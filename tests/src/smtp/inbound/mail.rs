@@ -26,80 +26,100 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use common::{config::smtp::auth::VerifyStrategy, expr::if_block::IfBlock};
+use common::Core;
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, IprevResult, SpfResult};
-use smtp_proto::{MtPriority, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
+use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
+
+use smtp::core::{Inner, Session};
+use store::Stores;
+use utils::config::Config;
 
 use crate::smtp::{
+    build_smtp,
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig,
+    TempDir,
 };
-use smtp::core::{Session, SMTP};
+
+const CONFIG: &str = r#"
+[storage]
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/data.db"
+
+[session.ehlo]
+require = true
+
+[auth.spf.verify]
+ehlo = 'relaxed'
+mail-from = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},
+             {else = 'relaxed'}]
+
+[auth.iprev]
+verify = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},
+          {else = 'relaxed'}]
+
+[session.extensions]
+future-release = [{if = "remote_ip = '10.0.0.2'", then = '1d'},
+                  {else = false}]
+deliver-by = [{if = "remote_ip = '10.0.0.2'", then = '1d'},
+             {else = false}]
+requiretls = [{if = "remote_ip = '10.0.0.2'", then = true},
+            {else = false}]
+mt-priority = [{if = "remote_ip = '10.0.0.2'", then = 'nsep'},
+               {else = false}]
+
+[session.data.limits]
+size = [{if = "remote_ip = '10.0.0.2'", then = 2048},
+        {else = 1024}]
+
+[[session.throttle]]
+match = "remote_ip = '10.0.0.1'"
+key = 'sender'
+rate = '2/1s'
+enable = true
+
+"#;
 
 #[tokio::test]
 async fn mail() {
-    let mut core = SMTP::test();
-    core.core.smtp.resolvers.dns.txt_add(
+    let tmp_dir = TempDir::new("smtp_mail_test", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
+    core.smtp.resolvers.dns.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.ptr_add(
+    core.smtp.resolvers.dns.ptr_add(
         "10.0.0.1".parse().unwrap(),
         vec!["mx1.foobar.org.".to_string()],
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.smtp.resolvers.dns.ipv4_add(
         "mx1.foobar.org.",
         vec!["10.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.ptr_add(
+    core.smtp.resolvers.dns.ptr_add(
         "10.0.0.2".parse().unwrap(),
         vec!["mx2.foobar.org.".to_string()],
         Instant::now() + Duration::from_secs(5),
     );
 
-    let config = &mut core.core.smtp.session;
-    config.ehlo.require = IfBlock::new(true);
-    core.mail_auth.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
-    core.mail_auth.spf.verify_mail_from = r#"[{if = "remote_ip = '10.0.0.2'", then = 'strict'},
-    {else = 'relaxed'}]"#
-        .parse_if_constant::<VerifyStrategy>();
-    core.mail_auth.iprev.verify = r#"[{if = "remote_ip = '10.0.0.2'", then = 'strict'},
-    {else = 'relaxed'}]"#
-        .parse_if_constant::<VerifyStrategy>();
-    config.extensions.future_release = r#"[{if = "remote_ip = '10.0.0.2'", then = '1d'},
-    {else = false}]"#
-        .parse_if();
-    config.extensions.deliver_by = r#"[{if = "remote_ip = '10.0.0.2'", then = '1d'},
-    {else = false}]"#
-        .parse_if();
-    config.extensions.requiretls = r#"[{if = "remote_ip = '10.0.0.2'", then = true},
-    {else = false}]"#
-        .parse_if();
-    config.extensions.mt_priority = r#"[{if = "remote_ip = '10.0.0.2'", then = 'nsep'},
-    {else = false}]"#
-        .parse_if_constant::<MtPriority>();
-    config.data.max_message_size = r#"[{if = "remote_ip = '10.0.0.2'", then = 2048},
-    {else = 1024}]"#
-        .parse_if();
-
-    config.throttle.mail_from = r#"[[throttle]]
-    match = "remote_ip = '10.0.0.1'"
-    key = 'sender'
-    rate = '2/1s'
-    "#
-    .parse_throttle();
-
     // Be rude and do not say EHLO
     let core = Arc::new(core);
-    let mut session = Session::test(core.clone());
+    let mut session = Session::test(build_smtp(core.clone(), Inner::default()));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
@@ -182,7 +202,7 @@ async fn mail() {
         .unwrap();
     session.response().assert_code("550 5.7.25");
     session.data.iprev = None;
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.smtp.resolvers.dns.ipv4_add(
         "mx2.foobar.org.",
         vec!["10.0.0.2".parse().unwrap()],
         Instant::now() + Duration::from_secs(5),
@@ -194,7 +214,7 @@ async fn mail() {
         .await
         .unwrap();
     session.response().assert_code("550 5.7.23");
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),

@@ -45,9 +45,9 @@ linger = 1
 tos = 1
 
 [certificate."default"]
-cert = "file://{CERT}"
-private-key = "file://{PK}"
+cert = "%{file:{CERT}}%"
+private-key = "%{file:{PK}}%"
 
 [certificate."other"]
-cert = "file://{CERT}"
-private-key = "file://{PK}"
+cert = "%{file:{CERT}}%"
+private-key = "%{file:{PK}}%"

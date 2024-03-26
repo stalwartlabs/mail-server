@@ -29,7 +29,7 @@ use std::{
 use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
 use mail_auth::MX;
 
-use crate::smtp::{outbound::start_test_server, session::TestSession, TestConfig, TestSMTP};
+use crate::smtp::{session::TestSession, TestSMTP};
 use smtp::{
     core::{Session, SMTP},
     queue::manager::Queue,
@@ -47,14 +47,16 @@ async fn concurrent_queue() {
     .unwrap();*/
 
     // Start test server
-    let mut core = SMTP::test();
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
+    let mut inner = Inner::default();
+    let mut core = Core::default();
+    core.smtp.session.rcpt.relay = IfBlock::new(true);
     let remote_qr = core.init_test_queue("smtp_concurrent_queue_remote");
     let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
 
     // Add mock DNS entries
-    let mut core = SMTP::test();
-    core.core.smtp.resolvers.dns.mx_add(
+    let mut inner = Inner::default();
+    let mut core = Core::default();
+    core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -62,17 +64,17 @@ async fn concurrent_queue() {
         }],
         Instant::now() + Duration::from_secs(100),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(100),
     );
     let local_qr = core.init_test_queue("smtp_concurrent_queue_local");
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    core.core.smtp.session.data.max_messages = IfBlock::new(200);
+    core.smtp.session.rcpt.relay = IfBlock::new(true);
+    core.smtp.session.data.max_messages = IfBlock::new(200);
 
     let core = Arc::new(core);
-    let mut session = Session::test(core.clone());
+    let mut session = Session::test(build_smtp(core, Inner::default()));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
@@ -105,9 +107,8 @@ async fn concurrent_queue() {
     assert_eq!(remote_messages.len(), 100);
 
     // Make sure local store is queue
-    core.core
-        .storage
+    core.storage
         .data
-        .assert_is_empty(core.core.storage.blob.clone())
+        .assert_is_empty(core.storage.blob.clone())
         .await;
 }

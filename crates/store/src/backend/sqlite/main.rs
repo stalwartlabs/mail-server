@@ -39,11 +39,11 @@ impl SqliteStore {
             conn_pool: Pool::builder()
                 .max_size(
                     config
-                        .property_((&prefix, "pool.max-connections"))
+                        .property((&prefix, "pool.max-connections"))
                         .unwrap_or_else(|| (num_cpus::get() * 4) as u32),
                 )
                 .build(
-                    SqliteConnectionManager::file(config.value_require_((&prefix, "path"))?)
+                    SqliteConnectionManager::file(config.value_require((&prefix, "path"))?)
                         .with_init(|c| {
                             c.execute_batch(concat!(
                                 "PRAGMA journal_mode = WAL; ",
@@ -63,7 +63,7 @@ impl SqliteStore {
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(
                     config
-                        .property_::<usize>((&prefix, "pool.workers"))
+                        .property::<usize>((&prefix, "pool.workers"))
                         .filter(|v| *v > 0)
                         .unwrap_or_else(num_cpus::get),
                 )

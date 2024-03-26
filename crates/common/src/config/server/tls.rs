@@ -59,9 +59,9 @@ impl Servers {
             let key_pk = ("certificate", cert_id, "private-key");
 
             let cert = config
-                .value_require_(key_cert)
+                .value_require(key_cert)
                 .map(|s| s.as_bytes().to_vec());
-            let pk = config.value_require_(key_pk).map(|s| s.as_bytes().to_vec());
+            let pk = config.value_require(key_pk).map(|s| s.as_bytes().to_vec());
 
             if let (Some(cert), Some(pk)) = (cert, pk) {
                 match build_certified_key(cert, pk) {
@@ -135,7 +135,7 @@ impl Servers {
                 })
                 .collect::<Vec<_>>();
             let renew_before: Duration = config
-                .property_or_default_(("acme", acme_id.as_str(), "renew-before"), "30d")
+                .property_or_default(("acme", acme_id.as_str(), "renew-before"), "30d")
                 .unwrap_or_else(|| Duration::from_secs(30 * 24 * 60 * 60));
 
             if directory.is_empty() {

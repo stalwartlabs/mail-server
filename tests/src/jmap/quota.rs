@@ -39,14 +39,10 @@ pub async fn test(params: &mut JMAPTest) {
     println!("Running quota tests...");
     let server = params.server.clone();
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("robert@example.com", "aabbcc", "Robert Foobar")
         .await;
@@ -69,14 +65,10 @@ pub async fn test(params: &mut JMAPTest) {
             .unwrap(),
     );
     params
-        .core
-        .storage
         .directory
         .set_test_quota("robert@example.com", 1024)
         .await;
     params
-        .core
-        .storage
         .directory
         .add_to_group("robert@example.com", "jdoe@example.com")
         .await;

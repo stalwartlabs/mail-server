@@ -26,27 +26,31 @@ use std::{fs, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use common::{
     config::smtp::session::{Milter, MilterVersion},
     expr::if_block::IfBlock,
+    Core,
 };
 use mail_auth::AuthenticatedMessage;
 use mail_parser::MessageParser;
 use serde::Deserialize;
 use smtp::{
-    core::{Session, SessionData, SMTP},
+    core::{Inner, Session, SessionData},
     inbound::milter::{
         receiver::{FrameResult, Receiver},
         Action, Command, Macros, MilterClient, Modification, Options, Response,
     },
 };
+use store::Stores;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::watch,
 };
+use utils::config::Config;
 
 use crate::smtp::{
+    build_smtp,
     inbound::TestMessage,
     session::{load_test_message, TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestSMTP,
+    TempDir, TestSMTP,
 };
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +58,31 @@ struct HeaderTest {
     modifications: Vec<Modification>,
     result: String,
 }
+
+const CONFIG: &str = r#"
+[storage]
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
+
+[session.rcpt]
+relay = true
+
+[[session.data.milter]]
+hostname = "127.0.0.1"
+port = 9332
+#port = 11332
+#port = 7357
+enable = true
+options.version = 6
+tls = false
+
+"#;
 
 #[tokio::test]
 async fn milter_session() {
@@ -67,25 +96,17 @@ async fn milter_session() {
     .unwrap();*/
 
     // Configure tests
+    let tmp_dir = TempDir::new("smtp_milter_test", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
     let _rx = spawn_mock_milter_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let mut core = SMTP::test();
-    let mut qr = core.init_test_queue("smtp_milter_test");
-    let config = &mut core.core.smtp.session;
-    config.rcpt.relay = IfBlock::new(true);
-    config.data.milters = r#"[[session.data.milter]]
-    hostname = "127.0.0.1"
-    port = 9332
-    #port = 11332
-    #port = 7357
-    enable = true
-    options.version = 6
-    tls = false
-    "#
-    .parse_milters();
+    let mut inner = Inner::default();
+    let mut qr = inner.init_test_queue(&core);
 
     // Build session
-    let mut session = Session::test(core);
+    let mut session = Session::test(build_smtp(core, inner));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;

@@ -133,7 +133,9 @@ impl<T: SessionStream> Session<T> {
             .core
             .eval_if::<String, _>(&self.core.core.smtp.session.connect.greeting, self)
             .await
-            .unwrap_or_else(|| "Stalwart ESMTP at your service".to_string());
+            .filter(|g| !g.is_empty())
+            .map(|g| format!("220 {}\r\n", g))
+            .unwrap_or_else(|| "220 Stalwart ESMTP at your service.\r\n".to_string());
 
         if self.write(greeting.as_bytes()).await.is_err() {
             return false;

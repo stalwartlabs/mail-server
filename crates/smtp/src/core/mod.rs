@@ -437,3 +437,25 @@ impl SessionAddress {
         }
     }
 }
+
+#[cfg(feature = "test_mode")]
+impl Default for Inner {
+    fn default() -> Self {
+        Self {
+            worker_pool: rayon::ThreadPoolBuilder::new()
+                .num_threads(num_cpus::get())
+                .build()
+                .unwrap(),
+            session_throttle: Default::default(),
+            queue_throttle: Default::default(),
+            queue_tx: mpsc::channel(1).0,
+            report_tx: mpsc::channel(1).0,
+            snowflake_id: Default::default(),
+            connectors: TlsConnectors {
+                pki_verify: mail_send::smtp::tls::build_tls_connector(false),
+                dummy_verify: mail_send::smtp::tls::build_tls_connector(true),
+            },
+            delivery_tx: mpsc::channel(1).0,
+        }
+    }
+}

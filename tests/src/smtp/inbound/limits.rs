@@ -23,31 +23,36 @@
 
 use std::time::{Duration, Instant};
 
+use common::Core;
 use tokio::sync::watch;
 
+use smtp::core::{Inner, Session};
+use utils::config::Config;
+
 use crate::smtp::{
+    build_smtp,
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig,
 };
-use smtp::core::{Session, SMTP};
+
+const CONFIG: &str = r#"
+[session]
+transfer-limit = [{if = "remote_ip = '10.0.0.1'", then = 10},
+                 {else = 1024}]
+timeout = [{if = "remote_ip = '10.0.0.2'", then = '500ms'},
+           {else = '30m'}]
+duration = [{if = "remote_ip = '10.0.0.3'", then = '500ms'},
+            {else = '60m'}]
+"#;
 
 #[tokio::test]
 async fn limits() {
-    let mut core = SMTP::test();
-    let config = &mut core.core.smtp.session;
-    config.transfer_limit = r#"[{if = "remote_ip = '10.0.0.1'", then = 10},
-    {else = 1024}]"#
-        .parse_if();
-    config.timeout = r#"[{if = "remote_ip = '10.0.0.2'", then = '500ms'},
-    {else = '30m'}]"#
-        .parse_if();
-    config.duration = r#"[{if = "remote_ip = '10.0.0.3'", then = '500ms'},
-    {else = '60m'}]"#
-        .parse_if();
+    let mut config = Config::new(CONFIG).unwrap();
+    let core = Core::parse(&mut config, Default::default()).await;
+
     let (_tx, rx) = watch::channel(true);
 
     // Exceed max line length
-    let mut session = Session::test_with_shutdown(core, rx);
+    let mut session = Session::test_with_shutdown(build_smtp(core, Inner::default()), rx);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     let mut buf = vec![b'A'; 2049];
     session.ingest(&buf).await.unwrap();

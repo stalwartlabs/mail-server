@@ -4,6 +4,7 @@ use ahash::AHashMap;
 use directory::Directory;
 use store::{write::purge::PurgeSchedule, BlobStore, FtsStore, LookupStore, Store};
 
+#[derive(Default)]
 pub struct Storage {
     pub data: Store,
     pub blob: BlobStore,

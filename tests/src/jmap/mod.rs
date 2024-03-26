@@ -24,8 +24,10 @@
 use std::{sync::Arc, time::Duration};
 
 use base64::{engine::general_purpose, Engine};
-use common::config::server::ServerProtocol;
-use directory::core::config::ConfigDirectory;
+use common::{
+    config::server::{ServerProtocol, Servers},
+    Core,
+};
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{
     api::JmapSessionManager,
@@ -34,13 +36,15 @@ use jmap::{
 };
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::types::id::Id;
+use managesieve::core::ManageSieveSessionManager;
 use reqwest::header;
 use smtp::core::{SmtpSessionManager, SMTP};
 
+use store::Stores;
 use tokio::sync::{mpsc, watch};
-use utils::UnwrapFailure;
+use utils::config::Config;
 
-use crate::{add_test_certs, directory::DirectoryStore, store::TempDir};
+use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
 
 pub mod auth_acl;
 pub mod auth_limits;
@@ -70,12 +74,12 @@ pub mod websocket;
 
 const SERVER: &str = r#"
 [server]
-hostname = "jmap.example.org"
+hostname = "'jmap.example.org'"
+url = "'https://127.0.0.1:8899'"
 
 [server.listener.jmap]
 bind = ["127.0.0.1:8899"]
-url = "https://127.0.0.1:8899"
-protocol = "jmap"
+protocol = "http"
 max-connections = 81920
 tls.implicit = true
 
@@ -98,9 +102,9 @@ enable = true
 implicit = false
 certificate = "default"
 
-[server.security]
-blocked-networks = {}
+[authentication]
 fail2ban = "101/5s"
+rate-limit = "100/2s"
 
 [session.ehlo]
 reject-non-fqdn = false
@@ -126,8 +130,8 @@ hash = 64
 type = "system"
 
 [queue.outbound]
-next-hop = [ { if = "key_exists('local/domains', rcpt_domain)", then = "'local'" }, 
-             { if = "key_exists('local/remote-domains', rcpt_domain)", then = "'mock-smtp'" },
+next-hop = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
+             { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
              { else = false } ]
 
 [remote."mock-smtp"]
@@ -176,11 +180,11 @@ url = "https://localhost:9200"
 user = "elastic"
 password = "RtQ-Lu6+o4rxx=XJplVJ"
 allow-invalid-certs = true
-disable = true # Elastic is disabled by default
+disable = true
 
 [certificate.default]
-cert = "file://{CERT}"
-private-key = "file://{PK}"
+cert = "%{file:{CERT}}%"
+private-key = "%{file:{PK}}%"
 
 [storage]
 data = "{STORE}"
@@ -212,7 +216,6 @@ size = 50000
 
 [jmap.rate-limit]
 account = "1000/1m"
-authentication = "100/2s"
 anonymous = "100/1m"
 
 [jmap.event-source]
@@ -248,17 +251,7 @@ description = "description"
 secret = "secret"
 email = "address"
 quota = "quota"
-type = "type"
-
-[store."local/domains"]
-type = "memory"
-format = "list"
-values = ["example.com"]
-
-[store."local/remote-domains"]
-type = "memory"
-format = "list"
-values = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
+class = "type"
 
 [oauth]
 key = "parerga_und_paralipomena"
@@ -271,6 +264,11 @@ user-code = "1s"
 token = "1s"
 refresh-token = "3s"
 refresh-token-renew = "2s"
+
+[session.extensions]
+expn = true
+vrfy = true
+
 "#;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -281,7 +279,7 @@ pub async fn jmap_tests() {
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::builder()
                         .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"),
+                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level},common={level}"),
                         )
                         .unwrap(),
                 )
@@ -369,6 +367,7 @@ pub async fn wait_for_index(server: &JMAP) {
     loop {
         let (tx, rx) = tokio::sync::oneshot::channel();
         server
+            .inner
             .housekeeper_tx
             .send(Event::IndexIsActive(tx))
             .await
@@ -397,67 +396,79 @@ pub async fn assert_is_empty(server: Arc<JMAP>) {
 async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     // Load and parse config
     let temp_dir = TempDir::new("jmap_tests", delete_if_exists);
-    let config = utils::config::Config::new(
-        &add_test_certs(SERVER)
+    let mut config = Config::new(
+        add_test_certs(SERVER)
             .replace("{STORE}", store_id)
             .replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();
-    let mut servers = config.parse_servers().unwrap();
-    let stores = config.parse_stores().await.failed("Invalid configuration");
-    let directory = config
-        .parse_directory(
-            &stores,
-            stores.core.storage.datas.get(store_id).unwrap().clone(),
-        )
-        .await
-        .unwrap();
+    config.resolve_macros().await;
 
-    // Start JMAP and SMTP servers
-    servers.bind(&config);
+    // Parse servers
+    let servers = Servers::parse(&mut config);
+
+    // Bind ports and drop privileges
+    servers.bind_and_drop_priv(&mut config);
+
+    // Build stores
+    let stores = Stores::parse(&mut config).await;
+
+    // Parse core
+    let core = Core::parse(&mut config, stores).await;
+    let store = core.storage.data.clone();
+    let shared_core = core.into_shared();
+
+    // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, &stores, &directory, delivery_tx)
-        .await
-        .failed("Invalid configuration file");
+    let smtp = SMTP::init(&mut config, shared_core.clone(), delivery_tx).await;
     let jmap = JMAP::init(
-        &config,
-        &stores,
-        &directory,
-        &mut servers,
+        &mut config,
         delivery_rx,
-        smtp.clone(),
+        shared_core.clone(),
+        smtp.inner.clone(),
     )
-    .await
-    .failed("Invalid configuration file");
-    let imap: Arc<IMAP> = IMAP::init(&config)
-        .await
-        .failed("Invalid configuration file");
-    jmap.core
-        .storage
-        .directory
-        .blocked_ips
-        .reload(&config)
-        .unwrap();
+    .await;
+    let imap = IMAP::init(&mut config, jmap.clone()).await;
+    config.assert_no_errors();
 
-    let (shutdown_tx, _) = servers.spawn(|server, shutdown_rx| {
-        match &server.protocol {
-            ServerProtocol::Smtp | ServerProtocol::Lmtp => {
-                server.spawn(SmtpSessionManager::new(smtp.clone()), shutdown_rx)
-            }
-            ServerProtocol::Jmap => {
-                server.spawn(JmapSessionManager::new(jmap.clone()), shutdown_rx)
-            }
-            ServerProtocol::Imap => server.spawn(
-                ImapSessionManager::new(jmap.clone(), imap.clone()),
-                shutdown_rx,
-            ),
-            _ => unreachable!(),
-        };
-    });
+    // Spawn servers
+    let shutdown_tx = servers.spawn(
+        |server, shutdown_rx| {
+            match &server.protocol {
+                ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
+                    SmtpSessionManager::new(smtp.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+                ServerProtocol::Http => server.spawn(
+                    JmapSessionManager::new(jmap.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+                ServerProtocol::Imap => server.spawn(
+                    ImapSessionManager::new(imap.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+                ServerProtocol::ManageSieve => server.spawn(
+                    ManageSieveSessionManager::new(imap.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+            };
+        },
+        store.clone(),
+    );
 
     // Create tables
     let directory = DirectoryStore {
-        store: stores.core.storage.lookups.get("auth").unwrap().clone(),
+        store: shared_core
+            .load()
+            .storage
+            .lookups
+            .get("auth")
+            .unwrap()
+            .clone(),
     };
     directory.create_test_directory().await;
     directory
@@ -465,7 +476,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         .await;
 
     if delete_if_exists {
-        jmap.core.storage.data.destroy().await;
+        store.destroy().await;
     }
 
     // Create client
@@ -479,7 +490,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     client.set_default_account_id(Id::new(1));
 
     JMAPTest {
-        server: jmap,
+        server: JMAP::from(jmap).into(),
         temp_dir,
         client,
         directory,

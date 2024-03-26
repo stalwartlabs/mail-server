@@ -42,7 +42,7 @@ impl S3Store {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         // Obtain region and endpoint from config
         let prefix = prefix.as_key();
-        let region = config.value_require_((&prefix, "region"))?.to_string();
+        let region = config.value_require((&prefix, "region"))?.to_string();
         let region = if let Some(endpoint) = config.value((&prefix, "endpoint")) {
             Region::Custom {
                 region: region.to_string(),
@@ -66,12 +66,12 @@ impl S3Store {
         })
         .ok()?;
         let timeout = config
-            .property_or_default_::<Duration>((&prefix, "timeout"), "30s")
+            .property_or_default::<Duration>((&prefix, "timeout"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30));
 
         Some(S3Store {
             bucket: Bucket::new(
-                config.value_require_((&prefix, "bucket"))?,
+                config.value_require((&prefix, "bucket"))?,
                 region,
                 credentials,
             )

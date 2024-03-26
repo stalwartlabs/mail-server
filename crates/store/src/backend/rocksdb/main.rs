@@ -40,7 +40,7 @@ impl RocksDbStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
         // Create the database directory if it doesn't exist
-        let idx_path: PathBuf = PathBuf::from(config.value_require_((&prefix, "path"))?);
+        let idx_path: PathBuf = PathBuf::from(config.value_require((&prefix, "path"))?);
         std::fs::create_dir_all(&idx_path)
             .map_err(|err| {
                 config.new_build_error(
@@ -73,7 +73,7 @@ impl RocksDbStore {
         cf_opts.set_enable_blob_files(true);
         cf_opts.set_min_blob_size(
             config
-                .property_or_default_((&prefix, "min-blob-size"), "16834")
+                .property_or_default((&prefix, "min-blob-size"), "16834")
                 .unwrap_or(16834),
         );
         cfs.push(ColumnFamilyDescriptor::new(CF_BLOBS, cf_opts));
@@ -95,7 +95,7 @@ impl RocksDbStore {
         //db_opts.set_max_successive_merges(100);
         db_opts.set_write_buffer_size(
             config
-                .property_or_default_((&prefix, "write-buffer-size"), "134217728")
+                .property_or_default((&prefix, "write-buffer-size"), "134217728")
                 .unwrap_or(134217728),
         );
 
@@ -112,7 +112,7 @@ impl RocksDbStore {
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(
                     config
-                        .property_::<usize>((&prefix, "pool.workers"))
+                        .property::<usize>((&prefix, "pool.workers"))
                         .filter(|v| *v > 0)
                         .unwrap_or_else(|| num_cpus::get() * 4),
                 )

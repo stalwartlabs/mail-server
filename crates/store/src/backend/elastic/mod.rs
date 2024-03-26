@@ -49,7 +49,7 @@ impl ElasticSearchStore {
         let credentials = if let Some(user) = config.value((&prefix, "user")) {
             let user = user.to_string();
             let password = config
-                .value_require_((&prefix, "password"))
+                .value_require((&prefix, "password"))
                 .unwrap_or_default();
             Some(Credentials::Basic(user, password.to_string()))
         } else {
@@ -66,7 +66,7 @@ impl ElasticSearchStore {
                 builder = builder.auth(credentials);
             }
             if config
-                .property_or_default_::<bool>((&prefix, "tls.allow-invalid-certs"), "false")
+                .property_or_default::<bool>((&prefix, "tls.allow-invalid-certs"), "false")
                 .unwrap_or(false)
             {
                 builder = builder.cert_validation(CertificateValidation::None);
@@ -105,10 +105,10 @@ impl ElasticSearchStore {
 
         es.create_index(
             config
-                .property_or_default_((&prefix, "index.shards"), "3")
+                .property_or_default((&prefix, "index.shards"), "3")
                 .unwrap_or(3),
             config
-                .property_or_default_((&prefix, "index.replicas"), "0")
+                .property_or_default((&prefix, "index.replicas"), "0")
                 .unwrap_or(0),
         )
         .await

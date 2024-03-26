@@ -26,7 +26,7 @@ use std::{sync::Arc, time::Duration};
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestSMTP,
+    TestSMTP,
 };
 use common::expr::if_block::IfBlock;
 use smtp::{
@@ -44,17 +44,18 @@ async fn queue_retry() {
     )
     .unwrap();*/
 
-    let mut core = SMTP::test();
+    let mut inner = Inner::default();
+    let mut core = Core::default();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_queue_retry_test");
 
-    let config = &mut core.core.smtp.session.rcpt;
+    let config = &mut core.smtp.session.rcpt;
     config.relay = IfBlock::new(true);
-    let config = &mut core.core.smtp.session.extensions;
+    let config = &mut core.smtp.session.extensions;
     config.deliver_by = IfBlock::new(Duration::from_secs(86400));
     config.future_release = IfBlock::new(Duration::from_secs(86400));
-    let config = &mut core.core.smtp.queue;
+    let config = &mut core.smtp.queue;
     config.retry = r#""[1s, 2s, 3s]""#.parse_if();
     config.notify = r#"[{if = "sender_domain = 'test.org'", then = "[1s, 2s]"},
     {else = ['15h', '22h']}]"#
@@ -66,7 +67,7 @@ async fn queue_retry() {
     // Create test message
     let core = Arc::new(core);
 
-    let mut session = Session::test(core.clone());
+    let mut session = Session::test(build_smtp(core, Inner::default()));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;

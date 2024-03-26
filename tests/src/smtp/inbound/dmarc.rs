@@ -21,16 +21,10 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use common::{
-    config::smtp::{auth::VerifyStrategy, report::AggregateFrequency},
-    expr::if_block::IfBlock,
-};
-use directory::core::config::ConfigDirectory;
+use common::{config::smtp::report::AggregateFrequency, Core};
+
 use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     dkim::DomainKeyReport,
@@ -38,19 +32,27 @@ use mail_auth::{
     report::DmarcResult,
     spf::Spf,
 };
-use store::Store;
+use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    inbound::{dummy_stores, sign::TextConfigContext, TestMessage, TestReportingEvent},
+    build_smtp,
+    inbound::{sign::SIGNATURES, TestMessage, TestReportingEvent},
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestSMTP,
+    TempDir, TestSMTP,
 };
-use smtp::core::{Session, SMTP};
+use smtp::core::{Inner, Session};
 
-const DIRECTORY: &str = r#"
+const CONFIG: &str = r#"
 [storage]
-lookup = "dummy"
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
 
 [directory."local"]
 type = "memory"
@@ -61,33 +63,78 @@ description = "John Doe"
 secret = "secret"
 email = ["jdoe@example.com"]
 
+[session.rcpt]
+directory = "'local'"
+
+[session.data.add-headers]
+received = true
+received-spf = true
+auth-results = true
+message-id = true
+date = true
+return-path = false
+
+[report.dkim]
+send = "[1, 1s]"
+sign = "['rsa']"
+
+[report.spf]
+send = "[1, 1s]"
+sign = "['rsa']"
+
+[report.dmarc]
+send = "[1, 1s]"
+sign = "['rsa']"
+
+[report.dmarc.aggregate]
+send = "daily"
+
+[auth.spf.verify]
+ehlo = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},
+        { else = 'relaxed' }]
+mail-from = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},
+             { else = 'relaxed' }]
+
+[auth.dmarc]
+verify = "strict"
+
+[auth.arc]
+verify = "strict"
+
+[auth.dkim]
+verify = [{if = "sender_domain = 'test.net'", then = 'relaxed'},
+         { else = 'strict' }]
+
 "#;
 
 #[tokio::test]
 async fn dmarc() {
-    let mut core = SMTP::test();
-    core.core.storage.signers = ConfigContext::new().parse_signatures().signers;
+    let mut inner = Inner::default();
+    let tmp_dir = TempDir::new("smtp_dmarc_test", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
 
     // Create temp dir for queue
-    let mut qr = core.init_test_queue("smtp_dmarc_test");
+    let mut qr = inner.init_test_queue(&core);
 
     // Add SPF, DKIM and DMARC records
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "mx.example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all ra=spf-failures rr=e:f:s:n").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "foobar.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "ed._domainkey.example.com",
         DomainKey::parse(
             concat!(
@@ -99,7 +146,7 @@ async fn dmarc() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "default._domainkey.example.com",
         DomainKey::parse(
             concat!(
@@ -114,12 +161,12 @@ async fn dmarc() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "_report._domainkey.example.com",
         DomainKeyReport::parse(b"ra=dkim-failures; rp=100; rr=d:o:p:s:u:v:x;").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "_dmarc.example.com",
         Dmarc::parse(
             concat!(
@@ -134,48 +181,10 @@ async fn dmarc() {
     );
 
     // Create report channels
-    let mut rr = core.init_test_report();
-    core.core.storage.directories = Config::new(DIRECTORY)
-        .unwrap()
-        .parse_directory(&dummy_stores(), Store::default())
-        .await
-        .unwrap()
-        .directories;
-    let config = &mut core.core.smtp.session.rcpt;
-    config.directory = IfBlock::new("local".to_string());
-
-    let config = &mut core.core.smtp.session;
-    config.data.add_auth_results = IfBlock::new(true);
-    config.data.add_date = IfBlock::new(true);
-    config.data.add_message_id = IfBlock::new(true);
-    config.data.add_received = IfBlock::new(true);
-    config.data.add_return_path = IfBlock::new(true);
-    config.data.add_received_spf = IfBlock::new(true);
-
-    let config = &mut core.core.smtp.report;
-    config.dkim.send = "\"[1, 1s]\"".parse_if();
-    config.dmarc.send = config.dkim.send.clone();
-    config.spf.send = config.dkim.send.clone();
-    config.dmarc_aggregate.send = IfBlock::new(AggregateFrequency::Daily);
-
-    let config = &mut core.mail_auth;
-    config.spf.verify_ehlo = r#"[{if = "remote_ip = '10.0.0.2'", then = 'strict'},
-    { else = 'relaxed' }]"#
-        .parse_if_constant::<VerifyStrategy>();
-    config.spf.verify_mail_from = config.spf.verify_ehlo.clone();
-    config.dmarc.verify = IfBlock::new(VerifyStrategy::Strict);
-    config.arc.verify = config.dmarc.verify.clone();
-    config.dkim.verify = r#"[{if = "sender_domain = 'test.net'", then = 'relaxed'},
-    { else = 'strict' }]"#
-        .parse_if_constant::<VerifyStrategy>();
-
-    let config = &mut core.core.smtp.report;
-    config.spf.sign = "\"['rsa']\"".parse_if();
-    config.dmarc.sign = "\"['rsa']\"".parse_if();
-    config.dkim.sign = "\"['rsa']\"".parse_if();
+    let mut rr = inner.init_test_report();
 
     // SPF must pass
-    let core = Arc::new(core);
+    let core = build_smtp(core, inner);
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.2".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();

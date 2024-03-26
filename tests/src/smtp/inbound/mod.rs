@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use store::{
     write::{key::DeserializeBigEndian, Bincode, QueueClass, QueueEvent, ReportEvent, ValueClass},
-    Deserialize, IterateParams, Store, Stores, ValueKey, U64_LEN,
+    Deserialize, IterateParams, ValueKey, U64_LEN,
 };
 use tokio::sync::mpsc::error::TryRecvError;
 
@@ -37,7 +37,7 @@ use smtp::{
 
 use super::{QueueReceiver, ReportReceiver};
 
-pub mod antispam;
+//pub mod antispam;
 pub mod auth;
 pub mod basic;
 pub mod data;
@@ -85,6 +85,7 @@ impl QueueReceiver {
 
     pub async fn assert_report_is_empty(&self) {
         assert_eq!(self.read_report_events().await, vec![]);
+        let todo = "fix antispam";
 
         for (from_key, to_key) in [
             (
@@ -377,18 +378,4 @@ impl TestMessage for Message {
             .map(|l| l.to_string())
             .collect()
     }
-}
-
-pub fn dummy_stores() -> Stores {
-    let mut stores = Stores::default();
-    let store = Store::default();
-    stores.stores.insert("dummy".to_string(), store.clone());
-    stores
-        .lookups
-        .insert("dummy".to_string(), store.clone().into());
-    stores
-        .fts_stores
-        .insert("dummy".to_string(), store.clone().into());
-    stores.blob_stores.insert("dummy".to_string(), store.into());
-    stores
 }

@@ -23,17 +23,22 @@
 
 use std::time::Duration;
 
-use store::LookupStore;
+use store::{LookupStore, Stores};
 use utils::config::{Config, Rate};
 
-use crate::store::{TempDir, CONFIG};
+use crate::{
+    store::{TempDir, CONFIG},
+    AssertConfig,
+};
 
 #[tokio::test]
 pub async fn lookup_tests() {
     let temp_dir = TempDir::new("lookup_tests", true);
-    let config =
-        Config::new(&CONFIG.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap())).unwrap();
-    let stores = config.parse_stores().await.unwrap();
+    let mut config =
+        Config::new(CONFIG.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
+            .unwrap()
+            .assert_no_errors();
+    let stores = Stores::parse(&mut config).await;
     let rate = Rate {
         requests: 1,
         period: Duration::from_secs(1),

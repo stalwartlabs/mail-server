@@ -14,6 +14,7 @@ use self::{
     session::SessionConfig,
 };
 
+#[derive(Default)]
 pub struct SmtpConfig {
     pub session: SessionConfig,
     pub queue: QueueConfig,

@@ -31,11 +31,12 @@ use smtp::{
 };
 use store::write::now;
 
-use crate::smtp::{TestConfig, TestSMTP};
+use crate::smtp::TestSMTP;
 
 #[tokio::test]
 async fn queue_due() {
-    let mut core = SMTP::test();
+    let mut inner = Inner::default();
+    let mut core = Core::default();
     let qr = core.init_test_queue("smtp_queue_due_test");
     let core = Arc::new(core);
 

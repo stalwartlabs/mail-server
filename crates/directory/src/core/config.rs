@@ -58,18 +58,18 @@ impl Directories {
             #[cfg(feature = "test_mode")]
             {
                 if config
-                    .property_or_default_::<bool>(("directory", id, "disable"), "false")
+                    .property_or_default::<bool>(("directory", id, "disable"), "false")
                     .unwrap_or(false)
                 {
                     tracing::debug!("Skipping disabled directory {id:?}.");
                     continue;
                 }
             }
-            let protocol = config.value_require_(("directory", id, "type")).unwrap();
+            let protocol = config.value_require(("directory", id, "type")).unwrap();
             let prefix = ("directory", id);
             let store = match protocol {
                 "internal" => Some(DirectoryInner::Internal(
-                    if let Some(store_id) = config.value_require_(("directory", id, "store")) {
+                    if let Some(store_id) = config.value_require(("directory", id, "store")) {
                         if let Some(data) = stores.stores.get(store_id) {
                             match data.clone().init().await {
                                 Ok(data) => data,
@@ -128,99 +128,6 @@ impl Directories {
     }
 }
 
-#[allow(async_fn_in_trait)]
-pub trait ConfigDirectory {
-    async fn parse_directory(
-        &mut self,
-        stores: &Stores,
-        data_store: Store,
-    ) -> utils::config::Result<Directories>;
-}
-
-impl ConfigDirectory for Config {
-    async fn parse_directory(
-        &mut self,
-        stores: &Stores,
-        data_store: Store,
-    ) -> utils::config::Result<Directories> {
-        let mut config = Directories {
-            directories: AHashMap::new(),
-        };
-
-        for id in self
-            .sub_keys("directory", ".type")
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-        {
-            // Parse directory
-            let id = id.as_str();
-            if self.property_or_default::<bool>(("directory", id, "disable"), "false")? {
-                tracing::debug!("Skipping disabled directory {id:?}.");
-                continue;
-            }
-            let protocol = self.value_require(("directory", id, "type"))?;
-            let prefix = ("directory", id);
-            let store = match protocol {
-                "internal" => DirectoryInner::Internal(
-                    stores
-                        .stores
-                        .get(self.value_require(("directory", id, "store"))?)
-                        .cloned()
-                        .ok_or_else(|| {
-                            format!(
-                                "Failed to find store {:?} for directory {:?}.",
-                                self.value_require(("directory", id, "store")).unwrap(),
-                                id
-                            )
-                        })?
-                        .init()
-                        .await
-                        .map_err(|err| {
-                            format!(
-                                "Failed to initialize store {:?} for directory {:?}: {:?}.",
-                                self.value_require(("directory", id, "store")).unwrap(),
-                                id,
-                                err
-                            )
-                        })?,
-                ),
-                "ldap" => DirectoryInner::Ldap(
-                    LdapDirectory::from_config(self, prefix, data_store.clone()).unwrap(),
-                ),
-                "sql" => DirectoryInner::Sql(
-                    SqlDirectory::from_config(self, prefix, stores, data_store.clone()).unwrap(),
-                ),
-                "imap" => DirectoryInner::Imap(ImapDirectory::from_config(self, prefix).unwrap()),
-                "smtp" => {
-                    DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, false).unwrap())
-                }
-                "lmtp" => {
-                    DirectoryInner::Smtp(SmtpDirectory::from_config(self, prefix, true).unwrap())
-                }
-                "memory" => DirectoryInner::Memory(
-                    MemoryDirectory::from_config(self, prefix, data_store.clone())
-                        .await
-                        .unwrap(),
-                ),
-                unknown => {
-                    return Err(format!("Unknown directory type: {unknown:?}"));
-                }
-            };
-
-            // Build directory
-            let directory = Arc::new(Directory {
-                store,
-                cache: CachedDirectory::try_from_config(self, ("directory", id)),
-            });
-
-            // Add directory
-            config.directories.insert(id.to_string(), directory);
-        }
-
-        Ok(config)
-    }
-}
-
 pub(crate) fn build_pool<M: Manager>(
     config: &mut Config,
     prefix: &str,
@@ -230,17 +137,17 @@ pub(crate) fn build_pool<M: Manager>(
         .runtime(Runtime::Tokio1)
         .max_size(
             config
-                .property_or_default_((prefix, "pool.max-connections"), "10")
+                .property_or_default((prefix, "pool.max-connections"), "10")
                 .unwrap_or(10),
         )
         .create_timeout(
             config
-                .property_or_default_::<Duration>((prefix, "pool.timeout.create"), "30s")
+                .property_or_default::<Duration>((prefix, "pool.timeout.create"), "30s")
                 .unwrap_or_else(|| Duration::from_secs(30))
                 .into(),
         )
-        .wait_timeout(config.property_or_default_((prefix, "pool.timeout.wait"), "30s"))
-        .recycle_timeout(config.property_or_default_((prefix, "pool.timeout.recycle"), "30s"))
+        .wait_timeout(config.property_or_default((prefix, "pool.timeout.wait"), "30s"))
+        .recycle_timeout(config.property_or_default((prefix, "pool.timeout.recycle"), "30s"))
         .build()
         .map_err(|err| {
             format!(

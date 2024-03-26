@@ -38,7 +38,7 @@ use store::write::QueueClass;
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage},
     session::VerifyResponse,
-    ParseTestConfig, TestConfig, TestSMTP,
+    TestSMTP,
 };
 use smtp::{core::SMTP, reporting::DmarcEvent};
 
@@ -52,9 +52,10 @@ async fn report_dmarc() {
     .unwrap();*/
 
     // Create scheduler
-    let mut core = SMTP::test();
-    core.core.storage.signers = ConfigContext::new().parse_signatures().signers;
-    let config = &mut core.core.smtp.report;
+    let mut inner = Inner::default();
+    let mut core = Core::default();
+    core.storage.signers = ConfigContext::new().parse_signatures().signers;
+    let config = &mut core.smtp.report;
     config.dmarc_aggregate.sign = "\"['rsa']\"".parse_if();
     config.dmarc_aggregate.max_size = IfBlock::new(4096);
     config.submitter = IfBlock::new("mx.example.org".to_string());
@@ -63,7 +64,7 @@ async fn report_dmarc() {
     config.dmarc_aggregate.contact_info = IfBlock::new("https://foobar.org/contact".to_string());
 
     // Authorize external report for foobar.org
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "foobar.org._report._dmarc.foobar.net",
         Dmarc::parse(b"v=DMARC1;").unwrap(),
         Instant::now() + Duration::from_secs(10),

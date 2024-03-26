@@ -37,16 +37,7 @@ use smtp_proto::MtPriority;
 use super::{Config, ConfigError, Rate};
 
 impl Config {
-    pub fn property<T: ParseValue>(&self, key: impl AsKey) -> super::Result<Option<T>> {
-        let key = key.as_key();
-        if let Some(value) = self.keys.get(&key) {
-            T::parse_value(key, value).map(Some)
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn property_<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
+    pub fn property<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
         let key = key.as_key();
         if let Some(value) = self.keys.get(&key) {
             match T::parse_value(key.as_str(), value) {
@@ -62,16 +53,6 @@ impl Config {
     }
 
     pub fn property_or_default<T: ParseValue>(
-        &self,
-        key: impl AsKey,
-        default: &str,
-    ) -> super::Result<T> {
-        let key = key.as_key();
-        let value = self.keys.get(&key).map_or(default, |v| v.as_str());
-        T::parse_value(key, value)
-    }
-
-    pub fn property_or_default_<T: ParseValue>(
         &mut self,
         key: impl AsKey,
         default: &str,
@@ -94,17 +75,6 @@ impl Config {
     }
 
     pub fn property_or_else<T: ParseValue>(
-        &self,
-        key: impl AsKey,
-        default: impl AsKey,
-    ) -> super::Result<Option<T>> {
-        match self.property(key) {
-            Ok(None) => self.property(default),
-            result => result,
-        }
-    }
-
-    pub fn property_or_else_<T: ParseValue>(
         &mut self,
         key: impl AsKey,
         default: impl AsKey,
@@ -127,15 +97,7 @@ impl Config {
         }
     }
 
-    pub fn property_require<T: ParseValue>(&self, key: impl AsKey) -> super::Result<T> {
-        match self.property(key.clone()) {
-            Ok(Some(result)) => Ok(result),
-            Ok(None) => Err(format!("Missing property {:?}.", key.as_key())),
-            Err(err) => Err(err),
-        }
-    }
-
-    pub fn property_require_<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
+    pub fn property_require<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
         let key = key.as_key();
         if let Some(value) = self.keys.get(&key) {
             match T::parse_value(key.as_str(), value) {
@@ -200,25 +162,7 @@ impl Config {
         })
     }
 
-    pub fn properties<T: ParseValue>(
-        &self,
-        prefix: impl AsKey,
-    ) -> impl Iterator<Item = super::Result<(&str, T)>> {
-        let full_prefix = prefix.as_key();
-        let prefix = prefix.as_prefix();
-
-        self.keys.iter().filter_map(move |(key, value)| {
-            if key.starts_with(&prefix) || key == &full_prefix {
-                T::parse_value(key.as_str(), value)
-                    .map(|value| (key.as_str(), value))
-                    .into()
-            } else {
-                None
-            }
-        })
-    }
-
-    pub fn properties_<T: ParseValue>(&mut self, prefix: impl AsKey) -> Vec<(String, T)> {
+    pub fn properties<T: ParseValue>(&mut self, prefix: impl AsKey) -> Vec<(String, T)> {
         let full_prefix = prefix.as_key();
         let prefix = prefix.as_prefix();
         let mut results = Vec::new();
@@ -247,14 +191,7 @@ impl Config {
         self.keys.contains_key(&key.as_key())
     }
 
-    pub fn value_require(&self, key: impl AsKey) -> super::Result<&str> {
-        self.keys
-            .get(&key.as_key())
-            .map(|s| s.as_str())
-            .ok_or_else(|| format!("Missing property {:?}.", key.as_key()))
-    }
-
-    pub fn value_require_(&mut self, key: impl AsKey) -> Option<&str> {
+    pub fn value_require(&mut self, key: impl AsKey) -> Option<&str> {
         let key = key.as_key();
         if let Some(value) = self.keys.get(&key) {
             Some(value.as_str())
@@ -821,14 +758,12 @@ ip = "a:b::1:1"
         assert_eq!(
             config
                 .property::<u32>("servers.my relay.transaction.auth.limits.0001.idle")
-                .unwrap()
                 .unwrap(),
             20
         );
         assert_eq!(
             config
                 .property::<IpAddr>(("servers", "submissions", "ip"))
-                .unwrap()
                 .unwrap(),
             "a:b::1:1".parse::<IpAddr>().unwrap()
         );

@@ -3,8 +3,10 @@ match = "remote_ip == '127.0.0.1'"
 key = ["remote_ip", "authenticated_as"]
 concurrency = 100
 rate = "50/30s"
+enable = true
 
 [[throttle]]
 key = "sender_domain"
 concurrency = 10000
+enable = true
 

@@ -23,22 +23,30 @@
 
 use std::time::Duration;
 
-use common::expr::if_block::IfBlock;
-use directory::core::config::ConfigDirectory;
+use common::Core;
+
 use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
-use store::Store;
+use store::Stores;
 use utils::config::Config;
 
-use crate::smtp::{
-    inbound::dummy_stores,
-    session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig,
-};
-use smtp::core::{Session, State, SMTP};
+use smtp::core::{Inner, Session, State};
 
-const DIRECTORY: &str = r#"
+use crate::smtp::{
+    build_smtp,
+    session::{TestSession, VerifyResponse},
+    TempDir,
+};
+
+const CONFIG: &str = r#"
 [storage]
-lookup = "dummy"
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
 
 [directory."local"]
 type = "memory"
@@ -67,45 +75,48 @@ description = "Mike Foobar"
 secret = "p4ssw0rd"
 email = "mike@foobar.org"
 
+[session.rcpt]
+directory = "'local'"
+max-recipients = [{if = "remote_ip = '10.0.0.1'", then = 3},
+                {else = 5}]
+relay = [{if = "remote_ip = '10.0.0.1'", then = false},
+         {else = true}]
+
+[session.rcpt.errors]
+total = [{if = "remote_ip = '10.0.0.1'", then = 3},
+         {else = 100}]
+wait = [{if = "remote_ip = '10.0.0.1'", then = '5ms'},
+        {else = '1s'}]
+
+[session.extensions]
+dsn = [{if = "remote_ip = '10.0.0.1'", then = false},
+       {else = true}]
+
+[[session.throttle]]
+match = "remote_ip = '10.0.0.1' && !is_empty(rcpt)"
+key = 'sender'
+rate = '2/1s'
+enable = true
+
 "#;
 
 #[tokio::test]
 async fn rcpt() {
-    let mut core = SMTP::test();
-
-    let config_ext = &mut core.core.smtp.session.extensions;
-    core.core.storage.directories = Config::new(DIRECTORY)
-        .unwrap()
-        .parse_directory(&dummy_stores(), Store::default())
-        .await
-        .unwrap()
-        .directories;
-    let config = &mut core.core.smtp.session.rcpt;
-    config.directory = IfBlock::new("local".to_string());
-    config.max_recipients = r#"[{if = "remote_ip = '10.0.0.1'", then = 3},
-    {else = 5}]"#
-        .parse_if();
-    config.relay = r#"[{if = "remote_ip = '10.0.0.1'", then = false},
-    {else = true}]"#
-        .parse_if();
-    config_ext.dsn = r#"[{if = "remote_ip = '10.0.0.1'", then = false},
-    {else = true}]"#
-        .parse_if();
-    config.errors_max = r#"[{if = "remote_ip = '10.0.0.1'", then = 3},
-    {else = 100}]"#
-        .parse_if();
-    config.errors_wait = r#"[{if = "remote_ip = '10.0.0.1'", then = '5ms'},
-    {else = '1s'}]"#
-        .parse_if();
-    core.core.smtp.session.throttle.rcpt_to = r#"[[throttle]]
-    match = "remote_ip = '10.0.0.1'"
-    key = 'sender'
-    rate = '2/1s'
-    "#
-    .parse_throttle();
+    // Enable logging
+    /*
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    )
+    .unwrap();*/
+    let tmp_dir = TempDir::new("smtp_rcpt_test", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
 
     // RCPT without MAIL FROM
-    let mut session = Session::test(core);
+    let mut session = Session::test(build_smtp(core, Inner::default()));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx1.foobar.org").await;

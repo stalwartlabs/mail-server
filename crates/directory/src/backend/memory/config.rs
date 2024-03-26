@@ -49,7 +49,7 @@ impl MemoryDirectory {
         {
             let lookup_id = lookup_id.as_str();
             let name = config
-                .value_require_((prefix.as_str(), "principals", lookup_id, "name"))?
+                .value_require((prefix.as_str(), "principals", lookup_id, "name"))?
                 .to_string();
             let typ = match config.value((prefix.as_str(), "principals", lookup_id, "class")) {
                 Some("individual") => Type::Individual,
@@ -147,7 +147,7 @@ impl MemoryDirectory {
                     .value((prefix.as_str(), "principals", lookup_id, "description"))
                     .map(|v| v.to_string()),
                 quota: config
-                    .property_((prefix.as_str(), "principals", lookup_id, "quota"))
+                    .property((prefix.as_str(), "principals", lookup_id, "quota"))
                     .unwrap_or(0),
                 member_of,
                 id,

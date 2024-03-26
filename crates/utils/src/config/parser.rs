@@ -34,9 +34,9 @@ const MAX_NEST_LEVEL: usize = 10;
 
 // Simple TOML parser for Stalwart Mail Server configuration files.
 impl Config {
-    pub fn new(toml: &str) -> Result<Self> {
+    pub fn new(toml: impl AsRef<str>) -> Result<Self> {
         let mut config = Config::default();
-        config.parse(toml)?;
+        config.parse(toml.as_ref())?;
         Ok(config)
     }
 

@@ -24,30 +24,33 @@
 use std::time::{Duration, Instant};
 
 use common::{
-    config::smtp::{session::Mechanism, *},
-    expr::{if_block::IfBlock, Expression},
+    config::smtp::*,
+    expr::{tokenizer::TokenMap, Expression},
+    Core,
 };
-use directory::core::config::ConfigDirectory;
+
 use mail_auth::MX;
-use smtp_proto::{AUTH_LOGIN, AUTH_PLAIN};
-use store::Store;
+use store::Stores;
 use utils::config::Config;
 
 use crate::{
     directory::DirectoryStore,
     smtp::{
+        build_smtp,
         session::{TestSession, VerifyResponse},
-        ParseTestConfig, TestConfig,
+        TempDir,
     },
-    store::TempDir,
 };
 use smtp::{
-    core::{Session, SMTP},
+    core::{Inner, Session},
     queue::RecipientDomain,
 };
 
 const CONFIG: &str = r#"
 [storage]
+data = "sql"
+blob = "sql"
+fts = "sql"
 lookup = "sql"
 
 [store."sql"]
@@ -74,7 +77,39 @@ description = "description"
 secret = "secret"
 email = "address"
 quota = "quota"
-type = "type"
+class = "type"
+
+[session.auth]
+directory = "'sql'"
+mechanisms = "[plain, login]"
+errors.wait = "5ms"
+
+[session.rcpt]
+directory = "'sql'"
+relay = false
+errors.wait = "5ms"
+
+[session.extensions]
+requiretls = [{if = "key_exists('sql/is_ip_allowed', remote_ip)", then = true},
+              {else = false}]
+expn = true
+vrfy = true
+
+[test."sql"]
+expr = "sql_query('sql', 'SELECT description FROM domains WHERE name = ?', 'foobar.org')"
+expect = "Main domain"
+
+[test."dns"]
+expr = "dns_query(rcpt_domain, 'mx')[0]"
+expect = "mx.foobar.org"
+
+[test."key_get"]
+expr = "key_get('sql', 'hello') + '-' + key_exists('sql', 'hello') + '-' + key_set('sql', 'hello', 'world') + '-' + key_get('sql', 'hello') + '-' + key_exists('sql', 'hello')"
+expect = "0-0-1-world-1"
+
+[test."counter_get"]
+expr = "counter_get('sql', 'county') + '-' + counter_incr('sql', 'county', 1) + '-' + counter_incr('sql', 'county', 1) + '-' + counter_get('sql', 'county')"
+expect = "0-1-2-2"
 
 "#;
 
@@ -91,18 +126,13 @@ async fn lookup_sql() {
 
     // Parse settings
     let temp_dir = TempDir::new("smtp_lookup_tests", true);
-    let config_file = CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy());
-    let mut core = SMTP::test();
-    let mut ctx = ConfigContext::new();
-    let config = Config::new(&config_file).unwrap();
-    ctx.stores = config.parse_stores().await.unwrap();
-    core.core.storage.lookups = ctx.stores.lookups.clone();
-    core.core.storage.directories = config
-        .parse_directory(&ctx.stores, Store::default())
-        .await
-        .unwrap()
-        .directories;
-    core.core.smtp.resolvers.dns.mx_add(
+    let mut config = Config::new(temp_dir.update_config(CONFIG)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+
+    let inner = Inner::default();
+    let core = Core::parse(&mut config, stores).await;
+
+    core.smtp.resolvers.dns.mx_add(
         "test.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -113,7 +143,7 @@ async fn lookup_sql() {
 
     // Obtain directory handle
     let handle = DirectoryStore {
-        store: ctx.stores.lookups.get("sql").unwrap().clone(),
+        store: core.storage.lookups.get("sql").unwrap().clone(),
     };
 
     // Create tables
@@ -160,76 +190,33 @@ async fn lookup_sql() {
     }
 
     // Test expression functions
-    for (expr, expected) in [
-        (
-            "sql_query('sql', 'SELECT description FROM domains WHERE name = ?', 'foobar.org')",
-            "Main domain",
-        ),
-        ("dns_query(rcpt_domain, 'mx')[0]", "mx.foobar.org"),
-        (
-            concat!(
-                "key_get('sql', 'hello') + '-' + key_exists('sql', 'hello') + '-' + ",
-                "key_set('sql', 'hello', 'world') + '-' + key_get('sql', 'hello') + ",
-                "'-' + key_exists('sql', 'hello')"
-            ),
-            "0-0-1-world-1",
-        ),
-        (
-            concat!(
-                "counter_get('sql', 'county') + '-' + counter_incr('sql', 'county', 1) + '-' ",
-                "+ counter_incr('sql', 'county', 1) + '-' + counter_get('sql', 'county')"
-            ),
-            "0-1-2-2",
-        ),
-    ] {
-        let e = Expression::parse("test", expr, |name| {
-            map_expr_token::<Duration>(
-                name,
-                &[
-                    V_RECIPIENT,
-                    V_RECIPIENT_DOMAIN,
-                    V_SENDER,
-                    V_SENDER_DOMAIN,
-                    V_MX,
-                    V_HELO_DOMAIN,
-                    V_AUTHENTICATED_AS,
-                    V_LISTENER,
-                    V_REMOTE_IP,
-                    V_LOCAL_IP,
-                    V_PRIORITY,
-                ],
-            )
-        })
-        .unwrap();
+    let token_map = TokenMap::default().with_smtp_variables(&[
+        V_RECIPIENT,
+        V_RECIPIENT_DOMAIN,
+        V_SENDER,
+        V_SENDER_DOMAIN,
+        V_MX,
+        V_HELO_DOMAIN,
+        V_AUTHENTICATED_AS,
+        V_LISTENER,
+        V_REMOTE_IP,
+        V_LOCAL_IP,
+        V_PRIORITY,
+    ]);
+    for test_name in ["sql", "dns", "key_get", "counter_get"] {
+        let e =
+            Expression::try_parse(&mut config, ("test", test_name, "expr"), &token_map).unwrap();
         assert_eq!(
-            core.core
-                .eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text")
+            core.eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text")
                 .await
                 .unwrap(),
-            expected,
+            config.value(("test", test_name, "expect")).unwrap(),
             "failed for '{}'",
-            expr
+            test_name
         );
     }
 
-    // Enable AUTH
-    let config = &mut core.core.smtp.session.auth;
-    config.directory = "\"'sql'\"".parse_if();
-    config.mechanisms = IfBlock::new(Mechanism::from(AUTH_PLAIN | AUTH_LOGIN));
-    config.errors_wait = IfBlock::new(Duration::from_millis(5));
-
-    // Enable VRFY/EXPN/RCPT
-    let config = &mut core.core.smtp.session.rcpt;
-    config.directory = "\"'sql'\"".parse_if();
-    config.relay = IfBlock::new(false);
-    config.errors_wait = IfBlock::new(Duration::from_millis(5));
-
-    // Enable REQUIRETLS based on SQL lookup
-    core.core.smtp.session.extensions.requiretls =
-        r#"[{if = "key_exists('sql/is_ip_allowed', remote_ip)", then = true},
-    {else = false}]"#
-            .parse_if();
-    let mut session = Session::test(core);
+    let mut session = Session::test(build_smtp(core, inner));
     session.data.remote_ip_str = "10.0.0.50".parse().unwrap();
     session.eval_session_params().await;
     session.stream.tls = true;

@@ -36,8 +36,6 @@ use tokio::{
 use smtp::core::{Session, SessionAddress, SessionData, SessionParameters, State, SMTP};
 use tokio_rustls::TlsAcceptor;
 
-use super::TestConfig;
-
 pub struct DummyIo {
     pub tx_buf: Vec<u8>,
     pub rx_buf: Vec<u8>,
@@ -99,8 +97,8 @@ impl Unpin for DummyIo {}
 
 #[allow(async_fn_in_trait)]
 pub trait TestSession {
-    fn test(core: impl Into<Arc<SMTP>>) -> Self;
-    fn test_with_shutdown(core: impl Into<Arc<SMTP>>, shutdown_rx: watch::Receiver<bool>) -> Self;
+    fn test(core: SMTP) -> Self;
+    fn test_with_shutdown(core: SMTP, shutdown_rx: watch::Receiver<bool>) -> Self;
     fn response(&mut self) -> Vec<String>;
     fn write_rx(&mut self, data: &str);
     async fn rset(&mut self);
@@ -114,11 +112,11 @@ pub trait TestSession {
 }
 
 impl TestSession for Session<DummyIo> {
-    fn test_with_shutdown(core: impl Into<Arc<SMTP>>, shutdown_rx: watch::Receiver<bool>) -> Self {
+    fn test_with_shutdown(core: SMTP, shutdown_rx: watch::Receiver<bool>) -> Self {
         Self {
             state: State::default(),
             instance: Arc::new(ServerInstance::test_with_shutdown(shutdown_rx)),
-            core: core.into(),
+            core,
             span: tracing::info_span!("test"),
             stream: DummyIo {
                 rx_buf: vec![],
@@ -136,7 +134,7 @@ impl TestSession for Session<DummyIo> {
         }
     }
 
-    fn test(core: impl Into<Arc<SMTP>>) -> Self {
+    fn test(core: SMTP) -> Self {
         Self::test_with_shutdown(core, watch::channel(false).1)
     }
 
@@ -383,8 +381,6 @@ impl ResolvesServerCert for DummyCertResolver {
     }
 }
 
-impl TestConfig for ServerInstance {
-    fn test() -> Self {
-        Self::test_with_shutdown(watch::channel(false).1)
-    }
+pub fn test_server_instance() -> ServerInstance {
+    ServerInstance::test_with_shutdown(watch::channel(false).1)
 }

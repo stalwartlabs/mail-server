@@ -125,16 +125,16 @@ impl JMAP {
         let (state_tx, state_rx) = init_state_manager();
         let (housekeeper_tx, housekeeper_rx) = init_housekeeper();
         let shard_amount = config
-            .property_::<u64>("cache.shard")
+            .property::<u64>("cache.shard")
             .unwrap_or(32)
             .next_power_of_two() as usize;
-        let capacity = config.property_("cache.capacity").unwrap_or(100);
+        let capacity = config.property("cache.capacity").unwrap_or(100);
 
         let inner = Inner {
             sessions: TtlDashMap::with_capacity(capacity, shard_amount),
             access_tokens: TtlDashMap::with_capacity(capacity, shard_amount),
             snowflake_id: config
-                .property_::<u64>("cluster.node-id")
+                .property::<u64>("cluster.node-id")
                 .map(SnowflakeIdGenerator::with_node_id)
                 .unwrap_or_default(),
             concurrency_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
@@ -146,7 +146,7 @@ impl JMAP {
             state_tx,
             housekeeper_tx,
             cache_threads: LruCache::with_capacity(
-                config.property_("cache.thread.size").unwrap_or(2048),
+                config.property("cache.thread.size").unwrap_or(2048),
             ),
         };
 

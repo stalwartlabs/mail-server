@@ -1,6 +1,6 @@
 [package]
 name = "directory"
-version = "0.1.0"
+version = "0.6.0"
 edition = "2021"
 resolver = "2"
 
@@ -37,3 +37,6 @@ serde = { version = "1.0", features = ["derive"]}
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }
+
+[features]
+test_mode = []

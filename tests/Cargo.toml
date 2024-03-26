@@ -20,7 +20,7 @@ redis = ["store/redis"]
 [dev-dependencies]
 store = { path = "../crates/store", features = ["test_mode"] }
 nlp = { path = "../crates/nlp" }
-directory = { path = "../crates/directory" }
+directory = { path = "../crates/directory", features = ["test_mode"] }
 jmap = { path = "../crates/jmap", features = ["test_mode"] }
 jmap_proto = { path = "../crates/jmap-proto" }
 imap = { path = "../crates/imap", features = ["test_mode"] }

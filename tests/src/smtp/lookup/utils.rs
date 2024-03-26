@@ -28,15 +28,41 @@ use common::{
         report::AggregateFrequency,
         resolver::{Mode, MxPattern, Policy},
     },
-    expr::if_block::IfBlock,
+    Core,
 };
-use mail_auth::{IpLookupStrategy, MX};
+use mail_auth::MX;
 
-use ::smtp::{core::SMTP, outbound::NextHop};
+use ::smtp::outbound::NextHop;
 use mail_parser::DateTime;
-use smtp::{outbound::lookup::ToNextHop, queue::RecipientDomain};
+use smtp::{
+    core::Inner,
+    outbound::{lookup::ToNextHop, mta_sts::parse::ParsePolicy},
+    queue::RecipientDomain,
+    reporting::AggregateTimestamp,
+};
+use utils::config::Config;
 
-use crate::smtp::{ParseTestConfig, TestConfig};
+use crate::smtp::build_smtp;
+
+const CONFIG_V4: &str = r#"
+[queue.outbound.source-ip]
+v4 = "['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']"
+v6 = "['a:b::1', 'a:b::2', 'a:b::3', 'a:b::4']"
+
+[queue.outbound]
+ip-strategy = "ipv4_then_ipv6"
+
+"#;
+
+const CONFIG_V6: &str = r#"
+[queue.outbound.source-ip]
+v4 = "['10.0.0.1', '10.0.0.2', '10.0.0.3', '10.0.0.4']"
+v6 = "['a:b::1', 'a:b::2', 'a:b::3', 'a:b::4']"
+
+[queue.outbound]
+ip-strategy = "ipv6_then_ipv4"
+
+"#;
 
 #[tokio::test]
 async fn lookup_ip() {
@@ -52,25 +78,11 @@ async fn lookup_ip() {
         "10.0.0.3".parse().unwrap(),
         "10.0.0.4".parse().unwrap(),
     ];
-    let mut core = SMTP::test();
-    core.core.smtp.queue.source_ip.ipv4 = format!(
-        "\"[{}]\"",
-        ipv4.iter()
-            .map(|ip| format!("'{}'", ip))
-            .collect::<Vec<_>>()
-            .join(",")
-    )
-    .as_str()
-    .parse_if();
-    core.core.smtp.queue.source_ip.ipv6 = format!(
-        "\"[{}]\"",
-        ipv6.iter()
-            .map(|ip| format!("'{}'", ip))
-            .collect::<Vec<_>>()
-            .join(",")
-    )
-    .as_str()
-    .parse_if();
+    let mut config = Config::new(CONFIG_V4).unwrap();
+    let core = build_smtp(
+        Core::parse(&mut config, Default::default()).await,
+        Inner::default(),
+    );
     core.core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec![
@@ -86,7 +98,6 @@ async fn lookup_ip() {
     );
 
     // Ipv4 strategy
-    core.core.smtp.queue.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv4thenIpv6);
     let resolve_result = core
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),
@@ -104,7 +115,24 @@ async fn lookup_ip() {
         .contains(&"172.168.0.100".parse().unwrap()));
 
     // Ipv6 strategy
-    core.core.smtp.queue.ip_strategy = IfBlock::new(IpLookupStrategy::Ipv6thenIpv4);
+    let mut config = Config::new(CONFIG_V6).unwrap();
+    let core = build_smtp(
+        Core::parse(&mut config, Default::default()).await,
+        Inner::default(),
+    );
+    core.core.smtp.resolvers.dns.ipv4_add(
+        "mx.foobar.org",
+        vec![
+            "172.168.0.100".parse().unwrap(),
+            "172.168.0.101".parse().unwrap(),
+        ],
+        Instant::now() + Duration::from_secs(10),
+    );
+    core.core.smtp.resolvers.dns.ipv6_add(
+        "mx.foobar.org",
+        vec!["e:f::a".parse().unwrap(), "e:f::b".parse().unwrap()],
+        Instant::now() + Duration::from_secs(10),
+    );
     let resolve_result = core
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),

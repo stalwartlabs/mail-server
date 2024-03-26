@@ -23,47 +23,53 @@
 
 use std::time::{Duration, Instant};
 
-use common::{config::smtp::auth::VerifyStrategy, expr::if_block::IfBlock};
+use common::Core;
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, SpfResult};
-use smtp_proto::MtPriority;
+
+use smtp::core::{Inner, Session};
+use utils::config::Config;
 
 use crate::smtp::{
+    build_smtp,
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig,
 };
-use smtp::core::{Session, SMTP};
+
+const CONFIG: &str = r#"
+[session.data.limits]
+size = [{if = "remote_ip = '10.0.0.1'", then = 1024},
+        {else = 2048}]
+
+[session.extensions]
+future-release = [{if = "remote_ip = '10.0.0.1'", then = '1h'},
+                  {else = false}]
+mt-priority = [{if = "remote_ip = '10.0.0.1'", then = 'nsep'},
+               {else = false}]
+
+[session.ehlo]
+reject-non-fqdn = true
+
+[auth.spf.verify]
+ehlo = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},
+        {else = 'relaxed'}]
+"#;
 
 #[tokio::test]
 async fn ehlo() {
-    let mut core = SMTP::test();
-    core.core.smtp.resolvers.dns.txt_add(
+    let mut config = Config::new(CONFIG).unwrap();
+    let core = Core::parse(&mut config, Default::default()).await;
+    core.smtp.resolvers.dns.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "mx2.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
 
-    let config = &mut core.core.smtp.session;
-    config.data.max_message_size = r#"[{if = "remote_ip = '10.0.0.1'", then = 1024},
-    {else = 2048}]"#
-        .parse_if();
-    config.extensions.future_release = r#"[{if = "remote_ip = '10.0.0.1'", then = '1h'},
-    {else = false}]"#
-        .parse_if();
-    config.extensions.mt_priority = r#"[{if = "remote_ip = '10.0.0.1'", then = 'nsep'},
-    {else = false}]"#
-        .parse_if_constant::<MtPriority>();
-    core.mail_auth.spf.verify_ehlo = r#"[{if = "remote_ip = '10.0.0.2'", then = 'strict'},
-    {else = 'relaxed'}]"#
-        .parse_if_constant::<VerifyStrategy>();
-    config.ehlo.reject_non_fqdn = IfBlock::new(true);
-
     // Reject non-FQDN domains
-    let mut session = Session::test(core);
+    let mut session = Session::test(build_smtp(core, Inner::default()));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.stream.tls = false;

@@ -39,52 +39,52 @@ impl Scripting {
         let untrusted_compiler = Compiler::new()
             .with_max_script_size(
                 config
-                    .property_("sieve.untrusted.limits.script-size")
+                    .property("sieve.untrusted.limits.script-size")
                     .unwrap_or(1024 * 1024),
             )
             .with_max_string_size(
                 config
-                    .property_("sieve.untrusted.limits.string-length")
+                    .property("sieve.untrusted.limits.string-length")
                     .unwrap_or(4096),
             )
             .with_max_variable_name_size(
                 config
-                    .property_("sieve.untrusted.limits.variable-name-length")
+                    .property("sieve.untrusted.limits.variable-name-length")
                     .unwrap_or(32),
             )
             .with_max_nested_blocks(
                 config
-                    .property_("sieve.untrusted.limits.nested-blocks")
+                    .property("sieve.untrusted.limits.nested-blocks")
                     .unwrap_or(15),
             )
             .with_max_nested_tests(
                 config
-                    .property_("sieve.untrusted.limits.nested-tests")
+                    .property("sieve.untrusted.limits.nested-tests")
                     .unwrap_or(15),
             )
             .with_max_nested_foreverypart(
                 config
-                    .property_("sieve.untrusted.limits.nested-foreverypart")
+                    .property("sieve.untrusted.limits.nested-foreverypart")
                     .unwrap_or(3),
             )
             .with_max_match_variables(
                 config
-                    .property_("sieve.untrusted.limits.match-variables")
+                    .property("sieve.untrusted.limits.match-variables")
                     .unwrap_or(30),
             )
             .with_max_local_variables(
                 config
-                    .property_("sieve.untrusted.limits.local-variables")
+                    .property("sieve.untrusted.limits.local-variables")
                     .unwrap_or(128),
             )
             .with_max_header_size(
                 config
-                    .property_("sieve.untrusted.limits.header-size")
+                    .property("sieve.untrusted.limits.header-size")
                     .unwrap_or(1024),
             )
             .with_max_includes(
                 config
-                    .property_("sieve.untrusted.limits.includes")
+                    .property("sieve.untrusted.limits.includes")
                     .unwrap_or(3),
             );
 
@@ -92,48 +92,48 @@ impl Scripting {
         let untrusted_runtime = Runtime::new()
             .with_max_nested_includes(
                 config
-                    .property_("sieve.untrusted.limits.nested-includes")
+                    .property("sieve.untrusted.limits.nested-includes")
                     .unwrap_or(3),
             )
             .with_cpu_limit(
                 config
-                    .property_("sieve.untrusted.limits.cpu")
+                    .property("sieve.untrusted.limits.cpu")
                     .unwrap_or(5000),
             )
             .with_max_variable_size(
                 config
-                    .property_("sieve.untrusted.limits.variable-size")
+                    .property("sieve.untrusted.limits.variable-size")
                     .unwrap_or(4096),
             )
             .with_max_redirects(
                 config
-                    .property_("sieve.untrusted.limits.redirects")
+                    .property("sieve.untrusted.limits.redirects")
                     .unwrap_or(1),
             )
             .with_max_received_headers(
                 config
-                    .property_("sieve.untrusted.limits.received-headers")
+                    .property("sieve.untrusted.limits.received-headers")
                     .unwrap_or(10),
             )
             .with_max_header_size(
                 config
-                    .property_("sieve.untrusted.limits.header-size")
+                    .property("sieve.untrusted.limits.header-size")
                     .unwrap_or(1024),
             )
             .with_max_out_messages(
                 config
-                    .property_("sieve.untrusted.limits.outgoing-messages")
+                    .property("sieve.untrusted.limits.outgoing-messages")
                     .unwrap_or(3),
             )
             .with_default_vacation_expiry(
                 config
-                    .property_::<Duration>("sieve.untrusted.default-expiry.vacation")
+                    .property::<Duration>("sieve.untrusted.default-expiry.vacation")
                     .unwrap_or(Duration::from_secs(30 * 86400))
                     .as_secs(),
             )
             .with_default_duplicate_expiry(
                 config
-                    .property_::<Duration>("sieve.untrusted.default-expiry.duplicate")
+                    .property::<Duration>("sieve.untrusted.default-expiry.duplicate")
                     .unwrap_or(Duration::from_secs(7 * 86400))
                     .as_secs(),
             )
@@ -201,7 +201,7 @@ impl Scripting {
             .with_max_includes(10)
             .with_no_capability_check(
                 config
-                    .property_or_default_("sieve.trusted.no-capability-check", "true")
+                    .property_or_default("sieve.trusted.no-capability-check", "true")
                     .unwrap_or(true),
             )
             .register_functions(&mut fnc_map);
@@ -223,7 +223,7 @@ impl Scripting {
             .with_capability(Capability::While)
             .with_max_variable_size(
                 config
-                    .property_or_default_("sieve.trusted.limits.variable-size", "52428800")
+                    .property_or_default("sieve.trusted.limits.variable-size", "52428800")
                     .unwrap_or(52428800),
             )
             .with_max_header_size(10240)
@@ -231,22 +231,22 @@ impl Scripting {
             .with_valid_ext_lists(stores.lookup_stores.keys().map(|k| k.to_string()))
             .with_functions(&mut fnc_map);
 
-        if let Some(value) = config.property_("sieve.trusted.limits.redirects") {
+        if let Some(value) = config.property("sieve.trusted.limits.redirects") {
             trusted_runtime.set_max_redirects(value);
         }
-        if let Some(value) = config.property_("sieve.trusted.limits.out-messages") {
+        if let Some(value) = config.property("sieve.trusted.limits.out-messages") {
             trusted_runtime.set_max_out_messages(value);
         }
-        if let Some(value) = config.property_("sieve.trusted.limits.cpu") {
+        if let Some(value) = config.property("sieve.trusted.limits.cpu") {
             trusted_runtime.set_cpu_limit(value);
         }
-        if let Some(value) = config.property_("sieve.trusted.limits.nested-includes") {
+        if let Some(value) = config.property("sieve.trusted.limits.nested-includes") {
             trusted_runtime.set_max_nested_includes(value);
         }
-        if let Some(value) = config.property_("sieve.trusted.limits.received-headers") {
+        if let Some(value) = config.property("sieve.trusted.limits.received-headers") {
             trusted_runtime.set_max_received_headers(value);
         }
-        if let Some(value) = config.property_::<Duration>("sieve.trusted.limits.duplicate-expiry") {
+        if let Some(value) = config.property::<Duration>("sieve.trusted.limits.duplicate-expiry") {
             trusted_runtime.set_default_duplicate_expiry(value.as_secs());
         }
         let hostname = if let Some(hostname) = config.value("sieve.trusted.hostname") {
@@ -267,7 +267,7 @@ impl Scripting {
         {
             // Skip sub-scripts
             if config
-                .property_(("sieve.trusted.scripts", id.as_str(), "snippet"))
+                .property(("sieve.trusted.scripts", id.as_str(), "snippet"))
                 .unwrap_or(false)
             {
                 continue;
@@ -311,14 +311,35 @@ impl Scripting {
             scripts,
             bayes_cache: BayesTokenCache::new(
                 config
-                    .property_or_default_("cache.bayes.capacity", "8192")
+                    .property_or_default("cache.bayes.capacity", "8192")
                     .unwrap_or(8192),
                 config
-                    .property_or_default_("cache.bayes.ttl.positive", "1h")
+                    .property_or_default("cache.bayes.ttl.positive", "1h")
                     .unwrap_or_else(|| Duration::from_secs(3600)),
                 config
-                    .property_or_default_("cache.bayes.ttl.negative", "1h")
+                    .property_or_default("cache.bayes.ttl.negative", "1h")
                     .unwrap_or_else(|| Duration::from_secs(3600)),
+            ),
+            remote_lists: Default::default(),
+        }
+    }
+}
+
+impl Default for Scripting {
+    fn default() -> Self {
+        Scripting {
+            untrusted_compiler: Compiler::new(),
+            untrusted_runtime: Runtime::new(),
+            trusted_runtime: Runtime::new(),
+            from_addr: "MAILER-DAEMON@localhost".to_string(),
+            from_name: "Mailer Daemon".to_string(),
+            return_path: "".to_string(),
+            sign: Vec::new(),
+            scripts: AHashMap::new(),
+            bayes_cache: BayesTokenCache::new(
+                8192,
+                Duration::from_secs(3600),
+                Duration::from_secs(3600),
             ),
             remote_lists: Default::default(),
         }

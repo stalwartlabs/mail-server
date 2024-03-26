@@ -65,7 +65,7 @@ impl Servers {
         // Parse protocol
         let id = id_.as_str();
         let protocol =
-            if let Some(protocol) = config.property_require_(("server.listener", id, "protocol")) {
+            if let Some(protocol) = config.property_require(("server.listener", id, "protocol")) {
                 protocol
             } else {
                 return;
@@ -73,7 +73,7 @@ impl Servers {
 
         // Build listeners
         let mut listeners = Vec::new();
-        for (_, addr) in config.properties_::<SocketAddr>(("server.listener", id, "bind")) {
+        for (_, addr) in config.properties::<SocketAddr>(("server.listener", id, "bind")) {
             // Parse bind address and build socket
             let socket = match if addr.is_ipv4() {
                 TcpSocket::new_v4()
@@ -144,17 +144,17 @@ impl Servers {
                 socket,
                 addr,
                 ttl: config
-                    .property_or_else_(("server.listener", id, "socket.ttl"), "server.socket.ttl"),
-                backlog: config.property_or_else_(
+                    .property_or_else(("server.listener", id, "socket.ttl"), "server.socket.ttl"),
+                backlog: config.property_or_else(
                     ("server.listener", id, "socket.backlog"),
                     "server.socket.backlog",
                 ),
-                linger: config.property_or_else_(
+                linger: config.property_or_else(
                     ("server.listener", id, "socket.linger"),
                     "server.socket.linger",
                 ),
                 nodelay: config
-                    .property_or_else_(
+                    .property_or_else(
                         ("server.listener", id, "socket.nodelay"),
                         "server.socket.nodelay",
                     )
@@ -172,7 +172,7 @@ impl Servers {
 
         // Build TLS config
         let (acceptor, tls_implicit) = if config
-            .property_or_else_(("server.listener", id, "tls.enable"), "server.tls.enable")
+            .property_or_else(("server.listener", id, "tls.enable"), "server.tls.enable")
             .unwrap_or(false)
         {
             // Parse protocol versions
@@ -203,7 +203,7 @@ impl Servers {
             } else {
                 "server.tls.disable-ciphers".as_key()
             };
-            for (_, protocol) in config.properties_::<SupportedCipherSuite>(cipher_keys) {
+            for (_, protocol) in config.properties::<SupportedCipherSuite>(cipher_keys) {
                 disabled_ciphers.push(protocol);
             }
 
@@ -225,7 +225,7 @@ impl Servers {
                 // Check if this port is used to receive ACME challenges
                 let port_key = ("acme", acme_id, "port").as_key();
                 let acme_port = config
-                    .property_or_default_::<u16>(port_key, "443")
+                    .property_or_default::<u16>(port_key, "443")
                     .unwrap_or(443);
                 if listeners.iter().any(|l| l.addr.port() == acme_port) {
                     acme_acceptor = Some(acme.clone());
@@ -284,7 +284,7 @@ impl Servers {
             };
 
             server_config.ignore_client_order = config
-                .property_or_else_(
+                .property_or_else(
                     ("server.listener", id, "tls.ignore-client-order"),
                     "server.tls.ignore-client-order",
                 )
@@ -308,7 +308,7 @@ impl Servers {
             (
                 acceptor,
                 config
-                    .property_or_else_(
+                    .property_or_else(
                         ("server.listener", id, "tls.implicit"),
                         "server.tls.implicit",
                     )
@@ -325,13 +325,13 @@ impl Servers {
         } else {
             "server.proxy.trusted-networks".as_key()
         };
-        for (_, network) in config.properties_(proxy_keys) {
+        for (_, network) in config.properties(proxy_keys) {
             proxy_networks.push(network);
         }
 
         self.servers.push(Server {
             max_connections: config
-                .property_or_else_(
+                .property_or_else(
                     ("server.listener", id, "max-connections"),
                     "server.max-connections",
                 )

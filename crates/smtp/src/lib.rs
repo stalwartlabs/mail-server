@@ -49,9 +49,9 @@ impl SMTP {
         #[cfg(feature = "local_delivery")] delivery_tx: mpsc::Sender<common::DeliveryEvent>,
     ) -> SmtpInstance {
         // Build inner
-        let capacity = config.property_("cache.capacity").unwrap_or(2);
+        let capacity = config.property("cache.capacity").unwrap_or(2);
         let shard = config
-            .property_::<u64>("cache.shard")
+            .property::<u64>("cache.shard")
             .unwrap_or(32)
             .next_power_of_two() as usize;
         let (queue_tx, queue_rx) = mpsc::channel(1024);
@@ -60,7 +60,7 @@ impl SMTP {
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(std::cmp::max(
                     config
-                        .property_::<usize>("global.thread-pool")
+                        .property::<usize>("global.thread-pool")
                         .filter(|v| *v > 0)
                         .unwrap_or_else(num_cpus::get),
                     4,
@@ -80,7 +80,7 @@ impl SMTP {
             queue_tx,
             report_tx,
             snowflake_id: config
-                .property_::<u64>("cluster.node-id")
+                .property::<u64>("cluster.node-id")
                 .map(SnowflakeIdGenerator::with_node_id)
                 .unwrap_or_default(),
             connectors: TlsConnectors {

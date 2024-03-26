@@ -68,14 +68,14 @@ impl Stores {
             #[cfg(feature = "test_mode")]
             {
                 if config
-                    .property_or_default_::<bool>(("store", id, "disable"), "false")
+                    .property_or_default::<bool>(("store", id, "disable"), "false")
                     .unwrap_or(false)
                 {
                     tracing::debug!("Skipping disabled store {id:?}.");
                     continue;
                 }
             }
-            let protocol = if let Some(protocol) = config.value_require_(("store", id, "type")) {
+            let protocol = if let Some(protocol) = config.value_require(("store", id, "type")) {
                 protocol.to_ascii_lowercase()
             } else {
                 continue;
@@ -83,8 +83,8 @@ impl Stores {
             let prefix = ("store", id);
             let store_id = id.to_string();
             let compression_algo = config
-                .property_or_default_::<CompressionAlgo>(("store", id, "compression"), "lz4")
-                .unwrap_or(CompressionAlgo::Lz4);
+                .property_or_default::<CompressionAlgo>(("store", id, "compression"), "none")
+                .unwrap_or(CompressionAlgo::None);
 
             let lookup_store: Store = match protocol.as_str() {
                 #[cfg(feature = "rocks")]
@@ -245,7 +245,7 @@ impl Stores {
         {
             let store_id = config.value("storage.data").unwrap().to_string();
             if let Some(cron) =
-                config.property_::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
+                config.property::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
             {
                 stores.purge_schedules.push(PurgeSchedule {
                     cron,
@@ -260,7 +260,7 @@ impl Stores {
             {
                 let store_id = config.value("storage.blob").unwrap().to_string();
                 if let Some(cron) =
-                    config.property_::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
+                    config.property::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
                 {
                     stores.purge_schedules.push(PurgeSchedule {
                         cron,
@@ -275,7 +275,7 @@ impl Stores {
         }
         for (store_id, store) in &stores.lookup_stores {
             if let Some(cron) =
-                config.property_::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
+                config.property::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
             {
                 stores.purge_schedules.push(PurgeSchedule {
                     cron,

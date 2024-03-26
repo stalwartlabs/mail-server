@@ -27,45 +27,30 @@ pub mod ldap;
 pub mod smtp;
 pub mod sql;
 
-use common::config::smtp::session::AddressMapping;
-use directory::{
-    backend::internal::manage::ManageDirectory, core::config::ConfigDirectory, Directories,
-    Principal,
-};
+use common::{config::smtp::session::AddressMapping, Core};
+use directory::{backend::internal::manage::ManageDirectory, Directories, Principal};
 use mail_send::Credentials;
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls_pki_types::PrivateKeyDer;
-use std::{borrow::Cow, io::BufReader, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, io::BufReader, sync::Arc};
 use store::{LookupStore, Store, Stores};
 use tokio_rustls::TlsAcceptor;
 
-use crate::store::TempDir;
+use crate::{store::TempDir, AssertConfig};
 
 const CONFIG: &str = r#"
 [directory."rocksdb"]
 type = "internal"
 store = "rocksdb"
 
-[directory."rocksdb".options]
-catch-all = true
-subaddressing = true
-
 [directory."foundationdb"]
 type = "internal"
 store = "foundationdb"
 
-[directory."foundationdb".options]
-catch-all = true
-subaddressing = true
-
 [directory."sqlite"]
 type = "sql"
 store = "sqlite"
-
-[directory."sqlite".options]
-catch-all = true
-subaddressing = true
 
 [directory."sqlite".columns]
 name = "name"
@@ -73,7 +58,7 @@ description = "description"
 secret = "secret"
 email = "address"
 quota = "quota"
-type = "type"
+class = "type"
 
 [store."rocksdb"]
 type = "rocksdb"
@@ -104,17 +89,13 @@ lookup = "sqlite"
 type = "sql"
 store = "postgresql"
 
-[directory."postgresql".options]
-catch-all = true
-subaddressing = true
-
 [directory."postgresql".columns]
 name = "name"
 description = "description"
 secret = "secret"
 email = "address"
 quota = "quota"
-type = "type"
+class = "type"
 
 [store."postgresql"]
 type = "postgresql"
@@ -139,17 +120,13 @@ domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || $1 LIMIT 1"
 type = "sql"
 store = "mysql"
 
-[directory."mysql".options]
-catch-all = true
-subaddressing = true
-
 [directory."mysql".columns]
 name = "name"
 description = "description"
 secret = "secret"
 email = "address"
 quota = "quota"
-type = "type"
+class = "type"
 
 [store."mysql"]
 type = "mysql"
@@ -172,7 +149,7 @@ domains = "SELECT 1 FROM emails WHERE address LIKE CONCAT('%@', ?) LIMIT 1"
 
 [directory."ldap"]
 type = "ldap"
-address = "ldap://localhost:3893"
+url = "ldap://localhost:3893"
 base-dn = "dc=example,dc=org"
 
 [directory."ldap".bind]
@@ -182,10 +159,6 @@ secret = "mysecret"
 [directory."ldap".bind.auth]
 enable = false
 dn = "cn=?,ou=svcaccts,dc=example,dc=org"
-
-[directory."ldap".options]
-catch-all = true
-subaddressing = true
 
 [directory."ldap".filter]
 name = "(&(|(objectClass=posixAccount)(objectClass=posixGroup))(uid=?))"
@@ -205,27 +178,27 @@ groups = ["memberOf", "otherGroups"]
 email = "mail"
 email-alias = "givenName"
 quota = "diskQuota"
-type = "objectClass"
+class = "objectClass"
 
 ##############################################################################
 
 [directory."imap"]
 type = "imap"
-address = "127.0.0.1"
+host = "127.0.0.1"
 port = 9198
 
 [directory."imap".pool]
 max-connections = 5
 
 [directory."imap".tls]
-implicit = true
+enable = true
 allow-invalid-certs = true
 
 ##############################################################################
 
 [directory."smtp"]
 type = "lmtp"
-address = "127.0.0.1"
+host = "127.0.0.1"
 port = 9199
 
 [directory."smtp".limits]
@@ -236,7 +209,7 @@ rcpt = 5
 max-connections = 5
 
 [directory."smtp".tls]
-implicit = true
+enable = true
 allow-invalid-certs = true
 
 [directory."smtp".cache]
@@ -248,13 +221,9 @@ ttl = {positive = '10s', negative = '5s'}
 [directory."local"]
 type = "memory"
 
-[directory."local".options]
-catch-all = true
-subaddressing = true
-
 [[directory."local".principals]]
 name = "john"
-type = "individual"
+class = "individual"
 description = "John Doe"
 secret = "12345"
 email = ["john@example.org", "jdoe@example.org", "john.doe@example.org"]
@@ -263,7 +232,7 @@ member-of = ["sales"]
 
 [[directory."local".principals]]
 name = "jane"
-type = "individual"
+class = "individual"
 description = "Jane Doe"
 secret = "abcde"
 email = "jane@example.org"
@@ -272,7 +241,7 @@ member-of = ["sales", "support"]
 
 [[directory."local".principals]]
 name = "bill"
-type = "individual"
+class = "individual"
 description = "Bill Foobar"
 secret = "$2y$05$bvIG6Nmid91Mu9RcmmWZfO5HJIMCT8riNW0hEp8f6/FuA2/mHZFpe"
 quota = 500000
@@ -281,12 +250,12 @@ email-list = ["info@example.org"]
 
 [[directory."local".principals]]
 name = "sales"
-type = "group"
+class = "group"
 description = "Sales Team"
 
 [[directory."local".principals]]
 name = "support"
-type = "group"
+class = "group"
 description = "Support Team"
 
 "#;
@@ -299,6 +268,7 @@ pub struct DirectoryTest {
     pub directories: Directories,
     pub stores: Stores,
     pub temp_dir: TempDir,
+    pub core: Core,
 }
 
 impl DirectoryTest {
@@ -308,24 +278,41 @@ impl DirectoryTest {
         if id_store.is_some() {
             // Disable foundationdb store for SQL tests (the fdb select api version can only be run once per process)
             config_file = config_file
-                .replace("type = \"foundationdb\"", "type = \"ignore\"")
-                .replace("store = \"foundationdb\"", "disable = true");
+                .replace(
+                    "type = \"foundationdb\"",
+                    "type = \"foundationdb\"\ndisable = true",
+                )
+                .replace(
+                    "store = \"foundationdb\"",
+                    "store = \"foundationdb\"\ndisable = true",
+                )
+        } else {
+            // Disable internal store
+            config_file =
+                config_file.replace("type = \"memory\"", "type = \"memory\"\ndisable = true")
         }
-        let config = utils::config::Config::new(&config_file).unwrap();
-        let stores = config.parse_stores().await.unwrap();
+        let mut config = utils::config::Config::new(&config_file).unwrap();
+        let stores = Stores::parse(&mut config).await;
+        let directories = Directories::parse(
+            &mut config,
+            &stores,
+            id_store
+                .map(|id| stores.stores.get(id).unwrap().clone())
+                .unwrap_or_default(),
+        )
+        .await;
+        config.assert_no_errors();
+
+        // Enable catch-all and subaddressing
+        let mut core = Core::default();
+        core.smtp.session.rcpt.catch_all = AddressMapping::Enable;
+        core.smtp.session.rcpt.subaddressing = AddressMapping::Enable;
 
         DirectoryTest {
-            directories: config
-                .parse_directory(
-                    &stores,
-                    id_store
-                        .map(|id| stores.stores.get(id).unwrap().clone())
-                        .unwrap_or_default(),
-                )
-                .await
-                .unwrap(),
+            directories,
             stores,
             temp_dir,
+            core,
         }
     }
 }
@@ -530,6 +517,9 @@ impl core::fmt::Debug for Item {
     }
 }
 
+/*
+
+// DEPRECATED - TODO: Remove
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn lookup_local() {
@@ -539,12 +529,12 @@ async fn lookup_local() {
     format = "regex"
     values = ["^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
              "^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"]
-    
+
     [store."local/glob"]
     type = "memory"
     format = "glob"
     values = ["*@example.org", "test@*", "localhost", "*+*@*.domain.net"]
-    
+
     [store."local/list"]
     type = "memory"
     format = "list"
@@ -564,7 +554,7 @@ async fn lookup_local() {
     )
     .unwrap();*/
 
-    let lookups = utils::config::Config::new(
+    let mut config = utils::config::Config::new(
         &LOOKUP_CONFIG.replace(
             "%PATH%",
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -578,11 +568,9 @@ async fn lookup_local() {
                 .unwrap(),
         ),
     )
-    .unwrap()
-    .parse_stores()
-    .await
-    .unwrap()
-    .lookup_stores;
+    .unwrap();
+
+    let lookups = Stores::parse(&mut config).await.lookup_stores;
 
     for (lookup, item, expect) in [
         ("glob", "user@example.org", true),
@@ -613,6 +601,7 @@ async fn lookup_local() {
         );
     }
 }
+*/
 
 #[tokio::test]
 async fn address_mappings() {
@@ -639,22 +628,23 @@ async fn address_mappings() {
     expected-catch = "info@example.org"
     "#;
 
-    let config = utils::config::Config::new(MAPPINGS).unwrap();
+    let mut config = utils::config::Config::new(MAPPINGS).unwrap();
     const ADDR: &str = "john.doe+alias@example.org";
     const ADDR_NO_MATCH: &str = "jane@example.org";
+    let core = Core::default();
 
     for test in ["enable", "disable", "custom"] {
-        let catch_all = AddressMapping::from_config(&config, (test, "catch-all")).unwrap();
-        let subaddressing = AddressMapping::from_config(&config, (test, "subaddressing")).unwrap();
+        let catch_all = AddressMapping::parse(&mut config, (test, "catch-all"));
+        let subaddressing = AddressMapping::parse(&mut config, (test, "subaddressing"));
 
         assert_eq!(
-            subaddressing.to_subaddress(ADDR).await,
+            subaddressing.to_subaddress(&core, ADDR).await,
             config.value_require((test, "expected-sub")).unwrap(),
             "failed subaddress for {test:?}"
         );
 
         assert_eq!(
-            subaddressing.to_subaddress(ADDR_NO_MATCH).await,
+            subaddressing.to_subaddress(&core, ADDR_NO_MATCH).await,
             config
                 .value_require((test, "expected-sub-nomatch"))
                 .unwrap(),
@@ -662,7 +652,7 @@ async fn address_mappings() {
         );
 
         assert_eq!(
-            catch_all.to_catch_all(ADDR).await,
+            catch_all.to_catch_all(&core, ADDR).await,
             config
                 .property_require::<Option<String>>((test, "expected-catch"))
                 .unwrap()

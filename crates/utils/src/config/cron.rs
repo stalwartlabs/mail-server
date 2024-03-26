@@ -139,3 +139,9 @@ impl ParseValue for SimpleCron {
         Err(format!("Invalid cron key {key:?}: parse cron expression."))
     }
 }
+
+impl Default for SimpleCron {
+    fn default() -> Self {
+        SimpleCron::Hour { minute: 0 }
+    }
+}

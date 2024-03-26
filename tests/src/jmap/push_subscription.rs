@@ -30,7 +30,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose, Engine};
-use common::listener::SessionData;
+use common::{config::server::Servers, listener::SessionData, Core};
 use directory::backend::internal::manage::ManageDirectory;
 use ece::EcKeyComponents;
 use hyper::{body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn, StatusCode};
@@ -45,25 +45,27 @@ use jmap::{
 };
 use jmap_client::{mailbox::Role, push_subscription::Keys};
 use jmap_proto::types::{id::Id, type_state::DataType};
-use store::ahash::AHashSet;
+use store::{ahash::AHashSet, Store};
 
 use tokio::sync::mpsc;
+use utils::config::Config;
 
 use crate::{
     add_test_certs,
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, test_account_login},
+    AssertConfig,
 };
 
 use super::JMAPTest;
 
-const SERVER: &str = "
+const SERVER: &str = r#"
 [server]
-hostname = 'jmap-push.example.org'
+hostname = "'jmap-push.example.org'"
+url = "'https://127.0.0.1:9000'"
 
 [server.listener.jmap]
 bind = ['127.0.0.1:9000']
-url = 'https://127.0.0.1:9000'
-protocol = 'jmap'
+protocol = 'http'
 
 [server.socket]
 reuse-addr = true
@@ -74,9 +76,9 @@ implicit = false
 certificate = 'default'
 
 [certificate.default]
-cert = 'file://{CERT}'
-private-key = 'file://{PK}'
-";
+cert = '%{file:{CERT}}%'
+private-key = '%{file:{PK}}%'
+"#;
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running Push Subscription tests...");
@@ -84,8 +86,6 @@ pub async fn test(params: &mut JMAPTest) {
     // Create test account
     let server = params.server.clone();
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
@@ -117,15 +117,20 @@ pub async fn test(params: &mut JMAPTest) {
     });
 
     // Start mock push server
-    let settings = utils::config::Config::new(&add_test_certs(SERVER)).unwrap();
-    let servers = settings.parse_servers().unwrap();
+    let mut settings = Config::new(&add_test_certs(SERVER)).unwrap();
+    settings.resolve_macros().await;
+    let servers = Servers::parse(&mut settings);
 
     // Start JMAP server
     let manager = SessionManager::from(push_server.clone());
-    servers.bind(&settings);
-    let _shutdown_tx = servers.spawn(|server, shutdown_rx| {
-        server.spawn(manager.clone(), shutdown_rx);
-    });
+    servers.bind_and_drop_priv(&mut settings);
+    settings.assert_no_errors();
+    let _shutdown_tx = servers.spawn(
+        |server, shutdown_rx| {
+            server.spawn(manager.clone(), Core::default().into_shared(), shutdown_rx);
+        },
+        Store::default(),
+    );
 
     // Register push notification (no encryption)
     let push_id = client

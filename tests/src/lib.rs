@@ -53,3 +53,26 @@ pub fn add_test_certs(config: &str) -> String {
         .replace("{CERT}", cert.as_path().to_str().unwrap())
         .replace("{PK}", pk.as_path().to_str().unwrap())
 }
+
+#[cfg(test)]
+pub trait AssertConfig {
+    fn assert_no_errors(self) -> Self;
+    fn assert_no_warnings(self) -> Self;
+}
+
+#[cfg(test)]
+impl AssertConfig for utils::config::Config {
+    fn assert_no_errors(self) -> Self {
+        if !self.errors.is_empty() {
+            panic!("Errors: {:#?}", self.errors);
+        }
+        self
+    }
+
+    fn assert_no_warnings(self) -> Self {
+        if !self.missing.is_empty() {
+            panic!("Warnings: {:#?}", self.missing);
+        }
+        self
+    }
+}

@@ -23,7 +23,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestConfig, TestSMTP};
+use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestSMTP};
 use common::{config::smtp::report::AddressMatch, expr::if_block::IfBlock};
 use smtp::core::{Session, SMTP};
 use store::{
@@ -33,15 +33,16 @@ use store::{
 
 #[tokio::test(flavor = "multi_thread")]
 async fn report_analyze() {
-    let mut core = SMTP::test();
+    let mut inner = Inner::default();
+    let mut core = Core::default();
 
     // Create temp dir for queue
     let mut qr = core.init_test_queue("smtp_analyze_report_test");
-    let config = &mut core.core.smtp.session.rcpt;
+    let config = &mut core.smtp.session.rcpt;
     config.relay = IfBlock::new(true);
-    let config = &mut core.core.smtp.session.data;
+    let config = &mut core.smtp.session.data;
     config.max_messages = IfBlock::new(1024);
-    let config = &mut core.core.smtp.report.analysis;
+    let config = &mut core.smtp.report.analysis;
     config.addresses = vec![
         AddressMatch::StartsWith("reports@".to_string()),
         AddressMatch::EndsWith("@dmarc.foobar.org".to_string()),
@@ -58,7 +59,7 @@ async fn report_analyze() {
         &[utils::config::ServerProtocol::Http],
     );*/
 
-    let mut session = Session::test(core.clone());
+    let mut session = Session::test(build_smtp(core, Inner::default()));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;

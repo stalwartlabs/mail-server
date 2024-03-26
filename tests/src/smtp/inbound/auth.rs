@@ -21,21 +21,28 @@
  * for more details.
 */
 
-use common::{config::smtp::session::Mechanism, expr::if_block::IfBlock};
-use directory::core::config::ConfigDirectory;
-use store::Store;
+use common::Core;
+
+use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    inbound::dummy_stores,
+    build_smtp,
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig,
+    TempDir,
 };
-use smtp::core::{Session, State, SMTP};
+use smtp::core::{Inner, Session, State};
 
-const DIRECTORY: &str = r#"
+const CONFIG: &str = r#"
 [storage]
-lookup = "dummy"
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
 
 [directory."local"]
 type = "memory"
@@ -55,41 +62,43 @@ secret = "p4ssw0rd"
 email = "jane@example.org"
 email-list = ["info@example.org"]
 member-of = ["sales", "support"]
+
+[session.auth]
+require = [{if = "remote_ip = '10.0.0.1'", then = true},
+           {else = false}]
+mechanisms = [{if = "remote_ip = '10.0.0.1'", then = "[plain, login]"},
+              {else = 0}]
+directory = [{if = "remote_ip = '10.0.0.1'", then = "'local'"},
+             {else = false}]
+must-match-sender = true
+
+[session.auth.errors]
+total = [{if = "remote_ip = '10.0.0.1'", then = 2},
+              {else = 3}]
+wait = "100ms"
+
+[session.extensions]
+future-release = [{if = '!is_empty(authenticated_as)', then = '1d'},
+                  {else = false}]
 "#;
 
 #[tokio::test]
 async fn auth() {
-    let mut core = SMTP::test();
-    core.core.storage.directories = Config::new(DIRECTORY)
-        .unwrap()
-        .parse_directory(&dummy_stores(), Store::default())
-        .await
-        .unwrap()
-        .directories;
+    // Enable logging
+    /*tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    )
+    .unwrap();*/
 
-    let config = &mut core.core.smtp.session.auth;
-
-    config.require = r#"[{if = "remote_ip = '10.0.0.1'", then = true},
-    {else = false}]"#
-        .parse_if();
-    config.directory = r#"[{if = "remote_ip = '10.0.0.1'", then = "'local'"},
-    {else = false}]"#
-        .parse_if();
-    config.errors_max = r#"[{if = "remote_ip = '10.0.0.1'", then = 2},
-    {else = 3}]"#
-        .parse_if();
-    config.errors_wait = "'100ms'".parse_if();
-    config.mechanisms = r#"[{if = "remote_ip = '10.0.0.1'", then = "[plain, login]"},
-    {else = 0}]"#
-        .parse_if_constant::<Mechanism>();
-    config.must_match_sender = IfBlock::new(true);
-    core.core.smtp.session.extensions.future_release =
-        r"[{if = '!is_empty(authenticated_as)', then = '1d'},
-    {else = false}]"
-            .parse_if();
+    let tmp_dir = TempDir::new("smtp_auth_test", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
 
     // EHLO should not advertise plain text auth without TLS
-    let mut session = Session::test(core);
+    let mut session = Session::test(build_smtp(core, Inner::default()));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.stream.tls = false;

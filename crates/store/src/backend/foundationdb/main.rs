@@ -23,7 +23,7 @@
 
 use std::time::Duration;
 
-use foundationdb::{options::DatabaseOption, Database};
+use foundationdb::{api, options::DatabaseOption, Database};
 use utils::config::{utils::AsKey, Config};
 
 use super::FdbStore;
@@ -31,15 +31,36 @@ use super::FdbStore;
 impl FdbStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
-        let guard = unsafe { foundationdb::boot() };
+        let guard = unsafe {
+            api::FdbApiBuilder::default()
+                .build()
+                .map_err(|err| {
+                    config.new_build_error(
+                        prefix.as_str(),
+                        format!("Failed to boot FoundationDB: {err:?}"),
+                    )
+                })
+                .ok()?
+                .boot()
+                .map_err(|err| {
+                    config.new_build_error(
+                        prefix.as_str(),
+                        format!("Failed to boot FoundationDB: {err:?}"),
+                    )
+                })
+                .ok()?
+        };
 
         let db = Database::new(config.value((&prefix, "cluster-file")))
             .map_err(|err| {
-                config.new_build_error(prefix.as_str(), format!("Failed to open database: {err:?}"))
+                config.new_build_error(
+                    prefix.as_str(),
+                    format!("Failed to create FoundationDB database: {err:?}"),
+                )
             })
             .ok()?;
 
-        if let Some(value) = config.property_::<Duration>((&prefix, "transaction.timeout")) {
+        if let Some(value) = config.property::<Duration>((&prefix, "transaction.timeout")) {
             db.set_option(DatabaseOption::TransactionTimeout(value.as_millis() as i32))
                 .map_err(|err| {
                     config.new_build_error(
@@ -49,7 +70,7 @@ impl FdbStore {
                 })
                 .ok()?;
         }
-        if let Some(value) = config.property_((&prefix, "transaction.retry-limit")) {
+        if let Some(value) = config.property((&prefix, "transaction.retry-limit")) {
             db.set_option(DatabaseOption::TransactionRetryLimit(value))
                 .map_err(|err| {
                     config.new_build_error(
@@ -59,8 +80,7 @@ impl FdbStore {
                 })
                 .ok()?;
         }
-        if let Some(value) = config.property_::<Duration>((&prefix, "transaction.max-retry-delay"))
-        {
+        if let Some(value) = config.property::<Duration>((&prefix, "transaction.max-retry-delay")) {
             db.set_option(DatabaseOption::TransactionMaxRetryDelay(
                 value.as_millis() as i32
             ))
@@ -72,7 +92,7 @@ impl FdbStore {
             })
             .ok()?;
         }
-        if let Some(value) = config.property_((&prefix, "ids.machine")) {
+        if let Some(value) = config.property((&prefix, "ids.machine")) {
             db.set_option(DatabaseOption::MachineId(value))
                 .map_err(|err| {
                     config.new_build_error(
@@ -82,7 +102,7 @@ impl FdbStore {
                 })
                 .ok()?;
         }
-        if let Some(value) = config.property_((&prefix, "ids.datacenter")) {
+        if let Some(value) = config.property((&prefix, "ids.datacenter")) {
             db.set_option(DatabaseOption::DatacenterId(value))
                 .map_err(|err| {
                     config.new_build_error(

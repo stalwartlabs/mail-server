@@ -21,21 +21,14 @@
  * for more details.
 */
 
-use crate::smtp::{
-    inbound::{dummy_stores, sign::TextConfigContext},
-    session::TestSession,
-    TestConfig,
-};
-use common::{config::smtp::*, expr::if_block::IfBlock};
-use directory::core::config::ConfigDirectory;
-use smtp::core::{Session, SMTP};
-use store::Store;
+use common::Core;
+
+use smtp::core::{Inner, Session};
 use utils::config::Config;
 
-const CONFIG: &str = r#"
-[storage]
-lookup = "dummy"
+use crate::smtp::{build_smtp, session::TestSession};
 
+const CONFIG: &str = r#"
 [session.mail]
 rewrite = [ { if = "ends_with(sender_domain, '.foobar.net') & matches('^([^.]+)@([^.]+)\.(.+)$', sender)", then = "$1 + '+' + $2 + '@' + $3"},
             { else = false } ]
@@ -47,6 +40,7 @@ rewrite = [ { if = "rcpt_domain = 'foobar.net' & matches('^([^.]+)\\.([^.]+)@(.+
             { else = false } ]
 script = [ { if = "rcpt_domain = 'foobar.org'", then = "'rcpt'" }, 
             { else = false } ]
+relay = true
 
 [sieve.trusted]
 from-name = "Sieve Daemon"
@@ -62,8 +56,8 @@ cpu = 10000
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[sieve.trusted.scripts]
-mail = '''
+[sieve.trusted.scripts."mail"]
+contents = '''
 require ["variables", "envelope"];
 
 if allof( envelope :domain :is "from" "foobar.org", 
@@ -73,7 +67,8 @@ if allof( envelope :domain :is "from" "foobar.org",
 
 '''
 
-rcpt = '''
+[sieve.trusted.scripts."rcpt"]
+contents = '''
 require ["variables", "envelope", "regex"];
 
 if allof( envelope :localpart :contains "to" ".",
@@ -96,45 +91,11 @@ async fn address_rewrite() {
     .unwrap();*/
 
     // Prepare config
-    let available_keys = &[V_SENDER, V_SENDER_DOMAIN, V_RECIPIENT, V_RECIPIENT_DOMAIN];
-    let mut core = SMTP::test();
-    let mut ctx = ConfigContext::new().parse_signatures();
-    let settings = Config::new(CONFIG).unwrap();
-    ctx.directory = settings
-        .parse_directory(&dummy_stores(), Store::default())
-        .await
-        .unwrap();
-    core.sieve = settings.parse_sieve(&mut ctx).unwrap();
-    core.core.storage.scripts = ctx.scripts;
-    let config = &mut core.core.smtp.session;
-    config.mail.script = settings
-        .parse_if_block("session.mail.script", |name| {
-            map_expr_token::<NoConstants>(name, available_keys)
-        })
-        .unwrap()
-        .unwrap_or_default();
-    config.mail.rewrite = settings
-        .parse_if_block("session.mail.rewrite", |name| {
-            map_expr_token::<NoConstants>(name, available_keys)
-        })
-        .unwrap()
-        .unwrap_or_default();
-    config.rcpt.script = settings
-        .parse_if_block("session.rcpt.script", |name| {
-            map_expr_token::<NoConstants>(name, available_keys)
-        })
-        .unwrap()
-        .unwrap_or_default();
-    config.rcpt.rewrite = settings
-        .parse_if_block("session.rcpt.rewrite", |name| {
-            map_expr_token::<NoConstants>(name, available_keys)
-        })
-        .unwrap()
-        .unwrap_or_default();
-    config.rcpt.relay = IfBlock::new(true);
+    let mut config = Config::new(CONFIG).unwrap();
+    let core = Core::parse(&mut config, Default::default()).await;
 
     // Init session
-    let mut session = Session::test(core);
+    let mut session = Session::test(build_smtp(core, Inner::default()));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;

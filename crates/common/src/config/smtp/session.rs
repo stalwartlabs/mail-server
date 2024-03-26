@@ -30,7 +30,7 @@ pub struct SessionConfig {
     pub extensions: Extensions,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct SessionThrottle {
     pub connect: Vec<Throttle>,
     pub mail_from: Vec<Throttle>,
@@ -302,7 +302,7 @@ impl SessionConfig {
             ),
             (
                 &mut session.auth.errors_max,
-                "session.auth.errors.max",
+                "session.auth.errors.total",
                 &has_ehlo_hars,
             ),
             (
@@ -347,7 +347,7 @@ impl SessionConfig {
             ),
             (
                 &mut session.rcpt.errors_max,
-                "session.rcpt.errors.max",
+                "session.rcpt.errors.total",
                 &has_sender_vars,
             ),
             (
@@ -499,9 +499,9 @@ fn parse_pipe(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Pip
 
 fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Milter> {
     let hostname = config
-        .value_require_(("session.data.milter", id, "hostname"))?
+        .value_require(("session.data.milter", id, "hostname"))?
         .to_string();
-    let port = config.property_require_(("session.data.milter", id, "port"))?;
+    let port = config.property_require(("session.data.milter", id, "port"))?;
     Some(Milter {
         enable: IfBlock::try_parse(config, ("session.data.milter", id, "enable"), token_map)
             .unwrap_or_default(),
@@ -518,28 +518,28 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
         hostname,
         port,
         timeout_connect: config
-            .property_or_default_(("session.data.milter", id, "timeout.connect"), "30s")
+            .property_or_default(("session.data.milter", id, "timeout.connect"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30)),
         timeout_command: config
-            .property_or_default_(("session.data.milter", id, "timeout.command"), "30s")
+            .property_or_default(("session.data.milter", id, "timeout.command"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30)),
         timeout_data: config
-            .property_or_default_(("session.data.milter", id, "timeout.data"), "60s")
+            .property_or_default(("session.data.milter", id, "timeout.data"), "60s")
             .unwrap_or_else(|| Duration::from_secs(60)),
         tls: config
-            .property_or_default_(("session.data.milter", id, "tls"), "false")
+            .property_or_default(("session.data.milter", id, "tls"), "false")
             .unwrap_or_default(),
         tls_allow_invalid_certs: config
-            .property_or_default_(("session.data.milter", id, "allow-invalid-certs"), "false")
+            .property_or_default(("session.data.milter", id, "allow-invalid-certs"), "false")
             .unwrap_or_default(),
         tempfail_on_error: config
-            .property_or_default_(
+            .property_or_default(
                 ("session.data.milter", id, "options.tempfail-on-error"),
                 "true",
             )
             .unwrap_or(true),
         max_frame_len: config
-            .property_or_default_(
+            .property_or_default(
                 ("session.data.milter", id, "options.max-response-size"),
                 "52428800",
             )
@@ -558,8 +558,8 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
                 MilterVersion::V6
             }
         },
-        flags_actions: config.property_(("session.data.milter", id, "options.flags.actions")),
-        flags_protocol: config.property_(("session.data.milter", id, "options.flags.protocol")),
+        flags_actions: config.property(("session.data.milter", id, "options.flags.actions")),
+        flags_protocol: config.property(("session.data.milter", id, "options.flags.protocol")),
     })
 }
 

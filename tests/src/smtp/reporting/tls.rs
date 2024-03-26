@@ -35,7 +35,7 @@ use store::write::QueueClass;
 use crate::smtp::{
     inbound::{sign::TextConfigContext, TestMessage},
     session::VerifyResponse,
-    ParseTestConfig, TestConfig, TestSMTP,
+    TestSMTP,
 };
 use smtp::{
     core::SMTP,
@@ -53,9 +53,10 @@ async fn report_tls() {
     .unwrap();*/
 
     // Create scheduler
-    let mut core = SMTP::test();
-    core.core.storage.signers = ConfigContext::new().parse_signatures().signers;
-    let config = &mut core.core.smtp.report;
+    let mut inner = Inner::default();
+    let mut core = Core::default();
+    core.storage.signers = ConfigContext::new().parse_signatures().signers;
+    let config = &mut core.smtp.report;
     config.tls.sign = "\"['rsa']\"".parse_if();
     config.tls.max_size = IfBlock::new(1532);
     config.submitter = IfBlock::new("mx.example.org".to_string());

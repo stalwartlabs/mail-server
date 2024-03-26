@@ -27,9 +27,7 @@ use smtp_proto::{Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_S
 use store::write::now;
 use utils::BlobHash;
 
-use crate::smtp::{
-    inbound::sign::TextConfigContext, ParseTestConfig, QueueReceiver, TestConfig, TestSMTP,
-};
+use crate::smtp::{inbound::sign::TextConfigContext, QueueReceiver, TestSMTP};
 use smtp::{
     core::SMTP,
     queue::{Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status},
@@ -93,9 +91,10 @@ async fn generate_dsn() {
     let span = tracing::span!(tracing::Level::INFO, "hi");
 
     // Load config
-    let mut core = SMTP::test();
-    core.core.storage.signers = ConfigContext::new().parse_signatures().signers;
-    let config = &mut core.core.smtp.queue.dsn;
+    let mut inner = Inner::default();
+    let mut core = Core::default();
+    core.storage.signers = ConfigContext::new().parse_signatures().signers;
+    let config = &mut core.smtp.queue.dsn;
     config.sign = "\"['rsa']\"".parse_if();
 
     // Create temp dir for queue

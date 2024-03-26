@@ -21,25 +21,40 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use common::{
-    config::{server::ServerProtocol, smtp::queue::RequireOptional},
-    expr::if_block::IfBlock,
-};
+use common::config::server::ServerProtocol;
 use mail_auth::MX;
 use store::write::now;
 
 use crate::smtp::{
     inbound::TestMessage,
-    outbound::start_test_server,
+    outbound::TestServer,
     session::{TestSession, VerifyResponse},
-    TestConfig, TestSMTP,
 };
-use smtp::core::{Session, SMTP};
+
+const LOCAL: &str = r#"
+[session.rcpt]
+relay = true
+
+[queue.outbound]
+hostname = "'badtls.foobar.org'"
+
+[queue.outbound.tls]
+starttls = "optional"
+"#;
+
+const REMOTE: &str = r#"
+[session.rcpt]
+relay = true
+
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.extensions]
+dsn = true
+chunking = false
+"#;
 
 #[tokio::test]
 #[serial_test::serial]
@@ -52,14 +67,14 @@ async fn starttls_optional() {
     .unwrap();*/
 
     // Start test server
-    let mut core = SMTP::test();
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    let mut remote_qr = core.init_test_queue("smtp_starttls_remote");
-    let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
+    let mut remote = TestServer::new("smtp_starttls_remote", REMOTE, true).await;
+    let _rx = remote.start(&[ServerProtocol::Smtp]).await;
+
+    // Retry on failed STARTTLS
+    let mut local = TestServer::new("smtp_starttls_local", LOCAL, true).await;
 
     // Add mock DNS entries
-    let mut core = SMTP::test();
-    core.core.smtp.queue.hostname = IfBlock::new("badtls.foobar.org".to_string());
+    let core = local.build_smtp();
     core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
@@ -74,25 +89,20 @@ async fn starttls_optional() {
         Instant::now() + Duration::from_secs(10),
     );
 
-    // Retry on failed STARTTLS
-    let mut local_qr = core.init_test_queue("smtp_starttls_local");
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    core.core.smtp.queue.tls.start = IfBlock::new(RequireOptional::Optional);
-
-    let core = Arc::new(core);
-    let mut session = Session::test(core.clone());
+    let mut session = local.new_session();
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    let mut retry = local_qr.expect_message().await;
+    let mut retry = local.qr.expect_message().await;
     assert!(retry.domains[0].disable_tls);
     let prev_due = retry.domains[0].retry.due;
     let next_due = now();
@@ -101,16 +111,18 @@ async fn starttls_optional() {
     retry
         .save_changes(&core, prev_due.into(), next_due.into())
         .await;
-    local_qr
+    local
+        .qr
         .delivery_attempt(queue_id)
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    remote_qr
+    remote
+        .qr
         .expect_message()
         .await
-        .read_lines(&remote_qr)
+        .read_lines(&remote.qr)
         .await
         .assert_not_contains("using TLSv1.3 with cipher");
 }

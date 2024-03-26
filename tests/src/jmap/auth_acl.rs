@@ -49,26 +49,18 @@ pub async fn test(params: &mut JMAPTest) {
     let trash_id = Id::new(TRASH_ID as u64).to_string();
 
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("jane.smith@example.com", "abcde", "Jane Smith")
         .await;
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("bill@example.com", "098765", "Bill Foobar")
         .await;
     params
-        .core
-        .storage
         .directory
         .create_test_group_with_email("sales@example.com", "Sales Group")
         .await;
@@ -692,8 +684,6 @@ pub async fn test(params: &mut JMAPTest) {
     // Add John and Jane to the Sales group
     for name in ["jdoe@example.com", "jane.smith@example.com"] {
         params
-            .core
-            .storage
             .directory
             .add_to_group(name, "sales@example.com")
             .await;
@@ -793,8 +783,6 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Remove John from the sales group
     params
-        .core
-        .storage
         .directory
         .remove_from_group("jdoe@example.com", "sales@example.com")
         .await;

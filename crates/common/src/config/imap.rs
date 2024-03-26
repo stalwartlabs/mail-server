@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use utils::config::{Config, Rate};
 
+#[derive(Default)]
 pub struct ImapConfig {
     pub max_request_size: usize,
     pub max_auth_failures: u32,
@@ -20,28 +21,28 @@ impl ImapConfig {
     pub fn parse(config: &mut Config) -> Self {
         ImapConfig {
             max_request_size: config
-                .property_or_default_("imap.request.max-size", "52428800")
+                .property_or_default("imap.request.max-size", "52428800")
                 .unwrap_or(52428800),
             max_auth_failures: config
-                .property_or_default_("imap.auth.max-failures", "3")
+                .property_or_default("imap.auth.max-failures", "3")
                 .unwrap_or(3),
             name_shared: config
                 .value("imap.folders.name.shared")
                 .unwrap_or("Shared Folders")
                 .to_string(),
             timeout_auth: config
-                .property_or_default_("imap.timeout.authenticated", "30m")
+                .property_or_default("imap.timeout.authenticated", "30m")
                 .unwrap_or_else(|| Duration::from_secs(1800)),
             timeout_unauth: config
-                .property_or_default_("imap.timeout.anonymous", "1m")
+                .property_or_default("imap.timeout.anonymous", "1m")
                 .unwrap_or_else(|| Duration::from_secs(60)),
             timeout_idle: config
-                .property_or_default_("imap.timeout.idle", "30m")
+                .property_or_default("imap.timeout.idle", "30m")
                 .unwrap_or_else(|| Duration::from_secs(1800)),
-            rate_requests: config.property_or_default_("imap.rate-limit.requests", "2000/1m"),
-            rate_concurrent: config.property_("imap.rate-limit.concurrent"),
+            rate_requests: config.property_or_default("imap.rate-limit.requests", "2000/1m"),
+            rate_concurrent: config.property("imap.rate-limit.concurrent"),
             allow_plain_auth: config
-                .property_or_default_("imap.auth.allow-plain-text", "false")
+                .property_or_default("imap.auth.allow-plain-text", "false")
                 .unwrap_or(false),
         }
     }

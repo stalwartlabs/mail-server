@@ -325,12 +325,12 @@ impl QueueConfig {
 
 fn parse_relay_host(config: &mut Config, id: &str) -> Option<RelayHost> {
     Some(RelayHost {
-        address: config.property_require_(("remote", id, "address"))?,
+        address: config.property_require(("remote", id, "address"))?,
         port: config
-            .property_require_(("remote", id, "port"))
+            .property_require(("remote", id, "port"))
             .unwrap_or(25),
         protocol: config
-            .property_require_(("remote", id, "protocol"))
+            .property_require(("remote", id, "protocol"))
             .unwrap_or(ServerProtocol::Smtp),
         auth: if let (Some(username), Some(secret)) = (
             config.value(("remote", id, "auth.username")),
@@ -341,10 +341,10 @@ fn parse_relay_host(config: &mut Config, id: &str) -> Option<RelayHost> {
             None
         },
         tls_implicit: config
-            .property_(("remote", id, "tls.implicit"))
+            .property(("remote", id, "tls.implicit"))
             .unwrap_or(true),
         tls_allow_invalid_certs: config
-            .property_(("remote", id, "tls.allow-invalid-certs"))
+            .property(("remote", id, "tls.allow-invalid-certs"))
             .unwrap_or(false),
     })
 }
@@ -481,10 +481,10 @@ fn parse_queue_quota_item(config: &mut Config, prefix: impl AsKey) -> Option<Que
         .unwrap_or_default(),
         keys,
         size: config
-            .property_::<usize>((prefix.as_str(), "size"))
+            .property::<usize>((prefix.as_str(), "size"))
             .filter(|&v| v > 0),
         messages: config
-            .property_::<usize>((prefix.as_str(), "messages"))
+            .property::<usize>((prefix.as_str(), "messages"))
             .filter(|&v| v > 0),
     };
 

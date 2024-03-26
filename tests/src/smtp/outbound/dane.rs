@@ -34,13 +34,9 @@ use std::{
 use common::{
     config::{
         server::ServerProtocol,
-        smtp::{
-            queue::RequireOptional,
-            report::AggregateFrequency,
-            resolver::{DnsRecordCache, DnssecResolver, Resolvers, Tlsa, TlsaEntry},
-        },
+        smtp::resolver::{DnsRecordCache, DnssecResolver, Resolvers, Tlsa, TlsaEntry},
     },
-    expr::if_block::IfBlock,
+    Core,
 };
 use mail_auth::{
     common::{
@@ -60,15 +56,34 @@ use utils::suffixlist::PublicSuffix;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
-    outbound::start_test_server,
+    outbound::TestServer,
     session::{TestSession, VerifyResponse},
-    TestConfig, TestSMTP,
 };
+use smtp::outbound::dane::verify::TlsaVerify;
 use smtp::{
-    core::{Session, SMTP},
+    core::SMTP,
     queue::{Error, ErrorDetails, Status},
     reporting::PolicyType,
 };
+
+const LOCAL: &str = r#"
+[session.rcpt]
+relay = true
+
+[report.tls.aggregate]
+send = "weekly"
+
+[queue.outbound.tls]
+dane = "require"
+"#;
+
+const REMOTE: &str = "
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = true
+";
 
 #[tokio::test]
 #[serial_test::serial]
@@ -81,13 +96,14 @@ async fn dane_verify() {
     .unwrap();*/
 
     // Start test server
-    let mut core = SMTP::test();
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    let mut remote_qr = core.init_test_queue("smtp_dane_remote");
-    let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
+    let mut remote = TestServer::new("smtp_dane_remote", REMOTE, true).await;
+    let _rx = remote.start(&[ServerProtocol::Smtp]).await;
+
+    // Fail on missing TLSA record
+    let mut local = TestServer::new("smtp_dane_local", LOCAL, true).await;
 
     // Add mock DNS entries
-    let mut core = SMTP::test();
+    let core = local.build_smtp();
     core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
@@ -107,38 +123,32 @@ async fn dane_verify() {
         Instant::now() + Duration::from_secs(10),
     );
 
-    // Fail on missing TLSA record
-    let mut local_qr = core.init_test_queue("smtp_dane_local");
-    let mut rr = core.init_test_report();
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    core.core.smtp.queue.tls.dane = IfBlock::new(RequireOptional::Require);
-    core.core.smtp.report.tls.send = IfBlock::new(AggregateFrequency::Weekly);
-
-    let core = Arc::new(core);
-    let mut session = Session::test(core.clone());
+    let mut session = local.new_session();
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    local_qr
+    local
+        .qr
         .expect_message()
         .await
-        .read_lines(&local_qr)
+        .read_lines(&local.qr)
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No TLSA records found");
-    local_qr.read_event().await.assert_reload();
-    local_qr.assert_no_events();
+    local.qr.read_event().await.assert_reload();
+    local.qr.assert_no_events();
 
     // Expect TLS failure report
-    let report = rr.read_report().await.unwrap_tls();
+    let report = local.rr.read_report().await.unwrap_tls();
     assert_eq!(report.domain, "foobar.org");
     assert_eq!(report.policy, PolicyType::Tlsa(None));
     assert_eq!(
@@ -165,7 +175,7 @@ async fn dane_verify() {
         has_end_entities: true,
         has_intermediates: false,
     });
-    core.core.smtp.resolvers.tlsa_add(
+    core.tlsa_add(
         "_25._tcp.mx.foobar.org",
         tlsa.clone(),
         Instant::now() + Duration::from_secs(10),
@@ -173,29 +183,31 @@ async fn dane_verify() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    local_qr
+    local
+        .qr
         .expect_message()
         .await
-        .read_lines(&local_qr)
+        .read_lines(&local.qr)
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No matching certificates found");
-    local_qr.read_event().await.assert_reload();
-    local_qr.assert_no_events();
+    local.qr.read_event().await.assert_reload();
+    local.qr.assert_no_events();
 
     // Expect TLS failure report
-    let report = rr.read_report().await.unwrap_tls();
+    let report = local.rr.read_report().await.unwrap_tls();
     assert_eq!(report.policy, PolicyType::Tlsa(tlsa.into()));
     assert_eq!(
         report.failure.as_ref().unwrap().result_type,
         ResultType::ValidationFailure
     );
-    remote_qr.assert_no_events();
+    remote.qr.assert_no_events();
 
     // DANE successful delivery
     let tlsa = Arc::new(Tlsa {
@@ -211,7 +223,7 @@ async fn dane_verify() {
         has_end_entities: true,
         has_intermediates: false,
     });
-    core.core.smtp.resolvers.tlsa_add(
+    core.tlsa_add(
         "_25._tcp.mx.foobar.org",
         tlsa.clone(),
         Instant::now() + Duration::from_secs(10),
@@ -219,22 +231,24 @@ async fn dane_verify() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    local_qr.read_event().await.assert_reload();
-    local_qr.assert_no_events();
-    remote_qr
+    local.qr.read_event().await.assert_reload();
+    local.qr.assert_no_events();
+    remote
+        .qr
         .expect_message()
         .await
-        .read_lines(&remote_qr)
+        .read_lines(&remote.qr)
         .await
         .assert_contains("using TLSv1.3 with cipher");
 
     // Expect TLS success report
-    let report = rr.read_report().await.unwrap_tls();
+    let report = local.rr.read_report().await.unwrap_tls();
     assert_eq!(report.policy, PolicyType::Tlsa(tlsa.into()));
     assert!(report.failure.is_none());
 }
@@ -246,7 +260,8 @@ async fn dane_test() {
     opts.validate = true;
     opts.try_tcp_on_error = true;
 
-    let r = Resolvers {
+    let mut core = Core::default();
+    core.smtp.resolvers = Resolvers {
         dns: Resolver::new_cloudflare().unwrap(),
         dnssec: DnssecResolver {
             resolver: AsyncResolver::tokio(conf, opts),
@@ -256,6 +271,10 @@ async fn dane_test() {
             mta_sts: LruCache::with_capacity(10),
         },
         psl: PublicSuffix::default(),
+    };
+    let r = SMTP {
+        core: core.into(),
+        inner: Default::default(),
     };
 
     // Add dns entries

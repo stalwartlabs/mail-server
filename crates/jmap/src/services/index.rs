@@ -201,6 +201,7 @@ impl JMAP {
                 .write(
                     BatchBuilder::new()
                         .with_account_id(key.account_id)
+                        .with_collection(Collection::Email)
                         .update_document(key.document_id)
                         .clear(ValueClass::IndexEmail(key.seq))
                         .build_batch(),

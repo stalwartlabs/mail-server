@@ -94,11 +94,9 @@ impl Directory {
             DirectoryInner::Memory(store) => store.rcpt(email).await,
         }?;
 
-        if result {
-            // Update cache
-            if let Some(cache) = &self.cache {
-                cache.set_rcpt(email, true);
-            }
+        // Update cache
+        if let Some(cache) = &self.cache {
+            cache.set_rcpt(email, result);
         }
 
         Ok(result)

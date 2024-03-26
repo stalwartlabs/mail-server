@@ -34,7 +34,7 @@ use utils::config::{
 use crate::Core;
 
 pub struct BlockedIps {
-    ip_addresses: RwLock<AHashSet<IpAddr>>,
+    pub ip_addresses: RwLock<AHashSet<IpAddr>>,
     ip_networks: Vec<IpAddrMask>,
     has_networks: bool,
     limiter_rate: Option<Rate>,
@@ -71,7 +71,7 @@ impl BlockedIps {
             ip_addresses: RwLock::new(ip_addresses),
             has_networks: !ip_networks.is_empty(),
             ip_networks,
-            limiter_rate: config.property_::<Rate>("authentication.fail2ban"),
+            limiter_rate: config.property::<Rate>("authentication.fail2ban"),
         }
     }
 }

@@ -56,9 +56,12 @@ impl Language {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, PartialEq, Clone, Copy, Hash, Eq, serde::Serialize, serde::Deserialize, Default,
+)]
 pub enum Language {
     Esperanto = 0,
+    #[default]
     English = 1,
     Russian = 2,
     Mandarin = 3,

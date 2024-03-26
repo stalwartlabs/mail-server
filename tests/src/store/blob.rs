@@ -24,7 +24,7 @@
 use ahash::AHashMap;
 use store::{
     write::{blob::BlobQuota, now, BatchBuilder, BlobOp},
-    BlobClass, BlobStore, Serialize,
+    BlobClass, BlobStore, Serialize, Stores,
 };
 use utils::{config::Config, BlobHash};
 
@@ -33,9 +33,9 @@ use crate::store::{TempDir, CONFIG};
 #[tokio::test]
 pub async fn blob_tests() {
     let temp_dir = TempDir::new("blob_tests", true);
-    let config =
-        Config::new(&CONFIG.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap())).unwrap();
-    let stores = config.parse_stores().await.unwrap();
+    let mut config =
+        Config::new(CONFIG.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap())).unwrap();
+    let stores = Stores::parse(&mut config).await;
 
     for (store_id, blob_store) in &stores.blob_stores {
         println!("Testing blob store {}...", store_id);

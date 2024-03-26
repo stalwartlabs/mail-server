@@ -22,45 +22,44 @@
 */
 
 use core::panic;
-use std::{fmt::Write, fs, path::PathBuf, sync::Arc};
+use std::{fmt::Write, fs, path::PathBuf};
 
 use crate::smtp::{
-    inbound::{sign::TextConfigContext, TestMessage, TestQueueEvent},
+    build_smtp,
+    inbound::{sign::SIGNATURES, TestMessage, TestQueueEvent},
     session::{TestSession, VerifyResponse},
-    TestConfig, TestSMTP,
+    TempDir, TestSMTP,
 };
-use common::{config::smtp::V_REMOTE_IP, expr::if_block::IfBlock};
-use directory::core::config::ConfigDirectory;
+use common::Core;
+
 use smtp::{
-    core::{Session, SMTP},
+    core::{Inner, Session},
     scripts::ScriptResult,
 };
-use store::Store;
+use store::Stores;
 use tokio::runtime::Handle;
 use utils::config::Config;
 
 const CONFIG: &str = r#"
 [storage]
+data = "sql"
 lookup = "sql"
+blob = "sql"
+fts = "sql"
 
 [store."sql"]
 type = "sqlite"
-path = "%PATH%/smtp_sieve.db"
+path = "{TMP}/smtp_sieve.db"
 
 [store."sql".pool]
 max-connections = 10
 min-connections = 0
 idle-timeout = "5m"
 
-[store."local/invalid-ehlos"]
-type = "memory"
-format = "list"
-values = ["spammer.org", "spammer.net"]
-
 [session.data.pipe."test"]
 command = [ { if = "remote_ip = '10.0.0.123'", then = "'/bin/bash'" }, 
             { else = false } ]
-arguments = "['%CFG_PATH%/pipe_me.sh', 'hello', 'world']"
+arguments = "['{CFG_PATH}/pipe_me.sh', 'hello', 'world']"
 timeout = "10s"
 
 [sieve.trusted]
@@ -78,7 +77,23 @@ cpu = 10000
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[sieve.trusted.scripts]
+[session.connect]
+script = "'stage_connect'"
+greeting = "'mx.example.org at your service'"
+
+[session.ehlo]
+script = "'stage_ehlo'"
+
+[session.mail]
+script = "'stage_mail'"
+
+[session.rcpt]
+script = "'stage_rcpt'"
+relay = true
+
+[session.data]
+script = "'stage_data'"
+
 "#;
 
 #[tokio::test]
@@ -91,7 +106,7 @@ async fn sieve_scripts() {
     .unwrap();*/
 
     // Add test scripts
-    let mut config = CONFIG.to_string();
+    let mut config = CONFIG.to_string() + SIGNATURES;
     for entry in fs::read_dir(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resources")
@@ -103,7 +118,7 @@ async fn sieve_scripts() {
         let entry = entry.unwrap();
         writeln!(
             &mut config,
-            "{} = \"file://{}\"",
+            "[sieve.trusted.scripts.{}]\ncontents = \"%{{file:{}}}%\"",
             entry
                 .file_name()
                 .to_str()
@@ -117,14 +132,12 @@ async fn sieve_scripts() {
     }
 
     // Prepare config
-    let mut core = SMTP::test();
-    let mut qr = core.init_test_queue("smtp_sieve_test");
-    let mut ctx = ConfigContext::new().parse_signatures();
-    let config = Config::new(
-        &config
-            .replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap())
-            .replace(
-                "%CFG_PATH%",
+    let mut inner = Inner::default();
+    let tmp_dir = TempDir::new("smtp_sieve_test", true);
+    let mut config = Config::new(
+        tmp_dir.update_config(
+            config.replace(
+                "{CFG_PATH}",
                 PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("resources")
                     .join("smtp")
@@ -133,30 +146,16 @@ async fn sieve_scripts() {
                     .to_str()
                     .unwrap(),
             ),
+        ),
     )
     .unwrap();
-    ctx.stores = config.parse_stores().await.unwrap();
-    core.core.storage.lookups = ctx.stores.lookups.clone();
-    core.core.storage.directories = config
-        .parse_directory(&ctx.stores, Store::default())
-        .await
-        .unwrap()
-        .directories;
-    let pipes = config.parse_pipes(&[V_REMOTE_IP]).unwrap();
-    core.sieve = config.parse_sieve(&mut ctx).unwrap();
-    core.core.storage.signers = ctx.signers;
-    core.core.storage.scripts = ctx.scripts.clone();
-    let config = &mut core.core.smtp.session;
-    config.connect.script = IfBlock::new("stage_connect".to_string());
-    config.ehlo.script = IfBlock::new("stage_ehlo".to_string());
-    config.mail.script = IfBlock::new("stage_mail".to_string());
-    config.rcpt.script = IfBlock::new("stage_rcpt".to_string());
-    config.data.script = IfBlock::new("stage_data".to_string());
-    config.rcpt.relay = IfBlock::new(true);
-    config.data.pipe_commands = pipes;
-    let core = Arc::new(core);
+    config.resolve_macros().await;
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
+    let mut qr = inner.init_test_queue(&core);
 
     // Build session
+    let core = build_smtp(core, inner);
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.88".parse().unwrap();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
@@ -164,7 +163,7 @@ async fn sieve_scripts() {
 
     // Run tests
     let span = tracing::info_span!("sieve_scripts");
-    for (name, script) in &ctx.scripts {
+    for (name, script) in &core.core.sieve.scripts {
         if name.starts_with("stage_") || name.ends_with("_include") {
             continue;
         }
@@ -203,7 +202,7 @@ async fn sieve_scripts() {
     session
         .cmd(
             "EHLO spammer.org",
-            "551 5.1.1 Your domain 'spammer.org' has been blacklisted",
+            "551 5.1.1 Your domain 'spammer.org' has been blocklisted",
         )
         .await;
     session.cmd("EHLO foobar.net", "250").await;

@@ -59,7 +59,7 @@ impl Tracers {
             {
                 "log" => {
                     if let Some(path) = config
-                        .value_require_(("tracer", id, "path"))
+                        .value_require(("tracer", id, "path"))
                         .map(|s| s.to_string())
                     {
                         let prefix = config.value(("tracer", id, "prefix")).unwrap_or("stalwart");
@@ -80,7 +80,7 @@ impl Tracers {
                             level,
                             appender,
                             ansi: config
-                                .property_or_default_(("tracer", id, "ansi"), "true")
+                                .property_or_default(("tracer", id, "ansi"), "true")
                                 .unwrap_or(true),
                         });
                     }
@@ -89,13 +89,13 @@ impl Tracers {
                     tracers.push(Tracer::Stdout {
                         level,
                         ansi: config
-                            .property_or_default_(("tracer", id, "ansi"), "true")
+                            .property_or_default(("tracer", id, "ansi"), "true")
                             .unwrap_or(true),
                     });
                 }
                 "otel" | "open-telemetry" => {
                     match config
-                        .value_require_(("tracer", id, "transport"))
+                        .value_require(("tracer", id, "transport"))
                         .unwrap_or_default()
                     {
                         "gprc" => {
@@ -110,7 +110,7 @@ impl Tracers {
                         }
                         "http" => {
                             if let Some(endpoint) = config
-                                .value_require_(("tracer", id, "endpoint"))
+                                .value_require(("tracer", id, "endpoint"))
                                 .map(|s| s.to_string())
                             {
                                 let mut headers = HashMap::new();

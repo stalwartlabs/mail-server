@@ -21,15 +21,25 @@
  * for more details.
 */
 
-use std::sync::Arc;
+use common::{
+    config::server::{ServerProtocol, Servers},
+    Core,
+};
+use store::{BlobStore, Store, Stores};
+use tokio::sync::{mpsc, watch};
 
-use common::config::server::ServerProtocol;
-use tokio::sync::watch;
-
-use ::smtp::core::{SmtpAdminSessionManager, SmtpSessionManager, SMTP};
+use ::smtp::core::{
+    Inner, Session, SmtpAdminSessionManager, SmtpInstance, SmtpSessionManager, SMTP,
+};
 use utils::config::Config;
 
-use super::add_test_certs;
+use crate::AssertConfig;
+
+use super::{
+    add_test_certs,
+    session::{DummyIo, TestSession},
+    QueueReceiver, ReportReceiver, TempDir, TestSMTP,
+};
 
 pub mod dane;
 pub mod extensions;
@@ -68,35 +78,105 @@ implicit = false
 certificate = 'default'
 
 [certificate.default]
-cert = 'file://{CERT}'
-private-key = 'file://{PK}'
+cert = '%{file:{CERT}}%'
+private-key = '%{file:{PK}}%'
 ";
 
-pub fn start_test_server(core: Arc<SMTP>, protocols: &[ServerProtocol]) -> watch::Sender<bool> {
-    // Spawn listeners
-    let config = Config::new(&add_test_certs(SERVER)).unwrap();
-    let mut servers = config.parse_servers().unwrap();
+const STORES: &str = r#"
+[storage]
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
 
-    // Filter out protocols
-    servers
-        .inner
-        .retain(|server| protocols.contains(&server.protocol));
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
 
-    // Start servers
-    servers.bind(&config);
-    let smtp_manager = SmtpSessionManager::new(core.clone());
-    let smtp_admin_manager = SmtpAdminSessionManager::new(core);
-    servers
-        .spawn(|server, shutdown_rx| {
-            match &server.protocol {
-                ServerProtocol::Smtp | ServerProtocol::Lmtp => {
-                    server.spawn(smtp_manager.clone(), shutdown_rx)
-                }
-                ServerProtocol::Http => server.spawn(smtp_admin_manager.clone(), shutdown_rx),
-                ServerProtocol::Imap | ServerProtocol::ManageSieve => {
-                    unreachable!()
-                }
-            };
-        })
-        .0
+"#;
+
+pub struct TestServer {
+    pub instance: SmtpInstance,
+    pub temp_dir: TempDir,
+    pub qr: QueueReceiver,
+    pub rr: ReportReceiver,
+}
+
+impl TestServer {
+    pub async fn new(name: &str, config: impl AsRef<str>, with_receiver: bool) -> TestServer {
+        let temp_dir = TempDir::new(name, true);
+        let mut config =
+            Config::new(temp_dir.update_config(STORES.to_string() + config.as_ref())).unwrap();
+        let stores = Stores::parse(&mut config).await;
+        let core = Core::parse(&mut config, stores).await;
+        let mut inner = Inner::default();
+        let qr = if with_receiver {
+            inner.init_test_queue(&core)
+        } else {
+            QueueReceiver {
+                store: Store::default(),
+                blob_store: BlobStore::default(),
+                queue_rx: mpsc::channel(1).1,
+            }
+        };
+        let rr = if with_receiver {
+            inner.init_test_report()
+        } else {
+            ReportReceiver {
+                report_rx: mpsc::channel(1).1,
+            }
+        };
+
+        TestServer {
+            instance: SmtpInstance::new(core.into_shared(), inner),
+            temp_dir,
+            qr,
+            rr,
+        }
+    }
+
+    pub async fn start(&self, protocols: &[ServerProtocol]) -> watch::Sender<bool> {
+        // Spawn listeners
+        let mut config = Config::new(add_test_certs(SERVER)).unwrap();
+        config.resolve_macros().await;
+        let mut servers = Servers::parse(&mut config);
+
+        // Filter out protocols
+        servers
+            .servers
+            .retain(|server| protocols.contains(&server.protocol));
+
+        // Start servers
+        servers.bind_and_drop_priv(&mut config);
+        config.assert_no_errors();
+        let instance = self.instance.clone();
+        let smtp_manager = SmtpSessionManager::new(instance.clone());
+        let smtp_admin_manager = SmtpAdminSessionManager::new(instance.clone());
+        servers.spawn(
+            |server, shutdown_rx| {
+                match &server.protocol {
+                    ServerProtocol::Smtp | ServerProtocol::Lmtp => {
+                        server.spawn(smtp_manager.clone(), instance.core.clone(), shutdown_rx)
+                    }
+                    ServerProtocol::Http => server.spawn(
+                        smtp_admin_manager.clone(),
+                        instance.core.clone(),
+                        shutdown_rx,
+                    ),
+                    ServerProtocol::Imap | ServerProtocol::ManageSieve => {
+                        unreachable!()
+                    }
+                };
+            },
+            instance.core.load().storage.data.clone(),
+        )
+    }
+
+    pub fn new_session(&self) -> Session<DummyIo> {
+        Session::test(self.build_smtp())
+    }
+
+    pub fn build_smtp(&self) -> SMTP {
+        SMTP::from(self.instance.clone())
+    }
 }

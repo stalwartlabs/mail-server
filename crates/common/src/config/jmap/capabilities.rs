@@ -124,11 +124,11 @@ impl JmapConfig {
             Capabilities::SieveAccount(SieveAccountCapabilities {
                 max_script_name: self.sieve_max_script_name,
                 max_script_size: config
-                    .property_("sieve.untrusted.max-script-size")
+                    .property("sieve.untrusted.max-script-size")
                     .unwrap_or(1024 * 1024),
                 max_scripts: self.sieve_max_scripts,
                 max_redirects: config
-                    .property_("sieve.untrusted.max-redirects")
+                    .property("sieve.untrusted.max-redirects")
                     .unwrap_or(1),
                 extensions,
                 notification_methods: if !notification_methods.is_empty() {

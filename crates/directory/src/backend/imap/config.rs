@@ -33,22 +33,22 @@ use super::{ImapConnectionManager, ImapDirectory};
 impl ImapDirectory {
     pub fn from_config(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
-        let address = config.value_require_((&prefix, "host"))?.to_string();
+        let address = config.value_require((&prefix, "host"))?.to_string();
         let tls_implicit: bool = config
-            .property_or_default_((&prefix, "tls.enable"), "false")
+            .property_or_default((&prefix, "tls.enable"), "false")
             .unwrap_or_default();
         let port: u16 = config
-            .property_or_default_((&prefix, "port"), if tls_implicit { "993" } else { "143" })
+            .property_or_default((&prefix, "port"), if tls_implicit { "993" } else { "143" })
             .unwrap_or(if tls_implicit { 993 } else { 143 });
 
         let manager = ImapConnectionManager {
             addr: format!("{address}:{port}"),
             timeout: config
-                .property_or_default_((&prefix, "timeout"), "30s")
+                .property_or_default((&prefix, "timeout"), "30s")
                 .unwrap_or_else(|| Duration::from_secs(30)),
             tls_connector: build_tls_connector(
                 config
-                    .property_or_default_((&prefix, "tls.allow-invalid-certs"), "false")
+                    .property_or_default((&prefix, "tls.allow-invalid-certs"), "false")
                     .unwrap_or_default(),
             ),
             tls_hostname: address.to_string(),

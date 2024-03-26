@@ -33,23 +33,23 @@ use super::{SmtpConnectionManager, SmtpDirectory};
 impl SmtpDirectory {
     pub fn from_config(config: &mut Config, prefix: impl AsKey, is_lmtp: bool) -> Option<Self> {
         let prefix = prefix.as_key();
-        let address = config.value_require_((&prefix, "host"))?.to_string();
+        let address = config.value_require((&prefix, "host"))?.to_string();
         let tls_implicit: bool = config
-            .property_or_default_((&prefix, "tls.enable"), "false")
+            .property_or_default((&prefix, "tls.enable"), "false")
             .unwrap_or_default();
         let port: u16 = config
-            .property_or_default_((&prefix, "port"), if tls_implicit { "465" } else { "25" })
+            .property_or_default((&prefix, "port"), if tls_implicit { "465" } else { "25" })
             .unwrap_or(if tls_implicit { 465 } else { 25 });
 
         let manager = SmtpConnectionManager {
             builder: SmtpClientBuilder {
                 addr: format!("{address}:{port}"),
                 timeout: config
-                    .property_or_default_((&prefix, "timeout"), "30s")
+                    .property_or_default((&prefix, "timeout"), "30s")
                     .unwrap_or_else(|| Duration::from_secs(30)),
                 tls_connector: build_tls_connector(
                     config
-                        .property_or_default_((&prefix, "tls.allow-invalid-certs"), "false")
+                        .property_or_default((&prefix, "tls.allow-invalid-certs"), "false")
                         .unwrap_or_default(),
                 ),
                 tls_hostname: address.to_string(),
@@ -63,10 +63,10 @@ impl SmtpDirectory {
                 say_ehlo: false,
             },
             max_rcpt: config
-                .property_or_default_((&prefix, "limits.rcpt"), "10")
+                .property_or_default((&prefix, "limits.rcpt"), "10")
                 .unwrap_or(10),
             max_auth_errors: config
-                .property_or_default_((&prefix, "limits.auth-errors"), "3")
+                .property_or_default((&prefix, "limits.auth-errors"), "3")
                 .unwrap_or(10),
         };
 

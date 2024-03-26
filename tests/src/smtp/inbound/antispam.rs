@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::smtp::session::TestSession;
 use ahash::AHashMap;
 use common::{
     expr::if_block::IfBlock,
@@ -15,18 +14,20 @@ use common::{
         functions::html::{get_attribute, html_attr_tokens, html_img_area, html_to_tokens},
         ScriptModification,
     },
+    Core,
 };
 use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, IprevResult, SpfResult, MX};
 use sieve::runtime::Variable;
 use smtp::{
-    core::{Session, SessionAddress, SMTP},
+    core::{Inner, Session, SessionAddress, SMTP},
     inbound::AuthResult,
     scripts::ScriptResult,
 };
+use store::Stores;
 use tokio::runtime::Handle;
 use utils::config::Config;
 
-use crate::smtp::{TestConfig, TestSMTP};
+use crate::smtp::{build_smtp, session::TestSession, TestSMTP};
 
 const CONFIG: &str = r#"
 [sieve.trusted]
@@ -165,8 +166,8 @@ async fn antispam() {
         "reputation",
         "pyzor",
     ];
-    let mut core = SMTP::test();
-    let qr = core.init_test_queue("smtp_antispam_test");
+    let mut inner = Inner::default();
+    let qr = inner.init_test_queue("smtp_antispam_test");
     let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -227,14 +228,12 @@ async fn antispam() {
     config.push_str(&format!("combined = '''{all_scripts}\n'''\n"));
 
     // Parse config
-    let config = Config::new(&config).unwrap();
-    let mut ctx = ConfigContext::new();
-    ctx.stores = config.parse_stores().await.unwrap();
-    core.sieve = config.parse_sieve(&mut ctx).unwrap();
-    core.core.storage.lookups = ctx.stores.lookups.clone();
-    core.core.storage.scripts = ctx.scripts.clone();
-    let config = &mut core.core.smtp.session;
+    let mut config = Config::new(&config).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let mut core = Core::parse(&mut config, stores).await;
+    let config = &mut core.smtp.session;
     config.rcpt.relay = IfBlock::new(true);
+    qr.set_core_stores(&mut core);
 
     // Add mock DNS entries
     for (domain, ip) in [
@@ -269,7 +268,7 @@ async fn antispam() {
             "127.0.0.8",
         ),
     ] {
-        core.core.smtp.resolvers.dns.ipv4_add(
+        core.smtp.resolvers.dns.ipv4_add(
             domain,
             vec![ip.parse().unwrap()],
             Instant::now() + Duration::from_secs(100),
@@ -281,7 +280,7 @@ async fn antispam() {
         "gmail.com",
         "custom.disposable.org",
     ] {
-        core.core.smtp.resolvers.dns.mx_add(
+        core.smtp.resolvers.dns.mx_add(
             mx,
             vec![MX {
                 exchanges: vec!["127.0.0.1".parse().unwrap()],
@@ -291,7 +290,7 @@ async fn antispam() {
         );
     }
 
-    let core = Arc::new(core);
+    let core = build_smtp(core, Inner::default());
 
     // Run tests
     let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -304,7 +303,7 @@ async fn antispam() {
             continue;
         }*/
         println!("===== {test_name} =====");
-        let script = ctx.scripts.remove(test_name).unwrap();
+        let script = core.core.sieve.scripts.get(test_name).cloned().unwrap();
 
         let contents = fs::read_to_string(base_path.join(format!("{test_name}.test"))).unwrap();
         let mut lines = contents.lines();

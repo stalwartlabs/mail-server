@@ -23,8 +23,41 @@
 
 use std::time::Duration;
 
-use crate::smtp::{session::TestSession, ParseTestConfig, TestConfig, TestSMTP};
-use smtp::core::{Session, SessionAddress, SMTP};
+use crate::smtp::{build_smtp, session::TestSession, TempDir};
+use common::Core;
+use smtp::core::{Inner, Session, SessionAddress};
+use store::Stores;
+use utils::config::Config;
+
+const CONFIG: &str = r#"
+[storage]
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/data.db"
+
+[[session.throttle]]
+match = "remote_ip = '10.0.0.1'"
+key = 'remote_ip'
+concurrency = 2
+rate = '3/1s'
+enable = true
+
+[[session.throttle]]
+key = 'sender'
+rate = '2/1s'
+enable = true
+
+[[session.throttle]]
+key = ['remote_ip', 'rcpt']
+rate = '2/1s'
+enable = true
+
+"#;
 
 #[tokio::test]
 async fn throttle_inbound() {
@@ -37,29 +70,14 @@ async fn throttle_inbound() {
     )
     .unwrap();*/
 
-    let mut core = SMTP::test();
-    let _qr = core.init_test_queue("smtp_inbound_throttle");
-    let config = &mut core.core.smtp.session;
-    config.throttle.connect = r#"[[throttle]]
-    match = "remote_ip = '10.0.0.1'"
-    key = 'remote_ip'
-    concurrency = 2
-    rate = '3/1s'
-    "#
-    .parse_throttle();
-    config.throttle.mail_from = r#"[[throttle]]
-    key = 'sender'
-    rate = '2/1s'
-    "#
-    .parse_throttle();
-    config.throttle.rcpt_to = r#"[[throttle]]
-    key = ['remote_ip', 'rcpt']
-    rate = '2/1s'
-    "#
-    .parse_throttle();
+    let tmp_dir = TempDir::new("smtp_inbound_throttle", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
+    let inner = Inner::default();
 
     // Test connection concurrency limit
-    let mut session = Session::test(core);
+    let mut session = Session::test(build_smtp(core, inner));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     assert!(
         session.is_allowed().await,

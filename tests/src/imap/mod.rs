@@ -38,11 +38,15 @@ pub mod thread;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use ::managesieve::core::ManageSieveSessionManager;
-use common::config::server::ServerProtocol;
+use common::{
+    config::server::{ServerProtocol, Servers},
+    Core,
+};
 
+use ::store::Stores;
 use ahash::AHashSet;
-use directory::{backend::internal::manage::ManageDirectory, core::config::ConfigDirectory};
-use imap::core::{ImapSessionManager, IMAP};
+use directory::backend::internal::manage::ManageDirectory;
+use imap::core::{ImapSessionManager, Inner, IMAP};
 use imap_proto::ResponseType;
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use smtp::core::{SmtpSessionManager, SMTP};
@@ -51,13 +55,13 @@ use tokio::{
     net::TcpStream,
     sync::{mpsc, watch},
 };
-use utils::UnwrapFailure;
+use utils::config::Config;
 
-use crate::{add_test_certs, directory::DirectoryStore, store::TempDir};
+use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
 
 const SERVER: &str = r#"
 [server]
-hostname = "imap.example.org"
+hostname = "'imap.example.org'"
 
 [server.listener.imap]
 bind = ["127.0.0.1:9991"]
@@ -114,8 +118,8 @@ hash = 64
 type = "system"
 
 [queue.outbound]
-next-hop = [ { if = "key_exists('local/domains', rcpt_domain)", then = "'local'" }, 
-             { if = "key_exists('local/remote-domains', rcpt_domain)", then = "'mock-smtp'" },
+next-hop = [ { if = "rcpt_domain == 'example.com'", then = "'local'" }, 
+             { if = "contains(['remote.org', 'foobar.com', 'test.com', 'other_domain.com'], rcpt_domain)", then = "'mock-smtp'" },
              { else = false } ]
 
 [remote."mock-smtp"]
@@ -124,7 +128,7 @@ port = 9999
 protocol = "smtp"
 
 [remote."mock-smtp".tls]
-implicit = false
+enable = false
 allow-invalid-certs = true
 
 [session.extensions]
@@ -169,8 +173,8 @@ disable = true
 allow-invalid-certs = true
 
 [certificate.default]
-cert = "file://{CERT}"
-private-key = "file://{PK}"
+cert = "%{file:{CERT}}%"
+private-key = "%{file:{PK}}%"
 
 [imap.protocol]
 uidplus = true
@@ -235,17 +239,7 @@ description = "description"
 secret = "secret"
 email = "address"
 quota = "quota"
-type = "type"
-
-[store."local/domains"]
-type = "memory"
-format = "list"
-values = ["example.com"]
-
-[store."local/remote-domains"]
-type = "memory"
-format = "list"
-values = ["remote.org", "foobar.com", "test.com", "other_domain.com"]
+class = "type"
 
 [oauth]
 key = "parerga_und_paralipomena"
@@ -262,7 +256,7 @@ refresh-token-renew = "2s"
 #[allow(dead_code)]
 pub struct IMAPTest {
     jmap: Arc<JMAP>,
-    imap: Arc<IMAP>,
+    imap: Arc<Inner>,
     temp_dir: TempDir,
     shutdown_tx: watch::Sender<bool>,
 }
@@ -270,64 +264,78 @@ pub struct IMAPTest {
 async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     // Load and parse config
     let temp_dir = TempDir::new("imap_tests", delete_if_exists);
-    let config = utils::config::Config::new(
-        &add_test_certs(SERVER)
+    let mut config = Config::new(
+        add_test_certs(SERVER)
             .replace("{STORE}", store_id)
             .replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();
-    let mut servers = config.parse_servers().unwrap();
-    let stores = config.parse_stores().await.failed("Invalid configuration");
-    let directory = config
-        .parse_directory(
-            &stores,
-            stores.core.storage.datas.get(store_id).unwrap().clone(),
-        )
-        .await
-        .unwrap();
+    config.resolve_macros().await;
 
-    // Start JMAP and SMTP servers
-    servers.bind(&config);
+    // Parse servers
+    let servers = Servers::parse(&mut config);
+
+    // Bind ports and drop privileges
+    servers.bind_and_drop_priv(&mut config);
+
+    // Build stores
+    let stores = Stores::parse(&mut config).await;
+
+    // Parse core
+    let core = Core::parse(&mut config, stores).await;
+    let store = core.storage.data.clone();
+    let shared_core = core.into_shared();
+
+    // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&config, &servers, &stores, &directory, delivery_tx)
-        .await
-        .failed("Invalid configuration file");
+    let smtp = SMTP::init(&mut config, shared_core.clone(), delivery_tx).await;
     let jmap = JMAP::init(
-        &config,
-        &stores,
-        &directory,
-        &mut servers,
+        &mut config,
         delivery_rx,
-        smtp.clone(),
+        shared_core.clone(),
+        smtp.inner.clone(),
     )
-    .await
-    .failed("Invalid configuration file");
-    let imap: Arc<IMAP> = IMAP::init(&config)
-        .await
-        .failed("Invalid configuration file");
-    let (shutdown_tx, _) = servers.spawn(|server, shutdown_rx| {
-        match &server.protocol {
-            ServerProtocol::Jmap => {
-                server.spawn(JmapSessionManager::new(jmap.clone()), shutdown_rx)
-            }
-            ServerProtocol::Imap => server.spawn(
-                ImapSessionManager::new(jmap.clone(), imap.clone()),
-                shutdown_rx,
-            ),
-            ServerProtocol::ManageSieve => server.spawn(
-                ManageSieveSessionManager::new(jmap.clone(), imap.clone()),
-                shutdown_rx,
-            ),
-            ServerProtocol::Smtp | ServerProtocol::Lmtp => {
-                server.spawn(SmtpSessionManager::new(smtp.clone()), shutdown_rx)
-            }
-            _ => unreachable!(),
-        };
-    });
+    .await;
+    let imap = IMAP::init(&mut config, jmap.clone()).await;
+    config.assert_no_errors();
 
+    // Spawn servers
+    let shutdown_tx = servers.spawn(
+        |server, shutdown_rx| {
+            match &server.protocol {
+                ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
+                    SmtpSessionManager::new(smtp.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+                ServerProtocol::Http => server.spawn(
+                    JmapSessionManager::new(jmap.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+                ServerProtocol::Imap => server.spawn(
+                    ImapSessionManager::new(imap.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+                ServerProtocol::ManageSieve => server.spawn(
+                    ManageSieveSessionManager::new(imap.clone()),
+                    shared_core.clone(),
+                    shutdown_rx,
+                ),
+            };
+        },
+        store.clone(),
+    );
     // Create tables and test accounts
     let lookup = DirectoryStore {
-        store: stores.lookup_stores.get("auth").unwrap().clone(),
+        store: shared_core
+            .load()
+            .storage
+            .lookups
+            .get("auth")
+            .unwrap()
+            .clone(),
     };
     lookup.create_test_directory().await;
     lookup
@@ -350,20 +358,15 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
         .await;
 
     if delete_if_exists {
-        jmap.core.storage.data.destroy().await;
+        store.destroy().await;
     }
 
     // Assign Id 0 to admin (required for some tests)
-    jmap.core
-        .storage
-        .data
-        .get_or_create_account_id("admin")
-        .await
-        .unwrap();
+    store.get_or_create_account_id("admin").await.unwrap();
 
     IMAPTest {
-        jmap,
-        imap,
+        jmap: JMAP::from(jmap.clone()).into(),
+        imap: imap.imap_inner,
         temp_dir,
         shutdown_tx,
     }

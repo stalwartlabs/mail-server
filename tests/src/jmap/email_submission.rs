@@ -85,7 +85,7 @@ pub async fn test(params: &mut JMAPTest) {
     let server = params.server.clone();
     let client = &mut params.client;
     let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
-    server.smtp.resolvers.dns.ipv4_add(
+    server.core.smtp.resolvers.dns.ipv4_add(
         "localhost",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + std::time::Duration::from_secs(10),
@@ -94,14 +94,10 @@ pub async fn test(params: &mut JMAPTest) {
     // Create a test account
     let server = params.server.clone();
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     params
-        .core
-        .storage
         .directory
         .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
         .await;

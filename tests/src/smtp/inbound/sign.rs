@@ -23,23 +23,24 @@
 
 use std::time::{Duration, Instant};
 
-use common::{config::smtp::auth::VerifyStrategy, expr::if_block::IfBlock};
-use directory::core::config::ConfigDirectory;
+use common::Core;
+
 use mail_auth::{
     common::{parse::TxtRecordParser, verify::DomainKey},
     spf::Spf,
 };
-use store::Store;
+use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    inbound::{dummy_stores, TestMessage},
+    build_smtp,
+    inbound::TestMessage,
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestSMTP,
+    TempDir, TestSMTP,
 };
-use smtp::core::{Session, SMTP};
+use smtp::core::{Inner, Session};
 
-const SIGNATURES: &str = "
+pub const SIGNATURES: &str = "
 [signature.rsa]
 private-key = '''
 -----BEGIN RSA PRIVATE KEY-----
@@ -91,9 +92,16 @@ canonicalization = 'relaxed/simple'
 set-body-length = false
 ";
 
-const DIRECTORY: &str = r#"
+const CONFIG: &str = r#"
 [storage]
-lookup = "dummy"
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
 
 [directory."local"]
 type = "memory"
@@ -103,27 +111,58 @@ name = "john"
 description = "John Doe"
 secret = "secret"
 email = ["jdoe@example.com"]
+
+[session.rcpt]
+directory = "'local'"
+
+[session.data.add-headers]
+received = true
+received-spf = true
+auth-results = true
+message-id = true
+date = true
+return-path = false
+
+[auth.spf.verify]
+ehlo = "relaxed"
+mail-from = "relaxed"
+
+[auth.dkim]
+verify = "relaxed"
+sign = "['rsa']"
+
+[auth.arc]
+verify = "relaxed"
+seal = "'ed'"
+
+[auth.dmarc]
+verify = "relaxed"
+
 "#;
 
 #[tokio::test]
 async fn sign_and_seal() {
-    let mut core = SMTP::test();
+    let tmp_dir = TempDir::new("smtp_sign_test", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
+    let mut inner = Inner::default();
 
     // Create temp dir for queue
-    let mut qr = core.init_test_queue("smtp_sign_test");
+    let mut qr = inner.init_test_queue(&core);
 
     // Add SPF, DKIM and DMARC records
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "mx.example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "ed._domainkey.scamorza.org",
         DomainKey::parse(
             concat!(
@@ -135,7 +174,7 @@ async fn sign_and_seal() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.smtp.resolvers.dns.txt_add(
         "rsa._domainkey.manchego.org",
         DomainKey::parse(
             concat!(
@@ -151,37 +190,8 @@ async fn sign_and_seal() {
         Instant::now() + Duration::from_secs(5),
     );
 
-    core.core.storage.directories = Config::new(DIRECTORY)
-        .unwrap()
-        .parse_directory(&dummy_stores(), Store::default())
-        .await
-        .unwrap()
-        .directories;
-    let config = &mut core.core.smtp.session.rcpt;
-    config.directory = IfBlock::new("local".to_string());
-
-    let config = &mut core.core.smtp.session;
-    config.data.add_auth_results = IfBlock::new(true);
-    config.data.add_date = IfBlock::new(true);
-    config.data.add_message_id = IfBlock::new(true);
-    config.data.add_received = IfBlock::new(true);
-    config.data.add_return_path = IfBlock::new(true);
-    config.data.add_received_spf = IfBlock::new(true);
-
-    let config = &mut core.mail_auth;
-    let ctx = ConfigContext::new().parse_signatures();
-    core.core.storage.signers = ctx.signers;
-    core.core.storage.sealers = ctx.sealers;
-    config.spf.verify_ehlo = IfBlock::new(VerifyStrategy::Relaxed);
-    config.spf.verify_mail_from = config.spf.verify_ehlo.clone();
-    config.dkim.verify = config.spf.verify_ehlo.clone();
-    config.arc.verify = config.spf.verify_ehlo.clone();
-    config.dmarc.verify = config.spf.verify_ehlo.clone();
-    config.dkim.sign = "\"['rsa']\"".parse_if();
-    config.arc.seal = "\"'ed'\"".parse_if();
-
     // Test DKIM signing
-    let mut session = Session::test(core);
+    let mut session = Session::test(build_smtp(core, inner));
     session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.example.com").await;
@@ -213,18 +223,4 @@ async fn sign_and_seal() {
         .assert_contains(
             "ARC-Message-Signature: i=3; a=ed25519-sha256; s=ed; d=example.com; c=relaxed/simple;",
         );
-}
-
-pub trait TextConfigContext<'x> {
-    fn parse_signatures(self) -> ConfigContext;
-}
-
-impl<'x> TextConfigContext<'x> for ConfigContext {
-    fn parse_signatures(mut self) -> Self {
-        Config::new(SIGNATURES)
-            .unwrap()
-            .parse_signatures(&mut self)
-            .unwrap();
-        self
-    }
 }

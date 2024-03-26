@@ -21,23 +21,28 @@
  * for more details.
 */
 
-use std::sync::Arc;
-
-use common::expr::if_block::IfBlock;
-use directory::core::config::ConfigDirectory;
-use store::Store;
+use common::Core;
+use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    inbound::{dummy_stores, TestMessage},
+    build_smtp,
+    inbound::TestMessage,
     session::{load_test_message, TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestSMTP,
+    TempDir, TestSMTP,
 };
-use smtp::core::{Session, SMTP};
+use smtp::core::{Inner, Session};
 
-const DIRECTORY: &str = r#"
+const CONFIG: &str = r#"
 [storage]
-lookup = "dummy"
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
 
 [directory."local"]
 type = "memory"
@@ -66,6 +71,45 @@ description = "Mike Foobar"
 secret = "p4ssw0rd"
 email = "mike@test.com"
 
+[session.rcpt]
+directory = "'local'"
+
+[[queue.quota]]
+match = "sender = 'john@doe.org'"
+key = ['sender']
+messages = 1
+
+[session.data.limits]
+messages = [{if = "remote_ip = '10.0.0.1'", then = 1},
+            {else = 100}]
+received-headers = 3
+
+[session.data.add-headers]
+received = [{if = "remote_ip = '10.0.0.3'", then = true},
+            {else = false}]
+received-spf =  [{if = "remote_ip = '10.0.0.3'", then = true},
+            {else = false}]
+auth-results =  [{if = "remote_ip = '10.0.0.3'", then = true},
+            {else = false}]
+message-id =  [{if = "remote_ip = '10.0.0.3'", then = true},
+               {else = false}]
+date = [{if = "remote_ip = '10.0.0.3'", then = true},
+        {else = false}]
+return-path =  [{if = "remote_ip = '10.0.0.3'", then = true},
+            {else = false}]
+
+[[queue.quota]]
+match = "rcpt_domain = 'foobar.org'"
+key = ['rcpt_domain']
+size = 450
+enable = true
+
+[[queue.quota]]
+match = "rcpt = 'jane@domain.net'"
+key = ['rcpt']
+size = 450
+enable = true
+
 "#;
 
 #[tokio::test]
@@ -77,52 +121,17 @@ async fn data() {
             .finish(),
     )
     .unwrap();*/
-    let mut core = SMTP::test();
 
     // Create temp dir for queue
-    let mut qr = core.init_test_queue("smtp_data_test");
-    core.core.storage.directories = Config::new(DIRECTORY)
-        .unwrap()
-        .parse_directory(&dummy_stores(), Store::default())
-        .await
-        .unwrap()
-        .directories;
-    let config = &mut core.core.smtp.session.rcpt;
-    config.directory = IfBlock::new("local".to_string());
-
-    let config = &mut core.core.smtp.session;
-    config.data.add_auth_results = r#"[{if = "remote_ip = '10.0.0.3'", then = true},
-    {else = false}]"#
-        .parse_if();
-    config.data.add_date = config.data.add_auth_results.clone();
-    config.data.add_message_id = config.data.add_auth_results.clone();
-    config.data.add_received = config.data.add_auth_results.clone();
-    config.data.add_return_path = config.data.add_auth_results.clone();
-    config.data.add_received_spf = config.data.add_auth_results.clone();
-    config.data.max_received_headers = IfBlock::new(3);
-    config.data.max_messages = r#"[{if = "remote_ip = '10.0.0.1'", then = 1},
-    {else = 100}]"#
-        .parse_if();
-
-    core.core.smtp.queue.quota = r#"[[queue.quota]]
-    match = "sender = 'john@doe.org'"
-    key = ['sender']
-    messages = 1
-
-    [[queue.quota]]
-    match = "rcpt_domain = 'foobar.org'"
-    key = ['rcpt_domain']
-    size = 450
-
-    [[queue.quota]]
-    match = "rcpt = 'jane@domain.net'"
-    key = ['rcpt']
-    size = 450
-    "#
-    .parse_quota();
+    let mut inner = Inner::default();
+    let tmp_dir = TempDir::new("smtp_data_test", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
+    let mut qr = inner.init_test_queue(&core);
 
     // Test queue message builder
-    let core = Arc::new(core);
+    let core = build_smtp(core, inner);
     let mut session = Session::test(core.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;

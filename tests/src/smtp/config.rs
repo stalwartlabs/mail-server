@@ -25,11 +25,12 @@ use std::{fs, net::IpAddr, path::PathBuf, time::Duration};
 
 use common::{
     config::{
-        server::{Listener, Server, ServerProtocol},
-        smtp::*,
+        server::{Listener, Server, ServerProtocol, Servers},
+        smtp::{throttle::parse_throttle, *},
     },
-    expr::{functions::ResolveVariable, if_block::*, *},
+    expr::{functions::ResolveVariable, if_block::*, tokenizer::TokenMap, *},
     listener::TcpAcceptor,
+    Core,
 };
 use tokio::net::TcpSocket;
 
@@ -59,10 +60,11 @@ fn parse_if_blocks() {
     file.push("config");
     file.push("if-blocks.toml");
 
-    let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
+    let mut config = Config::new(fs::read_to_string(file).unwrap()).unwrap();
 
     // Create context and add some conditions
-    let available_keys = vec![
+
+    let token_map = TokenMap::default().with_smtp_variables(&[
         V_RECIPIENT,
         V_RECIPIENT_DOMAIN,
         V_SENDER,
@@ -72,15 +74,10 @@ fn parse_if_blocks() {
         V_REMOTE_IP,
         V_LOCAL_IP,
         V_PRIORITY,
-    ];
+    ]);
 
     assert_eq!(
-        config
-            .parse_if_block("durations", |name| {
-                map_expr_token::<Duration>(name, &available_keys)
-            })
-            .unwrap()
-            .unwrap(),
+        IfBlock::try_parse(&mut config, "durations", &token_map).unwrap(),
         IfBlock {
             key: "durations".to_string(),
             if_then: vec![
@@ -125,12 +122,7 @@ fn parse_if_blocks() {
     );
 
     assert_eq!(
-        config
-            .parse_if_block("string-list", |name| {
-                map_expr_token::<Duration>(name, &available_keys)
-            })
-            .unwrap()
-            .unwrap(),
+        IfBlock::try_parse(&mut config, "string-list", &token_map).unwrap(),
         IfBlock {
             key: "string-list".to_string(),
             if_then: vec![
@@ -182,12 +174,7 @@ fn parse_if_blocks() {
     );
 
     assert_eq!(
-        config
-            .parse_if_block("string-list-bis", |name| {
-                map_expr_token::<Duration>(name, &available_keys)
-            })
-            .unwrap()
-            .unwrap(),
+        IfBlock::try_parse(&mut config, "string-list-bis", &token_map).unwrap(),
         IfBlock {
             key: "string-list-bis".to_string(),
             if_then: vec![
@@ -240,12 +227,7 @@ fn parse_if_blocks() {
     );
 
     assert_eq!(
-        config
-            .parse_if_block("single-value", |name| {
-                map_expr_token::<Duration>(name, &available_keys)
-            })
-            .unwrap()
-            .unwrap(),
+        IfBlock::try_parse(&mut config, "single-value", &token_map).unwrap(),
         IfBlock {
             key: "single-value".to_string(),
             if_then: vec![],
@@ -262,38 +244,37 @@ fn parse_if_blocks() {
         "bad-if-without-else",
         "bad-multiple-else",
     ] {
-        if let Ok(value) = config.parse_if_block(bad_rule, |name| {
-            map_expr_token::<Duration>(name, &available_keys)
-        }) {
+        if let Some(value) = IfBlock::try_parse(&mut config, bad_rule, &token_map) {
             panic!("Condition {bad_rule:?} had unexpected result {value:?}");
         }
     }
 }
 
 #[test]
-fn parse_throttle() {
+fn parse_throttles() {
     let mut file = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     file.push("resources");
     file.push("smtp");
     file.push("config");
     file.push("throttle.toml");
 
-    let available_keys = vec![
-        V_RECIPIENT,
-        V_RECIPIENT_DOMAIN,
-        V_SENDER,
-        V_SENDER_DOMAIN,
-        V_AUTHENTICATED_AS,
-        V_LISTENER,
-        V_REMOTE_IP,
-        V_LOCAL_IP,
-        V_PRIORITY,
-    ];
-
-    let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
-    let throttle = config
-        .parse_throttle("throttle", &available_keys, u16::MAX)
-        .unwrap();
+    let mut config = Config::new(fs::read_to_string(file).unwrap()).unwrap();
+    let throttle = parse_throttle(
+        &mut config,
+        "throttle",
+        &TokenMap::default().with_smtp_variables(&[
+            V_RECIPIENT,
+            V_RECIPIENT_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_AUTHENTICATED_AS,
+            V_LISTENER,
+            V_REMOTE_IP,
+            V_LOCAL_IP,
+            V_PRIORITY,
+        ]),
+        u16::MAX,
+    );
 
     assert_eq!(
         throttle,
@@ -335,8 +316,8 @@ fn parse_servers() {
     let toml = add_test_certs(&fs::read_to_string(file).unwrap());
 
     // Parse servers
-    let config = Config::new(&toml).unwrap();
-    let servers = config.parse_servers().unwrap().inner;
+    let mut config = Config::new(toml).unwrap();
+    let servers = Servers::parse(&mut config).servers;
     let expected_servers = vec![
         Server {
             id: "smtp".to_string(),
@@ -405,21 +386,6 @@ fn parse_servers() {
             expected_server.id
         );
         assert_eq!(
-            server.internal_id, expected_server.internal_id,
-            "failed for {}",
-            expected_server.id
-        );
-        assert_eq!(
-            server.hostname, expected_server.hostname,
-            "failed for {}",
-            expected_server.id
-        );
-        assert_eq!(
-            server.data, expected_server.data,
-            "failed for {}",
-            expected_server.id
-        );
-        assert_eq!(
             server.protocol, expected_server.protocol,
             "failed for {}",
             expected_server.id
@@ -459,23 +425,23 @@ async fn eval_if() {
     file.push("config");
     file.push("rules-eval.toml");
 
-    let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
-    let servers = vec![
-        Server {
-            id: "smtp".to_string(),
-            ..Default::default()
-        },
-        Server {
-            id: "smtps".to_string(),
-            ..Default::default()
-        },
-    ];
-    let mut context = ConfigContext::new();
-    context.stores = config.parse_stores().await.unwrap();
+    let mut config = Config::new(fs::read_to_string(file).unwrap()).unwrap();
+    let envelope = TestEnvelope::from_config(&mut config);
+    let token_map = TokenMap::default().with_smtp_variables(&[
+        V_RECIPIENT,
+        V_RECIPIENT_DOMAIN,
+        V_SENDER,
+        V_SENDER_DOMAIN,
+        V_AUTHENTICATED_AS,
+        V_LISTENER,
+        V_REMOTE_IP,
+        V_LOCAL_IP,
+        V_PRIORITY,
+        V_MX,
+    ]);
+    let core = Core::default();
 
-    let envelope = TestEnvelope::from_config(&config);
-
-    for (key, expr) in &config.keys {
+    for (key, _) in config.keys.clone() {
         if !key.starts_with("rule.") {
             continue;
         }
@@ -486,32 +452,12 @@ async fn eval_if() {
             IfBlock {
                 key: key.to_string(),
                 if_then: vec![IfThen {
-                    expr: Expression::parse(key.as_str(), expr, |name| {
-                        map_expr_token::<Duration>(
-                            name,
-                            &[
-                                V_RECIPIENT,
-                                V_RECIPIENT_DOMAIN,
-                                V_SENDER,
-                                V_SENDER_DOMAIN,
-                                V_AUTHENTICATED_AS,
-                                V_LISTENER,
-                                V_REMOTE_IP,
-                                V_LOCAL_IP,
-                                V_PRIORITY,
-                                V_MX,
-                            ],
-                        )
-                    })
-                    .unwrap(),
+                    expr: Expression::try_parse(&mut config, key.as_str(), &token_map).unwrap(),
                     then: Expression::from(true),
                 }],
                 default: Expression::from(false),
             }
-            .eval(
-                |name| { envelope.resolve_variable(name) },
-                |_, _| async { Default::default() }
-            )
+            .eval(&envelope, &core, &key)
             .await
             .to_bool(),
             expected_result.parse::<bool>().unwrap(),
@@ -528,48 +474,40 @@ async fn eval_dynvalue() {
     file.push("config");
     file.push("rules-dynvalue.toml");
 
-    let config = Config::new(&fs::read_to_string(file).unwrap()).unwrap();
-    let mut context = ConfigContext::new();
-    context.stores = config.parse_stores().await.unwrap();
+    let mut config = Config::new(fs::read_to_string(file).unwrap()).unwrap();
+    let envelope = TestEnvelope::from_config(&mut config);
+    let token_map = TokenMap::default().with_smtp_variables(&[
+        V_RECIPIENT,
+        V_RECIPIENT_DOMAIN,
+        V_SENDER,
+        V_SENDER_DOMAIN,
+        V_AUTHENTICATED_AS,
+        V_LISTENER,
+        V_REMOTE_IP,
+        V_LOCAL_IP,
+        V_PRIORITY,
+        V_MX,
+    ]);
+    let core = Core::default();
 
-    let envelope = TestEnvelope::from_config(&config);
-
-    for test_name in config.sub_keys("eval", "") {
+    for test_name in config
+        .sub_keys("eval", "")
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+    {
         //println!("============= Testing {:?} ==================", key);
-        let if_block = config
-            .parse_if_block(("eval", test_name, "test"), |name| {
-                map_expr_token::<Duration>(
-                    name,
-                    &[
-                        V_RECIPIENT,
-                        V_RECIPIENT_DOMAIN,
-                        V_SENDER,
-                        V_SENDER_DOMAIN,
-                        V_AUTHENTICATED_AS,
-                        V_LISTENER,
-                        V_REMOTE_IP,
-                        V_LOCAL_IP,
-                        V_PRIORITY,
-                        V_MX,
-                    ],
-                )
-            })
-            .unwrap()
-            .unwrap();
+        let if_block = IfBlock::try_parse(
+            &mut config,
+            ("eval", test_name.as_str(), "test"),
+            &token_map,
+        )
+        .unwrap();
         let expected = config
-            .property_require::<Option<String>>(("eval", test_name, "expect"))
-            .unwrap();
+            .property_require::<Option<String>>(("eval", test_name.as_str(), "expect"))
+            .unwrap_or_else(|| panic!("Missing expect for test {test_name:?}"));
 
         assert_eq!(
-            String::try_from(
-                if_block
-                    .eval(
-                        |name| { envelope.resolve_variable(name) },
-                        |_, _| async { Default::default() }
-                    )
-                    .await
-            )
-            .ok(),
+            String::try_from(if_block.eval(&envelope, &core, test_name.as_str()).await).ok(),
             expected,
             "failed for test {test_name:?}"
         );
@@ -596,7 +534,7 @@ impl ResolveVariable for TestEnvelope {
 }
 
 impl TestEnvelope {
-    pub fn from_config(config: &Config) -> Self {
+    pub fn from_config(config: &mut Config) -> Self {
         Self {
             local_ip: config.property_require("envelope.local-ip").unwrap(),
             remote_ip: config.property_require("envelope.remote-ip").unwrap(),

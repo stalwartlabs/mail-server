@@ -24,7 +24,7 @@ pub mod tracers;
 impl Core {
     pub async fn parse(config: &mut Config, stores: Stores) -> Self {
         let mut data = config
-            .value_require_("storage.data")
+            .value_require("storage.data")
             .map(|id| id.to_string())
             .and_then(|id| {
                 if let Some(store) = stores.stores.get(&id) {
@@ -36,7 +36,7 @@ impl Core {
             })
             .unwrap_or_default();
         let mut blob = config
-            .value_require_("storage.blob")
+            .value_require("storage.blob")
             .map(|id| id.to_string())
             .and_then(|id| {
                 if let Some(store) = stores.blob_stores.get(&id) {
@@ -48,7 +48,7 @@ impl Core {
             })
             .unwrap_or_default();
         let mut lookup = config
-            .value_require_("storage.lookup")
+            .value_require("storage.lookup")
             .map(|id| id.to_string())
             .and_then(|id| {
                 if let Some(store) = stores.lookup_stores.get(&id) {
@@ -63,7 +63,7 @@ impl Core {
             })
             .unwrap_or_default();
         let mut fts = config
-            .value_require_("storage.fts")
+            .value_require("storage.fts")
             .map(|id| id.to_string())
             .and_then(|id| {
                 if let Some(store) = stores.fts_stores.get(&id) {
@@ -79,7 +79,7 @@ impl Core {
             .unwrap_or_default();
         let directories = Directories::parse(config, &stores, data.clone()).await;
         let directory = config
-            .value_require_("storage.directory")
+            .value_require("storage.directory")
             .map(|id| id.to_string())
             .and_then(|id| {
                 if let Some(directory) = directories.directories.get(&id) {

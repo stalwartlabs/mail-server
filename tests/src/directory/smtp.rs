@@ -39,7 +39,7 @@ use crate::directory::{DirectoryTest, Item, LookupResult};
 use super::dummy_tls_acceptor;
 
 #[tokio::test]
-async fn smtp_directory() {
+async fn lmtp_directory() {
     // Spawn mock LMTP server
     let shutdown = spawn_mock_lmtp_server(5);
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -47,6 +47,7 @@ async fn smtp_directory() {
     // Obtain directory handle
     let mut config = DirectoryTest::new(None).await;
     let handle = config.directories.directories.remove("smtp").unwrap();
+    let core = config.core;
 
     // Basic lookup
     let tests = vec![
@@ -94,19 +95,19 @@ async fn smtp_directory() {
 
     for (item, expected) in &tests {
         let result: LookupResult = match item {
-            Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
+            Item::IsAccount(v) => core.rcpt(&handle, v).await.unwrap().into(),
             Item::Authenticate(v) => handle
                 .query(QueryBy::Credentials(v), true)
                 .await
                 .unwrap()
                 .is_some()
                 .into(),
-            Item::Verify(v) => match handle.vrfy(v).await {
+            Item::Verify(v) => match core.vrfy(&handle, v).await {
                 Ok(v) => v.into(),
                 Err(DirectoryError::Unsupported) => LookupResult::False,
                 Err(e) => panic!("Unexpected error: {e:?}"),
             },
-            Item::Expand(v) => match handle.expn(v).await {
+            Item::Expand(v) => match core.expn(&handle, v).await {
                 Ok(v) => v.into(),
                 Err(DirectoryError::Unsupported) => LookupResult::False,
                 Err(e) => panic!("Unexpected error: {e:?}"),
@@ -118,27 +119,29 @@ async fn smtp_directory() {
 
     // Concurrent requests
     let mut requests = Vec::new();
+    let core = Arc::new(core);
     for n in 0..100 {
         let (item, expected) = &tests[n % tests.len()];
         let item = item.append(n);
         let item_clone = item.clone();
         let handle = handle.clone();
+        let core = core.clone();
         requests.push((
             tokio::spawn(async move {
                 let result: LookupResult = match &item {
-                    Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
+                    Item::IsAccount(v) => core.rcpt(&handle, v).await.unwrap().into(),
                     Item::Authenticate(v) => handle
                         .query(QueryBy::Credentials(v), true)
                         .await
                         .unwrap()
                         .is_some()
                         .into(),
-                    Item::Verify(v) => match handle.vrfy(v).await {
+                    Item::Verify(v) => match core.vrfy(&handle, v).await {
                         Ok(v) => v.into(),
                         Err(DirectoryError::Unsupported) => LookupResult::False,
                         Err(e) => panic!("Unexpected error: {e:?}"),
                     },
-                    Item::Expand(v) => match handle.expn(v).await {
+                    Item::Expand(v) => match core.expn(&handle, v).await {
                         Ok(v) => v.into(),
                         Err(DirectoryError::Unsupported) => LookupResult::False,
                         Err(e) => panic!("Unexpected error: {e:?}"),
@@ -172,10 +175,11 @@ async fn smtp_directory() {
             let item = item.append(n);
             let item_clone = item.clone();
             let handle = handle.clone();
+            let core = core.clone();
             requests.push((
                 tokio::spawn(async move {
                     let result: LookupResult = match &item {
-                        Item::IsAccount(v) => handle.rcpt(v).await.unwrap().into(),
+                        Item::IsAccount(v) => core.rcpt(&handle, v).await.unwrap().into(),
                         _ => unreachable!(),
                     };
 

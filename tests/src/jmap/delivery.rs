@@ -42,20 +42,14 @@ pub async fn test(params: &mut JMAPTest) {
     // Create a domain name and a test account
     let server = params.server.clone();
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("jane@example.com", "abcdef", "Jane Smith")
         .await;
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("bill@example.com", "098765", "Bill Foobar")
         .await;
@@ -90,28 +84,20 @@ pub async fn test(params: &mut JMAPTest) {
     )
     .to_string();
     params
-        .core
-        .storage
         .directory
         .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
         .await;
 
     // Create a mailing list
     params
-        .core
-        .storage
         .directory
         .link_test_address("jdoe@example.com", "members@example.com", "list")
         .await;
     params
-        .core
-        .storage
         .directory
         .link_test_address("jane@example.com", "members@example.com", "list")
         .await;
     params
-        .core
-        .storage
         .directory
         .link_test_address("bill@example.com", "members@example.com", "list")
         .await;
@@ -255,8 +241,6 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Removing members from the mailing list and chunked ingest
     params
-        .core
-        .storage
         .directory
         .remove_test_alias("jdoe@example.com", "members@example.com")
         .await;

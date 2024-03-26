@@ -4,7 +4,7 @@ use directory::Directory;
 use utils::config::{utils::AsKey, Config};
 
 use crate::{
-    config::smtp::session::AddressMapping,
+    config::smtp::{session::AddressMapping, V_RECIPIENT},
     expr::{functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap, Variable},
     Core,
 };
@@ -130,7 +130,11 @@ impl AddressMapping {
         } else if let Some(if_block) = IfBlock::try_parse(
             config,
             key,
-            &TokenMap::default().with_variables([("address", 1), ("email", 1), ("rcpt", 1)]),
+            &TokenMap::default().with_variables([
+                ("address", V_RECIPIENT),
+                ("email", V_RECIPIENT),
+                ("rcpt", V_RECIPIENT),
+            ]),
         ) {
             AddressMapping::Custom(if_block)
         } else {
@@ -148,7 +152,11 @@ impl ResolveVariable for Address<'_> {
 }
 
 impl AddressMapping {
-    async fn to_subaddress<'x, 'y: 'x>(&'x self, core: &Core, address: &'y str) -> Cow<'x, str> {
+    pub async fn to_subaddress<'x, 'y: 'x>(
+        &'x self,
+        core: &Core,
+        address: &'y str,
+    ) -> Cow<'x, str> {
         match self {
             AddressMapping::Enable => {
                 if let Some((local_part, domain_part)) = address.rsplit_once('@') {
@@ -172,7 +180,7 @@ impl AddressMapping {
         address.into()
     }
 
-    async fn to_catch_all<'x, 'y: 'x>(
+    pub async fn to_catch_all<'x, 'y: 'x>(
         &'x self,
         core: &Core,
         address: &'y str,

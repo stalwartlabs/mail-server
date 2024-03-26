@@ -41,8 +41,7 @@ use super::{
 use crate::{
     backend::deserialize_i64_le,
     write::{
-        Batch, BitmapClass, LookupClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS,
-        MAX_COMMIT_TIME,
+        Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
     BitmapKey, Deserialize, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS, WITHOUT_BLOCK_NUM,
 };
@@ -211,6 +210,7 @@ impl<'x> RocksDBTransaction<'x> {
                             document_id,
                             class,
                         };
+
                         let is_counter = key.is_counter();
                         let key = key.serialize(0);
 
@@ -373,20 +373,6 @@ impl<'x> RocksDBTransaction<'x> {
                     } => {
                         document_id = *document_id_;
                     }
-                    Operation::Value {
-                        class,
-                        op: ValueOp::AtomicAdd(by),
-                    } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            class,
-                        }
-                        .serialize(0);
-
-                        wb.merge_cf(&self.cf_counters, &key, &by.to_le_bytes()[..]);
-                    }
                     Operation::Value { class, op } => {
                         let key = ValueKey {
                             account_id,
@@ -394,19 +380,28 @@ impl<'x> RocksDBTransaction<'x> {
                             document_id,
                             class,
                         };
+
+                        let is_counter = key.is_counter();
                         let key = key.serialize(0);
 
-                        if let ValueOp::Set(value) = op {
-                            wb.put_cf(&self.cf_values, &key, value);
-                        } else {
-                            wb.delete_cf(
-                                if matches!(class, ValueClass::Lookup(LookupClass::Counter(_))) {
-                                    &self.cf_counters
-                                } else {
-                                    &self.cf_values
-                                },
-                                &key,
-                            );
+                        match op {
+                            ValueOp::Set(value) => {
+                                wb.put_cf(&self.cf_values, &key, value);
+                            }
+                            ValueOp::AtomicAdd(by) => {
+                                wb.merge_cf(&self.cf_counters, &key, &by.to_le_bytes()[..]);
+                            }
+                            ValueOp::Clear => {
+                                wb.delete_cf(
+                                    if is_counter {
+                                        &self.cf_counters
+                                    } else {
+                                        &self.cf_values
+                                    },
+                                    &key,
+                                );
+                            }
+                            ValueOp::AddAndGet(_) => unreachable!(),
                         }
                     }
                     Operation::Index { field, key, set } => {

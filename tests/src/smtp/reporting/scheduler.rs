@@ -32,7 +32,7 @@ use mail_auth::{
 };
 use store::write::QueueClass;
 
-use crate::smtp::{TestConfig, TestSMTP};
+use crate::smtp::TestSMTP;
 use smtp::{
     core::SMTP,
     reporting::{dmarc::DmarcFormat, DmarcEvent, PolicyType, TlsEvent},
@@ -48,9 +48,10 @@ async fn report_scheduler() {
     .unwrap();*/
 
     // Create scheduler
-    let mut core = SMTP::test();
+    let mut inner = Inner::default();
+    let mut core = Core::default();
     let qr = core.init_test_queue("smtp_report_queue_test");
-    let config = &mut core.core.smtp.report;
+    let config = &mut core.smtp.report;
     config.dmarc_aggregate.max_size = IfBlock::new(500);
     config.tls.max_size = IfBlock::new(550);
 

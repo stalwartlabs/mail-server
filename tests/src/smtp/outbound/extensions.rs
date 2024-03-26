@@ -21,22 +21,40 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
+use common::config::server::ServerProtocol;
 use mail_auth::MX;
 use smtp_proto::{MAIL_REQUIRETLS, MAIL_RET_HDRS, MAIL_SMTPUTF8, RCPT_NOTIFY_NEVER};
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
-    outbound::start_test_server,
+    outbound::TestServer,
     session::{TestSession, VerifyResponse},
-    TestConfig, TestSMTP,
 };
-use smtp::core::{Session, SMTP};
+
+const LOCAL: &str = r#"
+[session.rcpt]
+relay = true
+
+[session.extensions]
+dsn = true
+"#;
+
+const REMOTE: &str = r#"
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = true
+
+[session.data.limits]
+size = 1500
+
+[session.extensions]
+dsn = true
+requiretls = true
+"#;
 
 #[tokio::test]
 #[serial_test::serial]
@@ -49,16 +67,14 @@ async fn extensions() {
     .unwrap();*/
 
     // Start test server
-    let mut core = SMTP::test();
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    core.core.smtp.session.data.max_message_size = IfBlock::new(1500);
-    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
-    core.core.smtp.session.extensions.requiretls = IfBlock::new(true);
-    let mut remote_qr = core.init_test_queue("smtp_ext_remote");
-    let _rx = start_test_server(core.into(), &[ServerProtocol::Smtp]);
+    let mut remote = TestServer::new("smtp_ext_remote", REMOTE, true).await;
+    let _rx = remote.start(&[ServerProtocol::Smtp]).await;
+
+    // Successful delivery with DSN
+    let mut local = TestServer::new("smtp_ext_local", LOCAL, true).await;
 
     // Add mock DNS entries
-    let mut core = SMTP::test();
+    let core = local.build_smtp();
     core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
@@ -73,13 +89,7 @@ async fn extensions() {
         Instant::now() + Duration::from_secs(10),
     );
 
-    // Successful delivery with DSN
-    let mut local_qr = core.init_test_queue("smtp_ext_local");
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
-    let core = Arc::new(core);
-    //let mut queue = Queue::default();
-    let mut session = Session::test(core.clone());
+    let mut session = local.new_session();
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
@@ -91,25 +101,28 @@ async fn extensions() {
             "250",
         )
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
 
-    local_qr
+    local
+        .qr
         .expect_message()
         .await
-        .read_lines(&local_qr)
+        .read_lines(&local.qr)
         .await
         .assert_contains("<bill@foobar.org> (delivered to")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: delivered");
-    local_qr.read_event().await.assert_reload();
-    remote_qr
+    local.qr.read_event().await.assert_reload();
+    remote
+        .qr
         .expect_message()
         .await
-        .read_lines(&remote_qr)
+        .read_lines(&remote.qr)
         .await
         .assert_contains("using TLSv1.3 with cipher");
 
@@ -117,22 +130,24 @@ async fn extensions() {
     session
         .send_message("john@test.org", &["bill@foobar.org"], "test:arc", "250")
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    local_qr
+    local
+        .qr
         .expect_message()
         .await
-        .read_lines(&local_qr)
+        .read_lines(&local.qr)
         .await
         .assert_contains("<bill@foobar.org> (host 'mx.foobar.org' rejected command 'MAIL FROM:")
         .assert_contains("Action: failed")
         .assert_contains("Diagnostic-Code: smtp;552")
         .assert_contains("Status: 5.3.4");
-    local_qr.read_event().await.assert_reload();
-    remote_qr.assert_no_events();
+    local.qr.read_event().await.assert_reload();
+    remote.qr.assert_no_events();
 
     // Test DSN, SMTPUTF8 and REQUIRETLS extensions
     session
@@ -143,13 +158,14 @@ async fn extensions() {
             "250",
         )
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    local_qr.read_event().await.assert_reload();
-    let message = remote_qr.expect_message().await;
+    local.qr.read_event().await.assert_reload();
+    let message = remote.qr.expect_message().await;
     assert_eq!(message.env_id, Some("abc123".to_string()));
     assert!((message.flags & MAIL_RET_HDRS) != 0);
     assert!((message.flags & MAIL_REQUIRETLS) != 0);

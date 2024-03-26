@@ -21,25 +21,47 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
+use common::config::server::ServerProtocol;
 use mail_auth::MX;
 use store::write::now;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
-    outbound::start_test_server,
+    outbound::TestServer,
     session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig, TestSMTP,
 };
-use smtp::{
-    core::{Session, SMTP},
-    queue::{DeliveryAttempt, Event},
-};
+use smtp::queue::{DeliveryAttempt, Event};
+
+const LOCAL: &str = r#"
+[session.rcpt]
+relay = true
+max-recipients = 100
+
+[session.extensions]
+dsn = true
+
+[queue.schedule]
+retry = "1s"
+notify = [{if = "rcpt_domain = 'foobar.org'", then = "[1s, 2s]"},
+          {if = "rcpt_domain = 'foobar.com'", then = "[5s, 6s]"},
+          {else = [1s]}]
+expire = [{if = "rcpt_domain = 'foobar.org'", then = "6s"},
+          {else = "7s"}]
+"#;
+
+const REMOTE: &str = r#"
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = true
+
+[session.extensions]
+dsn = true
+chunking = false
+"#;
 
 const SMUGGLER: &str = r#"From: Joe SixPack <john@foobar.net>
 To: Suzie Q <suzie@foobar.org>
@@ -73,16 +95,15 @@ async fn smtp_delivery() {
     .unwrap();*/
 
     // Start test server
-    let mut core = SMTP::test();
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
-    core.core.smtp.session.extensions.chunking = IfBlock::new(false);
-    let mut remote_qr = core.init_test_queue("smtp_delivery_remote");
-    let remote_core = Arc::new(core);
-    let _rx = start_test_server(remote_core.clone(), &[ServerProtocol::Smtp]);
+    let mut remote = TestServer::new("smtp_delivery_remote", REMOTE, true).await;
+    let _rx = remote.start(&[ServerProtocol::Smtp]).await;
+    let remote_core = remote.build_smtp();
+
+    // Multiple delivery attempts
+    let mut local = TestServer::new("smtp_delivery_local", LOCAL, true).await;
 
     // Add mock DNS entries
-    let mut core = SMTP::test();
+    let core = local.build_smtp();
     for domain in ["foobar.org", "foobar.net", "foobar.com"] {
         core.core.smtp.resolvers.dns.mx_add(
             domain,
@@ -104,23 +125,7 @@ async fn smtp_delivery() {
         );
     }
 
-    // Multiple delivery attempts
-    let mut local_qr = core.init_test_queue("smtp_delivery_local");
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    core.core.smtp.session.rcpt.max_recipients = IfBlock::new(100);
-    core.core.smtp.session.extensions.dsn = IfBlock::new(true);
-    let config = &mut core.core.smtp.queue;
-    config.retry = IfBlock::new(Duration::from_secs(1));
-    config.notify = r#"[{if = "rcpt_domain = 'foobar.org'", then = "[1s, 2s]"},
-    {if = "rcpt_domain = 'foobar.com'", then = "[5s, 6s]"},
-    {else = [1s]}]"#
-        .parse_if();
-    config.expire = r#"[{if = "rcpt_domain = 'foobar.org'", then = "6s"},
-    {else = "7s"}]"#
-        .parse_if();
-
-    let core = Arc::new(core);
-    let mut session = Session::test(core.clone());
+    let mut session = local.new_session();
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
@@ -140,10 +145,11 @@ async fn smtp_delivery() {
             "250",
         )
         .await;
-    let message = local_qr.expect_message().await;
+    let message = local.qr.expect_message().await;
     let num_domains = message.domains.len();
     assert_eq!(num_domains, 3);
-    local_qr
+    local
+        .qr
         .delivery_attempt(message.id)
         .await
         .try_deliver(core.clone())
@@ -151,7 +157,7 @@ async fn smtp_delivery() {
     let mut dsn = Vec::new();
     let mut domain_retries = vec![0; num_domains];
     loop {
-        match local_qr.try_read_event().await {
+        match local.qr.try_read_event().await {
             Some(Event::Reload) => {}
             Some(Event::OnHold(_)) => unreachable!(),
             None | Some(Event::Stop) => break,
@@ -188,14 +194,14 @@ async fn smtp_delivery() {
         "retries {domain_retries:?}"
     );
 
-    local_qr.assert_queue_is_empty().await;
+    local.qr.assert_queue_is_empty().await;
     assert_eq!(dsn.len(), 5);
 
     let mut dsn = dsn.into_iter();
 
     dsn.next()
         .unwrap()
-        .read_lines(&local_qr)
+        .read_lines(&local.qr)
         .await
         .assert_contains("<ok@foobar.net> (delivered to")
         .assert_contains("<ok@foobar.org> (delivered to")
@@ -205,7 +211,7 @@ async fn smtp_delivery() {
 
     dsn.next()
         .unwrap()
-        .read_lines(&local_qr)
+        .read_lines(&local.qr)
         .await
         .assert_contains("<delay@foobar.net> (host ")
         .assert_contains("<delay@foobar.org> (host ")
@@ -213,26 +219,27 @@ async fn smtp_delivery() {
 
     dsn.next()
         .unwrap()
-        .read_lines(&local_qr)
+        .read_lines(&local.qr)
         .await
         .assert_contains("<delay@foobar.org> (host ")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines(&local_qr)
+        .read_lines(&local.qr)
         .await
         .assert_contains("<delay@foobar.org> (host ");
 
     dsn.next()
         .unwrap()
-        .read_lines(&local_qr)
+        .read_lines(&local.qr)
         .await
         .assert_contains("<delay@foobar.net> (host ")
         .assert_contains("Action: failed");
 
     assert_eq!(
-        remote_qr
+        remote
+            .qr
             .consume_message(&remote_core)
             .await
             .recipients
@@ -242,7 +249,8 @@ async fn smtp_delivery() {
         vec!["ok@foobar.org".to_string()]
     );
     assert_eq!(
-        remote_qr
+        remote
+            .qr
             .consume_message(&remote_core)
             .await
             .recipients
@@ -252,7 +260,7 @@ async fn smtp_delivery() {
         vec!["ok@foobar.net".to_string()]
     );
 
-    remote_qr.assert_no_events();
+    remote.qr.assert_no_events();
 
     // SMTP smuggling
     for separator in ["\n", "\r"].iter() {
@@ -268,17 +276,19 @@ async fn smtp_delivery() {
         session
             .send_message("john@doe.org", &["bill@foobar.com"], &message, "250")
             .await;
-        local_qr
+        local
+            .qr
             .expect_message_then_deliver()
             .await
             .try_deliver(core.clone())
             .await;
-        local_qr.read_event().await.assert_reload();
+        local.qr.read_event().await.assert_reload();
 
-        let message = remote_qr
+        let message = remote
+            .qr
             .consume_message(&remote_core)
             .await
-            .read_message(&remote_qr)
+            .read_message(&remote.qr)
             .await;
 
         assert!(

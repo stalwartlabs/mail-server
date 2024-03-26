@@ -29,8 +29,10 @@ pub mod query;
 
 use std::io::Read;
 
-use store::FtsStore;
+use store::{FtsStore, Stores};
 use utils::config::Config;
+
+use crate::AssertConfig;
 
 pub struct TempDir {
     pub path: std::path::PathBuf,
@@ -78,7 +80,8 @@ password = "password"
 
 [store."redis"]
 type = "redis"
-url = "redis://127.0.0.1"
+urls = "redis://127.0.0.1"
+redis-type = "single"
 
 "#;
 
@@ -86,8 +89,10 @@ url = "redis://127.0.0.1"
 pub async fn store_tests() {
     let insert = true;
     let temp_dir = TempDir::new("store_tests", insert);
-    let config = Config::new(&CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy())).unwrap();
-    let stores = config.parse_stores().await.unwrap();
+    let mut config = Config::new(CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy()))
+        .unwrap()
+        .assert_no_errors();
+    let stores = Stores::parse(&mut config).await;
 
     let store_id = std::env::var("STORE")
         .expect("Missing store type. Try running `STORE=<store_type> cargo test`");

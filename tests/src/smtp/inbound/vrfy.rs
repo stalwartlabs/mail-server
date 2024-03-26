@@ -21,21 +21,29 @@
  * for more details.
 */
 
-use common::expr::if_block::IfBlock;
-use directory::core::config::ConfigDirectory;
-use store::Store;
+use common::Core;
+
+use store::Stores;
 use utils::config::Config;
 
-use crate::smtp::{
-    inbound::dummy_stores,
-    session::{TestSession, VerifyResponse},
-    ParseTestConfig, TestConfig,
-};
-use smtp::core::{Session, SMTP};
+use smtp::core::{Inner, Session};
 
-const DIRECTORY: &str = r#"
+use crate::smtp::{
+    build_smtp,
+    session::{TestSession, VerifyResponse},
+    TempDir,
+};
+
+const CONFIG: &str = r#"
 [storage]
-lookup = "dummy"
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/data.db"
 
 [directory."local"]
 type = "memory"
@@ -61,31 +69,26 @@ secret = "p4ssw0rd"
 email = "bill@foobar.org"
 email-list = ["sales@foobar.org"]
 
+[session.rcpt]
+directory = "'local'"
+
+[session.extensions]
+vrfy = [{if = "remote_ip = '10.0.0.1'", then = true},
+        {else = false}]
+expn = [{if = "remote_ip = '10.0.0.1'", then = true},
+        {else = false}]
+
 "#;
 
 #[tokio::test]
 async fn vrfy_expn() {
-    let mut core = SMTP::test();
-
-    core.core.storage.directories = Config::new(DIRECTORY)
-        .unwrap()
-        .parse_directory(&dummy_stores(), Store::default())
-        .await
-        .unwrap()
-        .directories;
-    let config = &mut core.core.smtp.session.rcpt;
-    config.directory = IfBlock::new("local".to_string());
-
-    let config = &mut core.core.smtp.session.extensions;
-    config.vrfy = r#"[{if = "remote_ip = '10.0.0.1'", then = true},
-    {else = false}]"#
-        .parse_if();
-    config.expn = r#"[{if = "remote_ip = '10.0.0.1'", then = true},
-    {else = false}]"#
-        .parse_if();
+    let tmp_dir = TempDir::new("smtp_vrfy_test", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
+    let stores = Stores::parse(&mut config).await;
+    let core = Core::parse(&mut config, stores).await;
 
     // EHLO should not advertise VRFY/EXPN to 10.0.0.2
-    let mut session = Session::test(core);
+    let mut session = Session::test(build_smtp(core, Inner::default()));
     session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session

@@ -69,7 +69,7 @@ pub struct Policy {
 impl Resolvers {
     pub async fn parse(config: &mut Config) -> Self {
         let (resolver_config, mut opts) = match config
-            .value_require_("resolver.type")
+            .value_require("resolver.type")
             .unwrap_or("system")
         {
             "cloudflare" => (ResolverConfig::cloudflare(), ResolverOpts::default()),
@@ -157,19 +157,19 @@ impl Resolvers {
                 (ResolverConfig::cloudflare(), ResolverOpts::default())
             }
         };
-        if let Some(concurrency) = config.property_("resolver.concurrency") {
+        if let Some(concurrency) = config.property("resolver.concurrency") {
             opts.num_concurrent_reqs = concurrency;
         }
-        if let Some(timeout) = config.property_("resolver.timeout") {
+        if let Some(timeout) = config.property("resolver.timeout") {
             opts.timeout = timeout;
         }
-        if let Some(preserve) = config.property_("resolver.preserve-intermediates") {
+        if let Some(preserve) = config.property("resolver.preserve-intermediates") {
             opts.preserve_intermediates = preserve;
         }
-        if let Some(try_tcp_on_error) = config.property_("resolver.try-tcp-on-error") {
+        if let Some(try_tcp_on_error) = config.property("resolver.try-tcp-on-error") {
             opts.try_tcp_on_error = try_tcp_on_error;
         }
-        if let Some(attempts) = config.property_("resolver.attempts") {
+        if let Some(attempts) = config.property("resolver.attempts") {
             opts.attempts = attempts;
         }
 
@@ -180,7 +180,7 @@ impl Resolvers {
 
         let mut capacities = [1024usize; 5];
         for (pos, key) in ["txt", "mx", "ipv4", "ipv6", "ptr"].into_iter().enumerate() {
-            if let Some(capacity) = config.property_(("cache.resolver", key)) {
+            if let Some(capacity) = config.property(("cache.resolver", key)) {
                 capacities[pos] = capacity;
             }
         }
@@ -201,11 +201,11 @@ impl Resolvers {
             },
             cache: DnsRecordCache {
                 tlsa: LruCache::with_capacity(
-                    config.property_("cache.resolver.tlsa.size").unwrap_or(1024),
+                    config.property("cache.resolver.tlsa.size").unwrap_or(1024),
                 ),
                 mta_sts: LruCache::with_capacity(
                     config
-                        .property_("cache.resolver.mta-sts.size")
+                        .property("cache.resolver.mta-sts.size")
                         .unwrap_or(1024),
                 ),
             },

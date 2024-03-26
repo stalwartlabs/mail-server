@@ -27,7 +27,7 @@ use crate::expr::{tokenizer::TokenMap, Expression};
 
 use super::*;
 
-pub(crate) fn parse_throttle(
+pub fn parse_throttle(
     config: &mut Config,
     prefix: impl AsKey,
     token_map: &TokenMap,
@@ -87,10 +87,10 @@ fn parse_throttle_item(
             .unwrap_or_default(),
         keys,
         concurrency: config
-            .property_::<u64>((prefix.as_str(), "concurrency"))
+            .property::<u64>((prefix.as_str(), "concurrency"))
             .filter(|&v| v > 0),
         rate: config
-            .property_::<Rate>((prefix.as_str(), "rate"))
+            .property::<Rate>((prefix.as_str(), "rate"))
             .filter(|v| v.requests > 0),
     };
 

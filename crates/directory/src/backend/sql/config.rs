@@ -34,7 +34,7 @@ impl SqlDirectory {
         data_store: Store,
     ) -> Option<Self> {
         let prefix = prefix.as_key();
-        let store_id = config.value_require_((&prefix, "store"))?.to_string();
+        let store_id = config.value_require((&prefix, "store"))?.to_string();
         let store = if let Some(store) = stores.lookup_stores.get(&store_id) {
             store.clone()
         } else {

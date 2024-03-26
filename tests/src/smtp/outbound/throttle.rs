@@ -23,54 +23,79 @@
 
 use std::{
     net::{IpAddr, Ipv4Addr},
-    sync::Arc,
     time::{Duration, Instant},
 };
 
-use common::expr::if_block::IfBlock;
 use mail_auth::MX;
 use store::write::now;
 
-use crate::smtp::{
-    inbound::TestQueueEvent, queue::manager::new_message, session::TestSession, ParseTestConfig,
-    TestConfig, TestSMTP,
-};
-use smtp::{
-    core::{Session, SMTP},
-    queue::{Message, QueueEnvelope},
-};
+use crate::smtp::{inbound::TestQueueEvent, outbound::TestServer, session::TestSession};
+use smtp::queue::{Message, QueueEnvelope};
 
-const THROTTLE: &str = r#"
+const CONFIG: &str = r#"
+[session.rcpt]
+relay = true
+
+[queue.schedule]
+retry = "1h"
+notify = "1h"
+expire = "1h"
+
 [[queue.throttle]]
 match = "sender_domain = 'foobar.org'"
 key = 'sender_domain'
 concurrency = 1
+enable = true
 
 [[queue.throttle]]
 match = "sender_domain = 'foobar.net'"
 key = 'sender_domain'
 rate = '1/30m'
+enable = true
 
 [[queue.throttle]]
 match = "rcpt_domain = 'example.org'"
 key = 'rcpt_domain'
 concurrency = 1
+enable = true
 
 [[queue.throttle]]
 match = "rcpt_domain = 'example.net'"
 key = 'rcpt_domain'
 rate = '1/40m'
+enable = true
 
 [[queue.throttle]]
 match = "mx = 'mx.test.org'"
 key = 'mx'
 concurrency = 1
+enable = true
 
 [[queue.throttle]]
 match = "mx = 'mx.test.net'"
 key = 'mx'
 rate = '1/50m'
+enable = true
 "#;
+
+pub fn new_message(id: u64) -> Message {
+    let todo = "remove";
+    Message {
+        size: 0,
+        id,
+        created: 0,
+        return_path: "sender@foobar.org".to_string(),
+        return_path_lcase: "".to_string(),
+        return_path_domain: "foobar.org".to_string(),
+        recipients: vec![],
+        domains: vec![],
+        flags: 0,
+        env_id: None,
+        priority: 0,
+        quota_keys: vec![],
+        blob_hash: Default::default(),
+    }
+}
 
 #[tokio::test]
 async fn throttle_outbound() {
@@ -84,23 +109,18 @@ async fn throttle_outbound() {
     // Build test message
     let mut test_message = new_message(0);
     test_message.return_path_domain = "foobar.org".to_string();
-    let mut core = SMTP::test();
-    let mut local_qr = core.init_test_queue("smtp_throttle_outbound");
-    core.core.smtp.session.rcpt.relay = IfBlock::new(true);
-    core.core.smtp.queue.throttle = THROTTLE.parse_queue_throttle();
-    core.core.smtp.queue.retry = IfBlock::new(Duration::from_secs(86400));
-    core.core.smtp.queue.notify = IfBlock::new(Duration::from_secs(86400));
-    core.core.smtp.queue.expire = IfBlock::new(Duration::from_secs(86400));
 
-    let core = Arc::new(core);
-    let mut session = Session::test(core.clone());
+    let mut local = TestServer::new("smtp_throttle_outbound", CONFIG, true).await;
+
+    let core = local.build_smtp();
+    let mut session = local.new_session();
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
     session
         .send_message("john@foobar.org", &["bill@test.org"], "test:no_dkim", "250")
         .await;
-    assert_eq!(local_qr.last_queued_due().await as i64 - now() as i64, 0);
+    assert_eq!(local.qr.last_queued_due().await as i64 - now() as i64, 0);
 
     // Throttle sender
     let span = tracing::info_span!("test");
@@ -119,13 +139,14 @@ async fn throttle_outbound() {
     assert!(!in_flight.is_empty());
 
     // Expect concurrency throttle for sender domain 'foobar.org'
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local_qr.read_event().await.unwrap_on_hold();
+    local.qr.read_event().await.unwrap_on_hold();
     in_flight.clear();
 
     // Expect rate limit throttle for sender domain 'foobar.net'
@@ -144,14 +165,15 @@ async fn throttle_outbound() {
     session
         .send_message("john@foobar.net", &["bill@test.org"], "test:no_dkim", "250")
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local_qr.read_event().await.assert_reload();
-    let due = local_qr.last_queued_due().await - now();
+    local.qr.read_event().await.assert_reload();
+    let due = local.qr.last_queued_due().await - now();
     assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for recipient domain 'example.org'
@@ -175,13 +197,14 @@ async fn throttle_outbound() {
             "250",
         )
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local_qr.read_event().await.unwrap_on_hold();
+    local.qr.read_event().await.unwrap_on_hold();
     in_flight.clear();
 
     // Expect rate limit throttle for recipient domain 'example.org'
@@ -204,14 +227,15 @@ async fn throttle_outbound() {
             "250",
         )
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local_qr.read_event().await.assert_reload();
-    let due = local_qr.last_queued_due().await - now();
+    local.qr.read_event().await.assert_reload();
+    let due = local.qr.last_queued_due().await - now();
     assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for mx 'mx.test.org'
@@ -242,12 +266,13 @@ async fn throttle_outbound() {
     session
         .send_message("john@test.net", &["jane@test.org"], "test:no_dkim", "250")
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    local_qr.read_event().await.unwrap_on_hold();
+    local.qr.read_event().await.unwrap_on_hold();
     in_flight.clear();
 
     // Expect rate limit throttle for mx 'mx.test.net'
@@ -278,15 +303,16 @@ async fn throttle_outbound() {
     session
         .send_message("john@test.net", &["jane@test.net"], "test:no_dkim", "250")
         .await;
-    local_qr
+    local
+        .qr
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local_qr.read_event().await.assert_reload();
-    let due = local_qr.last_queued_due().await - now();
+    local.qr.read_event().await.assert_reload();
+    let due = local.qr.last_queued_due().await - now();
     assert!(due > 0, "Due: {}", due);
 }
 

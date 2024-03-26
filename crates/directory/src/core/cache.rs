@@ -47,12 +47,12 @@ pub struct LookupCache<T: Hash + Eq> {
 impl CachedDirectory {
     pub fn try_from_config(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
-        let cached_entries = config.property_((&prefix, "cache.entries"))?;
+        let cached_entries = config.property((&prefix, "cache.entries"))?;
         let cache_ttl_positive = config
-            .property_((&prefix, "cache.ttl.positive"))
+            .property((&prefix, "cache.ttl.positive"))
             .unwrap_or(Duration::from_secs(86400));
         let cache_ttl_negative = config
-            .property_((&prefix, "cache.ttl.positive"))
+            .property((&prefix, "cache.ttl.positive"))
             .unwrap_or_else(|| Duration::from_secs(3600));
 
         Some(CachedDirectory {

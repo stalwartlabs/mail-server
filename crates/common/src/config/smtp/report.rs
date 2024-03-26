@@ -99,12 +99,12 @@ impl ReportConfig {
             }),
             analysis: ReportAnalysis {
                 addresses: config
-                    .properties_::<AddressMatch>("report.analysis.addresses")
+                    .properties::<AddressMatch>("report.analysis.addresses")
                     .into_iter()
                     .map(|(_, m)| m)
                     .collect(),
-                forward: config.property_("report.analysis.forward").unwrap_or(true),
-                store: config.property_("report.analysis.store"),
+                forward: config.property("report.analysis.forward").unwrap_or(true),
+                store: config.property("report.analysis.store"),
             },
             dkim: Report::parse(config, "dkim", &default_hostname, &sender_vars),
             spf: Report::parse(config, "spf", &default_hostname, &sender_vars),

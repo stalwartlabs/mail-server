@@ -40,7 +40,7 @@ pub struct FsStore {
 impl FsStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
-        let path = PathBuf::from(config.value_require_((&prefix, "path"))?);
+        let path = PathBuf::from(config.value_require((&prefix, "path"))?);
         if !path.exists() {
             fs::create_dir_all(&path)
                 .await
@@ -57,7 +57,7 @@ impl FsStore {
             path,
             hash_levels: std::cmp::min(
                 config
-                    .property_or_default_((&prefix, "depth"), "2")
+                    .property_or_default((&prefix, "depth"), "2")
                     .unwrap_or(2),
                 5,
             ),

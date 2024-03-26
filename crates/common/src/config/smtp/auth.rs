@@ -166,10 +166,10 @@ impl MailAuthConfig {
 }
 
 fn build_signature(config: &mut Config, id: &str) -> Option<(DkimSigner, ArcSealer)> {
-    match config.property_require_::<Algorithm>(("signature", id, "algorithm"))? {
+    match config.property_require::<Algorithm>(("signature", id, "algorithm"))? {
         Algorithm::RsaSha256 => {
             let pk = config
-                .value_require_(("signature", id, "private-key"))?
+                .value_require(("signature", id, "private-key"))?
                 .to_string();
             let key = RsaKey::<Sha256>::from_rsa_pem(&pk)
                 .or_else(|_| RsaKey::<Sha256>::from_pkcs8_pem(&pk))
@@ -200,7 +200,7 @@ fn build_signature(config: &mut Config, id: &str) -> Option<(DkimSigner, ArcSeal
                 (("signature", id, "public-key"), &mut public_key),
                 (("signature", id, "private-key"), &mut private_key),
             ] {
-                let mut contents = config.value_require_(key)?.as_bytes().iter().copied();
+                let mut contents = config.value_require(key)?.as_bytes().iter().copied();
                 let mut base64 = vec![];
 
                 'outer: while let Some(ch) = contents.next() {
@@ -281,10 +281,10 @@ fn parse_signature<T: SigningKey, U: SigningKey<Hasher = Sha256>>(
     mail_auth::arc::ArcSealer<U, Done>,
 )> {
     let domain = config
-        .value_require_(("signature", id, "domain"))?
+        .value_require(("signature", id, "domain"))?
         .to_string();
     let selector = config
-        .value_require_(("signature", id, "selector"))?
+        .value_require(("signature", id, "selector"))?
         .to_string();
     let mut headers = config
         .values(("signature", id, "headers"))
@@ -321,7 +321,7 @@ fn parse_signature<T: SigningKey, U: SigningKey<Hasher = Sha256>>(
         .selector(selector)
         .headers(headers);
 
-    if let Some(c) = config.property_::<DkimCanonicalization>(("signature", id, "canonicalization"))
+    if let Some(c) = config.property::<DkimCanonicalization>(("signature", id, "canonicalization"))
     {
         signer = signer
             .body_canonicalization(c.body)
@@ -331,29 +331,29 @@ fn parse_signature<T: SigningKey, U: SigningKey<Hasher = Sha256>>(
             .header_canonicalization(c.headers);
     }
 
-    if let Some(c) = config.property_::<Duration>(("signature", id, "expire")) {
+    if let Some(c) = config.property::<Duration>(("signature", id, "expire")) {
         signer = signer.expiration(c.as_secs());
         sealer = sealer.expiration(c.as_secs());
     }
 
-    if let Some(true) = config.property_::<bool>(("signature", id, "set-body-length")) {
+    if let Some(true) = config.property::<bool>(("signature", id, "set-body-length")) {
         signer = signer.body_length(true);
         sealer = sealer.body_length(true);
     }
 
-    if let Some(true) = config.property_::<bool>(("signature", id, "report")) {
+    if let Some(true) = config.property::<bool>(("signature", id, "report")) {
         signer = signer.reporting(true);
     }
 
-    if let Some(auid) = config.property_::<String>(("signature", id, "auid")) {
+    if let Some(auid) = config.property::<String>(("signature", id, "auid")) {
         signer = signer.agent_user_identifier(auid);
     }
 
-    if let Some(atps) = config.property_::<String>(("signature", id, "third-party")) {
+    if let Some(atps) = config.property::<String>(("signature", id, "third-party")) {
         signer = signer.atps(atps);
     }
 
-    if let Some(atpsh) = config.property_::<HashAlgorithm>(("signature", id, "third-party-algo")) {
+    if let Some(atpsh) = config.property::<HashAlgorithm>(("signature", id, "third-party-algo")) {
         signer = signer.atpsh(atpsh);
     }
 

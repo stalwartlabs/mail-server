@@ -21,12 +21,15 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    sync::Arc,
+    time::Duration,
+};
 
 use common::listener::blocked::BLOCKED_IP_KEY;
 use directory::backend::internal::manage::ManageDirectory;
 use imap_proto::ResponseType;
-use jmap::services::housekeeper::Event;
 use jmap_client::{
     client::{Client, Credentials},
     core::set::{SetError, SetErrorType},
@@ -48,8 +51,6 @@ pub async fn test(params: &mut JMAPTest) {
     // Create test account
     let server = params.server.clone();
     params
-        .core
-        .storage
         .directory
         .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
@@ -64,14 +65,12 @@ pub async fn test(params: &mut JMAPTest) {
     )
     .to_string();
     params
-        .core
-        .storage
         .directory
         .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
         .await;
 
     // Reset rate limiters
-    server.concurrency_limiter.clear();
+    server.inner.concurrency_limiter.clear();
 
     // Wait until the beginning of the 5 seconds bucket
     const LIMIT: u64 = 5;
@@ -170,10 +169,12 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
     server
-        .housekeeper_tx
-        .send(Event::ReloadConfig)
-        .await
-        .unwrap();
+        .core
+        .network
+        .blocked_ips
+        .ip_addresses
+        .write()
+        .remove(&IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
     // Valid authentication requests should not be rate limited
     for _ in 0..110 {
@@ -251,7 +252,7 @@ pub async fn test(params: &mut JMAPTest) {
                 .unwrap();
         });
     }
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(matches!(
         client
             .mailbox_query(
@@ -262,7 +263,7 @@ pub async fn test(params: &mut JMAPTest) {
             Err(jmap_client::Error::Problem(err)) if err.status() == Some(400)));
 
     // Wait for sleep to be done
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
 
     // Concurrent upload test
     for _ in 0..4 {
@@ -271,7 +272,7 @@ pub async fn test(params: &mut JMAPTest) {
             client_.upload(None, b"sleep".to_vec(), None).await.unwrap();
         });
     }
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(matches!(
         client.upload(None, b"sleep".to_vec(), None).await,
         Err(jmap_client::Error::Problem(err)) if err.status() == Some(400)));

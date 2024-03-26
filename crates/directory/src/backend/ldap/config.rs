@@ -37,7 +37,7 @@ impl LdapDirectory {
         let bind_dn = if let Some(dn) = config.value((&prefix, "bind.dn")) {
             Bind::new(
                 dn.to_string(),
-                config.value_require_((&prefix, "bind.secret"))?.to_string(),
+                config.value_require((&prefix, "bind.secret"))?.to_string(),
             )
             .into()
         } else {
@@ -45,28 +45,28 @@ impl LdapDirectory {
         };
 
         let manager = LdapConnectionManager::new(
-            config.value_require_((&prefix, "url"))?.to_string(),
+            config.value_require((&prefix, "url"))?.to_string(),
             LdapConnSettings::new()
                 .set_conn_timeout(
                     config
-                        .property_or_default_((&prefix, "timeout"), "30s")
+                        .property_or_default((&prefix, "timeout"), "30s")
                         .unwrap_or_else(|| Duration::from_secs(30)),
                 )
                 .set_starttls(
                     config
-                        .property_or_default_((&prefix, "tls.enable"), "false")
+                        .property_or_default((&prefix, "tls.enable"), "false")
                         .unwrap_or_default(),
                 )
                 .set_no_tls_verify(
                     config
-                        .property_or_default_((&prefix, "tls.allow-invalid-certs"), "false")
+                        .property_or_default((&prefix, "tls.allow-invalid-certs"), "false")
                         .unwrap_or_default(),
                 ),
             bind_dn,
         );
 
         let mut mappings = LdapMappings {
-            base_dn: config.value_require_((&prefix, "base-dn"))?.to_string(),
+            base_dn: config.value_require((&prefix, "base-dn"))?.to_string(),
             filter_name: LdapFilter::from_config(config, (&prefix, "filter.name")),
             filter_email: LdapFilter::from_config(config, (&prefix, "filter.email")),
             filter_verify: LdapFilter::from_config(config, (&prefix, "filter.verify")),
@@ -121,7 +121,7 @@ impl LdapDirectory {
         }
 
         let auth_bind = if config
-            .property_or_default_::<bool>((&prefix, "bind.auth.enable"), "false")
+            .property_or_default::<bool>((&prefix, "bind.auth.enable"), "false")
             .unwrap_or_default()
         {
             LdapFilter::from_config(config, (&prefix, "bind.auth.dn")).into()
