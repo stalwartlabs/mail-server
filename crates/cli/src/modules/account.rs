@@ -65,6 +65,20 @@ impl AccountCommands {
                     .await;
                 eprintln!("Successfully created account {name:?} with id {account_id}.");
             }
+            AccountCommands::HashPassword {
+                password,
+                algorithm,
+            } => {
+                let hashed = match algorithm.as_str() {
+                    "Bcrypt" => pwhash::bcrypt::hash(password).unwrap(),
+                    "Sha512-Crypt" => pwhash::sha512_crypt::hash(password).unwrap(),
+                    _ => {
+                        eprintln!("Error: unknown hash/crypt algorithm '{}'", algorithm);
+                        return;
+                    }
+                };
+                println!("{}", hashed);
+            }
             AccountCommands::Update {
                 name,
                 new_name,
