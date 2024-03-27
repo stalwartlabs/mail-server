@@ -26,7 +26,7 @@ use std::sync::Arc;
 use utils::config::{cron::SimpleCron, Config};
 
 use crate::{
-    backend::fs::FsStore,
+    backend::{fs::FsStore, memory::parse_memory_stores},
     write::purge::{PurgeSchedule, PurgeStore},
     BlobStore, CompressionAlgo, FtsStore, LookupStore, QueryStore, Store, Stores,
 };
@@ -284,6 +284,9 @@ impl Stores {
                 });
             }
         }
+
+        // Parse memory stores
+        parse_memory_stores(config, &mut stores);
 
         stores
     }

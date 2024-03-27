@@ -89,13 +89,13 @@ if eval "rcpt_count > 0" {
             # Check for freemail or disposable domains
             let "domain" "domain_part(email_part(addr, 'domain'), 'sld')";
             if eval "!is_empty(domain)" {
-                if eval "key_exists('spam/free-domains', domain)" {
+                if eval "key_exists('spam-free', domain)" {
                     if eval "!t.FREEMAIL_TO && contains_ignore_case(recipients_to, addr)" {
                         let "t.FREEMAIL_TO" "1";
                     } elsif eval "!t.FREEMAIL_CC && contains_ignore_case(recipients_cc, addr)" {
                         let "t.FREEMAIL_CC" "1";
                     }
-                } elsif eval "key_exists('spam/disposable-domains', domain)" {
+                } elsif eval "key_exists('spam-disposable', domain)" {
                     if eval "!t.DISPOSABLE_TO && contains_ignore_case(recipients_to, addr)" {
                         let "t.DISPOSABLE_TO" "1";
                     } elsif eval "!t.DISPOSABLE_CC && contains_ignore_case(recipients_cc, addr)" {

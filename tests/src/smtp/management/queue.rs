@@ -21,29 +21,24 @@
  * for more details.
 */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use ahash::{AHashMap, HashMap, HashSet};
-use common::{config::server::ServerProtocol, expr::if_block::IfBlock};
+use common::config::server::ServerProtocol;
 
 use mail_auth::MX;
 use mail_parser::DateTime;
 use reqwest::{header::AUTHORIZATION, Method, StatusCode};
-use store::Store;
-use utils::config::Config;
 
-use crate::smtp::{management::send_manage_request, session::TestSession, TestSMTP};
+use crate::smtp::{management::send_manage_request, outbound::TestServer, session::TestSession};
 use smtp::{
-    core::{management::Message, Session, SMTP},
+    core::management::Message,
     queue::{manager::SpawnQueue, QueueId, Status},
 };
 
-const DIRECTORY: &str = r#"
+const LOCAL: &str = r#"
 [storage]
-lookup = "dummy"
+directory = "local"
 
 [directory."local"]
 type = "memory"
@@ -53,8 +48,28 @@ name = "admin"
 type = "admin"
 description = "Superuser"
 secret = "secret"
-member-of = ["superusers"]
+class = "admin"
 
+[queue.schedule]
+retry = "1000s"
+notify = "2000s"
+expire = "3000s"
+
+[session.rcpt]
+relay = true
+max-recipients = 100
+
+[session.extensions]
+dsn = true
+future-release = "1h"
+"#;
+
+const REMOTE: &str = r#"
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = true
 "#;
 
 #[derive(serde::Deserialize)]
@@ -69,23 +84,22 @@ pub(super) struct List<T> {
 async fn manage_queue() {
     /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::TRACE)
             .finish(),
     )
     .unwrap();*/
 
     // Start remote test server
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-    core.smtp.session.rcpt.relay = IfBlock::new(true);
-    let mut remote_qr = core.init_test_queue("smtp_manage_queue_remote");
-    let remote_core = Arc::new(core);
-    let _rx_remote = start_test_server(remote_core.clone(), &[ServerProtocol::Smtp]);
+    let mut remote = TestServer::new("smtp_manage_queue_remote", REMOTE, true).await;
+    let _rx = remote.start(&[ServerProtocol::Smtp]).await;
+    let remote_core = remote.build_smtp();
+
+    // Start local management interface
+    let local = TestServer::new("smtp_manage_queue_local", LOCAL, true).await;
 
     // Add mock DNS entries
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-    core.smtp.resolvers.dns.mx_add(
+    let core = local.build_smtp();
+    core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx1.foobar.org".to_string()],
@@ -94,30 +108,13 @@ async fn manage_queue() {
         Instant::now() + Duration::from_secs(10),
     );
 
-    core.smtp.resolvers.dns.ipv4_add(
+    core.core.smtp.resolvers.dns.ipv4_add(
         "mx1.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
 
-    // Start local management interface
-    let directory = Config::new(DIRECTORY)
-        .unwrap()
-        .parse_directory(&dummy_stores(), Store::default())
-        .await
-        .unwrap();
-    core.storage.directory = directory.directories.get("local").unwrap().clone();
-    core.smtp.session.rcpt.relay = IfBlock::new(true);
-    core.smtp.session.rcpt.max_recipients = IfBlock::new(100);
-    core.smtp.session.extensions.future_release = IfBlock::new(Duration::from_secs(86400));
-    core.smtp.session.extensions.dsn = IfBlock::new(true);
-    core.smtp.queue.retry = IfBlock::new(Duration::from_secs(1000));
-    core.smtp.queue.notify = IfBlock::new(Duration::from_secs(2000));
-    core.smtp.queue.expire = IfBlock::new(Duration::from_secs(3000));
-    let local_qr = core.init_test_queue("smtp_manage_queue_local");
-    let core = Arc::new(core);
-    local_qr.queue_rx.spawn(core.clone());
-    let _rx_manage = start_test_server(core.clone(), &[ServerProtocol::Http]);
+    let _rx_manage = local.start(&[ServerProtocol::Http]).await;
 
     // Send test messages
     let envelopes = HashMap::from_iter([
@@ -156,7 +153,8 @@ async fn manage_queue() {
         ("e", ("bill5@foobar.net", vec!["john@foobar.org"])),
         ("f", ("", vec!["success@foobar.org", "delay@foobar.org"])),
     ]);
-    let mut session = Session::test(build_smtp(core, Inner::default()));
+    let mut session = local.new_session();
+    local.qr.queue_rx.spawn(local.instance.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("foobar.net").await;
@@ -181,7 +179,8 @@ async fn manage_queue() {
     // Expect delivery to success@foobar.org
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
-        remote_qr
+        remote
+            .qr
             .consume_message(&remote_core)
             .await
             .recipients
@@ -332,7 +331,8 @@ async fn manage_queue() {
     // Expect delivery to john@foobar.org
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
-        remote_qr
+        remote
+            .qr
             .consume_message(&remote_core)
             .await
             .recipients

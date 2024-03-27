@@ -64,13 +64,13 @@ if eval "header.DKIM-Signature.exists" {
 }
 
 # Check allowlists
-if eval "key_exists('spam/dmarc-allow', from_domain)" {
+if eval "key_exists('spam-dmarc', from_domain)" {
     if eval "t.DMARC_POLICY_ALLOW" {
         let "t.ALLOWLIST_DMARC" "1";
     } else {
         let "t.BLOCKLIST_DMARC" "1";
     }
-} elsif eval "key_exists('spam/spf-dkim-allow', from_domain)" {
+} elsif eval "key_exists('spam-spdk', from_domain)" {
     let "is_dkim_pass" "contains(env.dkim.domains, from_domain) || t.ARC_ALLOW";
 
     if eval "is_dkim_pass && t.SPF_ALLOW" {

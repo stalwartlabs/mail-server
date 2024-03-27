@@ -24,10 +24,7 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, HashSet};
-use common::{
-    config::{server::ServerProtocol, smtp::report::AggregateFrequency},
-    expr::if_block::IfBlock,
-};
+use common::config::{server::ServerProtocol, smtp::report::AggregateFrequency};
 
 use mail_auth::{
     common::parse::TxtRecordParser,
@@ -39,19 +36,19 @@ use mail_auth::{
     },
 };
 use reqwest::Method;
-use store::Store;
-use tokio::sync::mpsc;
-use utils::config::Config;
 
-use crate::smtp::management::{queue::List, send_manage_request};
+use crate::smtp::{
+    management::{queue::List, send_manage_request},
+    outbound::TestServer,
+};
 use smtp::{
-    core::{management::Report, SMTP},
+    core::management::Report,
     reporting::{scheduler::SpawnReport, DmarcEvent, TlsEvent},
 };
 
-const DIRECTORY: &str = r#"
+const CONFIG: &str = r#"
 [storage]
-lookup = "dummy"
+directory = "local"
 
 [directory."local"]
 type = "memory"
@@ -61,8 +58,16 @@ name = "admin"
 type = "admin"
 description = "Superuser"
 secret = "secret"
-member-of = ["superusers"]
+class = "admin"
 
+[session.rcpt]
+relay = true
+
+[report.dmarc.aggregate]
+max-size = 1024
+
+[report.tls.aggregate]
+max-size = 1024
 "#;
 
 #[tokio::test]
@@ -76,22 +81,10 @@ async fn manage_reports() {
     .unwrap();*/
 
     // Start reporting service
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-    let config = &mut core.smtp.report;
-    config.dmarc_aggregate.max_size = IfBlock::new(1024);
-    config.tls.max_size = IfBlock::new(1024);
-    let directory = Config::new(DIRECTORY)
-        .unwrap()
-        .parse_directory(&dummy_stores(), Store::default())
-        .await
-        .unwrap();
-    core.storage.directory = directory.directories.get("local").unwrap().clone();
-    let (report_tx, report_rx) = mpsc::channel(1024);
-    core.report.tx = report_tx;
-    let core = Arc::new(core);
-    report_rx.spawn(core.clone());
-    let _rx_manage = start_test_server(core.clone(), &[ServerProtocol::Http]);
+    let local = TestServer::new("smtp_manage_reports", CONFIG, true).await;
+    let _rx = local.start(&[ServerProtocol::Http]).await;
+    let core = local.build_smtp();
+    local.rr.report_rx.spawn(local.instance.clone());
 
     // Send test reporting events
     core.schedule_report(DmarcEvent {

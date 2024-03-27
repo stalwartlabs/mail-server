@@ -27,7 +27,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::{config::smtp::report::AggregateFrequency, expr::if_block::IfBlock};
+use common::config::smtp::report::AggregateFrequency;
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::Dmarc,
@@ -35,12 +35,31 @@ use mail_auth::{
 };
 use store::write::QueueClass;
 
+use smtp::reporting::DmarcEvent;
+
 use crate::smtp::{
-    inbound::{sign::TextConfigContext, TestMessage},
+    inbound::{sign::SIGNATURES, TestMessage},
+    outbound::TestServer,
     session::VerifyResponse,
-    TestSMTP,
 };
-use smtp::{core::SMTP, reporting::DmarcEvent};
+
+const CONFIG: &str = r#"
+[session.rcpt]
+relay = true
+
+[report]
+submitter = "'mx.example.org'"
+
+[report.dmarc.aggregate]
+from-name = "'DMARC Report'"
+from-address = "'reports@example.org'"
+org-name = "'Foobar, Inc.'"
+contact-info = "'https://foobar.org/contact'"
+send = "daily"
+max-size = 4096
+sign = "['rsa']"
+
+"#;
 
 #[tokio::test]
 async fn report_dmarc() {
@@ -52,27 +71,21 @@ async fn report_dmarc() {
     .unwrap();*/
 
     // Create scheduler
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-    core.storage.signers = ConfigContext::new().parse_signatures().signers;
-    let config = &mut core.smtp.report;
-    config.dmarc_aggregate.sign = "\"['rsa']\"".parse_if();
-    config.dmarc_aggregate.max_size = IfBlock::new(4096);
-    config.submitter = IfBlock::new("mx.example.org".to_string());
-    config.dmarc_aggregate.address = IfBlock::new("reports@example.org".to_string());
-    config.dmarc_aggregate.org_name = IfBlock::new("Foobar, Inc.".to_string());
-    config.dmarc_aggregate.contact_info = IfBlock::new("https://foobar.org/contact".to_string());
+    let mut local = TestServer::new(
+        "smtp_report_dmarc_test",
+        CONFIG.to_string() + SIGNATURES,
+        true,
+    )
+    .await;
 
     // Authorize external report for foobar.org
-    core.smtp.resolvers.dns.txt_add(
+    let core = local.build_smtp();
+    core.core.smtp.resolvers.dns.txt_add(
         "foobar.org._report._dmarc.foobar.net",
         Dmarc::parse(b"v=DMARC1;").unwrap(),
         Instant::now() + Duration::from_secs(10),
     );
-
-    // Create temp dir for queue
-    let mut qr = core.init_test_queue("smtp_report_dmarc_test");
-    let core = Arc::new(core);
+    let qr = &mut local.qr;
 
     // Schedule two events with a same policy and another one with a different policy
     let dmarc_record = Arc::new(
@@ -129,7 +142,7 @@ async fn report_dmarc() {
     );
     assert_eq!(message.return_path, "reports@example.org");
     message
-        .read_lines(&qr)
+        .read_lines(qr)
         .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: <reports@foobar.net>")
@@ -137,7 +150,7 @@ async fn report_dmarc() {
         .assert_contains("Submitter: mx.example.org");
 
     // Verify generated report
-    let report = Report::parse_rfc5322(message.read_message(&qr).await.as_bytes()).unwrap();
+    let report = Report::parse_rfc5322(message.read_message(qr).await.as_bytes()).unwrap();
     assert_eq!(report.domain(), "foobar.org");
     assert_eq!(report.email(), "reports@example.org");
     assert_eq!(report.org_name(), "Foobar, Inc.");

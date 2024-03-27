@@ -29,7 +29,10 @@ use std::{
 use mail_auth::MX;
 use store::write::now;
 
-use crate::smtp::{inbound::TestQueueEvent, outbound::TestServer, session::TestSession};
+use crate::smtp::{
+    inbound::TestQueueEvent, outbound::TestServer, queue::manager::new_message,
+    session::TestSession,
+};
 use smtp::queue::{Message, QueueEnvelope};
 
 const CONFIG: &str = r#"
@@ -77,25 +80,6 @@ key = 'mx'
 rate = '1/50m'
 enable = true
 "#;
-
-pub fn new_message(id: u64) -> Message {
-    let todo = "remove";
-    Message {
-        size: 0,
-        id,
-        created: 0,
-        return_path: "sender@foobar.org".to_string(),
-        return_path_lcase: "".to_string(),
-        return_path_domain: "foobar.org".to_string(),
-        recipients: vec![],
-        domains: vec![],
-        flags: 0,
-        env_id: None,
-        priority: 0,
-        quota_keys: vec![],
-        blob_hash: Default::default(),
-    }
-}
 
 #[tokio::test]
 async fn throttle_outbound() {

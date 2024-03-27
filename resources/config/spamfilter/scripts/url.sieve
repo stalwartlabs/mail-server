@@ -27,13 +27,13 @@ while "i > 0" {
         let "host_sld" "domain_part(host_lc, 'sld')";
 
         # Skip local and trusted domains
-        if eval "is_local_domain(DOMAIN_DIRECTORY, host_sld) || key_exists('spam/domains-allow', host_sld)" {
+        if eval "is_local_domain(DOMAIN_DIRECTORY, host_sld) || key_exists('spam-allow', host_sld)" {
             continue;
         }
 
         if eval "!is_ip && 
                  (!t.REDIRECTOR_URL || !t.URL_REDIRECTOR_NESTED) && 
-                 key_exists('spam/redirectors', host_sld)" {
+                 key_exists('spam-redirect', host_sld)" {
             let "t.REDIRECTOR_URL" "1";
             let "redir_count" "1";
 
@@ -48,7 +48,7 @@ while "i > 0" {
                     let "host_lc" "to_lowercase(host)";
                     let "host_sld" "domain_part(host_lc, 'sld')";
 
-                    if eval "!is_ip && key_exists('spam/redirectors', host_sld)" {
+                    if eval "!is_ip && key_exists('spam-redirect', host_sld)" {
                         let "redir_count" "redir_count + 1";
                     } else {
                         break;

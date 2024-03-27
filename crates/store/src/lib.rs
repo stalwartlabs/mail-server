@@ -32,7 +32,7 @@ pub mod write;
 
 pub use ahash;
 use ahash::AHashMap;
-use backend::fs::FsStore;
+use backend::{fs::FsStore, memory::MemoryStore};
 pub use blake3;
 pub use parking_lot;
 pub use rand;
@@ -242,6 +242,7 @@ pub enum LookupStore {
     Query(Arc<QueryStore>),
     #[cfg(feature = "redis")]
     Redis(Arc<RedisStore>),
+    Memory(Arc<MemoryStore>),
 }
 
 pub struct QueryStore {

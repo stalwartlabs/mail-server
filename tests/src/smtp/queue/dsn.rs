@@ -27,11 +27,27 @@ use smtp_proto::{Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_S
 use store::write::now;
 use utils::BlobHash;
 
-use crate::smtp::{inbound::sign::TextConfigContext, QueueReceiver, TestSMTP};
-use smtp::{
-    core::SMTP,
-    queue::{Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status},
+use crate::smtp::{inbound::sign::SIGNATURES, outbound::TestServer, QueueReceiver};
+use smtp::queue::{
+    Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status,
 };
+
+const CONFIG: &str = r#"
+[report]
+submitter = "'mx.example.org'"
+
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = true
+
+[report.dsn]
+from-name = "'Mail Delivery Subsystem'"
+from-address = "'MAILER-DAEMON@example.org'"
+sign = "['rsa']"
+
+"#;
 
 #[tokio::test]
 async fn generate_dsn() {
@@ -91,14 +107,11 @@ async fn generate_dsn() {
     let span = tracing::span!(tracing::Level::INFO, "hi");
 
     // Load config
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-    core.storage.signers = ConfigContext::new().parse_signatures().signers;
-    let config = &mut core.smtp.queue.dsn;
-    config.sign = "\"['rsa']\"".parse_if();
+    let mut local = TestServer::new("smtp_dsn_test", CONFIG.to_string() + SIGNATURES, true).await;
+    let core = local.build_smtp();
+    let qr = &mut local.qr;
 
     // Create temp dir for queue
-    let mut qr = core.init_test_queue("smtp_dsn_test");
     qr.blob_store
         .put_blob(message.blob_hash.as_slice(), dsn_original.as_bytes())
         .await

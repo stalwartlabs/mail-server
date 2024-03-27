@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use common::{config::smtp::report::AggregateFrequency, expr::if_block::IfBlock};
+use common::config::smtp::report::AggregateFrequency;
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::{Dmarc, URI},
@@ -32,11 +32,21 @@ use mail_auth::{
 };
 use store::write::QueueClass;
 
-use crate::smtp::TestSMTP;
-use smtp::{
-    core::SMTP,
-    reporting::{dmarc::DmarcFormat, DmarcEvent, PolicyType, TlsEvent},
-};
+use crate::smtp::outbound::TestServer;
+use smtp::reporting::{dmarc::DmarcFormat, DmarcEvent, PolicyType, TlsEvent};
+
+const CONFIG: &str = r#"
+[session.rcpt]
+relay = true
+
+[report.dmarc.aggregate]
+max-size = 500
+send = "daily"
+
+[report.tls.aggregate]
+max-size = 550
+send = "daily"
+"#;
 
 #[tokio::test]
 async fn report_scheduler() {
@@ -48,12 +58,9 @@ async fn report_scheduler() {
     .unwrap();*/
 
     // Create scheduler
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-    let qr = core.init_test_queue("smtp_report_queue_test");
-    let config = &mut core.smtp.report;
-    config.dmarc_aggregate.max_size = IfBlock::new(500);
-    config.tls.max_size = IfBlock::new(550);
+    let local = TestServer::new("smtp_report_queue_test", CONFIG, true).await;
+    let core = local.build_smtp();
+    let qr = &local.qr;
 
     // Schedule two events with a same policy and another one with a different policy
     let dmarc_record =

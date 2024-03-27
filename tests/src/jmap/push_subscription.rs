@@ -117,7 +117,7 @@ pub async fn test(params: &mut JMAPTest) {
     });
 
     // Start mock push server
-    let mut settings = Config::new(&add_test_certs(SERVER)).unwrap();
+    let mut settings = Config::new(add_test_certs(SERVER)).unwrap();
     settings.resolve_macros().await;
     let servers = Servers::parse(&mut settings);
 

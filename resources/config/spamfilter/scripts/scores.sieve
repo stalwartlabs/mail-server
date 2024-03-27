@@ -5,7 +5,7 @@ let "spam_result" "";
 while "i > 0" {
     let "i" "i - 1";
     let "tag" "tags[i]";
-    let "tag_score" "key_get('spam/scores', tag)";
+    let "tag_score" "key_get('spam-scores', tag)";
 
     if eval "is_number(tag_score)" {
         let "score" "score + tag_score";

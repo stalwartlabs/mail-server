@@ -3,7 +3,7 @@
 #############################################
 
 [report]
-#submitter = "%{HOST}%"
+#submitter = "'%{HOST}%'"
 
 [report.analysis]
 addresses = ["dmarc@*", "abuse@*", "postmaster@*"]

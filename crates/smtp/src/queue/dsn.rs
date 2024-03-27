@@ -262,7 +262,7 @@ impl Message {
             .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
         let reporting_mta = core
             .core
-            .eval_if(&config.hostname, self)
+            .eval_if(&core.core.smtp.report.submitter, self)
             .await
             .unwrap_or_else(|| String::from("localhost"));
 

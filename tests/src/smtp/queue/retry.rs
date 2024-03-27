@@ -21,19 +21,34 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
+    outbound::TestServer,
     session::{TestSession, VerifyResponse},
-    TestSMTP,
 };
-use common::expr::if_block::IfBlock;
-use smtp::{
-    core::{Session, SMTP},
-    queue::{DeliveryAttempt, Event},
-};
+use smtp::queue::{DeliveryAttempt, Event};
 use store::write::now;
+
+const CONFIG: &str = r#"
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = true
+
+[session.extensions]
+deliver-by = "1h"
+future-release = "1h"
+
+[queue.schedule]
+retry = "[1s, 2s, 3s]"
+notify = [{if = "sender_domain = 'test.org'", then = "[1s, 2s]"},
+           {else = ['15h', '22h']}]
+expire = [{if = "sender_domain = 'test.org'", then = "6s"},
+          {else = '1d'}]
+"#;
 
 #[tokio::test]
 async fn queue_retry() {
@@ -44,30 +59,14 @@ async fn queue_retry() {
     )
     .unwrap();*/
 
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-
     // Create temp dir for queue
-    let mut qr = core.init_test_queue("smtp_queue_retry_test");
-
-    let config = &mut core.smtp.session.rcpt;
-    config.relay = IfBlock::new(true);
-    let config = &mut core.smtp.session.extensions;
-    config.deliver_by = IfBlock::new(Duration::from_secs(86400));
-    config.future_release = IfBlock::new(Duration::from_secs(86400));
-    let config = &mut core.smtp.queue;
-    config.retry = r#""[1s, 2s, 3s]""#.parse_if();
-    config.notify = r#"[{if = "sender_domain = 'test.org'", then = "[1s, 2s]"},
-    {else = ['15h', '22h']}]"#
-        .parse_if();
-    config.expire = r#"[{if = "sender_domain = 'test.org'", then = "6s"},
-    {else = '1d'}]"#
-        .parse_if();
+    let mut local = TestServer::new("smtp_queue_retry_test", CONFIG, true).await;
 
     // Create test message
-    let core = Arc::new(core);
+    let core = local.build_smtp();
+    let mut session = local.new_session();
+    let qr = &mut local.qr;
 
-    let mut session = Session::test(build_smtp(core, Inner::default()));
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
@@ -83,7 +82,7 @@ async fn queue_retry() {
     assert_eq!(message.domains.first().unwrap().domain, "test.org");
     assert_eq!(message.recipients.first().unwrap().address, "john@test.org");
     message
-        .read_lines(&qr)
+        .read_lines(qr)
         .await
         .assert_contains("Content-Type: multipart/report")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
@@ -140,7 +139,7 @@ async fn queue_retry() {
 
     dsn.next()
         .unwrap()
-        .read_lines(&qr)
+        .read_lines(qr)
         .await
         .assert_contains("<bill@foobar.org> (failed to lookup 'foobar.org'")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
@@ -148,7 +147,7 @@ async fn queue_retry() {
 
     dsn.next()
         .unwrap()
-        .read_lines(&qr)
+        .read_lines(qr)
         .await
         .assert_contains("<jane@_dns_error.org> (failed to lookup '_dns_error.org'")
         .assert_contains("Final-Recipient: rfc822;jane@_dns_error.org")
@@ -156,7 +155,7 @@ async fn queue_retry() {
 
     dsn.next()
         .unwrap()
-        .read_lines(&qr)
+        .read_lines(qr)
         .await
         .assert_contains("<jane@_dns_error.org> (failed to lookup '_dns_error.org'")
         .assert_contains("Final-Recipient: rfc822;jane@_dns_error.org")
@@ -164,7 +163,7 @@ async fn queue_retry() {
 
     dsn.next()
         .unwrap()
-        .read_lines(&qr)
+        .read_lines(qr)
         .await
         .assert_contains("<jane@_dns_error.org> (failed to lookup '_dns_error.org'")
         .assert_contains("Final-Recipient: rfc822;jane@_dns_error.org")

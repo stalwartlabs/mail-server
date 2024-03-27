@@ -37,7 +37,7 @@ use smtp::{
 
 use super::{QueueReceiver, ReportReceiver};
 
-//pub mod antispam;
+pub mod antispam;
 pub mod auth;
 pub mod basic;
 pub mod data;
@@ -85,7 +85,6 @@ impl QueueReceiver {
 
     pub async fn assert_report_is_empty(&self) {
         assert_eq!(self.read_report_events().await, vec![]);
-        let todo = "fix antispam";
 
         for (from_key, to_key) in [
             (

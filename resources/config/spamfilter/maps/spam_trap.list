@@ -1,2 +1,1 @@
-# Spam Trap list
-# Messages to addresses listed here are classified as SPAM and rejected by the server.
+spam-trap = {}

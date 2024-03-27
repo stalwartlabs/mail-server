@@ -31,12 +31,11 @@ use tokio::sync::mpsc;
 
 pub mod config;
 pub mod inbound;
-/*
-pub mod management;
-pub mod queue;
-pub mod reporting;*/
 pub mod lookup;
+pub mod management;
 pub mod outbound;
+pub mod queue;
+pub mod reporting;
 pub mod session;
 
 pub struct TempDir {
@@ -46,7 +45,6 @@ pub struct TempDir {
 
 impl TempDir {
     pub fn new(name: &str, delete: bool) -> TempDir {
-        let todo = "make sure all includes are there";
         let mut temp_dir = std::env::temp_dir();
         temp_dir.push(name);
         if !temp_dir.exists() {

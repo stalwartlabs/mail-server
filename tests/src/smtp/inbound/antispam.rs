@@ -9,7 +9,6 @@ use std::{
 
 use ahash::AHashMap;
 use common::{
-    expr::if_block::IfBlock,
     scripts::{
         functions::html::{get_attribute, html_attr_tokens, html_img_area, html_to_tokens},
         ScriptModification,
@@ -19,7 +18,7 @@ use common::{
 use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, IprevResult, SpfResult, MX};
 use sieve::runtime::Variable;
 use smtp::{
-    core::{Inner, Session, SessionAddress, SMTP},
+    core::{Inner, Session, SessionAddress},
     inbound::AuthResult,
     scripts::ScriptResult,
 };
@@ -27,9 +26,38 @@ use store::Stores;
 use tokio::runtime::Handle;
 use utils::config::Config;
 
-use crate::smtp::{build_smtp, session::TestSession, TestSMTP};
+use crate::smtp::{build_smtp, session::TestSession, TempDir};
 
 const CONFIG: &str = r#"
+[spam.header]
+add-spam = true
+add-spam-result = true
+is-spam = "X-Spam-Status: Yes"
+
+[spam.autolearn]
+enable = true
+#balance = 0.9
+balance = 0.0
+
+[spam.autolearn.ham]
+replies = true
+threshold = -0.5
+
+[spam.autolearn.spam]
+threshold = 6.0
+
+[spam.threshold]
+spam = 5.0
+discard = 0
+reject = 0
+
+[spam.data]
+directory = ""
+lookup = ""
+
+[session.rcpt]
+relay = true
+
 [sieve.trusted]
 from-name = "Sieve Daemon"
 from-addr = "sieve@foobar.org"
@@ -45,95 +73,50 @@ cpu = 500000
 nested-includes = 5
 duplicate-expiry = "7d"
 
-[sieve.trusted.default]
-#directory = "%{DEFAULT_DIRECTORY}%"
-store = "spamdb"
+[storage]
+data = "spamdb"
+lookup = "spamdb"
+blob = "spamdb"
+fts = "spamdb"
 
 [store."spamdb"]
 type = "sqlite"
-path = "%PATH%/test_antispam.db"
+path = "{PATH}/test_antispam.db"
 
 #[store."redis"]
 #type = "redis"
 #url = "redis://127.0.0.1"
 
-[store."default/domains"]
-type = "memory"
-format = "list"
-values = ["local-domain.org"]
-
-[store."spam/free-domains"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["gmail.com", "googlemail.com", "yahoomail.com", "*.freemail.org"]
-
-[store."spam/disposable-domains"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["guerrillamail.com", "*.disposable.org"]
-
-[store."spam/redirectors"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["bit.ly", "redirect.io", "redirect.me", "redirect.org",
- "redirect.com", "redirect.net", "t.ly", "tinyurl.com"]
-
-[store."spam/dmarc-allow"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["dmarc-allow.org"]
-
-[store."spam/spf-dkim-allow"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["spf-dkim-allow.org"]
-
-[store."spam/domains-allow"]
-type = "memory"
-format = "glob"
-values = []
-
-[store."spam/mime-types"]
-type = "memory"
-format = "map"
-comment = '#'
-values = ["html text/html|BAD", 
-          "pdf application/pdf|NZ", 
-          "txt text/plain|message/disposition-notification|text/rfc822-headers", 
-          "zip AR", 
-          "js BAD|NZ", 
-          "hta BAD|NZ"]
-
-[store."spam/trap-address"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["spamtrap@*"]
-
-[store."spam/scores"]
-type = "memory"
-format = "map"
-values = "file://%CFG_PATH%/maps/scores.map"
+[lookup]
+"spam-free" = {"gmail.com", "googlemail.com", "yahoomail.com", "*.freemail.org"}
+"spam-disposable" = {"guerrillamail.com", "*.disposable.org"}
+"spam-redirect" = {"bit.ly", "redirect.io", "redirect.me", "redirect.org", "redirect.com", "redirect.net", "t.ly", "tinyurl.com"}
+"spam-dmarc" = {"dmarc-allow.org"}
+"spam-spdk" = {"spf-dkim-allow.org"}
+"spam-mime" = { "html" = "text/html|BAD", 
+                "pdf" = "application/pdf|NZ", 
+                "txt" = "text/plain|message/disposition-notification|text/rfc822-headers", 
+                "zip" = "AR", 
+                "js" = "BAD|NZ", 
+                "hta" = "BAD|NZ" }
+"spam-trap" = {"spamtrap@*"}
+"spam-allow" = {"stalw.art"}
 
 [resolver]
-public-suffix = "file://%LIST_PATH%/public-suffix.dat"
+public-suffix = "file://{LIST_PATH}/public-suffix.dat"
 
 [sieve.trusted.scripts]
 "#;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn antispam() {
-    /*tracing::subscriber::set_global_default(
+    /*let disable = true;
+    tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::builder()
                     .parse(
-                        "smtp=debug,imap=debug,jmap=debug,store=debug,utils=debug,directory=debug",
+                        "smtp=debug,imap=debug,jmap=debug,store=debug,utils=debug,directory=debug,common=debug",
                     )
                     .unwrap(),
             )
@@ -166,8 +149,7 @@ async fn antispam() {
         "reputation",
         "pyzor",
     ];
-    let mut inner = Inner::default();
-    let qr = inner.init_test_queue("smtp_antispam_test");
+    let tmp_dir = TempDir::new("smtp_antispam_test", true);
     let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -176,24 +158,19 @@ async fn antispam() {
         .join("config")
         .join("spamfilter");
     let mut config = CONFIG
-        .replace("%PATH%", qr._temp_dir.temp_dir.as_path().to_str().unwrap())
+        .replace("{PATH}", tmp_dir.temp_dir.as_path().to_str().unwrap())
         .replace(
-            "%LIST_PATH%",
+            "{LIST_PATH}",
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("resources")
                 .join("smtp")
                 .join("lists")
                 .to_str()
                 .unwrap(),
-        )
-        .replace("%CFG_PATH%", base_path.as_path().to_str().unwrap());
-    let base_path = base_path.join("scripts");
-    let script_config = fs::read_to_string(base_path.join("config.sieve"))
-        .unwrap()
-        .replace(
-            "AUTOLEARN_SPAM_HAM_BALANCE\" \"0.9",
-            "AUTOLEARN_SPAM_HAM_BALANCE\" \"0.0",
         );
+    let scores = fs::read_to_string(base_path.join("maps").join("scores.map")).unwrap();
+    let base_path = base_path.join("scripts");
+    let script_config = fs::read_to_string(base_path.join("config.sieve")).unwrap();
     let script_prelude = fs::read_to_string(base_path.join("prelude.sieve")).unwrap();
     let mut all_scripts = script_config.clone() + "\n" + script_prelude.as_str();
     for test_name in tests {
@@ -214,7 +191,7 @@ async fn antispam() {
         }
 
         config.push_str(&format!(
-            "{test_name} = '''{script_config}\n{script_prelude}\n{script}\n'''\n"
+            "{test_name}.contents = '''{script_config}\n{script_prelude}\n{script}\n'''\n"
         ));
     }
     for test_name in ["composites", "scores", "epilogue"] {
@@ -225,15 +202,16 @@ async fn antispam() {
                 .as_str();
     }
 
-    config.push_str(&format!("combined = '''{all_scripts}\n'''\n"));
+    config.push_str(&format!(
+        "combined.contents = '''{all_scripts}\n'''\n[lookup]\n"
+    ));
+    config.push_str(&scores);
 
     // Parse config
     let mut config = Config::new(&config).unwrap();
+    config.resolve_macros().await;
     let stores = Stores::parse(&mut config).await;
-    let mut core = Core::parse(&mut config, stores).await;
-    let config = &mut core.smtp.session;
-    config.rcpt.relay = IfBlock::new(true);
-    qr.set_core_stores(&mut core);
+    let core = Core::parse(&mut config, stores).await;
 
     // Add mock DNS entries
     for (domain, ip) in [

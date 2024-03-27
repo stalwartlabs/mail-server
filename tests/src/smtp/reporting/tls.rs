@@ -23,7 +23,7 @@
 
 use std::{io::Read, sync::Arc, time::Duration};
 
-use common::{config::smtp::report::AggregateFrequency, expr::if_block::IfBlock};
+use common::config::smtp::report::AggregateFrequency;
 use mail_auth::{
     common::parse::TxtRecordParser,
     flate2::read::GzDecoder,
@@ -32,41 +32,50 @@ use mail_auth::{
 };
 use store::write::QueueClass;
 
+use smtp::reporting::{tls::TLS_HTTP_REPORT, TlsEvent};
+
 use crate::smtp::{
-    inbound::{sign::TextConfigContext, TestMessage},
+    inbound::{sign::SIGNATURES, TestMessage},
+    outbound::TestServer,
     session::VerifyResponse,
-    TestSMTP,
 };
-use smtp::{
-    core::SMTP,
-    reporting::{tls::TLS_HTTP_REPORT, TlsEvent},
-};
+
+const CONFIG: &str = r#"
+[session.rcpt]
+relay = true
+
+[report]
+submitter = "'mx.example.org'"
+
+[report.tls.aggregate]
+from-name = "'Report Subsystem'"
+from-address = "'reports@example.org'"
+org-name = "'Foobar, Inc.'"
+contact-info = "'https://foobar.org/contact'"
+send = "daily"
+max-size = 1532
+sign = "['rsa']"
+"#;
 
 #[tokio::test]
 async fn report_tls() {
     /*let disable = "true";
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::TRACE)
             .finish(),
     )
     .unwrap();*/
 
     // Create scheduler
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-    core.storage.signers = ConfigContext::new().parse_signatures().signers;
-    let config = &mut core.smtp.report;
-    config.tls.sign = "\"['rsa']\"".parse_if();
-    config.tls.max_size = IfBlock::new(1532);
-    config.submitter = IfBlock::new("mx.example.org".to_string());
-    config.tls.address = IfBlock::new("reports@example.org".to_string());
-    config.tls.org_name = IfBlock::new("Foobar, Inc.".to_string());
-    config.tls.contact_info = IfBlock::new("https://foobar.org/contact".to_string());
-
-    // Create temp dir for queue
-    let mut qr = core.init_test_queue("smtp_report_tls_test");
-    let core = Arc::new(core);
+    let mut local = TestServer::new(
+        "smtp_report_tls_test",
+        CONFIG.to_string() + SIGNATURES,
+        true,
+    )
+    .await;
+    let core = local.build_smtp();
+    let qr = &mut local.qr;
 
     // Schedule TLS reports to be delivered via email
     let tls_record = Arc::new(TlsRpt::parse(b"v=TLSRPTv1;rua=mailto:reports@foobar.org").unwrap());
@@ -138,7 +147,7 @@ async fn report_tls() {
     );
     assert_eq!(message.return_path, "reports@example.org");
     message
-        .read_lines(&qr)
+        .read_lines(qr)
         .await
         .assert_contains("DKIM-Signature: v=1; a=rsa-sha256; s=rsa; d=example.com;")
         .assert_contains("To: <reports@foobar.org>")
@@ -146,7 +155,7 @@ async fn report_tls() {
         .assert_contains("Submitter: mx.example.org");
 
     // Verify generated report
-    let report = TlsReport::parse_rfc5322(message.read_message(&qr).await.as_bytes()).unwrap();
+    let report = TlsReport::parse_rfc5322(message.read_message(qr).await.as_bytes()).unwrap();
     assert_eq!(report.organization_name.unwrap(), "Foobar, Inc.");
     assert_eq!(report.contact_info.unwrap(), "https://foobar.org/contact");
     assert_eq!(report.policies.len(), 3);
@@ -166,10 +175,10 @@ async fn report_tls() {
             }
             PolicyType::Sts => {
                 seen[1] = true;
-                assert_eq!(policy.summary.total_failure, 3);
+                assert_eq!(policy.summary.total_failure, 2);
                 assert_eq!(policy.summary.total_success, 0);
                 assert_eq!(policy.policy.policy_domain, "foobar.org");
-                assert_eq!(policy.failure_details.len(), 3);
+                assert_eq!(policy.failure_details.len(), 2);
                 assert!(policy
                     .failure_details
                     .iter()
@@ -181,10 +190,10 @@ async fn report_tls() {
             }
             PolicyType::NoPolicyFound => {
                 seen[2] = true;
-                assert_eq!(policy.summary.total_failure, 0);
+                assert_eq!(policy.summary.total_failure, 1);
                 assert_eq!(policy.summary.total_success, 2);
                 assert_eq!(policy.policy.policy_domain, "foobar.org");
-                assert_eq!(policy.failure_details.len(), 0);
+                assert_eq!(policy.failure_details.len(), 1);
                 /*assert_eq!(
                     policy.failure_details.first().unwrap().result_type,
                     ResultType::CertificateExpired

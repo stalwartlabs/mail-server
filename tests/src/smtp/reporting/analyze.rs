@@ -21,45 +21,36 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
-use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestSMTP};
-use common::{config::smtp::report::AddressMatch, expr::if_block::IfBlock};
-use smtp::core::{Session, SMTP};
+use crate::smtp::{inbound::TestQueueEvent, outbound::TestServer, session::TestSession};
+
 use store::{
     write::{ReportClass, ValueClass},
     IterateParams, ValueKey,
 };
 
+const CONFIG: &str = r#"
+[session.rcpt]
+relay = true
+
+[session.data.limits]
+messages = 100
+
+[report.analysis]
+addresses = ["reports@*", "*@dmarc.foobar.org", "feedback@foobar.org"]
+forward = false
+store = "1s"
+"#;
+
 #[tokio::test(flavor = "multi_thread")]
 async fn report_analyze() {
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-
     // Create temp dir for queue
-    let mut qr = core.init_test_queue("smtp_analyze_report_test");
-    let config = &mut core.smtp.session.rcpt;
-    config.relay = IfBlock::new(true);
-    let config = &mut core.smtp.session.data;
-    config.max_messages = IfBlock::new(1024);
-    let config = &mut core.smtp.report.analysis;
-    config.addresses = vec![
-        AddressMatch::StartsWith("reports@".to_string()),
-        AddressMatch::EndsWith("@dmarc.foobar.org".to_string()),
-        AddressMatch::Equals("feedback@foobar.org".to_string()),
-    ];
-    config.forward = false;
-    config.store = Duration::from_secs(1).into();
-    //config.store = Duration::from_secs(86400).into();
+    let mut local = TestServer::new("smtp_analyze_report_test", CONFIG, true).await;
 
     // Create test message
-    let core = Arc::new(core);
-    /*let rx_manage = crate::smtp::outbound::start_test_server(
-        core.clone(),
-        &[utils::config::ServerProtocol::Http],
-    );*/
-
-    let mut session = Session::test(build_smtp(core, Inner::default()));
+    let mut session = local.new_session();
+    let qr = &mut local.qr;
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;

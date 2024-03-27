@@ -21,24 +21,28 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use mail_auth::hickory_resolver::proto::op::ResponseCode;
 
-use smtp::{
-    core::SMTP,
-    queue::{Domain, Message, Schedule, Status},
-};
+use smtp::queue::{Domain, Message, Schedule, Status};
 use store::write::now;
 
-use crate::smtp::TestSMTP;
+use crate::smtp::outbound::TestServer;
+
+const CONFIG: &str = r#"
+[session.ehlo]
+reject-non-fqdn = false
+
+[session.rcpt]
+relay = true
+"#;
 
 #[tokio::test]
 async fn queue_due() {
-    let mut inner = Inner::default();
-    let mut core = Core::default();
-    let qr = core.init_test_queue("smtp_queue_due_test");
-    let core = Arc::new(core);
+    let local = TestServer::new("smtp_queue_due_test", CONFIG, true).await;
+    let core = local.build_smtp();
+    let qr = &local.qr;
 
     let mut message = new_message(0);
     message.domains.push(domain("c", 3, 8, 9));

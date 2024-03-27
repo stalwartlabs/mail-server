@@ -27,66 +27,6 @@ reject = 0
 directory = ""
 lookup = ""
 
-[store."spam/free-domains"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["https://get.stalw.art/resources/config/spamfilter/maps/domains_free.list", 
-          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/domains_free.list"]
-
-[store."spam/disposable-domains"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["https://get.stalw.art/resources/config/spamfilter/maps/domains_disposable.list", 
-          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/domains_disposable.list"]
-
-[store."spam/redirectors"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["https://get.stalw.art/resources/config/spamfilter/maps/url_redirectors.list", 
-          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/url_redirectors.list"]
-
-[store."spam/domains-allow"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["https://get.stalw.art/resources/config/spamfilter/maps/allow_domains.list", 
-          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/allow_domains.list"]
-
-[store."spam/dmarc-allow"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["https://get.stalw.art/resources/config/spamfilter/maps/allow_dmarc.list", 
-          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/allow_dmarc.list"]
-
-[store."spam/spf-dkim-allow"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = ["https://get.stalw.art/resources/config/spamfilter/maps/allow_spf_dkim.list", 
-          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/allow_spf_dkim.list"]
-
-[store."spam/mime-types"]
-type = "memory"
-format = "map"
-comment = '#'
-values = ["https://get.stalw.art/resources/config/spamfilter/maps/mime_types.map", 
-          "file+fallback://%{BASE_PATH}%/etc/spamfilter/maps/mime_types.map"]
-
-[store."spam/trap-address"]
-type = "memory"
-format = "glob"
-comment = '#'
-values = "file://%{BASE_PATH}%/etc/spamfilter/maps/spam_trap.list"
-
-[store."spam/scores"]
-type = "memory"
-format = "map"
-values = "file://%{BASE_PATH}%/etc/spamfilter/maps/scores.map"
-
 [sieve.trusted.scripts]
 spam-filter = ["file://%{BASE_PATH}%/etc/spamfilter/scripts/config.sieve",
                "file://%{BASE_PATH}%/etc/spamfilter/scripts/prelude.sieve",
