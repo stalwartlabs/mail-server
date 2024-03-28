@@ -28,23 +28,63 @@ use rustls::{
     sign::CertifiedKey,
 };
 
-use super::{directory::ACME_TLS_ALPN_NAME, AcmeManager};
+use crate::{listener::tls::AcmeAuthKey, Core};
 
-impl AcmeManager {
-    pub(crate) fn set_cert(&self, cert: Arc<CertifiedKey>) {
-        self.cert.store(cert);
-        self.order_in_progress.store(false, Ordering::Relaxed);
-        self.auth_keys.lock().clear();
+use super::{directory::ACME_TLS_ALPN_NAME, AcmeProvider, AcmeResolver};
+
+impl Core {
+    pub(crate) fn set_cert(&self, provider: &AcmeProvider, cert: Arc<CertifiedKey>) {
+        // Add certificates
+        let mut certificates = self.tls.certificates.load().as_ref().clone();
+        for domain in provider.domains.iter() {
+            certificates.insert(
+                domain
+                    .strip_prefix("*.")
+                    .unwrap_or(domain.as_str())
+                    .to_string(),
+                cert.clone(),
+            );
+        }
+        self.tls.certificates.store(certificates.into());
+
+        // Remove auth keys
+        let mut auth_keys = self.tls.acme_auth_keys.lock();
+        auth_keys.retain(|_, v| v.provider_id != provider.id);
+        self.tls
+            .acme_in_progress
+            .store(!auth_keys.is_empty(), Ordering::Relaxed);
     }
-    pub(crate) fn set_auth_key(&self, domain: String, cert: Arc<CertifiedKey>) {
-        self.auth_keys.lock().insert(domain, cert);
+    pub(crate) fn set_auth_key(
+        &self,
+        provider: &AcmeProvider,
+        domain: String,
+        cert: Arc<CertifiedKey>,
+    ) {
+        self.tls
+            .acme_auth_keys
+            .lock()
+            .insert(domain, AcmeAuthKey::new(provider.id.clone(), cert));
     }
 }
 
-impl ResolvesServerCert for AcmeManager {
+impl ResolvesServerCert for AcmeResolver {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
-        if self.has_order_in_progress() && client_hello.is_tls_alpn_challenge() {
+        let core = self.core.load();
+        if core.has_acme_order_in_progress() && client_hello.is_tls_alpn_challenge() {
             match client_hello.server_name() {
+                Some(domain) => {
+                    tracing::trace!(
+                        context = "acme",
+                        event = "auth-key",
+                        domain = %domain,
+                        "Found client supplied SNI");
+
+                    core.tls
+                        .acme_auth_keys
+                        .lock()
+                        .get(domain)
+                        .map(|ak| ak.key.clone())
+                }
                 None => {
                     tracing::debug!(
                         context = "acme",
@@ -54,18 +94,9 @@ impl ResolvesServerCert for AcmeManager {
                     );
                     None
                 }
-                Some(domain) => {
-                    tracing::trace!(
-                        context = "acme",
-                        event = "auth-key",
-                        domain = %domain,
-                        "Found client supplied SNI");
-
-                    self.auth_keys.lock().get(domain).cloned()
-                }
             }
         } else {
-            self.cert.load().clone().into()
+            core.resolve_certificate(client_hello.server_name())
         }
     }
 }

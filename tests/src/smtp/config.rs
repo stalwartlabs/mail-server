@@ -29,7 +29,6 @@ use common::{
         smtp::{throttle::parse_throttle, *},
     },
     expr::{functions::ResolveVariable, if_block::*, tokenizer::TokenMap, *},
-    listener::TcpAcceptor,
     Core,
 };
 use tokio::net::TcpSocket;
@@ -330,8 +329,6 @@ fn parse_servers() {
                 linger: None,
                 nodelay: true,
             }],
-            acceptor: TcpAcceptor::Plain,
-            tls_implicit: false,
             max_connections: 8192,
             proxy_networks: vec![],
         },
@@ -356,8 +353,6 @@ fn parse_servers() {
                     nodelay: true,
                 },
             ],
-            acceptor: TcpAcceptor::Plain,
-            tls_implicit: true,
             max_connections: 1024,
             proxy_networks: vec![],
         },
@@ -372,8 +367,6 @@ fn parse_servers() {
                 linger: None,
                 nodelay: true,
             }],
-            acceptor: TcpAcceptor::Plain,
-            tls_implicit: true,
             max_connections: 8192,
             proxy_networks: vec![],
         },
@@ -387,11 +380,6 @@ fn parse_servers() {
         );
         assert_eq!(
             server.protocol, expected_server.protocol,
-            "failed for {}",
-            expected_server.id
-        );
-        assert_eq!(
-            server.tls_implicit, expected_server.tls_implicit,
             "failed for {}",
             expected_server.id
         );

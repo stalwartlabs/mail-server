@@ -15,7 +15,7 @@ use config::{
 };
 use directory::{Directory, Principal, QueryBy};
 use expr::if_block::IfBlock;
-use listener::blocked::BlockedIps;
+use listener::{blocked::BlockedIps, tls::TlsManager};
 use mail_send::Credentials;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::{
@@ -47,6 +47,7 @@ pub struct Core {
     pub storage: Storage,
     pub sieve: Scripting,
     pub network: Network,
+    pub tls: TlsManager,
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
     pub imap: ImapConfig,

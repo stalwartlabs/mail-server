@@ -273,18 +273,21 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     config.resolve_macros().await;
 
     // Parse servers
-    let servers = Servers::parse(&mut config);
+    let mut servers = Servers::parse(&mut config);
 
     // Bind ports and drop privileges
     servers.bind_and_drop_priv(&mut config);
 
     // Build stores
-    let stores = Stores::parse(&mut config).await;
+    let stores = Stores::parse_all(&mut config).await;
 
     // Parse core
-    let core = Core::parse(&mut config, stores).await;
+    let core = Core::parse(&mut config, stores, Default::default()).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
+
+    // Parse acceptors
+    servers.parse_tcp_acceptors(&mut config, shared_core.clone());
 
     // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
@@ -300,33 +303,34 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     config.assert_no_errors();
 
     // Spawn servers
-    let shutdown_tx = servers.spawn(
-        |server, shutdown_rx| {
-            match &server.protocol {
-                ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
-                    SmtpSessionManager::new(smtp.clone()),
-                    shared_core.clone(),
-                    shutdown_rx,
-                ),
-                ServerProtocol::Http => server.spawn(
-                    JmapSessionManager::new(jmap.clone()),
-                    shared_core.clone(),
-                    shutdown_rx,
-                ),
-                ServerProtocol::Imap => server.spawn(
-                    ImapSessionManager::new(imap.clone()),
-                    shared_core.clone(),
-                    shutdown_rx,
-                ),
-                ServerProtocol::ManageSieve => server.spawn(
-                    ManageSieveSessionManager::new(imap.clone()),
-                    shared_core.clone(),
-                    shutdown_rx,
-                ),
-            };
-        },
-        store.clone(),
-    );
+    let shutdown_tx = servers.spawn(|server, acceptor, shutdown_rx| {
+        match &server.protocol {
+            ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
+                SmtpSessionManager::new(smtp.clone()),
+                shared_core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::Http => server.spawn(
+                JmapSessionManager::new(jmap.clone()),
+                shared_core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::Imap => server.spawn(
+                ImapSessionManager::new(imap.clone()),
+                shared_core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::ManageSieve => server.spawn(
+                ManageSieveSessionManager::new(imap.clone()),
+                shared_core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+        };
+    });
     // Create tables and test accounts
     let lookup = DirectoryStore {
         store: shared_core

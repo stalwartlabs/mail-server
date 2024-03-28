@@ -29,38 +29,30 @@ pub mod resolver;
 
 use std::{
     fmt::Debug,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::{atomic::Ordering, Arc},
     time::Duration,
 };
 
-use ahash::AHashMap;
 use arc_swap::ArcSwap;
-use parking_lot::Mutex;
-use rustls::sign::CertifiedKey;
-use store::Store;
-use tokio::sync::watch;
 
-use crate::config::server::tls::build_self_signed_cert;
+use crate::{Core, SharedCore};
 
 use self::{
     directory::Account,
     order::{CertParseError, OrderError},
 };
 
-pub struct AcmeManager {
-    id: String,
-    pub(crate) directory_url: String,
-    pub(crate) domains: Vec<String>,
-    contact: Vec<String>,
+pub struct AcmeProvider {
+    pub id: String,
+    pub directory_url: String,
+    pub domains: Vec<String>,
+    pub contact: Vec<String>,
     renew_before: chrono::Duration,
-    store: ArcSwap<Store>,
     account_key: ArcSwap<Vec<u8>>,
-    auth_keys: Mutex<AHashMap<String, Arc<CertifiedKey>>>,
-    order_in_progress: AtomicBool,
-    cert: ArcSwap<CertifiedKey>,
+}
+
+pub struct AcmeResolver {
+    pub core: SharedCore,
 }
 
 #[derive(Debug)]
@@ -74,7 +66,7 @@ pub enum AcmeError {
     NewCertParse(CertParseError),
 }
 
-impl AcmeManager {
+impl AcmeProvider {
     pub fn new(
         id: String,
         directory_url: String,
@@ -82,7 +74,7 @@ impl AcmeManager {
         contact: Vec<String>,
         renew_before: Duration,
     ) -> utils::config::Result<Self> {
-        Ok(AcmeManager {
+        Ok(AcmeProvider {
             id,
             directory_url,
             contact: contact
@@ -96,115 +88,44 @@ impl AcmeManager {
                 })
                 .collect(),
             renew_before: chrono::Duration::from_std(renew_before).unwrap(),
-            store: ArcSwap::from_pointee(Store::None),
-            account_key: ArcSwap::from_pointee(Vec::new()),
-            auth_keys: Mutex::new(AHashMap::new()),
-            order_in_progress: false.into(),
-            cert: ArcSwap::from_pointee(build_self_signed_cert(&domains)?),
             domains,
+            account_key: Default::default(),
         })
     }
+}
 
-    pub async fn init(&self, store: Store) -> Result<Duration, AcmeError> {
-        // Update data store
-        self.store.store(Arc::new(store));
-
+impl Core {
+    pub async fn init_acme(&self, provider: &AcmeProvider) -> Result<Duration, AcmeError> {
         // Load account key from cache or generate a new one
-        if let Some(account_key) = self.load_account().await? {
-            self.account_key.store(Arc::new(account_key));
+        if let Some(account_key) = self.load_account(provider).await? {
+            provider.account_key.store(Arc::new(account_key));
         } else {
             let account_key = Account::generate_key_pair();
-            self.store_account(&account_key).await?;
-            self.account_key.store(Arc::new(account_key));
+            self.store_account(provider, &account_key).await?;
+            provider.account_key.store(Arc::new(account_key));
         }
 
         // Load certificate from cache or request a new one
-        Ok(if let Some(pem) = self.load_cert().await? {
-            self.process_cert(pem, true).await?
+        Ok(if let Some(pem) = self.load_cert(provider).await? {
+            self.process_cert(provider, pem, true).await?
         } else {
             Duration::from_millis(1000)
         })
     }
 
-    pub fn has_order_in_progress(&self) -> bool {
-        self.order_in_progress.load(Ordering::Relaxed)
+    pub fn has_acme_order_in_progress(&self) -> bool {
+        self.tls.acme_in_progress.load(Ordering::Relaxed)
     }
 }
 
-pub trait SpawnAcme {
-    fn spawn(self, store: Store, shutdown_rx: watch::Receiver<bool>);
-}
-
-impl SpawnAcme for Arc<AcmeManager> {
-    fn spawn(self, store: Store, mut shutdown_rx: watch::Receiver<bool>) {
-        tokio::spawn(async move {
-            let acme = self;
-            let mut renew_at = match acme.init(store).await {
-                Ok(renew_at) => renew_at,
-                Err(err) => {
-                    tracing::error!(
-                        context = "acme",
-                        event = "error",
-                        error = ?err,
-                        "Failed to initialize ACME certificate manager.");
-
-                    return;
-                }
-            };
-
-            loop {
-                tokio::select! {
-                    _ = tokio::time::sleep(renew_at) => {
-                        tracing::info!(
-                            context = "acme",
-                            event = "order",
-                            domains = ?acme.domains,
-                            "Ordering certificates.");
-
-                        match acme.renew().await {
-                            Ok(renew_at_) => {
-                                renew_at = renew_at_;
-                                tracing::info!(
-                                    context = "acme",
-                                    event = "success",
-                                    domains = ?acme.domains,
-                                    next_renewal = ?renew_at,
-                                    "Certificates renewed.");
-                            },
-                            Err(err) => {
-                                tracing::error!(
-                                    context = "acme",
-                                    event = "error",
-                                    error = ?err,
-                                    "Failed to renew certificates.");
-
-                                renew_at = Duration::from_secs(3600);
-                            },
-                        }
-
-                    },
-                    _ = shutdown_rx.changed() => {
-                        tracing::debug!(
-                            context = "acme",
-                            event = "shutdown",
-                            domains = ?acme.domains,
-                            "ACME certificate manager shutting down.");
-
-                        break;
-                    }
-                };
-            }
-        });
+impl AcmeResolver {
+    pub fn new(core: SharedCore) -> Self {
+        Self { core }
     }
 }
 
-impl Debug for AcmeManager {
+impl Debug for AcmeResolver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AcmeManager")
-            .field("directory_url", &self.directory_url)
-            .field("domains", &self.domains)
-            .field("contact", &self.contact)
-            .field("account_key", &self.account_key)
-            .finish()
+        f.debug_struct("AcmeResolver").finish()
     }
 }

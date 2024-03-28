@@ -30,8 +30,6 @@ use std::{collections::BTreeMap, time::Duration};
 
 use ahash::AHashMap;
 
-use crate::{failed, UnwrapFailure};
-
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Config {
     pub keys: BTreeMap<String, String>,
@@ -61,42 +59,6 @@ pub struct Rate {
 pub type Result<T> = std::result::Result<T, String>;
 
 impl Config {
-    pub fn init() -> Self {
-        let mut config_path = None;
-        let mut found_param = false;
-
-        for arg in std::env::args().skip(1) {
-            if let Some((key, value)) = arg.split_once('=') {
-                if key.starts_with("--config") {
-                    config_path = value.trim().to_string().into();
-                    break;
-                } else {
-                    failed(&format!("Invalid command line argument: {key}"));
-                }
-            } else if found_param {
-                config_path = arg.into();
-                break;
-            } else if arg.starts_with("--config") {
-                found_param = true;
-            } else {
-                failed(&format!("Invalid command line argument: {arg}"));
-            }
-        }
-
-        // Read main configuration file
-        let mut config = Config::default();
-        config
-            .parse(
-                &std::fs::read_to_string(
-                    config_path.failed("Missing parameter --config=<path-to-config>."),
-                )
-                .failed("Could not read configuration file"),
-            )
-            .failed("Invalid configuration file");
-
-        config
-    }
-
     pub async fn resolve_macros(&mut self) {
         for macro_class in ["env", "file", "cfg"] {
             self.resolve_macro_type(macro_class).await;

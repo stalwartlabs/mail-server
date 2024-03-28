@@ -89,8 +89,8 @@ enable = true
 async fn mail() {
     let tmp_dir = TempDir::new("smtp_mail_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse(&mut config).await;
-    let core = Core::parse(&mut config, stores).await;
+    let stores = Stores::parse_all(&mut config).await;
+    let core = Core::parse(&mut config, stores, Default::default()).await;
     core.smtp.resolvers.dns.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),

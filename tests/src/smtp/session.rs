@@ -357,14 +357,21 @@ pub trait TestServerInstance {
 
 impl TestServerInstance for ServerInstance {
     fn test_with_shutdown(shutdown_rx: watch::Receiver<bool>) -> Self {
+        let tls_config = Arc::new(
+            ServerConfig::builder()
+                .with_no_client_auth()
+                .with_cert_resolver(Arc::new(DummyCertResolver)),
+        );
+
         Self {
             id: "smtp".to_string(),
             protocol: ServerProtocol::Smtp,
-            acceptor: TcpAcceptor::Tls(TlsAcceptor::from(Arc::new(
-                ServerConfig::builder()
-                    .with_no_client_auth()
-                    .with_cert_resolver(Arc::new(DummyCertResolver)),
-            ))),
+            acceptor: TcpAcceptor::Tls {
+                acme_config: tls_config.clone(),
+                default_config: tls_config.clone(),
+                acceptor: TlsAcceptor::from(tls_config),
+                implicit: false,
+            },
             limiter: ConcurrencyLimiter::new(100),
             shutdown_rx,
             proxy_networks: vec![],

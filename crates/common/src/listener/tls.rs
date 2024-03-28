@@ -22,91 +22,140 @@
 */
 
 use std::{
+    cmp::Ordering,
     fmt::{self, Formatter},
-    sync::Arc,
+    sync::{atomic::AtomicBool, Arc},
 };
 
 use ahash::AHashMap;
 use arc_swap::ArcSwap;
+use parking_lot::Mutex;
 use rustls::{
-    client::verify_server_name,
-    server::{ClientHello, ParsedCertificate, ResolvesServerCert},
+    server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
     version::{TLS12, TLS13},
-    Error, SupportedProtocolVersion,
+    SupportedProtocolVersion,
 };
-use rustls_pki_types::{DnsName, ServerName};
-use store::Store;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
-use tokio_rustls::{Accept, LazyConfigAcceptor, TlsAcceptor};
+use tokio_rustls::{Accept, LazyConfigAcceptor};
 
-use crate::config::server::tls::build_certified_key;
+use crate::{Core, SharedCore};
 
-use super::{acme::resolver::IsTlsAlpnChallenge, SessionStream, TcpAcceptor, TcpAcceptorResult};
+use super::{
+    acme::{resolver::IsTlsAlpnChallenge, AcmeProvider},
+    SessionStream, TcpAcceptor, TcpAcceptorResult,
+};
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 
-pub struct CertificateResolver {
-    pub sni: AHashMap<String, Arc<Certificate>>,
-    pub cert: Arc<Certificate>,
+#[derive(Default)]
+pub struct TlsManager {
+    pub certificates: ArcSwap<AHashMap<String, Arc<CertifiedKey>>>,
+    pub acme_providers: AHashMap<String, AcmeProvider>,
+    pub(crate) acme_auth_keys: Mutex<AHashMap<String, AcmeAuthKey>>,
+    pub acme_in_progress: AtomicBool,
+    pub self_signed_cert: Option<Arc<CertifiedKey>>,
 }
 
-pub struct Certificate {
-    pub cert: ArcSwap<CertifiedKey>,
-    pub cert_id: String,
+pub(crate) struct AcmeAuthKey {
+    pub provider_id: String,
+    pub key: Arc<CertifiedKey>,
+}
+
+#[derive(Clone)]
+pub struct CertificateResolver {
+    pub core: SharedCore,
 }
 
 impl CertificateResolver {
-    pub fn add(&mut self, name: &str, ck: Arc<Certificate>) -> Result<(), Error> {
-        let server_name = {
-            let checked_name = DnsName::try_from(name)
-                .map_err(|_| Error::General("Bad DNS name".into()))
-                .map(|name| name.to_lowercase_owned())?;
-            ServerName::DnsName(checked_name)
-        };
+    pub fn new(core: SharedCore) -> Self {
+        Self { core }
+    }
+}
 
-        ck.cert
-            .load()
-            .end_entity_cert()
-            .and_then(ParsedCertificate::try_from)
-            .and_then(|cert| verify_server_name(&cert, &server_name))?;
-
-        if let ServerName::DnsName(name) = server_name {
-            self.sni.insert(name.as_ref().to_string(), ck);
-        }
-        Ok(())
+impl AcmeAuthKey {
+    pub fn new(provider_id: String, key: Arc<CertifiedKey>) -> Self {
+        Self { provider_id, key }
     }
 }
 
 impl ResolvesServerCert for CertificateResolver {
     fn resolve(&self, hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
-        if !self.sni.is_empty() {
-            if let Some(cert) = hello.server_name().and_then(|name| self.sni.get(name)) {
-                return cert.cert.load().clone().into();
+        self.core
+            .as_ref()
+            .load()
+            .resolve_certificate(hello.server_name())
+    }
+}
+
+impl Core {
+    pub(crate) fn resolve_certificate(&self, name: Option<&str>) -> Option<Arc<CertifiedKey>> {
+        let certs = self.tls.certificates.load();
+
+        name.map_or_else(
+            || certs.get("*"),
+            |name| {
+                certs
+                    .get(name)
+                    .or_else(|| {
+                        // Try with a wildcard certificate
+                        name.split_once('.')
+                            .and_then(|(_, domain)| certs.get(domain))
+                    })
+                    .or_else(|| {
+                        tracing::debug!(
+                            context = "tls",
+                            event = "not-found",
+                            client_name = name,
+                            "No SNI certificate found by name, using default."
+                        );
+                        certs.get("*")
+                    })
+            },
+        )
+        .or_else(|| match certs.len().cmp(&1) {
+            Ordering::Equal => certs.values().next(),
+            Ordering::Greater => {
+                tracing::debug!(
+                    context = "tls",
+                    event = "error",
+                    "Multiple certificates available and no default certificate configured."
+                );
+                certs.values().next()
             }
-        }
-        self.cert.cert.load().clone().into()
+            Ordering::Less => {
+                tracing::warn!(
+                    context = "tls",
+                    event = "error",
+                    "No certificates available, using self-signed."
+                );
+                self.tls.self_signed_cert.as_ref()
+            }
+        })
+        .cloned()
     }
 }
 
 impl TcpAcceptor {
-    pub async fn accept<IO>(&self, stream: IO) -> TcpAcceptorResult<IO>
+    pub async fn accept<IO>(&self, stream: IO, enable_acme: bool) -> TcpAcceptorResult<IO>
     where
         IO: SessionStream,
     {
         match self {
-            TcpAcceptor::Tls(acceptor) => TcpAcceptorResult::Tls(acceptor.accept(stream)),
-            TcpAcceptor::Acme {
-                challenge,
-                default,
-                manager,
-            } => {
-                if manager.has_order_in_progress() {
+            TcpAcceptor::Tls {
+                acme_config,
+                default_config,
+                acceptor,
+                implicit,
+            } if *implicit => {
+                if !enable_acme {
+                    TcpAcceptorResult::Tls(acceptor.accept(stream))
+                } else {
                     match LazyConfigAcceptor::new(Default::default(), stream).await {
                         Ok(start_handshake) => {
                             if start_handshake.client_hello().is_tls_alpn_challenge() {
-                                match start_handshake.into_stream(challenge.clone()).await {
+                                match start_handshake.into_stream(acme_config.clone()).await {
                                     Ok(mut tls) => {
                                         tracing::debug!(
                                             context = "acme",
@@ -126,7 +175,7 @@ impl TcpAcceptor {
                                 }
                             } else {
                                 return TcpAcceptorResult::Tls(
-                                    start_handshake.into_stream(default.clone()),
+                                    start_handshake.into_stream(default_config.clone()),
                                 );
                             }
                         }
@@ -141,16 +190,14 @@ impl TcpAcceptor {
                     }
 
                     TcpAcceptorResult::Close
-                } else {
-                    TcpAcceptorResult::Tls(TlsAcceptor::from(default.clone()).accept(stream))
                 }
             }
-            TcpAcceptor::Plain => TcpAcceptorResult::Plain(stream),
+            _ => TcpAcceptorResult::Plain(stream),
         }
     }
 
     pub fn is_tls(&self) -> bool {
-        matches!(self, TcpAcceptor::Tls(_) | TcpAcceptor::Acme { .. })
+        matches!(self, TcpAcceptor::Tls { .. })
     }
 }
 
@@ -166,37 +213,8 @@ where
     }
 }
 
-impl Certificate {
-    pub async fn reload(&self, store: &Store) -> utils::config::Result<()> {
-        match (
-            store
-                .config_get(format!("certificate.{}.cert", self.cert_id))
-                .await,
-            store
-                .config_get(format!("certificate.{}.private-key", self.cert_id))
-                .await,
-        ) {
-            (Ok(Some(cert)), Ok(Some(pk))) => {
-                match build_certified_key(cert.into_bytes(), pk.into_bytes()) {
-                    Ok(cert) => {
-                        self.cert.store(Arc::new(cert));
-
-                        Ok(())
-                    }
-                    Err(err) => Err(err),
-                }
-            }
-            (Ok(None), _) | (_, Ok(None)) => Err("Certificate or private key not found".into()),
-            (Err(err), _) | (_, Err(err)) => Err(err.to_string()),
-        }
-    }
-}
-
 impl std::fmt::Debug for CertificateResolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CertificateResolver")
-            .field("sni", &self.sni.keys())
-            .field("id", &self.cert.cert_id)
-            .finish()
+        f.debug_struct("CertificateResolver").finish()
     }
 }

@@ -127,10 +127,10 @@ async fn lookup_sql() {
     // Parse settings
     let temp_dir = TempDir::new("smtp_lookup_tests", true);
     let mut config = Config::new(temp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse(&mut config).await;
+    let stores = Stores::parse_all(&mut config).await;
 
     let inner = Inner::default();
-    let core = Core::parse(&mut config, stores).await;
+    let core = Core::parse(&mut config, stores, Default::default()).await;
 
     core.smtp.resolvers.dns.mx_add(
         "test.org",

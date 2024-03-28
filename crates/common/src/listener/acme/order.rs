@@ -13,10 +13,11 @@ use std::time::Duration;
 use x509_parser::parse_x509_certificate;
 
 use crate::listener::acme::directory::Identifier;
+use crate::Core;
 
 use super::directory::{Account, Auth, AuthStatus, Directory, DirectoryError, Order, OrderStatus};
 use super::jose::JoseError;
-use super::{AcmeError, AcmeManager};
+use super::{AcmeError, AcmeProvider};
 
 #[derive(Debug)]
 pub enum OrderError {
@@ -36,9 +37,10 @@ pub enum CertParseError {
     InvalidPrivateKey,
 }
 
-impl AcmeManager {
+impl Core {
     pub(crate) async fn process_cert(
         &self,
+        provider: &AcmeProvider,
         pem: Vec<u8>,
         cached: bool,
     ) -> Result<Duration, AcmeError> {
@@ -52,13 +54,13 @@ impl AcmeManager {
             }
         };
 
-        self.set_cert(Arc::new(cert));
+        self.set_cert(provider, Arc::new(cert));
 
-        let renew_at = (validity[1] - self.renew_before - Utc::now())
+        let renew_at = (validity[1] - provider.renew_before - Utc::now())
             .max(chrono::Duration::zero())
             .to_std()
             .unwrap_or_default();
-        let renewal_date = validity[1] - self.renew_before;
+        let renewal_date = validity[1] - provider.renew_before;
 
         tracing::info!(
             context = "acme",
@@ -66,27 +68,27 @@ impl AcmeManager {
             valid_not_before = %validity[0],
             valid_not_after = %validity[1],
             renewal_date = ?renewal_date,
-            domains = ?self.domains,
-            "Loaded certificate for domains {:?}", self.domains);
+            domains = ?provider.domains,
+            "Loaded certificate for domains {:?}", provider.domains);
 
         if !cached {
-            self.store_cert(&pem).await?;
+            self.store_cert(provider, &pem).await?;
         }
 
         Ok(renew_at)
     }
 
-    pub async fn renew(&self) -> Result<Duration, AcmeError> {
+    pub async fn renew(&self, provider: &AcmeProvider) -> Result<Duration, AcmeError> {
         let mut backoff = 0;
-        self.order_in_progress.store(true, Ordering::Relaxed);
+        self.tls.acme_in_progress.store(true, Ordering::Relaxed);
         loop {
-            match self.order().await {
-                Ok(pem) => return self.process_cert(pem, false).await,
+            match self.order(provider).await {
+                Ok(pem) => return self.process_cert(provider, pem, false).await,
                 Err(err) if backoff < 16 => {
                     tracing::debug!(
                         context = "acme",
                         event = "renew-backoff",
-                        domains = ?self.domains,
+                        domains = ?provider.domains,
                         attempt = backoff,
                         reason = ?err,
                         "Failed to renew certificate, backing off for {} seconds",
@@ -99,33 +101,33 @@ impl AcmeManager {
         }
     }
 
-    async fn order(&self) -> Result<Vec<u8>, OrderError> {
-        let directory = Directory::discover(&self.directory_url).await?;
+    async fn order(&self, provider: &AcmeProvider) -> Result<Vec<u8>, OrderError> {
+        let directory = Directory::discover(&provider.directory_url).await?;
         let account = Account::create_with_keypair(
             directory,
-            &self.contact,
-            self.account_key.load().as_slice(),
+            &provider.contact,
+            provider.account_key.load().as_slice(),
         )
         .await?;
 
-        let mut params = CertificateParams::new(self.domains.clone());
+        let mut params = CertificateParams::new(provider.domains.clone());
         params.distinguished_name = DistinguishedName::new();
         params.alg = &PKCS_ECDSA_P256_SHA256;
         let cert = rcgen::Certificate::from_params(params)?;
 
-        let (order_url, mut order) = account.new_order(self.domains.clone()).await?;
+        let (order_url, mut order) = account.new_order(provider.domains.clone()).await?;
         loop {
             match order.status {
                 OrderStatus::Pending => {
                     let auth_futures = order
                         .authorizations
                         .iter()
-                        .map(|url| self.authorize(&account, url));
+                        .map(|url| self.authorize(provider, &account, url));
                     try_join_all(auth_futures).await?;
                     tracing::info!(
                         context = "acme",
                         event = "auth-complete",
-                        domains = ?self.domains.as_slice(),
+                        domains = ?provider.domains.as_slice(),
                         "Completed all authorizations"
                     );
                     order = account.order(&order_url).await?;
@@ -135,7 +137,7 @@ impl AcmeManager {
                         tracing::info!(
                             context = "acme",
                             event = "processing",
-                            domains = ?self.domains.as_slice(),
+                            domains = ?provider.domains.as_slice(),
                             attempt = i,
                             "Processing order"
                         );
@@ -153,7 +155,7 @@ impl AcmeManager {
                     tracing::info!(
                         context = "acme",
                         event = "csr-send",
-                        domains = ?self.domains.as_slice(),
+                        domains = ?provider.domains.as_slice(),
                         "Sending CSR"
                     );
 
@@ -164,7 +166,7 @@ impl AcmeManager {
                     tracing::info!(
                         context = "acme",
                         event = "download",
-                        domains = ?self.domains.as_slice(),
+                        domains = ?provider.domains.as_slice(),
                         "Downloading certificate"
                     );
 
@@ -181,7 +183,7 @@ impl AcmeManager {
                         context = "acme",
                         event = "error",
                         reason = "invalid-order",
-                        domains = ?self.domains.as_slice(),
+                        domains = ?provider.domains.as_slice(),
                         "Invalid order"
                     );
 
@@ -191,7 +193,12 @@ impl AcmeManager {
         }
     }
 
-    async fn authorize(&self, account: &Account, url: &String) -> Result<(), OrderError> {
+    async fn authorize(
+        &self,
+        provider: &AcmeProvider,
+        account: &Account,
+        url: &String,
+    ) -> Result<(), OrderError> {
         let auth = account.auth(url).await?;
         let (domain, challenge_url) = match auth.status {
             AuthStatus::Pending => {
@@ -204,7 +211,7 @@ impl AcmeManager {
                 );
                 let (challenge, auth_key) =
                     account.tls_alpn_01(&auth.challenges, domain.clone())?;
-                self.set_auth_key(domain.clone(), Arc::new(auth_key));
+                self.set_auth_key(provider, domain.clone(), Arc::new(auth_key));
                 account.challenge(&challenge.url).await?;
                 (domain, challenge.url.clone())
             }

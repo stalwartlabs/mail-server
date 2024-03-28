@@ -38,7 +38,7 @@ pub async fn lookup_tests() {
         Config::new(CONFIG.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap()))
             .unwrap()
             .assert_no_errors();
-    let stores = Stores::parse(&mut config).await;
+    let stores = Stores::parse_all(&mut config).await;
     let rate = Rate {
         requests: 1,
         period: Duration::from_secs(1),

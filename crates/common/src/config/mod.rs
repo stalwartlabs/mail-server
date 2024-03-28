@@ -5,15 +5,16 @@ use directory::{Directories, Directory};
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use utils::config::Config;
 
-use crate::{Core, Network};
+use crate::{listener::tls::TlsManager, Core, Network};
 
 use self::{
-    imap::ImapConfig, jmap::settings::JmapConfig, scripts::Scripting, smtp::SmtpConfig,
-    storage::Storage,
+    imap::ImapConfig, jmap::settings::JmapConfig, manager::ConfigManager, scripts::Scripting,
+    smtp::SmtpConfig, storage::Storage,
 };
 
 pub mod imap;
 pub mod jmap;
+pub mod manager;
 pub mod network;
 pub mod scripts;
 pub mod server;
@@ -22,7 +23,7 @@ pub mod storage;
 pub mod tracers;
 
 impl Core {
-    pub async fn parse(config: &mut Config, stores: Stores) -> Self {
+    pub async fn parse(config: &mut Config, stores: Stores, config_manager: ConfigManager) -> Self {
         let mut data = config
             .value_require("storage.data")
             .map(|id| id.to_string())
@@ -116,6 +117,7 @@ impl Core {
             smtp: SmtpConfig::parse(config).await,
             jmap: JmapConfig::parse(config),
             imap: ImapConfig::parse(config),
+            tls: TlsManager::parse(config),
             storage: Storage {
                 data,
                 blob,
@@ -125,6 +127,7 @@ impl Core {
                 directory,
                 directories: directories.directories,
                 purge_schedules: stores.purge_schedules,
+                config: config_manager,
             },
         }
     }

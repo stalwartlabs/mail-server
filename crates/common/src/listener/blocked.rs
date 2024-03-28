@@ -97,8 +97,8 @@ impl Core {
 
                 // Write blocked IP to config
                 self.storage
-                    .data
-                    .config_set([ConfigKey {
+                    .config
+                    .set([ConfigKey {
                         key: format!("{}.{}", BLOCKED_IP_KEY, ip),
                         value: String::new(),
                     }])

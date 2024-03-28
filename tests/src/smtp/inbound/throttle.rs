@@ -72,8 +72,8 @@ async fn throttle_inbound() {
 
     let tmp_dir = TempDir::new("smtp_inbound_throttle", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse(&mut config).await;
-    let core = Core::parse(&mut config, stores).await;
+    let stores = Stores::parse_all(&mut config).await;
+    let core = Core::parse(&mut config, stores, Default::default()).await;
     let inner = Inner::default();
 
     // Test connection concurrency limit

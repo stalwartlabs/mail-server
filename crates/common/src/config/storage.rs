@@ -4,6 +4,8 @@ use ahash::AHashMap;
 use directory::Directory;
 use store::{write::purge::PurgeSchedule, BlobStore, FtsStore, LookupStore, Store};
 
+use super::manager::ConfigManager;
+
 #[derive(Default)]
 pub struct Storage {
     pub data: Store,
@@ -14,4 +16,5 @@ pub struct Storage {
     pub directory: Arc<Directory>,
     pub directories: AHashMap<String, Arc<Directory>>,
     pub purge_schedules: Vec<PurgeSchedule>,
+    pub config: ConfigManager,
 }

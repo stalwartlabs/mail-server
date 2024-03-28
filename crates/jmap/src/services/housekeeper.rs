@@ -21,7 +21,10 @@
  * for more details.
 */
 
-use std::{collections::BinaryHeap, time::Instant};
+use std::{
+    collections::BinaryHeap,
+    time::{Duration, Instant},
+};
 
 use store::write::purge::PurgeStore;
 use tokio::sync::mpsc;
@@ -34,21 +37,26 @@ use super::IPC_CHANNEL_BUFFER;
 pub enum Event {
     IndexStart,
     IndexDone,
+    AcmeReschedule {
+        provider_id: String,
+        renew_at: Instant,
+    },
     #[cfg(feature = "test_mode")]
     IndexIsActive(tokio::sync::oneshot::Sender<bool>),
     Exit,
 }
 
 #[derive(PartialEq, Eq)]
-struct PurgeEvent {
+struct Action {
     due: Instant,
-    event: PurgeClass,
+    event: ActionClass,
 }
 
 #[derive(PartialEq, Eq)]
-enum PurgeClass {
+enum ActionClass {
     Session,
     Store(usize),
+    Acme(String),
 }
 
 pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
@@ -67,15 +75,34 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
         // Add all purge events to heap
         let core_ = core.core.load();
-        heap.push(PurgeEvent {
+        heap.push(Action {
             due: Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
-            event: PurgeClass::Session,
+            event: ActionClass::Session,
         });
         for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
-            heap.push(PurgeEvent {
+            heap.push(Action {
                 due: Instant::now() + schedule.cron.time_to_next(),
-                event: PurgeClass::Store(idx),
+                event: ActionClass::Store(idx),
             });
+        }
+
+        // Add all ACME renewals to heap
+        for provider in core_.tls.acme_providers.values() {
+            match core_.init_acme(provider).await {
+                Ok(renew_at) => {
+                    heap.push(Action {
+                        due: Instant::now() + renew_at,
+                        event: ActionClass::Acme(provider.id.clone()),
+                    });
+                }
+                Err(err) => {
+                    tracing::error!(
+                        context = "acme",
+                        event = "error",
+                        error = ?err,
+                        "Failed to initialize ACME certificate manager.");
+                }
+            };
         }
 
         loop {
@@ -86,6 +113,15 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
             match tokio::time::timeout(time_to_next, rx.recv()).await {
                 Ok(Some(event)) => match event {
+                    Event::AcmeReschedule {
+                        provider_id,
+                        renew_at,
+                    } => {
+                        heap.push(Action {
+                            due: renew_at,
+                            event: ActionClass::Acme(provider_id),
+                        });
+                    }
                     Event::IndexStart => {
                         if !index_busy {
                             index_busy = true;
@@ -129,25 +165,70 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                         }
                         let event = heap.pop().unwrap();
                         match event.event {
-                            PurgeClass::Session => {
+                            ActionClass::Acme(provider_id) => {
+                                let inner = core.jmap_inner.clone();
+                                let core = core_.clone();
+                                tokio::spawn(async move {
+                                    if let Some(provider) =
+                                        core.tls.acme_providers.get(&provider_id)
+                                    {
+                                        tracing::info!(
+                                            context = "acme",
+                                            event = "order",
+                                            domains = ?provider.domains,
+                                            "Ordering certificates.");
+
+                                        let renew_at = match core.renew(provider).await {
+                                            Ok(renew_at) => {
+                                                tracing::info!(
+                                                    context = "acme",
+                                                    event = "success",
+                                                    domains = ?provider.domains,
+                                                    next_renewal = ?renew_at,
+                                                    "Certificates renewed.");
+                                                renew_at
+                                            }
+                                            Err(err) => {
+                                                tracing::error!(
+                                                    context = "acme",
+                                                    event = "error",
+                                                    error = ?err,
+                                                    "Failed to renew certificates.");
+
+                                                Duration::from_secs(3600)
+                                            }
+                                        };
+
+                                        inner
+                                            .housekeeper_tx
+                                            .send(Event::AcmeReschedule {
+                                                provider_id: provider_id.clone(),
+                                                renew_at: Instant::now() + renew_at,
+                                            })
+                                            .await
+                                            .ok();
+                                    }
+                                });
+                            }
+                            ActionClass::Session => {
                                 let inner = core.jmap_inner.clone();
                                 tokio::spawn(async move {
                                     tracing::debug!("Purging session cache.");
                                     inner.purge();
                                 });
-                                heap.push(PurgeEvent {
+                                heap.push(Action {
                                     due: Instant::now()
                                         + core_.jmap.session_purge_frequency.time_to_next(),
-                                    event: PurgeClass::Session,
+                                    event: ActionClass::Session,
                                 });
                             }
-                            PurgeClass::Store(idx) => {
+                            ActionClass::Store(idx) => {
                                 if let Some(schedule) =
                                     core_.storage.purge_schedules.get(idx).cloned()
                                 {
-                                    heap.push(PurgeEvent {
+                                    heap.push(Action {
                                         due: Instant::now() + schedule.cron.time_to_next(),
-                                        event: PurgeClass::Store(idx),
+                                        event: ActionClass::Store(idx),
                                     });
                                     tokio::spawn(async move {
                                         let (class, result) = match schedule.store {
@@ -187,13 +268,13 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
     });
 }
 
-impl Ord for PurgeEvent {
+impl Ord for Action {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.due.cmp(&other.due).reverse()
     }
 }
 
-impl PartialOrd for PurgeEvent {
+impl PartialOrd for Action {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }

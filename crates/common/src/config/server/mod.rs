@@ -1,10 +1,10 @@
-use std::{fmt::Display, net::SocketAddr, sync::Arc, time::Duration};
+use std::{fmt::Display, net::SocketAddr, time::Duration};
 
 use ahash::AHashMap;
 use tokio::net::TcpSocket;
 use utils::config::ipmask::IpAddrMask;
 
-use crate::listener::{acme::AcmeManager, tls::Certificate, TcpAcceptor};
+use crate::listener::TcpAcceptor;
 
 pub mod listener;
 pub mod tls;
@@ -12,9 +12,7 @@ pub mod tls;
 #[derive(Default)]
 pub struct Servers {
     pub servers: Vec<Server>,
-    pub certificates: AHashMap<String, Arc<Certificate>>,
-    pub certificates_sni: AHashMap<String, Arc<Certificate>>,
-    pub acme_managers: AHashMap<String, Arc<AcmeManager>>,
+    pub tcp_acceptors: AHashMap<String, TcpAcceptor>,
 }
 
 #[derive(Debug, Default)]
@@ -23,8 +21,6 @@ pub struct Server {
     pub protocol: ServerProtocol,
     pub listeners: Vec<Listener>,
     pub proxy_networks: Vec<IpAddrMask>,
-    pub acceptor: TcpAcceptor,
-    pub tls_implicit: bool,
     pub max_connections: u64,
 }
 

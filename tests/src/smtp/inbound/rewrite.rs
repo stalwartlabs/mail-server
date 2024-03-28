@@ -92,7 +92,7 @@ async fn address_rewrite() {
 
     // Prepare config
     let mut config = Config::new(CONFIG).unwrap();
-    let core = Core::parse(&mut config, Default::default()).await;
+    let core = Core::parse(&mut config, Default::default(), Default::default()).await;
 
     // Init session
     let mut session = Session::test(build_smtp(core, Inner::default()));

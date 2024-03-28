@@ -127,8 +127,8 @@ pub async fn test(params: &mut JMAPTest) {
         server
             .core
             .storage
-            .data
-            .config_get(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
+            .config
+            .get(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
             .await
             .unwrap(),
         None
@@ -149,8 +149,8 @@ pub async fn test(params: &mut JMAPTest) {
         server
             .core
             .storage
-            .data
-            .config_get(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
+            .config
+            .get(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
             .await
             .unwrap(),
         Some(String::new())
@@ -164,8 +164,8 @@ pub async fn test(params: &mut JMAPTest) {
     server
         .core
         .storage
-        .data
-        .config_clear(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
+        .config
+        .clear(format!("{BLOCKED_IP_KEY}.127.0.0.1"))
         .await
         .unwrap();
     server

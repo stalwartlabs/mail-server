@@ -30,7 +30,6 @@ use std::{
 use arc_swap::ArcSwap;
 use proxy_header::io::ProxiedStream;
 use rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256;
-use store::Store;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::watch,
@@ -40,13 +39,13 @@ use tracing::Span;
 use utils::{config::Config, UnwrapFailure};
 
 use crate::{
-    config::server::{Listener, Server, Servers},
+    config::server::{Listener, Server, ServerProtocol, Servers},
     Core,
 };
 
 use super::{
-    acme::SpawnAcme, limiter::ConcurrencyLimiter, ServerInstance, SessionData, SessionManager,
-    SessionStream, TcpAcceptorResult,
+    limiter::ConcurrencyLimiter, ServerInstance, SessionData, SessionManager, SessionStream,
+    TcpAcceptor,
 };
 
 impl Server {
@@ -54,18 +53,20 @@ impl Server {
         self,
         manager: impl SessionManager,
         core: Arc<ArcSwap<Core>>,
+        acceptor: TcpAcceptor,
         shutdown_rx: watch::Receiver<bool>,
     ) {
         // Prepare instance
         let instance = Arc::new(ServerInstance {
             id: self.id,
             protocol: self.protocol,
-            acceptor: self.acceptor,
             proxy_networks: self.proxy_networks,
             limiter: ConcurrencyLimiter::new(self.max_connections),
+            acceptor,
             shutdown_rx,
         });
-        let is_tls = self.tls_implicit;
+        let is_tls = matches!(instance.acceptor, TcpAcceptor::Tls { implicit, .. } if implicit);
+        let is_https = is_tls && self.protocol == ServerProtocol::Http;
         let has_proxies = !instance.proxy_networks.is_empty();
 
         // Spawn listeners
@@ -114,6 +115,7 @@ impl Server {
                             match stream {
                                 Ok((stream, remote_addr)) => {
                                     let core = core.as_ref().load();
+                                    let enable_acme = is_https && core.has_acme_order_in_progress();
 
                                     if has_proxies && instance.proxy_networks.iter().any(|network| network.matches(&remote_addr.ip())) {
                                         let instance = instance.clone();
@@ -131,7 +133,7 @@ impl Server {
                                                                             .unwrap_or(remote_addr);
                                                     if let Some(session) = instance.build_session(stream, local_ip, remote_addr, &core) {
                                                         // Spawn session
-                                                        manager.spawn(session, is_tls);
+                                                        manager.spawn(session, is_tls, enable_acme);
                                                     }
                                                 }
                                                 Err(err) => {
@@ -149,7 +151,7 @@ impl Server {
                                         opts.apply(&session.stream);
 
                                         // Spawn session
-                                        manager.spawn(session, is_tls);
+                                        manager.spawn(session, is_tls, enable_acme);
                                     }
                                 }
                                 Err(err) => {
@@ -308,9 +310,17 @@ impl Servers {
         // Drop privileges
         #[cfg(not(target_env = "msvc"))]
         {
-            if let Some(run_as_user) = config.value("server.run-as.user") {
+            if let Some(run_as_user) = config
+                .value("server.run-as.user")
+                .map(|s| s.to_string())
+                .or_else(|| std::env::var("RUN_AS_USER").ok())
+            {
                 let mut pd = privdrop::PrivDrop::default().user(run_as_user);
-                if let Some(run_as_group) = config.value("server.run-as.group") {
+                if let Some(run_as_group) = config
+                    .value("server.run-as.group")
+                    .map(|s| s.to_string())
+                    .or_else(|| std::env::var("RUN_AS_GROUP").ok())
+                {
                     pd = pd.group(run_as_group);
                 }
                 pd.apply().failed("Failed to drop privileges");
@@ -319,21 +329,19 @@ impl Servers {
     }
 
     pub fn spawn(
-        self,
-        spawn: impl Fn(Server, watch::Receiver<bool>),
-        store: Store,
+        mut self,
+        spawn: impl Fn(Server, TcpAcceptor, watch::Receiver<bool>),
     ) -> watch::Sender<bool> {
         // Spawn listeners
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         for server in self.servers {
-            spawn(server, shutdown_rx.clone());
-        }
+            let acceptor = self
+                .tcp_acceptors
+                .remove(&server.id)
+                .unwrap_or(TcpAcceptor::Plain);
 
-        // Spawn ACME managers
-        for (_, acme_manager) in self.acme_managers {
-            acme_manager.spawn(store.clone(), shutdown_rx.clone());
+            spawn(server, acceptor, shutdown_rx.clone());
         }
-
         shutdown_tx
     }
 }
@@ -352,8 +360,8 @@ impl ServerInstance {
         stream: T,
         span: &Span,
     ) -> Result<TlsStream<T>, ()> {
-        match self.acceptor.accept(stream).await {
-            TcpAcceptorResult::Tls(accept) => match accept.await {
+        match &self.acceptor {
+            TcpAcceptor::Tls { acceptor, .. } => match acceptor.accept(stream).await {
                 Ok(stream) => {
                     tracing::info!(
                         parent: span,
@@ -375,7 +383,7 @@ impl ServerInstance {
                     Err(())
                 }
             },
-            TcpAcceptorResult::Plain(_) | TcpAcceptorResult::Close => {
+            TcpAcceptor::Plain => {
                 tracing::debug!(
                     parent: span,
                     context = "tls",

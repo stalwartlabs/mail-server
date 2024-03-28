@@ -112,8 +112,8 @@ async fn dmarc() {
     let mut inner = Inner::default();
     let tmp_dir = TempDir::new("smtp_dmarc_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
-    let stores = Stores::parse(&mut config).await;
-    let core = Core::parse(&mut config, stores).await;
+    let stores = Stores::parse_all(&mut config).await;
+    let core = Core::parse(&mut config, stores, Default::default()).await;
 
     // Create temp dir for queue
     let mut qr = inner.init_test_queue(&core);

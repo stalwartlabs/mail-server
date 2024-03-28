@@ -45,7 +45,7 @@ use jmap::{
 };
 use jmap_client::{mailbox::Role, push_subscription::Keys};
 use jmap_proto::types::{id::Id, type_state::DataType};
-use store::{ahash::AHashSet, Store};
+use store::ahash::AHashSet;
 
 use tokio::sync::mpsc;
 use utils::config::Config;
@@ -119,18 +119,17 @@ pub async fn test(params: &mut JMAPTest) {
     // Start mock push server
     let mut settings = Config::new(add_test_certs(SERVER)).unwrap();
     settings.resolve_macros().await;
-    let servers = Servers::parse(&mut settings);
+    let mock_core = Core::default().into_shared();
+    let mut servers = Servers::parse(&mut settings);
+    servers.parse_tcp_acceptors(&mut settings, mock_core.clone());
 
     // Start JMAP server
     let manager = SessionManager::from(push_server.clone());
     servers.bind_and_drop_priv(&mut settings);
     settings.assert_no_errors();
-    let _shutdown_tx = servers.spawn(
-        |server, shutdown_rx| {
-            server.spawn(manager.clone(), Core::default().into_shared(), shutdown_rx);
-        },
-        Store::default(),
-    );
+    let _shutdown_tx = servers.spawn(|server, acceptor, shutdown_rx| {
+        server.spawn(manager.clone(), mock_core.clone(), acceptor, shutdown_rx);
+    });
 
     // Register push notification (no encryption)
     let push_id = client
@@ -309,7 +308,7 @@ impl common::listener::SessionManager for SessionManager {
                         session
                             .instance
                             .acceptor
-                            .accept(session.stream)
+                            .accept(session.stream, false)
                             .await
                             .unwrap_tls()
                             .await

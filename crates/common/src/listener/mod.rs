@@ -40,10 +40,7 @@ use crate::{
     expr::functions::ResolveVariable,
 };
 
-use self::{
-    acme::AcmeManager,
-    limiter::{ConcurrencyLimiter, InFlight},
-};
+use self::limiter::{ConcurrencyLimiter, InFlight};
 
 pub mod acme;
 pub mod blocked;
@@ -63,11 +60,11 @@ pub struct ServerInstance {
 
 #[derive(Default)]
 pub enum TcpAcceptor {
-    Tls(TlsAcceptor),
-    Acme {
-        challenge: Arc<ServerConfig>,
-        default: Arc<ServerConfig>,
-        manager: Arc<AcmeManager>,
+    Tls {
+        acme_config: Arc<ServerConfig>,
+        default_config: Arc<ServerConfig>,
+        acceptor: TlsAcceptor,
+        implicit: bool,
     },
     #[default]
     Plain,
@@ -99,12 +96,22 @@ pub trait SessionStream: AsyncRead + AsyncWrite + Unpin + 'static + Sync + Send 
 }
 
 pub trait SessionManager: Sync + Send + 'static + Clone {
-    fn spawn<T: SessionStream>(&self, mut session: SessionData<T>, is_tls: bool) {
+    fn spawn<T: SessionStream>(
+        &self,
+        mut session: SessionData<T>,
+        is_tls: bool,
+        enable_acme: bool,
+    ) {
         let manager = self.clone();
 
         tokio::spawn(async move {
             if is_tls {
-                match session.instance.acceptor.accept(session.stream).await {
+                match session
+                    .instance
+                    .acceptor
+                    .accept(session.stream, enable_acme)
+                    .await
+                {
                     TcpAcceptorResult::Tls(accept) => match accept.await {
                         Ok(stream) => {
                             let session = SessionData {
@@ -173,17 +180,7 @@ impl<T: SessionStream> ResolveVariable for SessionData<T> {
 impl Debug for TcpAcceptor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Tls(_) => f.debug_tuple("Tls").finish(),
-            Self::Acme {
-                challenge,
-                default,
-                manager,
-            } => f
-                .debug_struct("Acme")
-                .field("challenge", challenge)
-                .field("default", default)
-                .field("manager", manager)
-                .finish(),
+            Self::Tls { .. } => f.debug_tuple("Tls").finish(),
             Self::Plain => write!(f, "Plain"),
         }
     }

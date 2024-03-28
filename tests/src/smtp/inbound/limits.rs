@@ -47,7 +47,7 @@ duration = [{if = "remote_ip = '10.0.0.3'", then = '500ms'},
 #[tokio::test]
 async fn limits() {
     let mut config = Config::new(CONFIG).unwrap();
-    let core = Core::parse(&mut config, Default::default()).await;
+    let core = Core::parse(&mut config, Default::default(), Default::default()).await;
 
     let (_tx, rx) = watch::channel(true);
 

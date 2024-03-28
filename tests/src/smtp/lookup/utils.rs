@@ -80,7 +80,7 @@ async fn lookup_ip() {
     ];
     let mut config = Config::new(CONFIG_V4).unwrap();
     let core = build_smtp(
-        Core::parse(&mut config, Default::default()).await,
+        Core::parse(&mut config, Default::default(), Default::default()).await,
         Inner::default(),
     );
     core.core.smtp.resolvers.dns.ipv4_add(
@@ -117,7 +117,7 @@ async fn lookup_ip() {
     // Ipv6 strategy
     let mut config = Config::new(CONFIG_V6).unwrap();
     let core = build_smtp(
-        Core::parse(&mut config, Default::default()).await,
+        Core::parse(&mut config, Default::default(), Default::default()).await,
         Inner::default(),
     );
     core.core.smtp.resolvers.dns.ipv4_add(

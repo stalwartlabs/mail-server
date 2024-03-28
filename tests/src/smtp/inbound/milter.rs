@@ -98,8 +98,8 @@ async fn milter_session() {
     // Configure tests
     let tmp_dir = TempDir::new("smtp_milter_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse(&mut config).await;
-    let core = Core::parse(&mut config, stores).await;
+    let stores = Stores::parse_all(&mut config).await;
+    let core = Core::parse(&mut config, stores, Default::default()).await;
     let _rx = spawn_mock_milter_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut inner = Inner::default();

@@ -56,7 +56,7 @@ ehlo = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},
 #[tokio::test]
 async fn ehlo() {
     let mut config = Config::new(CONFIG).unwrap();
-    let core = Core::parse(&mut config, Default::default()).await;
+    let core = Core::parse(&mut config, Default::default(), Default::default()).await;
     core.smtp.resolvers.dns.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),

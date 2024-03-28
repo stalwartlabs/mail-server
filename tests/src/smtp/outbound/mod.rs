@@ -50,7 +50,7 @@ pub mod smtp;
 pub mod throttle;
 pub mod tls;
 
-const SERVER: &str = "
+const CONFIG: &str = r#"
 [server]
 hostname = 'mx.example.org'
 greeting = 'Test SMTP instance'
@@ -80,9 +80,7 @@ certificate = 'default'
 [certificate.default]
 cert = '%{file:{CERT}}%'
 private-key = '%{file:{PK}}%'
-";
 
-const STORES: &str = r#"
 [storage]
 data = "sqlite"
 lookup = "sqlite"
@@ -106,9 +104,10 @@ impl TestServer {
     pub async fn new(name: &str, config: impl AsRef<str>, with_receiver: bool) -> TestServer {
         let temp_dir = TempDir::new(name, true);
         let mut config =
-            Config::new(temp_dir.update_config(STORES.to_string() + config.as_ref())).unwrap();
-        let stores = Stores::parse(&mut config).await;
-        let core = Core::parse(&mut config, stores).await;
+            Config::new(temp_dir.update_config(add_test_certs(CONFIG) + config.as_ref())).unwrap();
+        config.resolve_macros().await;
+        let stores = Stores::parse_all(&mut config).await;
+        let core = Core::parse(&mut config, stores, Default::default()).await;
         let mut inner = Inner::default();
         let qr = if with_receiver {
             inner.init_test_queue(&core)
@@ -137,9 +136,9 @@ impl TestServer {
 
     pub async fn start(&self, protocols: &[ServerProtocol]) -> watch::Sender<bool> {
         // Spawn listeners
-        let mut config = Config::new(add_test_certs(SERVER)).unwrap();
-        config.resolve_macros().await;
+        let mut config = Config::new(CONFIG).unwrap();
         let mut servers = Servers::parse(&mut config);
+        servers.parse_tcp_acceptors(&mut config, self.instance.core.clone());
 
         // Filter out protocols
         servers
@@ -152,24 +151,25 @@ impl TestServer {
         let instance = self.instance.clone();
         let smtp_manager = SmtpSessionManager::new(instance.clone());
         let smtp_admin_manager = SmtpAdminSessionManager::new(instance.clone());
-        servers.spawn(
-            |server, shutdown_rx| {
-                match &server.protocol {
-                    ServerProtocol::Smtp | ServerProtocol::Lmtp => {
-                        server.spawn(smtp_manager.clone(), instance.core.clone(), shutdown_rx)
-                    }
-                    ServerProtocol::Http => server.spawn(
-                        smtp_admin_manager.clone(),
-                        instance.core.clone(),
-                        shutdown_rx,
-                    ),
-                    ServerProtocol::Imap | ServerProtocol::ManageSieve => {
-                        unreachable!()
-                    }
-                };
-            },
-            instance.core.load().storage.data.clone(),
-        )
+        servers.spawn(|server, acceptor, shutdown_rx| {
+            match &server.protocol {
+                ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
+                    smtp_manager.clone(),
+                    instance.core.clone(),
+                    acceptor,
+                    shutdown_rx,
+                ),
+                ServerProtocol::Http => server.spawn(
+                    smtp_admin_manager.clone(),
+                    instance.core.clone(),
+                    acceptor,
+                    shutdown_rx,
+                ),
+                ServerProtocol::Imap | ServerProtocol::ManageSieve => {
+                    unreachable!()
+                }
+            };
+        })
     }
 
     pub fn new_session(&self) -> Session<DummyIo> {

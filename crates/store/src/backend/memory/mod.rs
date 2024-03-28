@@ -42,103 +42,104 @@ impl MemoryStore {
     }
 }
 
-pub fn parse_memory_stores(config: &mut Config, stores: &mut Stores) {
-    let mut lookups = AHashMap::new();
-    let mut errors = Vec::new();
+impl Stores {
+    pub fn parse_memory_stores(&mut self, config: &mut Config) {
+        let mut lookups = AHashMap::new();
+        let mut errors = Vec::new();
 
-    for (key, value) in &config.keys {
-        if let Some(key) = key.strip_prefix("lookup.") {
-            if let Some((id, key)) = key
-                .split_once('.')
-                .filter(|(id, key)| !id.is_empty() && !key.is_empty())
-            {
-                // Detect if the key is a glob pattern
-                let mut last_ch = '\0';
-                let mut has_escape = false;
-                let mut is_glob = false;
-                for ch in key.chars() {
-                    match ch {
-                        '\\' => {
-                            has_escape = true;
-                        }
-                        '*' | '?' if last_ch != '\\' => {
-                            is_glob = true;
-                        }
-                        _ => {}
-                    }
-
-                    last_ch = ch;
-                }
-
-                // Detect value type
-                let value = if !value.is_empty() {
-                    let mut has_integers = false;
-                    let mut has_floats = false;
-                    let mut has_others = false;
-
-                    for (pos, ch) in value.as_bytes().iter().enumerate() {
+        for (key, value) in &config.keys {
+            if let Some(key) = key.strip_prefix("lookup.") {
+                if let Some((id, key)) = key
+                    .split_once('.')
+                    .filter(|(id, key)| !id.is_empty() && !key.is_empty())
+                {
+                    // Detect if the key is a glob pattern
+                    let mut last_ch = '\0';
+                    let mut has_escape = false;
+                    let mut is_glob = false;
+                    for ch in key.chars() {
                         match ch {
-                            b'.' if !has_floats && has_integers => {
-                                has_floats = true;
+                            '\\' => {
+                                has_escape = true;
                             }
-                            b'0'..=b'9' => {
-                                has_integers = true;
+                            '*' | '?' if last_ch != '\\' => {
+                                is_glob = true;
                             }
-                            b'-' if pos == 0 && value.len() > 1 => {}
-                            _ => {
-                                has_others = true;
+                            _ => {}
+                        }
+
+                        last_ch = ch;
+                    }
+
+                    // Detect value type
+                    let value = if !value.is_empty() {
+                        let mut has_integers = false;
+                        let mut has_floats = false;
+                        let mut has_others = false;
+
+                        for (pos, ch) in value.as_bytes().iter().enumerate() {
+                            match ch {
+                                b'.' if !has_floats && has_integers => {
+                                    has_floats = true;
+                                }
+                                b'0'..=b'9' => {
+                                    has_integers = true;
+                                }
+                                b'-' if pos == 0 && value.len() > 1 => {}
+                                _ => {
+                                    has_others = true;
+                                }
                             }
                         }
-                    }
 
-                    if has_others {
-                        Value::Text(value.to_string().into())
-                    } else if has_floats {
-                        value
-                            .parse()
-                            .map(Value::Float)
-                            .unwrap_or_else(|_| Value::Text(value.to_string().into()))
-                    } else {
-                        value
-                            .parse()
-                            .map(Value::Integer)
-                            .unwrap_or_else(|_| Value::Text(value.to_string().into()))
-                    }
-                } else {
-                    Value::Text("".into())
-                };
-
-                // Add entry
-                let store = lookups
-                    .entry(id.to_string())
-                    .or_insert_with(MemoryStore::default);
-                if is_glob {
-                    store.globs.push((GlobPattern::compile(key, false), value));
-                } else {
-                    store.entries.insert(
-                        if has_escape {
-                            key.replace('\\', "")
+                        if has_others {
+                            Value::Text(value.to_string().into())
+                        } else if has_floats {
+                            value
+                                .parse()
+                                .map(Value::Float)
+                                .unwrap_or_else(|_| Value::Text(value.to_string().into()))
                         } else {
-                            key.to_string()
-                        },
-                        value,
-                    );
+                            value
+                                .parse()
+                                .map(Value::Integer)
+                                .unwrap_or_else(|_| Value::Text(value.to_string().into()))
+                        }
+                    } else {
+                        Value::Text("".into())
+                    };
+
+                    // Add entry
+                    let store = lookups
+                        .entry(id.to_string())
+                        .or_insert_with(MemoryStore::default);
+                    if is_glob {
+                        store.globs.push((GlobPattern::compile(key, false), value));
+                    } else {
+                        store.entries.insert(
+                            if has_escape {
+                                key.replace('\\', "")
+                            } else {
+                                key.to_string()
+                            },
+                            value,
+                        );
+                    }
+                } else {
+                    errors.push(key.to_string());
                 }
-            } else {
-                errors.push(key.to_string());
+            } else if !lookups.is_empty() {
+                break;
             }
-        } else if !lookups.is_empty() {
-            break;
         }
-    }
 
-    for error in errors {
-        config.new_parse_error(error, "Invalid lookup key format");
-    }
+        for error in errors {
+            config.new_parse_error(error, "Invalid lookup key format");
+        }
 
-    for (id, store) in lookups {
-        stores
-            .lookup_stores
-            .insert(id, LookupStore::Memory(store.into()));
+        for (id, store) in lookups {
+            self.lookup_stores
+                .insert(id, LookupStore::Memory(store.into()));
+        }
     }
 }

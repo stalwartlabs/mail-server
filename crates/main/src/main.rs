@@ -23,23 +23,13 @@
 
 use std::time::Duration;
 
-use common::{
-    config::{
-        server::{ServerProtocol, Servers},
-        tracers::Tracers,
-    },
-    Core,
-};
+use common::config::{manager::BootManager, server::ServerProtocol};
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
 use managesieve::core::ManageSieveSessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
-use store::Stores;
 use tokio::sync::mpsc;
-use utils::{
-    config::{Config, ConfigError},
-    wait_for_shutdown,
-};
+use utils::wait_for_shutdown;
 
 #[cfg(not(target_env = "msvc"))]
 use jemallocator::Jemalloc;
@@ -51,75 +41,55 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     // Load config and apply macros
-    let mut config = Config::init();
-    config.resolve_macros().await;
+    let init = BootManager::init().await;
 
-    // Parse servers
-    let servers = Servers::parse(&mut config);
+    // Parse core
+    let mut config = init.config;
+    let core = init.core;
 
-    // Bind ports and drop privileges
-    servers.bind_and_drop_priv(&mut config);
-
-    // Build stores
-    let stores = Stores::parse(&mut config).await;
-    let todo = "merge config with data store, resolve macros";
-
-    // Enable tracing
-    let guards = Tracers::parse(&mut config).enable(&mut config);
+    // Init servers
     tracing::info!(
         "Starting Stalwart Mail Server v{}...",
         env!("CARGO_PKG_VERSION")
     );
-
-    // Parse core
-    let core = Core::parse(&mut config, stores).await;
-    let store = core.storage.data.clone();
-    let shared_core = core.into_shared();
-
-    // Init servers
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&mut config, shared_core.clone(), delivery_tx).await;
-    let jmap = JMAP::init(
-        &mut config,
-        delivery_rx,
-        shared_core.clone(),
-        smtp.inner.clone(),
-    )
-    .await;
+    let smtp = SMTP::init(&mut config, core.clone(), delivery_tx).await;
+    let jmap = JMAP::init(&mut config, delivery_rx, core.clone(), smtp.inner.clone()).await;
     let imap = IMAP::init(&mut config, jmap.clone()).await;
 
     // Log configuration errors
-    config.log_errors(guards.is_none());
-    config.log_warnings(guards.is_none());
+    config.log_errors(init.guards.is_none());
+    config.log_warnings(init.guards.is_none());
 
     // Spawn servers
-    let shutdown_tx = servers.spawn(
-        |server, shutdown_rx| {
-            match &server.protocol {
-                ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
-                    SmtpSessionManager::new(smtp.clone()),
-                    shared_core.clone(),
-                    shutdown_rx,
-                ),
-                ServerProtocol::Http => server.spawn(
-                    JmapSessionManager::new(jmap.clone()),
-                    shared_core.clone(),
-                    shutdown_rx,
-                ),
-                ServerProtocol::Imap => server.spawn(
-                    ImapSessionManager::new(imap.clone()),
-                    shared_core.clone(),
-                    shutdown_rx,
-                ),
-                ServerProtocol::ManageSieve => server.spawn(
-                    ManageSieveSessionManager::new(imap.clone()),
-                    shared_core.clone(),
-                    shutdown_rx,
-                ),
-            };
-        },
-        store,
-    );
+    let shutdown_tx = init.servers.spawn(|server, acceptor, shutdown_rx| {
+        match &server.protocol {
+            ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
+                SmtpSessionManager::new(smtp.clone()),
+                core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::Http => server.spawn(
+                JmapSessionManager::new(jmap.clone()),
+                core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::Imap => server.spawn(
+                ImapSessionManager::new(imap.clone()),
+                core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::ManageSieve => server.spawn(
+                ManageSieveSessionManager::new(imap.clone()),
+                core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+        };
+    });
 
     // Wait for shutdown signal
     wait_for_shutdown(&format!(

@@ -25,7 +25,6 @@ use std::{net::SocketAddr, sync::Arc};
 
 use rustls::{
     crypto::ring::{default_provider, ALL_CIPHER_SUITES},
-    server::ResolvesServerCert,
     ServerConfig, SupportedCipherSuite, ALL_VERSIONS,
 };
 
@@ -36,7 +35,14 @@ use utils::config::{
     Config,
 };
 
-use crate::listener::{acme::directory::ACME_TLS_ALPN_NAME, tls::CertificateResolver, TcpAcceptor};
+use crate::{
+    listener::{
+        acme::{directory::ACME_TLS_ALPN_NAME, AcmeResolver},
+        tls::CertificateResolver,
+        TcpAcceptor,
+    },
+    SharedCore,
+};
 
 use super::{
     tls::{TLS12_VERSION, TLS13_VERSION},
@@ -45,17 +51,15 @@ use super::{
 
 impl Servers {
     pub fn parse(config: &mut Config) -> Self {
-        // Parse certificates and ACME managers
+        // Parse ACME managers
         let mut servers = Servers::default();
-        servers.parse_certificates(config);
-        servers.parse_acmes(config);
 
         // Parse servers
-        let ids = config
+        for id in config
             .sub_keys("server.listener", ".protocol")
             .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-        for id in ids {
+            .collect::<Vec<_>>()
+        {
             servers.parse_server(config, id);
         }
         servers
@@ -170,154 +174,6 @@ impl Servers {
             return;
         }
 
-        // Build TLS config
-        let (acceptor, tls_implicit) = if config
-            .property_or_else(("server.listener", id, "tls.enable"), "server.tls.enable")
-            .unwrap_or(false)
-        {
-            // Parse protocol versions
-            let mut tls_v2 = true;
-            let mut tls_v3 = true;
-            let mut proto_err = None;
-            for (_, protocol) in config.values_or_else(
-                ("server.listener", id, "tls.disable-protocols"),
-                "server.tls.disable-protocols",
-            ) {
-                match protocol {
-                    "TLSv1.2" | "0x0303" => tls_v2 = false,
-                    "TLSv1.3" | "0x0304" => tls_v3 = false,
-                    protocol => {
-                        proto_err = format!("Unsupported TLS protocol {protocol:?}").into();
-                    }
-                }
-            }
-
-            if let Some(proto_err) = proto_err {
-                config.new_parse_error(("server.listener", id, "tls.disable-protocols"), proto_err);
-            }
-
-            // Parse cipher suites
-            let mut disabled_ciphers: Vec<SupportedCipherSuite> = Vec::new();
-            let cipher_keys = if config.has_prefix(("server.listener", id, "tls.disable-ciphers")) {
-                ("server.listener", id, "tls.disable-ciphers").as_key()
-            } else {
-                "server.tls.disable-ciphers".as_key()
-            };
-            for (_, protocol) in config.properties::<SupportedCipherSuite>(cipher_keys) {
-                disabled_ciphers.push(protocol);
-            }
-
-            // Build resolver
-            let mut acme_acceptor = None;
-            let resolver: Arc<dyn ResolvesServerCert> = if let Some(acme_id) =
-                config.value_or_else(("server.listener", id, "tls.acme"), "server.tls.acme")
-            {
-                let acme = if let Some(acme) = self.acme_managers.get(acme_id) {
-                    acme
-                } else {
-                    config.new_parse_error(
-                        ("server.listener", id, "tls.acme"),
-                        format!("Undefined ACME manager id {acme_id:?}"),
-                    );
-                    return;
-                };
-
-                // Check if this port is used to receive ACME challenges
-                let port_key = ("acme", acme_id, "port").as_key();
-                let acme_port = config
-                    .property_or_default::<u16>(port_key, "443")
-                    .unwrap_or(443);
-                if listeners.iter().any(|l| l.addr.port() == acme_port) {
-                    acme_acceptor = Some(acme.clone());
-                }
-
-                acme.clone()
-            } else if let Some(cert) = config
-                .value_or_else(
-                    ("server.listener", id, "tls.certificate"),
-                    "server.tls.certificate",
-                )
-                .and_then(|cert_id| self.certificates.get(cert_id))
-                .cloned()
-            {
-                Arc::new(CertificateResolver {
-                    sni: self.certificates_sni.clone(),
-                    cert,
-                })
-            } else {
-                config.new_parse_error(
-                    ("server.listener", id, "tls.certificate"),
-                    "Undefined certificate id",
-                );
-                return;
-            };
-
-            // Build cert provider
-            let mut provider = default_provider();
-            if !disabled_ciphers.is_empty() {
-                provider.cipher_suites = ALL_CIPHER_SUITES
-                    .iter()
-                    .filter(|suite| !disabled_ciphers.contains(suite))
-                    .copied()
-                    .collect();
-            }
-
-            // Build server config
-            let mut server_config = match ServerConfig::builder_with_provider(provider.into())
-                .with_protocol_versions(if tls_v3 == tls_v2 {
-                    ALL_VERSIONS
-                } else if tls_v3 {
-                    TLS13_VERSION
-                } else {
-                    TLS12_VERSION
-                }) {
-                Ok(server_config) => server_config
-                    .with_no_client_auth()
-                    .with_cert_resolver(resolver.clone()),
-                Err(err) => {
-                    config.new_build_error(
-                        ("server.listener", id, "tls"),
-                        format!("Failed to build TLS server config: {err}"),
-                    );
-                    return;
-                }
-            };
-
-            server_config.ignore_client_order = config
-                .property_or_else(
-                    ("server.listener", id, "tls.ignore-client-order"),
-                    "server.tls.ignore-client-order",
-                )
-                .unwrap_or(true);
-
-            // Build acceptor
-            let acceptor = if let Some(manager) = acme_acceptor {
-                let mut challenge = ServerConfig::builder()
-                    .with_no_client_auth()
-                    .with_cert_resolver(resolver);
-                challenge.alpn_protocols.push(ACME_TLS_ALPN_NAME.to_vec());
-                TcpAcceptor::Acme {
-                    challenge: Arc::new(challenge),
-                    default: Arc::new(server_config),
-                    manager,
-                }
-            } else {
-                TcpAcceptor::Tls(TlsAcceptor::from(Arc::new(server_config)))
-            };
-
-            (
-                acceptor,
-                config
-                    .property_or_else(
-                        ("server.listener", id, "tls.implicit"),
-                        "server.tls.implicit",
-                    )
-                    .unwrap_or(true),
-            )
-        } else {
-            (TcpAcceptor::Plain, false)
-        };
-
         // Parse proxy networks
         let mut proxy_networks = Vec::new();
         let proxy_keys = if config.has_prefix(("server.listener", id, "proxy.trusted-networks")) {
@@ -339,10 +195,125 @@ impl Servers {
             id: id_,
             protocol,
             listeners,
-            acceptor,
-            tls_implicit,
             proxy_networks,
         });
+    }
+
+    pub fn parse_tcp_acceptors(&mut self, config: &mut Config, core: SharedCore) {
+        let resolver = Arc::new(CertificateResolver::new(core.clone()));
+        let acme_config = {
+            let mut challenge = ServerConfig::builder()
+                .with_no_client_auth()
+                .with_cert_resolver(Arc::new(AcmeResolver::new(core)));
+
+            challenge.alpn_protocols.push(ACME_TLS_ALPN_NAME.to_vec());
+            Arc::new(challenge)
+        };
+
+        for id_ in config
+            .sub_keys("server.listener", ".protocol")
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+        {
+            let id = id_.as_str();
+            // Build TLS config
+            let acceptor = if config
+                .property_or_else(("server.listener", id, "tls.enable"), "server.tls.enable")
+                .unwrap_or(false)
+            {
+                // Parse protocol versions
+                let mut tls_v2 = true;
+                let mut tls_v3 = true;
+                let mut proto_err = None;
+                for (_, protocol) in config.values_or_else(
+                    ("server.listener", id, "tls.disable-protocols"),
+                    "server.tls.disable-protocols",
+                ) {
+                    match protocol {
+                        "TLSv1.2" | "0x0303" => tls_v2 = false,
+                        "TLSv1.3" | "0x0304" => tls_v3 = false,
+                        protocol => {
+                            proto_err = format!("Unsupported TLS protocol {protocol:?}").into();
+                        }
+                    }
+                }
+
+                if let Some(proto_err) = proto_err {
+                    config.new_parse_error(
+                        ("server.listener", id, "tls.disable-protocols"),
+                        proto_err,
+                    );
+                }
+
+                // Parse cipher suites
+                let mut disabled_ciphers: Vec<SupportedCipherSuite> = Vec::new();
+                let cipher_keys =
+                    if config.has_prefix(("server.listener", id, "tls.disable-ciphers")) {
+                        ("server.listener", id, "tls.disable-ciphers").as_key()
+                    } else {
+                        "server.tls.disable-ciphers".as_key()
+                    };
+                for (_, protocol) in config.properties::<SupportedCipherSuite>(cipher_keys) {
+                    disabled_ciphers.push(protocol);
+                }
+
+                // Build cert provider
+                let mut provider = default_provider();
+                if !disabled_ciphers.is_empty() {
+                    provider.cipher_suites = ALL_CIPHER_SUITES
+                        .iter()
+                        .filter(|suite| !disabled_ciphers.contains(suite))
+                        .copied()
+                        .collect();
+                }
+
+                // Build server config
+                let mut server_config = match ServerConfig::builder_with_provider(provider.into())
+                    .with_protocol_versions(if tls_v3 == tls_v2 {
+                        ALL_VERSIONS
+                    } else if tls_v3 {
+                        TLS13_VERSION
+                    } else {
+                        TLS12_VERSION
+                    }) {
+                    Ok(server_config) => server_config
+                        .with_no_client_auth()
+                        .with_cert_resolver(resolver.clone()),
+                    Err(err) => {
+                        config.new_build_error(
+                            ("server.listener", id, "tls"),
+                            format!("Failed to build TLS server config: {err}"),
+                        );
+                        return;
+                    }
+                };
+
+                server_config.ignore_client_order = config
+                    .property_or_else(
+                        ("server.listener", id, "tls.ignore-client-order"),
+                        "server.tls.ignore-client-order",
+                    )
+                    .unwrap_or(true);
+
+                // Build acceptor
+                let default_config = Arc::new(server_config);
+                TcpAcceptor::Tls {
+                    acceptor: TlsAcceptor::from(default_config.clone()),
+                    acme_config: acme_config.clone(),
+                    default_config,
+                    implicit: config
+                        .property_or_else(
+                            ("server.listener", id, "tls.implicit"),
+                            "server.tls.implicit",
+                        )
+                        .unwrap_or(true),
+                }
+            } else {
+                TcpAcceptor::Plain
+            };
+
+            self.tcp_acceptors.insert(id_, acceptor);
+        }
     }
 }
 

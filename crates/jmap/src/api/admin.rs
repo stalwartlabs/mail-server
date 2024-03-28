@@ -380,12 +380,12 @@ impl JMAP {
                     .into_http_response(),
                 }
             }
-            /*("reload", Some("settings"), &Method::GET) => {
-                let _ = self
-                    .inner
-                    .housekeeper_tx
-                    .send(housekeeper::Event::ReloadConfig)
-                    .await;
+            ("reload", Some("settings"), &Method::GET) => {
+                /*let _ = self
+                .inner
+                .housekeeper_tx
+                .send(housekeeper::Event::ReloadConfig)
+                .await;*/
 
                 JsonResponse::new(json!({
                     "data": (),
@@ -393,17 +393,17 @@ impl JMAP {
                 .into_http_response()
             }
             ("reload", Some("certificates"), &Method::GET) => {
-                let _ = self
-                    .inner
-                    .housekeeper_tx
-                    .send(housekeeper::Event::ReloadCertificates)
-                    .await;
+                /*let _ = self
+                .inner
+                .housekeeper_tx
+                .send(housekeeper::Event::ReloadCertificates)
+                .await;*/
 
                 JsonResponse::new(json!({
                     "data": (),
                 }))
                 .into_http_response()
-            }*/
+            }
             ("settings", Some("group"), &Method::GET) => {
                 // List settings
                 let params = UrlParams::new(req.uri().query());
@@ -434,7 +434,7 @@ impl JMAP {
                     params.parse::<usize>("page").unwrap_or(0).saturating_sub(1) * limit;
                 let has_filter = !filter.is_empty();
 
-                match self.core.storage.data.config_list(&prefix, true).await {
+                match self.core.storage.config.list(&prefix, true).await {
                     Ok(settings) => if !suffix.is_empty() && !settings.is_empty() {
                         // Obtain record ids
                         let mut total = 0;
@@ -548,7 +548,7 @@ impl JMAP {
                 let limit: usize = params.parse("limit").unwrap_or(0);
                 let offset = params.parse::<usize>("page").unwrap_or(0).saturating_sub(1) * limit;
 
-                match self.core.storage.data.config_list(&prefix, true).await {
+                match self.core.storage.config.list(&prefix, true).await {
                     Ok(settings) => {
                         let total = settings.len();
                         let items = settings
@@ -588,7 +588,7 @@ impl JMAP {
                 let mut results = AHashMap::with_capacity(keys.len());
 
                 for key in keys {
-                    match self.core.storage.data.config_get(key).await {
+                    match self.core.storage.config.get(key).await {
                         Ok(Some(value)) => {
                             results.insert(key.to_string(), value);
                         }
@@ -605,7 +605,7 @@ impl JMAP {
                     } else {
                         prefix.to_string()
                     };
-                    match self.core.storage.data.config_list(&prefix, false).await {
+                    match self.core.storage.config.list(&prefix, false).await {
                         Ok(values) => {
                             results.extend(values);
                         }
@@ -631,7 +631,7 @@ impl JMAP {
                 }
             }
             ("settings", Some(prefix), &Method::DELETE) if !prefix.is_empty() => {
-                match self.core.storage.data.config_clear(prefix).await {
+                match self.core.storage.config.clear(prefix).await {
                     Ok(_) => JsonResponse::new(json!({
                         "data": (),
                     }))
@@ -654,13 +654,8 @@ impl JMAP {
                         match change {
                             UpdateSettings::Delete { keys } => {
                                 for key in keys {
-                                    result = self
-                                        .core
-                                        .storage
-                                        .data
-                                        .config_clear(key)
-                                        .await
-                                        .map(|_| true);
+                                    result =
+                                        self.core.storage.config.clear(key).await.map(|_| true);
                                     if result.is_err() {
                                         break 'next;
                                     }
@@ -670,8 +665,8 @@ impl JMAP {
                                 result = self
                                     .core
                                     .storage
-                                    .data
-                                    .config_clear_prefix(&prefix)
+                                    .config
+                                    .clear_prefix(&prefix)
                                     .await
                                     .map(|_| true);
                                 if result.is_err() {
@@ -688,8 +683,8 @@ impl JMAP {
                                         result = self
                                             .core
                                             .storage
-                                            .data
-                                            .config_list(&format!("{prefix}."), true)
+                                            .config
+                                            .list(&format!("{prefix}."), true)
                                             .await
                                             .map(|items| items.is_empty());
 
@@ -700,8 +695,8 @@ impl JMAP {
                                         result = self
                                             .core
                                             .storage
-                                            .data
-                                            .config_get(key)
+                                            .config
+                                            .get(key)
                                             .await
                                             .map(|items| items.is_none());
 
@@ -714,8 +709,8 @@ impl JMAP {
                                 result = self
                                     .core
                                     .storage
-                                    .data
-                                    .config_set(values.into_iter().map(|(key, value)| ConfigKey {
+                                    .config
+                                    .set(values.into_iter().map(|(key, value)| ConfigKey {
                                         key: if let Some(prefix) = &prefix {
                                             format!("{prefix}.{key}")
                                         } else {

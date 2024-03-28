@@ -292,7 +292,7 @@ impl DirectoryTest {
                 config_file.replace("type = \"memory\"", "type = \"memory\"\ndisable = true")
         }
         let mut config = utils::config::Config::new(&config_file).unwrap();
-        let stores = Stores::parse(&mut config).await;
+        let stores = Stores::parse_all(&mut config).await;
         let directories = Directories::parse(
             &mut config,
             &stores,
@@ -570,7 +570,7 @@ async fn lookup_local() {
     )
     .unwrap();
 
-    let lookups = Stores::parse(&mut config).await.lookup_stores;
+    let lookups = Stores::parse_all(&mut config).await.lookup_stores;
 
     for (lookup, item, expect) in [
         ("glob", "user@example.org", true),

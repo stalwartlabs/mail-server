@@ -144,8 +144,8 @@ verify = "relaxed"
 async fn sign_and_seal() {
     let tmp_dir = TempDir::new("smtp_sign_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
-    let stores = Stores::parse(&mut config).await;
-    let core = Core::parse(&mut config, stores).await;
+    let stores = Stores::parse_all(&mut config).await;
+    let core = Core::parse(&mut config, stores, Default::default()).await;
     let mut inner = Inner::default();
 
     // Create temp dir for queue
