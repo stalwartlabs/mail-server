@@ -61,6 +61,15 @@ fn parse_throttle_item(
     available_throttle_keys: u16,
 ) -> Option<Throttle> {
     let prefix = prefix.as_key();
+
+    // Skip disabled throttles
+    if !config
+        .property::<bool>((prefix.as_str(), "enable"))
+        .unwrap_or(true)
+    {
+        return None;
+    }
+
     let mut keys = 0;
     for (key_, value) in config
         .values((&prefix, "key"))

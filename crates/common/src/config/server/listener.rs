@@ -318,7 +318,7 @@ impl Servers {
 }
 
 impl ParseValue for ServerProtocol {
-    fn parse_value(key: impl AsKey, value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
         if value.eq_ignore_ascii_case("smtp") {
             Ok(Self::Smtp)
         } else if value.eq_ignore_ascii_case("lmtp") {
@@ -330,11 +330,7 @@ impl ParseValue for ServerProtocol {
         } else if value.eq_ignore_ascii_case("managesieve") {
             Ok(Self::ManageSieve)
         } else {
-            Err(format!(
-                "Invalid server protocol type {:?} for property {:?}.",
-                value,
-                key.as_key()
-            ))
+            Err(format!("Invalid server protocol type {:?}.", value,))
         }
     }
 }

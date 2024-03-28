@@ -43,6 +43,16 @@ impl Tracers {
             .collect::<Vec<_>>()
         {
             let id = tracer_id.as_str();
+
+            // Skip disabled tracers
+            if !config
+                .property::<bool>(("tracer", id, "enable"))
+                .unwrap_or(true)
+            {
+                continue;
+            }
+
+            // Parse level
             let level = Level::from_str(config.value(("tracer", id, "level")).unwrap_or("info"))
                 .map_err(|err| {
                     config.new_parse_error(

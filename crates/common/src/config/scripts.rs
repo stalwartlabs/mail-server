@@ -17,8 +17,8 @@ use super::smtp::parse_server_hostname;
 
 pub struct Scripting {
     pub untrusted_compiler: Compiler,
-    pub untrusted_runtime: Runtime<()>,
-    pub trusted_runtime: Runtime<()>,
+    pub untrusted_runtime: Runtime,
+    pub trusted_runtime: Runtime,
     pub from_addr: String,
     pub from_name: String,
     pub return_path: String,
@@ -28,6 +28,7 @@ pub struct Scripting {
     pub remote_lists: RwLock<AHashMap<String, RemoteList>>,
 }
 
+#[derive(Clone)]
 pub struct RemoteList {
     pub entries: HashSet<String>,
     pub expires: Instant,
@@ -206,7 +207,7 @@ impl Scripting {
             )
             .register_functions(&mut fnc_map);
 
-        let mut trusted_runtime = Runtime::new_with_context(())
+        let mut trusted_runtime = Runtime::new()
             .without_capabilities([
                 Capability::FileInto,
                 Capability::Vacation,
@@ -342,6 +343,23 @@ impl Default for Scripting {
                 Duration::from_secs(3600),
             ),
             remote_lists: Default::default(),
+        }
+    }
+}
+
+impl Clone for Scripting {
+    fn clone(&self) -> Self {
+        Self {
+            untrusted_compiler: self.untrusted_compiler.clone(),
+            untrusted_runtime: self.untrusted_runtime.clone(),
+            trusted_runtime: self.trusted_runtime.clone(),
+            from_addr: self.from_addr.clone(),
+            from_name: self.from_name.clone(),
+            return_path: self.return_path.clone(),
+            sign: self.sign.clone(),
+            scripts: self.scripts.clone(),
+            bayes_cache: self.bayes_cache.clone(),
+            remote_lists: RwLock::new(self.remote_lists.read().clone()),
         }
     }
 }

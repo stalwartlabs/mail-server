@@ -35,23 +35,23 @@ use crate::{config::scripts::RemoteList, scripts::into_sieve_value, USER_AGENT};
 
 use super::PluginContext;
 
-pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("key_exists", plugin_id, 2);
 }
 
-pub fn register_get(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_get(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("key_get", plugin_id, 2);
 }
 
-pub fn register_set(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_set(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("key_set", plugin_id, 4);
 }
 
-pub fn register_remote(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_remote(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("key_exists_http", plugin_id, 3);
 }
 
-pub fn register_local_domain(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_local_domain(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("is_local_domain", plugin_id, 2);
 }
 

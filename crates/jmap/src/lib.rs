@@ -82,6 +82,7 @@ pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24);
 #[derive(Clone)]
 pub struct JMAP {
     pub core: Arc<Core>,
+    pub shared_core: SharedCore,
     pub inner: Arc<Inner>,
     pub smtp: SMTP,
 }
@@ -571,6 +572,7 @@ impl JMAP {
 
 impl From<JmapInstance> for JMAP {
     fn from(value: JmapInstance) -> Self {
+        let shared_core = value.core.clone();
         let core = value.core.load().clone();
         JMAP {
             smtp: SMTP {
@@ -578,6 +580,7 @@ impl From<JmapInstance> for JMAP {
                 inner: value.smtp_inner,
             },
             core,
+            shared_core,
             inner: value.jmap_inner,
         }
     }

@@ -123,11 +123,14 @@ impl Core {
                 blob,
                 fts,
                 lookup,
-                lookups: stores.lookup_stores,
                 directory,
                 directories: directories.directories,
                 purge_schedules: stores.purge_schedules,
                 config: config_manager,
+                stores: stores.stores,
+                lookups: stores.lookup_stores,
+                blobs: stores.blob_stores,
+                ftss: stores.fts_stores,
             },
         }
     }

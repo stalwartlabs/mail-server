@@ -26,7 +26,7 @@ use sieve::{compiler::ReceivedPart, runtime::Variable, Context};
 
 use super::ApplyString;
 
-pub fn fn_received_part<'x>(ctx: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_received_part<'x>(ctx: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     if let (Ok(part), Some(HeaderValue::Received(rcvd))) = (
         ReceivedPart::try_from(v[1].to_string().as_ref()),
         ctx.message()
@@ -45,7 +45,7 @@ pub fn fn_received_part<'x>(ctx: &'x Context<'x, ()>, v: Vec<Variable>) -> Varia
     }
 }
 
-pub fn fn_is_encoding_problem<'x>(ctx: &'x Context<'x, ()>, _: Vec<Variable>) -> Variable {
+pub fn fn_is_encoding_problem<'x>(ctx: &'x Context<'x>, _: Vec<Variable>) -> Variable {
     ctx.message()
         .part(ctx.part())
         .map(|p| p.is_encoding_problem)
@@ -53,16 +53,16 @@ pub fn fn_is_encoding_problem<'x>(ctx: &'x Context<'x, ()>, _: Vec<Variable>) ->
         .into()
 }
 
-pub fn fn_is_attachment<'x>(ctx: &'x Context<'x, ()>, _: Vec<Variable>) -> Variable {
+pub fn fn_is_attachment<'x>(ctx: &'x Context<'x>, _: Vec<Variable>) -> Variable {
     ctx.message().attachments.contains(&ctx.part()).into()
 }
 
-pub fn fn_is_body<'x>(ctx: &'x Context<'x, ()>, _: Vec<Variable>) -> Variable {
+pub fn fn_is_body<'x>(ctx: &'x Context<'x>, _: Vec<Variable>) -> Variable {
     (ctx.message().text_body.contains(&ctx.part()) || ctx.message().html_body.contains(&ctx.part()))
         .into()
 }
 
-pub fn fn_attachment_name<'x>(ctx: &'x Context<'x, ()>, _: Vec<Variable>) -> Variable {
+pub fn fn_attachment_name<'x>(ctx: &'x Context<'x>, _: Vec<Variable>) -> Variable {
     ctx.message()
         .part(ctx.part())
         .and_then(|p| p.attachment_name())
@@ -70,7 +70,7 @@ pub fn fn_attachment_name<'x>(ctx: &'x Context<'x, ()>, _: Vec<Variable>) -> Var
         .into()
 }
 
-pub fn fn_mime_part_len<'x>(ctx: &'x Context<'x, ()>, _: Vec<Variable>) -> Variable {
+pub fn fn_mime_part_len<'x>(ctx: &'x Context<'x>, _: Vec<Variable>) -> Variable {
     ctx.message()
         .part(ctx.part())
         .map(|p| p.len())
@@ -78,11 +78,11 @@ pub fn fn_mime_part_len<'x>(ctx: &'x Context<'x, ()>, _: Vec<Variable>) -> Varia
         .into()
 }
 
-pub fn fn_thread_name<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_thread_name<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].transform(|s| thread_name(s).into())
 }
 
-pub fn fn_is_header_utf8_valid<'x>(ctx: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_header_utf8_valid<'x>(ctx: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     ctx.message()
         .part(ctx.part())
         .map(|p| {

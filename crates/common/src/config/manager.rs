@@ -4,22 +4,27 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashSet;
 use arc_swap::ArcSwap;
+use parking_lot::RwLock;
 use store::{
     write::{BatchBuilder, ValueClass},
     Deserialize, IterateParams, Store, Stores, ValueKey,
 };
 use tracing_appender::non_blocking::WorkerGuard;
 use utils::{
-    config::{Config, ConfigKey},
+    config::{ipmask::IpAddrOrMask, utils::ParseValue, Config, ConfigKey},
     failed,
     glob::GlobPattern,
     UnwrapFailure,
 };
 
-use crate::{Core, SharedCore};
+use crate::{listener::blocked::BLOCKED_IP_KEY, Core, SharedCore};
 
-use super::{server::Servers, tracers::Tracers};
+use super::{
+    server::{tls::parse_certificates, Servers},
+    tracers::Tracers,
+};
 
 #[derive(Default)]
 pub struct ConfigManager {
@@ -37,6 +42,11 @@ pub struct Patterns {
 enum Pattern {
     Include(MatchType),
     Exclude(MatchType),
+}
+
+pub struct ReloadResult {
+    pub config: Config,
+    pub new_core: Option<Core>,
 }
 
 enum MatchType {
@@ -96,60 +106,6 @@ impl BootManager {
         // Resolve macros
         config.resolve_macros().await;
 
-        // Parse include/exclude patterns
-        let mut cfg_local_patterns = Vec::new();
-        for (key, value) in &config.keys {
-            if !key.starts_with("config.local-keys") {
-                if cfg_local_patterns.is_empty() {
-                    continue;
-                } else {
-                    break;
-                }
-            };
-            let value = value.trim();
-            let (value, is_include) = value
-                .strip_prefix('!')
-                .map_or((value, true), |value| (value, false));
-            let value = value.trim().to_ascii_lowercase();
-            if value.is_empty() {
-                continue;
-            }
-            let match_type = if value == "*" {
-                MatchType::All
-            } else if let Some(value) = value.strip_prefix('*') {
-                MatchType::StartsWith(value.to_string())
-            } else if let Some(value) = value.strip_suffix('*') {
-                MatchType::EndsWith(value.to_string())
-            } else if value.contains('*') {
-                MatchType::Matches(GlobPattern::compile(&value, false))
-            } else {
-                MatchType::Equal(value.to_string())
-            };
-
-            cfg_local_patterns.push(if is_include {
-                Pattern::Include(match_type)
-            } else {
-                Pattern::Exclude(match_type)
-            });
-        }
-        if cfg_local_patterns.is_empty() {
-            cfg_local_patterns = vec![
-                Pattern::Include(MatchType::StartsWith("store.".to_string())),
-                Pattern::Include(MatchType::StartsWith("server.listener.".to_string())),
-                Pattern::Include(MatchType::StartsWith("cluster.".to_string())),
-                Pattern::Include(MatchType::Equal("storage.data".to_string())),
-                Pattern::Include(MatchType::Equal("storage.blob".to_string())),
-                Pattern::Include(MatchType::Equal("storage.lookup".to_string())),
-                Pattern::Include(MatchType::Equal("storage.fts".to_string())),
-                Pattern::Include(MatchType::Equal("server.run-as.user".to_string())),
-                Pattern::Include(MatchType::Equal("server.run-as.group".to_string())),
-                Pattern::Exclude(MatchType::Matches(GlobPattern::compile(
-                    "store.*.query.*",
-                    false,
-                ))),
-            ];
-        }
-
         // Parser servers
         let mut servers = Servers::parse(&mut config);
 
@@ -163,10 +119,7 @@ impl BootManager {
         let manager = ConfigManager {
             cfg_local: ArcSwap::from_pointee(cfg_local),
             cfg_local_path,
-            cfg_local_patterns: Patterns {
-                patterns: cfg_local_patterns,
-            }
-            .into(),
+            cfg_local_patterns: Patterns::parse(&mut config).into(),
             cfg_store: config
                 .value("storage.data")
                 .and_then(|id| stores.stores.get(id))
@@ -177,7 +130,7 @@ impl BootManager {
         // Extend configuration with settings stored in the db
         if !manager.cfg_store.is_none() {
             manager
-                .extend_config(&mut config)
+                .extend_config(&mut config, "")
                 .await
                 .failed("Failed to read configuration");
         }
@@ -203,8 +156,19 @@ impl BootManager {
 }
 
 impl ConfigManager {
-    async fn extend_config(&self, config: &mut Config) -> store::Result<()> {
-        for (key, value) in self.db_list("", false).await? {
+    pub async fn build_config(&self, prefix: &str) -> store::Result<Config> {
+        let mut config = Config {
+            keys: self.cfg_local.load().as_ref().clone(),
+            ..Default::default()
+        };
+        config.resolve_macros().await;
+        self.extend_config(&mut config, prefix)
+            .await
+            .map(|_| config)
+    }
+
+    async fn extend_config(&self, config: &mut Config, prefix: &str) -> store::Result<()> {
+        for (key, value) in self.db_list(prefix, false).await? {
             config.keys.entry(key).or_insert(value);
         }
 
@@ -400,7 +364,186 @@ impl ConfigManager {
     }
 }
 
+impl Core {
+    pub async fn reload_blocked_ips(&self) -> store::Result<ReloadResult> {
+        let mut ip_addresses = AHashSet::new();
+        let mut config = self.storage.config.build_config(BLOCKED_IP_KEY).await?;
+
+        for ip in config
+            .set_values(BLOCKED_IP_KEY)
+            .map(IpAddrOrMask::parse_value)
+            .collect::<Vec<_>>()
+        {
+            match ip {
+                Ok(IpAddrOrMask::Ip(ip)) => {
+                    ip_addresses.insert(ip);
+                }
+                Ok(IpAddrOrMask::Mask(_)) => {}
+                Err(err) => {
+                    config.new_parse_error(BLOCKED_IP_KEY, err);
+                }
+            }
+        }
+
+        *self.network.blocked_ips.ip_addresses.write() = ip_addresses;
+
+        Ok(config.into())
+    }
+
+    pub async fn reload_certificates(&self) -> store::Result<ReloadResult> {
+        let mut config = self.storage.config.build_config("certificate").await?;
+        let mut certificates = self.tls.certificates.load().as_ref().clone();
+
+        parse_certificates(&mut config, &mut certificates, &mut Default::default());
+
+        self.tls.certificates.store(certificates.into());
+
+        Ok(config.into())
+    }
+
+    pub async fn reload_lookups(&self) -> store::Result<ReloadResult> {
+        let mut config = self.storage.config.build_config("certificate").await?;
+        let mut stores = Stores::default();
+        stores.parse_memory_stores(&mut config);
+
+        let mut core = self.clone();
+        for (id, store) in stores.lookup_stores {
+            core.storage.lookups.insert(id, store);
+        }
+
+        Ok(ReloadResult {
+            config,
+            new_core: core.into(),
+        })
+    }
+
+    pub async fn reload(&self) -> store::Result<ReloadResult> {
+        let mut config = self.storage.config.build_config("").await?;
+
+        // Parse tracers
+        Tracers::parse(&mut config);
+
+        // Load stores
+        let mut stores = Stores {
+            stores: self.storage.stores.clone(),
+            blob_stores: self.storage.blobs.clone(),
+            fts_stores: self.storage.ftss.clone(),
+            lookup_stores: self.storage.lookups.clone(),
+            purge_schedules: Default::default(),
+        };
+        stores.parse_stores(&mut config).await;
+        stores.parse_lookups(&mut config).await;
+        if !config.errors.is_empty() {
+            return Ok(config.into());
+        }
+
+        // Build manager
+        let manager = ConfigManager {
+            cfg_local: ArcSwap::from_pointee(self.storage.config.cfg_local.load().as_ref().clone()),
+            cfg_local_path: self.storage.config.cfg_local_path.clone(),
+            cfg_local_patterns: Patterns::parse(&mut config).into(),
+            cfg_store: config
+                .value("storage.data")
+                .and_then(|id| stores.stores.get(id))
+                .cloned()
+                .unwrap_or_default(),
+        };
+
+        // Parse settings and build shared core
+        let mut core = Core::parse(&mut config, stores, manager).await;
+        if !config.errors.is_empty() {
+            return Ok(config.into());
+        }
+        // Transfer Sieve cache
+        core.sieve.bayes_cache = self.sieve.bayes_cache.clone();
+        core.sieve.remote_lists = RwLock::new(self.sieve.remote_lists.read().clone());
+
+        // Copy ACME certificates
+        let mut certificates = core.tls.certificates.load().as_ref().clone();
+        for (cert_id, cert) in self.tls.certificates.load().iter() {
+            certificates
+                .entry(cert_id.to_string())
+                .or_insert(cert.clone());
+        }
+        core.tls.certificates.store(certificates.into());
+
+        // Parser servers
+        let mut servers = Servers::parse(&mut config);
+        servers.parse_tcp_acceptors(&mut config, core.clone().into_shared());
+
+        Ok(if config.errors.is_empty() {
+            ReloadResult {
+                config,
+                new_core: core.into(),
+            }
+        } else {
+            config.into()
+        })
+    }
+}
+
 impl Patterns {
+    pub fn parse(config: &mut Config) -> Self {
+        let mut cfg_local_patterns = Vec::new();
+        for (key, value) in &config.keys {
+            if !key.starts_with("config.local-keys") {
+                if cfg_local_patterns.is_empty() {
+                    continue;
+                } else {
+                    break;
+                }
+            };
+            let value = value.trim();
+            let (value, is_include) = value
+                .strip_prefix('!')
+                .map_or((value, true), |value| (value, false));
+            let value = value.trim().to_ascii_lowercase();
+            if value.is_empty() {
+                continue;
+            }
+            let match_type = if value == "*" {
+                MatchType::All
+            } else if let Some(value) = value.strip_prefix('*') {
+                MatchType::StartsWith(value.to_string())
+            } else if let Some(value) = value.strip_suffix('*') {
+                MatchType::EndsWith(value.to_string())
+            } else if value.contains('*') {
+                MatchType::Matches(GlobPattern::compile(&value, false))
+            } else {
+                MatchType::Equal(value.to_string())
+            };
+
+            cfg_local_patterns.push(if is_include {
+                Pattern::Include(match_type)
+            } else {
+                Pattern::Exclude(match_type)
+            });
+        }
+        if cfg_local_patterns.is_empty() {
+            cfg_local_patterns = vec![
+                Pattern::Include(MatchType::StartsWith("store.".to_string())),
+                Pattern::Include(MatchType::StartsWith("server.listener.".to_string())),
+                Pattern::Include(MatchType::StartsWith("server.socket.".to_string())),
+                Pattern::Include(MatchType::StartsWith("server.tls.".to_string())),
+                Pattern::Include(MatchType::Equal("cluster.node-id".to_string())),
+                Pattern::Include(MatchType::Equal("storage.data".to_string())),
+                Pattern::Include(MatchType::Equal("storage.blob".to_string())),
+                Pattern::Include(MatchType::Equal("storage.lookup".to_string())),
+                Pattern::Include(MatchType::Equal("storage.fts".to_string())),
+                Pattern::Include(MatchType::Equal("server.run-as.user".to_string())),
+                Pattern::Include(MatchType::Equal("server.run-as.group".to_string())),
+                Pattern::Exclude(MatchType::Matches(GlobPattern::compile(
+                    "store.*.query.*",
+                    false,
+                ))),
+            ];
+        }
+
+        Patterns {
+            patterns: cfg_local_patterns,
+        }
+    }
+
     pub fn is_local_key(&self, key: &str) -> bool {
         let mut is_local = false;
 
@@ -431,6 +574,26 @@ impl MatchType {
             MatchType::EndsWith(pattern) => value.ends_with(pattern),
             MatchType::Matches(pattern) => pattern.matches(value),
             MatchType::All => true,
+        }
+    }
+}
+
+impl Clone for ConfigManager {
+    fn clone(&self) -> Self {
+        Self {
+            cfg_local: ArcSwap::from_pointee(self.cfg_local.load().as_ref().clone()),
+            cfg_local_path: self.cfg_local_path.clone(),
+            cfg_local_patterns: self.cfg_local_patterns.clone(),
+            cfg_store: self.cfg_store.clone(),
+        }
+    }
+}
+
+impl From<Config> for ReloadResult {
+    fn from(config: Config) -> Self {
+        Self {
+            config,
+            new_core: None,
         }
     }
 }

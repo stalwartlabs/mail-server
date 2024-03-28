@@ -27,10 +27,7 @@ use deadpool::{
 };
 use std::{sync::Arc, time::Duration};
 use store::{Store, Stores};
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config,
-};
+use utils::config::{utils::ParseValue, Config};
 
 use ahash::AHashMap;
 
@@ -184,17 +181,13 @@ impl Default for LookupFormat {
 }
 
 impl ParseValue for LookupType {
-    fn parse_value(key: impl AsKey, value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
         match value {
             "list" => Ok(LookupType::List),
             "glob" => Ok(LookupType::Glob),
             "regex" => Ok(LookupType::Regex),
             "map" => Ok(LookupType::Map),
-            _ => Err(format!(
-                "Invalid value for lookup type {key:?}: {value:?}",
-                key = key.as_key(),
-                value = value
-            )),
+            _ => Err(format!("Invalid value for lookup type {value:?}",)),
         }
     }
 }

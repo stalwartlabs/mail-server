@@ -34,13 +34,13 @@ use mail_auth::{
 };
 use smtp_proto::MtPriority;
 
-use super::{Config, ConfigError, Rate};
+use super::{Config, ConfigError, ConfigWarning, Rate};
 
 impl Config {
     pub fn property<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
         let key = key.as_key();
         if let Some(value) = self.keys.get(&key) {
-            match T::parse_value(key.as_str(), value) {
+            match T::parse_value(value) {
                 Ok(value) => Some(value),
                 Err(err) => {
                     self.new_parse_error(key, err);
@@ -61,11 +61,14 @@ impl Config {
         let value = match self.keys.get(&key) {
             Some(value) => value.as_str(),
             None => {
-                self.missing.insert(key.clone(), default.to_string().into());
+                self.warnings.insert(
+                    key.clone(),
+                    ConfigWarning::AppliedDefault(default.to_string()),
+                );
                 default
             }
         };
-        match T::parse_value(key.as_str(), value) {
+        match T::parse_value(value) {
             Ok(value) => Some(value),
             Err(err) => {
                 self.new_parse_error(key, err);
@@ -83,12 +86,13 @@ impl Config {
         let value = match self.value_or_else(key.as_str(), default.clone()) {
             Some(value) => value,
             None => {
-                self.missing.insert(default.as_key(), None);
+                self.warnings
+                    .insert(default.as_key(), ConfigWarning::Missing);
                 return None;
             }
         };
 
-        match T::parse_value(key.as_str(), value) {
+        match T::parse_value(value) {
             Ok(value) => Some(value),
             Err(err) => {
                 self.new_parse_error(key, err);
@@ -100,7 +104,7 @@ impl Config {
     pub fn property_require<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
         let key = key.as_key();
         if let Some(value) = self.keys.get(&key) {
-            match T::parse_value(key.as_str(), value) {
+            match T::parse_value(value) {
                 Ok(value) => Some(value),
                 Err(err) => {
                     self.new_parse_error(key, err);
@@ -169,7 +173,7 @@ impl Config {
 
         for (key, value) in &self.keys {
             if key.starts_with(&prefix) || key == &full_prefix {
-                match T::parse_value(key.as_str(), value) {
+                match T::parse_value(value) {
                     Ok(value) => {
                         results.push((key.to_string(), value));
                     }
@@ -203,7 +207,7 @@ impl Config {
     }
 
     pub fn try_parse_value<T: ParseValue>(&mut self, key: impl AsKey, value: &str) -> Option<T> {
-        match T::parse_value(key.clone(), value) {
+        match T::parse_value(value) {
             Ok(value) => Some(value),
             Err(err) => {
                 self.errors.insert(key.as_key(), ConfigError::Parse(err));
@@ -261,7 +265,7 @@ impl Config {
         match self.keys.get(&key) {
             Some(value) => Some(value.as_str()),
             None => {
-                self.missing.insert(key, None);
+                self.warnings.insert(key, ConfigWarning::Missing);
                 None
             }
         }
@@ -278,38 +282,16 @@ impl Config {
     }
 
     pub fn new_missing_property(&mut self, key: impl AsKey) {
-        self.missing.insert(key.as_key(), None);
+        self.warnings.insert(key.as_key(), ConfigWarning::Missing);
     }
 }
 
 pub trait ParseValue: Sized {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self>;
-}
-
-pub trait ParseKey<T: ParseValue> {
-    fn parse_key(&self, key: impl AsKey) -> super::Result<T>;
-}
-
-impl<T: ParseValue> ParseKey<T> for &str {
-    fn parse_key(&self, key: impl AsKey) -> super::Result<T> {
-        T::parse_value(key, self)
-    }
-}
-
-impl<T: ParseValue> ParseKey<T> for String {
-    fn parse_key(&self, key: impl AsKey) -> super::Result<T> {
-        T::parse_value(key, self.as_str())
-    }
-}
-
-impl<T: ParseValue> ParseKey<T> for &String {
-    fn parse_key(&self, key: impl AsKey) -> super::Result<T> {
-        T::parse_value(key, self.as_str())
-    }
+    fn parse_value(value: &str) -> super::Result<Self>;
 }
 
 impl<T: ParseValue> ParseValue for Option<T> {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         if !value.is_empty()
             && !value.eq_ignore_ascii_case("false")
             && !value.eq_ignore_ascii_case("disable")
@@ -317,7 +299,7 @@ impl<T: ParseValue> ParseValue for Option<T> {
             && !value.eq_ignore_ascii_case("never")
             && !value.eq("0")
         {
-            T::parse_value(key, value).map(Some)
+            T::parse_value(value).map(Some)
         } else {
             Ok(None)
         }
@@ -325,137 +307,101 @@ impl<T: ParseValue> ParseValue for Option<T> {
 }
 
 impl ParseValue for String {
-    fn parse_value(_key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         Ok(value.to_string())
     }
 }
 
 impl ParseValue for u64 {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        value.parse().map_err(|_| {
-            format!(
-                "Invalid integer value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )
-        })
+    fn parse_value(value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid integer value {:?}.", value,))
     }
 }
 
 impl ParseValue for f64 {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        value.parse().map_err(|_| {
-            format!(
-                "Invalid floating point value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )
-        })
+    fn parse_value(value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid floating point value {:?}.", value))
     }
 }
 
 impl ParseValue for u16 {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        value.parse().map_err(|_| {
-            format!(
-                "Invalid integer value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )
-        })
+    fn parse_value(value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid integer value {:?}.", value))
     }
 }
 
 impl ParseValue for i16 {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        value.parse().map_err(|_| {
-            format!(
-                "Invalid integer value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )
-        })
+    fn parse_value(value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid integer value {:?}.", value))
     }
 }
 
 impl ParseValue for u32 {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        value.parse().map_err(|_| {
-            format!(
-                "Invalid integer value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )
-        })
+    fn parse_value(value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid integer value {:?}.", value))
     }
 }
 
 impl ParseValue for i32 {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        value.parse().map_err(|_| {
-            format!(
-                "Invalid integer value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )
-        })
+    fn parse_value(value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid integer value {:?}.", value))
     }
 }
 
 impl ParseValue for IpAddr {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        value.parse().map_err(|_| {
-            format!(
-                "Invalid IP address value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )
-        })
+    fn parse_value(value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid IP address value {:?}.", value))
     }
 }
 
 impl ParseValue for usize {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        value.parse().map_err(|_| {
-            format!(
-                "Invalid integer value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )
-        })
+    fn parse_value(value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid integer value {:?}.", value))
     }
 }
 
 impl ParseValue for bool {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
-        value.parse().map_err(|_| {
-            format!(
-                "Invalid boolean value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )
-        })
+    fn parse_value(value: &str) -> super::Result<Self> {
+        value
+            .parse()
+            .map_err(|_| format!("Invalid boolean value {:?}.", value))
     }
 }
 
 impl ParseValue for Ipv4Addr {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid IPv4 value {:?} for key {:?}.", value, key.as_key()))
+            .map_err(|_| format!("Invalid IPv4 value {:?}.", value))
     }
 }
 
 impl ParseValue for Ipv6Addr {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid IPv6 value {:?} for key {:?}.", value, key.as_key()))
+            .map_err(|_| format!("Invalid IPv6 value {:?}.", value))
     }
 }
 
 impl ParseValue for PathBuf {
-    fn parse_value(_key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         let path = PathBuf::from(value);
 
         if path.exists() {
@@ -467,84 +413,62 @@ impl ParseValue for PathBuf {
 }
 
 impl ParseValue for MtPriority {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         match value.to_ascii_lowercase().as_str() {
             "mixer" => Ok(MtPriority::Mixer),
             "stanag4406" => Ok(MtPriority::Stanag4406),
             "nsep" => Ok(MtPriority::Nsep),
-            _ => Err(format!(
-                "Invalid priority value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            )),
+            _ => Err(format!("Invalid priority value {:?}.", value)),
         }
     }
 }
 
 impl ParseValue for Canonicalization {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         match value {
             "relaxed" => Ok(Canonicalization::Relaxed),
             "simple" => Ok(Canonicalization::Simple),
-            _ => Err(format!(
-                "Invalid canonicalization value {:?} for key {:?}.",
-                value,
-                key.as_key()
-            )),
+            _ => Err(format!("Invalid canonicalization value {:?}.", value)),
         }
     }
 }
 
 impl ParseValue for IpLookupStrategy {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         Ok(match value.to_lowercase().as_str() {
             "ipv4_only" => IpLookupStrategy::Ipv4Only,
             "ipv6_only" => IpLookupStrategy::Ipv6Only,
             //"ipv4_and_ipv6" => IpLookupStrategy::Ipv4AndIpv6,
             "ipv6_then_ipv4" => IpLookupStrategy::Ipv6thenIpv4,
             "ipv4_then_ipv6" => IpLookupStrategy::Ipv4thenIpv6,
-            _ => {
-                return Err(format!(
-                    "Invalid IP lookup strategy {:?} for property {:?}.",
-                    value,
-                    key.as_key()
-                ))
-            }
+            _ => return Err(format!("Invalid IP lookup strategy {:?}.", value)),
         })
     }
 }
 
 impl ParseValue for Algorithm {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         match value {
             "ed25519-sha256" | "ed25519-sha-256" => Ok(Algorithm::Ed25519Sha256),
             "rsa-sha-256" | "rsa-sha256" => Ok(Algorithm::RsaSha256),
             "rsa-sha-1" | "rsa-sha1" => Ok(Algorithm::RsaSha1),
-            _ => Err(format!(
-                "Invalid algorithm {:?} for key {:?}.",
-                value,
-                key.as_key()
-            )),
+            _ => Err(format!("Invalid algorithm {:?}.", value)),
         }
     }
 }
 
 impl ParseValue for HashAlgorithm {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         match value {
             "sha256" | "sha-256" => Ok(HashAlgorithm::Sha256),
             "sha-1" | "sha1" => Ok(HashAlgorithm::Sha1),
-            _ => Err(format!(
-                "Invalid hash algorithm {:?} for key {:?}.",
-                value,
-                key.as_key()
-            )),
+            _ => Err(format!("Invalid hash algorithm {:?}.", value)),
         }
     }
 }
 
 impl ParseValue for Duration {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         let mut digits = String::new();
         let mut multiplier = String::new();
 
@@ -562,13 +486,7 @@ impl ParseValue for Duration {
             "m" => 60 * 1000,
             "s" => 1000,
             "ms" | "" => 1,
-            _ => {
-                return Err(format!(
-                    "Invalid duration value {:?} for property {:?}.",
-                    value,
-                    key.as_key()
-                ))
-            }
+            _ => return Err(format!("Invalid duration value {:?}.", value)),
         };
 
         digits
@@ -581,18 +499,12 @@ impl ParseValue for Duration {
                     None
                 }
             })
-            .ok_or_else(|| {
-                format!(
-                    "Invalid duration value {:?} for property {:?}.",
-                    value,
-                    key.as_key()
-                )
-            })
+            .ok_or_else(|| format!("Invalid duration value {:?}.", value))
     }
 }
 
 impl ParseValue for Rate {
-    fn parse_value(key: impl AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         if let Some((requests, period)) = value.split_once('/') {
             Ok(Rate {
                 requests: requests
@@ -600,23 +512,13 @@ impl ParseValue for Rate {
                     .parse::<u64>()
                     .ok()
                     .and_then(|r| if r > 0 { Some(r) } else { None })
-                    .ok_or_else(|| {
-                        format!(
-                            "Invalid rate value {:?} for property {:?}.",
-                            value,
-                            key.as_key()
-                        )
-                    })?,
-                period: std::cmp::max(period.parse_key(key)?, Duration::from_secs(1)),
+                    .ok_or_else(|| format!("Invalid rate value {:?}.", value))?,
+                period: std::cmp::max(Duration::parse_value(period)?, Duration::from_secs(1)),
             })
         } else if ["false", "none", "unlimited"].contains(&value) {
             Ok(Rate::default())
         } else {
-            Err(format!(
-                "Invalid rate value {:?} for property {:?}.",
-                value,
-                key.as_key()
-            ))
+            Err(format!("Invalid rate value {:?}.", value))
         }
     }
 }

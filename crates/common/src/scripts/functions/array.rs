@@ -25,7 +25,7 @@ use std::collections::{HashMap, HashSet};
 
 use sieve::{runtime::Variable, Context};
 
-pub fn fn_count<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_count<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     match &v[0] {
         Variable::Array(a) => a.len(),
         v => {
@@ -39,7 +39,7 @@ pub fn fn_count<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
     .into()
 }
 
-pub fn fn_sort<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_sort<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let is_asc = v[1].to_bool();
     let mut arr = (*v[0].to_array()).clone();
     if is_asc {
@@ -50,7 +50,7 @@ pub fn fn_sort<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
     arr.into()
 }
 
-pub fn fn_dedup<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_dedup<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let arr = v[0].to_array();
     let mut result = Vec::with_capacity(arr.len());
 
@@ -63,7 +63,7 @@ pub fn fn_dedup<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
     result.into()
 }
 
-pub fn fn_cosine_similarity<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_cosine_similarity<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let mut word_freq: HashMap<Variable, [u32; 2]> = HashMap::new();
 
     for (idx, var) in v.into_iter().enumerate() {
@@ -99,7 +99,7 @@ pub fn fn_cosine_similarity<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Var
     .into()
 }
 
-pub fn fn_jaccard_similarity<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_jaccard_similarity<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let mut word_freq = [HashSet::new(), HashSet::new()];
 
     for (idx, var) in v.into_iter().enumerate() {
@@ -128,7 +128,7 @@ pub fn fn_jaccard_similarity<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Va
     .into()
 }
 
-pub fn fn_is_intersect<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_intersect<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     match (&v[0], &v[1]) {
         (Variable::Array(a), Variable::Array(b)) => a.iter().any(|x| b.contains(x)),
         (Variable::Array(a), item) | (item, Variable::Array(a)) => a.contains(item),
@@ -137,7 +137,7 @@ pub fn fn_is_intersect<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable
     .into()
 }
 
-pub fn fn_winnow<'x>(_: &'x Context<'x, ()>, mut v: Vec<Variable>) -> Variable {
+pub fn fn_winnow<'x>(_: &'x Context<'x>, mut v: Vec<Variable>) -> Variable {
     match v.remove(0) {
         Variable::Array(a) => a
             .iter()

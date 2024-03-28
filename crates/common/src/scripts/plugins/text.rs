@@ -35,11 +35,11 @@ enum MatchPart {
     Host,
 }
 
-pub fn register_tokenize(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_tokenize(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("tokenize", plugin_id, 2);
 }
 
-pub fn register_domain_part(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_domain_part(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("domain_part", plugin_id, 2);
 }
 

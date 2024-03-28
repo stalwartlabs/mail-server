@@ -15,6 +15,7 @@ use crate::expr::{self, if_block::IfBlock, tokenizer::TokenMap, Constant, Consta
 
 use super::*;
 
+#[derive(Clone)]
 pub struct MailAuthConfig {
     pub dkim: DkimAuthConfig,
     pub arc: ArcAuthConfig,
@@ -26,24 +27,30 @@ pub struct MailAuthConfig {
     pub sealers: AHashMap<String, Arc<ArcSealer>>,
 }
 
+#[derive(Clone)]
 pub struct DkimAuthConfig {
     pub verify: IfBlock,
     pub sign: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct ArcAuthConfig {
     pub verify: IfBlock,
     pub seal: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct SpfAuthConfig {
     pub verify_ehlo: IfBlock,
     pub verify_mail_from: IfBlock,
 }
+
+#[derive(Clone)]
 pub struct DmarcAuthConfig {
     pub verify: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct IpRevAuthConfig {
     pub verify: IfBlock,
 }
@@ -399,16 +406,12 @@ impl VerifyStrategy {
 }
 
 impl ParseValue for VerifyStrategy {
-    fn parse_value(key: impl AsKey, value: &str) -> Result<Self, String> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         match value {
             "relaxed" => Ok(VerifyStrategy::Relaxed),
             "strict" => Ok(VerifyStrategy::Strict),
             "disable" | "disabled" | "never" | "none" => Ok(VerifyStrategy::Disable),
-            _ => Err(format!(
-                "Invalid value {:?} for key {:?}.",
-                value,
-                key.as_key()
-            )),
+            _ => Err(format!("Invalid value {:?}.", value)),
         }
     }
 }
@@ -426,14 +429,14 @@ impl ConstantValue for VerifyStrategy {
 }
 
 impl ParseValue for DkimCanonicalization {
-    fn parse_value(key: impl AsKey, value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
         if let Some((headers, body)) = value.split_once('/') {
             Ok(DkimCanonicalization {
-                headers: Canonicalization::parse_value(key.clone(), headers.trim())?,
-                body: Canonicalization::parse_value(key, body.trim())?,
+                headers: Canonicalization::parse_value(headers.trim())?,
+                body: Canonicalization::parse_value(body.trim())?,
             })
         } else {
-            let c = Canonicalization::parse_value(key, value)?;
+            let c = Canonicalization::parse_value(value)?;
             Ok(DkimCanonicalization {
                 headers: c,
                 body: c,

@@ -61,12 +61,13 @@ impl SqliteStore {
                 })
                 .ok()?,
             worker_pool: rayon::ThreadPoolBuilder::new()
-                .num_threads(
+                .num_threads(std::cmp::max(
                     config
                         .property::<usize>((&prefix, "pool.workers"))
                         .filter(|v| *v > 0)
                         .unwrap_or_else(num_cpus::get),
-                )
+                    4,
+                ))
                 .build()
                 .map_err(|err| {
                     config.new_build_error(

@@ -6,15 +6,19 @@ use store::{write::purge::PurgeSchedule, BlobStore, FtsStore, LookupStore, Store
 
 use super::manager::ConfigManager;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Storage {
     pub data: Store,
     pub blob: BlobStore,
     pub fts: FtsStore,
     pub lookup: LookupStore,
-    pub lookups: AHashMap<String, LookupStore>,
     pub directory: Arc<Directory>,
     pub directories: AHashMap<String, Arc<Directory>>,
     pub purge_schedules: Vec<PurgeSchedule>,
     pub config: ConfigManager,
+
+    pub stores: AHashMap<String, Store>,
+    pub blobs: AHashMap<String, BlobStore>,
+    pub lookups: AHashMap<String, LookupStore>,
+    pub ftss: AHashMap<String, FtsStore>,
 }

@@ -6,7 +6,7 @@ use nlp::language::Language;
 use store::rand::{distributions::Alphanumeric, thread_rng, Rng};
 use utils::config::{cron::SimpleCron, utils::ParseValue, Config, Rate};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct JmapConfig {
     pub default_language: Language,
     pub query_max_results: usize,
@@ -263,7 +263,7 @@ impl JmapConfig {
                 .unwrap_or_else(|| Duration::from_secs(1)),
             session_purge_frequency: config
                 .property_or_default::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
-                .unwrap_or_else(|| SimpleCron::parse_value("15 * *", "").unwrap()),
+                .unwrap_or_else(|| SimpleCron::parse_value("15 * *").unwrap()),
         };
 
         // Add capabilities

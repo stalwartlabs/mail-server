@@ -4,10 +4,7 @@ use std::{
 };
 
 use smtp_proto::*;
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config,
-};
+use utils::config::{utils::ParseValue, Config};
 
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap, Constant, ConstantValue, Variable};
 
@@ -15,6 +12,7 @@ use self::throttle::parse_throttle;
 
 use super::*;
 
+#[derive(Clone)]
 pub struct SessionConfig {
     pub timeout: IfBlock,
     pub duration: IfBlock,
@@ -30,24 +28,27 @@ pub struct SessionConfig {
     pub extensions: Extensions,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct SessionThrottle {
     pub connect: Vec<Throttle>,
     pub mail_from: Vec<Throttle>,
     pub rcpt_to: Vec<Throttle>,
 }
 
+#[derive(Clone)]
 pub struct Connect {
     pub script: IfBlock,
     pub greeting: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct Ehlo {
     pub script: IfBlock,
     pub require: IfBlock,
     pub reject_non_fqdn: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct Extensions {
     pub pipelining: IfBlock,
     pub chunking: IfBlock,
@@ -61,6 +62,7 @@ pub struct Extensions {
     pub mt_priority: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct Auth {
     pub directory: IfBlock,
     pub mechanisms: IfBlock,
@@ -71,11 +73,13 @@ pub struct Auth {
     pub errors_wait: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct Mail {
     pub script: IfBlock,
     pub rewrite: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct Rcpt {
     pub script: IfBlock,
     pub relay: IfBlock,
@@ -94,7 +98,7 @@ pub struct Rcpt {
     pub subaddressing: AddressMapping,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum AddressMapping {
     Enable,
     Custom(IfBlock),
@@ -102,6 +106,7 @@ pub enum AddressMapping {
     Disable,
 }
 
+#[derive(Clone)]
 pub struct Data {
     pub script: IfBlock,
     pub pipe_commands: Vec<Pipe>,
@@ -122,12 +127,14 @@ pub struct Data {
 }
 
 // Ceci n'est pas une pipe
+#[derive(Clone)]
 pub struct Pipe {
     pub command: IfBlock,
     pub arguments: IfBlock,
     pub timeout: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct Milter {
     pub enable: IfBlock,
     pub addrs: Vec<SocketAddr>,
@@ -641,7 +648,7 @@ impl Default for SessionConfig {
 pub struct Mechanism(u64);
 
 impl ParseValue for Mechanism {
-    fn parse_value(key: impl AsKey, value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
         Ok(Mechanism(match value.to_ascii_uppercase().as_str() {
             "LOGIN" => AUTH_LOGIN,
             "PLAIN" => AUTH_PLAIN,
@@ -685,13 +692,7 @@ impl ParseValue for Mechanism {
             "CRAM-MD5" => AUTH_CRAM_MD5,
             "DIGEST-MD5" => AUTH_DIGEST_MD5,
             "ANONYMOUS" => AUTH_ANONYMOUS,*/
-            _ => {
-                return Err(format!(
-                    "Unsupported mechanism {:?} for property {:?}.",
-                    value,
-                    key.as_key()
-                ))
-            }
+            _ => return Err(format!("Unsupported mechanism {:?}.", value)),
         }))
     }
 }
@@ -758,7 +759,7 @@ impl<'x> TryFrom<Variable<'x>> for MtPriority {
                 4 => Ok(MtPriority::Nsep),
                 _ => Err(()),
             },
-            Variable::String(value) => MtPriority::parse_value("", &value).map_err(|_| ()),
+            Variable::String(value) => MtPriority::parse_value(&value).map_err(|_| ()),
             _ => Err(()),
         }
     }

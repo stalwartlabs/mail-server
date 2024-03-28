@@ -27,7 +27,7 @@ use crate::scripts::ScriptModification;
 
 use super::PluginContext;
 
-pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("add_header", plugin_id, 2);
 }
 

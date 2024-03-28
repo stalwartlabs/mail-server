@@ -28,7 +28,7 @@ use sieve::{runtime::Variable, FunctionMap};
 
 use super::PluginContext;
 
-pub fn register_header(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_header(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("http_header", plugin_id, 4);
 }
 

@@ -35,7 +35,7 @@ use clap::{Parser, ValueEnum};
 use dialoguer::{console::Term, theme::ColorfulTheme, Confirm, Input, Select};
 use openssl::rsa::Rsa;
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use rcgen::generate_simple_self_signed;
+use rcgen::{generate_simple_self_signed, CertifiedKey};
 
 const CONFIG_URL: &str = "https://get.stalw.art/resources/config.zip";
 
@@ -482,15 +482,12 @@ fn main() -> std::io::Result<()> {
         let pk_path = base_path.join("privkey.pem");
 
         // Build self-signed cert
-        let cert = generate_simple_self_signed(vec![hostname.to_string()]).unwrap_or_else(|err| {
-            panic!("Failed to generate self-signed certificate for {hostname}: {err}",)
-        });
-        std::fs::write(
-            &cert_path,
-            cert.serialize_pem()
-                .unwrap_or_else(|err| panic!("Failed to write certificate for {hostname}: {err}",)),
-        )?;
-        std::fs::write(&pk_path, cert.serialize_private_key_pem())?;
+        let CertifiedKey { cert, key_pair } =
+            generate_simple_self_signed(vec![hostname.to_string()]).unwrap_or_else(|err| {
+                panic!("Failed to generate self-signed certificate for {hostname}: {err}",)
+            });
+        std::fs::write(&cert_path, cert.pem())?;
+        std::fs::write(&pk_path, key_pair.serialize_pem())?;
 
         (
             cert_path.to_str().unwrap().to_string(),

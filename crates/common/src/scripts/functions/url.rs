@@ -26,7 +26,7 @@ use sieve::{runtime::Variable, Context};
 
 use super::ApplyString;
 
-pub fn fn_uri_part<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_uri_part<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let part = v[1].to_string();
     v[0].transform(|uri| {
         uri.parse::<Uri>()
@@ -49,7 +49,7 @@ pub fn fn_uri_part<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
     })
 }
 
-pub fn fn_puny_decode<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_puny_decode<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].transform(|domain| {
         if domain.contains("xn--") {
             let mut decoded = String::with_capacity(domain.len());

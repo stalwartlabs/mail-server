@@ -22,7 +22,7 @@ mail-send = { version = "0.4", default-features = false, features = ["cram-md5"]
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] } 
 smtp-proto = { version = "0.1", features = ["serde_support"] }
-sieve-rs = { version = "0.4" } 
+sieve-rs = { version = "0.5" } 
 ahash = { version = "0.8" }
 rustls = "0.22"
 rustls-pemfile = "2.0"

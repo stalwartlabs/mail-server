@@ -25,7 +25,7 @@ use sieve::{runtime::Variable, Context};
 
 use super::ApplyString;
 
-pub fn fn_is_email<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_email<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let mut last_ch = 0;
     let mut in_quote = false;
     let mut at_count = 0;
@@ -95,7 +95,7 @@ pub fn fn_is_email<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
     (at_count == 1 && dot_count > 0 && lp_len > 0 && value > 0).into()
 }
 
-pub fn fn_email_part<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_email_part<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].transform(|s| {
         s.rsplit_once('@')
             .map(|(u, d)| match v[1].to_string().as_ref() {

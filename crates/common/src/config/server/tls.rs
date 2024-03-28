@@ -61,104 +61,7 @@ impl TlsManager {
         let mut subject_names = AHashSet::new();
 
         // Parse certificates
-        for cert_id in config
-            .sub_keys("certificate", ".cert")
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-        {
-            let cert_id = cert_id.as_str();
-            let key_cert = ("certificate", cert_id, "cert");
-            let key_pk = ("certificate", cert_id, "private-key");
-
-            let cert = config
-                .value_require(key_cert)
-                .map(|s| s.as_bytes().to_vec());
-            let pk = config.value_require(key_pk).map(|s| s.as_bytes().to_vec());
-
-            if let (Some(cert), Some(pk)) = (cert, pk) {
-                match build_certified_key(cert, pk) {
-                    Ok(cert) => {
-                        match cert
-                            .end_entity_cert()
-                            .map_err(|err| format!("Failed to obtain end entity cert: {err}"))
-                            .and_then(|cert| {
-                                X509Certificate::from_der(cert.as_ref()).map_err(|err| {
-                                    format!("Failed to parse end entity cert: {err}")
-                                })
-                            }) {
-                            Ok((_, parsed)) => {
-                                // Add CNs and SANs to the list of names
-                                let mut names = AHashSet::new();
-                                for name in parsed.subject().iter_common_name() {
-                                    if let Ok(name) = name.as_str() {
-                                        names.insert(name.to_string());
-                                    }
-                                }
-                                for ext in parsed.extensions() {
-                                    if let ParsedExtension::SubjectAlternativeName(san) =
-                                        ext.parsed_extension()
-                                    {
-                                        for name in &san.general_names {
-                                            let name = match name {
-                                                GeneralName::DNSName(name) => name.to_string(),
-                                                GeneralName::IPAddress(ip) => match ip.len() {
-                                                    4 => Ipv4Addr::from(
-                                                        <[u8; 4]>::try_from(*ip).unwrap(),
-                                                    )
-                                                    .to_string(),
-                                                    16 => Ipv6Addr::from(
-                                                        <[u8; 16]>::try_from(*ip).unwrap(),
-                                                    )
-                                                    .to_string(),
-                                                    _ => continue,
-                                                },
-                                                _ => {
-                                                    continue;
-                                                }
-                                            };
-                                            names.insert(name);
-                                        }
-                                    }
-                                }
-
-                                // Add custom SNIs
-                                names.extend(
-                                    config
-                                        .values(("certificate", cert_id, "subjects"))
-                                        .map(|(_, v)| v.trim().to_string()),
-                                );
-
-                                // Add domain names
-                                subject_names.extend(names.iter().cloned());
-
-                                // Add certificates
-                                let cert = Arc::new(cert);
-                                for name in names {
-                                    certificates.insert(
-                                        name.strip_prefix("*.")
-                                            .map(|name| name.to_string())
-                                            .unwrap_or(name),
-                                        cert.clone(),
-                                    );
-                                }
-
-                                // Add default certificate
-                                if config
-                                    .property::<bool>(("certificate", cert_id, "default"))
-                                    .unwrap_or_default()
-                                {
-                                    certificates.insert("*".to_string(), cert.clone());
-                                }
-                            }
-                            Err(err) => {
-                                config.new_build_error(format!("certificate.{cert_id}"), err)
-                            }
-                        }
-                    }
-                    Err(err) => config.new_build_error(format!("certificate.{cert_id}"), err),
-                }
-            }
-        }
+        parse_certificates(config, &mut certificates, &mut subject_names);
 
         // Parse ACME providers
         for acme_id in config
@@ -239,6 +142,109 @@ impl TlsManager {
                 })
                 .ok()
                 .map(Arc::new),
+        }
+    }
+}
+
+pub(crate) fn parse_certificates(
+    config: &mut Config,
+    certificates: &mut AHashMap<String, Arc<CertifiedKey>>,
+    subject_names: &mut AHashSet<String>,
+) {
+    // Parse certificates
+    for cert_id in config
+        .sub_keys("certificate", ".cert")
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+    {
+        let cert_id = cert_id.as_str();
+        let key_cert = ("certificate", cert_id, "cert");
+        let key_pk = ("certificate", cert_id, "private-key");
+
+        let cert = config
+            .value_require(key_cert)
+            .map(|s| s.as_bytes().to_vec());
+        let pk = config.value_require(key_pk).map(|s| s.as_bytes().to_vec());
+
+        if let (Some(cert), Some(pk)) = (cert, pk) {
+            match build_certified_key(cert, pk) {
+                Ok(cert) => {
+                    match cert
+                        .end_entity_cert()
+                        .map_err(|err| format!("Failed to obtain end entity cert: {err}"))
+                        .and_then(|cert| {
+                            X509Certificate::from_der(cert.as_ref())
+                                .map_err(|err| format!("Failed to parse end entity cert: {err}"))
+                        }) {
+                        Ok((_, parsed)) => {
+                            // Add CNs and SANs to the list of names
+                            let mut names = AHashSet::new();
+                            for name in parsed.subject().iter_common_name() {
+                                if let Ok(name) = name.as_str() {
+                                    names.insert(name.to_string());
+                                }
+                            }
+                            for ext in parsed.extensions() {
+                                if let ParsedExtension::SubjectAlternativeName(san) =
+                                    ext.parsed_extension()
+                                {
+                                    for name in &san.general_names {
+                                        let name = match name {
+                                            GeneralName::DNSName(name) => name.to_string(),
+                                            GeneralName::IPAddress(ip) => match ip.len() {
+                                                4 => Ipv4Addr::from(
+                                                    <[u8; 4]>::try_from(*ip).unwrap(),
+                                                )
+                                                .to_string(),
+                                                16 => Ipv6Addr::from(
+                                                    <[u8; 16]>::try_from(*ip).unwrap(),
+                                                )
+                                                .to_string(),
+                                                _ => continue,
+                                            },
+                                            _ => {
+                                                continue;
+                                            }
+                                        };
+                                        names.insert(name);
+                                    }
+                                }
+                            }
+
+                            // Add custom SNIs
+                            names.extend(
+                                config
+                                    .values(("certificate", cert_id, "subjects"))
+                                    .map(|(_, v)| v.trim().to_string()),
+                            );
+
+                            // Add domain names
+                            subject_names.extend(names.iter().cloned());
+
+                            // Add certificates
+                            let cert = Arc::new(cert);
+                            for name in names {
+                                certificates.insert(
+                                    name.strip_prefix("*.")
+                                        .map(|name| name.to_string())
+                                        .unwrap_or(name),
+                                    cert.clone(),
+                                );
+                            }
+
+                            // Add default certificate
+                            if config
+                                .property::<bool>(("certificate", cert_id, "default"))
+                                .unwrap_or_default()
+                            {
+                                certificates.insert("*".to_string(), cert.clone());
+                            }
+                        }
+                        Err(err) => config.new_build_error(format!("certificate.{cert_id}"), err),
+                    }
+                }
+                Err(err) => config.new_build_error(format!("certificate.{cert_id}"), err),
+            }
         }
     }
 }

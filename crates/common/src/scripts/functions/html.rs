@@ -26,11 +26,11 @@ use std::borrow::Cow;
 use mail_parser::decoders::html::{add_html_token, html_to_text};
 use sieve::{runtime::Variable, Context};
 
-pub fn fn_html_to_text<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_html_to_text<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     html_to_text(v[0].to_string().as_ref()).into()
 }
 
-pub fn fn_html_has_tag<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_html_has_tag<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].as_array()
         .map(|arr| {
             let token = v[1].to_string();
@@ -45,7 +45,7 @@ pub fn fn_html_has_tag<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable
         .into()
 }
 
-pub fn fn_html_attr_size<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_html_attr_size<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let t = v[0].to_string();
     let mut dimension = None;
 
@@ -63,7 +63,7 @@ pub fn fn_html_attr_size<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variab
     dimension.map(Variable::Integer).unwrap_or_default()
 }
 
-pub fn fn_html_attrs<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_html_attrs<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     html_attr_tokens(
         v[0].to_string().as_ref(),
         v[1].to_string().as_ref(),
@@ -72,7 +72,7 @@ pub fn fn_html_attrs<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
     .into()
 }
 
-pub fn fn_html_attr<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_html_attr<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     get_attribute(v[0].to_string().as_ref(), v[1].to_string().as_ref())
         .map(Variable::from)
         .unwrap_or_default()

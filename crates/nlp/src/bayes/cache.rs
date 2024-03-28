@@ -116,3 +116,14 @@ impl Default for BayesTokenCache {
         }
     }
 }
+
+impl Clone for BayesTokenCache {
+    fn clone(&self) -> Self {
+        Self {
+            positive: Mutex::new(self.positive.lock().clone()),
+            negative: Mutex::new(self.negative.lock().clone()),
+            ttl_negative: self.ttl_negative,
+            ttl_positive: self.ttl_positive,
+        }
+    }
+}

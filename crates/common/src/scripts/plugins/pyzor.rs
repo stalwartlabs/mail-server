@@ -48,7 +48,7 @@ struct PyzorResponse {
     wl_count: u64,
 }
 
-pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("pyzor_check", plugin_id, 2);
 }
 

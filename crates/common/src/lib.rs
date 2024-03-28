@@ -42,7 +42,7 @@ pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG
 
 pub type SharedCore = Arc<ArcSwap<Core>>;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Core {
     pub storage: Storage,
     pub sieve: Scripting,
@@ -53,6 +53,7 @@ pub struct Core {
     pub imap: ImapConfig,
 }
 
+#[derive(Clone)]
 pub struct Network {
     pub blocked_ips: BlockedIps,
     pub hostname: IfBlock,

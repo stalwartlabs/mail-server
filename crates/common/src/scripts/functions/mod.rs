@@ -37,7 +37,7 @@ use self::{
     array::*, email::*, header::*, html::*, image::*, misc::*, text::*, unicode::*, url::*,
 };
 
-pub fn register_functions() -> FunctionMap<()> {
+pub fn register_functions() -> FunctionMap {
     FunctionMap::new()
         .with_function("trim", fn_trim)
         .with_function("trim_start", fn_trim_start)

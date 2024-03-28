@@ -166,19 +166,12 @@ impl CompressionAlgo {
 }
 
 impl ParseValue for CompressionAlgo {
-    fn parse_value(
-        key: impl utils::config::utils::AsKey,
-        value: &str,
-    ) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
         match value {
             "lz4" => Ok(CompressionAlgo::Lz4),
             //"zstd" => Ok(CompressionAlgo::Zstd),
             "none" | "false" | "disable" | "disabled" => Ok(CompressionAlgo::None),
-            algo => Err(format!(
-                "Invalid compression algorithm: {} for key {}",
-                algo,
-                key.as_key()
-            )),
+            algo => Err(format!("Invalid compression algorithm: {algo}",)),
         }
     }
 }

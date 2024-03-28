@@ -34,19 +34,19 @@ use tokio::runtime::Handle;
 
 use super::PluginContext;
 
-pub fn register_train(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_train(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("bayes_train", plugin_id, 3);
 }
 
-pub fn register_untrain(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_untrain(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("bayes_untrain", plugin_id, 3);
 }
 
-pub fn register_classify(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_classify(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("bayes_classify", plugin_id, 3);
 }
 
-pub fn register_is_balanced(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_is_balanced(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("bayes_is_balanced", plugin_id, 3);
 }
 

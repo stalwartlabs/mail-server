@@ -16,12 +16,12 @@ rpassword = "7.0"
 indicatif = "0.17.0"
 dialoguer = "0.11"
 openssl = { version = "0.10.55", features = ["vendored"] }
-base64 = "0.21.2"
+base64 = "0.22"
 pwhash = "1.0.0"
 rand = "0.8.5"
 clap = { version = "4.1.6", features = ["derive"] }
 zip-extract = "0.1.2"
-rcgen = "0.12"
+rcgen = "0.13"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = "0.2.147"

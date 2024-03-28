@@ -1,14 +1,12 @@
 use std::time::Duration;
 
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config,
-};
+use utils::config::{utils::ParseValue, Config};
 
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap, Constant, ConstantValue, Variable};
 
 use super::*;
 
+#[derive(Clone)]
 pub struct ReportConfig {
     pub submitter: IfBlock,
     pub analysis: ReportAnalysis,
@@ -20,18 +18,21 @@ pub struct ReportConfig {
     pub tls: AggregateReport,
 }
 
+#[derive(Clone)]
 pub struct ReportAnalysis {
     pub addresses: Vec<AddressMatch>,
     pub forward: bool,
     pub store: Option<Duration>,
 }
 
+#[derive(Clone)]
 pub enum AddressMatch {
     StartsWith(String),
     EndsWith(String),
     Equals(String),
 }
 
+#[derive(Clone)]
 pub struct AggregateReport {
     pub name: IfBlock,
     pub address: IfBlock,
@@ -42,6 +43,7 @@ pub struct AggregateReport {
     pub max_size: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct Report {
     pub name: IfBlock,
     pub address: IfBlock,
@@ -241,17 +243,13 @@ impl Default for AggregateReport {
 }
 
 impl ParseValue for AggregateFrequency {
-    fn parse_value(key: impl AsKey, value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
         match value {
             "daily" | "day" => Ok(AggregateFrequency::Daily),
             "hourly" | "hour" => Ok(AggregateFrequency::Hourly),
             "weekly" | "week" => Ok(AggregateFrequency::Weekly),
             "never" | "disable" | "false" => Ok(AggregateFrequency::Never),
-            _ => Err(format!(
-                "Invalid aggregate frequency value {:?} for key {:?}.",
-                value,
-                key.as_key()
-            )),
+            _ => Err(format!("Invalid aggregate frequency value {:?}.", value,)),
         }
     }
 }
@@ -298,7 +296,7 @@ impl ConstantValue for AggregateFrequency {
 }
 
 impl ParseValue for AddressMatch {
-    fn parse_value(key: impl AsKey, value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
         if let Some(value) = value.strip_prefix('*').map(|v| v.trim()) {
             if !value.is_empty() {
                 return Ok(AddressMatch::EndsWith(value.to_lowercase()));
@@ -310,10 +308,6 @@ impl ParseValue for AddressMatch {
         } else if value.contains('@') {
             return Ok(AddressMatch::Equals(value.trim().to_lowercase()));
         }
-        Err(format!(
-            "Invalid address match value {:?} for key {:?}.",
-            value,
-            key.as_key()
-        ))
+        Err(format!("Invalid address match value {:?}.", value,))
     }
 }

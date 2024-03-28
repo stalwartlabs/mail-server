@@ -129,3 +129,16 @@ impl Debug for AcmeResolver {
         f.debug_struct("AcmeResolver").finish()
     }
 }
+
+impl Clone for AcmeProvider {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            directory_url: self.directory_url.clone(),
+            domains: self.domains.clone(),
+            contact: self.contact.clone(),
+            renew_before: self.renew_before,
+            account_key: ArcSwap::from_pointee(self.account_key.load().as_ref().clone()),
+        }
+    }
+}

@@ -380,29 +380,77 @@ impl JMAP {
                     .into_http_response(),
                 }
             }
-            ("reload", Some("settings"), &Method::GET) => {
-                /*let _ = self
-                .inner
-                .housekeeper_tx
-                .send(housekeeper::Event::ReloadConfig)
-                .await;*/
+            ("reload", Some("lookup"), &Method::GET) => {
+                match self.core.reload_lookups().await {
+                    Ok(result) => {
+                        // Update core
+                        if let Some(core) = result.new_core {
+                            self.shared_core.store(core.into());
+                        }
 
-                JsonResponse::new(json!({
-                    "data": (),
-                }))
-                .into_http_response()
+                        JsonResponse::new(json!({
+                            "data": result.config,
+                        }))
+                        .into_http_response()
+                    }
+                    Err(err) => RequestError::blank(
+                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                        "Database error",
+                        err.to_string(),
+                    )
+                    .into_http_response(),
+                }
             }
-            ("reload", Some("certificates"), &Method::GET) => {
-                /*let _ = self
-                .inner
-                .housekeeper_tx
-                .send(housekeeper::Event::ReloadCertificates)
-                .await;*/
+            ("reload", Some("certificate"), &Method::GET) => {
+                match self.core.reload_certificates().await {
+                    Ok(result) => JsonResponse::new(json!({
+                        "data": result.config,
+                    }))
+                    .into_http_response(),
+                    Err(err) => RequestError::blank(
+                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                        "Database error",
+                        err.to_string(),
+                    )
+                    .into_http_response(),
+                }
+            }
+            ("reload", Some("server.blocked-ip"), &Method::GET) => {
+                match self.core.reload_blocked_ips().await {
+                    Ok(result) => JsonResponse::new(json!({
+                        "data": result.config,
+                    }))
+                    .into_http_response(),
+                    Err(err) => RequestError::blank(
+                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                        "Database error",
+                        err.to_string(),
+                    )
+                    .into_http_response(),
+                }
+            }
+            ("reload", _, &Method::GET) => {
+                match self.core.reload().await {
+                    Ok(result) => {
+                        if !UrlParams::new(req.uri().query()).has_key("dry-run") {
+                            // Update core
+                            if let Some(core) = result.new_core {
+                                self.shared_core.store(core.into());
+                            }
+                        }
 
-                JsonResponse::new(json!({
-                    "data": (),
-                }))
-                .into_http_response()
+                        JsonResponse::new(json!({
+                            "data": result.config,
+                        }))
+                        .into_http_response()
+                    }
+                    Err(err) => RequestError::blank(
+                        StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                        "Database error",
+                        err.to_string(),
+                    )
+                    .into_http_response(),
+                }
             }
             ("settings", Some("group"), &Method::GET) => {
                 // List settings

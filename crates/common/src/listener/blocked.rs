@@ -48,12 +48,11 @@ impl BlockedIps {
         let mut ip_addresses = AHashSet::new();
         let mut ip_networks = Vec::new();
 
-        let ips = config
+        for ip in config
             .set_values(BLOCKED_IP_KEY)
-            .map(|value| IpAddrOrMask::parse_value(BLOCKED_IP_KEY, value))
-            .collect::<Vec<_>>();
-
-        for ip in ips {
+            .map(IpAddrOrMask::parse_value)
+            .collect::<Vec<_>>()
+        {
             match ip {
                 Ok(IpAddrOrMask::Ip(ip)) => {
                     ip_addresses.insert(ip);
@@ -134,6 +133,17 @@ impl Default for BlockedIps {
             ip_networks: Default::default(),
             has_networks: Default::default(),
             limiter_rate: Default::default(),
+        }
+    }
+}
+
+impl Clone for BlockedIps {
+    fn clone(&self) -> Self {
+        Self {
+            ip_addresses: RwLock::new(self.ip_addresses.read().clone()),
+            ip_networks: self.ip_networks.clone(),
+            has_networks: self.has_networks,
+            limiter_rate: self.limiter_rate.clone(),
         }
     }
 }

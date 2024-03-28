@@ -336,7 +336,7 @@ impl<'x> Tokenizer<'x> {
                 })
             } else if let Some(token) = self.token_map.tokens.get(buf.as_str()) {
                 Ok(token.clone())
-            } else if let Ok(duration) = Duration::parse_value("", &buf) {
+            } else if let Ok(duration) = Duration::parse_value(&buf) {
                 Ok(Token::Constant(Constant::Integer(
                     duration.as_millis() as i64
                 )))

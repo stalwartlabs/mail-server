@@ -29,15 +29,25 @@ pub mod utils;
 use std::{collections::BTreeMap, time::Duration};
 
 use ahash::AHashMap;
+use serde::Serialize;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct Config {
+    #[serde(skip)]
     pub keys: BTreeMap<String, String>,
-    pub missing: AHashMap<String, Option<String>>,
+    pub warnings: AHashMap<String, ConfigWarning>,
     pub errors: AHashMap<String, ConfigError>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "type")]
+pub enum ConfigWarning {
+    Missing,
+    AppliedDefault(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "type")]
 pub enum ConfigError {
     Parse(String),
     Build(String),
@@ -184,12 +194,12 @@ impl Config {
     }
 
     pub fn log_warnings(&self, use_stderr: bool) {
-        for (key, value) in &self.missing {
-            let message = match value {
-                Some(replaced) => {
-                    format!("WARNING: Missing setting {key:?}, applied default {replaced:?}")
+        for (key, warn) in &self.warnings {
+            let message = match warn {
+                ConfigWarning::AppliedDefault(default) => {
+                    format!("WARNING: Missing setting {key:?}, applied default {default:?}")
                 }
-                None => {
+                ConfigWarning::Missing => {
                     format!("WARNING: Missing setting {key:?}")
                 }
             };

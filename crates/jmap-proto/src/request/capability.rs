@@ -196,7 +196,7 @@ pub struct BlobCapabilities {
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct EmptyCapabilities {}
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BaseCapabilities {
     pub session: VecMap<Capability, Capabilities>,
     pub account: VecMap<Capability, Capabilities>,

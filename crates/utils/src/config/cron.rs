@@ -81,52 +81,53 @@ impl SimpleCron {
 }
 
 impl ParseValue for SimpleCron {
-    fn parse_value(key: impl super::utils::AsKey, value: &str) -> super::Result<Self> {
+    fn parse_value(value: &str) -> super::Result<Self> {
         let mut hour = 0;
         let mut minute = 0;
-        let key = key.as_key();
 
         for (pos, value) in value.split(' ').enumerate() {
             if pos == 0 {
-                minute = value.parse::<u32>().map_err(|_| {
-                    format!("Invalid cron key {key:?}: failed to parse cron minute")
-                })?;
+                minute = value
+                    .parse::<u32>()
+                    .map_err(|_| "Invalid cron key: failed to parse cron minute".to_string())?;
                 if !(0..=59).contains(&minute) {
                     return Err(format!(
-                        "Invalid cron key {key:?}: failed to parse minute, invalid value: {minute}"
+                        "Invalid cron key: failed to parse minute, invalid value: {minute}"
                     ));
                 }
             } else if pos == 1 {
                 if value
                     .as_bytes()
                     .first()
-                    .ok_or_else(|| format!("Invalid cron key {key:?}: failed to parse cron hour"))?
+                    .ok_or_else(|| "Invalid cron key: failed to parse cron hour".to_string())?
                     == &b'*'
                 {
                     return Ok(SimpleCron::Hour { minute });
                 } else {
-                    hour = value.parse::<u32>().map_err(|_| {
-                        format!("Invalid cron key {key:?}: failed to parse cron hour")
-                    })?;
+                    hour = value
+                        .parse::<u32>()
+                        .map_err(|_| "Invalid cron key: failed to parse cron hour".to_string())?;
                     if !(0..=23).contains(&hour) {
                         return Err(format!(
-                            "Invalid cron key {key:?}: failed to parse hour, invalid value: {hour}"
+                            "Invalid cron key: failed to parse hour, invalid value: {hour}"
                         ));
                     }
                 }
             } else if pos == 2 {
-                if value.as_bytes().first().ok_or_else(|| {
-                    format!("Invalid cron key {key:?}: failed to parse cron weekday")
-                })? == &b'*'
+                if value
+                    .as_bytes()
+                    .first()
+                    .ok_or_else(|| "Invalid cron key: failed to parse cron weekday".to_string())?
+                    == &b'*'
                 {
                     return Ok(SimpleCron::Day { hour, minute });
                 } else {
                     let day = value.parse::<u32>().map_err(|_| {
-                        format!("Invalid cron key {key:?}: failed to parse cron weekday")
+                        "Invalid cron key: failed to parse cron weekday".to_string()
                     })?;
                     if !(1..=7).contains(&hour) {
                         return Err(format!(
-                            "Invalid cron key {key:?}: failed to parse weekday, invalid value: {}, range is 1 (Monday) to 7 (Sunday).",
+                            "Invalid cron key: failed to parse weekday, invalid value: {}, range is 1 (Monday) to 7 (Sunday).",
                             hour,
                         ));
                     }
@@ -136,7 +137,7 @@ impl ParseValue for SimpleCron {
             }
         }
 
-        Err(format!("Invalid cron key {key:?}: parse cron expression."))
+        Err("Invalid cron key: parse cron expression.".to_string())
     }
 }
 

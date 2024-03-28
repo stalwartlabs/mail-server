@@ -30,7 +30,7 @@ use sieve::{runtime::Variable, Context};
 
 use super::ApplyString;
 
-pub fn fn_is_empty<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_empty<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     match &v[0] {
         Variable::String(s) => s.is_empty(),
         Variable::Integer(_) | Variable::Float(_) => false,
@@ -39,29 +39,29 @@ pub fn fn_is_empty<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
     .into()
 }
 
-pub fn fn_is_number<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_number<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     matches!(&v[0], Variable::Integer(_) | Variable::Float(_)).into()
 }
 
-pub fn fn_is_ip_addr<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_ip_addr<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].to_string().parse::<std::net::IpAddr>().is_ok().into()
 }
 
-pub fn fn_is_ipv4_addr<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_ipv4_addr<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].to_string()
         .parse::<std::net::IpAddr>()
         .map_or(false, |ip| matches!(ip, IpAddr::V4(_)))
         .into()
 }
 
-pub fn fn_is_ipv6_addr<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_ipv6_addr<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].to_string()
         .parse::<std::net::IpAddr>()
         .map_or(false, |ip| matches!(ip, IpAddr::V6(_)))
         .into()
 }
 
-pub fn fn_ip_reverse_name<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_ip_reverse_name<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].to_string()
         .parse::<std::net::IpAddr>()
         .map(|ip| ip.to_reverse_name())
@@ -69,7 +69,7 @@ pub fn fn_ip_reverse_name<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Varia
         .into()
 }
 
-pub fn fn_detect_file_type<'x>(ctx: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_detect_file_type<'x>(ctx: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     ctx.message()
         .part(ctx.part())
         .and_then(|p| infer::get(p.contents()))
@@ -86,7 +86,7 @@ pub fn fn_detect_file_type<'x>(ctx: &'x Context<'x, ()>, v: Vec<Variable>) -> Va
         .unwrap_or_default()
 }
 
-pub fn fn_hash<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
+pub fn fn_hash<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     use sha1::Digest;
     let hash = v[1].to_string();
 
@@ -111,7 +111,7 @@ pub fn fn_hash<'x>(_: &'x Context<'x, ()>, v: Vec<Variable>) -> Variable {
     })
 }
 
-pub fn fn_is_var_names<'x>(ctx: &'x Context<'x, ()>, _: Vec<Variable>) -> Variable {
+pub fn fn_is_var_names<'x>(ctx: &'x Context<'x>, _: Vec<Variable>) -> Variable {
     Variable::Array(
         ctx.global_variable_names()
             .map(|v| Variable::from(v.to_uppercase()))

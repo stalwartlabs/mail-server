@@ -58,6 +58,7 @@ pub struct TlsManager {
     pub self_signed_cert: Option<Arc<CertifiedKey>>,
 }
 
+#[derive(Clone)]
 pub(crate) struct AcmeAuthKey {
     pub provider_id: String,
     pub key: Arc<CertifiedKey>,
@@ -216,5 +217,20 @@ where
 impl std::fmt::Debug for CertificateResolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("CertificateResolver").finish()
+    }
+}
+
+impl Clone for TlsManager {
+    fn clone(&self) -> Self {
+        Self {
+            certificates: ArcSwap::from_pointee(self.certificates.load().as_ref().clone()),
+            acme_providers: self.acme_providers.clone(),
+            acme_auth_keys: Mutex::new(self.acme_auth_keys.lock().clone()),
+            acme_in_progress: self
+                .acme_in_progress
+                .load(std::sync::atomic::Ordering::Relaxed)
+                .into(),
+            self_signed_cert: self.self_signed_cert.clone(),
+        }
     }
 }

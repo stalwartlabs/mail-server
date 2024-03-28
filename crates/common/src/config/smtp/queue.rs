@@ -17,6 +17,7 @@ use self::throttle::{parse_throttle, parse_throttle_key};
 
 use super::*;
 
+#[derive(Clone)]
 pub struct QueueConfig {
     // Schedule
     pub retry: IfBlock,
@@ -44,17 +45,20 @@ pub struct QueueConfig {
     pub relay_hosts: AHashMap<String, RelayHost>,
 }
 
+#[derive(Clone)]
 pub struct QueueOutboundSourceIp {
     pub ipv4: IfBlock,
     pub ipv6: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct Dsn {
     pub name: IfBlock,
     pub address: IfBlock,
     pub sign: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct QueueOutboundTls {
     pub dane: IfBlock,
     pub mta_sts: IfBlock,
@@ -62,6 +66,7 @@ pub struct QueueOutboundTls {
     pub invalid_certs: IfBlock,
 }
 
+#[derive(Clone)]
 pub struct QueueOutboundTimeout {
     pub connect: IfBlock,
     pub greeting: IfBlock,
@@ -73,19 +78,21 @@ pub struct QueueOutboundTimeout {
     pub mta_sts: IfBlock,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QueueThrottle {
     pub sender: Vec<Throttle>,
     pub rcpt: Vec<Throttle>,
     pub host: Vec<Throttle>,
 }
 
+#[derive(Clone)]
 pub struct QueueQuotas {
     pub sender: Vec<QueueQuota>,
     pub rcpt: Vec<QueueQuota>,
     pub rcpt_domain: Vec<QueueQuota>,
 }
 
+#[derive(Clone)]
 pub struct QueueQuota {
     pub expr: Expression,
     pub keys: u16,
@@ -93,6 +100,7 @@ pub struct QueueQuota {
     pub messages: Option<usize>,
 }
 
+#[derive(Clone)]
 pub struct RelayHost {
     pub address: String,
     pub port: u16,
@@ -439,6 +447,15 @@ fn parse_queue_quota(config: &mut Config) -> QueueQuotas {
 
 fn parse_queue_quota_item(config: &mut Config, prefix: impl AsKey) -> Option<QueueQuota> {
     let prefix = prefix.as_key();
+
+    // Skip disabled throttles
+    if !config
+        .property::<bool>((prefix.as_str(), "enable"))
+        .unwrap_or(true)
+    {
+        return None;
+    }
+
     let mut keys = 0;
     for (key_, value) in config
         .values((&prefix, "key"))
@@ -505,16 +522,12 @@ fn parse_queue_quota_item(config: &mut Config, prefix: impl AsKey) -> Option<Que
 }
 
 impl ParseValue for RequireOptional {
-    fn parse_value(key: impl AsKey, value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
         match value {
             "optional" => Ok(RequireOptional::Optional),
             "require" | "required" => Ok(RequireOptional::Require),
             "disable" | "disabled" | "none" | "false" => Ok(RequireOptional::Disable),
-            _ => Err(format!(
-                "Invalid TLS option value {:?} for key {:?}.",
-                value,
-                key.as_key()
-            )),
+            _ => Err(format!("Invalid TLS option value {:?}.", value,)),
         }
     }
 }
@@ -567,7 +580,7 @@ impl<'x> TryFrom<Variable<'x>> for IpLookupStrategy {
                 5 => Ok(IpLookupStrategy::Ipv4thenIpv6),
                 _ => Err(()),
             },
-            Variable::String(value) => IpLookupStrategy::parse_value("", &value).map_err(|_| ()),
+            Variable::String(value) => IpLookupStrategy::parse_value(&value).map_err(|_| ()),
             _ => Err(()),
         }
     }

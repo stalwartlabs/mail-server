@@ -12,6 +12,7 @@ use mail_auth::{
     },
     Resolver,
 };
+use parking_lot::Mutex;
 use utils::{config::Config, suffixlist::PublicSuffix};
 
 pub struct Resolvers {
@@ -21,6 +22,7 @@ pub struct Resolvers {
     pub psl: PublicSuffix,
 }
 
+#[derive(Clone)]
 pub struct DnssecResolver {
     pub resolver: TokioAsyncResolver,
 }
@@ -236,6 +238,26 @@ impl Default for Resolvers {
                 mta_sts: LruCache::with_capacity(1024),
             },
             psl: PublicSuffix::default(),
+        }
+    }
+}
+
+impl Clone for Resolvers {
+    fn clone(&self) -> Self {
+        Self {
+            dns: self.dns.clone(),
+            dnssec: self.dnssec.clone(),
+            cache: self.cache.clone(),
+            psl: self.psl.clone(),
+        }
+    }
+}
+
+impl Clone for DnsRecordCache {
+    fn clone(&self) -> Self {
+        Self {
+            tlsa: Mutex::new(self.tlsa.lock().clone()),
+            mta_sts: Mutex::new(self.mta_sts.lock().clone()),
         }
     }
 }

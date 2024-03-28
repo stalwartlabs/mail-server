@@ -310,7 +310,7 @@ impl<'x> TryFrom<Variable<'x>> for Duration {
             Variable::Integer(value) if value > 0 => Ok(Duration::from_millis(value as u64)),
             Variable::Float(value) if value > 0.0 => Ok(Duration::from_millis(value as u64)),
             Variable::String(value) if !value.is_empty() => {
-                Duration::parse_value("", &value).map_err(|_| ())
+                Duration::parse_value(&value).map_err(|_| ())
             }
             _ => Err(()),
         }

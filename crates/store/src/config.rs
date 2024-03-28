@@ -63,7 +63,14 @@ impl Stores {
     }
 
     pub async fn parse(config: &mut Config) -> Self {
-        let mut stores = Stores::default();
+        let mut stores = Self::default();
+        stores.parse_stores(config).await;
+        stores
+    }
+
+    pub async fn parse_stores(&mut self, config: &mut Config) {
+        let is_reload = !self.stores.is_empty();
+
         for id in config
             .sub_keys("store", ".type")
             .map(|id| id.to_string())
@@ -95,86 +102,104 @@ impl Stores {
             match protocol.as_str() {
                 #[cfg(feature = "rocks")]
                 "rocksdb" => {
+                    // Avoid opening the same store twice
+                    if is_reload
+                        && self
+                            .stores
+                            .values()
+                            .any(|store| matches!(store, Store::RocksDb(_)))
+                    {
+                        continue;
+                    }
+
                     if let Some(db) = RocksDbStore::open(config, prefix).await.map(Store::from) {
-                        stores.stores.insert(store_id.clone(), db.clone());
-                        stores
-                            .fts_stores
-                            .insert(store_id.clone(), db.clone().into());
-                        stores.blob_stores.insert(
+                        self.stores.insert(store_id.clone(), db.clone());
+                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        stores.lookup_stores.insert(store_id, db.into());
+                        self.lookup_stores.insert(store_id, db.into());
                     }
                 }
                 #[cfg(feature = "foundation")]
                 "foundationdb" => {
+                    // Avoid opening the same store twice
+                    if is_reload
+                        && self
+                            .stores
+                            .values()
+                            .any(|store| matches!(store, Store::FoundationDb(_)))
+                    {
+                        continue;
+                    }
+
                     if let Some(db) = FdbStore::open(config, prefix).await.map(Store::from) {
-                        stores.stores.insert(store_id.clone(), db.clone());
-                        stores
-                            .fts_stores
-                            .insert(store_id.clone(), db.clone().into());
-                        stores.blob_stores.insert(
+                        self.stores.insert(store_id.clone(), db.clone());
+                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        stores.lookup_stores.insert(store_id, db.into());
+                        self.lookup_stores.insert(store_id, db.into());
                     }
                 }
                 #[cfg(feature = "postgres")]
                 "postgresql" => {
                     if let Some(db) = PostgresStore::open(config, prefix).await.map(Store::from) {
-                        stores.stores.insert(store_id.clone(), db.clone());
-                        stores
-                            .fts_stores
-                            .insert(store_id.clone(), db.clone().into());
-                        stores.blob_stores.insert(
+                        self.stores.insert(store_id.clone(), db.clone());
+                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        stores.lookup_stores.insert(store_id.clone(), db.into());
+                        self.lookup_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 #[cfg(feature = "mysql")]
                 "mysql" => {
                     if let Some(db) = MysqlStore::open(config, prefix).await.map(Store::from) {
-                        stores.stores.insert(store_id.clone(), db.clone());
-                        stores
-                            .fts_stores
-                            .insert(store_id.clone(), db.clone().into());
-                        stores.blob_stores.insert(
+                        self.stores.insert(store_id.clone(), db.clone());
+                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        stores.lookup_stores.insert(store_id.clone(), db.into());
+                        self.lookup_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
+                    // Avoid opening the same store twice
+                    if is_reload
+                        && self
+                            .stores
+                            .values()
+                            .any(|store| matches!(store, Store::SQLite(_)))
+                    {
+                        continue;
+                    }
+
                     if let Some(db) = SqliteStore::open(config, prefix).map(Store::from) {
-                        stores.stores.insert(store_id.clone(), db.clone());
-                        stores
-                            .fts_stores
-                            .insert(store_id.clone(), db.clone().into());
-                        stores.blob_stores.insert(
+                        self.stores.insert(store_id.clone(), db.clone());
+                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        stores.lookup_stores.insert(store_id.clone(), db.into());
+                        self.lookup_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 "fs" => {
                     if let Some(db) = FsStore::open(config, prefix).await.map(BlobStore::from) {
-                        stores
-                            .blob_stores
+                        self.blob_stores
                             .insert(store_id, db.with_compression(compression_algo));
                     }
                 }
                 #[cfg(feature = "s3")]
                 "s3" => {
                     if let Some(db) = S3Store::open(config, prefix).await.map(BlobStore::from) {
-                        stores
-                            .blob_stores
+                        self.blob_stores
                             .insert(store_id, db.with_compression(compression_algo));
                     }
                 }
@@ -184,7 +209,7 @@ impl Stores {
                         .await
                         .map(FtsStore::from)
                     {
-                        stores.fts_stores.insert(store_id, db);
+                        self.fts_stores.insert(store_id, db);
                     }
                 }
                 #[cfg(feature = "redis")]
@@ -193,7 +218,7 @@ impl Stores {
                         .await
                         .map(LookupStore::from)
                     {
-                        stores.lookup_stores.insert(store_id, db);
+                        self.lookup_stores.insert(store_id, db);
                     }
                 }
                 unknown => {
@@ -201,8 +226,6 @@ impl Stores {
                 }
             }
         }
-
-        stores
     }
 
     pub async fn parse_lookups(&mut self, config: &mut Config) {

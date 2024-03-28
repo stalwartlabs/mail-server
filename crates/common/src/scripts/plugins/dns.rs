@@ -28,11 +28,11 @@ use sieve::{runtime::Variable, FunctionMap};
 
 use super::PluginContext;
 
-pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("dns_query", plugin_id, 2);
 }
 
-pub fn register_exists(plugin_id: u32, fnc_map: &mut FunctionMap<()>) {
+pub fn register_exists(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("dns_exists", plugin_id, 2);
 }
 

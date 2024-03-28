@@ -14,7 +14,7 @@ use self::{
     session::SessionConfig,
 };
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SmtpConfig {
     pub session: SessionConfig,
     pub queue: QueueConfig,
@@ -23,7 +23,7 @@ pub struct SmtpConfig {
     pub report: ReportConfig,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
 pub struct Throttle {
     pub expr: Expression,

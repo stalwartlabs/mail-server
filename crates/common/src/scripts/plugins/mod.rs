@@ -39,7 +39,7 @@ use crate::Core;
 
 use super::ScriptModification;
 
-type RegisterPluginFnc = fn(u32, &mut FunctionMap<()>) -> ();
+type RegisterPluginFnc = fn(u32, &mut FunctionMap) -> ();
 type ExecPluginFnc = fn(PluginContext<'_>) -> Variable;
 
 pub struct PluginContext<'x> {
@@ -96,7 +96,7 @@ pub trait RegisterSievePlugins {
     fn register_plugins(self) -> Self;
 }
 
-impl RegisterSievePlugins for FunctionMap<()> {
+impl RegisterSievePlugins for FunctionMap {
     fn register_plugins(mut self) -> Self {
         #[cfg(feature = "test_mode")]
         {

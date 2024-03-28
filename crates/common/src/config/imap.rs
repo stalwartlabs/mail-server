@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use utils::config::{Config, Rate};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ImapConfig {
     pub max_request_size: usize,
     pub max_auth_failures: u32,
