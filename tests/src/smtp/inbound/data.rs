@@ -25,11 +25,14 @@ use common::Core;
 use store::Stores;
 use utils::config::Config;
 
-use crate::smtp::{
-    build_smtp,
-    inbound::TestMessage,
-    session::{load_test_message, TestSession, VerifyResponse},
-    TempDir, TestSMTP,
+use crate::{
+    smtp::{
+        build_smtp,
+        inbound::TestMessage,
+        session::{load_test_message, TestSession, VerifyResponse},
+        TempDir, TestSMTP,
+    },
+    AssertConfig,
 };
 use smtp::core::{Inner, Session};
 
@@ -39,6 +42,7 @@ data = "sqlite"
 lookup = "sqlite"
 blob = "sqlite"
 fts = "sqlite"
+directory = "local"
 
 [store."sqlite"]
 type = "sqlite"
@@ -74,11 +78,6 @@ email = "mike@test.com"
 [session.rcpt]
 directory = "'local'"
 
-[[queue.quota]]
-match = "sender = 'john@doe.org'"
-key = ['sender']
-messages = 1
-
 [session.data.limits]
 messages = [{if = "remote_ip = '10.0.0.1'", then = 1},
             {else = 100}]
@@ -99,6 +98,11 @@ return-path =  [{if = "remote_ip = '10.0.0.3'", then = true},
             {else = false}]
 
 [[queue.quota]]
+match = "sender = 'john@doe.org'"
+key = ['sender']
+messages = 1
+
+[[queue.quota]]
 match = "rcpt_domain = 'foobar.org'"
 key = ['rcpt_domain']
 size = 450
@@ -115,9 +119,10 @@ enable = true
 #[tokio::test]
 async fn data() {
     // Enable logging
-    /*tracing::subscriber::set_global_default(
+    /*let disable = 1;
+    tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
+            .with_max_level(tracing::Level::TRACE)
             .finish(),
     )
     .unwrap();*/
@@ -128,6 +133,7 @@ async fn data() {
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
+    config.assert_no_errors();
     let mut qr = inner.init_test_queue(&core);
 
     // Test queue message builder

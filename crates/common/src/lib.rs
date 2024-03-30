@@ -42,7 +42,7 @@ pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG
 
 pub type SharedCore = Arc<ArcSwap<Core>>;
 
-#[derive(Default, Clone)]
+#[derive(Clone, Default)]
 pub struct Core {
     pub storage: Storage,
     pub sieve: Scripting,
@@ -56,7 +56,6 @@ pub struct Core {
 #[derive(Clone)]
 pub struct Network {
     pub blocked_ips: BlockedIps,
-    pub hostname: IfBlock,
     pub url: IfBlock,
 }
 
@@ -249,7 +248,7 @@ impl Tracers {
                 | Tracer::Otel { level, .. } => level,
             };
 
-            if tracer_level > level {
+            if tracer_level < level {
                 level = tracer_level;
             }
         }

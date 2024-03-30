@@ -200,12 +200,7 @@ impl<T: SessionStream> Session<T> {
                 .unwrap_or_default()
                 .into();
             if response.auth_mechanisms != 0 {
-                if !self.stream.is_tls() && !self.params.auth_plain_text {
-                    response.auth_mechanisms &= !(AUTH_PLAIN | AUTH_LOGIN);
-                }
-                if response.auth_mechanisms != 0 {
-                    response.capabilities |= EXT_AUTH;
-                }
+                response.capabilities |= EXT_AUTH;
             }
         }
 

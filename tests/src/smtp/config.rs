@@ -63,7 +63,7 @@ fn parse_if_blocks() {
 
     // Create context and add some conditions
 
-    let token_map = TokenMap::default().with_smtp_variables(&[
+    let token_map = TokenMap::default().with_variables(&[
         V_RECIPIENT,
         V_RECIPIENT_DOMAIN,
         V_SENDER,
@@ -83,7 +83,7 @@ fn parse_if_blocks() {
                 IfThen {
                     expr: Expression {
                         items: vec![
-                            ExpressionItem::Variable(2),
+                            ExpressionItem::Variable(V_SENDER),
                             ExpressionItem::Constant(Constant::String("jdoe".to_string())),
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq)
                         ]
@@ -95,12 +95,12 @@ fn parse_if_blocks() {
                 IfThen {
                     expr: Expression {
                         items: vec![
-                            ExpressionItem::Variable(10),
+                            ExpressionItem::Variable(V_PRIORITY),
                             ExpressionItem::Constant(Constant::Integer(1)),
                             ExpressionItem::UnaryOperator(UnaryOperator::Minus),
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq),
                             ExpressionItem::JmpIf { val: true, pos: 4 },
-                            ExpressionItem::Variable(0),
+                            ExpressionItem::Variable(V_RECIPIENT),
                             ExpressionItem::Constant(Constant::String("jane".to_string())),
                             ExpressionItem::Function {
                                 id: 29,
@@ -128,7 +128,7 @@ fn parse_if_blocks() {
                 IfThen {
                     expr: Expression {
                         items: vec![
-                            ExpressionItem::Variable(2),
+                            ExpressionItem::Variable(V_SENDER),
                             ExpressionItem::Constant(Constant::String("jdoe".to_string())),
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq)
                         ]
@@ -145,12 +145,12 @@ fn parse_if_blocks() {
                 IfThen {
                     expr: Expression {
                         items: vec![
-                            ExpressionItem::Variable(10),
+                            ExpressionItem::Variable(V_PRIORITY),
                             ExpressionItem::Constant(Constant::Integer(1)),
                             ExpressionItem::UnaryOperator(UnaryOperator::Minus),
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq),
                             ExpressionItem::JmpIf { val: true, pos: 4 },
-                            ExpressionItem::Variable(0),
+                            ExpressionItem::Variable(V_RECIPIENT),
                             ExpressionItem::Constant(Constant::String("jane".to_string())),
                             ExpressionItem::Function {
                                 id: 29,
@@ -180,7 +180,7 @@ fn parse_if_blocks() {
                 IfThen {
                     expr: Expression {
                         items: vec![
-                            ExpressionItem::Variable(2),
+                            ExpressionItem::Variable(V_SENDER),
                             ExpressionItem::Constant(Constant::String("jdoe".to_string())),
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq)
                         ]
@@ -197,12 +197,12 @@ fn parse_if_blocks() {
                 IfThen {
                     expr: Expression {
                         items: vec![
-                            ExpressionItem::Variable(10),
+                            ExpressionItem::Variable(V_PRIORITY),
                             ExpressionItem::Constant(Constant::Integer(1)),
                             ExpressionItem::UnaryOperator(UnaryOperator::Minus),
                             ExpressionItem::BinaryOperator(BinaryOperator::Eq),
                             ExpressionItem::JmpIf { val: true, pos: 4 },
-                            ExpressionItem::Variable(0),
+                            ExpressionItem::Variable(V_RECIPIENT),
                             ExpressionItem::Constant(Constant::String("jane".to_string())),
                             ExpressionItem::Function {
                                 id: 29,
@@ -261,7 +261,7 @@ fn parse_throttles() {
     let throttle = parse_throttle(
         &mut config,
         "throttle",
-        &TokenMap::default().with_smtp_variables(&[
+        &TokenMap::default().with_variables(&[
             V_RECIPIENT,
             V_RECIPIENT_DOMAIN,
             V_SENDER,
@@ -415,7 +415,7 @@ async fn eval_if() {
 
     let mut config = Config::new(fs::read_to_string(file).unwrap()).unwrap();
     let envelope = TestEnvelope::from_config(&mut config);
-    let token_map = TokenMap::default().with_smtp_variables(&[
+    let token_map = TokenMap::default().with_variables(&[
         V_RECIPIENT,
         V_RECIPIENT_DOMAIN,
         V_SENDER,
@@ -464,7 +464,7 @@ async fn eval_dynvalue() {
 
     let mut config = Config::new(fs::read_to_string(file).unwrap()).unwrap();
     let envelope = TestEnvelope::from_config(&mut config);
-    let token_map = TokenMap::default().with_smtp_variables(&[
+    let token_map = TokenMap::default().with_variables(&[
         V_RECIPIENT,
         V_RECIPIENT_DOMAIN,
         V_SENDER,

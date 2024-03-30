@@ -21,11 +21,10 @@
  * for more details.
 */
 
-use common::AuthResult;
+use common::{listener::SessionStream, AuthResult};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
-use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::core::Session;
 
@@ -65,7 +64,7 @@ impl SaslToken {
     }
 }
 
-impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_sasl_response(
         &mut self,
         token: &mut SaslToken,

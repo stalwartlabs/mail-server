@@ -26,7 +26,7 @@ use std::{
     sync::Arc,
 };
 
-use common::{config::smtp::V_MX, expr::functions::ResolveVariable};
+use common::expr::{functions::ResolveVariable, V_MX};
 use mail_auth::{IpLookupStrategy, MX};
 use rand::{seq::SliceRandom, Rng};
 

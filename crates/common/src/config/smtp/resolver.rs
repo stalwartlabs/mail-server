@@ -70,10 +70,7 @@ pub struct Policy {
 
 impl Resolvers {
     pub async fn parse(config: &mut Config) -> Self {
-        let (resolver_config, mut opts) = match config
-            .value_require("resolver.type")
-            .unwrap_or("system")
-        {
+        let (resolver_config, mut opts) = match config.value("resolver.type").unwrap_or("system") {
             "cloudflare" => (ResolverConfig::cloudflare(), ResolverOpts::default()),
             "cloudflare-tls" => (ResolverConfig::cloudflare_tls(), ResolverOpts::default()),
             "quad9" => (ResolverConfig::quad9(), ResolverOpts::default()),

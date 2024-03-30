@@ -139,6 +139,7 @@ impl<T: SessionStream> Session<T> {
     pub async fn run_script(&self, script: Arc<Sieve>, params: ScriptParameters) -> ScriptResult {
         let core = self.core.clone();
         let span = self.span.clone();
+        let params = params.with_envelope(&self.core.core, self).await;
 
         let handle = Handle::current();
         self.core

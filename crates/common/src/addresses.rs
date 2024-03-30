@@ -4,8 +4,10 @@ use directory::Directory;
 use utils::config::{utils::AsKey, Config};
 
 use crate::{
-    config::smtp::{session::AddressMapping, V_RECIPIENT},
-    expr::{functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap, Variable},
+    config::smtp::session::AddressMapping,
+    expr::{
+        functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap, Variable, V_RECIPIENT,
+    },
     Core,
 };
 
@@ -130,7 +132,7 @@ impl AddressMapping {
         } else if let Some(if_block) = IfBlock::try_parse(
             config,
             key,
-            &TokenMap::default().with_variables([
+            &TokenMap::default().with_variables_map([
                 ("address", V_RECIPIENT),
                 ("email", V_RECIPIENT),
                 ("rcpt", V_RECIPIENT),
@@ -138,7 +140,7 @@ impl AddressMapping {
         ) {
             AddressMapping::Custom(if_block)
         } else {
-            AddressMapping::Disable
+            AddressMapping::Enable
         }
     }
 }

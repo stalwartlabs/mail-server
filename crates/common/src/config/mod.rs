@@ -5,7 +5,7 @@ use directory::{Directories, Directory};
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use utils::config::Config;
 
-use crate::{listener::tls::TlsManager, Core, Network};
+use crate::{expr::*, listener::tls::TlsManager, Core, Network};
 
 use self::{
     imap::ImapConfig, jmap::settings::JmapConfig, manager::ConfigManager, scripts::Scripting,
@@ -21,6 +21,16 @@ pub mod server;
 pub mod smtp;
 pub mod storage;
 pub mod tracers;
+
+pub(crate) const CONNECTION_VARS: &[u32; 7] = &[
+    V_LISTENER,
+    V_REMOTE_IP,
+    V_REMOTE_PORT,
+    V_LOCAL_IP,
+    V_LOCAL_PORT,
+    V_PROTOCOL,
+    V_TLS,
+];
 
 impl Core {
     pub async fn parse(config: &mut Config, stores: Stores, config_manager: ConfigManager) -> Self {
@@ -78,7 +88,7 @@ impl Core {
                 }
             })
             .unwrap_or_default();
-        let directories = Directories::parse(config, &stores, data.clone()).await;
+        let mut directories = Directories::parse(config, &stores, data.clone()).await;
         let directory = config
             .value_require("storage.directory")
             .map(|id| id.to_string())
@@ -94,6 +104,9 @@ impl Core {
                 }
             })
             .unwrap_or_else(|| Arc::new(Directory::default()));
+        directories
+            .directories
+            .insert("*".to_string(), directory.clone());
 
         // If any of the stores are missing, disable all stores to avoid data loss
         if matches!(data, Store::None)

@@ -39,8 +39,12 @@ impl ImapConfig {
             timeout_idle: config
                 .property_or_default("imap.timeout.idle", "30m")
                 .unwrap_or_else(|| Duration::from_secs(1800)),
-            rate_requests: config.property_or_default("imap.rate-limit.requests", "2000/1m"),
-            rate_concurrent: config.property("imap.rate-limit.concurrent"),
+            rate_requests: config
+                .property_or_default::<Option<Rate>>("imap.rate-limit.requests", "2000/1m")
+                .unwrap_or_default(),
+            rate_concurrent: config
+                .property::<Option<u64>>("imap.rate-limit.concurrent")
+                .unwrap_or_default(),
             allow_plain_auth: config
                 .property_or_default("imap.auth.allow-plain-text", "false")
                 .unwrap_or(false),

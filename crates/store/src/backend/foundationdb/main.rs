@@ -60,7 +60,10 @@ impl FdbStore {
             })
             .ok()?;
 
-        if let Some(value) = config.property::<Duration>((&prefix, "transaction.timeout")) {
+        if let Some(value) = config
+            .property::<Option<Duration>>((&prefix, "transaction.timeout"))
+            .unwrap_or_default()
+        {
             db.set_option(DatabaseOption::TransactionTimeout(value.as_millis() as i32))
                 .map_err(|err| {
                     config.new_build_error(
@@ -80,7 +83,10 @@ impl FdbStore {
                 })
                 .ok()?;
         }
-        if let Some(value) = config.property::<Duration>((&prefix, "transaction.max-retry-delay")) {
+        if let Some(value) = config
+            .property::<Option<Duration>>((&prefix, "transaction.max-retry-delay"))
+            .unwrap_or_default()
+        {
             db.set_option(DatabaseOption::TransactionMaxRetryDelay(
                 value.as_millis() as i32
             ))

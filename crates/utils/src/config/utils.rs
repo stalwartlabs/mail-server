@@ -60,13 +60,7 @@ impl Config {
         let key = key.as_key();
         let value = match self.keys.get(&key) {
             Some(value) => value.as_str(),
-            None => {
-                self.warnings.insert(
-                    key.clone(),
-                    ConfigWarning::AppliedDefault(default.to_string()),
-                );
-                default
-            }
+            None => default,
         };
         match T::parse_value(value) {
             Ok(value) => Some(value),
@@ -80,16 +74,13 @@ impl Config {
     pub fn property_or_else<T: ParseValue>(
         &mut self,
         key: impl AsKey,
-        default: impl AsKey,
+        or_else: impl AsKey,
+        default: &str,
     ) -> Option<T> {
         let key = key.as_key();
-        let value = match self.value_or_else(key.as_str(), default.clone()) {
+        let value = match self.value_or_else(key.as_str(), or_else.clone()) {
             Some(value) => value,
-            None => {
-                self.warnings
-                    .insert(default.as_key(), ConfigWarning::Missing);
-                return None;
-            }
+            None => default,
         };
 
         match T::parse_value(value) {
@@ -216,10 +207,10 @@ impl Config {
         }
     }
 
-    pub fn value_or_else(&self, key: impl AsKey, default: impl AsKey) -> Option<&str> {
+    pub fn value_or_else(&self, key: impl AsKey, or_else: impl AsKey) -> Option<&str> {
         self.keys
             .get(&key.as_key())
-            .or_else(|| self.keys.get(&default.as_key()))
+            .or_else(|| self.keys.get(&or_else.as_key()))
             .map(|s| s.as_str())
     }
 
@@ -258,17 +249,6 @@ impl Config {
 
     pub fn take_value(&mut self, key: &str) -> Option<String> {
         self.keys.remove(key)
-    }
-
-    pub fn value_or_warn(&mut self, key: impl AsKey) -> Option<&str> {
-        let key = key.as_key();
-        match self.keys.get(&key) {
-            Some(value) => Some(value.as_str()),
-            None => {
-                self.warnings.insert(key, ConfigWarning::Missing);
-                None
-            }
-        }
     }
 
     pub fn new_parse_error(&mut self, key: impl AsKey, details: impl Into<String>) {
@@ -520,6 +500,12 @@ impl ParseValue for Rate {
         } else {
             Err(format!("Invalid rate value {:?}.", value))
         }
+    }
+}
+
+impl ParseValue for () {
+    fn parse_value(_: &str) -> super::Result<Self> {
+        Ok(())
     }
 }
 

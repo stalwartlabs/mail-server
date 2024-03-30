@@ -28,17 +28,17 @@ use crate::expr::{Constant, Expression};
 use super::{
     parser::ExpressionParser,
     tokenizer::{TokenMap, Tokenizer},
-    ExpressionItem,
+    ConstantValue, ExpressionItem,
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
 pub struct IfThen {
     pub expr: Expression,
     pub then: Expression,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
 pub struct IfBlock {
     pub key: String,
@@ -47,11 +47,35 @@ pub struct IfBlock {
 }
 
 impl IfBlock {
-    pub fn new<T: Into<Constant>>(value: T) -> Self {
+    pub fn new<T: ConstantValue>(
+        key: impl Into<String>,
+        if_thens: impl IntoIterator<Item = (&'static str, &'static str)>,
+        default: impl AsRef<str>,
+    ) -> Self {
+        let token_map = TokenMap::default()
+            .with_all_variables()
+            .with_constants::<T>();
+
         Self {
-            key: String::new(),
-            if_then: Vec::new(),
-            default: Expression::from(value),
+            key: key.into(),
+            if_then: if_thens
+                .into_iter()
+                .map(|(if_, then)| IfThen {
+                    expr: Expression::parse(&token_map, if_),
+                    then: Expression::parse(&token_map, then),
+                })
+                .collect(),
+            default: Expression::parse(&token_map, default.as_ref()),
+        }
+    }
+
+    pub fn empty(key: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            if_then: Default::default(),
+            default: Expression {
+                items: Default::default(),
+            },
         }
     }
 
@@ -78,6 +102,12 @@ impl Expression {
             None
         }
     }
+
+    fn parse(token_map: &TokenMap, expr: &str) -> Self {
+        ExpressionParser::new(Tokenizer::new(expr, token_map))
+            .parse()
+            .unwrap()
+    }
 }
 
 impl IfBlock {
@@ -91,7 +121,10 @@ impl IfBlock {
         // Parse conditions
         let mut if_block = IfBlock {
             key,
-            ..Default::default()
+            if_then: Default::default(),
+            default: Expression {
+                items: Default::default(),
+            },
         };
 
         // Try first with a single value
@@ -181,7 +214,6 @@ impl IfBlock {
         }
 
         if !found_if {
-            config.new_missing_property(if_block.key);
             None
         } else if !found_then {
             config.new_parse_error(

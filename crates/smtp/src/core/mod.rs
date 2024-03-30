@@ -149,6 +149,7 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
 pub struct SessionData {
     pub local_ip: IpAddr,
     pub local_ip_str: String,
+    pub local_port: u16,
     pub remote_ip: IpAddr,
     pub remote_ip_str: String,
     pub remote_port: u16,
@@ -200,7 +201,6 @@ pub struct SessionParameters {
     pub auth_require: bool,
     pub auth_errors_max: usize,
     pub auth_errors_wait: Duration,
-    pub auth_plain_text: bool,
     pub auth_match_sender: bool,
 
     // Rcpt parameters
@@ -219,9 +219,10 @@ pub struct SessionParameters {
 }
 
 impl SessionData {
-    pub fn new(local_ip: IpAddr, remote_ip: IpAddr, remote_port: u16) -> Self {
+    pub fn new(local_ip: IpAddr, local_port: u16, remote_ip: IpAddr, remote_port: u16) -> Self {
         SessionData {
             local_ip,
+            local_port,
             remote_ip,
             local_ip_str: local_ip.to_string(),
             remote_ip_str: remote_ip.to_string(),
@@ -337,7 +338,6 @@ impl Session<common::listener::stream::NullIo> {
                 auth_require: Default::default(),
                 auth_errors_max: Default::default(),
                 auth_errors_wait: Default::default(),
-                auth_plain_text: false,
                 rcpt_errors_max: Default::default(),
                 rcpt_errors_wait: Default::default(),
                 rcpt_max: Default::default(),
@@ -395,6 +395,7 @@ impl SessionData {
             local_ip_str: "127.0.0.1".to_string(),
             remote_ip_str: "127.0.0.1".to_string(),
             remote_port: 0,
+            local_port: 0,
             helo_domain: "localhost".into(),
             mail_from,
             rcpt_to,

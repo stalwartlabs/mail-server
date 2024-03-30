@@ -1,6 +1,0 @@
-#############################################
-# JMAP authentication & session configuration
-#############################################
-
-[jmap.session.purge]
-frequency = "15 * *"

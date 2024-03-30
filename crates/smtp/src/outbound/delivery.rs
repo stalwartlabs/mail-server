@@ -726,7 +726,15 @@ impl DeliveryAttempt {
                             .core
                             .eval_if::<String, _>(&queue_config.hostname, &envelope)
                             .await
-                            .unwrap_or_else(|| "localhost".to_string());
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or_else(|| {
+                                tracing::warn!(parent: &span,
+                                    context = "queue",
+                                    event = "ehlo",
+                                    "No outbound hostname configured, using 'local.host'."
+                                );
+                                "local.host".to_string()
+                            });
                         let params = SessionParams {
                             span: &span,
                             core: &core,

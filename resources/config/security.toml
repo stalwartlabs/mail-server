@@ -1,0 +1,19 @@
+[[queue.quota]]
+messages = 100000
+size = 10737418240 # 10gb
+enable = true
+
+[[queue.throttle]]
+key = ["rcpt_domain"]
+concurrency = 5
+enable = true
+
+[[session.throttle]]
+key = ["remote_ip"]
+concurrency = 5
+enable = true
+
+[[session.throttle]]
+key = ["sender_domain", "rcpt"]
+rate = "25/1h"
+enable = true

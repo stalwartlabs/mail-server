@@ -24,7 +24,7 @@
 use std::collections::hash_map::Entry;
 
 use ahash::AHashMap;
-use common::config::smtp::report::AggregateFrequency;
+use common::{config::smtp::report::AggregateFrequency, listener::SessionStream};
 use mail_auth::{
     common::verify::VerifySignature,
     dmarc::{self, URI},
@@ -36,7 +36,6 @@ use store::{
     write::{now, BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, Serialize, ValueKey,
 };
-use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::Rate;
 
 use crate::{
@@ -53,7 +52,7 @@ pub struct DmarcFormat {
     pub records: Vec<Record>,
 }
 
-impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     #[allow(clippy::too_many_arguments)]
     pub async fn send_dmarc_report(
         &self,

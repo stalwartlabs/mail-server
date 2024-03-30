@@ -144,9 +144,15 @@ impl JmapConfig {
             session_cache_ttl: config
                 .property("cache.session.ttl")
                 .unwrap_or(Duration::from_secs(3600)),
-            rate_authenticated: config.property_or_default("jmap.rate-limit.account", "1000/1m"),
-            rate_authenticate_req: config.property_or_default("authentication.rate-limit", "10/1m"),
-            rate_anonymous: config.property_or_default("jmap.rate-limit.anonymous", "100/1m"),
+            rate_authenticated: config
+                .property_or_default::<Option<Rate>>("jmap.rate-limit.account", "1000/1m")
+                .unwrap_or_default(),
+            rate_authenticate_req: config
+                .property_or_default::<Option<Rate>>("authentication.rate-limit", "10/1m")
+                .unwrap_or_default(),
+            rate_anonymous: config
+                .property_or_default::<Option<Rate>>("jmap.rate-limit.anonymous", "100/1m")
+                .unwrap_or_default(),
             oauth_key: config
                 .value("oauth.key")
                 .map(|s| s.to_string())

@@ -66,11 +66,18 @@ impl From<&str> for PublicSuffix {
 impl PublicSuffix {
     #[allow(unused_variables)]
     pub async fn parse(config: &mut Config, key: &str) -> PublicSuffix {
-        let values = config
+        let mut values = config
             .values(key)
             .map(|(_, s)| s.to_string())
             .collect::<Vec<_>>();
-        let has_values = !values.is_empty();
+        if values.is_empty() {
+            values = vec![
+                "https://publicsuffix.org/list/public_suffix_list.dat".to_string(),
+                "https://raw.githubusercontent.com/publicsuffix/list/master/public_suffix_list.dat"
+                    .to_string(),
+            ]
+        }
+
         for (idx, value) in values.into_iter().enumerate() {
             let bytes = if value.starts_with("https://") || value.starts_with("http://") {
                 let result = match reqwest::get(&value).await {
@@ -157,14 +164,7 @@ impl PublicSuffix {
         }
 
         #[cfg(not(feature = "test_mode"))]
-        config.new_build_error(
-            key,
-            if has_values {
-                "Failed to parse public suffixes from any source."
-            } else {
-                "No public suffixes list was specified."
-            },
-        );
+        config.new_build_error(key, "Failed to parse public suffixes from any source.");
 
         PublicSuffix::default()
     }

@@ -70,7 +70,7 @@ impl BlockedIps {
             ip_addresses: RwLock::new(ip_addresses),
             has_networks: !ip_networks.is_empty(),
             ip_networks,
-            limiter_rate: config.property::<Rate>("authentication.fail2ban"),
+            limiter_rate: config.property_or_default::<Rate>("authentication.fail2ban", "100/1d"),
         }
     }
 }

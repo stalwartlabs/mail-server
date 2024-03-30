@@ -51,9 +51,9 @@ pub mod throttle;
 pub mod tls;
 
 const CONFIG: &str = r#"
-[server]
-hostname = 'mx.example.org'
-greeting = 'Test SMTP instance'
+[session.connect]
+hostname = "'mx.example.org'"
+greeting = "'Test SMTP instance'"
 
 [server.listener.smtp-debug]
 bind = ['127.0.0.1:9925']

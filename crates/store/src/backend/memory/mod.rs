@@ -93,7 +93,13 @@ impl Stores {
                         }
 
                         if has_others {
-                            Value::Text(value.to_string().into())
+                            if value == "true" {
+                                Value::Integer(1.into())
+                            } else if value == "false" {
+                                Value::Integer(0.into())
+                            } else {
+                                Value::Text(value.to_string().into())
+                            }
                         } else if has_floats {
                             value
                                 .parse()

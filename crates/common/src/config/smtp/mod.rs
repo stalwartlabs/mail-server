@@ -7,12 +7,14 @@ pub mod resolver;
 pub mod session;
 pub mod throttle;
 
-use crate::expr::{if_block::IfBlock, tokenizer::TokenMap, Expression, ExpressionItem, Token};
+use crate::expr::{tokenizer::TokenMap, Expression};
 
 use self::{
     auth::MailAuthConfig, queue::QueueConfig, report::ReportConfig, resolver::Resolvers,
     session::SessionConfig,
 };
+
+use super::*;
 
 #[derive(Default, Clone)]
 pub struct SmtpConfig {
@@ -43,30 +45,73 @@ pub const THROTTLE_REMOTE_IP: u16 = 1 << 7;
 pub const THROTTLE_LOCAL_IP: u16 = 1 << 8;
 pub const THROTTLE_HELO_DOMAIN: u16 = 1 << 9;
 
-pub const V_RECIPIENT: u32 = 0;
-pub const V_RECIPIENT_DOMAIN: u32 = 1;
-pub const V_SENDER: u32 = 2;
-pub const V_SENDER_DOMAIN: u32 = 3;
-pub const V_MX: u32 = 4;
-pub const V_HELO_DOMAIN: u32 = 5;
-pub const V_AUTHENTICATED_AS: u32 = 6;
-pub const V_LISTENER: u32 = 7;
-pub const V_REMOTE_IP: u32 = 8;
-pub const V_LOCAL_IP: u32 = 9;
-pub const V_PRIORITY: u32 = 10;
+pub(crate) const RCPT_DOMAIN_VARS: &[u32; 1] = &[V_RECIPIENT_DOMAIN];
 
-pub const VARIABLES_MAP: &[(&str, u32)] = &[
-    ("rcpt", V_RECIPIENT),
-    ("rcpt_domain", V_RECIPIENT_DOMAIN),
-    ("sender", V_SENDER),
-    ("sender_domain", V_SENDER_DOMAIN),
-    ("mx", V_MX),
-    ("helo_domain", V_HELO_DOMAIN),
-    ("authenticated_as", V_AUTHENTICATED_AS),
-    ("listener", V_LISTENER),
-    ("remote_ip", V_REMOTE_IP),
-    ("local_ip", V_LOCAL_IP),
-    ("priority", V_PRIORITY),
+pub(crate) const SMTP_EHLO_VARS: &[u32; 8] = &[
+    V_LISTENER,
+    V_REMOTE_IP,
+    V_REMOTE_PORT,
+    V_LOCAL_IP,
+    V_LOCAL_PORT,
+    V_PROTOCOL,
+    V_TLS,
+    V_HELO_DOMAIN,
+];
+pub(crate) const SMTP_MAIL_FROM_VARS: &[u32; 10] = &[
+    V_LISTENER,
+    V_REMOTE_IP,
+    V_REMOTE_PORT,
+    V_LOCAL_IP,
+    V_LOCAL_PORT,
+    V_PROTOCOL,
+    V_TLS,
+    V_SENDER,
+    V_SENDER_DOMAIN,
+    V_AUTHENTICATED_AS,
+];
+pub(crate) const SMTP_RCPT_TO_VARS: &[u32; 15] = &[
+    V_SENDER,
+    V_SENDER_DOMAIN,
+    V_RECIPIENTS,
+    V_RECIPIENT,
+    V_RECIPIENT_DOMAIN,
+    V_AUTHENTICATED_AS,
+    V_LISTENER,
+    V_REMOTE_IP,
+    V_REMOTE_PORT,
+    V_LOCAL_IP,
+    V_LOCAL_PORT,
+    V_PROTOCOL,
+    V_TLS,
+    V_PRIORITY,
+    V_HELO_DOMAIN,
+];
+pub(crate) const SMTP_QUEUE_HOST_VARS: &[u32; 9] = &[
+    V_SENDER,
+    V_SENDER_DOMAIN,
+    V_RECIPIENT_DOMAIN,
+    V_RECIPIENT,
+    V_RECIPIENTS,
+    V_MX,
+    V_PRIORITY,
+    V_REMOTE_IP,
+    V_LOCAL_IP,
+];
+pub(crate) const SMTP_QUEUE_RCPT_VARS: &[u32; 5] = &[
+    V_RECIPIENT_DOMAIN,
+    V_RECIPIENTS,
+    V_SENDER,
+    V_SENDER_DOMAIN,
+    V_PRIORITY,
+];
+pub(crate) const SMTP_QUEUE_SENDER_VARS: &[u32; 3] = &[V_SENDER, V_SENDER_DOMAIN, V_PRIORITY];
+pub(crate) const SMTP_QUEUE_MX_VARS: &[u32; 6] = &[
+    V_RECIPIENT_DOMAIN,
+    V_RECIPIENTS,
+    V_SENDER,
+    V_SENDER_DOMAIN,
+    V_PRIORITY,
+    V_MX,
 ];
 
 impl SmtpConfig {
@@ -79,24 +124,4 @@ impl SmtpConfig {
             report: ReportConfig::parse(config),
         }
     }
-}
-
-impl TokenMap {
-    pub fn with_smtp_variables(mut self, variables: &[u32]) -> Self {
-        for (name, idx) in VARIABLES_MAP {
-            if variables.contains(idx) {
-                self.tokens.insert(name, Token::Variable(*idx));
-            }
-        }
-
-        self
-    }
-}
-
-pub(crate) fn parse_server_hostname(config: &mut Config) -> Option<IfBlock> {
-    IfBlock::try_parse(
-        config,
-        "server.hostname",
-        &TokenMap::default().with_smtp_variables(&[V_LISTENER, V_REMOTE_IP, V_LOCAL_IP]),
-    )
 }

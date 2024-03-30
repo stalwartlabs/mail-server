@@ -24,8 +24,7 @@
 use std::{net::IpAddr, sync::Arc};
 
 use common::{
-    config::smtp::{V_LISTENER, V_LOCAL_IP, V_REMOTE_IP},
-    expr::functions::ResolveVariable,
+    expr::{functions::ResolveVariable, *},
     listener::{ServerInstance, SessionData, SessionManager, SessionStream},
     Core,
 };
@@ -57,7 +56,9 @@ use super::{HtmlResponse, HttpRequest, HttpResponse, JmapSessionManager, JsonRes
 pub struct HttpSessionData {
     pub instance: Arc<ServerInstance>,
     pub local_ip: IpAddr,
+    pub local_port: u16,
     pub remote_ip: IpAddr,
+    pub remote_port: u16,
     pub is_tls: bool,
 }
 
@@ -366,7 +367,9 @@ impl JMAP {
                                 HttpSessionData {
                                     instance,
                                     local_ip: session.local_ip,
+                                    local_port: session.local_port,
                                     remote_ip,
+                                    remote_port: session.remote_port,
                                     is_tls,
                                 },
                             )
@@ -423,7 +426,11 @@ impl ResolveVariable for HttpSessionData {
     fn resolve_variable(&self, variable: u32) -> common::expr::Variable<'_> {
         match variable {
             V_REMOTE_IP => self.remote_ip.to_string().into(),
+            V_REMOTE_PORT => self.remote_port.into(),
             V_LOCAL_IP => self.local_ip.to_string().into(),
+            V_LOCAL_PORT => self.local_port.into(),
+            V_TLS => self.is_tls.into(),
+            V_PROTOCOL => if self.is_tls { "https" } else { "http" }.into(),
             V_LISTENER => self.instance.id.as_str().into(),
             _ => common::expr::Variable::default(),
         }
@@ -434,7 +441,14 @@ impl HttpSessionData {
     pub async fn resolve_url(&self, core: &Core) -> String {
         core.eval_if(&core.network.url, self)
             .await
-            .unwrap_or_else(|| format!("http{}://localhost", if self.is_tls { "s" } else { "" }))
+            .unwrap_or_else(|| {
+                format!(
+                    "http{}://{}:{}",
+                    if self.is_tls { "s" } else { "" },
+                    self.local_ip,
+                    self.local_port
+                )
+            })
     }
 }
 

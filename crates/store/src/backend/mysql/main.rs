@@ -49,7 +49,8 @@ impl MysqlStore {
             .max_allowed_packet(config.property((&prefix, "max-allowed-packet")))
             .wait_timeout(
                 config
-                    .property::<Duration>((&prefix, "timeout"))
+                    .property::<Option<Duration>>((&prefix, "timeout"))
+                    .unwrap_or_default()
                     .map(|t| t.as_secs() as usize),
             );
         if let Some(port) = config.property((&prefix, "port")) {
@@ -68,10 +69,16 @@ impl MysqlStore {
         // Configure connection pool
         let mut pool_min = PoolConstraints::default().min();
         let mut pool_max = PoolConstraints::default().max();
-        if let Some(n_size) = config.property::<usize>((&prefix, "pool.min-connections")) {
+        if let Some(n_size) = config
+            .property::<usize>((&prefix, "pool.min-connections"))
+            .filter(|&n| n > 0)
+        {
             pool_min = n_size;
         }
-        if let Some(n_size) = config.property::<usize>((&prefix, "pool.max-connections")) {
+        if let Some(n_size) = config
+            .property::<usize>((&prefix, "pool.max-connections"))
+            .filter(|&n| n > 0)
+        {
             pool_max = n_size;
         }
         opts = opts.pool_opts(

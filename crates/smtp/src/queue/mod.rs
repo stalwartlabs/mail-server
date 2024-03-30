@@ -28,8 +28,7 @@ use std::{
 };
 
 use common::{
-    config::smtp::*,
-    expr::{self, functions::ResolveVariable},
+    expr::{self, functions::ResolveVariable, *},
     listener::limiter::{ConcurrencyLimiter, InFlight},
 };
 use serde::{Deserialize, Serialize};
@@ -245,6 +244,13 @@ impl<'x> ResolveVariable for QueueEnvelope<'x> {
             V_SENDER => self.message.return_path_lcase.as_str().into(),
             V_SENDER_DOMAIN => self.message.return_path_domain.as_str().into(),
             V_RECIPIENT_DOMAIN => self.domain.into(),
+            V_RECIPIENTS => self
+                .message
+                .recipients
+                .iter()
+                .map(|r| Variable::from(r.address_lcase.as_str()))
+                .collect::<Vec<_>>()
+                .into(),
             V_MX => self.mx.into(),
             V_PRIORITY => self.message.priority.into(),
             V_REMOTE_IP => self.remote_ip.to_string().into(),
@@ -259,6 +265,12 @@ impl ResolveVariable for Message {
         match variable {
             V_SENDER => self.return_path_lcase.as_str().into(),
             V_SENDER_DOMAIN => self.return_path_domain.as_str().into(),
+            V_RECIPIENTS => self
+                .recipients
+                .iter()
+                .map(|r| Variable::from(r.address_lcase.as_str()))
+                .collect::<Vec<_>>()
+                .into(),
             V_PRIORITY => self.priority.into(),
             _ => "".into(),
         }

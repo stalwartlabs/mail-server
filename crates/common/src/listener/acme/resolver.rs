@@ -45,6 +45,12 @@ impl Core {
                 cert.clone(),
             );
         }
+
+        // Add default certificate
+        if provider.default {
+            certificates.insert("*".to_string(), cert);
+        }
+
         self.tls.certificates.store(certificates.into());
 
         // Remove auth keys

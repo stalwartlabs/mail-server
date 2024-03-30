@@ -24,7 +24,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use ahash::AHashMap;
-use common::scripts::ScriptModification;
+use common::{expr::functions::ResolveVariable, scripts::ScriptModification, Core};
 use sieve::{runtime::Variable, Envelope};
 
 pub mod envelope;
@@ -48,6 +48,10 @@ pub struct ScriptParameters {
     message: Option<Arc<Vec<u8>>>,
     variables: AHashMap<Cow<'static, str>, Variable>,
     envelope: Vec<(Envelope, Variable)>,
+    from_addr: String,
+    from_name: String,
+    return_path: String,
+    sign: Vec<String>,
     #[cfg(feature = "test_mode")]
     expected_variables: Option<AHashMap<String, Variable>>,
 }
@@ -60,7 +64,27 @@ impl ScriptParameters {
             message: None,
             #[cfg(feature = "test_mode")]
             expected_variables: None,
+            from_addr: Default::default(),
+            from_name: Default::default(),
+            return_path: Default::default(),
+            sign: Default::default(),
         }
+    }
+
+    pub async fn with_envelope(mut self, core: &Core, vars: &impl ResolveVariable) -> Self {
+        for (variable, expr) in [
+            (&mut self.from_addr, &core.sieve.from_addr),
+            (&mut self.from_name, &core.sieve.from_name),
+            (&mut self.return_path, &core.sieve.return_path),
+        ] {
+            if let Some(value) = core.eval_if(expr, vars).await {
+                *variable = value;
+            }
+        }
+        if let Some(value) = core.eval_if(&core.sieve.sign, vars).await {
+            self.sign = value;
+        }
+        self
     }
 
     pub fn with_message(self, message: Arc<Vec<u8>>) -> Self {

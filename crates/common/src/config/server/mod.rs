@@ -46,14 +46,20 @@ pub enum ServerProtocol {
     ManageSieve,
 }
 
+impl ServerProtocol {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ServerProtocol::Smtp => "smtp",
+            ServerProtocol::Lmtp => "lmtp",
+            ServerProtocol::Imap => "imap",
+            ServerProtocol::Http => "http",
+            ServerProtocol::ManageSieve => "managesieve",
+        }
+    }
+}
+
 impl Display for ServerProtocol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ServerProtocol::Smtp => write!(f, "smtp"),
-            ServerProtocol::Lmtp => write!(f, "lmtp"),
-            ServerProtocol::Imap => write!(f, "imap"),
-            ServerProtocol::Http => write!(f, "http"),
-            ServerProtocol::ManageSieve => write!(f, "managesieve"),
-        }
+        f.write_str(self.as_str())
     }
 }

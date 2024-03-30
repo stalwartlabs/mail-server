@@ -21,15 +21,15 @@
  * for more details.
 */
 
+use common::listener::SessionStream;
 use mail_auth::{
     common::verify::VerifySignature, AuthenticatedMessage, AuthenticationResults, DkimOutput,
 };
-use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::Rate;
 
 use crate::core::Session;
 
-impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn send_dkim_report(
         &self,
         rcpt: &str,

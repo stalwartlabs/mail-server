@@ -23,11 +23,10 @@
 
 use common::{
     config::smtp::{queue::QueueQuota, *},
-    expr::functions::ResolveVariable,
-    listener::limiter::ConcurrencyLimiter,
+    expr::{functions::ResolveVariable, *},
+    listener::{limiter::ConcurrencyLimiter, SessionStream},
 };
 use dashmap::mapref::entry::Entry;
-use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::Rate;
 
 use std::hash::{BuildHasher, Hash, Hasher};
@@ -210,7 +209,7 @@ impl NewKey for Throttle {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn is_allowed(&mut self) -> bool {
         let throttles = if !self.data.rcpt_to.is_empty() {
             &self.core.core.smtp.session.throttle.rcpt_to

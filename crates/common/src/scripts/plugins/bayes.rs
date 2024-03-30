@@ -224,6 +224,7 @@ pub fn exec_classify(ctx: PluginContext<'_>) -> Variable {
             context = "sieve:bayes_classify",
             event = "skip-classify",
             reason = "Not enough training data",
+            min_learns = classifier.min_learns,
             spam_learns = %spam_learns,
             ham_learns = %ham_learns);
         return Variable::default();

@@ -30,28 +30,20 @@ use crate::smtp::{build_smtp, session::TestSession, TempDir};
 
 const CONFIG: &str = r#"
 [spam.header]
-add-spam = true
-add-spam-result = true
 is-spam = "X-Spam-Status: Yes"
 
-[spam.autolearn]
-enable = true
-#balance = 0.9
-balance = 0.0
-
-[spam.autolearn.ham]
-replies = true
-threshold = -0.5
-
-[spam.autolearn.spam]
-threshold = 6.0
-
-[spam.threshold]
-spam = 5.0
-discard = 0
-reject = 0
-
-[spam.data]
+[lookup.spam-config]
+add-spam = true
+add-spam-result = true
+learn-enable = true
+#learn-balance = "0.9"
+learn-balance = "0.0"
+learn-ham-replies = true
+learn-ham-threshold = "-0.5"
+learn-spam-threshold = "6.0"
+threshold-spam = "5.0"
+threshold-discard = 0
+threshold-reject = 0
 directory = ""
 lookup = ""
 
@@ -59,8 +51,8 @@ lookup = ""
 relay = true
 
 [sieve.trusted]
-from-name = "Sieve Daemon"
-from-addr = "sieve@foobar.org"
+from-name = "'Sieve Daemon'"
+from-addr = "'sieve@foobar.org'"
 return-path = ""
 hostname = "mx.foobar.org"
 no-capability-check = true
@@ -110,13 +102,12 @@ public-suffix = "file://{LIST_PATH}/public-suffix.dat"
 
 #[tokio::test(flavor = "multi_thread")]
 async fn antispam() {
-    /*let disable = true;
-    tracing::subscriber::set_global_default(
+    /*tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_env_filter(
                 tracing_subscriber::EnvFilter::builder()
                     .parse(
-                        "smtp=debug,imap=debug,jmap=debug,store=debug,utils=debug,directory=debug,common=debug",
+                        "smtp=debug,imap=debug,jmap=debug,store=debug,utils=debug,directory=debug,common=trace",
                     )
                     .unwrap(),
             )
@@ -212,6 +203,7 @@ async fn antispam() {
     config.resolve_macros().await;
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
+    //config.assert_no_errors();
 
     // Add mock DNS entries
     for (domain, ip) in [

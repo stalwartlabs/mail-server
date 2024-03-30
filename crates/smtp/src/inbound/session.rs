@@ -22,11 +22,8 @@
 */
 
 use common::{
-    config::{
-        server::ServerProtocol,
-        smtp::{session::Mechanism, *},
-    },
-    expr::{self, functions::ResolveVariable},
+    config::{server::ServerProtocol, smtp::session::Mechanism},
+    expr::{self, functions::ResolveVariable, *},
     listener::SessionStream,
 };
 use smtp_proto::{
@@ -111,11 +108,6 @@ impl<T: SessionStream> Session<T> {
                                     self.write(b"503 5.5.1 AUTH not allowed.\r\n").await?;
                                 } else if !self.data.authenticated_as.is_empty() {
                                     self.write(b"503 5.5.1 Already authenticated.\r\n").await?;
-                                } else if mechanism & (AUTH_LOGIN | AUTH_PLAIN) != 0
-                                    && !self.stream.is_tls()
-                                    && !self.params.auth_plain_text
-                                {
-                                    self.write(b"503 5.5.1 Clear text authentication without TLS is forbidden.\r\n").await?;
                                 } else if let Some(mut token) =
                                     SaslToken::from_mechanism(mechanism & auth)
                                 {
@@ -407,7 +399,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite> ResolveVariable for Session<T> {
+impl<T: SessionStream> ResolveVariable for Session<T> {
     fn resolve_variable(&self, variable: u32) -> expr::Variable<'_> {
         match variable {
             V_RECIPIENT => self
@@ -423,6 +415,13 @@ impl<T: AsyncRead + AsyncWrite> ResolveVariable for Session<T> {
                 .last()
                 .map(|r| r.domain.as_str())
                 .unwrap_or_default()
+                .into(),
+            V_RECIPIENTS => self
+                .data
+                .rcpt_to
+                .iter()
+                .map(|r| Variable::String(r.address_lcase.as_str().into()))
+                .collect::<Vec<_>>()
                 .into(),
             V_SENDER => self
                 .data
@@ -442,8 +441,12 @@ impl<T: AsyncRead + AsyncWrite> ResolveVariable for Session<T> {
             V_AUTHENTICATED_AS => self.data.authenticated_as.as_str().into(),
             V_LISTENER => self.instance.id.as_str().into(),
             V_REMOTE_IP => self.data.remote_ip_str.as_str().into(),
+            V_REMOTE_PORT => self.data.remote_port.into(),
             V_LOCAL_IP => self.data.local_ip_str.as_str().into(),
+            V_LOCAL_PORT => self.data.local_port.into(),
+            V_TLS => self.stream.is_tls().into(),
             V_PRIORITY => self.data.priority.to_string().into(),
+            V_PROTOCOL => self.instance.protocol.as_str().into(),
             _ => expr::Variable::default(),
         }
     }

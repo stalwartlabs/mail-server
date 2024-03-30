@@ -23,12 +23,11 @@
 
 use std::time::Duration;
 
-use common::config::smtp::auth::VerifyStrategy;
-use tokio::io::{AsyncRead, AsyncWrite};
+use common::{config::smtp::auth::VerifyStrategy, listener::SessionStream};
 
 use super::Session;
 
-impl<T: AsyncRead + AsyncWrite> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn eval_session_params(&mut self) {
         let c = &self.core.core.smtp.session;
         self.data.bytes_left = self
@@ -111,12 +110,6 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .eval_if(&ac.errors_wait, self)
             .await
             .unwrap_or_else(|| Duration::from_secs(30));
-        self.params.auth_plain_text = self
-            .core
-            .core
-            .eval_if(&ac.allow_plain_text, self)
-            .await
-            .unwrap_or(false);
         self.params.auth_match_sender = self
             .core
             .core

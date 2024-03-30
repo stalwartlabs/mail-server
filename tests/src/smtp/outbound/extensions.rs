@@ -54,6 +54,14 @@ size = 1500
 [session.extensions]
 dsn = true
 requiretls = true
+
+[session.data.add-headers]
+received = true
+received-spf = true
+auth-results = true
+message-id = true
+date = true
+return-path = false
 "#;
 
 #[tokio::test]

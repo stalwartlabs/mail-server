@@ -6,14 +6,17 @@ use crate::{
     Network,
 };
 
-use super::smtp::*;
+use super::CONNECTION_VARS;
 
 impl Default for Network {
     fn default() -> Self {
         Self {
             blocked_ips: Default::default(),
-            hostname: IfBlock::new("localhost".to_string()),
-            url: IfBlock::new("http://localhost:8080".to_string()),
+            url: IfBlock::new::<()>(
+                "server.http.url",
+                [],
+                "protocol + '://' + key_get('default', 'hostname') + ':' + local_port",
+            ),
         }
     }
 }
@@ -24,17 +27,9 @@ impl Network {
             blocked_ips: BlockedIps::parse(config),
             ..Default::default()
         };
-        let token_map = &TokenMap::default().with_smtp_variables(&[
-            V_LISTENER,
-            V_REMOTE_IP,
-            V_LOCAL_IP,
-            V_HELO_DOMAIN,
-        ]);
+        let token_map = &TokenMap::default().with_variables(CONNECTION_VARS);
 
-        for (value, key) in [
-            (&mut network.hostname, "server.hostname"),
-            (&mut network.url, "server.url"),
-        ] {
+        for (value, key) in [(&mut network.url, "server.url")] {
             if let Some(if_block) = IfBlock::try_parse(config, key, token_map) {
                 *value = if_block;
             }

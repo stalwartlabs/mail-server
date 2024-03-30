@@ -11,7 +11,10 @@ use utils::config::{
     Config,
 };
 
-use crate::expr::{self, if_block::IfBlock, tokenizer::TokenMap, Constant, ConstantValue};
+use crate::{
+    config::CONNECTION_VARS,
+    expr::{self, if_block::IfBlock, tokenizer::TokenMap, Constant, ConstantValue},
+};
 
 use super::*;
 
@@ -83,22 +86,62 @@ impl Default for MailAuthConfig {
     fn default() -> Self {
         Self {
             dkim: DkimAuthConfig {
-                verify: IfBlock::new(VerifyStrategy::Relaxed),
-                sign: Default::default(),
+                verify: IfBlock::new::<VerifyStrategy>("auth.dkim.verify", [], "relaxed"),
+                sign: IfBlock::new::<()>(
+                    "auth.dkim.sign",
+                    [(
+                        "local_port != 25",
+                        "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                    )],
+                    "false",
+                ),
             },
             arc: ArcAuthConfig {
-                verify: IfBlock::new(VerifyStrategy::Relaxed),
-                seal: Default::default(),
+                verify: IfBlock::new::<VerifyStrategy>("auth.arc.verify", [], "relaxed"),
+                seal: IfBlock::new::<()>(
+                    "auth.arc.seal",
+                    [],
+                    "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                ),
             },
             spf: SpfAuthConfig {
-                verify_ehlo: IfBlock::new(VerifyStrategy::Relaxed),
-                verify_mail_from: IfBlock::new(VerifyStrategy::Relaxed),
+                verify_ehlo: IfBlock::new::<VerifyStrategy>(
+                    "auth.spf.verify.ehlo",
+                    [("local_port == 25", "relaxed")],
+                    #[cfg(not(feature = "test_mode"))]
+                    "disable",
+                    #[cfg(feature = "test_mode")]
+                    "relaxed",
+                    
+                ),
+                verify_mail_from: IfBlock::new::<VerifyStrategy>(
+                    "auth.spf.verify.mail-from",
+                    [("local_port == 25", "relaxed")],
+                    #[cfg(not(feature = "test_mode"))]
+                    "disable",
+                    #[cfg(feature = "test_mode")]
+                    "relaxed",
+                ),
             },
             dmarc: DmarcAuthConfig {
-                verify: IfBlock::new(VerifyStrategy::Relaxed),
+                verify: IfBlock::new::<VerifyStrategy>(
+                    "auth.dmarc.verify",
+                    [("local_port == 25", "relaxed")],
+                    #[cfg(not(feature = "test_mode"))]
+                    "disable",
+                    #[cfg(feature = "test_mode")]
+                    "relaxed",
+                ),
             },
             iprev: IpRevAuthConfig {
-                verify: IfBlock::new(VerifyStrategy::Relaxed),
+                verify: IfBlock::new::<VerifyStrategy>(
+                    "auth.ipref.verify",
+                    [("local_port == 25", "relaxed")],
+                    #[cfg(not(feature = "test_mode"))]
+                    "disable",
+                    #[cfg(feature = "test_mode")]
+                    "relaxed",
+                ),
             },
             signers: Default::default(),
             sealers: Default::default(),
@@ -108,27 +151,19 @@ impl Default for MailAuthConfig {
 
 impl MailAuthConfig {
     pub fn parse(config: &mut Config) -> Self {
-        let sender_vars = TokenMap::default()
-            .with_smtp_variables(&[
-                V_SENDER,
-                V_SENDER_DOMAIN,
-                V_PRIORITY,
-                V_AUTHENTICATED_AS,
-                V_LISTENER,
-                V_REMOTE_IP,
-                V_LOCAL_IP,
-            ])
+        let rcpt_vars = TokenMap::default()
+            .with_variables(SMTP_RCPT_TO_VARS)
             .with_constants::<VerifyStrategy>();
         let conn_vars = TokenMap::default()
-            .with_smtp_variables(&[V_LISTENER, V_REMOTE_IP, V_LOCAL_IP])
+            .with_variables(CONNECTION_VARS)
             .with_constants::<VerifyStrategy>();
         let mut mail_auth = Self::default();
 
         for (value, key, token_map) in [
-            (&mut mail_auth.dkim.verify, "auth.dkim.verify", &sender_vars),
-            (&mut mail_auth.dkim.sign, "auth.dkim.sign", &sender_vars),
-            (&mut mail_auth.arc.verify, "auth.arc.verify", &sender_vars),
-            (&mut mail_auth.arc.seal, "auth.arc.seal", &sender_vars),
+            (&mut mail_auth.dkim.verify, "auth.dkim.verify", &rcpt_vars),
+            (&mut mail_auth.dkim.sign, "auth.dkim.sign", &rcpt_vars),
+            (&mut mail_auth.arc.verify, "auth.arc.verify", &rcpt_vars),
+            (&mut mail_auth.arc.seal, "auth.arc.seal", &rcpt_vars),
             (
                 &mut mail_auth.spf.verify_ehlo,
                 "auth.spf.verify.ehlo",
@@ -139,16 +174,8 @@ impl MailAuthConfig {
                 "auth.spf.verify.mail-from",
                 &conn_vars,
             ),
-            (
-                &mut mail_auth.dmarc.verify,
-                "auth.dmarc.verify",
-                &sender_vars,
-            ),
-            (
-                &mut mail_auth.iprev.verify,
-                "auth.iprev.verify",
-                &sender_vars,
-            ),
+            (&mut mail_auth.dmarc.verify, "auth.dmarc.verify", &rcpt_vars),
+            (&mut mail_auth.iprev.verify, "auth.iprev.verify", &conn_vars),
         ] {
             if let Some(if_block) = IfBlock::try_parse(config, key, token_map) {
                 *value = if_block;

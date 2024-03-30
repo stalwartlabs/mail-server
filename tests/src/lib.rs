@@ -70,8 +70,8 @@ impl AssertConfig for utils::config::Config {
     }
 
     fn assert_no_warnings(self) -> Self {
-        if !self.missing.is_empty() {
-            panic!("Warnings: {:#?}", self.missing);
+        if !self.warnings.is_empty() {
+            panic!("Warnings: {:#?}", self.warnings);
         }
         self
     }

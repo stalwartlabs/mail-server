@@ -125,6 +125,7 @@ impl TestSession for Session<DummyIo> {
             },
             data: SessionData::new(
                 "127.0.0.1".parse().unwrap(),
+                0,
                 "127.0.0.1".parse().unwrap(),
                 0,
             ),

@@ -27,6 +27,42 @@ use std::{
     time::Duration,
 };
 
+pub const V_RECIPIENT: u32 = 0;
+pub const V_RECIPIENT_DOMAIN: u32 = 1;
+pub const V_SENDER: u32 = 2;
+pub const V_SENDER_DOMAIN: u32 = 3;
+pub const V_MX: u32 = 4;
+pub const V_HELO_DOMAIN: u32 = 5;
+pub const V_AUTHENTICATED_AS: u32 = 6;
+pub const V_LISTENER: u32 = 7;
+pub const V_REMOTE_IP: u32 = 8;
+pub const V_REMOTE_PORT: u32 = 9;
+pub const V_LOCAL_IP: u32 = 10;
+pub const V_LOCAL_PORT: u32 = 11;
+pub const V_PRIORITY: u32 = 12;
+pub const V_PROTOCOL: u32 = 13;
+pub const V_TLS: u32 = 14;
+pub const V_RECIPIENTS: u32 = 15;
+
+pub const VARIABLES_MAP: &[(&str, u32)] = &[
+    ("rcpt", V_RECIPIENT),
+    ("rcpt_domain", V_RECIPIENT_DOMAIN),
+    ("sender", V_SENDER),
+    ("sender_domain", V_SENDER_DOMAIN),
+    ("mx", V_MX),
+    ("helo_domain", V_HELO_DOMAIN),
+    ("authenticated_as", V_AUTHENTICATED_AS),
+    ("listener", V_LISTENER),
+    ("remote_ip", V_REMOTE_IP),
+    ("local_ip", V_LOCAL_IP),
+    ("priority", V_PRIORITY),
+    ("local_port", V_LOCAL_PORT),
+    ("remote_port", V_REMOTE_PORT),
+    ("protocol", V_PROTOCOL),
+    ("is_tls", V_TLS),
+    ("recipients", V_RECIPIENTS),
+];
+
 use regex::Regex;
 use utils::config::{utils::ParseValue, Rate};
 
@@ -67,7 +103,7 @@ pub enum Variable<'x> {
 
 impl Default for Variable<'_> {
     fn default() -> Self {
-        Variable::Integer(0)
+        Variable::String("".into())
     }
 }
 
@@ -185,6 +221,12 @@ impl From<i32> for Variable<'_> {
     }
 }
 
+impl From<u16> for Variable<'_> {
+    fn from(value: u16) -> Self {
+        Variable::Integer(value as i64)
+    }
+}
+
 impl From<i16> for Variable<'_> {
     fn from(value: i16) -> Self {
         Variable::Integer(value as i64)
@@ -292,10 +334,30 @@ impl PartialEq for Token {
 
 impl Eq for Token {}
 
+pub struct NoConstants;
+
 pub trait ConstantValue:
     ParseValue + for<'x> TryFrom<Variable<'x>> + Into<Constant> + Sized
 {
     fn add_constants(token_map: &mut TokenMap);
+}
+
+impl ConstantValue for () {
+    fn add_constants(_: &mut TokenMap) {}
+}
+
+impl From<()> for Constant {
+    fn from(_: ()) -> Self {
+        Constant::Integer(0)
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for () {
+    type Error = ();
+
+    fn try_from(_: Variable<'x>) -> Result<Self, Self::Error> {
+        Ok(())
+    }
 }
 
 impl ConstantValue for Duration {

@@ -105,6 +105,11 @@ impl TlsManager {
                 .map(|(_, v)| v.to_string())
                 .collect::<Vec<_>>();
 
+            // This ACME manager is the default when SNI is not available
+            let default = config
+                .property::<bool>(("acme", acme_id.as_str(), "default"))
+                .unwrap_or_default();
+
             // Add domains for self-signed certificate
             subject_names.extend(domains.iter().cloned());
 
@@ -115,6 +120,7 @@ impl TlsManager {
                     domains,
                     contact,
                     renew_before,
+                    default,
                 ) {
                     Ok(acme_provider) => {
                         acme_providers.insert(acme_id.to_string(), acme_provider);

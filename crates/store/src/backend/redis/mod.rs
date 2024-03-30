@@ -67,23 +67,81 @@ impl RedisStore {
             return None;
         }
 
-        Some(match config.value_require((&prefix, "redis-type"))? {
-            "single" => {
-                let client = Client::open(urls.into_iter().next().unwrap())
-                    .map_err(|err| {
-                        config.new_build_error(
-                            prefix.as_str(),
-                            format!("Failed to open Redis client: {err:?}"),
-                        )
-                    })
-                    .ok()?;
-                let timeout = config
-                    .property_or_default((&prefix, "timeout"), "10s")
-                    .unwrap_or_else(|| Duration::from_secs(10));
+        Some(
+            match config.value((&prefix, "redis-type")).unwrap_or("single") {
+                "single" => {
+                    let client = Client::open(urls.into_iter().next().unwrap())
+                        .map_err(|err| {
+                            config.new_build_error(
+                                prefix.as_str(),
+                                format!("Failed to open Redis client: {err:?}"),
+                            )
+                        })
+                        .ok()?;
+                    let timeout = config
+                        .property_or_default((&prefix, "timeout"), "10s")
+                        .unwrap_or_default();
 
-                Self {
-                    pool: RedisPool::Single(
-                        build_pool(config, &prefix, RedisConnectionManager { client, timeout })
+                    Self {
+                        pool: RedisPool::Single(
+                            build_pool(config, &prefix, RedisConnectionManager { client, timeout })
+                                .map_err(|err| {
+                                    config.new_build_error(
+                                        prefix.as_str(),
+                                        format!("Failed to build Redis pool: {err:?}"),
+                                    )
+                                })
+                                .ok()?,
+                        ),
+                    }
+                }
+                "cluster" => {
+                    let mut builder = ClusterClientBuilder::new(urls.into_iter());
+                    if let Some(value) = config.property((&prefix, "user")) {
+                        builder = builder.username(value);
+                    }
+                    if let Some(value) = config.property((&prefix, "password")) {
+                        builder = builder.password(value);
+                    }
+                    if let Some(value) = config.property((&prefix, "retry.total")) {
+                        builder = builder.retries(value);
+                    }
+                    if let Some(value) = config
+                        .property::<Option<Duration>>((&prefix, "retry.max-wait"))
+                        .unwrap_or_default()
+                    {
+                        builder = builder.max_retry_wait(value.as_millis() as u64);
+                    }
+                    if let Some(value) = config
+                        .property::<Option<Duration>>((&prefix, "retry.min-wait"))
+                        .unwrap_or_default()
+                    {
+                        builder = builder.min_retry_wait(value.as_millis() as u64);
+                    }
+                    if let Some(true) = config.property::<bool>((&prefix, "read-from-replicas")) {
+                        builder = builder.read_from_replicas();
+                    }
+
+                    let client = builder
+                        .build()
+                        .map_err(|err| {
+                            config.new_build_error(
+                                prefix.as_str(),
+                                format!("Failed to open Redis client: {err:?}"),
+                            )
+                        })
+                        .ok()?;
+                    let timeout = config
+                        .property_or_default::<Duration>((&prefix, "timeout"), "10s")
+                        .unwrap_or_else(|| Duration::from_secs(10));
+
+                    Self {
+                        pool: RedisPool::Cluster(
+                            build_pool(
+                                config,
+                                &prefix,
+                                RedisClusterConnectionManager { client, timeout },
+                            )
                             .map_err(|err| {
                                 config.new_build_error(
                                     prefix.as_str(),
@@ -91,66 +149,16 @@ impl RedisStore {
                                 )
                             })
                             .ok()?,
-                    ),
+                        ),
+                    }
                 }
-            }
-            "cluster" => {
-                let mut builder = ClusterClientBuilder::new(urls.into_iter());
-                if let Some(value) = config.property((&prefix, "user")) {
-                    builder = builder.username(value);
+                invalid => {
+                    let err = format!("Invalid Redis type {invalid:?}");
+                    config.new_parse_error((&prefix, "redis-type"), err);
+                    return None;
                 }
-                if let Some(value) = config.property((&prefix, "password")) {
-                    builder = builder.password(value);
-                }
-                if let Some(value) = config.property((&prefix, "retry.total")) {
-                    builder = builder.retries(value);
-                }
-                if let Some(value) = config.property::<Duration>((&prefix, "retry.max-wait")) {
-                    builder = builder.max_retry_wait(value.as_millis() as u64);
-                }
-                if let Some(value) = config.property::<Duration>((&prefix, "retry.min-wait")) {
-                    builder = builder.min_retry_wait(value.as_millis() as u64);
-                }
-                if let Some(true) = config.property::<bool>((&prefix, "read-from-replicas")) {
-                    builder = builder.read_from_replicas();
-                }
-
-                let client = builder
-                    .build()
-                    .map_err(|err| {
-                        config.new_build_error(
-                            prefix.as_str(),
-                            format!("Failed to open Redis client: {err:?}"),
-                        )
-                    })
-                    .ok()?;
-                let timeout = config
-                    .property_or_default((&prefix, "timeout"), "10s")
-                    .unwrap_or_else(|| Duration::from_secs(10));
-
-                Self {
-                    pool: RedisPool::Cluster(
-                        build_pool(
-                            config,
-                            &prefix,
-                            RedisClusterConnectionManager { client, timeout },
-                        )
-                        .map_err(|err| {
-                            config.new_build_error(
-                                prefix.as_str(),
-                                format!("Failed to build Redis pool: {err:?}"),
-                            )
-                        })
-                        .ok()?,
-                    ),
-                }
-            }
-            invalid => {
-                let err = format!("Invalid Redis type {invalid:?}");
-                config.new_parse_error((&prefix, "redis-type"), err);
-                return None;
-            }
-        })
+            },
+        )
     }
 }
 
@@ -168,12 +176,19 @@ fn build_pool<M: Manager>(
         )
         .create_timeout(
             config
-                .property_or_default::<Duration>((prefix, "pool.create-timeout"), "30s")
-                .unwrap_or_else(|| Duration::from_secs(30))
-                .into(),
+                .property_or_default::<Option<Duration>>((prefix, "pool.create-timeout"), "30s")
+                .unwrap_or_default(),
         )
-        .wait_timeout(config.property_or_default((prefix, "pool.wait-timeout"), "30s"))
-        .recycle_timeout(config.property_or_default((prefix, "pool.recycle-timeout"), "30s"))
+        .wait_timeout(
+            config
+                .property_or_default::<Option<Duration>>((prefix, "pool.wait-timeout"), "30s")
+                .unwrap_or_default(),
+        )
+        .recycle_timeout(
+            config
+                .property_or_default::<Option<Duration>>((prefix, "pool.recycle-timeout"), "30s")
+                .unwrap_or_default(),
+        )
         .build()
         .map_err(|err| {
             format!(

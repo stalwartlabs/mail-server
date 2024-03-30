@@ -62,6 +62,15 @@ reject-non-fqdn = false
 
 [session.rcpt]
 relay = true
+
+[session.data.add-headers]
+received = true
+received-spf = true
+auth-results = true
+message-id = true
+date = true
+return-path = false
+
 "#;
 
 #[tokio::test]

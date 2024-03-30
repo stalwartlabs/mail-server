@@ -5,6 +5,7 @@ use tracing::Level;
 use tracing_appender::rolling::RollingFileAppender;
 use utils::config::Config;
 
+#[derive(Debug)]
 pub enum Tracer {
     Stdout {
         level: Level,
@@ -24,11 +25,13 @@ pub enum Tracer {
     },
 }
 
+#[derive(Debug)]
 pub enum OtelTracer {
     Gprc(TonicExporterBuilder),
     Http(HttpExporterBuilder),
 }
 
+#[derive(Debug)]
 pub struct Tracers {
     pub tracers: Vec<Tracer>,
 }

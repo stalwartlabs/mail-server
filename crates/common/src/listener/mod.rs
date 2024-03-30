@@ -33,11 +33,8 @@ use tokio_rustls::{Accept, TlsAcceptor};
 use utils::config::ipmask::IpAddrMask;
 
 use crate::{
-    config::{
-        server::ServerProtocol,
-        smtp::{V_LISTENER, V_LOCAL_IP, V_REMOTE_IP},
-    },
-    expr::functions::ResolveVariable,
+    config::server::ServerProtocol,
+    expr::{functions::ResolveVariable, *},
 };
 
 use self::limiter::{ConcurrencyLimiter, InFlight};
@@ -83,8 +80,10 @@ where
 pub struct SessionData<T: SessionStream> {
     pub stream: T,
     pub local_ip: IpAddr,
+    pub local_port: u16,
     pub remote_ip: IpAddr,
     pub remote_port: u16,
+    pub protocol: ServerProtocol,
     pub span: tracing::Span,
     pub in_flight: InFlight,
     pub instance: Arc<ServerInstance>,
@@ -117,8 +116,10 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                             let session = SessionData {
                                 stream,
                                 local_ip: session.local_ip,
+                                local_port: session.local_port,
                                 remote_ip: session.remote_ip,
                                 remote_port: session.remote_port,
+                                protocol: session.protocol,
                                 span: session.span,
                                 in_flight: session.in_flight,
                                 instance: session.instance,
@@ -157,21 +158,16 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send;
 }
 
-impl ResolveVariable for ServerInstance {
-    fn resolve_variable(&self, variable: u32) -> crate::expr::Variable<'_> {
-        match variable {
-            V_LISTENER => self.id.as_str().into(),
-            _ => crate::expr::Variable::default(),
-        }
-    }
-}
-
 impl<T: SessionStream> ResolveVariable for SessionData<T> {
     fn resolve_variable(&self, variable: u32) -> crate::expr::Variable<'_> {
         match variable {
             V_REMOTE_IP => self.remote_ip.to_string().into(),
+            V_REMOTE_PORT => self.remote_port.into(),
             V_LOCAL_IP => self.local_ip.to_string().into(),
+            V_LOCAL_PORT => self.local_port.into(),
             V_LISTENER => self.instance.id.as_str().into(),
+            V_PROTOCOL => self.protocol.as_str().into(),
+            V_TLS => self.stream.is_tls().into(),
             _ => crate::expr::Variable::default(),
         }
     }
@@ -180,7 +176,17 @@ impl<T: SessionStream> ResolveVariable for SessionData<T> {
 impl Debug for TcpAcceptor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Tls { .. } => f.debug_tuple("Tls").finish(),
+            Self::Tls {
+                acme_config,
+                default_config,
+                implicit,
+                ..
+            } => f
+                .debug_struct("Tls")
+                .field("acme_config", acme_config)
+                .field("default_config", default_config)
+                .field("implicit", implicit)
+                .finish(),
             Self::Plain => write!(f, "Plain"),
         }
     }

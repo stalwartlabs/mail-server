@@ -1,0 +1,72 @@
+#############################################
+# Stalwart Mail Server Configuration File   
+#############################################
+
+[server.listener."smtp"]
+bind = ["[::]:25"]
+protocol = "smtp"
+
+[server.listener."submission"]
+bind = ["[::]:587"]
+protocol = "smtp"
+
+[server.listener."submissions"]
+bind = ["[::]:465"]
+protocol = "smtp"
+tls.implicit = true
+
+[server.listener."imap"]
+bind = ["[::]:143"]
+protocol = "imap"
+
+[server.listener."imaptls"]
+bind = ["[::]:993"]
+protocol = "imap"
+tls.implicit = true
+
+[server.listener."sieve"]
+bind = ["[::]:4190"]
+protocol = "managesieve"
+
+[server.listener."https"]
+protocol = "http"
+bind = ["[::]:443"]
+tls.implicit = true
+
+[storage]
+data = "rocksdb"
+fts = "rocksdb"
+blob = "rocksdb"
+lookup = "rocksdb"
+directory = "internal"
+
+[store."rocksdb"]
+type = "rocksdb"
+path = "%{env:STALWART_PATH}%/data"
+compression = "lz4"
+
+[directory."internal"]
+type = "internal"
+store = "rocksdb"
+
+[lookup.default]
+domain = "%{env:DOMAIN}%"
+hostname = "%{env:HOSTNAME}%"
+
+[oauth]
+key = "%{env:OAUTH_KEY}%"
+
+[tracer."stdout"]
+type = "stdout"
+level = "info"
+ansi = false
+enable = true
+
+#[server.run-as]
+#user = "stalwart-mail"
+#group = "stalwart-mail"
+
+[server.http]
+headers = ["Access-Control-Allow-Origin: *", 
+           "Access-Control-Allow-Methods: POST, GET, PATCH, PUT, DELETE, HEAD, OPTIONS",
+           "Access-Control-Allow-Headers: Authorization, Content-Type, Accept, X-Requested-With"]

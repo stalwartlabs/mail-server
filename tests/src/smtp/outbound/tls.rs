@@ -59,7 +59,8 @@ chunking = false
 #[tokio::test]
 #[serial_test::serial]
 async fn starttls_optional() {
-    /*tracing::subscriber::set_global_default(
+    /*let disable = 1;
+    tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::TRACE)
             .finish(),

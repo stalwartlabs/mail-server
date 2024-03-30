@@ -55,8 +55,8 @@ impl SMTP {
             .filter(params.message.as_deref().map_or(b"", |m| &m[..]))
             .with_vars_env(params.variables)
             .with_envelope_list(params.envelope)
-            .with_user_address(&self.core.sieve.from_addr)
-            .with_user_full_name(&self.core.sieve.from_name);
+            .with_user_address(&params.from_addr)
+            .with_user_full_name(&params.from_name);
         let mut input = Input::script("__script", script);
         let mut messages: Vec<Vec<u8>> = Vec::new();
 
@@ -149,10 +149,10 @@ impl SMTP {
                         message_id,
                     } => {
                         // Build message
-                        let return_path_lcase = self.core.sieve.return_path.to_lowercase();
+                        let return_path_lcase = params.return_path.to_lowercase();
                         let return_path_domain = return_path_lcase.domain_part().to_string();
                         let mut message = self.new_message(
-                            self.core.sieve.return_path.clone(),
+                            params.return_path.clone(),
                             return_path_lcase,
                             return_path_domain,
                         );
@@ -265,9 +265,9 @@ impl SMTP {
                             instance.message().raw_message().into()
                         };
                         if let Some(raw_message) = raw_message {
-                            let headers = if !self.core.sieve.sign.is_empty() {
+                            let headers = if !params.sign.is_empty() {
                                 let mut headers = Vec::new();
-                                for dkim in &self.core.sieve.sign {
+                                for dkim in &params.sign {
                                     if let Some(dkim) = self.core.get_dkim_signer(dkim) {
                                         match dkim.sign(raw_message) {
                                             Ok(signature) => {

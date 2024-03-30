@@ -29,7 +29,7 @@ use utils::config::utils::ParseValue;
 
 use super::{
     functions::{ASYNC_FUNCTIONS, FUNCTIONS},
-    BinaryOperator, Constant, ConstantValue, Token, UnaryOperator,
+    *,
 };
 
 pub struct Tokenizer<'x> {
@@ -348,7 +348,37 @@ impl<'x> Tokenizer<'x> {
 }
 
 impl TokenMap {
-    pub fn with_variables<I>(mut self, vars: I) -> Self
+    pub fn with_all_variables(self) -> Self {
+        self.with_variables(&[
+            V_RECIPIENT,
+            V_RECIPIENT_DOMAIN,
+            V_SENDER,
+            V_SENDER_DOMAIN,
+            V_MX,
+            V_HELO_DOMAIN,
+            V_AUTHENTICATED_AS,
+            V_LISTENER,
+            V_REMOTE_IP,
+            V_REMOTE_PORT,
+            V_LOCAL_IP,
+            V_LOCAL_PORT,
+            V_PRIORITY,
+            V_PROTOCOL,
+            V_TLS,
+        ])
+    }
+
+    pub fn with_variables(mut self, variables: &[u32]) -> Self {
+        for (name, idx) in VARIABLES_MAP {
+            if variables.contains(idx) {
+                self.tokens.insert(name, Token::Variable(*idx));
+            }
+        }
+
+        self
+    }
+
+    pub fn with_variables_map<I>(mut self, vars: I) -> Self
     where
         I: IntoIterator<Item = (&'static str, u32)>,
     {

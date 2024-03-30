@@ -63,41 +63,17 @@ pub enum AggregateFrequency {
 
 impl ReportConfig {
     pub fn parse(config: &mut Config) -> Self {
-        let sender_vars = TokenMap::default().with_smtp_variables(&[
-            V_SENDER,
-            V_SENDER_DOMAIN,
-            V_PRIORITY,
-            V_AUTHENTICATED_AS,
-            V_LISTENER,
-            V_REMOTE_IP,
-            V_LOCAL_IP,
-        ]);
-        let rcpt_vars = TokenMap::default().with_smtp_variables(&[
-            V_SENDER,
-            V_SENDER_DOMAIN,
-            V_PRIORITY,
-            V_REMOTE_IP,
-            V_LOCAL_IP,
-            V_RECIPIENT_DOMAIN,
-        ]);
-
-        let default_hostname_if_block = parse_server_hostname(config);
-        let default_hostname = default_hostname_if_block
-            .as_ref()
-            .and_then(|i| i.default_string())
-            .unwrap_or("localhost")
-            .to_string();
+        let sender_vars = TokenMap::default().with_variables(SMTP_MAIL_FROM_VARS);
+        let rcpt_vars = TokenMap::default().with_variables(SMTP_RCPT_TO_VARS);
 
         Self {
             submitter: IfBlock::try_parse(
                 config,
                 "report.submitter",
-                &TokenMap::default().with_smtp_variables(&[V_RECIPIENT_DOMAIN]),
+                &TokenMap::default().with_variables(RCPT_DOMAIN_VARS),
             )
             .unwrap_or_else(|| {
-                default_hostname_if_block
-                    .map(|i| i.into_default("report.submitter"))
-                    .unwrap_or_else(|| IfBlock::new("localhost".to_string()))
+                IfBlock::new::<()>("report.submitter", [], "key_get('default', 'hostname')")
             }),
             analysis: ReportAnalysis {
                 addresses: config
@@ -106,40 +82,52 @@ impl ReportConfig {
                     .map(|(_, m)| m)
                     .collect(),
                 forward: config.property("report.analysis.forward").unwrap_or(true),
-                store: config.property("report.analysis.store"),
+                store: config
+                    .property_or_default::<Option<Duration>>("report.analysis.store", "30d")
+                    .unwrap_or_default(),
             },
-            dkim: Report::parse(config, "dkim", &default_hostname, &sender_vars),
-            spf: Report::parse(config, "spf", &default_hostname, &sender_vars),
-            dmarc: Report::parse(config, "dmarc", &default_hostname, &sender_vars),
+            dkim: Report::parse(config, "dkim", &rcpt_vars),
+            spf: Report::parse(config, "spf", &sender_vars),
+            dmarc: Report::parse(config, "dmarc", &rcpt_vars),
             dmarc_aggregate: AggregateReport::parse(
                 config,
                 "dmarc",
-                &default_hostname,
-                &sender_vars.with_constants::<AggregateFrequency>(),
+                &rcpt_vars.with_constants::<AggregateFrequency>(),
             ),
             tls: AggregateReport::parse(
                 config,
                 "tls",
-                &default_hostname,
-                &rcpt_vars.with_constants::<AggregateFrequency>(),
+                &TokenMap::default()
+                    .with_variables(SMTP_QUEUE_HOST_VARS)
+                    .with_constants::<AggregateFrequency>(),
             ),
         }
     }
 }
 
 impl Report {
-    pub fn parse(
-        config: &mut Config,
-        id: &str,
-        default_hostname: &str,
-        token_map: &TokenMap,
-    ) -> Self {
+    pub fn parse(config: &mut Config, id: &str, token_map: &TokenMap) -> Self {
         let mut report = Self {
-            name: IfBlock::new(format!("{} Reporting", id.to_ascii_uppercase())),
-            address: IfBlock::new(format!("MAILER-DAEMON@{default_hostname}")),
-            subject: IfBlock::new(format!("{} Report", id.to_ascii_uppercase())),
-            sign: Default::default(),
-            send: Default::default(),
+            name: IfBlock::new::<()>(format!("report.{id}.from-name"), [], "'Report Subsystem'"),
+            address: IfBlock::new::<()>(
+                format!("report.{id}.from-address"),
+                [],
+                format!("'noreply-{id}@' + key_get('default', 'domain')"),
+            ),
+            subject: IfBlock::new::<()>(
+                format!("report.{id}.subject"),
+                [],
+                format!(
+                    "'{} Authentication Failure Report'",
+                    id.to_ascii_uppercase()
+                ),
+            ),
+            sign: IfBlock::new::<()>(
+                format!("report.{id}.sign"),
+                [],
+                "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+            ),
+            send: IfBlock::new::<()>(format!("report.{id}.send"), [], "[1, 1d]"),
         };
         for (value, key) in [
             (&mut report.name, "from-name"),
@@ -158,22 +146,37 @@ impl Report {
 }
 
 impl AggregateReport {
-    pub fn parse(
-        config: &mut Config,
-        id: &str,
-        default_hostname: &str,
-        token_map: &TokenMap,
-    ) -> Self {
-        let rcpt_vars = TokenMap::default().with_smtp_variables(&[V_RECIPIENT_DOMAIN]);
+    pub fn parse(config: &mut Config, id: &str, token_map: &TokenMap) -> Self {
+        let rcpt_vars = TokenMap::default().with_variables(RCPT_DOMAIN_VARS);
 
         let mut report = Self {
-            name: IfBlock::new(format!("{} Aggregate Report", id.to_ascii_uppercase())),
-            address: IfBlock::new(format!("noreply-{id}@{default_hostname}")),
-            org_name: Default::default(),
-            contact_info: Default::default(),
-            send: IfBlock::new(AggregateFrequency::Never),
-            sign: Default::default(),
-            max_size: IfBlock::new(25 * 1024 * 1024),
+            name: IfBlock::new::<()>(
+                format!("report.{id}.aggregate.from-name"),
+                [],
+                format!("'{} Aggregate Report'", id.to_ascii_uppercase()),
+            ),
+            address: IfBlock::new::<()>(
+                format!("report.{id}.aggregate.from-address"),
+                [],
+                format!("'noreply-{id}@' + key_get('default', 'domain')"),
+            ),
+            org_name: IfBlock::new::<()>(
+                format!("report.{id}.aggregate.org-name"),
+                [],
+                "key_get('default', 'domain')",
+            ),
+            contact_info: IfBlock::empty(format!("report.{id}.aggregate.contact-info")),
+            send: IfBlock::new::<AggregateFrequency>(
+                format!("report.{id}.aggregate.send"),
+                [],
+                "daily",
+            ),
+            sign: IfBlock::new::<()>(
+                format!("report.{id}.aggregate.sign"),
+                [],
+                "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+            ),
+            max_size: IfBlock::new::<()>(format!("report.{id}.aggregate.max-size"), [], "26214400"),
         };
 
         for (value, key, token_map) in [
@@ -200,45 +203,7 @@ impl AggregateReport {
 
 impl Default for ReportConfig {
     fn default() -> Self {
-        Self {
-            submitter: IfBlock::new("localhost".to_string()),
-            analysis: ReportAnalysis {
-                addresses: Default::default(),
-                forward: true,
-                store: None,
-            },
-            dkim: Default::default(),
-            spf: Default::default(),
-            dmarc: Default::default(),
-            dmarc_aggregate: Default::default(),
-            tls: Default::default(),
-        }
-    }
-}
-
-impl Default for Report {
-    fn default() -> Self {
-        Self {
-            name: IfBlock::new("Mail Delivery Subsystem".to_string()),
-            address: IfBlock::new("MAILER-DAEMON@localhost".to_string()),
-            subject: IfBlock::new("Report".to_string()),
-            sign: Default::default(),
-            send: Default::default(),
-        }
-    }
-}
-
-impl Default for AggregateReport {
-    fn default() -> Self {
-        Self {
-            name: IfBlock::new("Reporting Subsystem".to_string()),
-            address: IfBlock::new("no-replyN@localhost".to_string()),
-            org_name: Default::default(),
-            contact_info: Default::default(),
-            send: IfBlock::new(AggregateFrequency::Never),
-            sign: Default::default(),
-            max_size: IfBlock::new(25 * 1024 * 1024),
-        }
+        Self::parse(&mut Config::default())
     }
 }
 

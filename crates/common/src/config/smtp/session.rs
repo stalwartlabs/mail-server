@@ -6,7 +6,10 @@ use std::{
 use smtp_proto::*;
 use utils::config::{utils::ParseValue, Config};
 
-use crate::expr::{if_block::IfBlock, tokenizer::TokenMap, Constant, ConstantValue, Variable};
+use crate::{
+    config::CONNECTION_VARS,
+    expr::{if_block::IfBlock, tokenizer::TokenMap, *},
+};
 
 use self::throttle::parse_throttle;
 
@@ -37,6 +40,7 @@ pub struct SessionThrottle {
 
 #[derive(Clone)]
 pub struct Connect {
+    pub hostname: IfBlock,
     pub script: IfBlock,
     pub greeting: IfBlock,
 }
@@ -67,7 +71,6 @@ pub struct Auth {
     pub directory: IfBlock,
     pub mechanisms: IfBlock,
     pub require: IfBlock,
-    pub allow_plain_text: IfBlock,
     pub must_match_sender: IfBlock,
     pub errors_max: IfBlock,
     pub errors_wait: IfBlock,
@@ -160,33 +163,10 @@ pub enum MilterVersion {
 
 impl SessionConfig {
     pub fn parse(config: &mut Config) -> Self {
-        let has_conn_vars =
-            TokenMap::default().with_smtp_variables(&[V_LISTENER, V_REMOTE_IP, V_LOCAL_IP]);
-        let has_ehlo_hars = TokenMap::default().with_smtp_variables(&[
-            V_LISTENER,
-            V_REMOTE_IP,
-            V_LOCAL_IP,
-            V_HELO_DOMAIN,
-        ]);
-        let has_sender_vars = TokenMap::default().with_smtp_variables(&[
-            V_LISTENER,
-            V_REMOTE_IP,
-            V_LOCAL_IP,
-            V_SENDER,
-            V_SENDER_DOMAIN,
-            V_AUTHENTICATED_AS,
-        ]);
-        let has_rcpt_vars = TokenMap::default().with_smtp_variables(&[
-            V_SENDER,
-            V_SENDER_DOMAIN,
-            V_RECIPIENT,
-            V_RECIPIENT_DOMAIN,
-            V_AUTHENTICATED_AS,
-            V_LISTENER,
-            V_REMOTE_IP,
-            V_LOCAL_IP,
-            V_HELO_DOMAIN,
-        ]);
+        let has_conn_vars = TokenMap::default().with_variables(CONNECTION_VARS);
+        let has_ehlo_hars = TokenMap::default().with_variables(SMTP_EHLO_VARS);
+        let has_sender_vars = TokenMap::default().with_variables(SMTP_MAIL_FROM_VARS);
+        let has_rcpt_vars = TokenMap::default().with_variables(SMTP_RCPT_TO_VARS);
         let mt_priority_vars = has_sender_vars.clone().with_constants::<MtPriority>();
         let mechanisms_vars = has_ehlo_hars.clone().with_constants::<Mechanism>();
 
@@ -220,6 +200,11 @@ impl SessionConfig {
             (
                 &mut session.connect.script,
                 "session.connect.script",
+                &has_conn_vars,
+            ),
+            (
+                &mut session.connect.hostname,
+                "session.connect.hostname",
                 &has_conn_vars,
             ),
             (
@@ -315,11 +300,6 @@ impl SessionConfig {
             (
                 &mut session.auth.errors_wait,
                 "session.auth.errors.wait",
-                &has_ehlo_hars,
-            ),
-            (
-                &mut session.auth.allow_plain_text,
-                "session.auth.allow-plain-text",
                 &has_ehlo_hars,
             ),
             (
@@ -438,18 +418,7 @@ impl SessionThrottle {
         let all_throttles = parse_throttle(
             config,
             "session.throttle",
-            &TokenMap::default().with_smtp_variables(&[
-                V_SENDER,
-                V_SENDER_DOMAIN,
-                V_RECIPIENT,
-                V_RECIPIENT_DOMAIN,
-                V_AUTHENTICATED_AS,
-                V_LISTENER,
-                V_REMOTE_IP,
-                V_LOCAL_IP,
-                V_PRIORITY,
-                V_HELO_DOMAIN,
-            ]),
+            &TokenMap::default().with_variables(SMTP_RCPT_TO_VARS),
             THROTTLE_LISTENER
                 | THROTTLE_REMOTE_IP
                 | THROTTLE_LOCAL_IP
@@ -500,7 +469,9 @@ fn parse_pipe(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Pip
         command: IfBlock::try_parse(config, ("session.data.pipe", id, "command"), token_map)?,
         arguments: IfBlock::try_parse(config, ("session.data.pipe", id, "arguments"), token_map)?,
         timeout: IfBlock::try_parse(config, ("session.data.pipe", id, "timeout"), token_map)
-            .unwrap_or_else(|| IfBlock::new(Duration::from_secs(30))),
+            .unwrap_or_else(|| {
+                IfBlock::new::<()>(format!("session.data.pipe.{id}.timeout"), [], "30s")
+            }),
     })
 }
 
@@ -511,7 +482,9 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
     let port = config.property_require(("session.data.milter", id, "port"))?;
     Some(Milter {
         enable: IfBlock::try_parse(config, ("session.data.milter", id, "enable"), token_map)
-            .unwrap_or_default(),
+            .unwrap_or_else(|| {
+                IfBlock::new::<()>(format!("session.data.milter.{id}.enable"), [], "false")
+            }),
         addrs: format!("{}:{}", hostname, port)
             .to_socket_addrs()
             .map_err(|err| {
@@ -573,72 +546,165 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            timeout: IfBlock::new(Duration::from_secs(15 * 60)),
-            duration: IfBlock::new(Duration::from_secs(5 * 60)),
-            transfer_limit: IfBlock::new(250 * 1024 * 1024),
+            timeout: IfBlock::new::<()>("session.timeout", [], "5m"),
+            duration: IfBlock::new::<()>("session.duration", [], "10m"),
+            transfer_limit: IfBlock::new::<()>("session.transfer-limit", [], "262144000"),
             throttle: SessionThrottle {
                 connect: Default::default(),
                 mail_from: Default::default(),
                 rcpt_to: Default::default(),
             },
             connect: Connect {
-                script: Default::default(),
-                greeting: IfBlock::new("Stalwart ESMTP at your service".to_string()),
+                hostname: IfBlock::new::<()>(
+                    "server.connect.hostname",
+                    [],
+                    "key_get('default', 'hostname')",
+                ),
+                script: IfBlock::empty("session.connect.script"),
+                greeting: IfBlock::new::<()>(
+                    "session.connect.greeting",
+                    [],
+                    "'Stalwart ESMTP at your service'",
+                ),
             },
             ehlo: Ehlo {
-                script: Default::default(),
-                require: IfBlock::new(true),
-                reject_non_fqdn: IfBlock::new(true),
+                script: IfBlock::empty("session.ehlo.script"),
+                require: IfBlock::new::<()>("session.ehlo.require", [], "true"),
+                reject_non_fqdn: IfBlock::new::<()>(
+                    "session.ehlo.reject-non-fqdn",
+                    [("local_port == 25", "true")],
+                    "false",
+                ),
             },
             auth: Auth {
-                directory: Default::default(),
-                mechanisms: Default::default(),
-                require: IfBlock::new(false),
-                allow_plain_text: IfBlock::new(false),
-                must_match_sender: IfBlock::new(true),
-                errors_max: IfBlock::new(3),
-                errors_wait: IfBlock::new(Duration::from_secs(30)),
+                directory: IfBlock::new::<()>(
+                    "session.auth.directory",
+                    #[cfg(feature = "test_mode")]
+                    [],
+                    #[cfg(not(feature = "test_mode"))]
+                    [("local_port != 25", "'*'")],
+                    "false",
+                ),
+                mechanisms: IfBlock::new::<Mechanism>(
+                    "session.auth.mechanisms",
+                    [("local_port != 25 && is_tls", "[plain, login]")],
+                    "false",
+                ),
+                require: IfBlock::new::<()>(
+                    "session.auth.require",
+                    #[cfg(feature = "test_mode")]
+                    [],
+                    #[cfg(not(feature = "test_mode"))]
+                    [("local_port != 25", "'*'")],
+                    "false",
+                ),
+                must_match_sender: IfBlock::new::<()>("session.auth.must-match-sender", [], "true"),
+                errors_max: IfBlock::new::<()>("session.auth.errors.total", [], "3"),
+                errors_wait: IfBlock::new::<()>("session.auth.errors.wait", [], "5s"),
             },
             mail: Mail {
-                script: Default::default(),
-                rewrite: Default::default(),
+                script: IfBlock::empty("session.mail.script"),
+                rewrite: IfBlock::empty("session.mail.rewrite"),
             },
             rcpt: Rcpt {
-                script: Default::default(),
-                relay: IfBlock::new(false),
-                directory: Default::default(),
-                rewrite: Default::default(),
-                errors_max: IfBlock::new(10),
-                errors_wait: IfBlock::new(Duration::from_secs(30)),
-                max_recipients: IfBlock::new(100),
-                catch_all: AddressMapping::Disable,
-                subaddressing: AddressMapping::Disable,
+                script: IfBlock::empty("session.rcpt."),
+                relay: IfBlock::new::<()>(
+                    "session.rcpt.relay",
+                    [("!is_empty(authenticated_as)", "true")],
+                    "false",
+                ),
+                directory: IfBlock::new::<()>(
+                    "session.rcpt.directory",
+                    [],
+                    #[cfg(feature = "test_mode")]
+                    "false",
+                    #[cfg(not(feature = "test_mode"))]
+                    "'*'",
+                ),
+                rewrite: IfBlock::empty("session.rcpt.rewrite"),
+                errors_max: IfBlock::new::<()>("session.rcpt.errors.total", [], "5"),
+                errors_wait: IfBlock::new::<()>("session.rcpt.errors.wait", [], "5s"),
+                max_recipients: IfBlock::new::<()>("session.rcpt.max-recipients", [], "100"),
+                catch_all: AddressMapping::Enable,
+                subaddressing: AddressMapping::Enable,
             },
             data: Data {
-                script: Default::default(),
+                script: IfBlock::empty("session.data.script"),
                 pipe_commands: Default::default(),
                 milters: Default::default(),
-                max_messages: IfBlock::new(10),
-                max_message_size: IfBlock::new(25 * 1024 * 1024),
-                max_received_headers: IfBlock::new(50),
-                add_received: IfBlock::new(true),
-                add_received_spf: IfBlock::new(true),
-                add_return_path: IfBlock::new(true),
-                add_auth_results: IfBlock::new(true),
-                add_message_id: IfBlock::new(true),
-                add_date: IfBlock::new(true),
+                max_messages: IfBlock::new::<()>("session.data.limits.messages", [], "10"),
+                max_message_size: IfBlock::new::<()>("session.data.limits.size", [], "104857600"),
+                max_received_headers: IfBlock::new::<()>(
+                    "session.data.limits.received-headers",
+                    [],
+                    "50",
+                ),
+                add_received: IfBlock::new::<()>(
+                    "session.data.add-headers.received",
+                    [("local_port == 25", "true")],
+                    "false",
+                ),
+                add_received_spf: IfBlock::new::<()>(
+                    "session.data.add-headers.received-spf",
+                    [("local_port == 25", "true")],
+                    "false",
+                ),
+                add_return_path: IfBlock::new::<()>(
+                    "session.data.add-headers.return-path",
+                    [("local_port == 25", "true")],
+                    "false",
+                ),
+                add_auth_results: IfBlock::new::<()>(
+                    "session.data.add-headers.auth-results",
+                    [("local_port == 25", "true")],
+                    "false",
+                ),
+                add_message_id: IfBlock::new::<()>(
+                    "session.data.add-headers.message-id",
+                    [("local_port == 25", "true")],
+                    "false",
+                ),
+                add_date: IfBlock::new::<()>(
+                    "session.data.add-headers.date",
+                    [("local_port == 25", "true")],
+                    "false",
+                ),
             },
             extensions: Extensions {
-                pipelining: IfBlock::new(true),
-                chunking: IfBlock::new(true),
-                requiretls: IfBlock::new(true),
-                dsn: IfBlock::new(false),
-                vrfy: IfBlock::new(false),
-                expn: IfBlock::new(false),
-                no_soliciting: IfBlock::new(false),
-                future_release: Default::default(),
-                deliver_by: Default::default(),
-                mt_priority: Default::default(),
+                pipelining: IfBlock::new::<()>("session.extensions.pipelining", [], "true"),
+                chunking: IfBlock::new::<()>("session.extensions.chunking", [], "true"),
+                requiretls: IfBlock::new::<()>("session.extensions.requiretls", [], "true"),
+                dsn: IfBlock::new::<()>(
+                    "session.extensions.dsn",
+                    [("!is_empty(authenticated_as)", "true")],
+                    "false",
+                ),
+                vrfy: IfBlock::new::<()>(
+                    "session.extensions.vrfy",
+                    [("!is_empty(authenticated_as)", "true")],
+                    "false",
+                ),
+                expn: IfBlock::new::<()>(
+                    "session.extensions.expn",
+                    [("!is_empty(authenticated_as)", "true")],
+                    "false",
+                ),
+                no_soliciting: IfBlock::new::<()>("session.extensions.no-soliciting", [], "''"),
+                future_release: IfBlock::new::<()>(
+                    "session.extensions.future-release",
+                    [("!is_empty(authenticated_as)", "7d")],
+                    "false",
+                ),
+                deliver_by: IfBlock::new::<()>(
+                    "session.extensions.deliver-by",
+                    [("!is_empty(authenticated_as)", "15d")],
+                    "false",
+                ),
+                mt_priority: IfBlock::new::<MtPriority>(
+                    "session.extensions.mt-priority",
+                    [("!is_empty(authenticated_as)", "mixer")],
+                    "false",
+                ),
             },
         }
     }

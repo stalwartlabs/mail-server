@@ -49,6 +49,7 @@ pub struct AcmeProvider {
     pub contact: Vec<String>,
     renew_before: chrono::Duration,
     account_key: ArcSwap<Vec<u8>>,
+    default: bool,
 }
 
 pub struct AcmeResolver {
@@ -73,6 +74,7 @@ impl AcmeProvider {
         domains: Vec<String>,
         contact: Vec<String>,
         renew_before: Duration,
+        default: bool,
     ) -> utils::config::Result<Self> {
         Ok(AcmeProvider {
             id,
@@ -90,6 +92,7 @@ impl AcmeProvider {
             renew_before: chrono::Duration::from_std(renew_before).unwrap(),
             domains,
             account_key: Default::default(),
+            default,
         })
     }
 }
@@ -139,6 +142,7 @@ impl Clone for AcmeProvider {
             contact: self.contact.clone(),
             renew_before: self.renew_before,
             account_key: ArcSwap::from_pointee(self.account_key.load().as_ref().clone()),
+            default: self.default,
         }
     }
 }

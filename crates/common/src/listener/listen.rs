@@ -79,7 +79,7 @@ impl Server {
                 tls = is_tls,
                 "Starting listener"
             );
-            let local_ip = listener.addr.ip();
+            let local_addr = listener.addr;
 
             // Obtain TCP options
             let opts = SocketOpts {
@@ -131,7 +131,7 @@ impl Server {
                                                                             .proxied_address()
                                                                             .map(|addr| addr.source)
                                                                             .unwrap_or(remote_addr);
-                                                    if let Some(session) = instance.build_session(stream, local_ip, remote_addr, &core) {
+                                                    if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &core) {
                                                         // Spawn session
                                                         manager.spawn(session, is_tls, enable_acme);
                                                     }
@@ -146,7 +146,7 @@ impl Server {
                                                 }
                                             }
                                         });
-                                    } else if let Some(session) = instance.build_session(stream, local_ip, remote_addr, &core) {
+                                    } else if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &core) {
                                         // Set socket options
                                         opts.apply(&session.stream);
 
@@ -183,7 +183,7 @@ trait BuildSession {
     fn build_session<T: SessionStream>(
         &self,
         stream: T,
-        local_ip: IpAddr,
+        local_addr: SocketAddr,
         remote_addr: SocketAddr,
         core: &Core,
     ) -> Option<SessionData<T>>;
@@ -193,7 +193,7 @@ impl BuildSession for Arc<ServerInstance> {
     fn build_session<T: SessionStream>(
         &self,
         stream: T,
-        local_ip: IpAddr,
+        local_addr: SocketAddr,
         remote_addr: SocketAddr,
         core: &Core,
     ) -> Option<SessionData<T>> {
@@ -231,9 +231,11 @@ impl BuildSession for Arc<ServerInstance> {
                     remote.ip = remote_ip.to_string(),
                     remote.port = remote_port,
                 ),
-                local_ip,
+                local_ip: local_addr.ip(),
+                local_port: local_addr.port(),
                 remote_ip,
                 remote_port,
+                protocol: self.protocol,
                 instance: self.clone(),
             }
             .into()

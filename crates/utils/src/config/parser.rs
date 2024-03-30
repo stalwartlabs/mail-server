@@ -207,17 +207,18 @@ impl<'x, 'y> TomlParser<'x, 'y> {
 
     #[allow(clippy::while_let_on_iterator)]
     fn key(&mut self, mut key: String, in_curly: bool) -> Result<(String, char)> {
+        let start_key_len = key.len();
         while let Some(ch) = self.iter.next() {
             match ch {
                 '=' => {
-                    if !key.is_empty() {
+                    if start_key_len != key.len() {
                         return Ok((key, ch));
                     } else {
                         return Err(format!("Empty key at line: {}", self.line));
                     }
                 }
                 ',' | '}' if in_curly => {
-                    if !key.is_empty() {
+                    if start_key_len != key.len() {
                         return Ok((key, ch));
                     } else {
                         return Err(format!("Empty key at line: {}", self.line));
@@ -236,7 +237,7 @@ impl<'x, 'y> TomlParser<'x, 'y> {
                             }
                             '\n' => {
                                 return Err(format!(
-                                    "Unexpected end of line at line: {}",
+                                    "Unexpected end of line while parsing quoted key at line: {}",
                                     self.line
                                 ));
                             }
@@ -249,7 +250,14 @@ impl<'x, 'y> TomlParser<'x, 'y> {
                 }
                 ' ' | '\t' | '\r' => (),
                 '\n' => {
-                    return Err(format!("Unexpected end of line at line: {}", self.line));
+                    if start_key_len == key.len() {
+                        self.line += 1;
+                    } else {
+                        return Err(format!(
+                            "Unexpected end of line while parsing key {:?} at line: {}",
+                            key, self.line
+                        ));
+                    }
                 }
                 _ => {
                     return Err(format!(

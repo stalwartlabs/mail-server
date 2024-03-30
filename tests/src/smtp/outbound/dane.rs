@@ -75,6 +75,8 @@ send = "weekly"
 
 [queue.outbound.tls]
 dane = "require"
+starttls = "require"
+
 "#;
 
 const REMOTE: &str = "
@@ -83,12 +85,22 @@ reject-non-fqdn = false
 
 [session.rcpt]
 relay = true
+
+[session.data.add-headers]
+received = true
+received-spf = true
+auth-results = true
+message-id = true
+date = true
+return-path = false
+
 ";
 
 #[tokio::test]
 #[serial_test::serial]
 async fn dane_verify() {
-    /*tracing::subscriber::set_global_default(
+    /*let disable = 1;
+    tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::TRACE)
             .finish(),

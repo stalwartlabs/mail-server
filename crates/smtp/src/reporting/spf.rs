@@ -21,13 +21,13 @@
  * for more details.
 */
 
+use common::listener::SessionStream;
 use mail_auth::{report::AuthFailureType, AuthenticationResults, SpfOutput};
-use tokio::io::{AsyncRead, AsyncWrite};
 use utils::config::Rate;
 
 use crate::core::Session;
 
-impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn send_spf_report(
         &self,
         rcpt: &str,

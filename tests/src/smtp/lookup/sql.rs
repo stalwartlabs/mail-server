@@ -24,8 +24,7 @@
 use std::time::{Duration, Instant};
 
 use common::{
-    config::smtp::*,
-    expr::{tokenizer::TokenMap, Expression},
+    expr::{tokenizer::TokenMap, *},
     Core,
 };
 
@@ -52,6 +51,7 @@ data = "sql"
 blob = "sql"
 fts = "sql"
 lookup = "sql"
+directory = "sql"
 
 [store."sql"]
 type = "sqlite"
@@ -105,7 +105,7 @@ expect = "mx.foobar.org"
 
 [test."key_get"]
 expr = "key_get('sql', 'hello') + '-' + key_exists('sql', 'hello') + '-' + key_set('sql', 'hello', 'world') + '-' + key_get('sql', 'hello') + '-' + key_exists('sql', 'hello')"
-expect = "0-0-1-world-1"
+expect = "-0-1-world-1"
 
 [test."counter_get"]
 expr = "counter_get('sql', 'county') + '-' + counter_incr('sql', 'county', 1) + '-' + counter_incr('sql', 'county', 1) + '-' + counter_get('sql', 'county')"
@@ -190,7 +190,7 @@ async fn lookup_sql() {
     }
 
     // Test expression functions
-    let token_map = TokenMap::default().with_smtp_variables(&[
+    let token_map = TokenMap::default().with_variables(&[
         V_RECIPIENT,
         V_RECIPIENT_DOMAIN,
         V_SENDER,

@@ -66,7 +66,7 @@ member-of = ["sales", "support"]
 [session.auth]
 require = [{if = "remote_ip = '10.0.0.1'", then = true},
            {else = false}]
-mechanisms = [{if = "remote_ip = '10.0.0.1'", then = "[plain, login]"},
+mechanisms = [{if = "remote_ip = '10.0.0.1' && is_tls", then = "[plain, login]"},
               {else = 0}]
 directory = [{if = "remote_ip = '10.0.0.1'", then = "'local'"},
              {else = false}]

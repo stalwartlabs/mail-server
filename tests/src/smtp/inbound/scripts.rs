@@ -63,11 +63,11 @@ arguments = "['{CFG_PATH}/pipe_me.sh', 'hello', 'world']"
 timeout = "10s"
 
 [sieve.trusted]
-from-name = "Sieve Daemon"
-from-addr = "sieve@foobar.org"
-return-path = ""
+from-name = "'Sieve Daemon'"
+from-addr = "'sieve@foobar.org'"
+return-path = "''"
 hostname = "mx.foobar.org"
-sign = ["rsa"]
+sign = "['rsa']"
 
 [sieve.trusted.limits]
 redirects = 3
@@ -94,11 +94,20 @@ relay = true
 [session.data]
 script = "'stage_data'"
 
+[session.data.add-headers]
+received = true
+received-spf = true
+auth-results = true
+message-id = true
+date = true
+return-path = false
+
 "#;
 
 #[tokio::test]
 async fn sieve_scripts() {
-    /*tracing::subscriber::set_global_default(
+    /*let disable = 1;
+    tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
             .with_max_level(tracing::Level::TRACE)
             .finish(),
@@ -170,7 +179,9 @@ async fn sieve_scripts() {
         let script = script.clone();
         let params = session
             .build_script_parameters("data")
-            .set_variable("from", "john.doe@example.org");
+            .set_variable("from", "john.doe@example.org")
+            .with_envelope(&core.core, &session)
+            .await;
         let handle = Handle::current();
         let span = span.clone();
         let core_ = core.clone();

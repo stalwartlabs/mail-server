@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use rustls::{
     crypto::ring::{default_provider, ALL_CIPHER_SUITES},
@@ -144,23 +144,40 @@ impl Servers {
                 }
             }
 
+            // Set default options
+            if !config.contains_key(("server.listener", id, "socket.reuse-addr")) {
+                let _ = socket.set_reuseaddr(true);
+            }
+
             listeners.push(Listener {
                 socket,
                 addr,
                 ttl: config
-                    .property_or_else(("server.listener", id, "socket.ttl"), "server.socket.ttl"),
-                backlog: config.property_or_else(
-                    ("server.listener", id, "socket.backlog"),
-                    "server.socket.backlog",
-                ),
-                linger: config.property_or_else(
-                    ("server.listener", id, "socket.linger"),
-                    "server.socket.linger",
-                ),
+                    .property_or_else::<Option<u32>>(
+                        ("server.listener", id, "socket.ttl"),
+                        "server.socket.ttl",
+                        "false",
+                    )
+                    .unwrap_or_default(),
+                backlog: config
+                    .property_or_else::<Option<u32>>(
+                        ("server.listener", id, "socket.backlog"),
+                        "server.socket.backlog",
+                        "1024",
+                    )
+                    .unwrap_or_default(),
+                linger: config
+                    .property_or_else::<Option<Duration>>(
+                        ("server.listener", id, "socket.linger"),
+                        "server.socket.linger",
+                        "false",
+                    )
+                    .unwrap_or_default(),
                 nodelay: config
                     .property_or_else(
                         ("server.listener", id, "socket.nodelay"),
                         "server.socket.nodelay",
+                        "true",
                     )
                     .unwrap_or(true),
             });
@@ -190,6 +207,7 @@ impl Servers {
                 .property_or_else(
                     ("server.listener", id, "max-connections"),
                     "server.max-connections",
+                    "8192",
                 )
                 .unwrap_or(8192),
             id: id_,
@@ -218,8 +236,8 @@ impl Servers {
             let id = id_.as_str();
             // Build TLS config
             let acceptor = if config
-                .property_or_else(("server.listener", id, "tls.enable"), "server.tls.enable")
-                .unwrap_or(false)
+                .property_or_default(("server.listener", id, "tls.enable"), "true")
+                .unwrap_or(true)
             {
                 // Parse protocol versions
                 let mut tls_v2 = true;
@@ -292,6 +310,7 @@ impl Servers {
                     .property_or_else(
                         ("server.listener", id, "tls.ignore-client-order"),
                         "server.tls.ignore-client-order",
+                        "true",
                     )
                     .unwrap_or(true);
 
@@ -302,11 +321,8 @@ impl Servers {
                     acme_config: acme_config.clone(),
                     default_config,
                     implicit: config
-                        .property_or_else(
-                            ("server.listener", id, "tls.implicit"),
-                            "server.tls.implicit",
-                        )
-                        .unwrap_or(true),
+                        .property_or_default(("server.listener", id, "tls.implicit"), "false")
+                        .unwrap_or(false),
                 }
             } else {
                 TcpAcceptor::Plain

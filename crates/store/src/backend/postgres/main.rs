@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::time::Duration;
+
 use crate::{
     backend::postgres::tls::MakeRustlsConnect, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS,
     SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
@@ -46,7 +48,9 @@ impl PostgresStore {
         cfg.user = config.value((&prefix, "user")).map(|s| s.to_string());
         cfg.password = config.value((&prefix, "password")).map(|s| s.to_string());
         cfg.port = config.property((&prefix, "port"));
-        cfg.connect_timeout = config.property((&prefix, "timeout"));
+        cfg.connect_timeout = config
+            .property::<Option<Duration>>((&prefix, "timeout"))
+            .unwrap_or_default();
         cfg.manager = Some(ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         });

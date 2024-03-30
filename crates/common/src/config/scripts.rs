@@ -13,16 +13,16 @@ use utils::config::Config;
 
 use crate::scripts::{functions::register_functions, plugins::RegisterSievePlugins};
 
-use super::smtp::parse_server_hostname;
+use super::{if_block::IfBlock, smtp::SMTP_RCPT_TO_VARS, tokenizer::TokenMap};
 
 pub struct Scripting {
     pub untrusted_compiler: Compiler,
     pub untrusted_runtime: Runtime,
     pub trusted_runtime: Runtime,
-    pub from_addr: String,
-    pub from_name: String,
-    pub return_path: String,
-    pub sign: Vec<String>,
+    pub from_addr: IfBlock,
+    pub from_name: IfBlock,
+    pub return_path: IfBlock,
+    pub sign: IfBlock,
     pub scripts: AHashMap<String, Arc<Sieve>>,
     pub bayes_cache: BayesTokenCache,
     pub remote_lists: RwLock<AHashMap<String, RemoteList>>,
@@ -182,7 +182,7 @@ impl Scripting {
                     .unwrap_or("Auto: ")
                     .to_string(),
             )
-            .with_env_variable("name", "Stalwart JMAP")
+            .with_env_variable("name", "Stalwart Mail Server")
             .with_env_variable("version", env!("CARGO_PKG_VERSION"))
             .with_env_variable("location", "MS")
             .with_env_variable("phase", "during");
@@ -250,13 +250,11 @@ impl Scripting {
         if let Some(value) = config.property::<Duration>("sieve.trusted.limits.duplicate-expiry") {
             trusted_runtime.set_default_duplicate_expiry(value.as_secs());
         }
-        let hostname = if let Some(hostname) = config.value("sieve.trusted.hostname") {
-            hostname.to_string()
-        } else {
-            parse_server_hostname(config)
-                .and_then(|h| h.into_default_string())
-                .unwrap_or_else(|| "localhost".to_string())
-        };
+        let hostname = config
+            .value("sieve.trusted.hostname")
+            .or_else(|| config.value("lookup.default.hostname"))
+            .unwrap_or("localhost")
+            .to_string();
         trusted_runtime.set_local_hostname(hostname.clone());
 
         // Parse scripts
@@ -266,19 +264,12 @@ impl Scripting {
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
         {
-            // Skip sub-scripts
-            if config
-                .property(("sieve.trusted.scripts", id.as_str(), "snippet"))
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
-            let script = config
-                .value(("sieve.trusted.scripts", id.as_str(), "contents"))
-                .unwrap();
-
-            match trusted_compiler.compile(script.as_bytes()) {
+            match trusted_compiler.compile(
+                config
+                    .value(("sieve.trusted.scripts", id.as_str(), "contents"))
+                    .unwrap()
+                    .as_bytes(),
+            ) {
                 Ok(compiled) => {
                     scripts.insert(id, compiled.into());
                 }
@@ -289,26 +280,42 @@ impl Scripting {
             }
         }
 
+        let token_map = TokenMap::default().with_variables(SMTP_RCPT_TO_VARS);
+
         Scripting {
             untrusted_compiler,
             untrusted_runtime,
             trusted_runtime,
-            from_addr: config
-                .value("sieve.trusted.from-addr")
-                .map(|a| a.to_string())
-                .unwrap_or(format!("MAILER-DAEMON@{hostname}")),
-            from_name: config
-                .value("sieve.trusted.from-name")
-                .unwrap_or("Mailer Daemon")
-                .to_string(),
-            return_path: config
-                .value("sieve.trusted.return-path")
-                .unwrap_or_default()
-                .to_string(),
-            sign: config
-                .values("sieve.trusted.sign")
-                .map(|(_, v)| v.to_string())
-                .collect(),
+            from_addr: IfBlock::try_parse(config, "sieve.trusted.from-addr", &token_map)
+                .unwrap_or_else(|| {
+                    IfBlock::new::<()>(
+                        "sieve.trusted.from-addr",
+                        [],
+                        "'MAILER-DAEMON@' + key_get('default', 'domain')",
+                    )
+                }),
+                from_name: IfBlock::try_parse(config, "sieve.trusted.from-name", &token_map)
+                .unwrap_or_else(|| {
+                    IfBlock::new::<()>(
+                        "sieve.trusted.from-name",
+                        [],
+                        "'Mailer Daemon'",
+                    )
+                }),
+                return_path: IfBlock::try_parse(config, "sieve.trusted.return-path", &token_map)
+                .unwrap_or_else(|| {
+                    IfBlock::empty(
+                        "sieve.trusted.return-path",
+                    )
+                }),
+                sign: IfBlock::try_parse(config, "sieve.trusted.sign", &token_map)
+                .unwrap_or_else(|| {
+                    IfBlock::new::<()>(
+                        "sieve.trusted.sign",
+                        [],
+                        "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                    )
+                }),
             scripts,
             bayes_cache: BayesTokenCache::new(
                 config
@@ -332,10 +339,18 @@ impl Default for Scripting {
             untrusted_compiler: Compiler::new(),
             untrusted_runtime: Runtime::new(),
             trusted_runtime: Runtime::new(),
-            from_addr: "MAILER-DAEMON@localhost".to_string(),
-            from_name: "Mailer Daemon".to_string(),
-            return_path: "".to_string(),
-            sign: Vec::new(),
+            from_addr: IfBlock::new::<()>(
+                "sieve.trusted.from-addr",
+                [],
+                "'MAILER-DAEMON@' + key_get('default', 'domain')",
+            ),
+            from_name: IfBlock::new::<()>("sieve.trusted.from-name", [], "'Mailer Daemon'"),
+            return_path: IfBlock::empty("sieve.trusted.return-path"),
+            sign: IfBlock::new::<()>(
+                "sieve.trusted.sign",
+                [],
+                "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+            ),
             scripts: AHashMap::new(),
             bayes_cache: BayesTokenCache::new(
                 8192,

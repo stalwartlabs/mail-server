@@ -21,13 +21,13 @@
  * for more details.
 */
 
+use common::listener::SessionStream;
 use directory::DirectoryError;
-use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::core::Session;
 use std::fmt::Write;
 
-impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_vrfy(&mut self, address: String) -> Result<(), ()> {
         match self
             .core

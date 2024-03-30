@@ -46,7 +46,12 @@ impl SessionManager for SmtpSessionManager {
             span: session.span,
             stream: session.stream,
             in_flight: vec![session.in_flight],
-            data: SessionData::new(session.local_ip, session.remote_ip, session.remote_port),
+            data: SessionData::new(
+                session.local_ip,
+                session.local_port,
+                session.remote_ip,
+                session.remote_port,
+            ),
             params: SessionParameters::default(),
         };
 
@@ -89,11 +94,13 @@ impl<T: SessionStream> Session<T> {
     pub async fn init_conn(&mut self) -> bool {
         self.eval_session_params().await;
 
+        let config = &self.core.core.smtp.session.connect;
+
         // Sieve filtering
         if let Some(script) = self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.connect.script, self)
+            .eval_if::<String, _>(&config.script, self)
             .await
             .and_then(|name| self.core.core.get_sieve_script(&name))
         {
@@ -115,7 +122,7 @@ impl<T: SessionStream> Session<T> {
         self.hostname = self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.network.hostname, self)
+            .eval_if::<String, _>(&config.hostname, self)
             .await
             .unwrap_or_default();
         if self.hostname.is_empty() {
@@ -124,14 +131,14 @@ impl<T: SessionStream> Session<T> {
                 event = "hostname",
                 "No hostname configured, using 'localhost'."
             );
-            self.hostname = "locahost".to_string();
+            self.hostname = "localhost".to_string();
         }
 
         // Obtain greeting
         let greeting = self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.connect.greeting, self)
+            .eval_if::<String, _>(&config.greeting, self)
             .await
             .filter(|g| !g.is_empty())
             .map(|g| format!("220 {}\r\n", g))

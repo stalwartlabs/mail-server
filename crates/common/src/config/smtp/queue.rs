@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use ahash::AHashMap;
 use mail_auth::IpLookupStrategy;
 use mail_send::Credentials;
@@ -10,7 +8,7 @@ use utils::config::{
 
 use crate::{
     config::server::ServerProtocol,
-    expr::{if_block::IfBlock, Constant, ConstantValue, Expression, Variable},
+    expr::{if_block::IfBlock, *},
 };
 
 use self::throttle::{parse_throttle, parse_throttle_key};
@@ -121,38 +119,80 @@ pub enum RequireOptional {
 impl Default for QueueConfig {
     fn default() -> Self {
         Self {
-            retry: IfBlock::new(Duration::from_secs(5 * 60)),
-            notify: IfBlock::new(Duration::from_secs(86400)),
-            expire: IfBlock::new(Duration::from_secs(5 * 86400)),
-            hostname: IfBlock::new("localhost".to_string()),
-            next_hop: Default::default(),
-            max_mx: IfBlock::new(5),
-            max_multihomed: IfBlock::new(2),
-            ip_strategy: IfBlock::new(IpLookupStrategy::Ipv4thenIpv6),
+            retry: IfBlock::new::<()>(
+                "queue.schedule.retry",
+                [],
+                "[2m, 5m, 10m, 15m, 30m, 1h, 2h]",
+            ),
+            notify: IfBlock::new::<()>("queue.schedule.notify", [], "[1d, 3d]"),
+            expire: IfBlock::new::<()>("queue.schedule.expire", [], "5d"),
+            hostname: IfBlock::new::<()>(
+                "queue.outbound.hostname",
+                [],
+                "key_get('default', 'hostname')",
+            ),
+            next_hop: IfBlock::new::<()>(
+                "queue.outbound.next-hop",
+                #[cfg(not(feature = "test_mode"))]
+                [("is_local_domain('*', rcpt_domain)", "'local'")],
+                #[cfg(feature = "test_mode")]
+                [],
+                "false",
+            ),
+            max_mx: IfBlock::new::<()>("queue.outbound.limits.mx", [], "5"),
+            max_multihomed: IfBlock::new::<()>("queue.outbound.limits.multihomed", [], "2"),
+            ip_strategy: IfBlock::new::<IpLookupStrategy>(
+                "queue.outbound.ip-strategy",
+                [],
+                "ipv4_then_ipv6",
+            ),
             source_ip: QueueOutboundSourceIp {
-                ipv4: Default::default(),
-                ipv6: Default::default(),
+                ipv4: IfBlock::empty("queue.outbound.source-ip.v4"),
+                ipv6: IfBlock::empty("queue.outbound.source-ip.v6"),
             },
             tls: QueueOutboundTls {
-                dane: IfBlock::new(RequireOptional::Optional),
-                mta_sts: IfBlock::new(RequireOptional::Optional),
-                start: IfBlock::new(RequireOptional::Optional),
-                invalid_certs: IfBlock::new(false),
+                dane: IfBlock::new::<RequireOptional>("queue.outbound.tls.dane", [], "optional"),
+                mta_sts: IfBlock::new::<RequireOptional>(
+                    "queue.outbound.tls.mta-sts",
+                    [],
+                    "optional",
+                ),
+                start: IfBlock::new::<RequireOptional>(
+                    "queue.outbound.tls.starttls",
+                    [],
+                    #[cfg(not(feature = "test_mode"))]
+                    "require",
+                    #[cfg(feature = "test_mode")]
+                    "optional",
+                ),
+                invalid_certs: IfBlock::new::<()>(
+                    "queue.outbound.tls.allow-invalid-certs",
+                    [],
+                    "false",
+                ),
             },
             dsn: Dsn {
-                name: IfBlock::new("Mail Delivery Subsystem".to_string()),
-                address: IfBlock::new("MAILER-DAEMON@localhost".to_string()),
-                sign: Default::default(),
+                name: IfBlock::new::<()>("report.dsn.from-name", [], "'Mail Delivery Subsystem'"),
+                address: IfBlock::new::<()>(
+                    "report.dsn.from-address",
+                    [],
+                    "'MAILER-DAEMON@' + key_get('default', 'domain')",
+                ),
+                sign: IfBlock::new::<()>(
+                    "report.dsn.sign",
+                    [],
+                    "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                ),
             },
             timeout: QueueOutboundTimeout {
-                connect: IfBlock::new(Duration::from_secs(5 * 60)),
-                greeting: IfBlock::new(Duration::from_secs(5 * 60)),
-                tls: IfBlock::new(Duration::from_secs(3 * 60)),
-                ehlo: IfBlock::new(Duration::from_secs(5 * 60)),
-                mail: IfBlock::new(Duration::from_secs(5 * 60)),
-                rcpt: IfBlock::new(Duration::from_secs(5 * 60)),
-                data: IfBlock::new(Duration::from_secs(10 * 60)),
-                mta_sts: IfBlock::new(Duration::from_secs(10 * 60)),
+                connect: IfBlock::new::<()>("queue.outbound.timeouts.connect", [], "5m"),
+                greeting: IfBlock::new::<()>("queue.outbound.timeouts.greeting", [], "5m"),
+                tls: IfBlock::new::<()>("queue.outbound.timeouts.tls", [], "3m"),
+                ehlo: IfBlock::new::<()>("queue.outbound.timeouts.ehlo", [], "5m"),
+                mail: IfBlock::new::<()>("queue.outbound.timeouts.mail-from", [], "5m"),
+                rcpt: IfBlock::new::<()>("queue.outbound.timeouts.rcpt-to", [], "5m"),
+                data: IfBlock::new::<()>("queue.outbound.timeouts.data", [], "10m"),
+                mta_sts: IfBlock::new::<()>("queue.outbound.timeouts.mta-sts", [], "10m"),
             },
             throttle: QueueThrottle {
                 sender: Default::default(),
@@ -172,38 +212,13 @@ impl Default for QueueConfig {
 impl QueueConfig {
     pub fn parse(config: &mut Config) -> Self {
         let mut queue = QueueConfig::default();
-        let rcpt_vars = TokenMap::default().with_smtp_variables(&[
-            V_RECIPIENT_DOMAIN,
-            V_SENDER,
-            V_SENDER_DOMAIN,
-            V_PRIORITY,
-        ]);
-        let sender_vars =
-            TokenMap::default().with_smtp_variables(&[V_SENDER, V_SENDER_DOMAIN, V_PRIORITY]);
-        let mx_vars = TokenMap::default().with_smtp_variables(&[
-            V_RECIPIENT_DOMAIN,
-            V_SENDER,
-            V_SENDER_DOMAIN,
-            V_PRIORITY,
-            V_MX,
-        ]);
-        let host_vars = TokenMap::default().with_smtp_variables(&[
-            V_RECIPIENT_DOMAIN,
-            V_SENDER,
-            V_SENDER_DOMAIN,
-            V_PRIORITY,
-            V_LOCAL_IP,
-            V_REMOTE_IP,
-            V_MX,
-        ]);
+        let rcpt_vars = TokenMap::default().with_variables(SMTP_QUEUE_RCPT_VARS);
+        let sender_vars = TokenMap::default().with_variables(SMTP_QUEUE_SENDER_VARS);
+        let mx_vars = TokenMap::default().with_variables(SMTP_QUEUE_MX_VARS);
+        let host_vars = TokenMap::default().with_variables(SMTP_QUEUE_HOST_VARS);
         let ip_strategy_vars = sender_vars.clone().with_constants::<IpLookupStrategy>();
         let dane_vars = mx_vars.clone().with_constants::<RequireOptional>();
         let mta_sts_vars = rcpt_vars.clone().with_constants::<RequireOptional>();
-
-        // Parse default server hostname
-        if let Some(hostname) = parse_server_hostname(config) {
-            queue.hostname = hostname.into_default("queue.outbound.hostname");
-        }
 
         for (value, key, token_map) in [
             (&mut queue.retry, "queue.schedule.retry", &host_vars),
@@ -368,15 +383,7 @@ fn parse_queue_throttle(config: &mut Config) -> QueueThrottle {
     let all_throttles = parse_throttle(
         config,
         "queue.throttle",
-        &TokenMap::default().with_smtp_variables(&[
-            V_RECIPIENT_DOMAIN,
-            V_SENDER,
-            V_SENDER_DOMAIN,
-            V_PRIORITY,
-            V_MX,
-            V_REMOTE_IP,
-            V_LOCAL_IP,
-        ]),
+        &TokenMap::default().with_variables(SMTP_QUEUE_HOST_VARS),
         THROTTLE_RCPT_DOMAIN
             | THROTTLE_SENDER
             | THROTTLE_SENDER_DOMAIN
@@ -487,22 +494,18 @@ fn parse_queue_quota_item(config: &mut Config, prefix: impl AsKey) -> Option<Que
         expr: Expression::try_parse(
             config,
             (prefix.as_str(), "match"),
-            &TokenMap::default().with_smtp_variables(&[
-                V_RECIPIENT,
-                V_RECIPIENT_DOMAIN,
-                V_SENDER,
-                V_SENDER_DOMAIN,
-                V_PRIORITY,
-            ]),
+            &TokenMap::default().with_variables(SMTP_QUEUE_HOST_VARS),
         )
         .unwrap_or_default(),
         keys,
         size: config
-            .property::<usize>((prefix.as_str(), "size"))
-            .filter(|&v| v > 0),
+            .property::<Option<usize>>((prefix.as_str(), "size"))
+            .filter(|&v| v.as_ref().map_or(false, |v| *v > 0))
+            .unwrap_or_default(),
         messages: config
-            .property::<usize>((prefix.as_str(), "messages"))
-            .filter(|&v| v > 0),
+            .property::<Option<usize>>((prefix.as_str(), "messages"))
+            .filter(|&v| v.as_ref().map_or(false, |v| *v > 0))
+            .unwrap_or_default(),
     };
 
     // Validate

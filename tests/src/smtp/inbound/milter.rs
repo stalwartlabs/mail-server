@@ -231,6 +231,7 @@ fn milter_address_modifications() {
 
     let mut data = SessionData::new(
         "127.0.0.1".parse().unwrap(),
+        0,
         "127.0.0.1".parse().unwrap(),
         0,
     );
@@ -335,6 +336,7 @@ fn milter_message_modifications() {
     let parsed_test_message = AuthenticatedMessage::parse(test_message.as_bytes()).unwrap();
     let mut session_data = SessionData::new(
         "127.0.0.1".parse().unwrap(),
+        0,
         "127.0.0.1".parse().unwrap(),
         0,
     );
@@ -403,7 +405,7 @@ async fn milter_client_test() {
     const PORT: u16 = 7357;
     let mut client = MilterClient::connect(
         &Milter {
-            enable: IfBlock::default(),
+            enable: IfBlock::empty(""),
             addrs: vec![SocketAddr::from(([127, 0, 0, 1], PORT))],
             hostname: "localhost".to_string(),
             port: PORT,
