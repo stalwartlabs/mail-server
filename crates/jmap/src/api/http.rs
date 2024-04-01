@@ -283,34 +283,18 @@ impl JMAP {
                 }
                 _ => (),
             },
-            "crypto" if self.core.jmap.encrypt => match *req.method() {
-                Method::GET => {
-                    return self.handle_crypto_update(&mut req, session.remote_ip).await;
-                }
-                Method::POST => {
-                    return match self.is_auth_allowed_soft(&session.remote_ip).await {
-                        Ok(_) => self.handle_crypto_update(&mut req, session.remote_ip).await,
-                        Err(err) => err.into_http_response(),
-                    }
-                }
-                _ => (),
-            },
             "api" => {
                 // Allow CORS preflight requests
                 if req.method() == Method::OPTIONS {
                     return ().into_http_response();
                 }
 
-                // Make sure the user is a superuser
+                // Authenticate user
                 return match self.authenticate_headers(&req, session.remote_ip).await {
                     Ok(Some((_, access_token))) => {
                         let body = fetch_body(&mut req, 8192, &access_token).await;
-                        if access_token.is_super_user() {
-                            self.handle_api_manage_request(&req, body, access_token)
-                                .await
-                        } else {
-                            self.handle_api_request(&req, body, access_token).await
-                        }
+                        self.handle_api_manage_request(&req, body, access_token)
+                            .await
                     }
                     Ok(None) => RequestError::unauthorized().into_http_response(),
                     Err(err) => err.into_http_response(),
@@ -486,6 +470,25 @@ impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
                     .boxed(),
             )
             .unwrap()
+    }
+}
+
+impl ToHttpResponse for store::Error {
+    fn into_http_response(self) -> HttpResponse {
+        tracing::error!(context = "store", error = %self, "Database error");
+
+        RequestError::internal_server_error().into_http_response()
+    }
+}
+
+impl ToHttpResponse for serde_json::Error {
+    fn into_http_response(self) -> HttpResponse {
+        RequestError::blank(
+            StatusCode::BAD_REQUEST.as_u16(),
+            "Invalid parameters",
+            format!("Failed to deserialize JSON: {self}"),
+        )
+        .into_http_response()
     }
 }
 

@@ -23,6 +23,7 @@
 
 use std::{
     collections::HashMap,
+    fmt::Display,
     io::{BufRead, Write},
     time::Duration,
 };
@@ -185,7 +186,19 @@ async fn oauth(url: &str) -> Credentials {
 #[serde(untagged)]
 pub enum Response<T> {
     Data { data: T },
-    Error { error: String, details: String },
+    Error(ManagementApiError),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "error")]
+pub enum ManagementApiError {
+    FieldAlreadyExists { field: String, value: String },
+    FieldMissing { field: String },
+    NotFound { item: String },
+    Unsupported { details: String },
+    AssertFailed,
+    Other { details: String },
+    UnsupportedDirectoryOperation { class: String },
 }
 
 impl Client {
@@ -276,9 +289,37 @@ impl Client {
         .unwrap_result("deserialize response")
         {
             Response::Data { data } => Some(data),
-            Response::Error { error, details } => {
-                eprintln!("Request failed: {details} ({error:?})");
+            Response::Error(error) => {
+                eprintln!("Request failed: {error})");
                 std::process::exit(1);
+            }
+        }
+    }
+}
+
+impl Display for ManagementApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ManagementApiError::FieldAlreadyExists { field, value } => {
+                write!(f, "Field {} already exists with value {}.", field, value)
+            }
+            ManagementApiError::FieldMissing { field } => {
+                write!(f, "Field {} is missing.", field)
+            }
+            ManagementApiError::NotFound { item } => {
+                write!(f, "{} not found.", item)
+            }
+            ManagementApiError::Unsupported { details } => {
+                write!(f, "Unsupported: {}", details)
+            }
+            ManagementApiError::AssertFailed => {
+                write!(f, "Assertion failed.")
+            }
+            ManagementApiError::Other { details } => {
+                write!(f, "{}", details)
+            }
+            ManagementApiError::UnsupportedDirectoryOperation { class } => {
+                write!(f, "This operation is only available on internal directories. Your current directory is {class}.")
             }
         }
     }

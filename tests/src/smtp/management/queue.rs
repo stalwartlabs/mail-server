@@ -26,15 +26,13 @@ use std::time::{Duration, Instant};
 use ahash::{AHashMap, HashMap, HashSet};
 use common::config::server::ServerProtocol;
 
+use jmap::api::management::queue::Message;
 use mail_auth::MX;
 use mail_parser::DateTime;
 use reqwest::{header::AUTHORIZATION, Method, StatusCode};
 
 use crate::smtp::{management::send_manage_request, outbound::TestServer, session::TestSession};
-use smtp::{
-    core::management::Message,
-    queue::{manager::SpawnQueue, QueueId, Status},
-};
+use smtp::queue::{manager::SpawnQueue, QueueId, Status};
 
 const LOCAL: &str = r#"
 [storage]
@@ -465,7 +463,7 @@ async fn manage_queue() {
             .danger_accept_invalid_certs(true)
             .build()
             .unwrap()
-            .get("https://127.0.0.1:9980/list")
+            .get("https://127.0.0.1:9980/api/queue/messages")
             .header(AUTHORIZATION, "Basic YWRtaW46aGVsbG93b3JsZA==")
             .send()
             .await

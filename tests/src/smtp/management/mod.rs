@@ -23,6 +23,7 @@
 
 use std::time::Duration;
 
+use jmap_proto::error::request::RequestError;
 use reqwest::{header::AUTHORIZATION, Method};
 use serde::{de::DeserializeOwned, Deserialize};
 
@@ -32,8 +33,9 @@ pub mod report;
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum Response<T> {
-    Data { data: T },
+    RequestError(RequestError),
     Error { error: String, details: String },
+    Data { data: T },
 }
 
 pub async fn send_manage_request<T: DeserializeOwned>(
@@ -69,15 +71,21 @@ impl<T> Response<T> {
             Response::Error { error, details } => {
                 panic!("Expected data, found error {error:?}: {details:?}")
             }
+            Response::RequestError(err) => {
+                panic!("Expected data, found error {err:?}")
+            }
         }
     }
 
     pub fn try_unwrap_data(self) -> Option<T> {
         match self {
             Response::Data { data } => Some(data),
-            Response::Error { error, .. } if error == "not-found" => None,
+            Response::RequestError(error) if error.status == 404 => None,
             Response::Error { error, details } => {
                 panic!("Expected data, found error {error:?}: {details:?}")
+            }
+            Response::RequestError(err) => {
+                panic!("Expected data, found error {err:?}")
             }
         }
     }
@@ -86,6 +94,9 @@ impl<T> Response<T> {
         match self {
             Response::Error { error, details } => (error, details),
             Response::Data { .. } => panic!("Expected error, found data."),
+            Response::RequestError(err) => {
+                panic!("Expected error, found request error {err:?}")
+            }
         }
     }
 }

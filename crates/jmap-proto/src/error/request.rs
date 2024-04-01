@@ -23,37 +23,37 @@
 
 use std::{borrow::Cow, fmt::Display};
 
-#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub enum RequestLimitError {
-    #[serde(rename(serialize = "maxSizeRequest"))]
+    #[serde(rename = "maxSizeRequest")]
     SizeRequest,
-    #[serde(rename(serialize = "maxSizeUpload"))]
+    #[serde(rename = "maxSizeUpload")]
     SizeUpload,
-    #[serde(rename(serialize = "maxCallsInRequest"))]
+    #[serde(rename = "maxCallsInRequest")]
     CallsIn,
-    #[serde(rename(serialize = "maxConcurrentRequests"))]
+    #[serde(rename = "maxConcurrentRequests")]
     ConcurrentRequest,
-    #[serde(rename(serialize = "maxConcurrentUpload"))]
+    #[serde(rename = "maxConcurrentUpload")]
     ConcurrentUpload,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum RequestErrorType {
-    #[serde(rename(serialize = "urn:ietf:params:jmap:error:unknownCapability"))]
+    #[serde(rename = "urn:ietf:params:jmap:error:unknownCapability")]
     UnknownCapability,
-    #[serde(rename(serialize = "urn:ietf:params:jmap:error:notJSON"))]
+    #[serde(rename = "urn:ietf:params:jmap:error:notJSON")]
     NotJSON,
-    #[serde(rename(serialize = "urn:ietf:params:jmap:error:notRequest"))]
+    #[serde(rename = "urn:ietf:params:jmap:error:notRequest")]
     NotRequest,
-    #[serde(rename(serialize = "urn:ietf:params:jmap:error:limit"))]
+    #[serde(rename = "urn:ietf:params:jmap:error:limit")]
     Limit,
-    #[serde(rename(serialize = "about:blank"))]
+    #[serde(rename = "about:blank")]
     Other,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct RequestError {
-    #[serde(rename(serialize = "type"))]
+    #[serde(rename = "type")]
     pub p_type: RequestErrorType,
     pub status: u16,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -84,7 +84,7 @@ impl RequestError {
             "Internal Server Error",
             concat!(
                 "There was a problem while processing your request. ",
-                "Please contact the system administrator."
+                "Please contact the system administrator if this problem persists."
             ),
         )
     }

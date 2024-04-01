@@ -26,6 +26,7 @@ use std::sync::Arc;
 use ahash::{AHashMap, HashSet};
 use common::config::{server::ServerProtocol, smtp::report::AggregateFrequency};
 
+use jmap::api::management::queue::Report;
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::Dmarc,
@@ -41,10 +42,7 @@ use crate::smtp::{
     management::{queue::List, send_manage_request},
     outbound::TestServer,
 };
-use smtp::{
-    core::management::Report,
-    reporting::{scheduler::SpawnReport, DmarcEvent, TlsEvent},
-};
+use smtp::reporting::{scheduler::SpawnReport, DmarcEvent, TlsEvent};
 
 const CONFIG: &str = r#"
 [storage]

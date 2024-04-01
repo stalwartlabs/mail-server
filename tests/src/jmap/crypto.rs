@@ -202,13 +202,14 @@ pub async fn test(params: &mut JMAPTest) {
 
 #[tokio::test]
 pub async fn import_certs_and_encrypt() {
-    for (name, expected_method, expected_certs) in [
+    for (name, method, expected_certs) in [
         ("cert_pgp.pem", EncryptionMethod::PGP, 1),
         //("cert_pgp.der", EncryptionMethod::PGP, 1),
         ("cert_smime.pem", EncryptionMethod::SMIME, 3),
         ("cert_smime.der", EncryptionMethod::SMIME, 1),
     ] {
-        let (method, mut certs) = try_parse_certs(
+        let mut certs = try_parse_certs(
+            method,
             std::fs::read(
                 PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                     .join("resources")
@@ -219,7 +220,6 @@ pub async fn import_certs_and_encrypt() {
         )
         .expect(name);
 
-        assert_eq!(method, expected_method);
         assert_eq!(certs.len(), expected_certs);
 
         if method == EncryptionMethod::PGP && certs.len() == 2 {
@@ -245,6 +245,7 @@ pub async fn import_certs_and_encrypt() {
 
     // S/MIME and PGP should not be allowed mixed
     assert!(try_parse_certs(
+        EncryptionMethod::PGP,
         std::fs::read(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("resources")

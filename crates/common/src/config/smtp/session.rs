@@ -595,7 +595,7 @@ impl Default for SessionConfig {
                     #[cfg(feature = "test_mode")]
                     [],
                     #[cfg(not(feature = "test_mode"))]
-                    [("local_port != 25", "'*'")],
+                    [("local_port != 25", "true")],
                     "false",
                 ),
                 must_match_sender: IfBlock::new::<()>("session.auth.must-match-sender", [], "true"),

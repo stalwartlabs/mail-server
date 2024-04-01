@@ -299,7 +299,7 @@ impl Scripting {
                     IfBlock::new::<()>(
                         "sieve.trusted.from-name",
                         [],
-                        "'Mailer Daemon'",
+                        "'Automated Message'",
                     )
                 }),
                 return_path: IfBlock::try_parse(config, "sieve.trusted.return-path", &token_map)

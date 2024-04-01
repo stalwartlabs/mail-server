@@ -247,7 +247,7 @@ impl SMTP {
         self.delete_tls_report(events).await;
     }
 
-    pub(crate) async fn generate_tls_aggregate_report(
+    pub async fn generate_tls_aggregate_report(
         &self,
         events: &[ReportEvent],
         rua: &mut Vec<ReportUri>,

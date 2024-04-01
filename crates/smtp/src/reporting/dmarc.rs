@@ -427,7 +427,7 @@ impl SMTP {
         self.delete_dmarc_report(event).await;
     }
 
-    pub(crate) async fn generate_dmarc_aggregate_report(
+    pub async fn generate_dmarc_aggregate_report(
         &self,
         event: &ReportEvent,
         rua: &mut Vec<URI>,

@@ -168,8 +168,9 @@ impl Config {
                     Ok(value) => {
                         results.push((key.to_string(), value));
                     }
-                    Err(err) => {
-                        self.errors.insert(key.to_string(), ConfigError::Parse(err));
+                    Err(error) => {
+                        self.errors
+                            .insert(key.to_string(), ConfigError::Parse { error });
                     }
                 }
             }
@@ -191,8 +192,12 @@ impl Config {
         if let Some(value) = self.keys.get(&key) {
             Some(value.as_str())
         } else {
-            self.errors
-                .insert(key, ConfigError::Parse("Missing property".to_string()));
+            self.errors.insert(
+                key,
+                ConfigError::Parse {
+                    error: "Missing property".to_string(),
+                },
+            );
             None
         }
     }
@@ -200,8 +205,9 @@ impl Config {
     pub fn try_parse_value<T: ParseValue>(&mut self, key: impl AsKey, value: &str) -> Option<T> {
         match T::parse_value(value) {
             Ok(value) => Some(value),
-            Err(err) => {
-                self.errors.insert(key.as_key(), ConfigError::Parse(err));
+            Err(error) => {
+                self.errors
+                    .insert(key.as_key(), ConfigError::Parse { error });
                 None
             }
         }
@@ -252,13 +258,21 @@ impl Config {
     }
 
     pub fn new_parse_error(&mut self, key: impl AsKey, details: impl Into<String>) {
-        self.errors
-            .insert(key.as_key(), ConfigError::Parse(details.into()));
+        self.errors.insert(
+            key.as_key(),
+            ConfigError::Parse {
+                error: details.into(),
+            },
+        );
     }
 
     pub fn new_build_error(&mut self, key: impl AsKey, details: impl Into<String>) {
-        self.errors
-            .insert(key.as_key(), ConfigError::Build(details.into()));
+        self.errors.insert(
+            key.as_key(),
+            ConfigError::Build {
+                error: details.into(),
+            },
+        );
     }
 
     pub fn new_missing_property(&mut self, key: impl AsKey) {

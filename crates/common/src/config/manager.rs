@@ -196,12 +196,10 @@ impl ConfigManager {
     ) -> store::Result<Vec<(String, String)>> {
         let mut results = self.db_list(prefix, strip_prefix).await?;
         for (key, value) in self.cfg_local.load().iter() {
-            if !strip_prefix || prefix.is_empty() {
+            if prefix.is_empty() || (!strip_prefix && key.starts_with(prefix)) {
                 results.push((key.clone(), value.clone()));
-            } else if key.starts_with(prefix) {
-                if let Some(key) = key.strip_prefix(prefix) {
-                    results.push((key.to_string(), value.clone()));
-                }
+            } else if let Some(key) = key.strip_prefix(prefix) {
+                results.push((key.to_string(), value.clone()));
             }
         }
 
@@ -343,12 +341,46 @@ impl ConfigManager {
             if value == "true" || value == "false" || value.parse::<f64>().is_ok() {
                 cfg_text.push_str(value);
             } else {
-                cfg_text.push('"');
-                cfg_text.push_str(&value.replace('"', "\\\""));
-                cfg_text.push('"');
-            }
+                let mut needs_escape = false;
+                let mut has_lf = false;
 
-            cfg_text.push_str(value);
+                for ch in value.chars() {
+                    match ch {
+                        '"' | '\\' => {
+                            needs_escape = true;
+                            if has_lf {
+                                break;
+                            }
+                        }
+                        '\n' => {
+                            has_lf = true;
+                            if needs_escape {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                if has_lf || (value.len() > 50 && needs_escape) {
+                    cfg_text.push_str("'''");
+                    cfg_text.push_str(value);
+                    cfg_text.push_str("'''");
+                } else {
+                    cfg_text.push('"');
+                    if needs_escape {
+                        for ch in value.chars() {
+                            if ch == '\\' || ch == '"' {
+                                cfg_text.push('\\');
+                            }
+                            cfg_text.push(ch);
+                        }
+                    } else {
+                        cfg_text.push_str(value);
+                    }
+                    cfg_text.push('"');
+                }
+            }
             cfg_text.push('\n');
         }
 
@@ -466,6 +498,7 @@ impl Core {
                 .or_insert(cert.clone());
         }
         core.tls.certificates.store(certificates.into());
+        core.tls.self_signed_cert = self.tls.self_signed_cert.clone();
 
         // Parser servers
         let mut servers = Servers::parse(&mut config);

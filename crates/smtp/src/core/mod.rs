@@ -58,7 +58,6 @@ use crate::{
 
 use self::throttle::{ThrottleKey, ThrottleKeyHasherBuilder};
 
-pub mod management;
 pub mod params;
 pub mod throttle;
 pub mod worker;
@@ -83,18 +82,7 @@ pub struct SmtpSessionManager {
     pub inner: SmtpInstance,
 }
 
-#[derive(Clone)]
-pub struct SmtpAdminSessionManager {
-    pub inner: SmtpInstance,
-}
-
 impl SmtpSessionManager {
-    pub fn new(inner: SmtpInstance) -> Self {
-        Self { inner }
-    }
-}
-
-impl SmtpAdminSessionManager {
     pub fn new(inner: SmtpInstance) -> Self {
         Self { inner }
     }

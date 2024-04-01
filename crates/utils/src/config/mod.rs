@@ -43,15 +43,15 @@ pub struct Config {
 #[serde(tag = "type")]
 pub enum ConfigWarning {
     Missing,
-    AppliedDefault(String),
+    AppliedDefault { default: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type")]
 pub enum ConfigError {
-    Parse(String),
-    Build(String),
-    Macro(String),
+    Parse { error: String },
+    Build { error: String },
+    Macro { error: String },
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -99,7 +99,9 @@ impl Config {
                                     } else {
                                         self.errors.insert(
                                             key.clone(),
-                                            ConfigError::Macro(format!("Unknown key {location:?}")),
+                                            ConfigError::Macro {
+                                                error: format!("Unknown key {location:?}"),
+                                            },
                                         );
                                     }
                                 }
@@ -110,9 +112,9 @@ impl Config {
                                     Err(_) => {
                                         self.errors.insert(
                                                 key.clone(),
-                                                ConfigError::Macro(format!(
+                                                ConfigError::Macro { error : format!(
                                                     "Failed to obtain environment variable {location:?}"
-                                                )),
+                                                )},
                                             );
                                     }
                                 },
@@ -126,9 +128,11 @@ impl Config {
                                             Err(err) => {
                                                 self.errors.insert(
                                                     key.clone(),
-                                                    ConfigError::Macro(format!(
+                                                    ConfigError::Macro {
+                                                        error: format!(
                                                         "Failed to read file {file_name:?}: {err}"
-                                                    )),
+                                                    ),
+                                                    },
                                                 );
                                                 continue 'outer;
                                             }
@@ -136,9 +140,11 @@ impl Config {
                                         Err(err) => {
                                             self.errors.insert(
                                                 key.clone(),
-                                                ConfigError::Macro(format!(
-                                                    "Failed to read file {file_name:?}: {err}"
-                                                )),
+                                                ConfigError::Macro {
+                                                    error: format!(
+                                                        "Failed to read file {file_name:?}: {err}"
+                                                    ),
+                                                },
                                             );
                                             continue 'outer;
                                         }
@@ -175,14 +181,14 @@ impl Config {
     pub fn log_errors(&self, use_stderr: bool) {
         for (key, err) in &self.errors {
             let message = match err {
-                ConfigError::Parse(err) => {
-                    format!("Failed to parse setting {key:?}: {err}")
+                ConfigError::Parse { error } => {
+                    format!("Failed to parse setting {key:?}: {error}")
                 }
-                ConfigError::Build(err) => {
-                    format!("Build error for key {key:?}: {err}")
+                ConfigError::Build { error } => {
+                    format!("Build error for key {key:?}: {error}")
                 }
-                ConfigError::Macro(err) => {
-                    format!("Macro expansion error for setting {key:?}: {err}")
+                ConfigError::Macro { error } => {
+                    format!("Macro expansion error for setting {key:?}: {error}")
                 }
             };
             if !use_stderr {
@@ -196,7 +202,7 @@ impl Config {
     pub fn log_warnings(&self, use_stderr: bool) {
         for (key, warn) in &self.warnings {
             let message = match warn {
-                ConfigWarning::AppliedDefault(default) => {
+                ConfigWarning::AppliedDefault { default } => {
                     format!("WARNING: Missing setting {key:?}, applied default {default:?}")
                 }
                 ConfigWarning::Missing => {

@@ -28,9 +28,9 @@ use utils::map::vec_map::VecMap;
 
 use crate::JmapInstance;
 
-pub mod admin;
 pub mod event_source;
 pub mod http;
+pub mod management;
 pub mod request;
 pub mod session;
 

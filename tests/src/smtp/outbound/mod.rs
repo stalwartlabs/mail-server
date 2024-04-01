@@ -25,12 +25,11 @@ use common::{
     config::server::{ServerProtocol, Servers},
     Core,
 };
+use jmap::{api::JmapSessionManager, JMAP};
 use store::{BlobStore, Store, Stores};
 use tokio::sync::{mpsc, watch};
 
-use ::smtp::core::{
-    Inner, Session, SmtpAdminSessionManager, SmtpInstance, SmtpSessionManager, SMTP,
-};
+use ::smtp::core::{Inner, Session, SmtpInstance, SmtpSessionManager, SMTP};
 use utils::config::Config;
 
 use crate::AssertConfig;
@@ -147,10 +146,18 @@ impl TestServer {
 
         // Start servers
         servers.bind_and_drop_priv(&mut config);
-        config.assert_no_errors();
         let instance = self.instance.clone();
         let smtp_manager = SmtpSessionManager::new(instance.clone());
-        let smtp_admin_manager = SmtpAdminSessionManager::new(instance.clone());
+        let jmap = JMAP::init(
+            &mut config,
+            mpsc::channel(1).1,
+            instance.core.clone(),
+            instance.inner.clone(),
+        )
+        .await;
+        let jmap_manager = JmapSessionManager::new(jmap);
+        config.assert_no_errors();
+
         servers.spawn(|server, acceptor, shutdown_rx| {
             match &server.protocol {
                 ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
@@ -160,7 +167,7 @@ impl TestServer {
                     shutdown_rx,
                 ),
                 ServerProtocol::Http => server.spawn(
-                    smtp_admin_manager.clone(),
+                    jmap_manager.clone(),
                     instance.core.clone(),
                     acceptor,
                     shutdown_rx,

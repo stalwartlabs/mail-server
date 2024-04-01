@@ -2,7 +2,7 @@
 .vscode
 *.failed
 *_failed
-stalwart.toml
+/resources/config/config.toml
 run.sh
 _ignore
 .DS_Store

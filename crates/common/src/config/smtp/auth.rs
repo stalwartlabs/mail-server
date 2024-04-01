@@ -90,8 +90,8 @@ impl Default for MailAuthConfig {
                 sign: IfBlock::new::<()>(
                     "auth.dkim.sign",
                     [(
-                        "local_port != 25",
-                        "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                        "is_local_domain('*', sender_domain)",
+                        "['rsa_' + sender_domain, 'ed_' + sender_domain]",
                     )],
                     "false",
                 ),
@@ -112,7 +112,6 @@ impl Default for MailAuthConfig {
                     "disable",
                     #[cfg(feature = "test_mode")]
                     "relaxed",
-                    
                 ),
                 verify_mail_from: IfBlock::new::<VerifyStrategy>(
                     "auth.spf.verify.mail-from",

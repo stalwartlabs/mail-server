@@ -309,7 +309,7 @@ impl From<(&Option<Arc<Policy>>, &Option<Arc<Tlsa>>)> for PolicyType {
     }
 }
 
-pub(crate) struct SerializedSize {
+pub struct SerializedSize {
     bytes_left: usize,
 }
 
