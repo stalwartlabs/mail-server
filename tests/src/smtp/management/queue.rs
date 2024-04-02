@@ -31,7 +31,10 @@ use mail_auth::MX;
 use mail_parser::DateTime;
 use reqwest::{header::AUTHORIZATION, Method, StatusCode};
 
-use crate::smtp::{management::send_manage_request, outbound::TestServer, session::TestSession};
+use crate::{
+    jmap::ManagementApi,
+    smtp::{outbound::TestServer, session::TestSession},
+};
 use smtp::queue::{manager::SpawnQueue, QueueId, Status};
 
 const LOCAL: &str = r#"
@@ -189,7 +192,9 @@ async fn manage_queue() {
     );
 
     // Fetch and validate messages
-    let ids = send_manage_request::<List<QueueId>>(Method::GET, "/api/queue/messages")
+    let api = ManagementApi::default();
+    let ids = api
+        .request::<List<QueueId>>(Method::GET, "/api/queue/messages")
         .await
         .unwrap()
         .unwrap_data()
@@ -198,7 +203,7 @@ async fn manage_queue() {
     let mut id_map = AHashMap::new();
     let mut id_map_rev = AHashMap::new();
     let mut test_search = String::new();
-    for (message, id) in get_messages(&ids).await.into_iter().zip(ids) {
+    for (message, id) in api.get_messages(&ids).await.into_iter().zip(ids) {
         let message = message.unwrap();
         let env_id = message.env_id.as_ref().unwrap().clone();
 
@@ -295,7 +300,8 @@ async fn manage_queue() {
         ),
     ] {
         let expected_ids = HashSet::from_iter(expected_ids.into_iter().map(|s| s.to_string()));
-        let ids = send_manage_request::<List<QueueId>>(Method::GET, &query)
+        let ids = api
+            .request::<List<QueueId>>(Method::GET, &query)
             .await
             .unwrap()
             .unwrap_data()
@@ -308,23 +314,23 @@ async fn manage_queue() {
 
     // Retry delivery
     for id in [id_map.get("e").unwrap(), id_map.get("f").unwrap()] {
-        assert!(
-            send_manage_request::<bool>(Method::PATCH, &format!("/api/queue/messages/{id}",))
-                .await
-                .unwrap()
-                .unwrap_data(),
-        );
+        assert!(api
+            .request::<bool>(Method::PATCH, &format!("/api/queue/messages/{id}",))
+            .await
+            .unwrap()
+            .unwrap_data(),);
     }
-    assert!(send_manage_request::<bool>(
-        Method::PATCH,
-        &format!(
-            "/api/queue/messages/{}?filter=example1.org&at=2200-01-01T00:00:00Z",
-            id_map.get("a").unwrap(),
+    assert!(api
+        .request::<bool>(
+            Method::PATCH,
+            &format!(
+                "/api/queue/messages/{}?filter=example1.org&at=2200-01-01T00:00:00Z",
+                id_map.get("a").unwrap(),
+            )
         )
-    )
-    .await
-    .unwrap()
-    .unwrap_data());
+        .await
+        .unwrap()
+        .unwrap_data());
 
     // Expect delivery to john@foobar.org
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -342,13 +348,14 @@ async fn manage_queue() {
 
     // Message 'e' should be gone, 'f' should have retry_num == 2
     // while 'a' should have a retry time of 2200-01-01T00:00:00Z for example1.org
-    let mut messages = get_messages(&[
-        *id_map.get("e").unwrap(),
-        *id_map.get("f").unwrap(),
-        *id_map.get("a").unwrap(),
-    ])
-    .await
-    .into_iter();
+    let mut messages = api
+        .get_messages(&[
+            *id_map.get("e").unwrap(),
+            *id_map.get("f").unwrap(),
+            *id_map.get("a").unwrap(),
+        ])
+        .await
+        .into_iter();
     assert_eq!(messages.next().unwrap(), None);
     assert_eq!(
         messages
@@ -380,7 +387,7 @@ async fn manage_queue() {
         ("d", ""),
     ] {
         assert!(
-            send_manage_request::<bool>(
+            api.request::<bool>(
                 Method::DELETE,
                 &format!(
                     "/api/queue/messages/{}{}{}",
@@ -396,7 +403,7 @@ async fn manage_queue() {
         );
     }
     assert_eq!(
-        send_manage_request::<List<QueueId>>(Method::GET, "/api/queue/messages")
+        api.request::<List<QueueId>>(Method::GET, "/api/queue/messages")
             .await
             .unwrap()
             .unwrap_data()
@@ -404,15 +411,16 @@ async fn manage_queue() {
             .len(),
         3
     );
-    for (message, id) in get_messages(&[
-        *id_map.get("a").unwrap(),
-        *id_map.get("b").unwrap(),
-        *id_map.get("c").unwrap(),
-        *id_map.get("d").unwrap(),
-    ])
-    .await
-    .into_iter()
-    .zip(["a", "b", "c", "d"])
+    for (message, id) in api
+        .get_messages(&[
+            *id_map.get("a").unwrap(),
+            *id_map.get("b").unwrap(),
+            *id_map.get("c").unwrap(),
+            *id_map.get("d").unwrap(),
+        ])
+        .await
+        .into_iter()
+        .zip(["a", "b", "c", "d"])
     {
         if ["b", "d"].contains(&id) {
             assert_eq!(message, None);
@@ -481,17 +489,19 @@ fn assert_timestamp(timestamp: &DateTime, expected: i64, ctx: &str, message: &Me
     }
 }
 
-async fn get_messages(ids: &[QueueId]) -> Vec<Option<Message>> {
-    let mut results = Vec::with_capacity(ids.len());
+impl ManagementApi {
+    async fn get_messages(&self, ids: &[QueueId]) -> Vec<Option<Message>> {
+        let mut results = Vec::with_capacity(ids.len());
 
-    for id in ids {
-        let message =
-            send_manage_request::<Message>(Method::GET, &format!("/api/queue/messages/{id}",))
+        for id in ids {
+            let message = self
+                .request::<Message>(Method::GET, &format!("/api/queue/messages/{id}",))
                 .await
                 .unwrap()
                 .try_unwrap_data();
-        results.push(message);
-    }
+            results.push(message);
+        }
 
-    results
+        results
+    }
 }

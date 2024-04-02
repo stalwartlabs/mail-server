@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{sync::atomic, time::SystemTime};
+use std::time::SystemTime;
 
 use directory::QueryBy;
 use hyper::StatusCode;
@@ -30,11 +30,9 @@ use mail_parser::decoders::base64::base64_decode;
 use store::{
     blake3,
     rand::{thread_rng, Rng},
+    write::Bincode,
 };
-use utils::{
-    codec::leb128::{Leb128Iterator, Leb128Vec},
-    map::ttl_dashmap::TtlMap,
-};
+use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
@@ -43,8 +41,8 @@ use crate::{
 };
 
 use super::{
-    ErrorType, FormData, OAuthResponse, TokenResponse, CLIENT_ID_MAX_LEN, MAX_POST_LEN,
-    RANDOM_CODE_LEN, STATUS_AUTHORIZED, STATUS_PENDING, STATUS_TOKEN_ISSUED,
+    ErrorType, FormData, OAuthCode, OAuthResponse, OAuthStatus, TokenResponse, CLIENT_ID_MAX_LEN,
+    MAX_POST_LEN, RANDOM_CODE_LEN,
 };
 
 impl JMAP {
@@ -65,34 +63,44 @@ impl JMAP {
                 params.get("client_id"),
                 params.get("redirect_uri"),
             ) {
-                if let Some(oauth) = self.inner.oauth_codes.get_with_ttl(code) {
-                    if client_id != oauth.client_id
-                        || redirect_uri != oauth.redirect_uri.as_deref().unwrap_or("")
-                    {
-                        TokenResponse::error(ErrorType::InvalidClient)
-                    } else if oauth.status.load(atomic::Ordering::Relaxed) == STATUS_AUTHORIZED {
-                        // Mark this token as issued
-                        oauth
-                            .status
-                            .store(STATUS_TOKEN_ISSUED, atomic::Ordering::Relaxed);
+                // Obtain code
+                match self
+                    .core
+                    .storage
+                    .lookup
+                    .key_get::<Bincode<OAuthCode>>(format!("oauth:{code}").into_bytes())
+                    .await
+                {
+                    Ok(Some(auth_code)) => {
+                        let oauth = auth_code.inner;
+                        if client_id != oauth.client_id || redirect_uri != oauth.params {
+                            TokenResponse::error(ErrorType::InvalidClient)
+                        } else if oauth.status == OAuthStatus::Authorized {
+                            // Mark this token as issued
+                            if let Err(err) = self
+                                .core
+                                .storage
+                                .lookup
+                                .key_delete(format!("oauth:{code}").into_bytes())
+                                .await
+                            {
+                                return err.into_http_response();
+                            }
 
-                        // Issue token
-                        self.issue_token(
-                            oauth.account_id.load(atomic::Ordering::Relaxed),
-                            &oauth.client_id,
-                            true,
-                        )
-                        .await
-                        .map(TokenResponse::Granted)
-                        .unwrap_or_else(|err| {
-                            tracing::error!("Failed to generate OAuth token: {}", err);
-                            TokenResponse::error(ErrorType::InvalidRequest)
-                        })
-                    } else {
-                        TokenResponse::error(ErrorType::InvalidGrant)
+                            // Issue token
+                            self.issue_token(oauth.account_id, &oauth.client_id, true)
+                                .await
+                                .map(TokenResponse::Granted)
+                                .unwrap_or_else(|err| {
+                                    tracing::error!("Failed to generate OAuth token: {}", err);
+                                    TokenResponse::error(ErrorType::InvalidRequest)
+                                })
+                        } else {
+                            TokenResponse::error(ErrorType::InvalidGrant)
+                        }
                     }
-                } else {
-                    TokenResponse::error(ErrorType::AccessDenied)
+                    Ok(None) => TokenResponse::error(ErrorType::AccessDenied),
+                    Err(err) => return err.into_http_response(),
                 }
             } else {
                 TokenResponse::error(ErrorType::InvalidClient)
@@ -100,46 +108,59 @@ impl JMAP {
         } else if grant_type.eq_ignore_ascii_case("urn:ietf:params:oauth:grant-type:device_code") {
             response = TokenResponse::error(ErrorType::ExpiredToken);
 
-            if let (Some(oauth), Some(client_id)) = (
-                params
-                    .get("device_code")
-                    .and_then(|dc| self.inner.oauth_codes.get_with_ttl(dc)),
-                params.get("client_id"),
-            ) {
-                response = if oauth.client_id != client_id {
-                    TokenResponse::error(ErrorType::InvalidClient)
-                } else {
-                    match oauth.status.load(atomic::Ordering::Relaxed) {
-                        STATUS_AUTHORIZED => {
-                            // Mark this token as issued
-                            oauth
-                                .status
-                                .store(STATUS_TOKEN_ISSUED, atomic::Ordering::Relaxed);
+            if let (Some(device_code), Some(client_id)) =
+                (params.get("device_code"), params.get("client_id"))
+            {
+                // Obtain code
+                match self
+                    .core
+                    .storage
+                    .lookup
+                    .key_get::<Bincode<OAuthCode>>(format!("oauth:{device_code}").into_bytes())
+                    .await
+                {
+                    Ok(Some(auth_code)) => {
+                        let oauth = auth_code.inner;
+                        response = if oauth.client_id != client_id {
+                            TokenResponse::error(ErrorType::InvalidClient)
+                        } else {
+                            match oauth.status {
+                                OAuthStatus::Authorized => {
+                                    // Mark this token as issued
+                                    if let Err(err) = self
+                                        .core
+                                        .storage
+                                        .lookup
+                                        .key_delete(format!("oauth:{device_code}").into_bytes())
+                                        .await
+                                    {
+                                        return err.into_http_response();
+                                    }
 
-                            // Issue token
-                            self.issue_token(
-                                oauth.account_id.load(atomic::Ordering::Relaxed),
-                                &oauth.client_id,
-                                true,
-                            )
-                            .await
-                            .map(TokenResponse::Granted)
-                            .unwrap_or_else(|err| {
-                                tracing::error!("Failed to generate OAuth token: {}", err);
-                                TokenResponse::error(ErrorType::InvalidRequest)
-                            })
-                        }
-                        status
-                            if (STATUS_PENDING
-                                ..STATUS_PENDING + self.core.jmap.oauth_max_auth_attempts)
-                                .contains(&status) =>
-                        {
-                            TokenResponse::error(ErrorType::AuthorizationPending)
-                        }
-                        STATUS_TOKEN_ISSUED => TokenResponse::error(ErrorType::ExpiredToken),
-                        _ => TokenResponse::error(ErrorType::AccessDenied),
+                                    // Issue token
+                                    self.issue_token(oauth.account_id, &oauth.client_id, true)
+                                        .await
+                                        .map(TokenResponse::Granted)
+                                        .unwrap_or_else(|err| {
+                                            tracing::error!(
+                                                "Failed to generate OAuth token: {}",
+                                                err
+                                            );
+                                            TokenResponse::error(ErrorType::InvalidRequest)
+                                        })
+                                }
+                                OAuthStatus::Pending => {
+                                    TokenResponse::error(ErrorType::AuthorizationPending)
+                                }
+                                OAuthStatus::TokenIssued => {
+                                    TokenResponse::error(ErrorType::ExpiredToken)
+                                }
+                            }
+                        };
                     }
-                };
+                    Ok(None) => (),
+                    Err(err) => return err.into_http_response(),
+                }
             }
         } else if grant_type.eq_ignore_ascii_case("refresh_token") {
             if let Some(refresh_token) = params.get("refresh_token") {

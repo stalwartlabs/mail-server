@@ -23,11 +23,15 @@
 
 use std::{sync::Arc, time::Duration};
 
-use base64::{engine::general_purpose, Engine};
+use base64::{
+    engine::general_purpose::{self, STANDARD},
+    Engine,
+};
 use common::{
     config::server::{ServerProtocol, Servers},
     Core,
 };
+use hyper::{header::AUTHORIZATION, Method};
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{
     api::JmapSessionManager,
@@ -35,9 +39,10 @@ use jmap::{
     JMAP,
 };
 use jmap_client::client::{Client, Credentials};
-use jmap_proto::types::id::Id;
+use jmap_proto::{error::request::RequestError, types::id::Id};
 use managesieve::core::ManageSieveSessionManager;
 use reqwest::header;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use smtp::core::{SmtpSessionManager, SMTP};
 
 use store::Stores;
@@ -611,4 +616,137 @@ pub async fn test_account_login(login: &str, secret: &str) -> Client {
         .connect("https://127.0.0.1:8899")
         .await
         .unwrap()
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum Response<T> {
+    RequestError(RequestError),
+    Error { error: String, details: String },
+    Data { data: T },
+}
+
+pub struct ManagementApi {
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+}
+
+impl Default for ManagementApi {
+    fn default() -> Self {
+        Self {
+            port: 9980,
+            username: "admin".to_string(),
+            password: "secret".to_string(),
+        }
+    }
+}
+
+impl ManagementApi {
+    pub fn new(port: u16, username: &str, password: &str) -> Self {
+        Self {
+            port,
+            username: username.to_string(),
+            password: password.to_string(),
+        }
+    }
+
+    pub async fn post<T: DeserializeOwned>(
+        &self,
+        query: &str,
+        body: &impl Serialize,
+    ) -> Result<Response<T>, String> {
+        self.request_raw(
+            Method::POST,
+            query,
+            Some(serde_json::to_string(body).unwrap()),
+        )
+        .await
+        .map(|result| {
+            serde_json::from_str::<Response<T>>(&result)
+                .unwrap_or_else(|err| panic!("{err}: {result}"))
+        })
+    }
+
+    pub async fn request<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        query: &str,
+    ) -> Result<Response<T>, String> {
+        self.request_raw(method, query, None).await.map(|result| {
+            serde_json::from_str::<Response<T>>(&result)
+                .unwrap_or_else(|err| panic!("{err}: {result}"))
+        })
+    }
+
+    async fn request_raw(
+        &self,
+        method: Method,
+        query: &str,
+        body: Option<String>,
+    ) -> Result<String, String> {
+        let mut request = reqwest::Client::builder()
+            .timeout(Duration::from_millis(500))
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap()
+            .request(method, format!("https://127.0.0.1:{}{query}", self.port));
+
+        if let Some(body) = body {
+            request = request.body(body);
+        }
+
+        request
+            .header(
+                AUTHORIZATION,
+                format!(
+                    "Basic {}",
+                    STANDARD.encode(format!("{}:{}", self.username, self.password).as_bytes())
+                ),
+            )
+            .send()
+            .await
+            .map_err(|err| err.to_string())?
+            .bytes()
+            .await
+            .map(|bytes| String::from_utf8(bytes.to_vec()).unwrap())
+            .map_err(|err| err.to_string())
+    }
+}
+
+impl<T> Response<T> {
+    pub fn unwrap_data(self) -> T {
+        match self {
+            Response::Data { data } => data,
+            Response::Error { error, details } => {
+                panic!("Expected data, found error {error:?}: {details:?}")
+            }
+            Response::RequestError(err) => {
+                panic!("Expected data, found error {err:?}")
+            }
+        }
+    }
+
+    pub fn try_unwrap_data(self) -> Option<T> {
+        match self {
+            Response::Data { data } => Some(data),
+            Response::RequestError(error) if error.status == 404 => None,
+            Response::Error { error, details } => {
+                panic!("Expected data, found error {error:?}: {details:?}")
+            }
+            Response::RequestError(err) => {
+                panic!("Expected data, found error {err:?}")
+            }
+        }
+    }
+
+    pub fn unwrap_error(self) -> (String, String) {
+        match self {
+            Response::Error { error, details } => (error, details),
+            Response::Data { .. } => panic!("Expected error, found data."),
+            Response::RequestError(err) => {
+                panic!("Expected error, found request error {err:?}")
+            }
+        }
+    }
 }

@@ -35,9 +35,8 @@ use http_body_util::combinators::BoxBody;
 use hyper::{body::Bytes, Method};
 use jmap_proto::error::request::RequestError;
 use serde::Serialize;
-use serde_json::json;
 
-use crate::{auth::{oauth::OAuthCodeRequest, AccessToken}, JMAP};
+use crate::{auth::AccessToken, JMAP};
 
 use super::{http::ToHttpResponse, HttpRequest, JsonResponse};
 
@@ -77,49 +76,14 @@ impl JMAP {
         let is_superuser = access_token.is_super_user();
 
         match path.first().copied().unwrap_or_default() {
-            "principal" if is_superuser => {
-                self.handle_manage_principal(req, path, body)
-                    .await
-            }
-            "domain" if is_superuser => {
-                self.handle_manage_domain(req, path)
-                    .await
-            }
-            "store" if is_superuser => {
-                self.handle_manage_store(req, path,)
-                    .await
-            }
-            "reload" if is_superuser => {
-                self.handle_manage_reload(req, path)
-                    .await
-            }
-            "settings" if is_superuser => {
-                self.handle_manage_settings(req, path, body)
-                    .await
-            }
-            "queue" if is_superuser => {
-                self.handle_manage_queue(req, path)
-                    .await
-            }
-            "reports" if is_superuser => {
-                self.handle_manage_reports(req, path)
-                    .await
-            }
-            "oauth" => {
-                match serde_json::from_slice::<OAuthCodeRequest>(body.as_deref().unwrap_or_default()) {
-                    Ok(request) => {
-                        JsonResponse::new(json!({
-                            "data": {
-                                "code": self.issue_client_code(&access_token, request.client_id, request.redirect_uri),
-                                "is_admin": access_token.is_super_user(),
-                            },
-                        }))
-                        .into_http_response()
-    
-                    },
-                    Err(err) => err.into_http_response(),
-                }
-            }
+            "principal" if is_superuser => self.handle_manage_principal(req, path, body).await,
+            "domain" if is_superuser => self.handle_manage_domain(req, path).await,
+            "store" if is_superuser => self.handle_manage_store(req, path).await,
+            "reload" if is_superuser => self.handle_manage_reload(req, path).await,
+            "settings" if is_superuser => self.handle_manage_settings(req, path, body).await,
+            "queue" if is_superuser => self.handle_manage_queue(req, path).await,
+            "reports" if is_superuser => self.handle_manage_reports(req, path).await,
+            "oauth" => self.handle_oauth_api_request(access_token, body).await,
             "crypto" => match *req.method() {
                 Method::POST => self.handle_crypto_post(access_token, body).await,
                 Method::GET => self.handle_crypto_get(access_token).await,
@@ -133,7 +97,6 @@ impl JMAP {
         }
     }
 }
-
 
 impl ToHttpResponse for ManagementApiError {
     fn into_http_response(self) -> super::HttpResponse {
@@ -149,6 +112,8 @@ impl From<Cow<'static, str>> for ManagementApiError {
 
 impl From<String> for ManagementApiError {
     fn from(details: String) -> Self {
-        ManagementApiError::Other { details: details.into() }
+        ManagementApiError::Other {
+            details: details.into(),
+        }
     }
 }

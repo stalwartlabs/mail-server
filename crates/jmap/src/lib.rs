@@ -23,7 +23,7 @@
 
 use std::{collections::hash_map::RandomState, fmt::Display, sync::Arc, time::Duration};
 
-use auth::{oauth::OAuthCode, rate_limit::ConcurrencyLimiters, AccessToken};
+use auth::{rate_limit::ConcurrencyLimiters, AccessToken};
 use common::{Core, DeliveryEvent, SharedCore};
 use dashmap::DashMap;
 use directory::QueryBy;
@@ -100,7 +100,6 @@ pub struct Inner {
     pub snowflake_id: SnowflakeIdGenerator,
 
     pub concurrency_limiter: DashMap<u32, Arc<ConcurrencyLimiters>>,
-    pub oauth_codes: TtlDashMap<String, Arc<OAuthCode>>,
 
     pub state_tx: mpsc::Sender<state::Event>,
     pub housekeeper_tx: mpsc::Sender<housekeeper::Event>,
@@ -143,7 +142,6 @@ impl JMAP {
                 RandomState::default(),
                 shard_amount,
             ),
-            oauth_codes: TtlDashMap::with_capacity(capacity, shard_amount),
             state_tx,
             housekeeper_tx,
             cache_threads: LruCache::with_capacity(

@@ -38,9 +38,9 @@ use mail_auth::{
 };
 use reqwest::Method;
 
-use crate::smtp::{
-    management::{queue::List, send_manage_request},
-    outbound::TestServer,
+use crate::{
+    jmap::ManagementApi,
+    smtp::{management::queue::List, outbound::TestServer},
 };
 use smtp::reporting::{scheduler::SpawnReport, DmarcEvent, TlsEvent};
 
@@ -135,7 +135,9 @@ async fn manage_reports() {
     .await;
 
     // List reports
-    let ids = send_manage_request::<List<String>>(Method::GET, "/api/queue/reports")
+    let api = ManagementApi::default();
+    let ids = api
+        .request::<List<String>>(Method::GET, "/api/queue/reports")
         .await
         .unwrap()
         .unwrap_data()
@@ -143,7 +145,7 @@ async fn manage_reports() {
     assert_eq!(ids.len(), 4);
     let mut id_map = AHashMap::new();
     let mut id_map_rev = AHashMap::new();
-    for (report, id) in get_reports(&ids).await.into_iter().zip(ids) {
+    for (report, id) in api.get_reports(&ids).await.into_iter().zip(ids) {
         let mut parts = id.split('!');
         let report = report.unwrap();
         let mut id_num = if parts.next().unwrap() == "t" {
@@ -189,7 +191,8 @@ async fn manage_reports() {
         ("/api/queue/reports?domain=foobar.net&type=tls", vec!["d"]),
     ] {
         let expected_ids = HashSet::from_iter(expected_ids.into_iter().map(|s| s.to_string()));
-        let ids = send_manage_request::<List<String>>(Method::GET, query)
+        let ids = api
+            .request::<List<String>>(Method::GET, query)
             .await
             .unwrap()
             .unwrap_data()
@@ -203,7 +206,7 @@ async fn manage_reports() {
     // Cancel reports
     for id in ["a", "b"] {
         assert!(
-            send_manage_request::<bool>(
+            api.request::<bool>(
                 Method::DELETE,
                 &format!("/api/queue/reports/{}", id_map.get(id).unwrap(),)
             )
@@ -214,7 +217,7 @@ async fn manage_reports() {
         );
     }
     assert_eq!(
-        send_manage_request::<List<String>>(Method::GET, "/api/queue/reports")
+        api.request::<List<String>>(Method::GET, "/api/queue/reports")
             .await
             .unwrap()
             .unwrap_data()
@@ -222,31 +225,34 @@ async fn manage_reports() {
             .len(),
         2
     );
-    let mut ids = get_reports(&[
-        id_map.get("a").unwrap().clone(),
-        id_map.get("b").unwrap().clone(),
-        id_map.get("c").unwrap().clone(),
-        id_map.get("d").unwrap().clone(),
-    ])
-    .await
-    .into_iter();
+    let mut ids = api
+        .get_reports(&[
+            id_map.get("a").unwrap().clone(),
+            id_map.get("b").unwrap().clone(),
+            id_map.get("c").unwrap().clone(),
+            id_map.get("d").unwrap().clone(),
+        ])
+        .await
+        .into_iter();
     assert!(ids.next().unwrap().is_none());
     assert!(ids.next().unwrap().is_none());
     assert!(ids.next().unwrap().is_some());
     assert!(ids.next().unwrap().is_some());
 }
 
-async fn get_reports(ids: &[String]) -> Vec<Option<Report>> {
-    let mut results = Vec::with_capacity(ids.len());
+impl ManagementApi {
+    async fn get_reports(&self, ids: &[String]) -> Vec<Option<Report>> {
+        let mut results = Vec::with_capacity(ids.len());
 
-    for id in ids {
-        let report =
-            send_manage_request::<Report>(Method::GET, &format!("/api/queue/reports/{id}",))
+        for id in ids {
+            let report = self
+                .request::<Report>(Method::GET, &format!("/api/queue/reports/{id}",))
                 .await
                 .unwrap()
                 .try_unwrap_data();
-        results.push(report);
-    }
+            results.push(report);
+        }
 
-    results
+        results
+    }
 }

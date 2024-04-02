@@ -34,7 +34,7 @@ use utils::{
     BlobHash,
 };
 
-use crate::{backend::MAX_TOKEN_LENGTH, BlobClass, Deserialize, Serialize};
+use crate::{backend::MAX_TOKEN_LENGTH, BlobClass, Deserialize, Serialize, Value};
 
 use self::assert::AssertValue;
 
@@ -608,6 +608,7 @@ impl BlobClass {
     }
 }
 
+#[derive(Debug)]
 pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
     pub inner: T,
 }
@@ -615,6 +616,12 @@ pub struct Bincode<T: serde::Serialize + serde::de::DeserializeOwned> {
 impl<T: serde::Serialize + serde::de::DeserializeOwned> Bincode<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
+    }
+}
+
+impl<T: serde::Serialize + serde::de::DeserializeOwned> From<Value<'static>> for Bincode<T> {
+    fn from(_: Value<'static>) -> Self {
+        unreachable!("From Value called on Bincode<T>")
     }
 }
 

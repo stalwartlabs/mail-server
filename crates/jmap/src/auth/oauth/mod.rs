@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{collections::HashMap, sync::atomic::AtomicU32};
+use std::collections::HashMap;
 
 use http_body_util::BodyExt;
 use hyper::{header::CONTENT_TYPE, StatusCode};
@@ -29,29 +29,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse};
 
-pub mod device_auth;
+pub mod auth;
 pub mod token;
-pub mod user_code;
 
-const OAUTH_HTML_HEADER: &str = include_str!("../../../../../resources/htx/header.htx");
-const OAUTH_HTML_FOOTER: &str = include_str!("../../../../../resources/htx/footer.htx");
-const OAUTH_HTML_LOGIN_HEADER_CLIENT: &str =
-    include_str!("../../../../../resources/htx/login_hdr_client.htx");
-const OAUTH_HTML_LOGIN_HEADER_DEVICE: &str =
-    include_str!("../../../../../resources/htx/login_hdr_device.htx");
-const OAUTH_HTML_LOGIN_HEADER_FAILED: &str =
-    include_str!("../../../../../resources/htx/login_hdr_failed.htx");
-const OAUTH_HTML_LOGIN_FORM: &str = include_str!("../../../../../resources/htx/login.htx");
-const OAUTH_HTML_LOGIN_CODE: &str = include_str!("../../../../../resources/htx/login_code.htx");
-const OAUTH_HTML_LOGIN_CODE_HIDDEN: &str =
-    include_str!("../../../../../resources/htx/login_code_hidden.htx");
-const OAUTH_HTML_LOGIN_SUCCESS: &str =
-    include_str!("../../../../../resources/htx/login_success.htx");
-const OAUTH_HTML_ERROR: &str = include_str!("../../../../../resources/htx/error.htx");
-
-const STATUS_AUTHORIZED: u32 = 0;
-const STATUS_TOKEN_ISSUED: u32 = 1;
-const STATUS_PENDING: u32 = 2;
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum OAuthStatus {
+    Authorized,
+    TokenIssued,
+    Pending,
+}
 
 const DEVICE_CODE_LEN: usize = 40;
 const USER_CODE_LEN: usize = 8;
@@ -73,12 +59,12 @@ pub struct OAuth {
     pub metadata: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OAuthCode {
-    pub status: AtomicU32,
-    pub account_id: AtomicU32,
+    pub status: OAuthStatus,
+    pub account_id: u32,
     pub client_id: String,
-    pub redirect_uri: Option<String>,
+    pub params: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -192,7 +178,7 @@ impl OAuthMetadata {
         let base_url = base_url.as_ref();
         OAuthMetadata {
             issuer: base_url.into(),
-            authorization_endpoint: format!("{}/auth/code", base_url),
+            authorization_endpoint: format!("{}/authorize/code", base_url),
             token_endpoint: format!("{}/auth/token", base_url),
             grant_types_supported: vec![
                 "authorization_code".to_string(),
@@ -207,9 +193,15 @@ impl OAuthMetadata {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct OAuthCodeRequest {
-    pub client_id: String,
-    pub redirect_uri: Option<String>,
+#[serde(tag = "type")]
+pub enum OAuthCodeRequest {
+    Code {
+        client_id: String,
+        redirect_uri: Option<String>,
+    },
+    Device {
+        code: String,
+    },
 }
 
 impl TokenResponse {

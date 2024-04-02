@@ -762,6 +762,7 @@ impl JMAP {
         }
 
         // Save encryption params
+        let num_certs = params.certs.len();
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(access_token.primary_id())
@@ -770,7 +771,7 @@ impl JMAP {
             .value(Property::Parameters, &params, F_VALUE);
         match self.core.storage.data.write(batch.build()).await {
             Ok(_) => JsonResponse::new(json!({
-                "data": (),
+                "data": num_certs,
             }))
             .into_http_response(),
             Err(err) => err.into_http_response(),

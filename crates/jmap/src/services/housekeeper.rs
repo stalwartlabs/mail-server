@@ -284,7 +284,6 @@ impl Inner {
     pub fn purge(&self) {
         self.sessions.cleanup();
         self.access_tokens.cleanup();
-        self.oauth_codes.cleanup();
         self.concurrency_limiter
             .retain(|_, limiter| limiter.is_active());
     }

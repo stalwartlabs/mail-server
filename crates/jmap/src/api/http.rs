@@ -233,36 +233,6 @@ impl JMAP {
                 _ => (),
             },
             "auth" => match (path.next().unwrap_or(""), req.method()) {
-                ("", &Method::GET) => {
-                    return match self.is_anonymous_allowed(&session.remote_ip).await {
-                        Ok(_) => self.handle_user_device_auth(&mut req).await,
-                        Err(err) => err.into_http_response(),
-                    }
-                }
-                ("", &Method::POST) => {
-                    return match self.is_auth_allowed_soft(&session.remote_ip).await {
-                        Ok(_) => {
-                            self.handle_user_device_auth_post(&mut req, session.remote_ip)
-                                .await
-                        }
-                        Err(err) => err.into_http_response(),
-                    }
-                }
-                ("code", &Method::GET) => {
-                    return match self.is_anonymous_allowed(&session.remote_ip).await {
-                        Ok(_) => self.handle_user_code_auth(&mut req).await,
-                        Err(err) => err.into_http_response(),
-                    }
-                }
-                ("code", &Method::POST) => {
-                    return match self.is_auth_allowed_soft(&session.remote_ip).await {
-                        Ok(_) => {
-                            self.handle_user_code_auth_post(&mut req, session.remote_ip)
-                                .await
-                        }
-                        Err(err) => err.into_http_response(),
-                    }
-                }
                 ("device", &Method::POST) => {
                     return match self.is_anonymous_allowed(&session.remote_ip).await {
                         Ok(_) => {
