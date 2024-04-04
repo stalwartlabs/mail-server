@@ -25,13 +25,27 @@ use directory::backend::internal::manage::ManageDirectory;
 use http_body_util::combinators::BoxBody;
 use hyper::{body::Bytes, Method};
 use jmap_proto::error::request::RequestError;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use store::ahash::AHashMap;
 use utils::url_params::UrlParams;
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, JsonResponse},
+    api::{
+        http::ToHttpResponse,
+        management::dkim::{obtain_dkim_public_key, Algorithm},
+        HttpRequest, JsonResponse,
+    },
     JMAP,
 };
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DnsRecord {
+    #[serde(rename = "type")]
+    typ: String,
+    name: String,
+    content: String,
+}
 
 impl JMAP {
     pub async fn handle_manage_domain(
@@ -70,12 +84,17 @@ impl JMAP {
                     Err(err) => err.into_http_response(),
                 }
             }
-            (Some(domain), &Method::POST) => {
-                // Make sure the current directory supports updates
-                if let Some(response) = self.assert_supported_directory() {
-                    return response;
+            (Some(domain), &Method::GET) => {
+                // Obtain DNS records
+                match self.build_dns_records(domain).await {
+                    Ok(records) => JsonResponse::new(json!({
+                        "data": records,
+                    }))
+                    .into_http_response(),
+                    Err(err) => err.into_http_response(),
                 }
-
+            }
+            (Some(domain), &Method::POST) => {
                 // Create domain
                 match self.core.storage.data.create_domain(domain).await {
                     Ok(_) => JsonResponse::new(json!({
@@ -98,5 +117,99 @@ impl JMAP {
 
             _ => RequestError::not_found().into_http_response(),
         }
+    }
+
+    async fn build_dns_records(&self, domain_name: &str) -> store::Result<Vec<DnsRecord>> {
+        // Obtain server name
+        let server_name = self
+            .core
+            .storage
+            .config
+            .get("lookup.default.hostname")
+            .await?
+            .unwrap_or_else(|| "localhost".to_string());
+        let mut records = Vec::new();
+
+        // Obtain DKIM keys
+        let mut keys = AHashMap::new();
+        let mut signature_ids = Vec::new();
+        for (key, value) in self.core.storage.config.list("signature.", true).await? {
+            match key.strip_suffix(".domain") {
+                Some(key_id) if value == domain_name => {
+                    signature_ids.push(key_id.to_string());
+                }
+                _ => (),
+            }
+            keys.insert(key, value);
+        }
+
+        // Add MX and CNAME records
+        records.push(DnsRecord {
+            typ: "MX".to_string(),
+            name: format!("{domain_name}."),
+            content: format!("10 {server_name}."),
+        });
+        if server_name
+            .strip_prefix("mail.")
+            .map_or(true, |s| s != domain_name)
+        {
+            records.push(DnsRecord {
+                typ: "CNAME".to_string(),
+                name: format!("mail.{domain_name}."),
+                content: format!("{server_name}."),
+            });
+        }
+
+        // Process DKIM keys
+        for signature_id in signature_ids {
+            if let (Some(algo), Some(pk), Some(selector)) = (
+                keys.get(&format!("{signature_id}.algorithm"))
+                    .and_then(|algo| algo.parse::<Algorithm>().ok()),
+                keys.get(&format!("{signature_id}.private-key")),
+                keys.get(&format!("{signature_id}.selector")),
+            ) {
+                match obtain_dkim_public_key(algo, pk) {
+                    Ok(public) => {
+                        records.push(DnsRecord {
+                            typ: "TXT".to_string(),
+                            name: format!("{selector}._domainkey.{domain_name}.",),
+                            content: match algo {
+                                Algorithm::Rsa => format!("v=DKIM1; k=rsa; h=sha256; p={public}"),
+                                Algorithm::Ed25519 => {
+                                    format!("v=DKIM1; k=ed25519; h=sha256; p={public}")
+                                }
+                            },
+                        });
+                    }
+                    Err(err) => {
+                        tracing::debug!("Failed to obtain DKIM public key: {}", err);
+                    }
+                }
+            }
+        }
+
+        // Add SPF records
+        if server_name.ends_with(&format!(".{domain_name}")) || server_name == domain_name {
+            records.push(DnsRecord {
+                typ: "TXT".to_string(),
+                name: format!("{server_name}."),
+                content: "v=spf1 a -all ra=postmaster".to_string(),
+            });
+        }
+
+        records.push(DnsRecord {
+            typ: "TXT".to_string(),
+            name: format!("{domain_name}."),
+            content: "v=spf1 mx -all ra=postmaster".to_string(),
+        });
+
+        // Add DMARC records
+        records.push(DnsRecord {
+            typ: "TXT".to_string(),
+            name: format!("_dmarc.{domain_name}."),
+            content: format!("v=DMARC1; p=reject; rua=mailto:postmaster@{domain_name}; ruf=mailto:postmaster@{domain_name}",),
+        });
+
+        Ok(records)
     }
 }

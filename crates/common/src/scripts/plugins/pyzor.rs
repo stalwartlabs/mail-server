@@ -587,11 +587,11 @@ mod test {
         // Test spec
         let mut text = String::new();
         for i in 0..100 {
-            text += &format!("Line{i} test test test\n");
+            text += format!("Line{i} test test test\n").as_str();
         }
         let mut expected = String::new();
         for i in [20, 21, 22, 60, 61, 62] {
-            expected += &format!("Line{i}testtesttest");
+            expected += format!("Line{i}testtesttest").as_str();
         }
         assert_eq!(
             String::from_utf8(pyzor_digest(Vec::new(), text.lines(), &psl)).unwrap(),

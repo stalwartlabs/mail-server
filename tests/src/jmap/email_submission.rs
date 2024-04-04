@@ -586,7 +586,7 @@ pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockS
                                 message.message = message.message.trim().to_string();
                                 break;
                             } else {
-                                message.message += &buf;
+                                message.message += buf.as_str();
                                 buf.clear();
                             }
                         }

@@ -91,7 +91,7 @@ impl Default for MailAuthConfig {
                     "auth.dkim.sign",
                     [(
                         "is_local_domain('*', sender_domain)",
-                        "['rsa_' + sender_domain, 'ed_' + sender_domain]",
+                        "['rsa-' + sender_domain, 'ed25519-' + sender_domain]",
                     )],
                     "false",
                 ),
@@ -101,7 +101,7 @@ impl Default for MailAuthConfig {
                 seal: IfBlock::new::<()>(
                     "auth.arc.seal",
                     [],
-                    "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                    "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
                 ),
             },
             spf: SpfAuthConfig {
@@ -226,50 +226,8 @@ fn build_signature(config: &mut Config, id: &str) -> Option<(DkimSigner, ArcSeal
             (DkimSigner::RsaSha256(signer), ArcSealer::RsaSha256(sealer)).into()
         }
         Algorithm::Ed25519Sha256 => {
-            let mut public_key = vec![];
-            let mut private_key = vec![];
-
-            for (key, key_bytes) in [
-                (("signature", id, "public-key"), &mut public_key),
-                (("signature", id, "private-key"), &mut private_key),
-            ] {
-                let mut contents = config.value_require(key)?.as_bytes().iter().copied();
-                let mut base64 = vec![];
-
-                'outer: while let Some(ch) = contents.next() {
-                    if !ch.is_ascii_whitespace() {
-                        if ch == b'-' {
-                            for ch in contents.by_ref() {
-                                if ch == b'\n' {
-                                    break;
-                                }
-                            }
-                        } else {
-                            base64.push(ch);
-                        }
-
-                        for ch in contents.by_ref() {
-                            if ch == b'-' {
-                                break 'outer;
-                            } else if !ch.is_ascii_whitespace() {
-                                base64.push(ch);
-                            }
-                        }
-                    }
-                }
-
-                *key_bytes = base64_decode(&base64)
-                    .ok_or_else(|| {
-                        config.new_build_error(
-                            ("signature", id),
-                            format!("Failed to base64 decode key for {}.", key.as_key(),),
-                        )
-                    })
-                    .ok()?;
-            }
-
+            let private_key = parse_pem(config, ("signature", id, "private-key"))?;
             let key = Ed25519Key::from_pkcs8_maybe_unchecked_der(&private_key)
-                .or_else(|_| Ed25519Key::from_seed_and_public_key(&private_key, &public_key))
                 .map_err(|err| {
                     config.new_build_error(
                         ("signature", id),
@@ -278,7 +236,6 @@ fn build_signature(config: &mut Config, id: &str) -> Option<(DkimSigner, ArcSeal
                 })
                 .ok()?;
             let key_clone = Ed25519Key::from_pkcs8_maybe_unchecked_der(&private_key)
-                .or_else(|_| Ed25519Key::from_seed_and_public_key(&private_key, &public_key))
                 .map_err(|err| {
                     config.new_build_error(
                         ("signature", id),
@@ -302,6 +259,44 @@ fn build_signature(config: &mut Config, id: &str) -> Option<(DkimSigner, ArcSeal
             None
         }
     }
+}
+
+fn parse_pem(config: &mut Config, key: impl AsKey) -> Option<Vec<u8>> {
+    if let Some(der) = simple_pem_parse(config.value_require(key.clone())?) {
+        Some(der)
+    } else {
+        config.new_build_error(key, "Failed to base64 decode key.");
+        None
+    }
+}
+
+pub fn simple_pem_parse(contents: &str) -> Option<Vec<u8>> {
+    let mut contents = contents.as_bytes().iter().copied();
+    let mut base64 = vec![];
+
+    'outer: while let Some(ch) = contents.next() {
+        if !ch.is_ascii_whitespace() {
+            if ch == b'-' {
+                for ch in contents.by_ref() {
+                    if ch == b'\n' {
+                        break;
+                    }
+                }
+            } else {
+                base64.push(ch);
+            }
+
+            for ch in contents.by_ref() {
+                if ch == b'-' {
+                    break 'outer;
+                } else if !ch.is_ascii_whitespace() {
+                    base64.push(ch);
+                }
+            }
+        }
+    }
+
+    base64_decode(&base64)
 }
 
 fn parse_signature<T: SigningKey, U: SigningKey<Hasher = Sha256>>(

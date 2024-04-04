@@ -86,7 +86,7 @@ impl CharUtils for char {
 
 pub fn fn_cure_text<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     decancer::cure(v[0].to_string().as_ref(), decancer::Options::default())
-        .map(|s| s.into_str())
+        .map(String::from)
         .unwrap_or_default()
         .into()
 }

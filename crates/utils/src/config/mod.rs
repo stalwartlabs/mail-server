@@ -217,3 +217,36 @@ impl Config {
         }
     }
 }
+
+impl From<(String, String)> for ConfigKey {
+    fn from((key, value): (String, String)) -> Self {
+        Self { key, value }
+    }
+}
+
+impl From<(&str, &str)> for ConfigKey {
+    fn from((key, value): (&str, &str)) -> Self {
+        Self {
+            key: key.to_string(),
+            value: value.to_string(),
+        }
+    }
+}
+
+impl From<(&str, String)> for ConfigKey {
+    fn from((key, value): (&str, String)) -> Self {
+        Self {
+            key: key.to_string(),
+            value,
+        }
+    }
+}
+
+impl From<(String, &str)> for ConfigKey {
+    fn from((key, value): (String, &str)) -> Self {
+        Self {
+            key,
+            value: value.to_string(),
+        }
+    }
+}

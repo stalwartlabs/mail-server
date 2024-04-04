@@ -313,7 +313,7 @@ impl Scripting {
                     IfBlock::new::<()>(
                         "sieve.trusted.sign",
                         [],
-                        "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                        "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
                     )
                 }),
             scripts,
@@ -349,7 +349,7 @@ impl Default for Scripting {
             sign: IfBlock::new::<()>(
                 "sieve.trusted.sign",
                 [],
-                "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
             ),
             scripts: AHashMap::new(),
             bayes_cache: BayesTokenCache::new(

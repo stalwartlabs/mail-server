@@ -248,11 +248,16 @@ impl ConfigManager {
         Ok(results)
     }
 
-    pub async fn set(&self, keys: impl IntoIterator<Item = ConfigKey>) -> store::Result<()> {
+    pub async fn set<I, T>(&self, keys: I) -> store::Result<()>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<ConfigKey>,
+    {
         let mut batch = BatchBuilder::new();
         let mut local_batch = Vec::new();
 
         for key in keys {
+            let key = key.into();
             if self.cfg_local_patterns.is_local_key(&key.key) {
                 local_batch.push(key);
             } else {

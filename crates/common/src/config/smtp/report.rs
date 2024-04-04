@@ -125,7 +125,7 @@ impl Report {
             sign: IfBlock::new::<()>(
                 format!("report.{id}.sign"),
                 [],
-                "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
             ),
             send: IfBlock::new::<()>(format!("report.{id}.send"), [], "[1, 1d]"),
         };
@@ -174,7 +174,7 @@ impl AggregateReport {
             sign: IfBlock::new::<()>(
                 format!("report.{id}.aggregate.sign"),
                 [],
-                "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
             ),
             max_size: IfBlock::new::<()>(format!("report.{id}.aggregate.max-size"), [], "26214400"),
         };

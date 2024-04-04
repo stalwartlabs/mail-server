@@ -181,7 +181,7 @@ impl Default for QueueConfig {
                 sign: IfBlock::new::<()>(
                     "report.dsn.sign",
                     [],
-                    "['rsa_' + key_get('default', 'domain'), 'ed_' + key_get('default', 'domain')]",
+                    "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
                 ),
             },
             timeout: QueueOutboundTimeout {

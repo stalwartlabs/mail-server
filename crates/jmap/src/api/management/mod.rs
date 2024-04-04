@@ -21,6 +21,7 @@
  * for more details.
 */
 
+pub mod dkim;
 pub mod domain;
 pub mod principal;
 pub mod queue;
@@ -83,6 +84,7 @@ impl JMAP {
             "settings" if is_superuser => self.handle_manage_settings(req, path, body).await,
             "queue" if is_superuser => self.handle_manage_queue(req, path).await,
             "reports" if is_superuser => self.handle_manage_reports(req, path).await,
+            "dkim" if is_superuser => self.handle_manage_dkim(req, path, body).await,
             "oauth" => self.handle_oauth_api_request(access_token, body).await,
             "crypto" => match *req.method() {
                 Method::POST => self.handle_crypto_post(access_token, body).await,

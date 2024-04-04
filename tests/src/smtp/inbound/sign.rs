@@ -80,9 +80,8 @@ set-body-length = true
 report = true
 
 [signature.ed]
-public-key = '11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo='
 private-key = '-----BEGIN PRIVATE KEY-----
-nWGxne/9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A=
+MC4CAQAwBQYDK2VwBCIEIAO3hAf144lTAVjTkht3ZwBTK0CMCCd1bI0alggneN3B
 -----END PRIVATE KEY-----'
 domain = 'example.com'
 selector = 'ed'
@@ -142,6 +141,15 @@ verify = "relaxed"
 
 #[tokio::test]
 async fn sign_and_seal() {
+    // Enable logging
+    /*let disable = "true";
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    )
+    .unwrap();*/
+
     let tmp_dir = TempDir::new("smtp_sign_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
