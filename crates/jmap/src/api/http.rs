@@ -26,6 +26,7 @@ use std::{net::IpAddr, sync::Arc};
 use common::{
     expr::{functions::ResolveVariable, *},
     listener::{ServerInstance, SessionData, SessionManager, SessionStream},
+    manager::webadmin::Resource,
     Core,
 };
 use http_body_util::{BodyExt, Full};
@@ -270,7 +271,19 @@ impl JMAP {
                     Err(err) => err.into_http_response(),
                 };
             }
-            _ => (),
+            _ => {
+                let path = req.uri().path();
+                return match self
+                    .inner
+                    .webadmin
+                    .get(path.strip_prefix('/').unwrap_or(path))
+                    .await
+                {
+                    Ok(resource) if !resource.is_empty() => resource.into_http_response(),
+                    Err(err) => err.into_http_response(),
+                    _ => RequestError::not_found().into_http_response(),
+                };
+            }
         }
         RequestError::not_found().into_http_response()
     }
@@ -451,6 +464,14 @@ impl ToHttpResponse for store::Error {
     }
 }
 
+impl ToHttpResponse for std::io::Error {
+    fn into_http_response(self) -> HttpResponse {
+        tracing::error!(context = "i/o", error = %self, "I/O error");
+
+        RequestError::internal_server_error().into_http_response()
+    }
+}
+
 impl ToHttpResponse for serde_json::Error {
     fn into_http_response(self) -> HttpResponse {
         RequestError::blank(
@@ -520,6 +541,20 @@ impl ToHttpResponse for DownloadResponse {
             )
             .body(
                 Full::new(Bytes::from(self.blob))
+                    .map_err(|never| match never {})
+                    .boxed(),
+            )
+            .unwrap()
+    }
+}
+
+impl ToHttpResponse for Resource<Vec<u8>> {
+    fn into_http_response(self) -> HttpResponse {
+        hyper::Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, self.content_type)
+            .body(
+                Full::new(Bytes::from(self.contents))
                     .map_err(|never| match never {})
                     .boxed(),
             )

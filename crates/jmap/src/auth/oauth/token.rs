@@ -198,24 +198,33 @@ impl JMAP {
         .into_http_response()
     }
 
+    async fn password_hash(&self, account_id: u32) -> Result<String, &'static str> {
+        if account_id != u32::MAX {
+            self.core
+                .storage
+                .directory
+                .query(QueryBy::Id(account_id), false)
+                .await
+                .map_err(|_| "Temporary lookup error")?
+                .ok_or("Account no longer exists")?
+                .secrets
+                .into_iter()
+                .next()
+                .ok_or("Failed to obtain password hash")
+        } else if let Some((_, secret)) = &self.core.jmap.fallback_admin {
+            Ok(secret.clone())
+        } else {
+            Err("Invalid account id.")
+        }
+    }
+
     pub async fn issue_token(
         &self,
         account_id: u32,
         client_id: &str,
         with_refresh_token: bool,
     ) -> Result<OAuthResponse, &'static str> {
-        let password_hash = self
-            .core
-            .storage
-            .directory
-            .query(QueryBy::Id(account_id), false)
-            .await
-            .map_err(|_| "Temporary lookup error")?
-            .ok_or("Account no longer exists")?
-            .secrets
-            .into_iter()
-            .next()
-            .ok_or("Failed to obtain password hash")?;
+        let password_hash = self.password_hash(account_id).await?;
 
         Ok(OAuthResponse {
             access_token: self.encode_access_token(
@@ -324,18 +333,7 @@ impl JMAP {
         }
 
         // Obtain password hash
-        let password_hash = self
-            .core
-            .storage
-            .directory
-            .query(QueryBy::Id(account_id), false)
-            .await
-            .map_err(|_| "Temporary lookup error")?
-            .ok_or("Account no longer exists")?
-            .secrets
-            .into_iter()
-            .next()
-            .ok_or("Failed to obtain password hash")?;
+        let password_hash = self.password_hash(account_id).await?;
 
         // Build context
         let key = self.core.jmap.oauth_key.clone();

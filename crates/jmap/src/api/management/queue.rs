@@ -23,8 +23,7 @@
 
 use std::str::FromStr;
 
-use http_body_util::combinators::BoxBody;
-use hyper::{body::Bytes, Method};
+use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use mail_auth::{
     dmarc::URI,
@@ -42,7 +41,7 @@ use store::{
 use utils::url_params::UrlParams;
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, JsonResponse},
+    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
     JMAP,
 };
 
@@ -118,11 +117,7 @@ pub enum Report {
 }
 
 impl JMAP {
-    pub async fn handle_manage_queue(
-        &self,
-        req: &HttpRequest,
-        path: Vec<&str>,
-    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    pub async fn handle_manage_queue(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
         let params = UrlParams::new(req.uri().query());
 
         match (

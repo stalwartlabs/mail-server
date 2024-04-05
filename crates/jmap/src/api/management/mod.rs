@@ -32,14 +32,13 @@ pub mod stores;
 
 use std::{borrow::Cow, sync::Arc};
 
-use http_body_util::combinators::BoxBody;
-use hyper::{body::Bytes, Method};
+use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde::Serialize;
 
 use crate::{auth::AccessToken, JMAP};
 
-use super::{http::ToHttpResponse, HttpRequest, JsonResponse};
+use super::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 #[derive(Serialize)]
 #[serde(tag = "error")]
@@ -72,7 +71,7 @@ impl JMAP {
         req: &HttpRequest,
         body: Option<Vec<u8>>,
         access_token: Arc<AccessToken>,
-    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    ) -> HttpResponse {
         let path = req.uri().path().split('/').skip(2).collect::<Vec<_>>();
         let is_superuser = access_token.is_super_user();
 
@@ -85,16 +84,16 @@ impl JMAP {
             "queue" if is_superuser => self.handle_manage_queue(req, path).await,
             "reports" if is_superuser => self.handle_manage_reports(req, path).await,
             "dkim" if is_superuser => self.handle_manage_dkim(req, path, body).await,
+            "update" if is_superuser => self.handle_manage_update(req, path).await,
             "oauth" => self.handle_oauth_api_request(access_token, body).await,
             "crypto" => match *req.method() {
                 Method::POST => self.handle_crypto_post(access_token, body).await,
                 Method::GET => self.handle_crypto_get(access_token).await,
                 _ => RequestError::not_found().into_http_response(),
             },
-            "password" => match *req.method() {
-                Method::POST => self.handle_change_password(req, access_token, body).await,
-                _ => RequestError::not_found().into_http_response(),
-            },
+            "password" if req.method() == Method::POST => {
+                self.handle_change_password(req, access_token, body).await
+            }
             _ => RequestError::not_found().into_http_response(),
         }
     }

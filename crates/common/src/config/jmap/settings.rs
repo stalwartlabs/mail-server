@@ -61,6 +61,7 @@ pub struct JmapConfig {
     pub oauth_expiry_refresh_token: u64,
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
+    pub fallback_admin: Option<(String, String)>,
 
     pub spam_header: Option<(HeaderName<'static>, String)>,
 
@@ -78,6 +79,59 @@ pub struct JmapConfig {
 
 impl JmapConfig {
     pub fn parse(config: &mut Config) -> Self {
+        // Parse HTTP headers
+        let mut http_headers = config
+            .values("server.http.headers")
+            .map(|(_, v)| {
+                if let Some((k, v)) = v.split_once(':') {
+                    Ok((
+                        hyper::header::HeaderName::from_str(k.trim()).map_err(|err| {
+                            format!(
+                                "Invalid header found in property \"server.http.headers\": {}",
+                                err
+                            )
+                        })?,
+                        hyper::header::HeaderValue::from_str(v.trim()).map_err(|err| {
+                            format!(
+                                "Invalid header found in property \"server.http.headers\": {}",
+                                err
+                            )
+                        })?,
+                    ))
+                } else {
+                    Err(format!(
+                        "Invalid header found in property \"server.http.headers\": {}",
+                        v
+                    ))
+                }
+            })
+            .collect::<Result<Vec<_>, String>>()
+            .map_err(|e| config.new_parse_error("server.http.headers", e))
+            .unwrap_or_default();
+
+        // Add permissive CORS headers
+        if config
+            .property::<bool>("server.http.permissive-cors")
+            .unwrap_or(false)
+        {
+            http_headers.push((
+                hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                hyper::header::HeaderValue::from_static("*"),
+            ));
+            http_headers.push((
+                hyper::header::ACCESS_CONTROL_ALLOW_HEADERS,
+                hyper::header::HeaderValue::from_static(
+                    "Authorization, Content-Type, Accept, X-Requested-With",
+                ),
+            ));
+            http_headers.push((
+                hyper::header::ACCESS_CONTROL_ALLOW_METHODS,
+                hyper::header::HeaderValue::from_static(
+                    "POST, GET, PATCH, PUT, DELETE, HEAD, OPTIONS",
+                ),
+            ));
+        }
+
         let mut jmap = JmapConfig {
             default_language: Language::from_iso_639(
                 config
@@ -210,45 +264,21 @@ impl JmapConfig {
             encrypt_append: config
                 .property_or_default("storage.encryption.append", "false")
                 .unwrap_or(false),
-            spam_header: config.value("spam.header.is-spam").and_then(|v| {
-                v.split_once(':').map(|(k, v)| {
-                    (
-                        mail_parser::HeaderName::parse(k.trim().to_string()).unwrap(),
-                        v.trim().to_string(),
-                    )
-                })
-            }),
+            spam_header: config
+                .property_or_default::<Option<String>>("spam.header.is-spam", "X-Spam-Status: Yes")
+                .unwrap_or_default()
+                .and_then(|v| {
+                    v.split_once(':').map(|(k, v)| {
+                        (
+                            mail_parser::HeaderName::parse(k.trim().to_string()).unwrap(),
+                            v.trim().to_string(),
+                        )
+                    })
+                }),
             http_use_forwarded: config
                 .property("server.http.use-x-forwarded")
                 .unwrap_or(false),
-            http_headers: config
-                .values("server.http.headers")
-                .map(|(_, v)| {
-                    if let Some((k, v)) = v.split_once(':') {
-                        Ok((
-                            hyper::header::HeaderName::from_str(k.trim()).map_err(|err| {
-                                format!(
-                                    "Invalid header found in property \"server.http.headers\": {}",
-                                    err
-                                )
-                            })?,
-                            hyper::header::HeaderValue::from_str(v.trim()).map_err(|err| {
-                                format!(
-                                    "Invalid header found in property \"server.http.headers\": {}",
-                                    err
-                                )
-                            })?,
-                        ))
-                    } else {
-                        Err(format!(
-                            "Invalid header found in property \"server.http.headers\": {}",
-                            v
-                        ))
-                    }
-                })
-                .collect::<Result<Vec<_>, String>>()
-                .map_err(|e| config.new_parse_error("server.http.headers", e))
-                .unwrap_or_default(),
+            http_headers,
             push_attempt_interval: config
                 .property_or_default("jmap.push.attempts.interval", "1m")
                 .unwrap_or_else(|| Duration::from_secs(60)),
@@ -270,6 +300,13 @@ impl JmapConfig {
             session_purge_frequency: config
                 .property_or_default::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
                 .unwrap_or_else(|| SimpleCron::parse_value("15 * *").unwrap()),
+            fallback_admin: config
+                .value("authentication.fallback-admin.user")
+                .and_then(|u| {
+                    config
+                        .value("authentication.fallback-admin.secret")
+                        .map(|p| (u.to_string(), p.to_string()))
+                }),
         };
 
         // Add capabilities

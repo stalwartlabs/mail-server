@@ -21,15 +21,14 @@
  * for more details.
 */
 
-use http_body_util::combinators::BoxBody;
-use hyper::{body::Bytes, Method};
+use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
 use store::ahash::AHashMap;
 use utils::{config::ConfigKey, url_params::UrlParams};
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, JsonResponse},
+    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
     JMAP,
 };
 
@@ -57,7 +56,7 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
-    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    ) -> HttpResponse {
         match (path.get(1).copied(), req.method()) {
             (Some("group"), &Method::GET) => {
                 // List settings

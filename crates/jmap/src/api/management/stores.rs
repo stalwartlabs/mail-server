@@ -21,22 +21,17 @@
  * for more details.
 */
 
-use http_body_util::combinators::BoxBody;
-use hyper::{body::Bytes, Method};
+use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, JsonResponse},
+    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
     JMAP,
 };
 
 impl JMAP {
-    pub async fn handle_manage_store(
-        &self,
-        req: &HttpRequest,
-        path: Vec<&str>,
-    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    pub async fn handle_manage_store(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
         match (path.get(1).copied(), req.method()) {
             (Some("maintenance"), &Method::GET) => {
                 match self

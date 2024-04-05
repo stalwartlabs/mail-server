@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use directory::Directory;
 use store::{write::purge::PurgeSchedule, BlobStore, FtsStore, LookupStore, Store};
 
-use super::manager::ConfigManager;
+use crate::manager::config::ConfigManager;
 
 #[derive(Default, Clone)]
 pub struct Storage {

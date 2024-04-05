@@ -24,7 +24,7 @@
 use std::{collections::hash_map::RandomState, fmt::Display, sync::Arc, time::Duration};
 
 use auth::{rate_limit::ConcurrencyLimiters, AccessToken};
-use common::{Core, DeliveryEvent, SharedCore};
+use common::{manager::webadmin::WebAdminManager, Core, DeliveryEvent, SharedCore};
 use dashmap::DashMap;
 use directory::QueryBy;
 use email::cache::Threads;
@@ -98,6 +98,7 @@ pub struct Inner {
     pub sessions: TtlDashMap<String, u32>,
     pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
     pub snowflake_id: SnowflakeIdGenerator,
+    pub webadmin: WebAdminManager,
 
     pub concurrency_limiter: DashMap<u32, Arc<ConcurrencyLimiters>>,
 
@@ -131,6 +132,7 @@ impl JMAP {
         let capacity = config.property("cache.capacity").unwrap_or(100);
 
         let inner = Inner {
+            webadmin: WebAdminManager::new(),
             sessions: TtlDashMap::with_capacity(capacity, shard_amount),
             access_tokens: TtlDashMap::with_capacity(capacity, shard_amount),
             snowflake_id: config
@@ -148,6 +150,11 @@ impl JMAP {
                 config.property("cache.thread.size").unwrap_or(2048),
             ),
         };
+
+        // Unpack webadmin
+        if let Err(err) = inner.webadmin.unpack(&core.load().storage.blob).await {
+            tracing::warn!(event = "error", error = ?err, "Failed to unpack webadmin bundle.");
+        }
 
         let jmap_instance = JmapInstance {
             core,

@@ -24,7 +24,7 @@
 use std::{net::IpAddr, sync::Arc, time::Instant};
 
 use common::{listener::limiter::InFlight, AuthResult};
-use directory::QueryBy;
+use directory::{Principal, QueryBy};
 use hyper::header;
 use jmap_proto::error::request::RequestError;
 use mail_parser::decoders::base64::base64_decode;
@@ -179,15 +179,21 @@ impl JMAP {
     }
 
     pub async fn get_access_token(&self, account_id: u32) -> Option<AccessToken> {
-        // Create access token
-        self.update_access_token(AccessToken::new(
-            self.core
-                .storage
-                .directory
-                .query(QueryBy::Id(account_id), true)
-                .await
-                .ok()??,
-        ))
-        .await
+        match self
+            .core
+            .storage
+            .directory
+            .query(QueryBy::Id(account_id), true)
+            .await
+        {
+            Ok(Some(principal)) => self.update_access_token(AccessToken::new(principal)).await,
+            _ => match &self.core.jmap.fallback_admin {
+                Some((_, secret)) if account_id == u32::MAX => {
+                    self.update_access_token(AccessToken::new(Principal::fallback_admin(secret)))
+                        .await
+                }
+                _ => None,
+            },
+        }
     }
 }

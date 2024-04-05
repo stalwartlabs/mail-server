@@ -33,8 +33,8 @@ use ahash::AHashMap;
 
 use crate::{
     backend::{
-        imap::ImapDirectory, internal::manage::ManageDirectory, ldap::LdapDirectory,
-        memory::MemoryDirectory, smtp::SmtpDirectory, sql::SqlDirectory,
+        imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
+        sql::SqlDirectory,
     },
     Directories, Directory, DirectoryInner,
 };
@@ -68,15 +68,7 @@ impl Directories {
                 "internal" => Some(DirectoryInner::Internal(
                     if let Some(store_id) = config.value_require(("directory", id, "store")) {
                         if let Some(data) = stores.stores.get(store_id) {
-                            match data.clone().init().await {
-                                Ok(data) => data,
-                                Err(err) => {
-                                    let err =
-                                        format!("Failed to initialize store {store_id:?}: {err:?}");
-                                    config.new_parse_error(("directory", id, "store"), err);
-                                    continue;
-                                }
-                            }
+                            data.clone()
                         } else {
                             config.new_parse_error(
                                 ("directory", id, "store"),

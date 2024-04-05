@@ -155,9 +155,9 @@ pub enum PrincipalField {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PrincipalUpdate {
-    action: PrincipalAction,
-    field: PrincipalField,
-    value: PrincipalValue,
+    pub action: PrincipalAction,
+    pub field: PrincipalField,
+    pub value: PrincipalValue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

@@ -21,23 +21,19 @@
  * for more details.
 */
 
-use http_body_util::combinators::BoxBody;
-use hyper::{body::Bytes, Method};
+use common::manager::SPAMFILTER_URL;
+use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
 use utils::url_params::UrlParams;
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, JsonResponse},
+    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
     JMAP,
 };
 
 impl JMAP {
-    pub async fn handle_manage_reload(
-        &self,
-        req: &HttpRequest,
-        path: Vec<&str>,
-    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    pub async fn handle_manage_reload(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
         match (path.get(1).copied(), req.method()) {
             (Some("lookup"), &Method::GET) => {
                 match self.core.reload_lookups().await {
@@ -86,6 +82,41 @@ impl JMAP {
                         }))
                         .into_http_response()
                     }
+                    Err(err) => err.into_http_response(),
+                }
+            }
+            _ => RequestError::not_found().into_http_response(),
+        }
+    }
+
+    pub async fn handle_manage_update(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
+        match (path.get(1).copied(), req.method()) {
+            (Some("spam-filter"), &Method::GET) => {
+                match self
+                    .core
+                    .storage
+                    .config
+                    .update_external_config(SPAMFILTER_URL)
+                    .await
+                {
+                    Ok(result) => JsonResponse::new(json!({
+                        "data": result,
+                    }))
+                    .into_http_response(),
+                    Err(err) => err.into_http_response(),
+                }
+            }
+            (Some("webadmin"), &Method::GET) => {
+                match self
+                    .inner
+                    .webadmin
+                    .update_and_unpack(&self.core.storage.blob)
+                    .await
+                {
+                    Ok(_) => JsonResponse::new(json!({
+                        "data": (),
+                    }))
+                    .into_http_response(),
                     Err(err) => err.into_http_response(),
                 }
             }

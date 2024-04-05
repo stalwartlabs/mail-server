@@ -13,7 +13,7 @@ use config::{
     storage::Storage,
     tracers::{OtelTracer, Tracer, Tracers},
 };
-use directory::{Directory, Principal, QueryBy};
+use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy};
 use expr::if_block::IfBlock;
 use listener::{blocked::BlockedIps, tls::TlsManager};
 use mail_send::Credentials;
@@ -26,15 +26,17 @@ use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION
 use sieve::Sieve;
 use store::LookupStore;
 use tokio::sync::oneshot;
-use tracing::{level_filters::LevelFilter, Level};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use tracing_subscriber::{
+    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer, Registry,
+};
 use utils::{config::Config, BlobHash};
 
 pub mod addresses;
 pub mod config;
 pub mod expr;
 pub mod listener;
+pub mod manager;
 pub mod scripts;
 
 pub static USER_AGENT: &str = concat!("StalwartMail/", env!("CARGO_PKG_VERSION"),);
@@ -205,11 +207,29 @@ impl Core {
         remote_ip: IpAddr,
         return_member_of: bool,
     ) -> directory::Result<AuthResult<Principal<u32>>> {
-        if let Some(principal) = directory
+        // First try to authenticate the user against the default directory
+        let result = match directory
             .query(QueryBy::Credentials(credentials), return_member_of)
-            .await?
+            .await
         {
-            Ok(AuthResult::Success(principal))
+            Ok(Some(principal)) => return Ok(AuthResult::Success(principal)),
+            Ok(None) => Ok(()),
+            Err(err) => Err(err),
+        };
+
+        // Then check if the credentials match the fallback admin
+        if let (Some((fallback_admin, fallback_pass)), Credentials::Plain { username, secret }) =
+            (&self.jmap.fallback_admin, credentials)
+        {
+            if username == fallback_admin && verify_secret_hash(fallback_pass, secret).await {
+                return Ok(AuthResult::Success(Principal::fallback_admin(
+                    fallback_pass,
+                )));
+            }
+        }
+
+        if let Err(err) = result {
+            Err(err)
         } else if self.has_fail2ban() {
             let login = match credentials {
                 Credentials::Plain { username, .. }
@@ -237,60 +257,42 @@ impl Core {
 
 impl Tracers {
     pub fn enable(self, config: &mut Config) -> Option<Vec<WorkerGuard>> {
-        let mut layers = Vec::new();
-        let mut level = Level::TRACE;
-
-        for tracer in &self.tracers {
-            let tracer_level = *match tracer {
-                Tracer::Stdout { level, .. }
-                | Tracer::Log { level, .. }
-                | Tracer::Journal { level }
-                | Tracer::Otel { level, .. } => level,
-            };
-
-            if tracer_level < level {
-                level = tracer_level;
-            }
-        }
-
+        let mut layers: Option<Box<dyn Layer<Registry> + Sync + Send>> = None;
         let mut guards = Vec::new();
-        match EnvFilter::builder().parse(format!(
-            "smtp={level},imap={level},jmap={level},store={level},common={level},utils={level},directory={level}"
-        )) {
-            Ok(layer) => {
-                layers.push(layer.boxed());
-            }
-            Err(err) => {
-                config.new_build_error("tracer", format!("Failed to set env filter: {err}"));
-            }
-        }
 
         for tracer in self.tracers {
-            match tracer {
-                Tracer::Stdout { level, ansi } => {
-                    layers.push(
-                        tracing_subscriber::fmt::layer()
-                            .with_ansi(ansi)
-                            .with_filter(LevelFilter::from_level(level))
-                            .boxed(),
-                    );
+            let (Tracer::Stdout { level, .. }
+            | Tracer::Log { level, .. }
+            | Tracer::Journal { level }
+            | Tracer::Otel { level, .. }) = tracer;
+
+            let filter = match EnvFilter::builder().parse(format!(
+                "smtp={level},imap={level},jmap={level},store={level},common={level},utils={level},directory={level}"
+            )) {
+                Ok(filter) => {
+                    filter
                 }
-                Tracer::Log {
-                    level,
-                    appender,
-                    ansi,
-                } => {
+                Err(err) => {
+                    config.new_build_error("tracer", format!("Failed to set env filter: {err}"));
+                    continue;
+                }
+            };
+
+            let layer = match tracer {
+                Tracer::Stdout { ansi, .. } => tracing_subscriber::fmt::layer()
+                    .with_ansi(ansi)
+                    .with_filter(filter)
+                    .boxed(),
+                Tracer::Log { appender, ansi, .. } => {
                     let (non_blocking, guard) = tracing_appender::non_blocking(appender);
                     guards.push(guard);
-                    layers.push(
-                        tracing_subscriber::fmt::layer()
-                            .with_writer(non_blocking)
-                            .with_ansi(ansi)
-                            .with_filter(LevelFilter::from_level(level))
-                            .boxed(),
-                    );
+                    tracing_subscriber::fmt::layer()
+                        .with_writer(non_blocking)
+                        .with_ansi(ansi)
+                        .with_filter(filter)
+                        .boxed()
                 }
-                Tracer::Otel { level, tracer } => {
+                Tracer::Otel { tracer, .. } => {
                     let tracer = match tracer {
                         OtelTracer::Gprc(exporter) => opentelemetry_otlp::new_pipeline()
                             .tracing()
@@ -313,36 +315,30 @@ impl Tracers {
                     .install_batch(opentelemetry_sdk::runtime::Tokio);
 
                     match tracer {
-                        Ok(tracer) => {
-                            layers.push(
-                                tracing_opentelemetry::layer()
-                                    .with_tracer(tracer)
-                                    .with_filter(LevelFilter::from_level(level))
-                                    .boxed(),
-                            );
-                        }
+                        Ok(tracer) => tracing_opentelemetry::layer()
+                            .with_tracer(tracer)
+                            .with_filter(filter)
+                            .boxed(),
                         Err(err) => {
                             config.new_build_error(
                                 "tracer",
                                 format!("Failed to start OpenTelemetry: {err}"),
                             );
+                            continue;
                         }
                     }
                 }
-                Tracer::Journal { level } => {
+                Tracer::Journal { .. } => {
                     #[cfg(unix)]
                     {
                         match tracing_journald::layer() {
-                            Ok(layer) => {
-                                layers.push(
-                                    layer.with_filter(LevelFilter::from_level(level)).boxed(),
-                                );
-                            }
+                            Ok(layer) => layer.with_filter(filter).boxed(),
                             Err(err) => {
                                 config.new_build_error(
                                     "tracer",
                                     format!("Failed to start Journald: {err}"),
                                 );
+                                continue;
                             }
                         }
                     }
@@ -353,21 +349,23 @@ impl Tracers {
                             "tracer",
                             "Journald is only available on Unix systems.",
                         );
+                        continue;
                     }
                 }
-            }
+            };
+
+            layers = Some(match layers {
+                Some(layers) => layers.and_then(layer).boxed(),
+                None => layer,
+            });
         }
 
-        if layers.len() > 1 {
-            match tracing_subscriber::registry().with(layers).try_init() {
-                Ok(_) => Some(guards),
-                Err(err) => {
-                    config.new_build_error("tracer", format!("Failed to start tracing: {err}"));
-                    None
-                }
+        match tracing_subscriber::registry().with(layers?).try_init() {
+            Ok(_) => Some(guards),
+            Err(err) => {
+                config.new_build_error("tracer", format!("Failed to start tracing: {err}"));
+                None
             }
-        } else {
-            None
         }
     }
 }

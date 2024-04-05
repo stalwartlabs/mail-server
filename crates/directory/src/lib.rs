@@ -201,6 +201,19 @@ impl From<PoolError<mail_send::Error>> for DirectoryError {
     }
 }
 
+impl Principal<u32> {
+    pub fn fallback_admin(fallback_pass: impl Into<String>) -> Self {
+        Principal {
+            id: u32::MAX,
+            typ: Type::Superuser,
+            quota: 0,
+            name: "Fallback Administrator".to_string(),
+            secrets: vec![fallback_pass.into()],
+            ..Default::default()
+        }
+    }
+}
+
 impl From<LdapError> for DirectoryError {
     fn from(error: LdapError) -> Self {
         tracing::warn!(

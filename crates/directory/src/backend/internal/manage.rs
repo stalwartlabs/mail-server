@@ -22,14 +22,11 @@
 */
 
 use jmap_proto::types::collection::Collection;
-use pwhash::sha512_crypt;
 use store::{
-    rand::{distributions::Alphanumeric, thread_rng, Rng},
     write::{
-        assert::HashedValue, key::DeserializeBigEndian, BatchBuilder, BitmapClass, DirectoryClass,
-        ValueClass,
+        assert::HashedValue, key::DeserializeBigEndian, BatchBuilder, DirectoryClass, ValueClass,
     },
-    BitmapKey, Deserialize, IterateParams, Serialize, Store, ValueKey, U32_LEN,
+    Deserialize, IterateParams, Serialize, Store, ValueKey, U32_LEN,
 };
 
 use crate::{DirectoryError, ManagementError, Principal, QueryBy, Type};
@@ -76,7 +73,6 @@ pub trait ManageDirectory: Sized {
     async fn create_domain(&self, domain: &str) -> crate::Result<()>;
     async fn delete_domain(&self, domain: &str) -> crate::Result<()>;
     async fn list_domains(&self, filter: Option<&str>) -> crate::Result<Vec<String>>;
-    async fn init(self) -> crate::Result<Self>;
 }
 
 impl ManageDirectory for Store {
@@ -972,85 +968,6 @@ impl ManageDirectory for Store {
         )
         .await?;
         Ok(results)
-    }
-
-    async fn init(self) -> crate::Result<Self> {
-        // Create admin account if requested
-        if let (Ok(admin_user), Ok(admin_pass)) = (
-            std::env::var("SET_ADMIN_USER"),
-            std::env::var("SET_ADMIN_PASS"),
-        ) {
-            if let Some(account_id) = self.get_account_id(&admin_user).await? {
-                self.update_account(
-                    QueryBy::Id(account_id),
-                    vec![PrincipalUpdate {
-                        action: PrincipalAction::Set,
-                        field: PrincipalField::Secrets,
-                        value: PrincipalValue::StringList(vec![admin_pass]),
-                    }],
-                )
-                .await?;
-                eprintln!("Successfully updated password for {admin_user:?}.");
-            } else {
-                self.create_account(
-                    Principal {
-                        typ: Type::Superuser,
-                        quota: 0,
-                        name: admin_user.clone(),
-                        secrets: vec![admin_pass],
-                        emails: vec![],
-                        member_of: vec![],
-                        description: "Superuser".to_string().into(),
-                        ..Default::default()
-                    },
-                    vec![],
-                )
-                .await?;
-                eprintln!("Successfully created administrator account {admin_user:?}.");
-            }
-            std::process::exit(0);
-        }
-
-        // Create a default administrator account if none exists
-        if self
-            .get_bitmap(BitmapKey {
-                account_id: u32::MAX,
-                collection: Collection::Principal.into(),
-                class: BitmapClass::DocumentIds,
-                block_num: 0,
-            })
-            .await?
-            .unwrap_or_default()
-            .is_empty()
-        {
-            let secret = thread_rng()
-                .sample_iter(Alphanumeric)
-                .take(12)
-                .map(char::from)
-                .collect::<String>();
-            let hashed_secret = sha512_crypt::hash(&secret).unwrap();
-
-            self.create_account(
-                Principal {
-                    typ: Type::Superuser,
-                    quota: 0,
-                    name: "admin".to_string(),
-                    secrets: vec![hashed_secret],
-                    emails: vec![],
-                    member_of: vec![],
-                    description: "Superuser".to_string().into(),
-                    ..Default::default()
-                },
-                vec![],
-            )
-            .await?;
-
-            tracing::info!(
-                "Created default administrator account \"admin\" with password {secret:?}."
-            )
-        }
-
-        Ok(self)
     }
 }
 

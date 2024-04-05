@@ -5,16 +5,15 @@ use directory::{Directories, Directory};
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use utils::config::Config;
 
-use crate::{expr::*, listener::tls::TlsManager, Core, Network};
+use crate::{expr::*, listener::tls::TlsManager, manager::config::ConfigManager, Core, Network};
 
 use self::{
-    imap::ImapConfig, jmap::settings::JmapConfig, manager::ConfigManager, scripts::Scripting,
-    smtp::SmtpConfig, storage::Storage,
+    imap::ImapConfig, jmap::settings::JmapConfig, scripts::Scripting, smtp::SmtpConfig,
+    storage::Storage,
 };
 
 pub mod imap;
 pub mod jmap;
-pub mod manager;
 pub mod network;
 pub mod scripts;
 pub mod server;

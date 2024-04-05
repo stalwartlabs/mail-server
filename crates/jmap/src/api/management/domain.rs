@@ -22,8 +22,8 @@
 */
 
 use directory::backend::internal::manage::ManageDirectory;
-use http_body_util::combinators::BoxBody;
-use hyper::{body::Bytes, Method};
+
+use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -34,7 +34,7 @@ use crate::{
     api::{
         http::ToHttpResponse,
         management::dkim::{obtain_dkim_public_key, Algorithm},
-        HttpRequest, JsonResponse,
+        HttpRequest, HttpResponse, JsonResponse,
     },
     JMAP,
 };
@@ -48,11 +48,7 @@ struct DnsRecord {
 }
 
 impl JMAP {
-    pub async fn handle_manage_domain(
-        &self,
-        req: &HttpRequest,
-        path: Vec<&str>,
-    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    pub async fn handle_manage_domain(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
         match (path.get(1), req.method()) {
             (None, &Method::GET) => {
                 // List domains
@@ -97,10 +93,28 @@ impl JMAP {
             (Some(domain), &Method::POST) => {
                 // Create domain
                 match self.core.storage.data.create_domain(domain).await {
-                    Ok(_) => JsonResponse::new(json!({
-                        "data": (),
-                    }))
-                    .into_http_response(),
+                    Ok(_) => {
+                        // Set default domain name if missing
+                        if matches!(
+                            self.core.storage.config.get("lookup.default.domain").await,
+                            Ok(None)
+                        ) {
+                            if let Err(err) = self
+                                .core
+                                .storage
+                                .config
+                                .set([("lookup.default.domain", *domain)])
+                                .await
+                            {
+                                tracing::error!("Failed to set default domain name: {}", err);
+                            }
+                        }
+
+                        JsonResponse::new(json!({
+                            "data": (),
+                        }))
+                        .into_http_response()
+                    }
                     Err(err) => err.into_http_response(),
                 }
             }

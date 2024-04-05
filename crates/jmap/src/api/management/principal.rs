@@ -30,8 +30,8 @@ use directory::{
     },
     DirectoryError, DirectoryInner, ManagementError, Principal, QueryBy, Type,
 };
-use http_body_util::combinators::BoxBody;
-use hyper::{body::Bytes, header, Method, StatusCode};
+
+use hyper::{header, Method, StatusCode};
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
 use utils::url_params::UrlParams;
@@ -76,7 +76,7 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
-    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    ) -> HttpResponse {
         match (path.get(1), req.method()) {
             (None, &Method::POST) => {
                 // Make sure the current directory supports updates
@@ -251,6 +251,18 @@ impl JMAP {
                             body.as_deref().unwrap_or_default(),
                         ) {
                             Ok(changes) => {
+                                // Make sure the current directory supports updates
+                                if let Some(response) = self.assert_supported_directory() {
+                                    if changes.iter().any(|change| {
+                                        !matches!(
+                                            change.field,
+                                            PrincipalField::Quota | PrincipalField::Description
+                                        )
+                                    }) {
+                                        return response;
+                                    }
+                                }
+
                                 match self
                                     .core
                                     .storage
@@ -281,7 +293,7 @@ impl JMAP {
         req: &HttpRequest,
         access_token: Arc<AccessToken>,
         body: Option<Vec<u8>>,
-    ) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
+    ) -> HttpResponse {
         // Make sure the user authenticated using Basic auth
         if req
             .headers()
@@ -295,11 +307,7 @@ impl JMAP {
             .into_http_response();
         }
 
-        // Make sure the current directory supports updates
-        if let Some(response) = self.assert_supported_directory() {
-            return response;
-        }
-
+        // Obtain new password
         let new_password = match String::from_utf8(body.unwrap_or_default()) {
             Ok(new_password) if !new_password.is_empty() => new_password,
             _ => {
@@ -309,6 +317,28 @@ impl JMAP {
                 .into_http_response()
             }
         };
+
+        // Handle Fallback admin password changes
+        if access_token.is_super_user() && access_token.primary_id() == u32::MAX {
+            return match self
+                .core
+                .storage
+                .config
+                .set([("authentication.fallback-admin.secret", new_password)])
+                .await
+            {
+                Ok(_) => JsonResponse::new(json!({
+                    "data": (),
+                }))
+                .into_http_response(),
+                Err(err) => err.into_http_response(),
+            };
+        }
+
+        // Make sure the current directory supports updates
+        if let Some(response) = self.assert_supported_directory() {
+            return response;
+        }
 
         // Update password
         match self
@@ -332,9 +362,7 @@ impl JMAP {
         }
     }
 
-    pub fn assert_supported_directory(
-        &self,
-    ) -> Option<hyper::Response<BoxBody<Bytes, hyper::Error>>> {
+    pub fn assert_supported_directory(&self) -> Option<HttpResponse> {
         ManagementApiError::UnsupportedDirectoryOperation {
             class: match &self.core.storage.directory.store {
                 DirectoryInner::Internal(_) => return None,

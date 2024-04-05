@@ -109,7 +109,7 @@ async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> bool {
     }
 }
 
-async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
+pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
     if hashed_secret.starts_with('$') {
         verify_hash_prefix(hashed_secret, secret).await
     } else if hashed_secret.starts_with('_') {

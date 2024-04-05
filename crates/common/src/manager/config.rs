@@ -1,37 +1,50 @@
+/*
+ * Copyright (c) 2023 Stalwart Labs Ltd.
+ *
+ * This file is part of Stalwart Mail Server.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * in the LICENSE file at the top-level directory of this distribution.
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * You can be released from the requirements of the AGPLv3 license by
+ * purchasing a commercial license. Please contact licensing@stalw.art
+ * for more details.
+*/
+
 use std::{
     collections::{btree_map::Entry, BTreeMap},
     path::PathBuf,
     sync::Arc,
 };
 
-use ahash::AHashSet;
 use arc_swap::ArcSwap;
-use parking_lot::RwLock;
 use store::{
     write::{BatchBuilder, ValueClass},
-    Deserialize, IterateParams, Store, Stores, ValueKey,
+    Deserialize, IterateParams, Store, ValueKey,
 };
-use tracing_appender::non_blocking::WorkerGuard;
 use utils::{
-    config::{ipmask::IpAddrOrMask, utils::ParseValue, Config, ConfigKey},
-    failed,
+    config::{Config, ConfigKey},
     glob::GlobPattern,
-    UnwrapFailure,
 };
 
-use crate::{listener::blocked::BLOCKED_IP_KEY, Core, SharedCore};
-
-use super::{
-    server::{tls::parse_certificates, Servers},
-    tracers::Tracers,
-};
+use super::download_resource;
 
 #[derive(Default)]
 pub struct ConfigManager {
-    cfg_local: ArcSwap<BTreeMap<String, String>>,
-    cfg_local_path: PathBuf,
-    cfg_local_patterns: Arc<Patterns>,
-    cfg_store: Store,
+    pub cfg_local: ArcSwap<BTreeMap<String, String>>,
+    pub cfg_local_path: PathBuf,
+    pub cfg_local_patterns: Arc<Patterns>,
+    pub cfg_store: Store,
 }
 
 #[derive(Default)]
@@ -44,11 +57,6 @@ enum Pattern {
     Exclude(MatchType),
 }
 
-pub struct ReloadResult {
-    pub config: Config,
-    pub new_core: Option<Core>,
-}
-
 enum MatchType {
     Equal(String),
     StartsWith(String),
@@ -57,102 +65,10 @@ enum MatchType {
     All,
 }
 
-pub struct BootManager {
-    pub config: Config,
-    pub core: SharedCore,
-    pub servers: Servers,
-    pub guards: Option<Vec<WorkerGuard>>,
-}
-
-impl BootManager {
-    pub async fn init() -> Self {
-        let mut config_path = std::env::var("CONFIG_PATH").ok();
-        let mut found_param = false;
-
-        if config_path.is_none() {
-            for arg in std::env::args().skip(1) {
-                if let Some((key, value)) = arg.split_once('=') {
-                    if key.starts_with("--config") {
-                        config_path = value.trim().to_string().into();
-                        break;
-                    } else {
-                        failed(&format!("Invalid command line argument: {key}"));
-                    }
-                } else if found_param {
-                    config_path = arg.into();
-                    break;
-                } else if arg.starts_with("--config") {
-                    found_param = true;
-                } else {
-                    failed(&format!("Invalid command line argument: {arg}"));
-                }
-            }
-        }
-
-        // Read main configuration file
-        let cfg_local_path =
-            PathBuf::from(config_path.failed("Missing parameter --config=<path-to-config>."));
-        let mut config = Config::default();
-        match std::fs::read_to_string(&cfg_local_path) {
-            Ok(value) => {
-                config.parse(&value).failed("Invalid configuration file");
-            }
-            Err(err) => {
-                config.new_build_error("*", format!("Could not read configuration file: {err}"));
-            }
-        }
-        let cfg_local = config.keys.clone();
-
-        // Resolve macros
-        config.resolve_macros().await;
-
-        // Parser servers
-        let mut servers = Servers::parse(&mut config);
-
-        // Bind ports and drop privileges
-        servers.bind_and_drop_priv(&mut config);
-
-        // Load stores
-        let mut stores = Stores::parse(&mut config).await;
-
-        // Build manager
-        let manager = ConfigManager {
-            cfg_local: ArcSwap::from_pointee(cfg_local),
-            cfg_local_path,
-            cfg_local_patterns: Patterns::parse(&mut config).into(),
-            cfg_store: config
-                .value("storage.data")
-                .and_then(|id| stores.stores.get(id))
-                .cloned()
-                .unwrap_or_default(),
-        };
-
-        // Extend configuration with settings stored in the db
-        if !manager.cfg_store.is_none() {
-            manager
-                .extend_config(&mut config, "")
-                .await
-                .failed("Failed to read configuration");
-        }
-
-        // Parse lookup stores
-        stores.parse_lookups(&mut config).await;
-
-        // Parse settings and build shared core
-        let core = Core::parse(&mut config, stores, manager)
-            .await
-            .into_shared();
-
-        // Parse TCP acceptors
-        servers.parse_tcp_acceptors(&mut config, core.clone());
-
-        BootManager {
-            core,
-            guards: Tracers::parse(&mut config).enable(&mut config),
-            config,
-            servers,
-        }
-    }
+pub(crate) struct ExternalConfig {
+    pub id: String,
+    pub version: String,
+    pub keys: Vec<ConfigKey>,
 }
 
 impl ConfigManager {
@@ -167,7 +83,11 @@ impl ConfigManager {
             .map(|_| config)
     }
 
-    async fn extend_config(&self, config: &mut Config, prefix: &str) -> store::Result<()> {
+    pub(crate) async fn extend_config(
+        &self,
+        config: &mut Config,
+        prefix: &str,
+    ) -> store::Result<()> {
         for (key, value) in self.db_list(prefix, false).await? {
             config.keys.entry(key).or_insert(value);
         }
@@ -399,124 +319,73 @@ impl ConfigManager {
                 ))
             })
     }
-}
 
-impl Core {
-    pub async fn reload_blocked_ips(&self) -> store::Result<ReloadResult> {
-        let mut ip_addresses = AHashSet::new();
-        let mut config = self.storage.config.build_config(BLOCKED_IP_KEY).await?;
+    pub async fn update_external_config(&self, url: &str) -> store::Result<Option<String>> {
+        let external = self
+            .fetch_external_config(url)
+            .await
+            .map_err(store::Error::InternalError)?;
 
-        for ip in config
-            .set_values(BLOCKED_IP_KEY)
-            .map(IpAddrOrMask::parse_value)
-            .collect::<Vec<_>>()
+        if self
+            .get(&external.id)
+            .await?
+            .map_or(true, |v| v != external.version)
         {
-            match ip {
-                Ok(IpAddrOrMask::Ip(ip)) => {
-                    ip_addresses.insert(ip);
-                }
-                Ok(IpAddrOrMask::Mask(_)) => {}
-                Err(err) => {
-                    config.new_parse_error(BLOCKED_IP_KEY, err);
-                }
-            }
-        }
-
-        *self.network.blocked_ips.ip_addresses.write() = ip_addresses;
-
-        Ok(config.into())
-    }
-
-    pub async fn reload_certificates(&self) -> store::Result<ReloadResult> {
-        let mut config = self.storage.config.build_config("certificate").await?;
-        let mut certificates = self.tls.certificates.load().as_ref().clone();
-
-        parse_certificates(&mut config, &mut certificates, &mut Default::default());
-
-        self.tls.certificates.store(certificates.into());
-
-        Ok(config.into())
-    }
-
-    pub async fn reload_lookups(&self) -> store::Result<ReloadResult> {
-        let mut config = self.storage.config.build_config("certificate").await?;
-        let mut stores = Stores::default();
-        stores.parse_memory_stores(&mut config);
-
-        let mut core = self.clone();
-        for (id, store) in stores.lookup_stores {
-            core.storage.lookups.insert(id, store);
-        }
-
-        Ok(ReloadResult {
-            config,
-            new_core: core.into(),
-        })
-    }
-
-    pub async fn reload(&self) -> store::Result<ReloadResult> {
-        let mut config = self.storage.config.build_config("").await?;
-
-        // Parse tracers
-        Tracers::parse(&mut config);
-
-        // Load stores
-        let mut stores = Stores {
-            stores: self.storage.stores.clone(),
-            blob_stores: self.storage.blobs.clone(),
-            fts_stores: self.storage.ftss.clone(),
-            lookup_stores: self.storage.lookups.clone(),
-            purge_schedules: Default::default(),
-        };
-        stores.parse_stores(&mut config).await;
-        stores.parse_lookups(&mut config).await;
-        if !config.errors.is_empty() {
-            return Ok(config.into());
-        }
-
-        // Build manager
-        let manager = ConfigManager {
-            cfg_local: ArcSwap::from_pointee(self.storage.config.cfg_local.load().as_ref().clone()),
-            cfg_local_path: self.storage.config.cfg_local_path.clone(),
-            cfg_local_patterns: Patterns::parse(&mut config).into(),
-            cfg_store: config
-                .value("storage.data")
-                .and_then(|id| stores.stores.get(id))
-                .cloned()
-                .unwrap_or_default(),
-        };
-
-        // Parse settings and build shared core
-        let mut core = Core::parse(&mut config, stores, manager).await;
-        if !config.errors.is_empty() {
-            return Ok(config.into());
-        }
-        // Transfer Sieve cache
-        core.sieve.bayes_cache = self.sieve.bayes_cache.clone();
-        core.sieve.remote_lists = RwLock::new(self.sieve.remote_lists.read().clone());
-
-        // Copy ACME certificates
-        let mut certificates = core.tls.certificates.load().as_ref().clone();
-        for (cert_id, cert) in self.tls.certificates.load().iter() {
-            certificates
-                .entry(cert_id.to_string())
-                .or_insert(cert.clone());
-        }
-        core.tls.certificates.store(certificates.into());
-        core.tls.self_signed_cert = self.tls.self_signed_cert.clone();
-
-        // Parser servers
-        let mut servers = Servers::parse(&mut config);
-        servers.parse_tcp_acceptors(&mut config, core.clone().into_shared());
-
-        Ok(if config.errors.is_empty() {
-            ReloadResult {
-                config,
-                new_core: core.into(),
-            }
+            self.set(external.keys).await?;
+            Ok(Some(external.version))
         } else {
-            config.into()
-        })
+            tracing::debug!(
+                context = "config",
+                event = "update",
+                url = url,
+                version = external.version,
+                "Configuration version is up-to-date"
+            );
+            Ok(None)
+        }
+    }
+
+    pub(crate) async fn fetch_external_config(&self, url: &str) -> Result<ExternalConfig, String> {
+        let config = String::from_utf8(download_resource(url).await?)
+            .map_err(|err| format!("Configuration file has invalid UTF-8: {err}"))?;
+        let config = Config::new(config)
+            .map_err(|err| format!("Failed to parse external configuration: {err}"))?;
+
+        // Import configuration
+        let mut external = ExternalConfig {
+            id: String::new(),
+            version: String::new(),
+            keys: Vec::new(),
+        };
+        for (key, value) in config.keys {
+            if key.starts_with("version.") {
+                external.id = key.clone();
+                external.version = value.clone();
+                external.keys.push(ConfigKey::from((key, value)));
+            } else if key.starts_with("queue.quota.")
+                || key.starts_with("queue.throttle.")
+                || key.starts_with("session.throttle.")
+                || (key.starts_with("lookup.") && !key.starts_with("lookup.default."))
+                || key.starts_with("sieve.trusted.scripts.")
+            {
+                external.keys.push(ConfigKey::from((key, value)));
+            } else {
+                tracing::debug!(
+                    context = "config",
+                    event = "import",
+                    key = key,
+                    value = value,
+                    url = url,
+                    "Ignoring key"
+                );
+            }
+        }
+
+        if !external.version.is_empty() {
+            Ok(external)
+        } else {
+            Err("External configuration file does not contain a version key".to_string())
+        }
     }
 }
 
@@ -560,20 +429,19 @@ impl Patterns {
         if cfg_local_patterns.is_empty() {
             cfg_local_patterns = vec![
                 Pattern::Include(MatchType::StartsWith("store.".to_string())),
-                Pattern::Include(MatchType::StartsWith("server.listener.".to_string())),
-                Pattern::Include(MatchType::StartsWith("server.socket.".to_string())),
-                Pattern::Include(MatchType::StartsWith("server.tls.".to_string())),
+                Pattern::Include(MatchType::StartsWith("directory.".to_string())),
+                Pattern::Include(MatchType::StartsWith("tracer.".to_string())),
+                Pattern::Include(MatchType::StartsWith("server.".to_string())),
+                Pattern::Include(MatchType::StartsWith(
+                    "authentication.fallback-admin.".to_string(),
+                )),
                 Pattern::Include(MatchType::Equal("cluster.node-id".to_string())),
                 Pattern::Include(MatchType::Equal("storage.data".to_string())),
                 Pattern::Include(MatchType::Equal("storage.blob".to_string())),
                 Pattern::Include(MatchType::Equal("storage.lookup".to_string())),
                 Pattern::Include(MatchType::Equal("storage.fts".to_string())),
-                Pattern::Include(MatchType::Equal("server.run-as.user".to_string())),
-                Pattern::Include(MatchType::Equal("server.run-as.group".to_string())),
-                Pattern::Exclude(MatchType::Matches(GlobPattern::compile(
-                    "store.*.query.*",
-                    false,
-                ))),
+                Pattern::Include(MatchType::Equal("storage.directory".to_string())),
+                Pattern::Include(MatchType::Equal("lookup.default.hostname".to_string())),
             ];
         }
 
@@ -623,15 +491,6 @@ impl Clone for ConfigManager {
             cfg_local_path: self.cfg_local_path.clone(),
             cfg_local_patterns: self.cfg_local_patterns.clone(),
             cfg_store: self.cfg_store.clone(),
-        }
-    }
-}
-
-impl From<Config> for ReloadResult {
-    fn from(config: Config) -> Self {
-        Self {
-            config,
-            new_core: None,
         }
     }
 }
