@@ -1,23 +1,5 @@
-[spam.header]
-is-spam = "X-Spam-Status: Yes"
-
-[lookup.spam-config]
-add-spam = true
-add-spam-result = true
-learn-enable = true
-learn-balance = "0.9"
-learn-ham-replies = true
-learn-ham-threshold = "-0.5"
-learn-spam-threshold = "6.0"
-threshold-spam = "5.0"
-threshold-discard = "0.0"
-threshold-reject = "0.0"
-directory = ""
-lookup = ""
-
-[session.data]
-script = [ { if = "is_empty(authenticated_as)", then = "'spam-filter'"},
-           { else = "'track-replies'" } ]
+[version]
+spam-filter = "1.0"
 
 [sieve.trusted.scripts.spam-filter]
 name = "Spam Filter"
@@ -2464,6 +2446,21 @@ if eval "!key_exists(SPAM_DB, triplet)" {
 
 
 [lookup]
+spam-config = {
+"add-spam" = true,
+"add-spam-result" = true,
+"learn-enable" = true,
+"learn-balance" = "0.9",
+"learn-ham-replies" = true,
+"learn-ham-threshold" = "-0.5",
+"learn-spam-threshold" = "6.0",
+"threshold-spam" = "5.0",
+"threshold-discard" = "0.0",
+"threshold-reject" = "0.0",
+"directory" = "",
+"lookup" = ""
+}
+
 spam-scores = {"ABUSE_SURBL" = "5.0",
 "ALLOWLIST_DKIM" = "-1.0",
 "ALLOWLIST_DMARC" = "-7.0",

@@ -49,13 +49,6 @@ compression = "lz4"
 type = "internal"
 store = "rocksdb"
 
-[lookup.default]
-domain = "%{env:DOMAIN}%"
-hostname = "%{env:HOSTNAME}%"
-
-[oauth]
-key = "%{env:OAUTH_KEY}%"
-
 [tracer."stdout"]
 type = "stdout"
 level = "info"
@@ -66,7 +59,6 @@ enable = true
 #user = "stalwart-mail"
 #group = "stalwart-mail"
 
-[server.http]
-headers = ["Access-Control-Allow-Origin: *", 
-           "Access-Control-Allow-Methods: POST, GET, PATCH, PUT, DELETE, HEAD, OPTIONS",
-           "Access-Control-Allow-Headers: Authorization, Content-Type, Accept, X-Requested-With"]
+[authentication.fallback-admin]
+user = "admin"
+secret = "%{env:ADMIN_SECRET}%"

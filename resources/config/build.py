@@ -45,7 +45,8 @@ script_names = {
     "greylist" : "Greylisting"
 }
 
-maps = ["scores.map", 
+maps = ["spam_config.map",
+        "scores.map", 
         "allow_dmarc.list", 
         "allow_domains.list", 
         "allow_spf_dkim.list", 
@@ -68,7 +69,7 @@ def read_file(file):
         return f.read() + "\n"
 
 def build_spam_filters(scripts):
-    spam_filter = read_file("./spamfilter/settings.toml")
+    spam_filter = "[version]\nspam-filter = \"1.0\"\n\n"
     for script_name, file_list in scripts.items():
         script_content = read_and_concatenate(file_list).replace("'''", "\\'\\'\\'")
         script_description = script_names[script_name]
@@ -85,9 +86,6 @@ def main():
     spam_filter = build_spam_filters(scripts)
     with open("spamfilter.toml", "w", encoding="utf-8") as toml_file:
         toml_file.write(spam_filter)
-    config = read_file("./minimal.toml") + read_file("./security.toml") + spam_filter
-    with open("config.toml", "w", encoding="utf-8") as toml_file:
-        toml_file.write(config)
     print("Stalwart TOML configuration files have been generated.")
 
 if __name__ == "__main__":
