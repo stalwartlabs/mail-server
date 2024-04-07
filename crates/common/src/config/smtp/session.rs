@@ -629,9 +629,9 @@ impl Default for SessionConfig {
                 subaddressing: AddressMapping::Enable,
             },
             data: Data {
-                #[cfg(not(feature = "test_mode"))]
-                script: IfBlock::empty("session.data.script"),
                 #[cfg(feature = "test_mode")]
+                script: IfBlock::empty("session.data.script"),
+                #[cfg(not(feature = "test_mode"))]
                 script: IfBlock::new::<()>(
                     "session.data.script",
                     [("is_empty(authenticated_as)", "'spam-filter'")],

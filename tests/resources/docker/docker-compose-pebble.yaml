@@ -1,4 +1,8 @@
+# docker-compose -f docker-compose-pebble.yaml up
 # curl --request POST --data '{"ip":"192.168.5.2"}' http://localhost:8055/set-default-ipv4
+# HTTPS port should be 5001
+# Directory https://localhost:14000/dir
+
 version: '3'
 services:
   pebble:

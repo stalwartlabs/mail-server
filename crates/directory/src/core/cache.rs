@@ -52,7 +52,7 @@ impl CachedDirectory {
             .property((&prefix, "cache.ttl.positive"))
             .unwrap_or(Duration::from_secs(86400));
         let cache_ttl_negative = config
-            .property((&prefix, "cache.ttl.positive"))
+            .property((&prefix, "cache.ttl.negative"))
             .unwrap_or_else(|| Duration::from_secs(3600));
 
         Some(CachedDirectory {

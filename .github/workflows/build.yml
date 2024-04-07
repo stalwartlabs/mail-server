@@ -88,21 +88,19 @@ jobs:
         run: |
           cargo build -p mail-server --target=${{ matrix.target }} --no-default-features --features "foundationdb elastic s3 redis" --release
           cd target/${{ matrix.target }}/release && tar czvf ../../../stalwart-mail-foundationdb-${{ matrix.target }}.tar.gz stalwart-mail && cd -
-          cargo build -p mail-server -p stalwart-cli -p stalwart-install --target=${{ matrix.target }} --release
+          cargo build -p mail-server -p stalwart-cli --target=${{ matrix.target }} --release
           cd target/${{ matrix.target }}/release
           tar czvf ../../../stalwart-mail-${{ matrix.target }}.tar.gz stalwart-mail
           tar czvf ../../../stalwart-cli-${{ matrix.target }}.tar.gz stalwart-cli
-          tar czvf ../../../stalwart-install-${{ matrix.target }}.tar.gz stalwart-install
           cd -
 
       - name: Building binary (Windows version)
         if: ${{ contains(matrix.host_os, 'windows') }}
         run: |
-          cargo build -p mail-server -p stalwart-cli -p stalwart-install --target=${{ matrix.target }} --release
+          cargo build -p mail-server -p stalwart-cli --target=${{ matrix.target }} --release
           cd target/${{ matrix.target }}/release
           7z a ../../../stalwart-mail-${{ matrix.target }}.zip stalwart-mail.exe
           7z a ../../../stalwart-cli-${{ matrix.target }}.zip stalwart-cli.exe
-          7z a ../../../stalwart-install-${{ matrix.target }}.zip stalwart-install.exe
           cd -
 
       - name: Publish Release
@@ -158,10 +156,9 @@ jobs:
 
           run: |
             export PATH="$HOME/.cargo/bin:$PATH"
-            cargo build -p stalwart-cli -p stalwart-install --target=${target} --release
+            cargo build -p stalwart-cli --target=${target} --release
             cd target/${target}/release
             tar czvf /artifacts/stalwart-cli-${target}.tar.gz stalwart-cli
-            tar czvf /artifacts/stalwart-install-${target}.tar.gz stalwart-install
             cd -
 
       - name: Move packages

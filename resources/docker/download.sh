@@ -1,13 +1,12 @@
 #!/usr/bin/env sh
 # shellcheck shell=dash
 
-# Stalwart Mail install script -- based on the rustup installation script.
+# Stalwart Mail Server install script -- based on the rustup installation script.
 
 set -e
 set -u
 
 readonly BASE_URL="https://github.com/stalwartlabs/mail-server/releases/latest/download"
-readonly BIN_DIR="/usr/local/bin"
 
 main() {
     downloader --check
@@ -35,37 +34,23 @@ main() {
         _account="_stalwart-mail"
     fi
 
-    # Start configuration mode
-    if [ "$#" -eq 1 ] && [ "$1" = "--download" ]  ; then
-        # Detect platform architecture
-        get_architecture || return 1
-        local _arch="$RETVAL"
-        assert_nz "$_arch" "arch"
+    # Default component setting
+    local _component="stalwart-mail"
+    local _dir="/usr/local/bin"
 
-        # Download binaries
-        say "⏳ Downloading Stalwart binary for ${_arch}..."
-        local _file="${BIN_DIR}/stalwart-install.tar.gz"
-        local _url="https://github.com/stalwartlabs/__R__/releases/latest/download/stalwart-__N__-${_arch}.tar.gz"
-        ensure downloader "$_url" "$_file" "$_arch"
-        ensure tar zxvf "$_file" -C "$BIN_DIR"
-        ignore rm "$_file"
+    # Detect platform architecture
+    get_architecture || return 1
+    local _arch="$RETVAL"
+    assert_nz "$_arch" "arch"
 
-        say "⏳ Downloading configure tool for ${_arch}..."
-        local _file="${BIN_DIR}/stalwart-install.tar.gz"
-        local _url="${BASE_URL}/stalwart-install-${_arch}.tar.gz"
-        ensure downloader "$_url" "$_file" "$_arch"
-        ensure tar zxvf "$_file" -C "$BIN_DIR"
-        ignore rm "$_file"
-
-        say "⏳ Downloading CLI tool for ${_arch}..."
-        local _file="${BIN_DIR}/stalwart-cli.tar.gz"
-        local _url="${BASE_URL}/stalwart-cli-${_arch}.tar.gz"
-        ensure downloader "$_url" "$_file" "$_arch"
-        ensure tar zxvf "$_file" -C "$BIN_DIR"
-        ignore rm "$_file"
-    else
-        ignore $BIN_DIR/stalwart-install -c __C__ -p /opt/stalwart-mail -d
-    fi
+    # Download latest binary
+    say "⏳ Downloading ${_component} for ${_arch}..."
+    local _file="${_dir}/stalwart-mail.tar.gz"
+    local _url="${BASE_URL}/${_component}-${_arch}.tar.gz"
+    ensure downloader "$_url" "$_file" "$_arch"
+    ensure tar zxvf "$_file" -C "$_dir"
+    ignore chmod +x "$_dir/stalwart-mail"
+    ignore rm "$_file"
 
     return 0
 }
@@ -343,7 +328,7 @@ get_endianness() {
 }
 
 say() {
-    printf 'stalwart-mail: %s\n' "$1"
+    printf '%s\n' "$1"
 }
 
 err() {

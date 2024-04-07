@@ -23,6 +23,7 @@
 
 pub mod dkim;
 pub mod domain;
+pub mod log;
 pub mod principal;
 pub mod queue;
 pub mod reload;
@@ -76,15 +77,24 @@ impl JMAP {
         let is_superuser = access_token.is_super_user();
 
         match path.first().copied().unwrap_or_default() {
+            "queue" if is_superuser => self.handle_manage_queue(req, path).await,
+            "settings" if is_superuser => self.handle_manage_settings(req, path, body).await,
+            "reports" if is_superuser => self.handle_manage_reports(req, path).await,
             "principal" if is_superuser => self.handle_manage_principal(req, path, body).await,
             "domain" if is_superuser => self.handle_manage_domain(req, path).await,
             "store" if is_superuser => self.handle_manage_store(req, path).await,
             "reload" if is_superuser => self.handle_manage_reload(req, path).await,
-            "settings" if is_superuser => self.handle_manage_settings(req, path, body).await,
-            "queue" if is_superuser => self.handle_manage_queue(req, path).await,
-            "reports" if is_superuser => self.handle_manage_reports(req, path).await,
             "dkim" if is_superuser => self.handle_manage_dkim(req, path, body).await,
             "update" if is_superuser => self.handle_manage_update(req, path).await,
+            "logs" if is_superuser && req.method() == Method::GET => {
+                self.handle_view_logs(req).await
+            }
+            "restart" if is_superuser && req.method() == Method::GET => {
+                ManagementApiError::Unsupported {
+                    details: "Restart is not yet supported".into(),
+                }
+                .into_http_response()
+            }
             "oauth" => self.handle_oauth_api_request(access_token, body).await,
             "crypto" => match *req.method() {
                 Method::POST => self.handle_crypto_post(access_token, body).await,

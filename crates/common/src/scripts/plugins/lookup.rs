@@ -83,7 +83,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
             _ => false,
         }
     } else {
-        tracing::warn!(
+        tracing::debug!(
             parent: ctx.span,
             context = "sieve:lookup",
             event = "failed",
@@ -112,7 +112,7 @@ pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
             .map(|v| v.into_inner())
             .unwrap_or_default()
     } else {
-        tracing::warn!(
+        tracing::debug!(
             parent: ctx.span,
             context = "sieve:key_get",
             event = "failed",

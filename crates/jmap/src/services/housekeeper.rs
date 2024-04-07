@@ -52,11 +52,16 @@ struct Action {
     event: ActionClass,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 enum ActionClass {
     Session,
     Store(usize),
     Acme(String),
+}
+
+#[derive(Default)]
+struct Queue {
+    heap: BinaryHeap<Action>,
 }
 
 pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
@@ -71,29 +76,29 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         tokio::spawn(async move {
             jmap.fts_index_queued().await;
         });
-        let mut heap = BinaryHeap::new();
+        let mut queue = Queue::default();
 
-        // Add all purge events to heap
+        // Add all events to queue
         let core_ = core.core.load();
-        heap.push(Action {
-            due: Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
-            event: ActionClass::Session,
-        });
+        queue.schedule(
+            Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
+            ActionClass::Session,
+        );
         for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
-            heap.push(Action {
-                due: Instant::now() + schedule.cron.time_to_next(),
-                event: ActionClass::Store(idx),
-            });
+            queue.schedule(
+                Instant::now() + schedule.cron.time_to_next(),
+                ActionClass::Store(idx),
+            );
         }
 
         // Add all ACME renewals to heap
         for provider in core_.tls.acme_providers.values() {
             match core_.init_acme(provider).await {
                 Ok(renew_at) => {
-                    heap.push(Action {
-                        due: Instant::now() + renew_at,
-                        event: ActionClass::Acme(provider.id.clone()),
-                    });
+                    queue.schedule(
+                        Instant::now() + renew_at,
+                        ActionClass::Acme(provider.id.clone()),
+                    );
                 }
                 Err(err) => {
                     tracing::error!(
@@ -106,21 +111,13 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         }
 
         loop {
-            let time_to_next = heap
-                .peek()
-                .map(|e| e.due.saturating_duration_since(Instant::now()))
-                .unwrap_or(LONG_SLUMBER);
-
-            match tokio::time::timeout(time_to_next, rx.recv()).await {
+            match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
                 Ok(Some(event)) => match event {
                     Event::AcmeReschedule {
                         provider_id,
                         renew_at,
                     } => {
-                        heap.push(Action {
-                            due: renew_at,
-                            event: ActionClass::Acme(provider_id),
-                        });
+                        queue.schedule(renew_at, ActionClass::Acme(provider_id));
                     }
                     Event::IndexStart => {
                         if !index_busy {
@@ -159,11 +156,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                 }
                 Err(_) => {
                     let core_ = core.core.load();
-                    while let Some(event) = heap.peek() {
-                        if event.due > Instant::now() {
-                            break;
-                        }
-                        let event = heap.pop().unwrap();
+                    while let Some(event) = queue.pop() {
                         match event.event {
                             ActionClass::Acme(provider_id) => {
                                 let inner = core.jmap_inner.clone();
@@ -216,20 +209,20 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     tracing::debug!("Purging session cache.");
                                     inner.purge();
                                 });
-                                heap.push(Action {
-                                    due: Instant::now()
+                                queue.schedule(
+                                    Instant::now()
                                         + core_.jmap.session_purge_frequency.time_to_next(),
-                                    event: ActionClass::Session,
-                                });
+                                    ActionClass::Session,
+                                );
                             }
                             ActionClass::Store(idx) => {
                                 if let Some(schedule) =
                                     core_.storage.purge_schedules.get(idx).cloned()
                                 {
-                                    heap.push(Action {
-                                        due: Instant::now() + schedule.cron.time_to_next(),
-                                        event: ActionClass::Store(idx),
-                                    });
+                                    queue.schedule(
+                                        Instant::now() + schedule.cron.time_to_next(),
+                                        ActionClass::Store(idx),
+                                    );
                                     tokio::spawn(async move {
                                         let (class, result) = match schedule.store {
                                             PurgeStore::Data(store) => {
@@ -266,6 +259,28 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
             }
         }
     });
+}
+
+impl Queue {
+    pub fn schedule(&mut self, due: Instant, event: ActionClass) {
+        tracing::debug!(due_in = due.saturating_duration_since(Instant::now()).as_secs(), event = ?event, "Scheduling housekeeper event.");
+        self.heap.push(Action { due, event });
+    }
+
+    pub fn wake_up_time(&self) -> Duration {
+        self.heap
+            .peek()
+            .map(|e| e.due.saturating_duration_since(Instant::now()))
+            .unwrap_or(LONG_SLUMBER)
+    }
+
+    pub fn pop(&mut self) -> Option<Action> {
+        if self.heap.peek()?.due <= Instant::now() {
+            self.heap.pop()
+        } else {
+            None
+        }
+    }
 }
 
 impl Ord for Action {

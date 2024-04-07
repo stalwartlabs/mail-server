@@ -39,6 +39,10 @@ use super::{Config, ConfigError, ConfigWarning, Rate};
 impl Config {
     pub fn property<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
         let key = key.as_key();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(key.clone());
+
         if let Some(value) = self.keys.get(&key) {
             match T::parse_value(value) {
                 Ok(value) => Some(value),
@@ -58,6 +62,10 @@ impl Config {
         default: &str,
     ) -> Option<T> {
         let key = key.as_key();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(key.clone());
+
         let value = match self.keys.get(&key) {
             Some(value) => value.as_str(),
             None => default,
@@ -94,6 +102,10 @@ impl Config {
 
     pub fn property_require<T: ParseValue>(&mut self, key: impl AsKey) -> Option<T> {
         let key = key.as_key();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(key.clone());
+
         if let Some(value) = self.keys.get(&key) {
             match T::parse_value(value) {
                 Ok(value) => Some(value),
@@ -137,30 +149,21 @@ impl Config {
     pub fn set_values<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &str> + 'x {
         let prefix = prefix.as_prefix();
 
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(prefix.clone());
+
         self.keys
             .keys()
             .filter_map(move |key| key.strip_prefix(&prefix))
-    }
-
-    pub fn set_values_or_else(
-        &self,
-        prefix: impl AsKey,
-        default: impl AsKey,
-    ) -> impl Iterator<Item = &str> {
-        let mut prefix = prefix.as_prefix();
-
-        self.set_values(if self.keys.keys().any(|k| k.starts_with(&prefix)) {
-            prefix.truncate(prefix.len() - 1);
-            prefix
-        } else {
-            default.as_key()
-        })
     }
 
     pub fn properties<T: ParseValue>(&mut self, prefix: impl AsKey) -> Vec<(String, T)> {
         let full_prefix = prefix.as_key();
         let prefix = prefix.as_prefix();
         let mut results = Vec::new();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(prefix.clone());
 
         for (key, value) in &self.keys {
             if key.starts_with(&prefix) || key == &full_prefix {
@@ -180,7 +183,12 @@ impl Config {
     }
 
     pub fn value(&self, key: impl AsKey) -> Option<&str> {
-        self.keys.get(&key.as_key()).map(|s| s.as_str())
+        let key = key.as_key();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(key.clone());
+
+        self.keys.get(&key).map(|s| s.as_str())
     }
 
     pub fn contains_key(&self, key: impl AsKey) -> bool {
@@ -189,6 +197,10 @@ impl Config {
 
     pub fn value_require(&mut self, key: impl AsKey) -> Option<&str> {
         let key = key.as_key();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(key.clone());
+
         if let Some(value) = self.keys.get(&key) {
             Some(value.as_str())
         } else {
@@ -214,8 +226,16 @@ impl Config {
     }
 
     pub fn value_or_else(&self, key: impl AsKey, or_else: impl AsKey) -> Option<&str> {
+        let key = key.as_key();
+
+        #[cfg(debug_assertions)]
+        {
+            self.keys_read.lock().insert(key.clone());
+            self.keys_read.lock().insert(or_else.clone().as_key());
+        }
+
         self.keys
-            .get(&key.as_key())
+            .get(&key)
             .or_else(|| self.keys.get(&or_else.as_key()))
             .map(|s| s.as_str())
     }
@@ -223,6 +243,9 @@ impl Config {
     pub fn values(&self, prefix: impl AsKey) -> impl Iterator<Item = (&str, &str)> {
         let full_prefix = prefix.as_key();
         let prefix = prefix.as_prefix();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(prefix.clone());
 
         self.keys.iter().filter_map(move |(key, value)| {
             if key.starts_with(&prefix) || key == &full_prefix {
@@ -233,28 +256,41 @@ impl Config {
         })
     }
 
+    pub fn iterate_prefix(&self, prefix: impl AsKey) -> impl Iterator<Item = (&str, &str)> {
+        let prefix = prefix.as_prefix();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(prefix.clone());
+
+        self.keys
+            .iter()
+            .filter_map(move |(key, value)| Some((key.strip_prefix(&prefix)?, value.as_str())))
+    }
+
     pub fn values_or_else(
         &self,
         prefix: impl AsKey,
-        default: impl AsKey,
+        or_else: impl AsKey,
     ) -> impl Iterator<Item = (&str, &str)> {
         let mut prefix = prefix.as_prefix();
+
+        #[cfg(debug_assertions)]
+        {
+            self.keys_read.lock().insert(prefix.clone());
+            self.keys_read.lock().insert(or_else.clone().as_prefix());
+        }
 
         self.values(if self.keys.keys().any(|k| k.starts_with(&prefix)) {
             prefix.truncate(prefix.len() - 1);
             prefix
         } else {
-            default.as_key()
+            or_else.as_key()
         })
     }
 
     pub fn has_prefix(&self, prefix: impl AsKey) -> bool {
         let prefix = prefix.as_prefix();
         self.keys.keys().any(|k| k.starts_with(&prefix))
-    }
-
-    pub fn take_value(&mut self, key: &str) -> Option<String> {
-        self.keys.remove(key)
     }
 
     pub fn new_parse_error(&mut self, key: impl AsKey, details: impl Into<String>) {
@@ -277,6 +313,24 @@ impl Config {
 
     pub fn new_missing_property(&mut self, key: impl AsKey) {
         self.warnings.insert(key.as_key(), ConfigWarning::Missing);
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn warn_unread_keys(&mut self) {
+        let mut keys = self.keys.clone();
+
+        for key in self.keys_read.lock().iter() {
+            if let Some(base_key) = key.strip_suffix('.') {
+                keys.remove(base_key);
+                keys.retain(|k, _| !k.starts_with(key));
+            } else {
+                keys.remove(key);
+            }
+        }
+
+        for (key, value) in keys {
+            self.warnings.insert(key, ConfigWarning::Unread { value });
+        }
     }
 }
 

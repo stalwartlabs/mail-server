@@ -31,12 +31,15 @@ use std::{collections::BTreeMap, time::Duration};
 use ahash::AHashMap;
 use serde::Serialize;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct Config {
     #[serde(skip)]
     pub keys: BTreeMap<String, String>,
     pub warnings: AHashMap<String, ConfigWarning>,
     pub errors: AHashMap<String, ConfigError>,
+    #[cfg(debug_assertions)]
+    #[serde(skip)]
+    pub keys_read: parking_lot::Mutex<ahash::AHashSet<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -44,6 +47,7 @@ pub struct Config {
 pub enum ConfigWarning {
     Missing,
     AppliedDefault { default: String },
+    Unread { value: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -199,7 +203,10 @@ impl Config {
         }
     }
 
-    pub fn log_warnings(&self, use_stderr: bool) {
+    pub fn log_warnings(&mut self, use_stderr: bool) {
+        #[cfg(debug_assertions)]
+        self.warn_unread_keys();
+
         for (key, warn) in &self.warnings {
             let message = match warn {
                 ConfigWarning::AppliedDefault { default } => {
@@ -207,6 +214,9 @@ impl Config {
                 }
                 ConfigWarning::Missing => {
                     format!("WARNING: Missing setting {key:?}")
+                }
+                ConfigWarning::Unread { value } => {
+                    format!("WARNING: Unused setting {key:?} with value {value:?}")
                 }
             };
             if !use_stderr {
@@ -217,6 +227,26 @@ impl Config {
         }
     }
 }
+
+impl Clone for Config {
+    fn clone(&self) -> Self {
+        Self {
+            keys: self.keys.clone(),
+            warnings: self.warnings.clone(),
+            errors: self.errors.clone(),
+            #[cfg(debug_assertions)]
+            keys_read: Default::default(),
+        }
+    }
+}
+
+impl PartialEq for Config {
+    fn eq(&self, other: &Self) -> bool {
+        self.keys == other.keys && self.warnings == other.warnings && self.errors == other.errors
+    }
+}
+
+impl Eq for Config {}
 
 impl From<(String, String)> for ConfigKey {
     fn from((key, value): (String, String)) -> Self {

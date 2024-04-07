@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use utils::config::{cron::SimpleCron, Config};
+use utils::config::{cron::SimpleCron, utils::ParseValue, Config};
 
 use crate::{
     backend::fs::FsStore,
@@ -278,41 +278,46 @@ impl Stores {
             .and_then(|store_id| self.stores.get(store_id))
         {
             let store_id = config.value("storage.data").unwrap().to_string();
-            if let Some(cron) =
-                config.property::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
-            {
-                self.purge_schedules.push(PurgeSchedule {
-                    cron,
-                    store_id,
-                    store: PurgeStore::Data(store.clone()),
-                });
-            }
+            self.purge_schedules.push(PurgeSchedule {
+                cron: config
+                    .property_or_default::<SimpleCron>(
+                        ("store", store_id.as_str(), "purge.frequency"),
+                        "0 3 *",
+                    )
+                    .unwrap_or_else(|| SimpleCron::parse_value("0 3 *").unwrap()),
+                store_id,
+                store: PurgeStore::Data(store.clone()),
+            });
 
             if let Some(blob_store) = config
                 .value("storage.blob")
                 .and_then(|blob_store_id| self.blob_stores.get(blob_store_id))
             {
                 let store_id = config.value("storage.blob").unwrap().to_string();
-                if let Some(cron) =
-                    config.property::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
-                {
-                    self.purge_schedules.push(PurgeSchedule {
-                        cron,
-                        store_id,
-                        store: PurgeStore::Blobs {
-                            store: store.clone(),
-                            blob_store: blob_store.clone(),
-                        },
-                    });
-                }
+                self.purge_schedules.push(PurgeSchedule {
+                    cron: config
+                        .property_or_default::<SimpleCron>(
+                            ("store", store_id.as_str(), "purge.frequency"),
+                            "0 4 *",
+                        )
+                        .unwrap_or_else(|| SimpleCron::parse_value("0 4 *").unwrap()),
+                    store_id,
+                    store: PurgeStore::Blobs {
+                        store: store.clone(),
+                        blob_store: blob_store.clone(),
+                    },
+                });
             }
         }
         for (store_id, store) in &self.lookup_stores {
-            if let Some(cron) =
-                config.property::<SimpleCron>(("store", store_id.as_str(), "purge.frequency"))
-            {
+            if matches!(store, LookupStore::Store(_)) {
                 self.purge_schedules.push(PurgeSchedule {
-                    cron,
+                    cron: config
+                        .property_or_default::<SimpleCron>(
+                            ("store", store_id.as_str(), "purge.frequency"),
+                            "0 5 *",
+                        )
+                        .unwrap_or_else(|| SimpleCron::parse_value("0 5 *").unwrap()),
                     store_id: store_id.clone(),
                     store: PurgeStore::Lookup(store.clone()),
                 });

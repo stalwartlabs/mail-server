@@ -281,7 +281,9 @@ async fn https(
     body: Option<String>,
 ) -> Result<Response, DirectoryError> {
     let url = url.as_ref();
-    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(30));
+    let mut builder = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .http1_only();
 
     #[cfg(debug_assertions)]
     {

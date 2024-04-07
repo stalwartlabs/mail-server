@@ -179,7 +179,7 @@ impl Resolvers {
 
         let mut capacities = [1024usize; 5];
         for (pos, key) in ["txt", "mx", "ipv4", "ipv6", "ptr"].into_iter().enumerate() {
-            if let Some(capacity) = config.property(("cache.resolver", key)) {
+            if let Some(capacity) = config.property(("cache.resolver", key, "size")) {
                 capacities[pos] = capacity;
             }
         }

@@ -38,6 +38,8 @@ impl Core {
         resolver: &'x V,
     ) -> Option<R> {
         if if_block.is_empty() {
+            tracing::trace!(context = "eval_if", property = if_block.key, result = "");
+
             return None;
         }
 

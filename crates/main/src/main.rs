@@ -48,10 +48,6 @@ async fn main() -> std::io::Result<()> {
     let core = init.core;
 
     // Init servers
-    tracing::info!(
-        "Starting Stalwart Mail Server v{}...",
-        env!("CARGO_PKG_VERSION")
-    );
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
     let smtp = SMTP::init(&mut config, core.clone(), delivery_tx).await;
     let jmap = JMAP::init(&mut config, delivery_rx, core.clone(), smtp.inner.clone()).await;

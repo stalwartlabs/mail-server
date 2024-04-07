@@ -221,9 +221,13 @@ impl JMAP {
                     format!("signature.{id}.canonicalization"),
                     "relaxed/relaxed".to_string(),
                 ),
+                (format!("signature.{id}.headers.0"), "From".to_string()),
+                (format!("signature.{id}.headers.1"), "To".to_string()),
+                (format!("signature.{id}.headers.2"), "Date".to_string()),
+                (format!("signature.{id}.headers.3"), "Subject".to_string()),
                 (
-                    format!("signature.{id}.headers"),
-                    "['From', 'To', 'Date', 'Subject', 'Message-ID']".to_string(),
+                    format!("signature.{id}.headers.4"),
+                    "Message-ID".to_string(),
                 ),
                 (format!("signature.{id}.report"), "false".to_string()),
             ])

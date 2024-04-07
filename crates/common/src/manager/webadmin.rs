@@ -119,6 +119,11 @@ impl WebAdminManager {
         // Update routes
         self.routes.store(routes.into());
 
+        tracing::debug!(
+            path = self.bundle_path.path.to_string_lossy().as_ref(),
+            "WebAdmin successfully unpacked"
+        );
+
         Ok(())
     }
 

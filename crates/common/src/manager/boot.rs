@@ -135,6 +135,10 @@ impl BootManager {
 
         // Enable tracing
         let guards = Tracers::parse(&mut config).enable(&mut config);
+        tracing::info!(
+            "Starting Stalwart Mail Server v{}...",
+            env!("CARGO_PKG_VERSION")
+        );
 
         // Add hostname lookup if missing
         let mut insert_keys = Vec::new();
@@ -283,7 +287,10 @@ fn quickstart(path: impl Into<PathBuf>) {
     }
 
     for dir in &["etc", "data", "logs"] {
-        std::fs::create_dir(path.join(dir)).failed(&format!("Failed to create {dir} directory"));
+        let sub_path = path.join(dir);
+        if !sub_path.exists() {
+            std::fs::create_dir(sub_path).failed(&format!("Failed to create {dir} directory"));
+        }
     }
 
     let admin_pass = thread_rng()

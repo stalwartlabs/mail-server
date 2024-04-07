@@ -29,7 +29,7 @@ impl Network {
         };
         let token_map = &TokenMap::default().with_variables(CONNECTION_VARS);
 
-        for (value, key) in [(&mut network.url, "server.url")] {
+        for (value, key) in [(&mut network.url, "server.http.url")] {
             if let Some(if_block) = IfBlock::try_parse(config, key, token_map) {
                 *value = if_block;
             }
