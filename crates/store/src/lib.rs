@@ -677,6 +677,18 @@ impl Store {
     pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
+
+    pub fn is_sql(&self) -> bool {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Store::SQLite(_) => true,
+            #[cfg(feature = "postgres")]
+            Store::PostgreSQL(_) => true,
+            #[cfg(feature = "mysql")]
+            Store::MySQL(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl std::fmt::Debug for Store {

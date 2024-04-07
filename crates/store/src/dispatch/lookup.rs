@@ -352,6 +352,13 @@ impl LookupStore {
 
         Ok(())
     }
+
+    pub fn is_sql(&self) -> bool {
+        match self {
+            LookupStore::Store(store) => store.is_sql(),
+            _ => false,
+        }
+    }
 }
 
 enum LookupValue<T> {

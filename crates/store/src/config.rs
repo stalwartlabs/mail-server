@@ -234,10 +234,7 @@ impl Stores {
 
         // Add SQL queries as lookup stores
         for (store_id, lookup_store) in self.stores.iter().filter_map(|(id, store)| {
-            if matches!(
-                store,
-                Store::MySQL(_) | Store::PostgreSQL(_) | Store::SQLite(_)
-            ) {
+            if store.is_sql() {
                 Some((id.clone(), LookupStore::from(store.clone())))
             } else {
                 None
