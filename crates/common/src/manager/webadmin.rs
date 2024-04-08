@@ -103,6 +103,7 @@ impl WebAdminManager {
                 {
                     "html" => "text/html",
                     "css" => "text/css",
+                    "wasm" => "application/wasm",
                     "js" => "application/javascript",
                     "json" => "application/json",
                     "png" => "image/png",

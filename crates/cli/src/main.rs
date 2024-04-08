@@ -185,8 +185,8 @@ async fn oauth(url: &str) -> Credentials {
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum Response<T> {
-    Data { data: T },
     Error(ManagementApiError),
+    Data { data: T },
 }
 
 #[derive(Deserialize)]
@@ -283,11 +283,11 @@ impl Client {
             }
         }
 
-        match serde_json::from_slice::<Response<R>>(
-            &response.bytes().await.unwrap_result("fetch bytes"),
-        )
-        .unwrap_result("deserialize response")
-        {
+        let bytes = response.bytes().await.unwrap_result("fetch bytes");
+        match serde_json::from_slice::<Response<R>>(&bytes).unwrap_result(&format!(
+            "deserialize response {}",
+            String::from_utf8_lossy(bytes.as_ref())
+        )) {
             Response::Data { data } => Some(data),
             Response::Error(error) => {
                 eprintln!("Request failed: {error})");

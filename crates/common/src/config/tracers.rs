@@ -93,8 +93,8 @@ impl Tracers {
                             level,
                             appender,
                             ansi: config
-                                .property_or_default(("tracer", id, "ansi"), "true")
-                                .unwrap_or(true),
+                                .property_or_default(("tracer", id, "ansi"), "false")
+                                .unwrap_or(false),
                         });
                     }
                 }

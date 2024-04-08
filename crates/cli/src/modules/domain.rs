@@ -27,6 +27,8 @@ use prettytable::{Attr, Cell, Row, Table};
 use reqwest::Method;
 use serde_json::Value;
 
+use crate::modules::List;
+
 use super::cli::{Client, DomainCommands};
 
 impl DomainCommands {
@@ -70,15 +72,15 @@ impl DomainCommands {
                 };
 
                 let domains = client
-                    .http_request::<Vec<String>, String>(Method::GET, query.as_ref(), None)
+                    .http_request::<List<String>, String>(Method::GET, query.as_ref(), None)
                     .await;
-                if !domains.is_empty() {
+                if !domains.items.is_empty() {
                     let mut table = Table::new();
                     table.add_row(Row::new(vec![
                         Cell::new("Domain Name").with_style(Attr::Bold)
                     ]));
 
-                    for domain in &domains {
+                    for domain in &domains.items {
                         table.add_row(Row::new(vec![Cell::new(domain)]));
                     }
 
@@ -89,8 +91,8 @@ impl DomainCommands {
 
                 eprintln!(
                     "\n\n{} domain{} found.\n",
-                    domains.len(),
-                    if domains.len() == 1 { "" } else { "s" }
+                    domains.total,
+                    if domains.total == 1 { "" } else { "s" }
                 );
             }
         }

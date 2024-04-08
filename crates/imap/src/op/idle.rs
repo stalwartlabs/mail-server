@@ -80,7 +80,7 @@ impl<T: SessionStream> Session<T> {
         // Send continuation response
         self.write_bytes(b"+ Idling, send 'DONE' to stop.\r\n".to_vec())
             .await?;
-        tracing::debug!(parent: &self.span, event = "stat", context = "idle", "Starting IDLE.");
+        tracing::debug!(parent: &self.span, event = "start", context = "idle", "Starting IDLE.");
         let mut buf = vec![0; 1024];
         loop {
             tokio::select! {

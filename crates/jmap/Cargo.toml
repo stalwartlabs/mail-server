@@ -47,6 +47,7 @@ aes = "0.8.3"
 cbc = { version = "0.1.2", features = ["alloc"] }
 sequoia-openpgp = { version = "1.16", default-features = false, features = ["crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"] }
 rand = "0.8.5"
+pkcs8 = { version = "0.10.2", features = ["alloc", "std"] }
 rasn = "0.10"
 rasn-cms = "0.10"
 rasn-pkix = "0.10"
