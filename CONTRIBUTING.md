@@ -1,26 +1,35 @@
 # Contributing
 
-Thank you for your interest in contributing to the Stalwart Mail Server project! We appreciate your support and enthusiasm. This document provides guidelines for contributing to the project.
+When contributing to this repository, please first discuss the change you wish to make via issue,
+email, or any other method with the owners of this repository before making a change. 
 
-## Not accepting Pull Requests at this time
-As of now, the Stalwart Mail Server project is in a phase of rapid development and evolution. Until we reach version 1.0, **we are not open to direct code contributions** in the form of pull requests. This is due to the following reasons:
-- The project is undergoing significant changes which might make integrating external contributions challenging.
-- Our current resources do not allow for the efficient evaluation and testing of submitted pull requests.
+Please note we have a code of conduct, please follow it in all your interactions with the project.
 
-We understand that this might be disappointing, but rest assured, this measure is temporary and is aimed at maintaining the integrity and consistency of the project during its critical development phase.
+## Any contributions you make will be under AGPL
 
-## Other Ways to Contribute
-While we're not accepting pull requests at this moment, there are several other valuable ways you can contribute to the Stalwart Mail Server project:
+This software is licensed under the Affero General Public License (AGPL). Any contributions made to 
+this project will be under this license. Before any contributions can be made, contributors are 
+required to sign a Contributor License Agreement (CLA). The purpose of the agreement is to clarify 
+and document the rights granted by contributors to us.
 
-- **Enhancement Requests**: If you have an idea for a new feature or an improvement, we encourage you to file an enhancement request on GitHub. This way, your idea can be evaluated and potentially included in future versions of the project. To do this, create a new issue on our GitHub repository and label it as an 'enhancement'.
-- **Extensive Testing**: One of the most helpful contributions is to rigorously test the software in various environments and use-cases. Your testing can uncover important issues and help improve the stability of the project.
-- **Writing Unit Tests**: Contributing new unit tests or improving existing ones is a great way to ensure the reliability and robustness of our codebase.
-- **Reviewing Documentation**: As the project evolves, so does the need for accurate and up-to-date documentation. Reviewing, updating, or writing new documentation is a critical contribution that helps new and existing users understand and effectively use Stalwart Mail Server.
+## Pull Request Process
 
-## Stay Updated
-We anticipate opening up for code contributions once version 1.0 is launched. We recommend keeping an eye on our project announcements for any updates regarding contribution opportunities.
+1. Ensure any install or build dependencies are removed before the end of the layer when doing a 
+   build.
+2. Update the README.md with details of changes to the interface, this includes new environment 
+   variables, exposed ports, useful file locations and container parameters.
+3. Increase the version numbers in any examples files and the README.md to the new version that this
+   Pull Request would represent. The versioning scheme we use is [SemVer](http://semver.org/).
+4. You may merge the Pull Request in once you have the sign-off of two other developers, or if you 
+   do not have permission to do that, you may request the second reviewer to merge it for you.
 
-## Questions or Suggestions?
-If you have any questions or suggestions regarding the contribution process, feel free to open a discussion on our GitHub repository.
+## Code of Conduct
 
-Thank you for your support and understanding. Together, we are building a robust and reliable Stalwart Mail Server!
+We as members, contributors, and leaders pledge to make participation in our community a harassment-free 
+experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex 
+characteristics, gender identity and expression, level of experience, education, socio-economic status, 
+nationality, personal appearance, race, religion, or sexual identity and orientation.
+We pledge to act and interact in ways that contribute to an open, welcoming, diverse, inclusive, 
+and healthy community.
+
+You can read the full Code of Conduct [here](https://github.com/stalwartlabs/.github/blob/main/CODE_OF_CONDUCT.md).

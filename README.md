@@ -75,6 +75,13 @@ Key features:
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
   - Integration with **OpenTelemetry** to enable monitoring, tracing, and performance analysis.
+- **Web-based administration**:
+  - Account, domain, group and mailing list management.
+  - SMTP queue management for messages and outbound DMARC and TLS reports.
+  - Report visualization interface for received DMARC, TLS-RPT and Failure (ARF) reports.
+  - Configuration of every aspect of the mail server.
+  - Log viewer with search and filtering capabilities.
+  - Self-service portal for password reset and encryption-at-rest key management.
 - **Secure and robust**:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
   - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555).
@@ -106,7 +113,7 @@ Additionally you may become a sponsor to obtain priority support from Stalwart L
 
 - [x] Performance enhancements
 - [x] Distributed SMTP queues
-- [ ] Web-based admin panel
+- [x] Web-based admin panel
 - [ ] JMAP Calendar, Contacts and Tasks support
 - [ ] CalDAV and CardDAV support
 

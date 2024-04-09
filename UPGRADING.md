@@ -1,3 +1,38 @@
+Upgrading from `v0.6.0` to `v0.7.0`
+-----------------------------------
+
+Version `0.7.0` of Stalwart Mail Server introduces significant improvements and features that enhance performance and functionality. However, it also comes with multiple breaking changes in the configuration files and a revamped database layout optimized for accessing large mailboxes. Additionally, Stalwart now supports compression for binaries stored in the blob store, further increasing efficiency.
+Due to these extensive changes, the recommended approach for upgrading is to perform a clean reinstallation of Stalwart and manually migrate your accounts to the new version.
+
+## Pre-Upgrade Steps
+- Download the `v0.7.0` mail-server and CLI binaries for your platform from the [releases page](https://github.com/stalwartlabs/mail-server/releases/latest/).
+- Initialize the setup on a distinct directory using the command `sudo ./stalwart-mail -- init /path/to/new-install`. This command will print the administrator password required to access the web-admin.
+- Create the `bin` directory using `mkdir /path/to/new-install/bin`.
+- Move the downloaded binaries to the `bin` directory using the command `mv stalwart-mail stalwart-cli /path/to/new-install/bin`.
+- Open `/path/to/new-install/etc/config.toml` in a text editor and comment out all listeners except the HTTP listener for port `8080`.
+- Start the new installation from the terminal using the command `sudo /path/to/new-install/bin/stalwart-mail --config /path/to/new-install/etc/config.toml`.
+- Point your browser to the web-admin at `http://yourserver.org:8080` and login using the auto-generated administrator password. 
+- Configure the new installation with your domain, hostname, certificates, and other settings following the instructions at [stalw.art/docs/get-started](https://stalw.art/docs/get-started). Ignore the part about using the installation script, we are performing a manual installation.
+- Add your user accounts.
+- Configure Stalwart to run as the `stalwart-mail` user and `stalwart-mail` group from `Settings` > `Server` > `System`. This is not necessary if you are using Docker.
+- Stop the new installation by pressing `Ctrl+C` in the terminal.
+
+## Upgrade Steps
+- On your `v0.6.0` installation, open in a text editor the `smtp/listener.toml`, `imap/listener.toml` files and comment out all listeners except the JMAP/HTTP listener (we are going to need it to export the user accounts) and then restart the service.
+- If you are using an external store, backup the database using the appropriate method for your database system.
+- Create the `~/exports` directory, here we will store the exported accounts.
+- Using the existing CLI tool (not the one you just downloaded as it is not compatible), export each user account using the command `./stalwart-cli -u https://your-old-server.org -c <ADMIN_PASSWORD> export account <ACCOUNT_NAME> ~/exports`.
+- Stop the `v0.6.0` installation using the command `sudo systemctl stop stalwart-mail`.
+- Move the old `v0.6.0` installation to a backup directory, for example `mv /opt/stalwart-mail /opt/stalwart-mail-backup`.
+- Move the new `v0.7.0` installation to the old installation directory, for example `mv /path/to/new-install /opt/stalwart-mail`.
+- Set the right permissions for the new installation using the command `sudo chown -R stalwart:stalwart /opt/stalwart-mail`.
+- Start the new installation using the command `sudo systemctl start stalwart-mail`.
+- Import the accounts using the new CLI tool with the command `./stalwart-cli -u http://yourserver.org:8080-c <ADMIN_PASSWORD> import <ACCOUNT> ~/exports/<ACCOUNT>`.
+- Using the admin tool, reactivate all the necessary listener (SMTP, IMAP, etc.)
+- Restart the service using the command `sudo systemctl restart stalwart-mail`.
+
+We apologize for the complexity of the upgrade process associated with this version of Stalwart. We understand the challenges and inconveniences that the requirement for a clean reinstallation and manual account migration poses. Moving forward, an automated migration tool will be included in any future releases that necessitate changes to the database layout, aiming to streamline the upgrade process for you. Furthermore, as we approach the milestone of version 1.0.0, we anticipate that such foundational changes will become increasingly infrequent, leading to more straightforward updates. We appreciate your patience and commitment to Stalwart during this upgrade.
+
 Upgrading from `v0.5.3` to `v0.6.0`
 -----------------------------------
 

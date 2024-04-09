@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.7.0] - 2024-04-09
+
+This version uses a different database layout and introduces multiple breaking changes in the configuration files. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- Web-based administration interface.
+- REST API for management and configuration.
+- Automatic RSA and ED25519 DKIM key generation.
+- Support for compressing binaries in the blob store (#227).
+- Improved performance accessing IMAP mailboxes with a large number of messages.
+- Support for custom DNS resolvers.
+- Support for multiple loggers with different levels and outputs.
+
+### Changed
+
+### Fixed
+- Store quotas as `u64` rather than `u32`.
+- Second IDLE connections disconnects the first one (#280).
+- Use relaxed DNS parsing, allowing underscores in DNS labels (#172).
+- Escape regexes within `matches()` expressions (#155).
+- ManageSieve LOGOUT should reply with `OK` instead of `BYE`.
+
 ## [0.6.0] - 2024-02-14
 
 This version introduces breaking changes in the configuration file. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
