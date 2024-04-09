@@ -31,15 +31,10 @@ pub mod reload;
 pub mod webadmin;
 
 pub const SPAMFILTER_URL: &str = "https://get.stalw.art/resources/config/spamfilter.toml";
-pub const WEBADMIN_URL: &str = "file://get.stalw.art/resources/config/webadmin.toml";
+pub const WEBADMIN_URL: &str = "https://get.stalw.art/resources/webadmin.zip";
 pub const WEBADMIN_KEY: &[u8] = "STALWART_WEBADMIN".as_bytes();
 
 async fn download_resource(url: &str) -> Result<Vec<u8>, String> {
-    let todo = "remove";
-    if url == WEBADMIN_URL {
-        return Ok(tokio::fs::read("/tmp/dist.zip").await.unwrap());
-    }
-
     reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
         .user_agent(USER_AGENT)

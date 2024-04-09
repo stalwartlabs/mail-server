@@ -314,6 +314,7 @@ fn quickstart(path: impl Into<PathBuf>) {
     eprintln!("🔑 Your administrator account is 'admin' with password '{admin_pass}'.");
 }
 
+#[cfg(not(feature = "foundation"))]
 const QUICKSTART_CONFIG: &str = r#"[server.listener.smtp]
 bind = "[::]:25"
 protocol = "smtp"
@@ -364,6 +365,71 @@ compression = "lz4"
 [directory.internal]
 type = "internal"
 store = "rocksdb"
+
+[tracer.log]
+type = "log"
+level = "info"
+path = "_P_/logs"
+prefix = "stalwart.log"
+rotate = "daily"
+ansi = false
+enable = true
+
+[authentication.fallback-admin]
+user = "admin"
+secret = "_S_"
+"#;
+
+#[cfg(feature = "foundation")]
+const QUICKSTART_CONFIG: &str = r#"[server.listener.smtp]
+bind = "[::]:25"
+protocol = "smtp"
+
+[server.listener.submission]
+bind = "[::]:587"
+protocol = "smtp"
+
+[server.listener.submissions]
+bind = "[::]:465"
+protocol = "smtp"
+tls.implicit = true
+
+[server.listener.imap]
+bind = "[::]:143"
+protocol = "imap"
+
+[server.listener.imaptls]
+bind = "[::]:993"
+protocol = "imap"
+tls.implicit = true
+
+[server.listener.sieve]
+bind = "[::]:4190"
+protocol = "managesieve"
+
+[server.listener.https]
+protocol = "http"
+bind = "[::]:443"
+tls.implicit = true
+
+[server.listener.http]
+protocol = "http"
+bind = "[::]:8080"
+
+[storage]
+data = "foundation-db"
+fts = "foundation-db"
+blob = "foundation-db"
+lookup = "foundation-db"
+directory = "internal"
+
+[store.foundation-db]
+type = "foundationdb"
+compression = "lz4"
+
+[directory.internal]
+type = "internal"
+store = "foundation-db"
 
 [tracer.log]
 type = "log"

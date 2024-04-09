@@ -27,7 +27,7 @@ use deadpool::{
 };
 use std::{sync::Arc, time::Duration};
 use store::{Store, Stores};
-use utils::config::{utils::ParseValue, Config};
+use utils::config::Config;
 
 use ahash::AHashMap;
 
@@ -145,41 +145,4 @@ pub(crate) fn build_pool<M: Manager>(
                 err = err
             )
         })
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LookupType {
-    List,
-    Glob,
-    Regex,
-    Map,
-}
-
-#[derive(Debug, Clone)]
-pub struct LookupFormat {
-    pub lookup_type: LookupType,
-    pub comment: Option<String>,
-    pub separator: Option<String>,
-}
-
-impl Default for LookupFormat {
-    fn default() -> Self {
-        Self {
-            lookup_type: LookupType::Glob,
-            comment: Default::default(),
-            separator: Default::default(),
-        }
-    }
-}
-
-impl ParseValue for LookupType {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
-        match value {
-            "list" => Ok(LookupType::List),
-            "glob" => Ok(LookupType::Glob),
-            "regex" => Ok(LookupType::Regex),
-            "map" => Ok(LookupType::Map),
-            _ => Err(format!("Invalid value for lookup type {value:?}",)),
-        }
-    }
 }

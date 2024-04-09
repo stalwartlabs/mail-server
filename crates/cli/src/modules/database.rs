@@ -38,13 +38,13 @@ impl ServerCommands {
             }
             ServerCommands::ReloadCertificates {} => {
                 client
-                    .http_request::<Value, String>(Method::GET, "/api/reload/certificates", None)
+                    .http_request::<Value, String>(Method::GET, "/api/reload/certificate", None)
                     .await;
                 eprintln!("Success.");
             }
             ServerCommands::ReloadConfig {} => {
                 client
-                    .http_request::<Value, String>(Method::GET, "/api/reload/settings", None)
+                    .http_request::<Value, String>(Method::GET, "/api/reload", None)
                     .await;
                 eprintln!("Success.");
             }

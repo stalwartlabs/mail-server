@@ -230,26 +230,39 @@ impl Scripting {
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")
             .with_valid_ext_lists(stores.lookup_stores.keys().map(|k| k.to_string()))
-            .with_functions(&mut fnc_map);
+            .with_functions(&mut fnc_map)
+            .with_max_redirects(
+                config
+                    .property_or_default("sieve.trusted.limits.redirects", "3")
+                    .unwrap_or(3),
+            )
+            .with_max_out_messages(
+                config
+                    .property_or_default("sieve.trusted.limits.out-messages", "5")
+                    .unwrap_or(5),
+            )
+            .with_cpu_limit(
+                config
+                    .property_or_default("sieve.trusted.limits.cpu", "1048576")
+                    .unwrap_or(1048576),
+            )
+            .with_max_nested_includes(
+                config
+                    .property_or_default("sieve.trusted.limits.nested-includes", "5")
+                    .unwrap_or(5),
+            )
+            .with_max_received_headers(
+                config
+                    .property_or_default("sieve.trusted.limits.received-headers", "50")
+                    .unwrap_or(50),
+            )
+            .with_default_duplicate_expiry(
+                config
+                    .property_or_default::<Duration>("sieve.trusted.limits.duplicate-expiry", "7d")
+                    .unwrap_or_else(|| Duration::from_secs(604800))
+                    .as_secs(),
+            );
 
-        if let Some(value) = config.property("sieve.trusted.limits.redirects") {
-            trusted_runtime.set_max_redirects(value);
-        }
-        if let Some(value) = config.property("sieve.trusted.limits.out-messages") {
-            trusted_runtime.set_max_out_messages(value);
-        }
-        if let Some(value) = config.property("sieve.trusted.limits.cpu") {
-            trusted_runtime.set_cpu_limit(value);
-        }
-        if let Some(value) = config.property("sieve.trusted.limits.nested-includes") {
-            trusted_runtime.set_max_nested_includes(value);
-        }
-        if let Some(value) = config.property("sieve.trusted.limits.received-headers") {
-            trusted_runtime.set_max_received_headers(value);
-        }
-        if let Some(value) = config.property::<Duration>("sieve.trusted.limits.duplicate-expiry") {
-            trusted_runtime.set_default_duplicate_expiry(value.as_secs());
-        }
         let hostname = config
             .value("sieve.trusted.hostname")
             .or_else(|| config.value("lookup.default.hostname"))
