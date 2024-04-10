@@ -27,7 +27,7 @@ Due to these extensive changes, the recommended approach for upgrading is to per
 - Move the new `v0.7.0` installation to the old installation directory, for example `mv /path/to/new-install /opt/stalwart-mail`.
 - Set the right permissions for the new installation using the command `sudo chown -R stalwart:stalwart /opt/stalwart-mail`.
 - Start the new installation using the command `sudo systemctl start stalwart-mail`.
-- Import the accounts using the new CLI tool with the command `./stalwart-cli -u http://yourserver.org:8080-c <ADMIN_PASSWORD> import <ACCOUNT> ~/exports/<ACCOUNT>`.
+- Import the accounts using the new CLI tool with the command `./stalwart-cli -u http://yourserver.org:8080 -c <ADMIN_PASSWORD> import account <ACCOUNT> ~/exports/<ACCOUNT>`.
 - Using the admin tool, reactivate all the necessary listener (SMTP, IMAP, etc.)
 - Restart the service using the command `sudo systemctl restart stalwart-mail`.
 
