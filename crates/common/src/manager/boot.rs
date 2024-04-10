@@ -293,7 +293,7 @@ fn quickstart(path: impl Into<PathBuf>) {
         }
     }
 
-    let admin_pass = std::env::var("STALWART_INITIAL_ADMIN_PASSWORD").unwrap_or_else(|_| {
+    let admin_pass = std::env::var("STALWART_ADMIN_PASSWORD").unwrap_or_else(|_| {
         thread_rng()
             .sample_iter(Alphanumeric)
             .take(10)

@@ -32,11 +32,7 @@ use mail_auth::{
 };
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::DateTime;
-use pkcs8::{
-    der::{asn1::BitString, Encode},
-    spki::{AlgorithmIdentifier, SubjectPublicKeyInfoOwned},
-    Document,
-};
+use pkcs8::Document;
 use rsa::pkcs1::DecodeRsaPublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -259,22 +255,13 @@ pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> Result<String, &'sta
                 }
             },
             Algorithm::Ed25519 => {
-                match Ed25519Key::from_pkcs8_maybe_unchecked_der(&der).and_then(|key| {
-                    BitString::from_bytes(&key.public_key())
-                        .and_then(|subject_public_key| {
-                            SubjectPublicKeyInfoOwned {
-                                algorithm: AlgorithmIdentifier {
-                                    oid: "1.3.101.112".parse().unwrap(),
-                                    parameters: None,
-                                },
-                                subject_public_key,
-                            }
-                            .to_der()
-                        })
-                        .map_err(|err| mail_auth::Error::CryptoError(err.to_string()))
-                }) {
-                    Ok(pk) => Ok(String::from_utf8(base64_encode(&pk).unwrap_or_default())
-                        .unwrap_or_default()),
+                match Ed25519Key::from_pkcs8_maybe_unchecked_der(&der)
+                    .map_err(|err| mail_auth::Error::CryptoError(err.to_string()))
+                {
+                    Ok(pk) => Ok(String::from_utf8(
+                        base64_encode(&pk.public_key()).unwrap_or_default(),
+                    )
+                    .unwrap_or_default()),
                     Err(err) => {
                         tracing::debug!("Failed to read ED25519 DER: {err}");
 
