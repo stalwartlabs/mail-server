@@ -4,6 +4,7 @@ use std::{
     path::Path,
 };
 
+use chrono::DateTime;
 use rev_lines::RevLines;
 use serde::Serialize;
 use serde_json::json;
@@ -120,14 +121,11 @@ fn read_log_files(
 impl LogEntry {
     fn from_line(line: &str) -> Option<Self> {
         let (timestamp, rest) = line.split_once(' ')?;
-        let timestamp = timestamp
-            .rsplit_once('.')
-            .filter(|(_, z)| z.ends_with('Z'))
-            .map_or_else(|| timestamp.to_string(), |(t, _)| format!("{t}Z"));
+        let timestamp = DateTime::parse_from_rfc3339(timestamp).ok()?;
         let (level, message) = rest.trim().split_once(' ')?;
         let message = message.split_once(": ").map_or(message, |(_, v)| v);
         Some(Self {
-            timestamp,
+            timestamp: timestamp.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             level: level.to_string(),
             message: message.to_string(),
         })
