@@ -6,7 +6,7 @@ Due to these extensive changes, the recommended approach for upgrading is to per
 
 ## Pre-Upgrade Steps
 - Download the `v0.7.0` mail-server and CLI binaries for your platform from the [releases page](https://github.com/stalwartlabs/mail-server/releases/latest/).
-- Initialize the setup on a distinct directory using the command `sudo ./stalwart-mail -- init /path/to/new-install`. This command will print the administrator password required to access the web-admin.
+- Initialize the setup on a distinct directory using the command `sudo ./stalwart-mail --init /path/to/new-install`. This command will print the administrator password required to access the web-admin.
 - Create the `bin` directory using `mkdir /path/to/new-install/bin`.
 - Move the downloaded binaries to the `bin` directory using the command `mv stalwart-mail stalwart-cli /path/to/new-install/bin`.
 - Open `/path/to/new-install/etc/config.toml` in a text editor and comment out all listeners except the HTTP listener for port `8080`.
@@ -25,7 +25,7 @@ Due to these extensive changes, the recommended approach for upgrading is to per
 - Stop the `v0.6.0` installation using the command `sudo systemctl stop stalwart-mail`.
 - Move the old `v0.6.0` installation to a backup directory, for example `mv /opt/stalwart-mail /opt/stalwart-mail-backup`.
 - Move the new `v0.7.0` installation to the old installation directory, for example `mv /path/to/new-install /opt/stalwart-mail`.
-- Set the right permissions for the new installation using the command `sudo chown -R stalwart:stalwart /opt/stalwart-mail`.
+- Set the right permissions for the new installation using the command `sudo chown -R stalwart-mail:stalwart-mail /opt/stalwart-mail`.
 - Start the new installation using the command `sudo systemctl start stalwart-mail`.
 - Import the accounts using the new CLI tool with the command `./stalwart-cli -u http://yourserver.org:8080 -c <ADMIN_PASSWORD> import account <ACCOUNT> ~/exports/<ACCOUNT>`.
 - Using the admin tool, reactivate all the necessary listener (SMTP, IMAP, etc.)

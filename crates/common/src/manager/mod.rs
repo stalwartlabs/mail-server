@@ -31,7 +31,8 @@ pub mod reload;
 pub mod webadmin;
 
 pub const SPAMFILTER_URL: &str = "https://get.stalw.art/resources/config/spamfilter.toml";
-pub const WEBADMIN_URL: &str = "https://get.stalw.art/resources/webadmin.zip";
+pub const WEBADMIN_URL: &str =
+    "https://github.com/stalwartlabs/webadmin/releases/latest/download/webadmin.zip";
 pub const WEBADMIN_KEY: &[u8] = "STALWART_WEBADMIN".as_bytes();
 
 async fn download_resource(url: &str) -> Result<Vec<u8>, String> {
