@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    tags:
-      - '*'
+    tags: ["v*.*.*"]
+    branches: ["*"]
 
 jobs:
   style:
@@ -13,98 +13,55 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt
-          profile: minimal
-          override: true
-
-      - name: cargo fmt -- --check
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - name: Check Style
+        run: cargo fmt --all --check
 
   test:
     name: Test
-    needs: [style]
+    needs: style
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -yq protobuf-compiler
-          wget https://github.com/glauth/glauth/releases/download/v2.2.0/glauth-linux-arm64
+          curl -LO https://github.com/glauth/glauth/releases/download/v2.2.0/glauth-linux-arm64
           chmod a+rx glauth-linux-arm64
           nohup ./glauth-linux-arm64 -c tests/resources/ldap.cfg &
-          wget https://dl.min.io/server/minio/release/linux-amd64/archive/minio_20230629051228.0.0_amd64.deb -O minio.deb
+          curl -Lo minio.deb https://dl.min.io/server/minio/release/linux-amd64/archive/minio_20230629051228.0.0_amd64.deb
           sudo dpkg -i minio.deb
           mkdir ~/minio
           nohup minio server ~/minio --console-address :9090 &
-          wget https://dl.min.io/client/mc/release/linux-amd64/mc
+          curl -LO https://dl.min.io/client/mc/release/linux-amd64/mc
           chmod a+rx mc
           ./mc alias set myminio http://localhost:9000 minioadmin minioadmin
           ./mc mb tmp
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
 
       - name: JMAP Protocol Tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=crates/jmap-proto/Cargo.toml
+        run: cargo test -p jmap_proto -- --nocapture
 
       - name: IMAP Protocol Tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=crates/imap-proto/Cargo.toml
+        run: cargo test -p imap_proto -- --nocapture
 
       - name: Full-text search Tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=crates/store/Cargo.toml
-
-      #- name: Store Tests
-      #  uses: actions-rs/cargo@v1
-      #  with:
-      #    command: test
-      #    args: --manifest-path=tests/Cargo.toml store -- --nocapture
+        run: cargo test -p store -- --nocapture
 
       - name: Directory Tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=tests/Cargo.toml directory -- --nocapture
+        run: cargo test -p tests directory -- --nocapture
 
       - name: SMTP Tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=tests/Cargo.toml smtp -- --nocapture
+        run: cargo test -p tests smtp -- --nocapture
 
       - name: IMAP Tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=tests/Cargo.toml imap -- --nocapture
+        run: cargo test -p tests imap -- --nocapture
 
       - name: JMAP Tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path=tests/Cargo.toml jmap -- --nocapture
+        run: cargo test -p tests jmap -- --nocapture

@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.7.1] - 2024-04-12
+
+To upgrade replace the `stalwart-mail` binary.
+
+## Added
+- Make initial admin password configurable via env (#311)
+
+### Changed
+- WebAdmin download URL.
+
+### Fixed
+- Remove ASN.1 DER structure from DKIM ED25519 public keys.
+- Filter out invalid timestamps on log entries.
+
 ## [0.7.0] - 2024-04-09
 
 This version uses a different database layout and introduces multiple breaking changes in the configuration files. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
