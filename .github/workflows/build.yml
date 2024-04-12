@@ -7,7 +7,6 @@ on:
   pull_request:
   push:
     tags: ["v*.*.*"]
-    branches: ["main"]
 
 jobs:
   build:
