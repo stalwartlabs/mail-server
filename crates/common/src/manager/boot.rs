@@ -54,34 +54,40 @@ pub struct BootManager {
 }
 
 impl BootManager {
-    pub async fn init() -> Self {
-        let mut config_path = std::env::var("CONFIG_PATH").ok();
+    pub async fn init(optional_config_path: Option<String>) -> Self {
+        let mut config_path;
 
-        if config_path.is_none() {
-            let mut args = std::env::args().skip(1);
+        if optional_config_path.is_some() {
+            config_path = optional_config_path;
+        } else {
+            config_path = std::env::var("CONFIG_PATH").ok();
 
-            if let Some(arg) = args
-                .next()
-                .and_then(|arg| arg.strip_prefix("--").map(|arg| arg.to_string()))
-            {
-                let (key, value) = if let Some((key, value)) = arg.split_once('=') {
-                    (key.to_string(), value.trim().to_string())
-                } else if let Some(value) = args.next() {
-                    (arg, value)
-                } else {
-                    failed(&format!("Invalid command line argument: {arg}"));
-                };
+            if config_path.is_none() {
+                let mut args = std::env::args().skip(1);
 
-                match key.as_str() {
-                    "config" => {
-                        config_path = Some(value);
-                    }
-                    "init" => {
-                        quickstart(value);
-                        std::process::exit(0);
-                    }
-                    _ => {
-                        failed(&format!("Invalid command line argument: {key}"));
+                if let Some(arg) = args
+                    .next()
+                    .and_then(|arg| arg.strip_prefix("--").map(|arg| arg.to_string()))
+                {
+                    let (key, value) = if let Some((key, value)) = arg.split_once('=') {
+                        (key.to_string(), value.trim().to_string())
+                    } else if let Some(value) = args.next() {
+                        (arg, value)
+                    } else {
+                        failed(&format!("Invalid command line argument: {arg}"));
+                    };
+
+                    match key.as_str() {
+                        "config" => {
+                            config_path = Some(value);
+                        }
+                        "init" => {
+                            quickstart(value);
+                            std::process::exit(0);
+                        }
+                        _ => {
+                            failed(&format!("Invalid command line argument: {key}"));
+                        }
                     }
                 }
             }
