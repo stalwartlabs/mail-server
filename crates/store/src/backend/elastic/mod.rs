@@ -103,17 +103,19 @@ impl ElasticSearchStore {
             }
         };
 
-        es.create_index(
-            config
-                .property_or_default((&prefix, "index.shards"), "3")
-                .unwrap_or(3),
-            config
-                .property_or_default((&prefix, "index.replicas"), "0")
-                .unwrap_or(0),
-        )
-        .await
-        .map_err(|err| config.new_build_error(prefix.as_str(), err.to_string()))
-        .ok()?;
+        if let Err(err) = es
+            .create_index(
+                config
+                    .property_or_default((&prefix, "index.shards"), "3")
+                    .unwrap_or(3),
+                config
+                    .property_or_default((&prefix, "index.replicas"), "0")
+                    .unwrap_or(0),
+            )
+            .await
+        {
+            config.new_build_error(prefix.as_str(), err.to_string());
+        }
 
         Some(es)
     }
