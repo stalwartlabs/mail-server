@@ -30,7 +30,9 @@ use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use store::BlobStore;
 
-use super::{download_resource, WEBADMIN_KEY, WEBADMIN_URL};
+use crate::Core;
+
+use super::WEBADMIN_KEY;
 
 pub struct WebAdminManager {
     bundle_path: TempDir,
@@ -128,12 +130,17 @@ impl WebAdminManager {
         Ok(())
     }
 
-    pub async fn update_and_unpack(&self, blob_store: &BlobStore) -> store::Result<()> {
-        let bytes = download_resource(WEBADMIN_URL).await.map_err(|err| {
-            store::Error::InternalError(format!("Failed to download webadmin: {err}"))
-        })?;
-        blob_store.put_blob(WEBADMIN_KEY, &bytes).await?;
-        self.unpack(blob_store).await
+    pub async fn update_and_unpack(&self, core: &Core) -> store::Result<()> {
+        let bytes = core
+            .storage
+            .config
+            .fetch_resource("webadmin")
+            .await
+            .map_err(|err| {
+                store::Error::InternalError(format!("Failed to download webadmin: {err}"))
+            })?;
+        core.storage.blob.put_blob(WEBADMIN_KEY, &bytes).await?;
+        self.unpack(&core.storage.blob).await
     }
 }
 

@@ -21,7 +21,6 @@
  * for more details.
 */
 
-use common::manager::SPAMFILTER_URL;
 use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
@@ -96,7 +95,7 @@ impl JMAP {
                     .core
                     .storage
                     .config
-                    .update_external_config(SPAMFILTER_URL)
+                    .update_config_resource("spam-filter")
                     .await
                 {
                     Ok(result) => JsonResponse::new(json!({
@@ -107,12 +106,7 @@ impl JMAP {
                 }
             }
             (Some("webadmin"), &Method::GET) => {
-                match self
-                    .inner
-                    .webadmin
-                    .update_and_unpack(&self.core.storage.blob)
-                    .await
-                {
+                match self.inner.webadmin.update_and_unpack(&self.core).await {
                     Ok(_) => JsonResponse::new(json!({
                         "data": (),
                     }))

@@ -37,8 +37,6 @@ use utils::{
     glob::GlobPattern,
 };
 
-use super::download_resource;
-
 #[derive(Default)]
 pub struct ConfigManager {
     pub cfg_local: ArcSwap<BTreeMap<String, String>>,
@@ -320,9 +318,9 @@ impl ConfigManager {
             })
     }
 
-    pub async fn update_external_config(&self, url: &str) -> store::Result<Option<String>> {
+    pub async fn update_config_resource(&self, resource_id: &str) -> store::Result<Option<String>> {
         let external = self
-            .fetch_external_config(url)
+            .fetch_config_resource(resource_id)
             .await
             .map_err(store::Error::InternalError)?;
 
@@ -337,7 +335,7 @@ impl ConfigManager {
             tracing::debug!(
                 context = "config",
                 event = "update",
-                url = url,
+                resource_id = resource_id,
                 version = external.version,
                 "Configuration version is up-to-date"
             );
@@ -345,8 +343,11 @@ impl ConfigManager {
         }
     }
 
-    pub(crate) async fn fetch_external_config(&self, url: &str) -> Result<ExternalConfig, String> {
-        let config = String::from_utf8(download_resource(url).await?)
+    pub(crate) async fn fetch_config_resource(
+        &self,
+        resource_id: &str,
+    ) -> Result<ExternalConfig, String> {
+        let config = String::from_utf8(self.fetch_resource(resource_id).await?)
             .map_err(|err| format!("Configuration file has invalid UTF-8: {err}"))?;
         let config = Config::new(config)
             .map_err(|err| format!("Failed to parse external configuration: {err}"))?;
@@ -375,7 +376,7 @@ impl ConfigManager {
                     event = "import",
                     key = key,
                     value = value,
-                    url = url,
+                    resource_id = resource_id,
                     "Ignoring key"
                 );
             }

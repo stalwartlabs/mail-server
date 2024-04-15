@@ -37,13 +37,12 @@ use utils::{
 
 use crate::{
     config::{server::Servers, tracers::Tracers},
-    manager::SPAMFILTER_URL,
     Core, SharedCore,
 };
 
 use super::{
     config::{ConfigManager, Patterns},
-    download_resource, WEBADMIN_KEY, WEBADMIN_URL,
+    WEBADMIN_KEY,
 };
 
 pub struct BootManager {
@@ -177,12 +176,11 @@ impl BootManager {
             .filter(|v| !v.is_empty())
             .is_none()
         {
-            match manager.fetch_external_config(SPAMFILTER_URL).await {
+            match manager.fetch_config_resource("spam-filter").await {
                 Ok(external_config) => {
                     tracing::info!(
                         context = "config",
                         event = "import",
-                        url = SPAMFILTER_URL,
                         version = external_config.version,
                         "Imported spam filter rules"
                     );
@@ -221,13 +219,12 @@ impl BootManager {
         {
             match blob_store.get_blob(WEBADMIN_KEY, 0..usize::MAX).await {
                 Ok(Some(_)) => (),
-                Ok(None) => match download_resource(WEBADMIN_URL).await {
+                Ok(None) => match manager.fetch_resource("webadmin").await {
                     Ok(bytes) => match blob_store.put_blob(WEBADMIN_KEY, &bytes).await {
                         Ok(_) => {
                             tracing::info!(
                                 context = "webadmin",
                                 event = "download",
-                                url = WEBADMIN_URL,
                                 "Downloaded webadmin bundle"
                             );
                         }
