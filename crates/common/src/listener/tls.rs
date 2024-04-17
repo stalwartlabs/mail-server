@@ -24,12 +24,11 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Formatter},
-    sync::{atomic::AtomicBool, Arc},
+    sync::Arc,
 };
 
 use ahash::AHashMap;
 use arc_swap::ArcSwap;
-use parking_lot::Mutex;
 use rustls::{
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
@@ -42,7 +41,10 @@ use tokio_rustls::{Accept, LazyConfigAcceptor};
 use crate::{Core, SharedCore};
 
 use super::{
-    acme::{resolver::IsTlsAlpnChallenge, AcmeProvider},
+    acme::{
+        resolver::{build_acme_static_resolver, IsTlsAlpnChallenge},
+        AcmeProvider,
+    },
     SessionStream, TcpAcceptor, TcpAcceptorResult,
 };
 
@@ -53,15 +55,7 @@ pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 pub struct TlsManager {
     pub certificates: ArcSwap<AHashMap<String, Arc<CertifiedKey>>>,
     pub acme_providers: AHashMap<String, AcmeProvider>,
-    pub(crate) acme_auth_keys: Mutex<AHashMap<String, AcmeAuthKey>>,
-    pub acme_in_progress: AtomicBool,
     pub self_signed_cert: Option<Arc<CertifiedKey>>,
-}
-
-#[derive(Clone)]
-pub(crate) struct AcmeAuthKey {
-    pub provider_id: String,
-    pub key: Arc<CertifiedKey>,
 }
 
 #[derive(Clone)]
@@ -72,12 +66,6 @@ pub struct CertificateResolver {
 impl CertificateResolver {
     pub fn new(core: SharedCore) -> Self {
         Self { core }
-    }
-}
-
-impl AcmeAuthKey {
-    pub fn new(provider_id: String, key: Arc<CertifiedKey>) -> Self {
-        Self { provider_id, key }
     }
 }
 
@@ -139,24 +127,54 @@ impl Core {
 }
 
 impl TcpAcceptor {
-    pub async fn accept<IO>(&self, stream: IO, enable_acme: bool) -> TcpAcceptorResult<IO>
+    pub async fn accept<IO>(
+        &self,
+        stream: IO,
+        enable_acme: Option<Arc<Core>>,
+    ) -> TcpAcceptorResult<IO>
     where
         IO: SessionStream,
     {
         match self {
             TcpAcceptor::Tls {
-                acme_config,
-                default_config,
+                config,
                 acceptor,
                 implicit,
-            } if *implicit => {
-                if !enable_acme {
-                    TcpAcceptorResult::Tls(acceptor.accept(stream))
-                } else {
+            } if *implicit => match enable_acme {
+                None => TcpAcceptorResult::Tls(acceptor.accept(stream)),
+                Some(core) => {
                     match LazyConfigAcceptor::new(Default::default(), stream).await {
                         Ok(start_handshake) => {
-                            if start_handshake.client_hello().is_tls_alpn_challenge() {
-                                match start_handshake.into_stream(acme_config.clone()).await {
+                            if core.has_acme_tls_providers()
+                                && start_handshake.client_hello().is_tls_alpn_challenge()
+                            {
+                                let key = match start_handshake.client_hello().server_name() {
+                                    Some(domain) => {
+                                        let key = core.build_acme_certificate(domain).await;
+
+                                        tracing::trace!(
+                                            context = "acme",
+                                            event = "auth-key",
+                                            domain = %domain,
+                                            found_key = key.is_some(),
+                                            "Client supplied SNI");
+                                        key
+                                    }
+                                    None => {
+                                        tracing::debug!(
+                                            context = "acme",
+                                            event = "error",
+                                            reason = "missing-sni",
+                                            "Client did not supply SNI"
+                                        );
+                                        None
+                                    }
+                                };
+
+                                match start_handshake
+                                    .into_stream(build_acme_static_resolver(key))
+                                    .await
+                                {
                                     Ok(mut tls) => {
                                         tracing::debug!(
                                             context = "acme",
@@ -176,7 +194,7 @@ impl TcpAcceptor {
                                 }
                             } else {
                                 return TcpAcceptorResult::Tls(
-                                    start_handshake.into_stream(default_config.clone()),
+                                    start_handshake.into_stream(config.clone()),
                                 );
                             }
                         }
@@ -192,7 +210,7 @@ impl TcpAcceptor {
 
                     TcpAcceptorResult::Close
                 }
-            }
+            },
             _ => TcpAcceptorResult::Plain(stream),
         }
     }
@@ -225,11 +243,6 @@ impl Clone for TlsManager {
         Self {
             certificates: ArcSwap::from_pointee(self.certificates.load().as_ref().clone()),
             acme_providers: self.acme_providers.clone(),
-            acme_auth_keys: Mutex::new(self.acme_auth_keys.lock().clone()),
-            acme_in_progress: self
-                .acme_in_progress
-                .load(std::sync::atomic::Ordering::Relaxed)
-                .into(),
             self_signed_cert: self.self_signed_cert.clone(),
         }
     }

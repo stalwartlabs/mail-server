@@ -31,13 +31,26 @@ pub(crate) fn sign(
     Ok(serde_json::to_string(&body)?)
 }
 
+pub(crate) fn key_authorization(key: &EcdsaKeyPair, token: &str) -> Result<String, JoseError> {
+    Ok(format!(
+        "{}.{}",
+        token,
+        Jwk::new(key).thumb_sha256_base64()?
+    ))
+}
+
 pub(crate) fn key_authorization_sha256(
     key: &EcdsaKeyPair,
     token: &str,
 ) -> Result<Digest, JoseError> {
-    let jwk = Jwk::new(key);
-    let key_authorization = format!("{}.{}", token, jwk.thumb_sha256_base64()?);
-    Ok(digest(&SHA256, key_authorization.as_bytes()))
+    key_authorization(key, token).map(|s| digest(&SHA256, s.as_bytes()))
+}
+
+pub(crate) fn key_authorization_sha256_base64(
+    key: &EcdsaKeyPair,
+    token: &str,
+) -> Result<String, JoseError> {
+    key_authorization_sha256(key, token).map(|s| URL_SAFE_NO_PAD.encode(s.as_ref()))
 }
 
 #[derive(Serialize)]

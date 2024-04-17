@@ -21,16 +21,20 @@
  * for more details.
 */
 
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 
 use rustls::{
+    crypto::ring::sign::any_ecdsa_type,
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
+    ServerConfig,
 };
+use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use store::write::Bincode;
 
-use crate::{listener::tls::AcmeAuthKey, Core};
+use crate::{listener::acme::directory::SerializedCert, Core};
 
-use super::{directory::ACME_TLS_ALPN_NAME, AcmeProvider, AcmeResolver};
+use super::{directory::ACME_TLS_ALPN_NAME, AcmeProvider, StaticResolver};
 
 impl Core {
     pub(crate) fn set_cert(&self, provider: &AcmeProvider, cert: Arc<CertifiedKey>) {
@@ -52,57 +56,71 @@ impl Core {
         }
 
         self.tls.certificates.store(certificates.into());
-
-        // Remove auth keys
-        let mut auth_keys = self.tls.acme_auth_keys.lock();
-        auth_keys.retain(|_, v| v.provider_id != provider.id);
-        self.tls
-            .acme_in_progress
-            .store(!auth_keys.is_empty(), Ordering::Relaxed);
-    }
-    pub(crate) fn set_auth_key(
-        &self,
-        provider: &AcmeProvider,
-        domain: String,
-        cert: Arc<CertifiedKey>,
-    ) {
-        self.tls
-            .acme_auth_keys
-            .lock()
-            .insert(domain, AcmeAuthKey::new(provider.id.clone(), cert));
     }
 }
 
-impl ResolvesServerCert for AcmeResolver {
-    fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
-        let core = self.core.load();
-        if core.has_acme_order_in_progress() && client_hello.is_tls_alpn_challenge() {
-            match client_hello.server_name() {
-                Some(domain) => {
-                    tracing::trace!(
-                        context = "acme",
-                        event = "auth-key",
-                        domain = %domain,
-                        "Found client supplied SNI");
+impl ResolvesServerCert for StaticResolver {
+    fn resolve(&self, _: ClientHello) -> Option<Arc<CertifiedKey>> {
+        self.key.clone()
+    }
+}
 
-                    core.tls
-                        .acme_auth_keys
-                        .lock()
-                        .get(domain)
-                        .map(|ak| ak.key.clone())
-                }
-                None => {
-                    tracing::debug!(
-                        context = "acme",
-                        event = "error",
-                        reason = "missing-sni",
-                        "client did not supply SNI"
-                    );
-                    None
+pub(crate) fn build_acme_static_resolver(key: Option<Arc<CertifiedKey>>) -> Arc<ServerConfig> {
+    let mut challenge = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_cert_resolver(Arc::new(StaticResolver { key }));
+    challenge.alpn_protocols.push(ACME_TLS_ALPN_NAME.to_vec());
+    Arc::new(challenge)
+}
+
+impl Core {
+    pub(crate) async fn build_acme_certificate(&self, domain: &str) -> Option<Arc<CertifiedKey>> {
+        match self
+            .storage
+            .lookup
+            .key_get::<Bincode<SerializedCert>>(format!("acme:{domain}").into_bytes())
+            .await
+        {
+            Ok(Some(cert)) => {
+                match any_ecdsa_type(&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+                    cert.inner.private_key,
+                ))) {
+                    Ok(key) => Some(Arc::new(CertifiedKey::new(
+                        vec![CertificateDer::from(cert.inner.certificate)],
+                        key,
+                    ))),
+                    Err(err) => {
+                        tracing::error!(
+                            context = "acme",
+                            event = "error",
+                            domain = %domain,
+                            reason = %err,
+                            "Failed to parse private key",
+                        );
+                        None
+                    }
                 }
             }
-        } else {
-            core.resolve_certificate(client_hello.server_name())
+            Err(err) => {
+                tracing::error!(
+                    context = "acme",
+                    event = "error",
+                    domain = %domain,
+                    reason = %err,
+                    "Failed to lookup token",
+                );
+                None
+            }
+            Ok(None) => {
+                tracing::debug!(
+                    context = "acme",
+                    event = "error",
+                    domain = %domain,
+                    reason = "missing-token",
+                    "Token not found in lookup store"
+                );
+                None
+            }
         }
     }
 }

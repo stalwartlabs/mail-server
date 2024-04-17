@@ -35,6 +35,7 @@ use utils::config::ipmask::IpAddrMask;
 use crate::{
     config::server::ServerProtocol,
     expr::{functions::ResolveVariable, *},
+    Core,
 };
 
 use self::limiter::{ConcurrencyLimiter, InFlight};
@@ -58,8 +59,7 @@ pub struct ServerInstance {
 #[derive(Default)]
 pub enum TcpAcceptor {
     Tls {
-        acme_config: Arc<ServerConfig>,
-        default_config: Arc<ServerConfig>,
+        config: Arc<ServerConfig>,
         acceptor: TlsAcceptor,
         implicit: bool,
     },
@@ -99,7 +99,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
         &self,
         mut session: SessionData<T>,
         is_tls: bool,
-        enable_acme: bool,
+        acme_core: Option<Arc<Core>>,
     ) {
         let manager = self.clone();
 
@@ -108,7 +108,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                 match session
                     .instance
                     .acceptor
-                    .accept(session.stream, enable_acme)
+                    .accept(session.stream, acme_core)
                     .await
                 {
                     TcpAcceptorResult::Tls(accept) => match accept.await {
@@ -177,14 +177,10 @@ impl Debug for TcpAcceptor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Tls {
-                acme_config,
-                default_config,
-                implicit,
-                ..
+                config, implicit, ..
             } => f
                 .debug_struct("Tls")
-                .field("acme_config", acme_config)
-                .field("default_config", default_config)
+                .field("config", config)
                 .field("implicit", implicit)
                 .finish(),
             Self::Plain => write!(f, "Plain"),

@@ -23,17 +23,11 @@
 
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 use sieve::{runtime::Variable, FunctionMap};
+use utils::suffixlist::DomainPart;
 
 use crate::scripts::functions::{html::html_to_tokens, text::tokenize_words, ApplyString};
 
 use super::PluginContext;
-
-#[derive(PartialEq, Eq, Clone, Copy)]
-enum MatchPart {
-    Sld,
-    Tld,
-    Host,
-}
 
 pub fn register_tokenize(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("tokenize", plugin_id, 2);
@@ -78,51 +72,20 @@ pub fn exec_tokenize(ctx: PluginContext<'_>) -> Variable {
 
 pub fn exec_domain_part(ctx: PluginContext<'_>) -> Variable {
     let v = ctx.arguments;
-    let match_part = match v[1].to_string().as_ref() {
-        "sld" => MatchPart::Sld,
-        "tld" => MatchPart::Tld,
-        "host" => MatchPart::Host,
+    let part = match v[1].to_string().as_ref() {
+        "sld" => DomainPart::Sld,
+        "tld" => DomainPart::Tld,
+        "host" => DomainPart::Host,
         _ => return Variable::default(),
     };
 
     v[0].transform(|domain| {
-        let d = domain.trim().to_lowercase();
-        let mut seen_dot = false;
-        for (pos, ch) in d.as_bytes().iter().enumerate().rev() {
-            if *ch == b'.' {
-                if seen_dot {
-                    let maybe_domain =
-                        std::str::from_utf8(&d.as_bytes()[pos + 1..]).unwrap_or_default();
-                    if !ctx.core.smtp.resolvers.psl.contains(maybe_domain) {
-                        return if match_part == MatchPart::Sld {
-                            maybe_domain
-                        } else {
-                            std::str::from_utf8(&d.as_bytes()[..pos]).unwrap_or_default()
-                        }
-                        .to_string()
-                        .into();
-                    }
-                } else if match_part == MatchPart::Tld {
-                    return std::str::from_utf8(&d.as_bytes()[pos + 1..])
-                        .unwrap_or_default()
-                        .to_string()
-                        .into();
-                } else {
-                    seen_dot = true;
-                }
-            }
-        }
-
-        if seen_dot {
-            if match_part == MatchPart::Sld {
-                d.into()
-            } else {
-                Variable::default()
-            }
-        } else if match_part == MatchPart::Host {
-            d.into()
-        } else {
-            Variable::default()
-        }
+        ctx.core
+            .smtp
+            .resolvers
+            .psl
+            .domain_part(domain, part)
+            .map(Variable::from)
+            .unwrap_or_default()
     })
 }

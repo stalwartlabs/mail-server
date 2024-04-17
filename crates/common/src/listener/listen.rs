@@ -115,7 +115,7 @@ impl Server {
                             match stream {
                                 Ok((stream, remote_addr)) => {
                                     let core = core.as_ref().load();
-                                    let enable_acme = is_https && core.has_acme_order_in_progress();
+                                    let enable_acme = (is_https && core.has_acme_tls_providers()).then_some(core.clone());
 
                                     if has_proxies && instance.proxy_networks.iter().any(|network| network.matches(&remote_addr.ip())) {
                                         let instance = instance.clone();

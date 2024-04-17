@@ -36,11 +36,7 @@ use utils::config::{
 };
 
 use crate::{
-    listener::{
-        acme::{directory::ACME_TLS_ALPN_NAME, AcmeResolver},
-        tls::CertificateResolver,
-        TcpAcceptor,
-    },
+    listener::{tls::CertificateResolver, TcpAcceptor},
     SharedCore,
 };
 
@@ -219,14 +215,6 @@ impl Servers {
 
     pub fn parse_tcp_acceptors(&mut self, config: &mut Config, core: SharedCore) {
         let resolver = Arc::new(CertificateResolver::new(core.clone()));
-        let acme_config = {
-            let mut challenge = ServerConfig::builder()
-                .with_no_client_auth()
-                .with_cert_resolver(Arc::new(AcmeResolver::new(core)));
-
-            challenge.alpn_protocols.push(ACME_TLS_ALPN_NAME.to_vec());
-            Arc::new(challenge)
-        };
 
         for id_ in config
             .sub_keys("server.listener", ".protocol")
@@ -318,8 +306,7 @@ impl Servers {
                 let default_config = Arc::new(server_config);
                 TcpAcceptor::Tls {
                     acceptor: TlsAcceptor::from(default_config.clone()),
-                    acme_config: acme_config.clone(),
-                    default_config,
+                    config: default_config,
                     implicit: config
                         .property_or_default(("server.listener", id, "tls.implicit"), "false")
                         .unwrap_or(false),

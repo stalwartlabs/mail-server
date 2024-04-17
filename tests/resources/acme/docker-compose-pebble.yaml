@@ -1,13 +1,14 @@
 # docker-compose -f docker-compose-pebble.yaml up
 # curl --request POST --data '{"ip":"192.168.5.2"}' http://localhost:8055/set-default-ipv4
 # HTTPS port should be 5001
+# HTTP port should be 5002
 # Directory https://localhost:14000/dir
 
 version: '3'
 services:
   pebble:
     image: letsencrypt/pebble:latest
-    command: pebble -config /test/config/pebble-config.json -strict -dnsserver 10.30.50.3:8053
+    command: pebble -config /test/config/pebble-config.json -strict -dnsserver 8.8.8.8:53 #-dnsserver 10.30.50.3:8053
     ports:
       - 14000:14000 # HTTPS ACME API
       - 15000:15000 # HTTPS Management API

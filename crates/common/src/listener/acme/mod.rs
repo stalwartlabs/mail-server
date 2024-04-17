@@ -27,18 +27,16 @@ pub mod jose;
 pub mod order;
 pub mod resolver;
 
-use std::{
-    fmt::Debug,
-    sync::{atomic::Ordering, Arc},
-    time::Duration,
-};
+use std::{fmt::Debug, sync::Arc, time::Duration};
 
 use arc_swap::ArcSwap;
+use dns_update::DnsUpdater;
+use rustls::sign::CertifiedKey;
 
-use crate::{Core, SharedCore};
+use crate::Core;
 
 use self::{
-    directory::Account,
+    directory::{Account, ChallengeType},
     order::{CertParseError, OrderError},
 };
 
@@ -47,13 +45,27 @@ pub struct AcmeProvider {
     pub directory_url: String,
     pub domains: Vec<String>,
     pub contact: Vec<String>,
+    pub challenge: ChallengeSettings,
     renew_before: chrono::Duration,
     account_key: ArcSwap<Vec<u8>>,
     default: bool,
 }
 
-pub struct AcmeResolver {
-    pub core: SharedCore,
+#[derive(Clone)]
+pub enum ChallengeSettings {
+    Http01,
+    TlsAlpn01,
+    Dns01 {
+        updater: DnsUpdater,
+        origin: Option<String>,
+        polling_interval: Duration,
+        propagation_timeout: Duration,
+        ttl: u32,
+    },
+}
+
+pub struct StaticResolver {
+    pub key: Option<Arc<CertifiedKey>>,
 }
 
 #[derive(Debug)]
@@ -73,6 +85,7 @@ impl AcmeProvider {
         directory_url: String,
         domains: Vec<String>,
         contact: Vec<String>,
+        challenge: ChallengeSettings,
         renew_before: Duration,
         default: bool,
     ) -> utils::config::Result<Self> {
@@ -92,6 +105,7 @@ impl AcmeProvider {
             renew_before: chrono::Duration::from_std(renew_before).unwrap(),
             domains,
             account_key: Default::default(),
+            challenge,
             default,
         })
     }
@@ -116,20 +130,34 @@ impl Core {
         })
     }
 
-    pub fn has_acme_order_in_progress(&self) -> bool {
-        self.tls.acme_in_progress.load(Ordering::Relaxed)
+    pub fn has_acme_tls_providers(&self) -> bool {
+        self.tls
+            .acme_providers
+            .values()
+            .any(|p| matches!(p.challenge, ChallengeSettings::TlsAlpn01))
+    }
+
+    pub fn has_acme_http_providers(&self) -> bool {
+        self.tls
+            .acme_providers
+            .values()
+            .any(|p| matches!(p.challenge, ChallengeSettings::Http01))
     }
 }
 
-impl AcmeResolver {
-    pub fn new(core: SharedCore) -> Self {
-        Self { core }
+impl ChallengeSettings {
+    pub fn challenge_type(&self) -> ChallengeType {
+        match self {
+            ChallengeSettings::Http01 => ChallengeType::Http01,
+            ChallengeSettings::TlsAlpn01 => ChallengeType::TlsAlpn01,
+            ChallengeSettings::Dns01 { .. } => ChallengeType::Dns01,
+        }
     }
 }
 
-impl Debug for AcmeResolver {
+impl Debug for StaticResolver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AcmeResolver").finish()
+        f.debug_struct("StaticResolver").finish()
     }
 }
 
@@ -140,6 +168,7 @@ impl Clone for AcmeProvider {
             directory_url: self.directory_url.clone(),
             domains: self.domains.clone(),
             contact: self.contact.clone(),
+            challenge: self.challenge.clone(),
             renew_before: self.renew_before,
             account_key: ArcSwap::from_pointee(self.account_key.load().as_ref().clone()),
             default: self.default,

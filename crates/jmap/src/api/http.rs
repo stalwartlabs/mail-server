@@ -228,6 +228,25 @@ impl JMAP {
                         Err(err) => err.into_http_response(),
                     };
                 }
+                ("acme-challenge", &Method::GET) if self.core.has_acme_http_providers() => {
+                    if let Some(token) = path.next() {
+                        return match self
+                            .core
+                            .storage
+                            .lookup
+                            .key_get::<String>(format!("acme:{token}").into_bytes())
+                            .await
+                        {
+                            Ok(Some(proof)) => Resource {
+                                content_type: "text/plain",
+                                contents: proof.into_bytes(),
+                            }
+                            .into_http_response(),
+                            Ok(None) => RequestError::not_found().into_http_response(),
+                            Err(err) => err.into_http_response(),
+                        };
+                    }
+                }
                 (_, &Method::OPTIONS) => {
                     return ().into_http_response();
                 }

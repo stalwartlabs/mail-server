@@ -171,6 +171,8 @@ impl Resolvers {
         if let Some(attempts) = config.property("resolver.attempts") {
             opts.attempts = attempts;
         }
+        // We already have a cache, so disable the built-in cache
+        opts.cache_size = 0;
 
         // Prepare DNSSEC resolver options
         let config_dnssec = resolver_config.clone();

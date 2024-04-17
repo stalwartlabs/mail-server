@@ -1,18 +1,20 @@
 // Adapted from rustls-acme (https://github.com/FlorianUekermann/rustls-acme), licensed under MIT/Apache-2.0.
 
 use chrono::{DateTime, TimeZone, Utc};
+use dns_update::DnsRecord;
 use futures::future::try_join_all;
 use rcgen::{CertificateParams, DistinguishedName, PKCS_ECDSA_P256_SHA256};
 use rustls::crypto::ring::sign::any_ecdsa_type;
 use rustls::sign::CertifiedKey;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::fmt::Debug;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use utils::suffixlist::DomainPart;
 use x509_parser::parse_x509_certificate;
 
 use crate::listener::acme::directory::Identifier;
+use crate::listener::acme::ChallengeSettings;
 use crate::Core;
 
 use super::directory::{Account, Auth, AuthStatus, Directory, DirectoryError, Order, OrderStatus};
@@ -27,6 +29,8 @@ pub enum OrderError {
     BadAuth(Auth),
     TooManyAttemptsAuth(String),
     ProcessingTimeout(Order),
+    Store(store::Error),
+    Dns(dns_update::Error),
 }
 
 #[derive(Debug)]
@@ -80,7 +84,6 @@ impl Core {
 
     pub async fn renew(&self, provider: &AcmeProvider) -> Result<Duration, AcmeError> {
         let mut backoff = 0;
-        self.tls.acme_in_progress.store(true, Ordering::Relaxed);
         loop {
             match self.order(provider).await {
                 Ok(pem) => return self.process_cert(provider, pem, false).await,
@@ -203,21 +206,165 @@ impl Core {
         let (domain, challenge_url) = match auth.status {
             AuthStatus::Pending => {
                 let Identifier::Dns(domain) = auth.identifier;
+                let challenge_type = provider.challenge.challenge_type();
                 tracing::info!(
                     context = "acme",
                     event = "challenge",
                     domain = domain,
+                    challenge = ?challenge_type,
                     "Requesting challenge for domain {domain}"
                 );
-                let (challenge, auth_key) =
-                    account.tls_alpn_01(&auth.challenges, domain.clone())?;
-                self.set_auth_key(provider, domain.clone(), Arc::new(auth_key));
+                let challenge = auth
+                    .challenges
+                    .iter()
+                    .find(|c| c.typ == challenge_type)
+                    .ok_or(DirectoryError::NoChallenge(challenge_type))?;
+
+                match &provider.challenge {
+                    ChallengeSettings::TlsAlpn01 => {
+                        self.storage
+                            .lookup
+                            .key_set(
+                                format!("acme:{domain}").into_bytes(),
+                                account.tls_alpn_key(challenge, domain.clone())?,
+                                3600.into(),
+                            )
+                            .await?;
+                    }
+                    ChallengeSettings::Http01 => {
+                        self.storage
+                            .lookup
+                            .key_set(
+                                format!("acme:{}", challenge.token).into_bytes(),
+                                account.http_proof(challenge)?,
+                                3600.into(),
+                            )
+                            .await?;
+                    }
+                    ChallengeSettings::Dns01 {
+                        updater,
+                        origin,
+                        polling_interval,
+                        propagation_timeout,
+                        ttl,
+                    } => {
+                        let dns_proof = account.dns_proof(challenge)?;
+                        let domain = domain.strip_prefix("*.").unwrap_or(&domain);
+                        let name = format!("_acme-challenge.{}", domain);
+                        let origin = origin
+                            .clone()
+                            .or_else(|| {
+                                self.smtp.resolvers.psl.domain_part(domain, DomainPart::Sld)
+                            })
+                            .unwrap_or_else(|| domain.to_string());
+
+                        // First try deleting the record
+                        if let Err(err) = updater.delete(&name, &origin).await {
+                            // Errors are expected if the record does not exist
+                            tracing::trace!(
+                                context = "acme",
+                                event = "dns-delete",
+                                name = name,
+                                origin = origin,
+                                error = ?err,
+                            );
+                        }
+
+                        // Create the record
+                        if let Err(err) = updater
+                            .create(
+                                &name,
+                                DnsRecord::TXT {
+                                    content: dns_proof.clone(),
+                                },
+                                *ttl,
+                                &origin,
+                            )
+                            .await
+                        {
+                            tracing::warn!(
+                                context = "acme",
+                                event = "dns-create",
+                                name = name,
+                                origin = origin,
+                                error = ?err,
+                                "Failed to create DNS record.",
+                            );
+                            return Err(OrderError::Dns(err));
+                        }
+
+                        tracing::info!(
+                            context = "acme",
+                            event = "dns-create",
+                            name = name,
+                            origin = origin,
+                            "Successfully created DNS record.",
+                        );
+
+                        // Wait for changes to propagate
+                        let wait_until = Instant::now() + *propagation_timeout;
+                        let mut did_propagate = false;
+                        while Instant::now() < wait_until {
+                            match self.smtp.resolvers.dns.txt_raw_lookup(&name).await {
+                                Ok(result) => {
+                                    let result = std::str::from_utf8(&result).unwrap_or_default();
+                                    if result.contains(&dns_proof) {
+                                        did_propagate = true;
+                                        break;
+                                    } else {
+                                        tracing::debug!(
+                                            context = "acme",
+                                            event = "dns-lookup",
+                                            name = name,
+                                            origin = origin,
+                                            contents = ?result,
+                                            expected_proof = ?dns_proof,
+                                            "DNS record has not propagated yet.",
+                                        );
+                                    }
+                                }
+                                Err(err) => {
+                                    tracing::trace!(
+                                        context = "acme",
+                                        event = "dns-lookup",
+                                        name = name,
+                                        origin = origin,
+                                        error = ?err,
+                                        "Failed to lookup DNS record.",
+                                    );
+                                }
+                            }
+
+                            tokio::time::sleep(*polling_interval).await;
+                        }
+
+                        if did_propagate {
+                            tracing::info!(
+                                context = "acme",
+                                event = "dns-lookup",
+                                name = name,
+                                origin = origin,
+                                "DNS changes have been propagated.",
+                            );
+                        } else {
+                            tracing::warn!(
+                                context = "acme",
+                                event = "dns-lookup",
+                                name = name,
+                                origin = origin,
+                                "DNS changes have not been propagated within the timeout.",
+                            );
+                        }
+                    }
+                }
+
                 account.challenge(&challenge.url).await?;
                 (domain, challenge.url.clone())
             }
             AuthStatus::Valid => return Ok(()),
             _ => return Err(OrderError::BadAuth(auth)),
         };
+
         for i in 0u64..5 {
             tokio::time::sleep(Duration::from_secs(1u64 << i)).await;
             let auth = account.auth(url).await?;
@@ -232,7 +379,16 @@ impl Core {
                     );
                     account.challenge(&challenge_url).await?
                 }
-                AuthStatus::Valid => return Ok(()),
+                AuthStatus::Valid => {
+                    tracing::debug!(
+                        context = "acme",
+                        event = "auth-valid",
+                        domain = domain,
+                        "Authorization for domain {domain} is valid",
+                    );
+
+                    return Ok(());
+                }
                 _ => return Err(OrderError::BadAuth(auth)),
             }
         }
@@ -303,5 +459,11 @@ impl From<JoseError> for OrderError {
 impl From<JoseError> for AcmeError {
     fn from(err: JoseError) -> Self {
         Self::Order(OrderError::from(err))
+    }
+}
+
+impl From<store::Error> for OrderError {
+    fn from(value: store::Error) -> Self {
+        Self::Store(value)
     }
 }

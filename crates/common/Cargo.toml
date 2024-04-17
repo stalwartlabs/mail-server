@@ -1,6 +1,6 @@
 [package]
 name = "common"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 resolver = "2"
 
@@ -15,6 +15,7 @@ mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] 
 mail-auth = { version = "0.3" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
 smtp-proto = { version = "0.1", features = ["serde_support"] }
+dns-update = { version = "0.1" }
 ahash = { version = "0.8.0", features = ["serde"] }
 parking_lot = "0.12.1"
 regex = "1.7.0"

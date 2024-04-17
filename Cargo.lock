@@ -985,7 +985,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -994,6 +994,7 @@ dependencies = [
  "chrono",
  "decancer",
  "directory",
+ "dns-update",
  "futures",
  "hostname 0.4.0",
  "hyper 1.2.0",
@@ -1496,7 +1497,7 @@ dependencies = [
 
 [[package]]
 name = "directory"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash 0.8.11",
  "argon2",
@@ -1586,6 +1587,20 @@ name = "dlv-list"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0688c2a7f92e427f44895cd63841bff7b29f8d7a1648b9e7e07a4a365b2e1257"
+
+[[package]]
+name = "dns-update"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1be40017dbee3b3cb51abd068fd8319d83b95433cca53d83fef589a11ba0cd51"
+dependencies = [
+ "hickory-client",
+ "reqwest 0.12.3",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tokio",
+]
 
 [[package]]
 name = "doc-comment"
@@ -1770,6 +1785,12 @@ checksum = "b45de904aa0b010bce2ab45264d0631681847fa7b6f2eaa7dab7619943bc4f59"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "endian-type"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
 
 [[package]]
 name = "enum-as-inner"
@@ -2300,18 +2321,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hickory-client"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f3e08124cf0ddda93b1186d4af73599de401f3b52f14cd9aaa719049379462e"
+dependencies = [
+ "cfg-if",
+ "data-encoding",
+ "futures-channel",
+ "futures-util",
+ "hickory-proto",
+ "once_cell",
+ "radix_trie",
+ "rand",
+ "rustls 0.21.10",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "hickory-proto"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "091a6fbccf4860009355e3efc52ff4acf37a63489aad7435372d44ceeb6fbbcf"
 dependencies = [
  "async-trait",
+ "bytes",
  "cfg-if",
  "data-encoding",
  "enum-as-inner",
  "futures-channel",
  "futures-io",
  "futures-util",
+ "h2 0.3.26",
+ "http 0.2.12",
  "idna 0.4.0",
  "ipnet",
  "once_cell",
@@ -2657,7 +2701,7 @@ checksum = "029d73f573d8e8d63e6d5020011d3255b28c3ba85d6cf870a07184ed23de9284"
 
 [[package]]
 name = "imap"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash 0.8.11",
  "common",
@@ -2853,7 +2897,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -3267,7 +3311,7 @@ dependencies = [
 
 [[package]]
 name = "mail-server"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "common",
  "directory",
@@ -3285,7 +3329,7 @@ dependencies = [
 
 [[package]]
 name = "managesieve"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -3539,6 +3583,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "nibble_vec"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77a5d83df9f36fe23f0c3648c6bbb8b0298bb5f1939c8f2704431371f4b84d43"
+dependencies = [
+ "smallvec",
+]
+
+[[package]]
 name = "nix"
 version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3553,7 +3606,7 @@ dependencies = [
 
 [[package]]
 name = "nlp"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -4393,6 +4446,16 @@ name = "radium"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
+
+[[package]]
+name = "radix_trie"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c069c179fcdc6a2fe24d8d18305cf085fdbd4f922c041943e203685d6a1c58fd"
+dependencies = [
+ "endian-type",
+ "nibble_vec",
+]
 
 [[package]]
 name = "rand"
@@ -5349,9 +5412,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.115"
+version = "1.0.116"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12dc5c46daa8e9fdf4f5e71b6cf9a53f2487da0e86e55808e2d35539666497dd"
+checksum = "3e17db7126d17feb94eb3fad46bf1a96b034e8aacbc2e775fe81505f8b0b2813"
 dependencies = [
  "itoa",
  "ryu",
@@ -5566,7 +5629,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "smtp"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -5682,7 +5745,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-cli"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "clap",
  "console",
@@ -5713,7 +5776,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "store"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -6556,7 +6619,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "utils"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "ahash 0.8.11",
  "base64 0.21.7",

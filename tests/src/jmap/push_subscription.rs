@@ -308,7 +308,7 @@ impl common::listener::SessionManager for SessionManager {
                         session
                             .instance
                             .acceptor
-                            .accept(session.stream, false)
+                            .accept(session.stream, None)
                             .await
                             .unwrap_tls()
                             .await

@@ -30,6 +30,8 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
+use base64::{engine::general_purpose::STANDARD, Engine};
+use dns_update::{DnsUpdater, TsigAlgorithm};
 use rcgen::generate_simple_self_signed;
 use rustls::{
     crypto::ring::sign::any_supported_type,
@@ -47,7 +49,7 @@ use x509_parser::{
 };
 
 use crate::listener::{
-    acme::{directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeProvider},
+    acme::{directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeProvider, ChallengeSettings},
     tls::TlsManager,
 };
 
@@ -64,18 +66,19 @@ impl TlsManager {
         parse_certificates(config, &mut certificates, &mut subject_names);
 
         // Parse ACME providers
-        for acme_id in config
+        'outer: for acme_id in config
             .sub_keys("acme", ".directory")
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
         {
+            let acme_id = acme_id.as_str();
             let directory = config
-                .value(("acme", acme_id.as_str(), "directory"))
+                .value(("acme", acme_id, "directory"))
                 .unwrap_or(LETS_ENCRYPT_PRODUCTION_DIRECTORY)
                 .trim()
                 .to_string();
             let contact = config
-                .values(("acme", acme_id.as_str(), "contact"))
+                .values(("acme", acme_id, "contact"))
                 .filter_map(|(_, v)| {
                     let v = v.trim().to_string();
                     if !v.is_empty() {
@@ -86,7 +89,7 @@ impl TlsManager {
                 })
                 .collect::<Vec<_>>();
             let renew_before: Duration = config
-                .property_or_default(("acme", acme_id.as_str(), "renew-before"), "30d")
+                .property_or_default(("acme", acme_id, "renew-before"), "30d")
                 .unwrap_or_else(|| Duration::from_secs(30 * 24 * 60 * 60));
 
             if directory.is_empty() {
@@ -99,15 +102,59 @@ impl TlsManager {
                 continue;
             }
 
+            // Parse challenge type
+            let challenge = match config
+                .value(("acme", acme_id, "challenge"))
+                .unwrap_or("tls-alpn-01")
+            {
+                "tls-alpn-01" => ChallengeSettings::TlsAlpn01,
+                "http-01" => ChallengeSettings::Http01,
+                "dns-01" => match build_dns_updater(config, acme_id) {
+                    Some(updater) => ChallengeSettings::Dns01 {
+                        updater,
+                        origin: config
+                            .value(("acme", acme_id, "origin"))
+                            .map(|s| s.to_string()),
+                        polling_interval: config
+                            .property_or_default(("acme", acme_id, "polling-interval"), "15s")
+                            .unwrap_or_else(|| Duration::from_secs(15)),
+                        propagation_timeout: config
+                            .property_or_default(("acme", acme_id, "propagation-timeout"), "1m")
+                            .unwrap_or_else(|| Duration::from_secs(60)),
+                        ttl: config
+                            .property_or_default(("acme", acme_id, "ttl"), "5m")
+                            .unwrap_or_else(|| Duration::from_secs(5 * 60))
+                            .as_secs() as u32,
+                    },
+                    None => {
+                        continue;
+                    }
+                },
+                _ => {
+                    config
+                        .new_parse_error(("acme", acme_id, "challenge"), "Invalid challenge type");
+                    continue;
+                }
+            };
+
             // Domains covered by this ACME manager
             let domains = config
-                .values(("acme", acme_id.as_str(), "domains"))
-                .map(|(_, v)| v.to_string())
+                .values(("acme", acme_id, "domains"))
+                .map(|(_, s)| s.trim().to_string())
                 .collect::<Vec<_>>();
+            if !matches!(challenge, ChallengeSettings::Dns01 { .. })
+                && domains.iter().any(|d| d.starts_with("*."))
+            {
+                config.new_parse_error(
+                    ("acme", acme_id, "domains"),
+                    "Wildcard domains are only supported with DNS-01 challenge",
+                );
+                continue 'outer;
+            }
 
             // This ACME manager is the default when SNI is not available
             let default = config
-                .property::<bool>(("acme", acme_id.as_str(), "default"))
+                .property::<bool>(("acme", acme_id, "default"))
                 .unwrap_or_default();
 
             // Add domains for self-signed certificate
@@ -119,6 +166,7 @@ impl TlsManager {
                     directory,
                     domains,
                     contact,
+                    challenge,
                     renew_before,
                     default,
                 ) {
@@ -139,8 +187,6 @@ impl TlsManager {
         TlsManager {
             certificates: ArcSwap::from_pointee(certificates),
             acme_providers,
-            acme_auth_keys: Default::default(),
-            acme_in_progress: false.into(),
             self_signed_cert: build_self_signed_cert(subject_names.into_iter().collect::<Vec<_>>())
                 .or_else(|err| {
                     config.new_build_error("certificate.self-signed", err);
@@ -148,6 +194,77 @@ impl TlsManager {
                 })
                 .ok()
                 .map(Arc::new),
+        }
+    }
+}
+
+#[allow(clippy::unnecessary_to_owned)]
+fn build_dns_updater(config: &mut Config, acme_id: &str) -> Option<DnsUpdater> {
+    match config.value_require(("acme", acme_id, "provider"))? {
+        "rfc2136-tsig" => {
+            let algorithm: TsigAlgorithm = config
+                .value_require(("acme", acme_id, "algorithm"))?
+                .parse()
+                .map_err(|_| {
+                    config.new_parse_error(("acme", acme_id, "algorithm"), "Invalid algorithm")
+                })
+                .ok()?;
+            let key = STANDARD
+                .decode(config.value_require(("acme", acme_id, "secret"))?)
+                .map_err(|_| {
+                    config.new_parse_error(
+                        ("acme", acme_id, "secret"),
+                        "Failed to base64 decode secret",
+                    )
+                })
+                .ok()?;
+            let host = config.value_require(("acme", acme_id, "host"))?.to_string();
+            let port = config
+                .property_or_default::<u16>(("acme", acme_id, "port"), "53")
+                .unwrap_or(53);
+            let protocol = if config.value(("acme", acme_id, "protocol")) == Some("tcp") {
+                "tcp"
+            } else {
+                "udp"
+            };
+
+            DnsUpdater::new_rfc2136_tsig(
+                format!("{protocol}://{host}:{port}"),
+                config.value_require(("acme", acme_id, "key"))?.to_string(),
+                key,
+                algorithm,
+            )
+            .map_err(|err| {
+                config.new_build_error(
+                    ("acme", acme_id, "provider"),
+                    format!("Failed to create RFC2136-TSIG DNS updater: {err}"),
+                )
+            })
+            .ok()
+        }
+        "cloudflare" => {
+            let timeout = config
+                .property_or_default(("acme", acme_id, "timeout"), "30s")
+                .unwrap_or_else(|| Duration::from_secs(30));
+
+            DnsUpdater::new_cloudflare(
+                config
+                    .value_require(("acme", acme_id, "secret"))?
+                    .to_string(),
+                config.value(("acme", acme_id, "user")),
+                timeout.into(),
+            )
+            .map_err(|err| {
+                config.new_build_error(
+                    ("acme", acme_id, "provider"),
+                    format!("Failed to create Cloudflare DNS updater: {err}"),
+                )
+            })
+            .ok()
+        }
+        _ => {
+            config.new_parse_error(("acme", acme_id, "provider"), "Unsupported provider");
+            None
         }
     }
 }

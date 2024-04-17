@@ -35,11 +35,59 @@ pub struct PublicSuffix {
     pub wildcards: Vec<String>,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum DomainPart {
+    Sld,
+    Tld,
+    Host,
+}
+
 impl PublicSuffix {
     pub fn contains(&self, suffix: &str) -> bool {
         self.suffixes.contains(suffix)
             || (!self.exceptions.contains(suffix)
                 && self.wildcards.iter().any(|w| suffix.ends_with(w)))
+    }
+
+    pub fn domain_part(&self, domain: &str, part: DomainPart) -> Option<String> {
+        let d = domain.trim().to_lowercase();
+        let mut seen_dot = false;
+        for (pos, ch) in d.as_bytes().iter().enumerate().rev() {
+            if *ch == b'.' {
+                if seen_dot {
+                    let maybe_domain =
+                        std::str::from_utf8(&d.as_bytes()[pos + 1..]).unwrap_or_default();
+                    if !self.contains(maybe_domain) {
+                        return if part == DomainPart::Sld {
+                            maybe_domain
+                        } else {
+                            std::str::from_utf8(&d.as_bytes()[..pos]).unwrap_or_default()
+                        }
+                        .to_string()
+                        .into();
+                    }
+                } else if part == DomainPart::Tld {
+                    return std::str::from_utf8(&d.as_bytes()[pos + 1..])
+                        .unwrap_or_default()
+                        .to_string()
+                        .into();
+                } else {
+                    seen_dot = true;
+                }
+            }
+        }
+
+        if seen_dot {
+            if part == DomainPart::Sld {
+                d.into()
+            } else {
+                None
+            }
+        } else if part == DomainPart::Host {
+            d.into()
+        } else {
+            None
+        }
     }
 }
 

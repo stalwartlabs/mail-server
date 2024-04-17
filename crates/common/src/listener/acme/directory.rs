@@ -10,13 +10,14 @@ use reqwest::{Method, Response, StatusCode};
 use ring::error::{KeyRejected, Unspecified};
 use ring::rand::SystemRandom;
 use ring::signature::{EcdsaKeyPair, EcdsaSigningAlgorithm, ECDSA_P256_SHA256_FIXED_SIGNING};
-use rustls::crypto::ring::sign::any_ecdsa_type;
-use rustls::sign::CertifiedKey;
-use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
+use store::write::Bincode;
+use store::Serialize;
 
-use super::jose::{key_authorization_sha256, sign, JoseError};
+use super::jose::{
+    key_authorization, key_authorization_sha256, key_authorization_sha256_base64, sign, JoseError,
+};
 
 pub const LETS_ENCRYPT_STAGING_DIRECTORY: &str =
     "https://acme-staging-v02.api.letsencrypt.org/directory";
@@ -138,31 +139,39 @@ impl Account {
         Ok(self.request(&url, "").await?.1)
     }
 
-    pub fn tls_alpn_01<'a>(
+    pub fn http_proof(&self, challenge: &Challenge) -> Result<Vec<u8>, DirectoryError> {
+        key_authorization(&self.key_pair, &challenge.token)
+            .map(|key| key.into_bytes())
+            .map_err(Into::into)
+    }
+
+    pub fn dns_proof(&self, challenge: &Challenge) -> Result<String, DirectoryError> {
+        key_authorization_sha256_base64(&self.key_pair, &challenge.token).map_err(Into::into)
+    }
+
+    pub fn tls_alpn_key(
         &self,
-        challenges: &'a [Challenge],
+        challenge: &Challenge,
         domain: String,
-    ) -> Result<(&'a Challenge, CertifiedKey), DirectoryError> {
-        let challenge = challenges
-            .iter()
-            .find(|c| c.typ == ChallengeType::TlsAlpn01);
-        let challenge = match challenge {
-            Some(challenge) => challenge,
-            None => return Err(DirectoryError::NoTlsAlpn01Challenge),
-        };
+    ) -> Result<Vec<u8>, DirectoryError> {
         let mut params = rcgen::CertificateParams::new(vec![domain]);
         let key_auth = key_authorization_sha256(&self.key_pair, &challenge.token)?;
         params.alg = &PKCS_ECDSA_P256_SHA256;
         params.custom_extensions = vec![CustomExtension::new_acme_identifier(key_auth.as_ref())];
         let cert = Certificate::from_params(params)?;
-        let pk = any_ecdsa_type(&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
-            cert.serialize_private_key_der(),
-        )))
-        .unwrap();
-        let certified_key =
-            CertifiedKey::new(vec![CertificateDer::from(cert.serialize_der()?)], pk);
-        Ok((challenge, certified_key))
+
+        Ok(Bincode::new(SerializedCert {
+            certificate: cert.serialize_der()?,
+            private_key: cert.serialize_private_key_der(),
+        })
+        .serialize())
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+pub struct SerializedCert {
+    pub certificate: Vec<u8>,
+    pub private_key: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -187,7 +196,7 @@ impl Directory {
     }
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Clone, Copy)]
 pub enum ChallengeType {
     #[serde(rename = "http-01")]
     Http01,
@@ -223,6 +232,7 @@ pub struct Auth {
     pub status: AuthStatus,
     pub identifier: Identifier,
     pub challenges: Vec<Challenge>,
+    pub wildcard: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -236,7 +246,7 @@ pub enum AuthStatus {
     Deactivated,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, Deserialize)]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum Identifier {
     Dns(String),
@@ -251,7 +261,7 @@ pub struct Challenge {
     pub error: Option<Problem>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Problem {
     #[serde(rename = "type")]
@@ -271,7 +281,7 @@ pub enum DirectoryError {
     KeyRejected(KeyRejected),
     Crypto(Unspecified),
     MissingHeader(&'static str),
-    NoTlsAlpn01Challenge,
+    NoChallenge(ChallengeType),
 }
 
 #[allow(unused_mut)]
