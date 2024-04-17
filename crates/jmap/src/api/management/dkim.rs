@@ -46,6 +46,8 @@ use crate::{
     JMAP,
 };
 
+use super::decode_path_element;
+
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq)]
 pub enum Algorithm {
     Rsa,
@@ -76,7 +78,7 @@ impl JMAP {
 
     async fn handle_get_public_key(&self, path: Vec<&str>) -> HttpResponse {
         let signature_id = match path.get(1) {
-            Some(signature_id) => *signature_id,
+            Some(signature_id) => decode_path_element(signature_id),
             None => {
                 return RequestError::not_found().into_http_response();
             }

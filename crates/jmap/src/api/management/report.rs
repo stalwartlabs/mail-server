@@ -40,6 +40,8 @@ use crate::{
     JMAP,
 };
 
+use super::decode_path_element;
+
 enum ReportType {
     Dmarc,
     Tls,
@@ -50,7 +52,7 @@ impl JMAP {
     pub async fn handle_manage_reports(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
         match (
             path.get(1).copied().unwrap_or_default(),
-            path.get(2).copied(),
+            path.get(2).copied().map(decode_path_element),
             req.method(),
         ) {
             (class @ ("dmarc" | "tls" | "arf"), None, &Method::GET) => {
@@ -159,7 +161,7 @@ impl JMAP {
                 }
             }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::GET) => {
-                if let Some(report_id) = parse_incoming_report_id(class, report_id) {
+                if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
                     match &report_id {
                         ReportClass::Tls { .. } => match self
                             .core
@@ -215,7 +217,7 @@ impl JMAP {
                 }
             }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::DELETE) => {
-                if let Some(report_id) = parse_incoming_report_id(class, report_id) {
+                if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
                     let mut batch = BatchBuilder::new();
                     batch.clear(ValueClass::Report(report_id));
                     let result = self.core.storage.data.write(batch.build()).await.is_ok();

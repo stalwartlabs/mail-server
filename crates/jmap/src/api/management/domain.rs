@@ -39,6 +39,8 @@ use crate::{
     JMAP,
 };
 
+use super::decode_path_element;
+
 #[derive(Debug, Serialize, Deserialize)]
 struct DnsRecord {
     #[serde(rename = "type")]
@@ -82,7 +84,8 @@ impl JMAP {
             }
             (Some(domain), &Method::GET) => {
                 // Obtain DNS records
-                match self.build_dns_records(domain).await {
+                let domain = decode_path_element(domain);
+                match self.build_dns_records(domain.as_ref()).await {
                     Ok(records) => JsonResponse::new(json!({
                         "data": records,
                     }))
@@ -92,7 +95,8 @@ impl JMAP {
             }
             (Some(domain), &Method::POST) => {
                 // Create domain
-                match self.core.storage.data.create_domain(domain).await {
+                let domain = decode_path_element(domain);
+                match self.core.storage.data.create_domain(domain.as_ref()).await {
                     Ok(_) => {
                         // Set default domain name if missing
                         if matches!(
@@ -103,7 +107,7 @@ impl JMAP {
                                 .core
                                 .storage
                                 .config
-                                .set([("lookup.default.domain", *domain)])
+                                .set([("lookup.default.domain", domain.as_ref())])
                                 .await
                             {
                                 tracing::error!("Failed to set default domain name: {}", err);
@@ -120,7 +124,8 @@ impl JMAP {
             }
             (Some(domain), &Method::DELETE) => {
                 // Delete domain
-                match self.core.storage.data.delete_domain(domain).await {
+                let domain = decode_path_element(domain);
+                match self.core.storage.data.delete_domain(domain.as_ref()).await {
                     Ok(_) => JsonResponse::new(json!({
                         "data": (),
                     }))

@@ -32,7 +32,7 @@ use crate::{
     JMAP,
 };
 
-use super::ManagementApiError;
+use super::{decode_path_element, ManagementApiError};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
@@ -269,7 +269,9 @@ impl JMAP {
                 }
             }
             (Some(prefix), &Method::DELETE) if !prefix.is_empty() => {
-                match self.core.storage.config.clear(prefix).await {
+                let prefix = decode_path_element(prefix);
+
+                match self.core.storage.config.clear(prefix.as_ref()).await {
                     Ok(_) => JsonResponse::new(json!({
                         "data": (),
                     }))

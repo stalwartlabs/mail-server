@@ -45,6 +45,8 @@ use crate::{
     JMAP,
 };
 
+use super::decode_path_element;
+
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Message {
     pub id: QueueId,
@@ -122,7 +124,7 @@ impl JMAP {
 
         match (
             path.get(1).copied().unwrap_or_default(),
-            path.get(2).copied(),
+            path.get(2).copied().map(decode_path_element),
             req.method(),
         ) {
             ("messages", None, &Method::GET) => {
@@ -439,7 +441,7 @@ impl JMAP {
             }
             ("reports", Some(report_id), &Method::GET) => {
                 let mut result = None;
-                if let Some(report_id) = parse_queued_report_id(report_id) {
+                if let Some(report_id) = parse_queued_report_id(report_id.as_ref()) {
                     match report_id {
                         QueueClass::DmarcReportHeader(event) => {
                             let mut rua = Vec::new();
@@ -475,7 +477,7 @@ impl JMAP {
                 }
             }
             ("reports", Some(report_id), &Method::DELETE) => {
-                if let Some(report_id) = parse_queued_report_id(report_id) {
+                if let Some(report_id) = parse_queued_report_id(report_id.as_ref()) {
                     match report_id {
                         QueueClass::DmarcReportHeader(event) => {
                             self.smtp.delete_dmarc_report(event).await;

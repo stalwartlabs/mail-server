@@ -21,7 +21,7 @@ chrono = "0.4"
 rand = "0.8.5"
 webpki-roots = { version = "0.26"}
 ring = { version = "0.17" }
-base64 = "0.21"
+base64 = "0.22"
 serde_json = "1.0"
 rcgen = "0.13"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2"]}

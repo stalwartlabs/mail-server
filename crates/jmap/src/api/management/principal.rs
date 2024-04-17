@@ -42,7 +42,7 @@ use crate::{
     JMAP,
 };
 
-use super::ManagementApiError;
+use super::{decode_path_element, ManagementApiError};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct PrincipalResponse {
@@ -151,7 +151,8 @@ impl JMAP {
             }
             (Some(name), method) => {
                 // Fetch, update or delete principal
-                let account_id = match self.core.storage.data.get_account_id(name).await {
+                let name = decode_path_element(name);
+                let account_id = match self.core.storage.data.get_account_id(name.as_ref()).await {
                     Ok(Some(account_id)) => account_id,
                     Ok(None) => {
                         return RequestError::blank(

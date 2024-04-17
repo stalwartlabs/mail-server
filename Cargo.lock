@@ -6622,7 +6622,7 @@ name = "utils"
 version = "0.7.2"
 dependencies = [
  "ahash 0.8.11",
- "base64 0.21.7",
+ "base64 0.22.0",
  "blake3",
  "chrono",
  "dashmap",

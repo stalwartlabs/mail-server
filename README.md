@@ -91,7 +91,7 @@ Key features:
   - Self-service portal for password reset and encryption-at-rest key management.
 - **Secure and robust**:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
-  - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555).
+  - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555) using `TLS-ALPN-01`, `DNS-01` or `HTTP-01` challenges.
   - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
   - Automated blocking of hosts that cause multiple authentication errors (aka **fail2ban**).
   - Access Control Lists (ACLs).

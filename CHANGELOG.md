@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+
+## [0.7.2] - 2024-04-17
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin version.
+
+## Added
+- Support for DNS-01 and HTTP-01 ACME challenges (#226)
+- Configurable external resources (#355)
+
+### Changed
+
+### Fixed
+- Startup failure when Elasticsearch is down/starting up (#334)
+- URL decode path elements in REST API.
+
 ## [0.7.1] - 2024-04-12
 
 To upgrade replace the `stalwart-mail` binary.

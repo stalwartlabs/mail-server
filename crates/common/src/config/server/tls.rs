@@ -203,10 +203,10 @@ fn build_dns_updater(config: &mut Config, acme_id: &str) -> Option<DnsUpdater> {
     match config.value_require(("acme", acme_id, "provider"))? {
         "rfc2136-tsig" => {
             let algorithm: TsigAlgorithm = config
-                .value_require(("acme", acme_id, "algorithm"))?
+                .value_require(("acme", acme_id, "tsig-algorithm"))?
                 .parse()
                 .map_err(|_| {
-                    config.new_parse_error(("acme", acme_id, "algorithm"), "Invalid algorithm")
+                    config.new_parse_error(("acme", acme_id, "tsig-algorithm"), "Invalid algorithm")
                 })
                 .ok()?;
             let key = STANDARD

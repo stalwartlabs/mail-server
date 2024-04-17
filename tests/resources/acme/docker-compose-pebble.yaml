@@ -8,7 +8,7 @@ version: '3'
 services:
   pebble:
     image: letsencrypt/pebble:latest
-    command: pebble -config /test/config/pebble-config.json -strict -dnsserver 8.8.8.8:53 #-dnsserver 10.30.50.3:8053
+    command: pebble -config /test/config/pebble-config.json -strict -dnsserver 10.30.50.3:8053 #-dnsserver 8.8.8.8:53
     ports:
       - 14000:14000 # HTTPS ACME API
       - 15000:15000 # HTTPS Management API
