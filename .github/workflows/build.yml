@@ -84,6 +84,11 @@ jobs:
           sudo installer -allowUntrusted -dumplog -pkg FoundationDB-7.1.34_x86_64.pkg -target /
           echo "USE_FOUNDATIONDB=1" >> "$GITHUB_ENV"
 
+      - name: Update JEMALLOC_SYS_WITH_LG_PAGE (aarch64-*-linux-*)
+        if: startsWith(matrix.host_os, 'ubuntu') && startsWith(matrix.target, 'aarch64')
+        run: |
+          echo "JEMALLOC_SYS_WITH_LG_PAGE=16" >> "$GITHUB_ENV"
+
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
