@@ -113,21 +113,33 @@ impl Resolvers {
                     } else {
                         (Protocol::Udp, url)
                     };
-                    let (host, port) = if let Some((host, port)) = host.split_once(':') {
+
+                    let (host, port) = if let Some(host) = host.strip_prefix('[') {
+                        let (host, maybe_port) = host.rsplit_once(']').unwrap_or_default();
+
                         (
-                            host.to_string(),
-                            port.parse::<u16>()
-                                .map_err(|err| {
-                                    config.new_parse_error(
-                                        "resolver.custom",
-                                        format!("Invalid custom resolver port {port:?}: {err}"),
-                                    );
-                                })
-                                .unwrap_or(53),
+                            host,
+                            maybe_port
+                                .rsplit_once(':')
+                                .map(|(_, port)| port)
+                                .unwrap_or("53"),
                         )
+                    } else if let Some((host, port)) = host.split_once(':') {
+                        (host, port)
                     } else {
-                        (host, 53)
+                        (host.as_str(), "53")
                     };
+
+                    let port = port
+                        .parse::<u16>()
+                        .map_err(|err| {
+                            config.new_parse_error(
+                                "resolver.custom",
+                                format!("Invalid custom resolver port {port:?}: {err}"),
+                            );
+                        })
+                        .unwrap_or(53);
+
                     let host = host
                         .parse::<IpAddr>()
                         .map_err(|err| {

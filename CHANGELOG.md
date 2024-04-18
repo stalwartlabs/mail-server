@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file. This projec
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin version.
 
 ## Added
-- Support for DNS-01 and HTTP-01 ACME challenges (#226)
+- Support for `DNS-01` and `HTTP-01` ACME challenges (#226)
 - Configurable external resources (#355)
 
 ### Changed

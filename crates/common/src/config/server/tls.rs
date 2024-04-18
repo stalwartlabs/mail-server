@@ -23,7 +23,7 @@
 
 use std::{
     io::Cursor,
-    net::{Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::Arc,
     time::Duration,
 };
@@ -31,7 +31,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use dns_update::{DnsUpdater, TsigAlgorithm};
+use dns_update::{providers::rfc2136::DnsAddress, DnsUpdater, TsigAlgorithm};
 use rcgen::generate_simple_self_signed;
 use rustls::{
     crypto::ring::sign::any_supported_type,
@@ -218,18 +218,18 @@ fn build_dns_updater(config: &mut Config, acme_id: &str) -> Option<DnsUpdater> {
                     )
                 })
                 .ok()?;
-            let host = config.value_require(("acme", acme_id, "host"))?.to_string();
+            let host = config.property_require::<IpAddr>(("acme", acme_id, "host"))?;
             let port = config
                 .property_or_default::<u16>(("acme", acme_id, "port"), "53")
                 .unwrap_or(53);
-            let protocol = if config.value(("acme", acme_id, "protocol")) == Some("tcp") {
-                "tcp"
+            let addr = if config.value(("acme", acme_id, "protocol")) == Some("tcp") {
+                DnsAddress::Tcp(SocketAddr::new(host, port))
             } else {
-                "udp"
+                DnsAddress::Udp(SocketAddr::new(host, port))
             };
 
             DnsUpdater::new_rfc2136_tsig(
-                format!("{protocol}://{host}:{port}"),
+                addr,
                 config.value_require(("acme", acme_id, "key"))?.to_string(),
                 key,
                 algorithm,
