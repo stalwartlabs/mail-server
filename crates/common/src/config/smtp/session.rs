@@ -305,7 +305,7 @@ impl SessionConfig {
             (
                 &mut session.auth.must_match_sender,
                 "session.auth.must-match-sender",
-                &has_ehlo_hars,
+                &has_sender_vars,
             ),
             (
                 &mut session.mail.script,
