@@ -215,7 +215,7 @@ foreverypart {
 }
 
 # Message contains both text and encrypted parts
-if eval "has_text_part && (t.ENCRYPTED_SMIME || t.SIGNED_SMIME || t.ENCRYPTED_PGP || t.SIGNED_PGP)" {
+if eval "has_text_part && (t.ENCRYPTED_SMIME || t.ENCRYPTED_PGP)" {
     let "t.BOGUS_ENCRYPTED_AND_TEXT" "1";
 }
 
