@@ -95,15 +95,12 @@ impl JMAP {
 
                     // Insert record
                     let mut batch = BatchBuilder::new();
-                    let document_id = self
-                        .assign_document_id(account_id, Collection::EmailSubmission)
-                        .await?;
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::EmailSubmission)
-                        .create_document(document_id)
+                        .create_document()
                         .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(submission));
-                    self.write_batch(batch).await?;
+                    let document_id = self.write_batch_expect_id(batch).await?;
                     changes.log_insert(Collection::EmailSubmission, document_id);
                     response.created(id, document_id);
                 }

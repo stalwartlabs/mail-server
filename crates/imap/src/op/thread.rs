@@ -108,7 +108,10 @@ impl<T: SessionStream> SessionData<T> {
 
         let mut threads = threads
             .into_iter()
-            .map(|(_, messages)| messages)
+            .map(|(_, mut messages)| {
+                messages.sort_unstable();
+                messages
+            })
             .collect::<Vec<_>>();
         threads.sort_unstable();
 

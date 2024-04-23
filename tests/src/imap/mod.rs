@@ -35,7 +35,11 @@ pub mod search;
 pub mod store;
 pub mod thread;
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use ::managesieve::core::ManageSieveSessionManager;
 use common::{
@@ -394,6 +398,7 @@ pub async fn imap_tests() {
     }
 
     // Prepare settings
+    let start_time = Instant::now();
     let delete = true;
     let handle = init_imap_tests(
         &std::env::var("STORE")
@@ -447,6 +452,14 @@ pub async fn imap_tests() {
 
     // Run ManageSieve tests
     managesieve::test().await;
+
+    // Print elapsed time
+    let elapsed = start_time.elapsed();
+    println!(
+        "Elapsed: {}.{:03}s",
+        elapsed.as_secs(),
+        elapsed.subsec_millis()
+    );
 
     // Remove test data
     if delete {

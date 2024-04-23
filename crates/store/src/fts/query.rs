@@ -81,7 +81,7 @@ impl Store {
                             account_id,
                             collection,
                             class: BitmapClass::word(token.word.as_ref(), field),
-                            block_num: 0,
+                            document_id: 0,
                         });
 
                         if !last_token.is_empty() {
@@ -141,7 +141,7 @@ impl Store {
                             account_id,
                             collection,
                             class: BitmapClass::word(token.word.as_ref(), field),
-                            block_num: 0,
+                            document_id: 0,
                         };
                         let token2 = BitmapKey {
                             account_id,
@@ -155,7 +155,7 @@ impl Store {
                                 .as_ref(),
                                 field,
                             ),
-                            block_num: 0,
+                            document_id: 0,
                         };
 
                         match self.get_bitmaps_union(vec![token1, token2]).await? {
@@ -184,7 +184,7 @@ impl Store {
                         account_id,
                         collection,
                         class: BitmapClass::word(text, field),
-                        block_num: 0,
+                        document_id: 0,
                     })
                     .await?
                 }
@@ -264,7 +264,7 @@ impl Store {
 
     async fn get_bitmaps_union(
         &self,
-        keys: Vec<BitmapKey<BitmapClass>>,
+        keys: Vec<BitmapKey<BitmapClass<u32>>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut bm = RoaringBitmap::new();
 

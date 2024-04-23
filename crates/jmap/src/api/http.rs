@@ -98,6 +98,8 @@ impl JMAP {
                         .await
                         .ok_or_else(|| RequestError::limit(RequestLimitError::SizeRequest))
                         .and_then(|bytes| {
+                            //let c = println!("<- {}", String::from_utf8_lossy(&bytes));
+
                             Request::parse(
                                 &bytes,
                                 self.core.jmap.request_max_calls,
@@ -105,13 +107,18 @@ impl JMAP {
                             )
                         }) {
                             Ok(request) => {
-                                //let _ = println!("<- {}", String::from_utf8_lossy(&bytes));
-
                                 match self
                                     .handle_request(request, access_token, &session.instance)
                                     .await
                                 {
-                                    Ok(response) => response.into_http_response(),
+                                    Ok(response) => {
+                                        /*let c = println!(
+                                            "-> {}",
+                                            serde_json::to_string_pretty(&response).unwrap()
+                                        );*/
+
+                                        response.into_http_response()
+                                    }
                                     Err(err) => err.into_http_response(),
                                 }
                             }

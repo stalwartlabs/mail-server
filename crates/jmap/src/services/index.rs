@@ -44,13 +44,13 @@ struct IndexEmail {
 
 impl JMAP {
     pub async fn fts_index_queued(&self) {
-        let from_key = ValueKey::<ValueClass> {
+        let from_key = ValueKey::<ValueClass<u32>> {
             account_id: 0,
             collection: 0,
             document_id: 0,
             class: ValueClass::IndexEmail(0),
         };
-        let to_key = ValueKey::<ValueClass> {
+        let to_key = ValueKey::<ValueClass<u32>> {
             account_id: u32::MAX,
             collection: u8::MAX,
             document_id: u32::MAX,

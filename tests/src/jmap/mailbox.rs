@@ -64,9 +64,9 @@ pub async fn test(params: &mut JMAPTest) {
             "drafts",
             "spam2",
             "inbox",
-            "1",
-            "2",
-            "3",
+            "l.1",
+            "l.2",
+            "l.3",
             "sent",
             "spam",
             "1.1",
@@ -99,15 +99,15 @@ pub async fn test(params: &mut JMAPTest) {
         [
             "drafts",
             "inbox",
-            "1",
+            "l.1",
             "1.1",
             "1.1.1",
             "1.1.1.1",
             "1.1.1.1.1",
             "1.2",
             "1.2.1",
-            "2",
-            "3",
+            "l.2",
+            "l.3",
             "sent",
             "spam",
             "spam1",
@@ -134,15 +134,15 @@ pub async fn test(params: &mut JMAPTest) {
             .map(|id| id_map.get(id).unwrap())
             .collect::<Vec<_>>(),
         [
-            "1",
+            "l.1",
             "1.1",
             "1.1.1",
             "1.1.1.1",
             "1.1.1.1.1",
             "1.2",
             "1.2.1",
-            "2",
-            "3"
+            "l.2",
+            "l.3"
         ]
     );
 
@@ -231,31 +231,35 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Duplicate name
     let mut request = client.build();
-    request.set_mailbox().update(&id_map["2"]).name("Level 3");
-    assert!(matches!(
-        request
-            .send_set_mailbox()
-            .await
-            .unwrap()
-            .updated(&id_map["2"]),
-        Err(Error::Set(SetError {
-            type_: SetErrorType::InvalidProperties,
-            ..
-        }))
-    ));
+    request.set_mailbox().update(&id_map["l.2"]).name("Level 3");
+    let result = request
+        .send_set_mailbox()
+        .await
+        .unwrap()
+        .updated(&id_map["l.2"]);
+    assert!(
+        matches!(
+            result,
+            Err(Error::Set(SetError {
+                type_: SetErrorType::InvalidProperties,
+                ..
+            }))
+        ),
+        "{result:?}",
+    );
 
     // Circular relationship
     let mut request = client.build();
     request
         .set_mailbox()
-        .update(&id_map["1"])
+        .update(&id_map["l.1"])
         .parent_id((&id_map["1.1.1.1.1"]).into());
     assert!(matches!(
         request
             .send_set_mailbox()
             .await
             .unwrap()
-            .updated(&id_map["1"]),
+            .updated(&id_map["l.1"]),
         Err(Error::Set(SetError {
             type_: SetErrorType::InvalidProperties,
             ..
@@ -265,14 +269,14 @@ pub async fn test(params: &mut JMAPTest) {
     let mut request = client.build();
     request
         .set_mailbox()
-        .update(&id_map["1"])
-        .parent_id((&id_map["1"]).into());
+        .update(&id_map["l.1"])
+        .parent_id((&id_map["l.1"]).into());
     assert!(matches!(
         request
             .send_set_mailbox()
             .await
             .unwrap()
-            .updated(&id_map["1"]),
+            .updated(&id_map["l.1"]),
         Err(Error::Set(SetError {
             type_: SetErrorType::InvalidProperties,
             ..
@@ -283,14 +287,14 @@ pub async fn test(params: &mut JMAPTest) {
     let mut request = client.build();
     request
         .set_mailbox()
-        .update(&id_map["1"])
+        .update(&id_map["l.1"])
         .parent_id(Id::new(u64::MAX).to_string().into());
     assert!(matches!(
         request
             .send_set_mailbox()
             .await
             .unwrap()
-            .updated(&id_map["1"]),
+            .updated(&id_map["l.1"]),
         Err(Error::Set(SetError {
             type_: SetErrorType::InvalidProperties,
             ..
@@ -311,7 +315,7 @@ pub async fn test(params: &mut JMAPTest) {
         .set_mailbox()
         .update(&id_map["1.1.1.1.1"])
         .name("Renamed and moved")
-        .parent_id((&id_map["2"]).into());
+        .parent_id((&id_map["l.2"]).into());
     assert!(request
         .send_set_mailbox()
         .await
@@ -472,13 +476,13 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Deleting folders with children is not allowed
     let mut request = client.build();
-    request.set_mailbox().destroy([&id_map["1"]]);
+    request.set_mailbox().destroy([&id_map["l.1"]]);
     assert!(matches!(
         request
             .send_set_mailbox()
             .await
             .unwrap()
-            .destroyed(&id_map["1"]),
+            .destroyed(&id_map["l.1"]),
         Err(Error::Set(SetError {
             type_: SetErrorType::MailboxHasChild,
             ..
@@ -533,7 +537,7 @@ pub async fn test(params: &mut JMAPTest) {
         .update(&id_map["drafts"])
         .name("Borradores")
         .sort_order(100)
-        .parent_id((&id_map["2"]).into())
+        .parent_id((&id_map["l.2"]).into())
         .role(Role::None);
     assert!(request
         .send_set_mailbox()
@@ -546,7 +550,7 @@ pub async fn test(params: &mut JMAPTest) {
             .mailbox_query(
                 Filter::and([
                     mailbox::query::Filter::name("Borradores").into(),
-                    mailbox::query::Filter::parent_id((&id_map["2"]).into()).into(),
+                    mailbox::query::Filter::parent_id((&id_map["l.2"]).into()).into(),
                     Filter::not([mailbox::query::Filter::has_any_role(true)])
                 ])
                 .into(),
@@ -691,7 +695,7 @@ const TEST_MAILBOXES: &[u8] = br#"
         "children": [
             {
                 "name": "Level 1",
-                "id": "1",
+                "id": "l.1",
                 "order": 4,
                 "children": [
                     {
@@ -737,12 +741,12 @@ const TEST_MAILBOXES: &[u8] = br#"
             },
             {
                 "name": "Level 2",
-                "id": "2",
+                "id": "l.2",
                 "order": 8
             },
             {
                 "name": "Level 3",
-                "id": "3",
+                "id": "l.3",
                 "order": 9
             }
         ]

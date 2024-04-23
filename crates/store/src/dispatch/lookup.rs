@@ -73,7 +73,8 @@ impl LookupStore {
                         KeySerializer::new(value.len() + U64_LEN)
                             .write(expires.map_or(u64::MAX, |expires| now() + expires))
                             .write(value.as_slice())
-                            .finalize(),
+                            .finalize()
+                            .into(),
                     ),
                 });
                 store.write(batch.build()).await.map(|_| ())
@@ -111,7 +112,8 @@ impl LookupStore {
                         op: ValueOp::Set(
                             KeySerializer::new(U64_LEN)
                                 .write(now() + expires)
-                                .finalize(),
+                                .finalize()
+                                .into(),
                         ),
                     });
                 }
@@ -125,7 +127,13 @@ impl LookupStore {
                     },
                 });
 
-                store.write(batch.build()).await.map(|r| r.unwrap_or(0))
+                store.write(batch.build()).await.and_then(|r| {
+                    if return_value {
+                        r.last_counter_id()
+                    } else {
+                        Ok(0)
+                    }
+                })
             }
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_incr(key, value, expires).await,

@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use base64::{
     engine::general_purpose::{self, STANDARD},
@@ -29,6 +29,7 @@ use base64::{
 };
 use common::{
     config::server::{ServerProtocol, Servers},
+    manager::config::{ConfigManager, Patterns},
     Core,
 };
 use hyper::{header::AUTHORIZATION, Method};
@@ -80,7 +81,7 @@ pub mod websocket;
 const SERVER: &str = r#"
 [server]
 hostname = "'jmap.example.org'"
-url = "'https://127.0.0.1:8899'"
+http.url = "'https://127.0.0.1:8899'"
 
 [server.listener.jmap]
 bind = ["127.0.0.1:8899"]
@@ -340,7 +341,7 @@ pub async fn jmap_stress_tests() {
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::builder()
                         .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level}"),
+                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level},common={level}"),
                         )
                         .unwrap(),
                 )
@@ -419,7 +420,17 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let stores = Stores::parse_all(&mut config).await;
 
     // Parse core
-    let core = Core::parse(&mut config, stores, Default::default()).await;
+    let config_manager = ConfigManager {
+        cfg_local: Default::default(),
+        cfg_local_path: PathBuf::new(),
+        cfg_local_patterns: Patterns::parse(&mut config).into(),
+        cfg_store: config
+            .value("storage.data")
+            .and_then(|id| stores.stores.get(id))
+            .cloned()
+            .unwrap_or_default(),
+    };
+    let core = Core::parse(&mut config, stores, config_manager).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
 

@@ -22,13 +22,17 @@
 */
 
 use std::{
+    borrow::Cow,
     collections::HashSet,
+    fmt::{self, Formatter},
     hash::Hash,
     slice::Iter,
     time::{Duration, SystemTime},
 };
 
 use nlp::tokenizers::word::WordTokenizer;
+use rand::Rng;
+use roaring::RoaringBitmap;
 use utils::{
     codec::leb128::{Leb128Iterator, Leb128Vec},
     BlobHash,
@@ -39,7 +43,6 @@ use crate::{backend::MAX_TOKEN_LENGTH, BlobClass, Deserialize, Serialize, Value}
 use self::assert::AssertValue;
 
 pub mod assert;
-pub mod assign_id;
 pub mod batch;
 pub mod bitmap;
 pub mod blob;
@@ -47,6 +50,34 @@ pub mod hash;
 pub mod key;
 pub mod log;
 pub mod purge;
+
+pub trait SerializeWithId: Send + Sync {
+    fn serialize_with_id(&self, ids: &AssignedIds) -> crate::Result<Vec<u8>>;
+}
+
+pub trait ResolveId {
+    fn resolve_id(&self, ids: Option<&AssignedIds>) -> u32;
+}
+
+pub enum MaybeDynamicValue {
+    Static(Vec<u8>),
+    Dynamic(Box<dyn SerializeWithId>),
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
+pub enum MaybeDynamicId {
+    Static(u32),
+    Dynamic(usize),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct DynamicDocumentId(pub usize);
+
+#[derive(Debug, Default)]
+pub struct AssignedIds {
+    pub document_ids: Vec<u32>,
+    pub counter_ids: Vec<i64>,
+}
 
 #[cfg(not(feature = "test_mode"))]
 pub(crate) const MAX_COMMIT_ATTEMPTS: u32 = 10;
@@ -66,11 +97,13 @@ pub const F_CLEAR: u32 = 1 << 3;
 #[derive(Debug)]
 pub struct Batch {
     pub ops: Vec<Operation>,
+    pub change_id: u64,
 }
 
 #[derive(Debug)]
 pub struct BatchBuilder {
     pub ops: Vec<Operation>,
+    pub change_id: u64,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -85,11 +118,11 @@ pub enum Operation {
         document_id: u32,
     },
     AssertValue {
-        class: ValueClass,
+        class: ValueClass<MaybeDynamicId>,
         assert_value: AssertValue,
     },
     Value {
-        class: ValueClass,
+        class: ValueClass<MaybeDynamicId>,
         op: ValueOp,
     },
     Index {
@@ -98,20 +131,18 @@ pub enum Operation {
         set: bool,
     },
     Bitmap {
-        class: BitmapClass,
+        class: BitmapClass<MaybeDynamicId>,
         set: bool,
     },
     Log {
-        change_id: u64,
-        collection: u8,
-        set: Vec<u8>,
+        set: MaybeDynamicValue,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum BitmapClass {
+pub enum BitmapClass<T> {
     DocumentIds,
-    Tag { field: u8, value: TagValue },
+    Tag { field: u8, value: TagValue<T> },
     Text { field: u8, token: BitmapHash },
 }
 
@@ -122,20 +153,19 @@ pub struct BitmapHash {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TagValue {
-    Id(u32),
+pub enum TagValue<T> {
+    Id(T),
     Text(Vec<u8>),
     Static(u8),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum ValueClass {
+pub enum ValueClass<T> {
     Property(u8),
     Acl(u32),
     Lookup(LookupClass),
     TermIndex,
-    ReservedId,
-    Directory(DirectoryClass),
+    Directory(DirectoryClass<T>),
     Blob(BlobOp),
     IndexEmail(u64),
     Config(Vec<u8>),
@@ -151,13 +181,13 @@ pub enum LookupClass {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum DirectoryClass {
+pub enum DirectoryClass<T> {
     NameToId(Vec<u8>),
     EmailToId(Vec<u8>),
-    MemberOf { principal_id: u32, member_of: u32 },
-    Members { principal_id: u32, has_member: u32 },
+    MemberOf { principal_id: T, member_of: T },
+    Members { principal_id: T, has_member: T },
     Domain(Vec<u8>),
-    Principal(u32),
+    Principal(T),
     UsedQuota(u32),
 }
 
@@ -196,7 +226,7 @@ pub struct ReportEvent {
 
 #[derive(Debug, PartialEq, Eq, Hash, Default)]
 pub enum ValueOp {
-    Set(Vec<u8>),
+    Set(MaybeDynamicValue),
     AtomicAdd(i64),
     AddAndGet(i64),
     #[default]
@@ -216,31 +246,37 @@ pub struct AnyKey<T: AsRef<[u8]>> {
     pub key: T,
 }
 
-impl From<u32> for TagValue {
+impl From<u32> for TagValue<MaybeDynamicId> {
+    fn from(value: u32) -> Self {
+        TagValue::Id(MaybeDynamicId::Static(value))
+    }
+}
+
+impl From<u32> for TagValue<u32> {
     fn from(value: u32) -> Self {
         TagValue::Id(value)
     }
 }
 
-impl From<Vec<u8>> for TagValue {
+impl<T> From<Vec<u8>> for TagValue<T> {
     fn from(value: Vec<u8>) -> Self {
         TagValue::Text(value)
     }
 }
 
-impl From<String> for TagValue {
+impl<T> From<String> for TagValue<T> {
     fn from(value: String) -> Self {
         TagValue::Text(value.into_bytes())
     }
 }
 
-impl From<u8> for TagValue {
+impl<T> From<u8> for TagValue<T> {
     fn from(value: u8) -> Self {
         TagValue::Static(value)
     }
 }
 
-impl From<()> for TagValue {
+impl<T> From<()> for TagValue<T> {
     fn from(_: ()) -> Self {
         TagValue::Text(vec![])
     }
@@ -493,7 +529,7 @@ impl ToBitmaps for u32 {
         ops.push(Operation::Bitmap {
             class: BitmapClass::Tag {
                 field,
-                value: TagValue::Id(*self),
+                value: TagValue::Id(MaybeDynamicId::Static(*self)),
             },
             set,
         });
@@ -505,7 +541,7 @@ impl ToBitmaps for u64 {
         ops.push(Operation::Bitmap {
             class: BitmapClass::Tag {
                 field,
-                value: TagValue::Id(*self as u32),
+                value: TagValue::Id(MaybeDynamicId::Static(*self as u32)),
             },
             set,
         });
@@ -552,7 +588,9 @@ impl Operation {
     pub fn acl(grant_account_id: u32, set: Option<Vec<u8>>) -> Self {
         Operation::Value {
             class: ValueClass::Acl(grant_account_id),
-            op: set.map(ValueOp::Set).unwrap_or(ValueOp::Clear),
+            op: set
+                .map(|op| ValueOp::Set(op.into()))
+                .unwrap_or(ValueOp::Clear),
         }
     }
 }
@@ -564,23 +602,26 @@ pub fn now() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-impl AsRef<ValueClass> for ValueClass {
-    fn as_ref(&self) -> &ValueClass {
+impl<T> AsRef<ValueClass<T>> for ValueClass<T> {
+    fn as_ref(&self) -> &ValueClass<T> {
         self
     }
 }
 
-impl AsRef<BitmapClass> for BitmapClass {
-    fn as_ref(&self) -> &BitmapClass {
+impl<T> AsRef<BitmapClass<T>> for BitmapClass<T> {
+    fn as_ref(&self) -> &BitmapClass<T> {
         self
     }
 }
 
-impl BitmapClass {
-    pub fn tag_id(property: impl Into<u8>, id: u32) -> Self {
+impl<T> BitmapClass<T> {
+    pub fn tag_id(property: impl Into<u8>, id: u32) -> Self
+    where
+        TagValue<T>: From<u32>,
+    {
         BitmapClass::Tag {
             field: property.into(),
-            value: TagValue::Id(id),
+            value: id.into(),
         }
     }
 }
@@ -666,5 +707,165 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for Bincode<T>
 impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for &Bincode<T> {
     fn to_bitmaps(&self, _ops: &mut Vec<crate::write::Operation>, _field: u8, _set: bool) {
         unreachable!()
+    }
+}
+
+impl AssignedIds {
+    pub fn push_document_id(&mut self, id: u32) {
+        self.document_ids.push(id);
+    }
+
+    pub fn push_counter_id(&mut self, id: i64) {
+        self.counter_ids.push(id);
+    }
+
+    pub fn get_document_id(&self, idx: usize) -> crate::Result<u32> {
+        self.document_ids
+            .get(idx)
+            .copied()
+            .ok_or_else(|| crate::Error::InternalError("No document ids were created".to_string()))
+    }
+
+    pub fn first_document_id(&self) -> crate::Result<u32> {
+        self.get_document_id(0)
+    }
+
+    pub fn last_document_id(&self) -> crate::Result<u32> {
+        self.document_ids
+            .last()
+            .copied()
+            .ok_or_else(|| crate::Error::InternalError("No document ids were created".to_string()))
+    }
+
+    pub fn last_counter_id(&self) -> crate::Result<i64> {
+        self.counter_ids
+            .last()
+            .copied()
+            .ok_or_else(|| crate::Error::InternalError("No counter ids were created".to_string()))
+    }
+}
+
+impl From<String> for MaybeDynamicValue {
+    fn from(value: String) -> Self {
+        MaybeDynamicValue::Static(value.into_bytes())
+    }
+}
+
+impl From<&[u8]> for MaybeDynamicValue {
+    fn from(value: &[u8]) -> Self {
+        MaybeDynamicValue::Static(value.to_vec())
+    }
+}
+
+impl From<Vec<u8>> for MaybeDynamicValue {
+    fn from(value: Vec<u8>) -> Self {
+        MaybeDynamicValue::Static(value)
+    }
+}
+
+impl MaybeDynamicValue {
+    pub fn resolve(&self, ids: &AssignedIds) -> crate::Result<Cow<[u8]>> {
+        match self {
+            MaybeDynamicValue::Static(value) => Ok(Cow::Borrowed(value.as_slice())),
+            MaybeDynamicValue::Dynamic(value) => value.serialize_with_id(ids).map(Cow::Owned),
+        }
+    }
+}
+
+impl MaybeDynamicId {
+    pub fn resolve(&self, ids: &AssignedIds) -> crate::Result<u32> {
+        match self {
+            MaybeDynamicId::Static(id) => Ok(*id),
+            MaybeDynamicId::Dynamic(idx) => ids.get_document_id(*idx),
+        }
+    }
+}
+
+impl ResolveId for u32 {
+    fn resolve_id(&self, _: Option<&AssignedIds>) -> u32 {
+        *self
+    }
+}
+
+impl ResolveId for MaybeDynamicId {
+    fn resolve_id(&self, ids: Option<&AssignedIds>) -> u32 {
+        match self {
+            MaybeDynamicId::Static(id) => *id,
+            MaybeDynamicId::Dynamic(idx) => ids
+                .and_then(|ids| ids.document_ids.get(*idx))
+                .copied()
+                .unwrap_or(u32::MAX),
+        }
+    }
+}
+
+impl std::fmt::Debug for MaybeDynamicValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            MaybeDynamicValue::Static(value) => write!(f, "{:?}", value),
+            MaybeDynamicValue::Dynamic(_) => write!(f, "Dynamic"),
+        }
+    }
+}
+
+impl PartialEq for MaybeDynamicValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (MaybeDynamicValue::Static(a), MaybeDynamicValue::Static(b)) => a == b,
+            (MaybeDynamicValue::Dynamic(_), MaybeDynamicValue::Dynamic(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for MaybeDynamicValue {}
+
+impl Hash for MaybeDynamicValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            MaybeDynamicValue::Static(value) => value.hash(state),
+            MaybeDynamicValue::Dynamic(_) => 0.hash(state),
+        }
+    }
+}
+
+impl From<MaybeDynamicId> for MaybeDynamicValue {
+    fn from(value: MaybeDynamicId) -> Self {
+        match value {
+            MaybeDynamicId::Static(id) => MaybeDynamicValue::Static(id.serialize()),
+            MaybeDynamicId::Dynamic(idx) => {
+                MaybeDynamicValue::Dynamic(Box::new(DynamicDocumentId(idx)))
+            }
+        }
+    }
+}
+
+impl SerializeWithId for DynamicDocumentId {
+    fn serialize_with_id(&self, ids: &AssignedIds) -> crate::Result<Vec<u8>> {
+        ids.get_document_id(self.0).map(|id| id.serialize())
+    }
+}
+
+pub(crate) trait RandomAvailableId {
+    fn random_available_id(&self) -> u32;
+}
+
+impl RandomAvailableId for RoaringBitmap {
+    fn random_available_id(&self) -> u32 {
+        let mut last_id = 0;
+        let mut available_ids = Vec::with_capacity(100);
+        for id in self.iter() {
+            for i in last_id..id {
+                available_ids.push(i);
+            }
+            last_id = id + 1;
+        }
+
+        while available_ids.len() < 100 {
+            available_ids.push(last_id);
+            last_id += 1;
+        }
+
+        available_ids[rand::thread_rng().gen_range(0..available_ids.len())]
     }
 }

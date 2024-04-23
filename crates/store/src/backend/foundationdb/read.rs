@@ -32,7 +32,6 @@ use roaring::RoaringBitmap;
 use crate::{
     backend::deserialize_i64_le,
     write::{
-        bitmap::DeserializeBlock,
         key::{DeserializeBigEndian, KeySerializer},
         BitmapClass, ValueClass,
     },
@@ -40,13 +39,6 @@ use crate::{
 };
 
 use super::{FdbStore, MAX_VALUE_SIZE};
-
-#[cfg(feature = "fdb-chunked-bm")]
-pub(crate) enum ChunkedBitmap {
-    Single(RoaringBitmap),
-    Chunked { n_chunks: u8, bitmap: RoaringBitmap },
-    None,
-}
 
 #[allow(dead_code)]
 pub(crate) enum ChunkedValue {
@@ -72,47 +64,35 @@ impl FdbStore {
 
     pub(crate) async fn get_bitmap(
         &self,
-        mut key: BitmapKey<BitmapClass>,
+        mut key: BitmapKey<BitmapClass<u32>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
-        #[cfg(feature = "fdb-chunked-bm")]
-        {
-            read_chunked_bitmap(&key.serialize(WITH_SUBSPACE), &self.db.create_trx()?, true)
-                .await
-                .map(Into::into)
-        }
+        let mut bm = RoaringBitmap::new();
+        let begin = key.serialize(WITH_SUBSPACE);
+        key.document_id = u32::MAX;
+        let end = key.serialize(WITH_SUBSPACE);
+        let key_len = begin.len();
+        let trx = self.db.create_trx()?;
+        let mut values = trx.get_ranges(
+            RangeOption {
+                begin: KeySelector::first_greater_or_equal(begin),
+                end: KeySelector::first_greater_or_equal(end),
+                mode: StreamingMode::WantAll,
+                reverse: false,
+                ..RangeOption::default()
+            },
+            true,
+        );
 
-        #[cfg(not(feature = "fdb-chunked-bm"))]
-        {
-            let mut bm = RoaringBitmap::new();
-            let begin = key.serialize(WITH_SUBSPACE);
-            key.block_num = u32::MAX;
-            let end = key.serialize(WITH_SUBSPACE);
-            let key_len = begin.len();
-            let trx = self.db.create_trx()?;
-            let mut values = trx.get_ranges(
-                RangeOption {
-                    begin: KeySelector::first_greater_or_equal(begin),
-                    end: KeySelector::first_greater_or_equal(end),
-                    mode: StreamingMode::WantAll,
-                    reverse: false,
-                    ..RangeOption::default()
-                },
-                true,
-            );
-
-            while let Some(values) = values.next().await {
-                for value in values? {
-                    let key = value.key();
-                    if key.len() == key_len {
-                        bm.deserialize_block(
-                            value.value(),
-                            key.deserialize_be_u32(key.len() - U32_LEN)?,
-                        );
-                    }
+        while let Some(values) = values.next().await {
+            for value in values? {
+                let key = value.key();
+                if key.len() == key_len {
+                    bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
                 }
             }
-            Ok(if !bm.is_empty() { Some(bm) } else { None })
         }
+
+        Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
     pub(crate) async fn iterate<T: Key>(
@@ -155,7 +135,7 @@ impl FdbStore {
 
     pub(crate) async fn get_counter(
         &self,
-        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
+        key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> crate::Result<i64> {
         let key = key.into().serialize(WITH_SUBSPACE);
         if let Some(bytes) = self.db.create_trx()?.get(&key, true).await? {

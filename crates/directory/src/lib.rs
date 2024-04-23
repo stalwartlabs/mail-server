@@ -214,6 +214,14 @@ impl Principal<u32> {
     }
 }
 
+impl<T: Ord> Principal<T> {
+    pub fn into_sorted(mut self) -> Self {
+        self.member_of.sort_unstable();
+        self.emails.sort_unstable();
+        self
+    }
+}
+
 impl From<LdapError> for DirectoryError {
     fn from(error: LdapError) -> Self {
         tracing::warn!(

@@ -24,7 +24,9 @@
 use std::slice::Iter;
 
 use store::{
-    write::{BitmapClass, DeserializeFrom, Operation, SerializeInto, TagValue, ToBitmaps},
+    write::{
+        BitmapClass, DeserializeFrom, MaybeDynamicId, Operation, SerializeInto, TagValue, ToBitmaps,
+    },
     Serialize, U32_LEN,
 };
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
@@ -36,6 +38,8 @@ pub mod set;
 pub const INBOX_ID: u32 = 0;
 pub const TRASH_ID: u32 = 1;
 pub const JUNK_ID: u32 = 2;
+pub const DRAFTS_ID: u32 = 3;
+pub const SENT_ID: u32 = 4;
 
 #[derive(Debug, Clone, Copy)]
 pub struct UidMailbox {
@@ -56,7 +60,7 @@ impl ToBitmaps for UidMailbox {
         ops.push(Operation::Bitmap {
             class: BitmapClass::Tag {
                 field,
-                value: TagValue::Id(self.mailbox_id),
+                value: TagValue::Id(MaybeDynamicId::Static(self.mailbox_id)),
             },
             set,
         });

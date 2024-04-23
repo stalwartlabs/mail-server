@@ -159,14 +159,12 @@ impl JMAP {
             .trim()
             .to_string();
         let has_many = principal.emails.len() > 1;
-        for email in principal.emails {
+        for (idx, email) in principal.emails.into_iter().enumerate() {
+            let document_id = idx as u32;
             let email = sanitize_email(&email).unwrap_or_default();
             if email.is_empty() {
                 continue;
             }
-            let identity_id = self
-                .assign_document_id(account_id, Collection::Identity)
-                .await?;
             let name = if name.is_empty() {
                 email.clone()
             } else if has_many {
@@ -174,14 +172,14 @@ impl JMAP {
             } else {
                 name.clone()
             };
-            batch.create_document(identity_id).value(
+            batch.create_document_with_id(document_id).value(
                 Property::Value,
                 Object::with_capacity(4)
                     .with_property(Property::Name, name)
                     .with_property(Property::Email, email),
                 F_VALUE,
             );
-            identity_ids.insert(identity_id);
+            identity_ids.insert(document_id);
         }
         self.core
             .storage

@@ -60,6 +60,7 @@ use crate::{
 
 #[allow(unused_imports)]
 use super::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
+use super::{DRAFTS_ID, SENT_ID};
 
 struct SetContext<'x> {
     account_id: u32,
@@ -115,9 +116,6 @@ impl JMAP {
             match self.mailbox_set_item(object, None, &ctx).await? {
                 Ok(builder) => {
                     let mut batch = BatchBuilder::new();
-                    let document_id = self
-                        .assign_document_id(account_id, Collection::Mailbox)
-                        .await?;
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::Mailbox);
@@ -133,11 +131,19 @@ impl JMAP {
                         }
                     }
 
-                    batch.create_document(document_id).custom(builder);
-                    changes.log_insert(Collection::Mailbox, document_id);
-                    ctx.mailbox_ids.insert(document_id);
-                    match self.core.storage.data.write(batch.build()).await {
-                        Ok(_) => {
+                    batch.create_document().custom(builder);
+
+                    match self
+                        .core
+                        .storage
+                        .data
+                        .write(batch.build())
+                        .await
+                        .and_then(|ids| ids.last_document_id())
+                    {
+                        Ok(document_id) => {
+                            changes.log_insert(Collection::Mailbox, document_id);
+                            ctx.mailbox_ids.insert(document_id);
                             ctx.response.created(id, document_id);
                         }
                         Err(store::Error::AssertValueFailed) => {
@@ -833,17 +839,14 @@ impl JMAP {
             .with_collection(Collection::Mailbox);
 
         // Create mailboxes
-        for (name, role) in [
-            ("Inbox", "inbox"),
-            ("Deleted Items", "trash"),
-            ("Junk Mail", "junk"),
-            ("Drafts", "drafts"),
-            ("Sent Items", "sent"),
+        for (name, role, document_id) in [
+            ("Inbox", "inbox", INBOX_ID),
+            ("Deleted Items", "trash", TRASH_ID),
+            ("Junk Mail", "junk", JUNK_ID),
+            ("Drafts", "drafts", DRAFTS_ID),
+            ("Sent Items", "sent", SENT_ID),
         ] {
-            let mailbox_id = self
-                .assign_document_id(account_id, Collection::Mailbox)
-                .await?;
-            batch.create_document(mailbox_id).custom(
+            batch.create_document_with_id(document_id).custom(
                 ObjectIndexBuilder::new(SCHEMA).with_changes(
                     Object::with_capacity(4)
                         .with_property(Property::Name, name)
@@ -855,7 +858,7 @@ impl JMAP {
                         ),
                 ),
             );
-            mailbox_ids.insert(mailbox_id);
+            mailbox_ids.insert(document_id);
         }
         self.core
             .storage
@@ -901,36 +904,42 @@ impl JMAP {
 
         // Create missing folders
         if path.peek().is_some() {
-            let mut batch = BatchBuilder::new();
             let mut changes = self.begin_changes(account_id).await?;
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Mailbox);
 
             for name in path {
                 if name.len() > self.core.jmap.mailbox_name_max_len {
                     return Ok(None);
                 }
-
-                let document_id = self
-                    .assign_document_id(account_id, Collection::Mailbox)
-                    .await?;
-                batch.create_document(document_id).custom(
-                    ObjectIndexBuilder::new(SCHEMA).with_changes(
-                        Object::with_capacity(3)
-                            .with_property(Property::Name, name)
-                            .with_property(Property::ParentId, Value::Id(Id::from(next_parent_id)))
-                            .with_property(
-                                Property::Cid,
-                                Value::UnsignedInt(rand::random::<u32>() as u64),
-                            ),
-                    ),
-                );
+                let mut batch = BatchBuilder::new();
+                batch
+                    .with_account_id(account_id)
+                    .with_collection(Collection::Mailbox)
+                    .create_document()
+                    .custom(
+                        ObjectIndexBuilder::new(SCHEMA).with_changes(
+                            Object::with_capacity(3)
+                                .with_property(Property::Name, name)
+                                .with_property(
+                                    Property::ParentId,
+                                    Value::Id(Id::from(next_parent_id)),
+                                )
+                                .with_property(
+                                    Property::Cid,
+                                    Value::UnsignedInt(rand::random::<u32>() as u64),
+                                ),
+                        ),
+                    );
+                let document_id = self.write_batch_expect_id(batch).await?;
                 changes.log_insert(Collection::Mailbox, document_id);
                 next_parent_id = document_id + 1;
             }
             let change_id = changes.change_id;
-            batch.custom(changes);
+            let mut batch = BatchBuilder::new();
+
+            batch
+                .with_account_id(account_id)
+                .with_collection(Collection::Mailbox)
+                .custom(changes);
             self.write_batch(batch).await?;
 
             Ok(Some((next_parent_id - 1, Some(change_id))))

@@ -223,8 +223,9 @@ impl JMAP {
                     };
 
                     while let Some(&id) = it.next() {
-                        jmap_id = id.document_id() + 1;
-                        if children.remove(&jmap_id) {
+                        let next_id = id.document_id() + 1;
+                        if children.remove(&next_id) {
+                            jmap_id = next_id;
                             if !paginate.add(0, id.document_id()) {
                                 break 'outer;
                             } else {

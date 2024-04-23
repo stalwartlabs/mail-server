@@ -34,20 +34,18 @@ use rocksdb::{
     OptimisticTransactionOptions, WriteOptions,
 };
 
-use super::{
-    bitmap::{clear_bit, set_bit},
-    RocksDbStore, CF_BITMAPS, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES,
-};
+use super::{RocksDbStore, CF_BITMAPS, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES};
 use crate::{
     backend::deserialize_i64_le,
     write::{
-        Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
+        key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
+        ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, Deserialize, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS, WITHOUT_BLOCK_NUM,
+    BitmapKey, Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTERS, U32_LEN,
 };
 
 impl RocksDbStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
+    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
         let db = self.db.clone();
 
         self.spawn_worker(move || {
@@ -175,288 +173,168 @@ enum CommitError {
 }
 
 impl<'x> RocksDBTransaction<'x> {
-    fn commit(&self) -> Result<Option<i64>, CommitError> {
+    fn commit(&self) -> Result<AssignedIds, CommitError> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
-        let mut result = None;
+        let mut result = AssignedIds::default();
 
         let txn = self
             .db
             .transaction_opt(&WriteOptions::default(), &self.txn_opts);
 
-        if !self.batch.is_atomic() {
-            for op in &self.batch.ops {
-                match op {
-                    Operation::AccountId {
-                        account_id: account_id_,
-                    } => {
-                        account_id = *account_id_;
-                    }
-                    Operation::Collection {
-                        collection: collection_,
-                    } => {
-                        collection = *collection_;
-                    }
-                    Operation::DocumentId {
-                        document_id: document_id_,
-                    } => {
-                        document_id = *document_id_;
-                    }
-                    Operation::Value { class, op } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            class,
-                        };
+        for op in &self.batch.ops {
+            match op {
+                Operation::AccountId {
+                    account_id: account_id_,
+                } => {
+                    account_id = *account_id_;
+                }
+                Operation::Collection {
+                    collection: collection_,
+                } => {
+                    collection = *collection_;
+                }
+                Operation::DocumentId {
+                    document_id: document_id_,
+                } => {
+                    document_id = *document_id_;
+                }
+                Operation::Value { class, op } => {
+                    let key =
+                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let is_counter = class.is_counter(collection);
 
-                        let is_counter = key.is_counter();
-                        let key = key.serialize(0);
-
-                        match op {
-                            ValueOp::Set(value) => {
-                                txn.put_cf(&self.cf_values, &key, value)?;
-
-                                if matches!(class, ValueClass::ReservedId) {
-                                    if let Some(bitmap) = txn
-                                        .get_pinned_for_update_cf(
-                                            &self.cf_bitmaps,
-                                            &BitmapKey {
-                                                account_id,
-                                                collection,
-                                                class: BitmapClass::DocumentIds,
-                                                block_num: 0,
-                                            }
-                                            .serialize(WITHOUT_BLOCK_NUM),
-                                            true,
-                                        )
-                                        .map_err(CommitError::from)
-                                        .and_then(|bytes| {
-                                            if let Some(bytes) = bytes {
-                                                RoaringBitmap::deserialize(&bytes)
-                                                    .map(Some)
-                                                    .map_err(CommitError::from)
-                                            } else {
-                                                Ok(None)
-                                            }
-                                        })?
-                                    {
-                                        if bitmap.contains(document_id) {
-                                            txn.rollback()?;
-                                            return Err(CommitError::Internal(
-                                                crate::Error::AssertValueFailed,
-                                            ));
-                                        }
+                    match op {
+                        ValueOp::Set(value) => {
+                            txn.put_cf(&self.cf_values, &key, value.resolve(&result)?.as_ref())?;
+                        }
+                        ValueOp::AtomicAdd(by) => {
+                            txn.merge_cf(&self.cf_counters, &key, &by.to_le_bytes()[..])?;
+                        }
+                        ValueOp::AddAndGet(by) => {
+                            let num = txn
+                                .get_pinned_for_update_cf(&self.cf_counters, &key, true)
+                                .map_err(CommitError::from)
+                                .and_then(|bytes| {
+                                    if let Some(bytes) = bytes {
+                                        deserialize_i64_le(&bytes)
+                                            .map(|v| v + *by)
+                                            .map_err(CommitError::from)
+                                    } else {
+                                        Ok(*by)
                                     }
-                                }
-                            }
-                            ValueOp::AtomicAdd(by) => {
-                                txn.merge_cf(&self.cf_counters, &key, &by.to_le_bytes()[..])?;
-                            }
-                            ValueOp::AddAndGet(by) => {
-                                let num = txn
-                                    .get_pinned_for_update_cf(&self.cf_counters, &key, true)
-                                    .map_err(CommitError::from)
-                                    .and_then(|bytes| {
-                                        if let Some(bytes) = bytes {
-                                            deserialize_i64_le(&bytes)
-                                                .map(|v| v + *by)
-                                                .map_err(CommitError::from)
-                                        } else {
-                                            Ok(*by)
-                                        }
-                                    })?;
-                                txn.put_cf(&self.cf_counters, &key, &num.to_le_bytes()[..])?;
-                                result = Some(num);
-                            }
-                            ValueOp::Clear => {
-                                txn.delete_cf(
-                                    if is_counter {
-                                        &self.cf_counters
-                                    } else {
-                                        &self.cf_values
-                                    },
-                                    &key,
-                                )?;
-                            }
+                                })?;
+                            txn.put_cf(&self.cf_counters, &key, &num.to_le_bytes()[..])?;
+                            result.push_counter_id(num);
                         }
-                    }
-                    Operation::Index { field, key, set } => {
-                        let key = IndexKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            field: *field,
-                            key,
-                        }
-                        .serialize(0);
-
-                        if *set {
-                            txn.put_cf(&self.cf_indexes, &key, [])?;
-                        } else {
-                            txn.delete_cf(&self.cf_indexes, &key)?;
-                        }
-                    }
-                    Operation::Bitmap { class, set } => {
-                        let key = BitmapKey {
-                            account_id,
-                            collection,
-                            class,
-                            block_num: 0,
-                        }
-                        .serialize(WITHOUT_BLOCK_NUM);
-
-                        let value = if *set {
-                            set_bit(document_id)
-                        } else {
-                            clear_bit(document_id)
-                        };
-
-                        txn.merge_cf(&self.cf_bitmaps, key, value)?;
-                    }
-                    Operation::Log {
-                        collection,
-                        change_id,
-                        set,
-                    } => {
-                        let key = LogKey {
-                            account_id,
-                            collection: *collection,
-                            change_id: *change_id,
-                        }
-                        .serialize(0);
-
-                        txn.put_cf(&self.cf_logs, &key, set)?;
-                    }
-                    Operation::AssertValue {
-                        class,
-                        assert_value,
-                    } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            class,
-                        }
-                        .serialize(0);
-                        let matches = txn
-                            .get_pinned_for_update_cf(&self.cf_values, &key, true)?
-                            .map(|value| assert_value.matches(&value))
-                            .unwrap_or_else(|| assert_value.is_none());
-
-                        if !matches {
-                            txn.rollback()?;
-                            return Err(CommitError::Internal(crate::Error::AssertValueFailed));
+                        ValueOp::Clear => {
+                            txn.delete_cf(
+                                if is_counter {
+                                    &self.cf_counters
+                                } else {
+                                    &self.cf_values
+                                },
+                                &key,
+                            )?;
                         }
                     }
                 }
-            }
-
-            txn.commit().map(|_| result).map_err(Into::into)
-        } else {
-            let mut wb = txn.get_writebatch();
-            for op in &self.batch.ops {
-                match op {
-                    Operation::AccountId {
-                        account_id: account_id_,
-                    } => {
-                        account_id = *account_id_;
-                    }
-                    Operation::Collection {
-                        collection: collection_,
-                    } => {
-                        collection = *collection_;
-                    }
-                    Operation::DocumentId {
-                        document_id: document_id_,
-                    } => {
-                        document_id = *document_id_;
-                    }
-                    Operation::Value { class, op } => {
-                        let key = ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            class,
-                        };
-
-                        let is_counter = key.is_counter();
-                        let key = key.serialize(0);
-
-                        match op {
-                            ValueOp::Set(value) => {
-                                wb.put_cf(&self.cf_values, &key, value);
-                            }
-                            ValueOp::AtomicAdd(by) => {
-                                wb.merge_cf(&self.cf_counters, &key, &by.to_le_bytes()[..]);
-                            }
-                            ValueOp::Clear => {
-                                wb.delete_cf(
-                                    if is_counter {
-                                        &self.cf_counters
-                                    } else {
-                                        &self.cf_values
-                                    },
-                                    &key,
-                                );
-                            }
-                            ValueOp::AddAndGet(_) => unreachable!(),
-                        }
-                    }
-                    Operation::Index { field, key, set } => {
-                        let key = IndexKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            field: *field,
-                            key,
-                        }
-                        .serialize(0);
-
-                        if *set {
-                            wb.put_cf(&self.cf_indexes, &key, []);
-                        } else {
-                            wb.delete_cf(&self.cf_indexes, &key);
-                        }
-                    }
-                    Operation::Bitmap { class, set } => {
-                        let key = BitmapKey {
-                            account_id,
-                            collection,
-                            class,
-                            block_num: 0,
-                        }
-                        .serialize(WITHOUT_BLOCK_NUM);
-
-                        let value = if *set {
-                            set_bit(document_id)
-                        } else {
-                            clear_bit(document_id)
-                        };
-
-                        wb.merge_cf(&self.cf_bitmaps, key, value);
-                    }
-                    Operation::Log {
+                Operation::Index { field, key, set } => {
+                    let key = IndexKey {
+                        account_id,
                         collection,
-                        change_id,
-                        set,
-                    } => {
-                        let key = LogKey {
+                        document_id,
+                        field: *field,
+                        key,
+                    }
+                    .serialize(0);
+
+                    if *set {
+                        txn.put_cf(&self.cf_indexes, &key, [])?;
+                    } else {
+                        txn.delete_cf(&self.cf_indexes, &key)?;
+                    }
+                }
+                Operation::Bitmap { class, set } => {
+                    let is_document_id = matches!(class, BitmapClass::DocumentIds);
+                    if *set && is_document_id && document_id == u32::MAX {
+                        let begin = BitmapKey {
                             account_id,
-                            collection: *collection,
-                            change_id: *change_id,
+                            collection,
+                            class: BitmapClass::DocumentIds,
+                            document_id: 0,
                         }
                         .serialize(0);
+                        let end = BitmapKey {
+                            account_id,
+                            collection,
+                            class: BitmapClass::DocumentIds,
+                            document_id: u32::MAX,
+                        }
+                        .serialize(0);
+                        let key_len = begin.len();
+                        let mut found_ids = RoaringBitmap::new();
 
-                        wb.put_cf(&self.cf_logs, &key, set);
+                        for row in txn.iterator_cf(
+                            &self.cf_bitmaps,
+                            IteratorMode::From(&begin, Direction::Forward),
+                        ) {
+                            let (key, _) = row?;
+                            let key = key.as_ref();
+                            if key.len() == key_len
+                                && key >= begin.as_slice()
+                                && key <= end.as_slice()
+                            {
+                                found_ids.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
+                            } else {
+                                break;
+                            }
+                        }
+
+                        document_id = found_ids.random_available_id();
+                        result.push_document_id(document_id);
                     }
-                    Operation::AssertValue { .. } => unreachable!(),
+                    let key =
+                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+
+                    if *set {
+                        txn.put_cf(&self.cf_bitmaps, &key, [])?;
+                    } else {
+                        txn.delete_cf(&self.cf_bitmaps, &key)?;
+                    }
+                }
+                Operation::Log { set } => {
+                    let key = LogKey {
+                        account_id,
+                        collection,
+                        change_id: self.batch.change_id,
+                    }
+                    .serialize(0);
+
+                    txn.put_cf(&self.cf_logs, &key, set.resolve(&result)?.as_ref())?;
+                }
+                Operation::AssertValue {
+                    class,
+                    assert_value,
+                } => {
+                    let key =
+                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+
+                    let matches = txn
+                        .get_pinned_for_update_cf(&self.cf_values, &key, true)?
+                        .map(|value| assert_value.matches(&value))
+                        .unwrap_or_else(|| assert_value.is_none());
+
+                    if !matches {
+                        txn.rollback()?;
+                        return Err(CommitError::Internal(crate::Error::AssertValueFailed));
+                    }
                 }
             }
-
-            self.db.write(wb).map(|_| result).map_err(Into::into)
         }
+
+        txn.commit().map(|_| result).map_err(Into::into)
     }
 }
 

@@ -24,6 +24,7 @@
 use std::{fs, path::PathBuf};
 
 use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
+use ahash::AHashSet;
 use jmap::mailbox::INBOX_ID;
 use jmap_client::{
     client::Client,
@@ -326,11 +327,17 @@ pub async fn assert_email_properties(
         .unwrap()
         .unwrap();
 
-    let mut mailbox_ids_ = result.mailbox_ids().to_vec();
-    let mut keywords_ = result.keywords().to_vec();
-    mailbox_ids_.sort_unstable();
-    keywords_.sort_unstable();
+    assert_eq!(
+        mailbox_ids.iter().copied().collect::<AHashSet<_>>(),
+        result
+            .mailbox_ids()
+            .iter()
+            .copied()
+            .collect::<AHashSet<_>>()
+    );
 
-    assert_eq!(mailbox_ids_, mailbox_ids);
-    assert_eq!(keywords_, keywords);
+    assert_eq!(
+        keywords.iter().copied().collect::<AHashSet<_>>(),
+        result.keywords().iter().copied().collect::<AHashSet<_>>()
+    );
 }

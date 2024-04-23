@@ -30,7 +30,7 @@ use jmap_proto::types::{collection::Collection, id::Id, property::Property, stat
 
 use store::{
     ahash::{AHashMap, AHashSet},
-    write::{log::ChangeLogBuilder, BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE},
+    write::{log::ChangeLogBuilder, BatchBuilder, MaybeDynamicId, TagValue, F_BITMAP, F_CLEAR},
 };
 
 use crate::jmap::{
@@ -156,11 +156,16 @@ pub async fn test(params: &mut JMAPTest) {
                         BatchBuilder::new()
                             .with_account_id(1)
                             .with_collection(Collection::Thread)
-                            .create_document(thread_id)
+                            .create_document()
                             .with_collection(Collection::Email)
                             .update_document(id.document_id())
                             .value(Property::ThreadId, id.prefix_id(), F_BITMAP | F_CLEAR)
-                            .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
+                            .set(Property::ThreadId, MaybeDynamicId::Dynamic(0))
+                            .tag(
+                                Property::ThreadId,
+                                TagValue::Id(MaybeDynamicId::Dynamic(0)),
+                                0,
+                            )
                             .custom(server.begin_changes(1).await.unwrap().with_log_move(
                                 Collection::Email,
                                 id,
