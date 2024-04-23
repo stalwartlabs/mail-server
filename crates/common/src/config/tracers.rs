@@ -165,7 +165,14 @@ impl Tracers {
                     }
                 }
                 "journal" => {
-                    tracers.push(Tracer::Journal { level });
+                    if !tracers.iter().any(|t| matches!(t, Tracer::Journal { .. })) {
+                        tracers.push(Tracer::Journal { level });
+                    } else {
+                        config.new_build_error(
+                            ("tracer", id, "type"),
+                            "Only one journal tracer is allowed".to_string(),
+                        );
+                    }
                 }
                 unknown => {
                     config.new_parse_error(
