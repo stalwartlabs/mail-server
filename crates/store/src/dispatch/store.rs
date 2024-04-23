@@ -26,7 +26,9 @@ use std::ops::{BitAndAssign, Range};
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{key::KeySerializer, now, AnyKey, Batch, BitmapClass, ReportClass, ValueClass},
+    write::{
+        key::KeySerializer, now, AnyKey, AssignedIds, Batch, BitmapClass, ReportClass, ValueClass,
+    },
     BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAPS,
     SUBSPACE_INDEXES, SUBSPACE_LOGS, U32_LEN,
 };
@@ -59,7 +61,7 @@ impl Store {
 
     pub async fn get_bitmap(
         &self,
-        key: BitmapKey<BitmapClass>,
+        key: BitmapKey<BitmapClass<u32>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         match self {
             #[cfg(feature = "sqlite")]
@@ -78,7 +80,7 @@ impl Store {
 
     pub async fn get_bitmaps_intersection(
         &self,
-        keys: Vec<BitmapKey<BitmapClass>>,
+        keys: Vec<BitmapKey<BitmapClass<u32>>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let mut result: Option<RoaringBitmap> = None;
         for key in keys {
@@ -120,7 +122,7 @@ impl Store {
 
     pub async fn get_counter(
         &self,
-        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
+        key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> crate::Result<i64> {
         match self {
             #[cfg(feature = "sqlite")]
@@ -137,7 +139,7 @@ impl Store {
         }
     }
 
-    pub async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
+    pub async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
         #[cfg(feature = "test_mode")]
         if std::env::var("PARANOID_WRITE").map_or(false, |v| v == "1") {
             use crate::write::Operation;
@@ -146,6 +148,7 @@ impl Store {
             let mut document_id = u32::MAX;
 
             let mut bitmaps = Vec::new();
+            let mut result = AssignedIds::default();
 
             for op in &batch.ops {
                 match op {
@@ -165,13 +168,19 @@ impl Store {
                         document_id = *document_id_;
                     }
                     Operation::Bitmap { class, set } => {
-                        let key = BitmapKey {
+                        if *set && matches!(class, BitmapClass::DocumentIds) {
+                            let id = result.document_ids.len() as u32;
+                            result.document_ids.push(id);
+                        }
+
+                        let key = class.serialize(
                             account_id,
                             collection,
-                            block_num: 0,
-                            class,
-                        }
-                        .serialize(0);
+                            document_id,
+                            0,
+                            (&result).into(),
+                        );
+
                         bitmaps.push((key, class.clone(), document_id, *set));
                     }
                     _ => {}
@@ -216,7 +225,7 @@ impl Store {
                 }
             }
 
-            return Ok(None);
+            return Ok(AssignedIds::default());
         }
 
         match self {
@@ -310,7 +319,6 @@ impl Store {
 
         for (from_class, to_class) in [
             (ValueClass::Acl(account_id), ValueClass::Acl(account_id + 1)),
-            (ValueClass::ReservedId, ValueClass::ReservedId),
             (ValueClass::Property(0), ValueClass::Property(0)),
             (ValueClass::TermIndex, ValueClass::TermIndex),
         ] {

@@ -33,7 +33,7 @@ use sieve::Sieve;
 use store::{
     query::Filter,
     write::{assert::HashedValue, BatchBuilder, Bincode, BlobOp},
-    Deserialize, Serialize,
+    BlobClass, Deserialize, Serialize,
 };
 
 use crate::{sieve::SeenIds, JMAP};
@@ -99,8 +99,24 @@ impl JMAP {
                     Property::Id => {
                         result.append(Property::Id, Value::Id(id));
                     }
-                    Property::Name | Property::BlobId | Property::IsActive => {
+                    Property::Name | Property::IsActive => {
                         result.append(property.clone(), push.remove(property));
+                    }
+                    Property::BlobId => {
+                        result.append(
+                            Property::BlobId,
+                            match push.remove(&Property::BlobId) {
+                                Value::BlobId(mut blob_id) => {
+                                    blob_id.class = BlobClass::Linked {
+                                        account_id,
+                                        collection: Collection::SieveScript.into(),
+                                        document_id,
+                                    };
+                                    Value::BlobId(blob_id)
+                                }
+                                other => other,
+                            },
+                        );
                     }
                     property => {
                         result.append(property.clone(), Value::Null);

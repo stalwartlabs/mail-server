@@ -26,7 +26,7 @@ use std::fmt::Debug;
 use directory::{backend::internal::manage::ManageDirectory, Principal, QueryBy, Type};
 use mail_send::Credentials;
 
-use crate::directory::{map_account_ids, DirectoryTest, IntoSortedPrincipal};
+use crate::directory::{map_account_ids, DirectoryTest};
 
 #[tokio::test]
 async fn ldap_directory() {

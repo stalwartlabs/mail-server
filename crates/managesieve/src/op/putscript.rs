@@ -30,7 +30,7 @@ use jmap_proto::{
 use sieve::compiler::ErrorType;
 use store::{
     query::Filter,
-    write::{assert::HashedValue, BatchBuilder, BlobOp, DirectoryClass},
+    write::{assert::HashedValue, log::LogInsert, BatchBuilder, BlobOp, DirectoryClass},
     BlobClass,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -165,12 +165,6 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             );
             self.jmap.write_batch(batch).await?;
         } else {
-            // Obtain document id
-            let document_id = self
-                .jmap
-                .assign_document_id(account_id, Collection::SieveScript)
-                .await?;
-
             // Write script blob
             let blob_id = BlobId::new(
                 self.jmap
@@ -180,19 +174,18 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 BlobClass::Linked {
                     account_id,
                     collection: Collection::SieveScript.into(),
-                    document_id,
+                    document_id: 0,
                 },
             )
             .with_section_size(script_size as usize);
 
             // Write record
-            let mut changelog = self.jmap.begin_changes(account_id).await?;
-            changelog.log_insert(Collection::SieveScript, document_id);
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
-                .create_document(document_id)
+                .create_document()
+                .log(LogInsert())
                 .add(DirectoryClass::UsedQuota(account_id), script_size)
                 .set(
                     BlobOp::Link {
@@ -207,8 +200,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                             .with_property(Property::IsActive, Value::Bool(false))
                             .with_property(Property::BlobId, Value::BlobId(blob_id)),
                     ),
-                )
-                .custom(changelog);
+                );
             self.jmap.write_batch(batch).await?;
         }
 

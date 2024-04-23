@@ -27,7 +27,7 @@ use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
     store::deflate_test_resource,
 };
-use jmap::{email::ingest::IngestEmail, mailbox::INBOX_ID, IngestError};
+use jmap::{email::ingest::IngestEmail, IngestError};
 use jmap_client::{email, mailbox::Role};
 use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{mailbox::mbox::MessageIterator, MessageParser};
@@ -229,14 +229,20 @@ async fn test_multi_thread(params: &mut JMAPTest) {
     println!("Running Email Merge Threads tests (multi-threaded)...");
     //let semaphore = sync::Arc::Arc::new(tokio::sync::Semaphore::new(100));
     let mut handles = vec![];
-    for num in 0..3 {
+
+    let mailbox_id = Id::from_bytes(
         params
             .client
             .set_default_account_id(Id::new(0u64).to_string())
-            .mailbox_create(format!("Mailbox {num}"), None::<String>, Role::None)
+            .mailbox_create("Inbox", None::<String>, Role::None)
             .await
-            .unwrap();
-    }
+            .unwrap()
+            .id()
+            .unwrap()
+            .as_bytes(),
+    )
+    .unwrap()
+    .document_id();
 
     for message in MessageIterator::new(Cursor::new(deflate_test_resource("mailbox.gz")))
         .collect::<Vec<_>>()
@@ -255,7 +261,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                         message: MessageParser::new().parse(message.contents()),
                         account_id: 0,
                         account_quota: 0,
-                        mailbox_ids: vec![INBOX_ID],
+                        mailbox_ids: vec![mailbox_id],
                         keywords: vec![],
                         received_at: None,
                         skip_duplicates: true,

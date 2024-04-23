@@ -243,13 +243,12 @@ pub async fn test(params: &mut JMAPTest) {
     for _ in 0..8 {
         let client_ = client.clone();
         tokio::spawn(async move {
-            client_
+            let _ = client_
                 .mailbox_query(
                     mailbox::query::Filter::name("__sleep").into(),
                     [mailbox::query::Comparator::name()].into(),
                 )
-                .await
-                .unwrap();
+                .await;
         });
     }
     tokio::time::sleep(Duration::from_millis(500)).await;

@@ -26,23 +26,22 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
 use foundationdb::{
-    options::{self, MutationType},
+    options::{self, MutationType, StreamingMode},
     FdbError, KeySelector, RangeOption,
 };
 use futures::StreamExt;
 use rand::Rng;
+use roaring::RoaringBitmap;
 
 use crate::{
     backend::deserialize_i64_le,
     write::{
-        bitmap::{block_contains, DenseBitmap},
-        key::KeySerializer,
-        Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
+        key::{DeserializeBigEndian, KeySerializer},
+        AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId, ValueOp,
+        MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_BITMAPS, SUBSPACE_COUNTERS,
-    SUBSPACE_VALUES, WITH_SUBSPACE,
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTERS, SUBSPACE_VALUES, U32_LEN, WITH_SUBSPACE,
 };
 
 use super::{
@@ -50,41 +49,16 @@ use super::{
     FdbStore, MAX_VALUE_SIZE,
 };
 
-#[cfg(feature = "fdb-chunked-bm")]
-use super::read::{read_chunked_bitmap, ChunkedBitmap};
-
-#[cfg(feature = "fdb-chunked-bm")]
-use roaring::RoaringBitmap;
-
-#[cfg(feature = "fdb-chunked-bm")]
-struct BitmapOp {
-    document_id: u32,
-    set: bool,
-}
-
-#[cfg(feature = "fdb-chunked-bm")]
-impl BitmapOp {
-    fn new(document_id: u32, set: bool) -> Self {
-        Self { document_id, set }
-    }
-}
-
 impl FdbStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
+    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
         let start = Instant::now();
         let mut retry_count = 0;
-        #[cfg(not(feature = "fdb-chunked-bm"))]
-        let mut set_bitmaps = AHashMap::new();
-        #[cfg(not(feature = "fdb-chunked-bm"))]
-        let mut clear_bitmaps = AHashMap::new();
-        #[cfg(feature = "fdb-chunked-bm")]
-        let mut bitmaps = AHashMap::new();
 
         loop {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
-            let mut result = None;
+            let mut result = AssignedIds::default();
 
             let trx = self.db.create_trx()?;
 
@@ -106,17 +80,18 @@ impl FdbStore {
                         document_id = *document_id_;
                     }
                     Operation::Value { class, op } => {
-                        let mut key = ValueKey {
+                        let mut key = class.serialize(
                             account_id,
                             collection,
                             document_id,
-                            class,
-                        }
-                        .serialize(WITH_SUBSPACE);
+                            WITH_SUBSPACE,
+                            (&result).into(),
+                        );
                         let do_chunk = key[0] == SUBSPACE_VALUES;
 
                         match op {
                             ValueOp::Set(value) => {
+                                let value = value.resolve(&result)?;
                                 if !value.is_empty() && do_chunk {
                                     for (pos, chunk) in value.chunks(MAX_VALUE_SIZE).enumerate() {
                                         match pos.cmp(&1) {
@@ -138,29 +113,7 @@ impl FdbStore {
                                         trx.set(&key, chunk);
                                     }
                                 } else {
-                                    trx.set(&key, value);
-                                }
-
-                                if matches!(class, ValueClass::ReservedId) {
-                                    let block_num = DenseBitmap::block_num(document_id);
-                                    if let Ok(Some(bytes)) = trx
-                                        .get(
-                                            &BitmapKey {
-                                                account_id,
-                                                collection,
-                                                class: BitmapClass::DocumentIds,
-                                                block_num,
-                                            }
-                                            .serialize(WITH_SUBSPACE),
-                                            true,
-                                        )
-                                        .await
-                                    {
-                                        if block_contains(&bytes, block_num, document_id) {
-                                            trx.cancel();
-                                            return Err(crate::Error::AssertValueFailed);
-                                        }
-                                    }
+                                    trx.set(&key, value.as_ref());
                                 }
                             }
                             ValueOp::AtomicAdd(by) => {
@@ -173,7 +126,7 @@ impl FdbStore {
                                     *by
                                 };
                                 trx.set(&key, &num.to_le_bytes()[..]);
-                                result = Some(num);
+                                result.push_counter_id(num);
                             }
                             ValueOp::Clear => {
                                 if do_chunk {
@@ -207,64 +160,100 @@ impl FdbStore {
                         }
                     }
                     Operation::Bitmap { class, set } => {
-                        if retry_count == 0 {
-                            #[cfg(not(feature = "fdb-chunked-bm"))]
-                            if *set {
-                                &mut set_bitmaps
-                            } else {
-                                &mut clear_bitmaps
+                        // Find the next available document id
+                        let assign_id = *set
+                            && matches!(class, BitmapClass::DocumentIds)
+                            && document_id == u32::MAX;
+                        if assign_id {
+                            let begin = BitmapKey {
+                                account_id,
+                                collection,
+                                class: BitmapClass::DocumentIds,
+                                document_id: 0,
                             }
-                            .entry(
-                                BitmapKey {
-                                    account_id,
-                                    collection,
-                                    class,
-                                    block_num: DenseBitmap::block_num(document_id),
+                            .serialize(WITH_SUBSPACE);
+                            let end = BitmapKey {
+                                account_id,
+                                collection,
+                                class: BitmapClass::DocumentIds,
+                                document_id: u32::MAX,
+                            }
+                            .serialize(WITH_SUBSPACE);
+                            let key_len = begin.len();
+                            let mut values = trx.get_ranges(
+                                RangeOption {
+                                    begin: KeySelector::first_greater_or_equal(begin),
+                                    end: KeySelector::first_greater_or_equal(end),
+                                    mode: StreamingMode::WantAll,
+                                    reverse: false,
+                                    ..RangeOption::default()
+                                },
+                                true,
+                            );
+                            let mut found_ids = RoaringBitmap::new();
+                            while let Some(values) = values.next().await {
+                                for value in values? {
+                                    let key = value.key();
+                                    if key.len() == key_len {
+                                        found_ids
+                                            .insert(key.deserialize_be_u32(key_len - U32_LEN)?);
+                                    } else {
+                                        break;
+                                    }
                                 }
-                                .serialize(WITH_SUBSPACE),
-                            )
-                            .or_insert_with(DenseBitmap::empty)
-                            .set(document_id);
+                            }
+                            document_id = found_ids.random_available_id();
+                            result.push_document_id(document_id);
+                        }
 
-                            #[cfg(feature = "fdb-chunked-bm")]
-                            bitmaps
-                                .entry(
-                                    BitmapKey {
+                        let key = class.serialize(
+                            account_id,
+                            collection,
+                            document_id,
+                            WITH_SUBSPACE,
+                            (&result).into(),
+                        );
+
+                        if *set {
+                            if assign_id {
+                                trx.add_conflict_range(
+                                    &key,
+                                    &class.serialize(
                                         account_id,
                                         collection,
-                                        class,
-                                        block_num: 0,
-                                    }
-                                    .serialize(WITH_SUBSPACE),
-                                )
-                                .or_insert(Vec::new())
-                                .push(BitmapOp::new(document_id, *set));
+                                        document_id + 1,
+                                        WITH_SUBSPACE,
+                                        (&result).into(),
+                                    ),
+                                    options::ConflictRangeType::Read,
+                                )?;
+                            }
+
+                            trx.set(&key, &[]);
+                        } else {
+                            trx.clear(&key);
                         }
                     }
-                    Operation::Log {
-                        collection,
-                        change_id,
-                        set,
-                    } => {
+                    Operation::Log { set } => {
                         let key = LogKey {
                             account_id,
-                            collection: *collection,
-                            change_id: *change_id,
+                            collection,
+                            change_id: batch.change_id,
                         }
                         .serialize(WITH_SUBSPACE);
-                        trx.set(&key, set);
+                        trx.set(&key, set.resolve(&result)?.as_ref());
                     }
                     Operation::AssertValue {
                         class,
                         assert_value,
                     } => {
-                        let key = ValueKey {
+                        let key = class.serialize(
                             account_id,
                             collection,
                             document_id,
-                            class,
-                        }
-                        .serialize(WITH_SUBSPACE);
+                            WITH_SUBSPACE,
+                            (&result).into(),
+                        );
 
                         let matches = match read_chunked_value(&key, &trx, false).await {
                             Ok(ChunkedValue::Single(bytes)) => assert_value.matches(bytes.as_ref()),
@@ -278,100 +267,6 @@ impl FdbStore {
                         if !matches {
                             trx.cancel();
                             return Err(crate::Error::AssertValueFailed);
-                        }
-                    }
-                }
-            }
-
-            #[cfg(not(feature = "fdb-chunked-bm"))]
-            {
-                for (key, bitmap) in &set_bitmaps {
-                    trx.atomic_op(key, &bitmap.bitmap, MutationType::BitOr);
-                }
-
-                for (key, bitmap) in &clear_bitmaps {
-                    trx.atomic_op(key, &bitmap.bitmap, MutationType::BitXor);
-                }
-            }
-
-            // Write bitmaps
-            #[cfg(feature = "fdb-chunked-bm")]
-            for (key, bitmap_ops) in &bitmaps {
-                let (mut bitmap, exists, n_chunks) =
-                    match read_chunked_bitmap(key, &trx, false).await? {
-                        ChunkedBitmap::Single(bitmap) => (bitmap, true, 0u8),
-                        ChunkedBitmap::Chunked { n_chunks, bitmap } => (bitmap, true, n_chunks),
-                        ChunkedBitmap::None => (RoaringBitmap::new(), false, 0u8),
-                    };
-
-                for bitmap_op in bitmap_ops {
-                    if bitmap_op.set {
-                        bitmap.insert(bitmap_op.document_id);
-                    } else {
-                        bitmap.remove(bitmap_op.document_id);
-                    }
-                }
-
-                if !bitmap.is_empty() {
-                    let mut bytes = Vec::with_capacity(bitmap.serialized_size());
-                    bitmap.serialize_into(&mut bytes).map_err(|_| {
-                        crate::Error::InternalError("Failed to serialize bitmap".into())
-                    })?;
-                    let mut key = KeySerializer::new(key.len() + 1)
-                        .write(key.as_slice())
-                        .finalize();
-                    let mut chunk_diff = n_chunks;
-
-                    for (pos, chunk) in bytes.chunks(MAX_VALUE_SIZE).enumerate() {
-                        match pos.cmp(&1) {
-                            Ordering::Less => {}
-                            Ordering::Equal => {
-                                key.push(0);
-                                if n_chunks > 0 {
-                                    chunk_diff -= 1;
-                                }
-                            }
-                            Ordering::Greater => {
-                                if pos < u8::MAX as usize {
-                                    *key.last_mut().unwrap() += 1;
-                                    if n_chunks > 0 {
-                                        chunk_diff -= 1;
-                                    }
-                                } else {
-                                    trx.cancel();
-                                    return Err(crate::Error::InternalError(
-                                        "Bitmap value too large".into(),
-                                    ));
-                                }
-                            }
-                        }
-                        trx.set(&key, chunk);
-                    }
-
-                    // Delete any additional chunks
-                    if chunk_diff > 0 {
-                        let mut key = KeySerializer::new(key.len() + 1)
-                            .write(key.as_slice())
-                            .write(0u8)
-                            .finalize();
-                        for chunk in (0..n_chunks).rev().take(chunk_diff as usize) {
-                            *key.last_mut().unwrap() = chunk;
-                            trx.clear(&key);
-                        }
-                    }
-                } else if exists {
-                    // Delete main key
-                    trx.clear(key);
-
-                    // Delete additional chunked keys
-                    if n_chunks > 0 {
-                        let mut key = KeySerializer::new(key.len() + 1)
-                            .write(key.as_slice())
-                            .write(0u8)
-                            .finalize();
-                        for chunk in 0..n_chunks {
-                            *key.last_mut().unwrap() = chunk;
-                            trx.clear(&key);
                         }
                     }
                 }
@@ -396,38 +291,8 @@ impl FdbStore {
     }
 
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {
-        // Obtain all empty bitmaps
-        let trx = self.db.create_trx()?;
-        let mut iter = trx.get_ranges(
-            RangeOption {
-                begin: KeySelector::first_greater_or_equal(&[SUBSPACE_BITMAPS, 0u8][..]),
-                end: KeySelector::first_greater_or_equal(
-                    &[
-                        SUBSPACE_BITMAPS,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                    ][..],
-                ),
-                mode: options::StreamingMode::WantAll,
-                reverse: false,
-                ..Default::default()
-            },
-            true,
-        );
-        let mut delete_keys = Vec::new();
-
-        while let Some(values) = iter.next().await {
-            for value in values? {
-                if value.value().iter().all(|byte| *byte == 0) {
-                    delete_keys.push(value.key().to_vec());
-                }
-            }
-        }
-
         // Obtain all zero counters
+        let mut delete_keys = Vec::new();
         let trx = self.db.create_trx()?;
         let mut iter = trx.get_ranges(
             RangeOption {
@@ -462,22 +327,13 @@ impl FdbStore {
         }
 
         // Delete keys
-        let bitmap = DenseBitmap::empty();
         let integer = 0i64.to_le_bytes();
         for chunk in delete_keys.chunks(1024) {
             let mut retry_count = 0;
             loop {
                 let trx = self.db.create_trx()?;
                 for key in chunk {
-                    trx.atomic_op(
-                        key,
-                        if key[0] == SUBSPACE_BITMAPS {
-                            &bitmap.bitmap
-                        } else {
-                            &integer
-                        },
-                        MutationType::CompareAndClear,
-                    );
+                    trx.atomic_op(key, &integer, MutationType::CompareAndClear);
                 }
                 match trx.commit().await {
                     Ok(_) => {

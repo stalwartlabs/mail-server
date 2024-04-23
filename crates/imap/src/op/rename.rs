@@ -145,51 +145,57 @@ impl<T: SessionStream> SessionData<T> {
                 return StatusResponse::database_failure().with_tag(arguments.tag);
             }
         };
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(params.account_id)
-            .with_collection(Collection::Mailbox);
+
         let mut parent_id = params.parent_mailbox_id.map(|id| id + 1).unwrap_or(0);
         let mut create_ids = Vec::with_capacity(params.path.len());
         for &path_item in params.path.iter() {
-            let mailbox_id = match self
-                .jmap
-                .assign_document_id(params.account_id, Collection::Mailbox)
-                .await
-            {
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(params.account_id)
+                .with_collection(Collection::Mailbox)
+                .create_document()
+                .custom(
+                    ObjectIndexBuilder::new(SCHEMA).with_changes(
+                        Object::with_capacity(3)
+                            .with_property(Property::Name, path_item)
+                            .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
+                            .with_property(
+                                Property::Cid,
+                                Value::UnsignedInt(rand::random::<u32>() as u64),
+                            ),
+                    ),
+                );
+
+            let mailbox_id = match self.jmap.write_batch_expect_id(batch).await {
                 Ok(mailbox_id) => mailbox_id,
                 Err(_) => {
                     return StatusResponse::database_failure().with_tag(arguments.tag);
                 }
             };
-            batch.create_document(mailbox_id).custom(
-                ObjectIndexBuilder::new(SCHEMA).with_changes(
-                    Object::with_capacity(3)
-                        .with_property(Property::Name, path_item)
-                        .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
-                        .with_property(
-                            Property::Cid,
-                            Value::UnsignedInt(rand::random::<u32>() as u64),
-                        ),
-                ),
-            );
+
             changes.log_insert(Collection::Mailbox, mailbox_id);
             parent_id = mailbox_id + 1;
             create_ids.push(mailbox_id);
         }
-        batch.update_document(mailbox_id).custom(
-            ObjectIndexBuilder::new(SCHEMA)
-                .with_current(mailbox)
-                .with_changes(
-                    Object::with_capacity(3)
-                        .with_property(Property::Name, new_mailbox_name)
-                        .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
-                        .with_property(
-                            Property::Cid,
-                            Value::UnsignedInt(rand::random::<u32>() as u64),
-                        ),
-                ),
-        );
+
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(params.account_id)
+            .with_collection(Collection::Mailbox)
+            .update_document(mailbox_id)
+            .custom(
+                ObjectIndexBuilder::new(SCHEMA)
+                    .with_current(mailbox)
+                    .with_changes(
+                        Object::with_capacity(3)
+                            .with_property(Property::Name, new_mailbox_name)
+                            .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
+                            .with_property(
+                                Property::Cid,
+                                Value::UnsignedInt(rand::random::<u32>() as u64),
+                            ),
+                    ),
+            );
         changes.log_update(Collection::Mailbox, mailbox_id);
 
         let change_id = changes.change_id;

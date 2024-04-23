@@ -41,7 +41,7 @@ pub struct Pagination {
     has_anchor: bool,
     anchor_found: bool,
     pub ids: Vec<u64>,
-    prefix_key: Option<ValueKey<ValueClass>>,
+    prefix_key: Option<ValueKey<ValueClass<u32>>>,
     prefix_unique: bool,
 }
 
@@ -303,7 +303,7 @@ impl Pagination {
         }
     }
 
-    pub fn with_prefix_key(mut self, prefix_key: ValueKey<ValueClass>) -> Self {
+    pub fn with_prefix_key(mut self, prefix_key: ValueKey<ValueClass<u32>>) -> Self {
         self.prefix_key = Some(prefix_key);
         self
     }

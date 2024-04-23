@@ -90,23 +90,10 @@ impl<T: SessionStream> SessionData<T> {
                 return StatusResponse::database_failure().with_tag(arguments.tag);
             }
         };
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(params.account_id)
-            .with_collection(Collection::Mailbox);
+
         let mut parent_id = params.parent_mailbox_id.map(|id| id + 1).unwrap_or(0);
         let mut create_ids = Vec::with_capacity(params.path.len());
         for (pos, &path_item) in params.path.iter().enumerate() {
-            let mailbox_id = match self
-                .jmap
-                .assign_document_id(params.account_id, Collection::Mailbox)
-                .await
-            {
-                Ok(mailbox_id) => mailbox_id,
-                Err(_) => {
-                    return StatusResponse::database_failure().with_tag(arguments.tag);
-                }
-            };
             let mut mailbox = Object::with_capacity(4)
                 .with_property(Property::Name, path_item)
                 .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
@@ -119,15 +106,30 @@ impl<T: SessionStream> SessionData<T> {
                     mailbox.set(Property::Role, mailbox_role);
                 }
             }
+            let mut batch = BatchBuilder::new();
             batch
-                .create_document(mailbox_id)
+                .with_account_id(params.account_id)
+                .with_collection(Collection::Mailbox)
+                .create_document()
                 .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(mailbox));
+            let mailbox_id = match self.jmap.write_batch_expect_id(batch).await {
+                Ok(mailbox_id) => mailbox_id,
+                Err(_) => {
+                    return StatusResponse::database_failure().with_tag(arguments.tag);
+                }
+            };
             changes.log_insert(Collection::Mailbox, mailbox_id);
             parent_id = mailbox_id + 1;
             create_ids.push(mailbox_id);
         }
+
+        // Write changes
         let change_id = changes.change_id;
-        batch.custom(changes);
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(params.account_id)
+            .with_collection(Collection::Mailbox)
+            .custom(changes);
         if self.jmap.write_batch(batch).await.is_err() {
             return StatusResponse::database_failure().with_tag(arguments.tag);
         }

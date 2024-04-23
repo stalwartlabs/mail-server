@@ -318,7 +318,7 @@ pub async fn test(params: &mut JMAPTest) {
                 "jane@example.com",
                 "robert@example.com",
                 &format!("Ingest test {i}"),
-                100,
+                513,
             ))
             .unwrap(),
         )

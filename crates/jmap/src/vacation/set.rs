@@ -41,12 +41,10 @@ use jmap_proto::{
 };
 use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
-use store::{
-    write::{
-        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, DirectoryClass, F_CLEAR,
-        F_VALUE,
-    },
-    BlobClass,
+use store::write::{
+    assert::HashedValue,
+    log::{Changes, LogInsert},
+    BatchBuilder, BlobOp, DirectoryClass, F_CLEAR, F_VALUE,
 };
 
 use crate::{
@@ -121,8 +119,15 @@ impl JMAP {
             }
         }
 
+        // Prepare write batch
+        let mut batch = BatchBuilder::new();
+        let change_id = self.assign_change_id(account_id).await?;
+        batch
+            .with_change_id(change_id)
+            .with_account_id(account_id)
+            .with_collection(Collection::SieveScript);
+
         // Process changes
-        let mut change_log = ChangeLogBuilder::new();
         if let Some(changes_) = changes {
             // Parse properties
             let mut changes = Object::with_capacity(changes_.properties.len());
@@ -199,12 +204,6 @@ impl JMAP {
                 }
             }
 
-            // Prepare write batch
-            let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::SieveScript);
-
             // Obtain current script
             let document_id = self.get_vacation_sieve_script_id(account_id).await?;
             let mut was_active = false;
@@ -231,20 +230,14 @@ impl JMAP {
                 .with_changes(changes);
 
             // Update id
-            let document_id = if let Some(document_id) = document_id {
+            if let Some(document_id) = document_id {
                 batch
                     .update_document(document_id)
-                    .value(Property::EmailIds, (), F_VALUE | F_CLEAR);
-                change_log.log_insert(Collection::SieveScript, document_id);
-                document_id
+                    .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
+                    .log(Changes::update([document_id]));
             } else {
-                let document_id = self
-                    .assign_document_id(account_id, Collection::SieveScript)
-                    .await?;
-                batch.create_document(document_id);
-                change_log.log_update(Collection::SieveScript, document_id);
-                document_id
-            };
+                batch.create_document().log(LogInsert());
+            }
 
             // Create sieve script only if there are changes
             if build_script {
@@ -255,11 +248,11 @@ impl JMAP {
                     .hash;
                 let blob_id = obj.changes_mut().unwrap().blob_id_mut().unwrap();
                 blob_id.hash = hash;
-                blob_id.class = BlobClass::Linked {
+                /*blob_id.class = BlobClass::Linked {
                     account_id,
                     collection: Collection::SieveScript.into(),
-                    document_id,
-                };
+                    document_id: u32::MAX,
+                };*/
 
                 // Link blob
                 batch.set(
@@ -305,9 +298,18 @@ impl JMAP {
 
             // Write changes
             batch.custom(obj);
-            if !batch.is_empty() {
-                self.write_batch(batch).await?;
-            }
+            let document_id = if !batch.is_empty() {
+                let ids = self.write_batch(batch).await?;
+                response.new_state = Some(change_id.into());
+                match document_id {
+                    Some(document_id) => document_id,
+                    None => ids
+                        .last_document_id()
+                        .map_err(|_| MethodError::ServerPartialFail)?,
+                }
+            } else {
+                document_id.unwrap_or(u32::MAX)
+            };
 
             // Deactivate other sieve scripts
             if !was_active && is_active {
@@ -331,7 +333,7 @@ impl JMAP {
                     {
                         self.sieve_script_delete(account_id, document_id, false)
                             .await?;
-                        change_log.log_delete(Collection::SieveScript, document_id);
+                        batch.log(Changes::delete([document_id]));
                         response.destroyed.push(id);
                         continue;
                     }
@@ -339,11 +341,12 @@ impl JMAP {
 
                 response.not_destroyed.append(id, SetError::not_found());
             }
-        }
 
-        // Write changes
-        if !change_log.is_empty() {
-            response.new_state = Some(self.commit_changes(account_id, change_log).await?.into());
+            // Write changes
+            if !batch.is_empty() {
+                self.write_batch(batch).await?;
+                response.new_state = Some(change_id.into());
+            }
         }
 
         Ok(response)

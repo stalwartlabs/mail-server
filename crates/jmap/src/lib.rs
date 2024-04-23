@@ -48,7 +48,8 @@ use store::{
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
     write::{
-        key::DeserializeBigEndian, BatchBuilder, BitmapClass, DirectoryClass, TagValue, ValueClass,
+        key::DeserializeBigEndian, AssignedIds, BatchBuilder, BitmapClass, DirectoryClass,
+        TagValue, ValueClass,
     },
     BitmapKey, Deserialize, IterateParams, ValueKey, U32_LEN,
 };
@@ -172,26 +173,6 @@ impl JMAP {
         spawn_housekeeper(jmap_instance.clone(), housekeeper_rx);
 
         jmap_instance
-    }
-
-    pub async fn assign_document_id(
-        &self,
-        account_id: u32,
-        collection: Collection,
-    ) -> Result<u32, MethodError> {
-        self.core
-            .storage
-            .data
-            .assign_document_id(account_id, collection)
-            .await
-            .map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "assign_document_id",
-                    error = ?err,
-                    "Failed to assign documentId.");
-                MethodError::ServerPartialFail
-            })
     }
 
     pub async fn get_property<U>(
@@ -322,7 +303,7 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
         property: impl AsRef<Property>,
-        value: impl Into<TagValue>,
+        value: impl Into<TagValue<u32>>,
     ) -> Result<Option<RoaringBitmap>, MethodError> {
         let property = property.as_ref();
         match self
@@ -336,7 +317,7 @@ impl JMAP {
                     field: property.into(),
                     value: value.into(),
                 },
-                block_num: 0,
+                document_id: 0,
             })
             .await
         {
@@ -544,13 +525,12 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn write_batch(&self, batch: BatchBuilder) -> Result<(), MethodError> {
+    pub async fn write_batch(&self, batch: BatchBuilder) -> Result<AssignedIds, MethodError> {
         self.core
             .storage
             .data
             .write(batch.build())
             .await
-            .map(|_| ())
             .map_err(|err| {
                 match err {
                     store::Error::InternalError(err) => {
@@ -572,6 +552,20 @@ impl JMAP {
                     }
                 }
             })
+    }
+
+    pub async fn write_batch_expect_id(&self, batch: BatchBuilder) -> Result<u32, MethodError> {
+        self.write_batch(batch).await.and_then(|ids| {
+            ids.last_document_id().map_err(|err| {
+                tracing::error!(
+                    event = "error",
+                    context = "write_batch_expect_id",
+                    error = ?err,
+                    "Failed to obtain last document id."
+                );
+                MethodError::ServerPartialFail
+            })
+        })
     }
 }
 

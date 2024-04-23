@@ -25,8 +25,8 @@ use roaring::RoaringBitmap;
 use rocksdb::{Direction, IteratorMode};
 
 use crate::{
-    write::{BitmapClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey, WITHOUT_BLOCK_NUM,
+    write::{key::DeserializeBigEndian, BitmapClass, ValueClass},
+    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
 };
 
 use super::{RocksDbStore, CF_BITMAPS, CF_COUNTERS};
@@ -57,28 +57,29 @@ impl RocksDbStore {
 
     pub(crate) async fn get_bitmap(
         &self,
-        key: BitmapKey<BitmapClass>,
+        mut key: BitmapKey<BitmapClass<u32>>,
     ) -> crate::Result<Option<RoaringBitmap>> {
         let db = self.db.clone();
         self.spawn_worker(move || {
-            db.get_pinned_cf(
+            let mut bm = RoaringBitmap::new();
+            let begin = key.serialize(0);
+            key.document_id = u32::MAX;
+            let end = key.serialize(0);
+            let key_len = begin.len();
+            for row in db.iterator_cf(
                 &db.cf_handle(CF_BITMAPS).unwrap(),
-                &key.serialize(WITHOUT_BLOCK_NUM),
-            )
-            .map_err(Into::into)
-            .and_then(|value| {
-                if let Some(value) = value {
-                    RoaringBitmap::deserialize(&value).map(|rb| {
-                        if !rb.is_empty() {
-                            Some(rb)
-                        } else {
-                            None
-                        }
-                    })
+                IteratorMode::From(&begin, Direction::Forward),
+            ) {
+                let (key, _) = row?;
+                let key = key.as_ref();
+                if key.len() == key_len && key >= begin.as_slice() && key <= end.as_slice() {
+                    bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
                 } else {
-                    Ok(None)
+                    break;
                 }
-            })
+            }
+
+            Ok(if !bm.is_empty() { Some(bm) } else { None })
         })
         .await
     }
@@ -120,7 +121,7 @@ impl RocksDbStore {
 
     pub(crate) async fn get_counter(
         &self,
-        key: impl Into<ValueKey<ValueClass>> + Sync + Send,
+        key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> crate::Result<i64> {
         let key = key.into().serialize(0);
         let db = self.db.clone();

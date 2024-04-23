@@ -28,7 +28,7 @@ pub mod smtp;
 pub mod sql;
 
 use common::{config::smtp::session::AddressMapping, Core};
-use directory::{backend::internal::manage::ManageDirectory, Directories, Principal};
+use directory::{backend::internal::manage::ManageDirectory, Directories};
 use mail_send::Credentials;
 use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
@@ -668,16 +668,4 @@ async fn map_account_ids(store: &Store, names: Vec<impl AsRef<str>>) -> Vec<u32>
         ids.push(store.get_account_id(name.as_ref()).await.unwrap().unwrap());
     }
     ids
-}
-
-trait IntoSortedPrincipal: Sized {
-    fn into_sorted(self) -> Self;
-}
-
-impl IntoSortedPrincipal for Principal<u32> {
-    fn into_sorted(mut self) -> Self {
-        self.member_of.sort_unstable();
-        self.emails.sort_unstable();
-        self
-    }
 }

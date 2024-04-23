@@ -25,20 +25,30 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use deadpool_postgres::Object;
+use futures::{pin_mut, TryStreamExt};
 use rand::Rng;
+use roaring::RoaringBitmap;
 use tokio_postgres::{error::SqlState, IsolationLevel};
 
 use crate::{
     write::{
-        Batch, BitmapClass, Operation, ValueClass, ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
+        key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
+        ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, ValueKey, SUBSPACE_COUNTERS,
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTERS, U32_LEN,
 };
 
 use super::PostgresStore;
 
+#[derive(Debug)]
+enum CommitError {
+    Postgres(tokio_postgres::Error),
+    Internal(crate::Error),
+    Retry,
+}
+
 impl PostgresStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<Option<i64>> {
+    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
         let mut conn = self.conn_pool.get().await?;
         let start = Instant::now();
         let mut retry_count = 0;
@@ -46,21 +56,35 @@ impl PostgresStore {
         loop {
             match self.write_trx(&mut conn, &batch).await {
                 Ok(result) => {
-                    return result;
+                    return Ok(result);
                 }
-                Err(err) => match err.code() {
-                    Some(
-                        &SqlState::T_R_SERIALIZATION_FAILURE | &SqlState::T_R_DEADLOCK_DETECTED,
-                    ) if retry_count < MAX_COMMIT_ATTEMPTS && start.elapsed() < MAX_COMMIT_TIME => {
-                        let backoff = rand::thread_rng().gen_range(50..=300);
-                        tokio::time::sleep(Duration::from_millis(backoff)).await;
-                        retry_count += 1;
+                Err(err) => {
+                    match err {
+                        CommitError::Postgres(err) => match err.code() {
+                            Some(
+                                &SqlState::T_R_SERIALIZATION_FAILURE
+                                | &SqlState::T_R_DEADLOCK_DETECTED,
+                            ) if retry_count < MAX_COMMIT_ATTEMPTS
+                                && start.elapsed() < MAX_COMMIT_TIME => {}
+                            Some(&SqlState::UNIQUE_VIOLATION) => {
+                                return Err(crate::Error::AssertValueFailed);
+                            }
+                            _ => return Err(err.into()),
+                        },
+                        CommitError::Internal(err) => return Err(err),
+                        CommitError::Retry => {
+                            if retry_count > MAX_COMMIT_ATTEMPTS
+                                || start.elapsed() > MAX_COMMIT_TIME
+                            {
+                                return Err(crate::Error::AssertValueFailed);
+                            }
+                        }
                     }
-                    Some(&SqlState::UNIQUE_VIOLATION) => {
-                        return Err(crate::Error::AssertValueFailed);
-                    }
-                    _ => return Err(err.into()),
-                },
+
+                    let backoff = rand::thread_rng().gen_range(50..=300);
+                    tokio::time::sleep(Duration::from_millis(backoff)).await;
+                    retry_count += 1;
+                }
             }
         }
     }
@@ -69,7 +93,7 @@ impl PostgresStore {
         &self,
         conn: &mut Object,
         batch: &Batch,
-    ) -> Result<crate::Result<Option<i64>>, tokio_postgres::Error> {
+    ) -> Result<AssignedIds, CommitError> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
@@ -79,7 +103,7 @@ impl PostgresStore {
             .isolation_level(IsolationLevel::ReadCommitted)
             .start()
             .await?;
-        let mut result = None;
+        let mut result = AssignedIds::default();
 
         for op in &batch.ops {
             match op {
@@ -99,14 +123,9 @@ impl PostgresStore {
                     document_id = *document_id_;
                 }
                 Operation::Value { class, op } => {
-                    let key = ValueKey {
-                        account_id,
-                        collection,
-                        document_id,
-                        class,
-                    };
-                    let table = char::from(key.subspace());
-                    let key = key.serialize(0);
+                    let key =
+                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let table = char::from(class.subspace(collection));
 
                     match op {
                         ValueOp::Set(value) => {
@@ -135,23 +154,12 @@ impl PostgresStore {
                                 .await?
                             };
 
-                            if trx.execute(&s, &[&key, value]).await? == 0 {
-                                return Ok(Err(crate::Error::AssertValueFailed));
-                            }
-
-                            if matches!(class, ValueClass::ReservedId) {
-                                // Make sure the reserved id is not already in use
-                                let s = trx.prepare_cached("SELECT 1 FROM b WHERE k = $1").await?;
-                                let key = BitmapKey {
-                                    account_id,
-                                    collection,
-                                    class: BitmapClass::DocumentIds,
-                                    block_num: document_id,
-                                }
-                                .serialize(0);
-                                if trx.query_opt(&s, &[&key]).await?.is_some() {
-                                    return Ok(Err(crate::Error::AssertValueFailed));
-                                }
+                            if trx
+                                .execute(&s, &[&key, &value.resolve(&result)?.as_ref()])
+                                .await?
+                                == 0
+                            {
+                                return Err(crate::Error::AssertValueFailed.into());
                             }
                         }
                         ValueOp::AtomicAdd(by) => {
@@ -177,11 +185,11 @@ impl PostgresStore {
                                     "ON CONFLICT(k) DO UPDATE SET v = c.v + EXCLUDED.v RETURNING v"
                                 ))
                                 .await?;
-                            result = trx
-                                .query_one(&s, &[&key, &by])
-                                .await
-                                .and_then(|row| row.try_get::<_, i64>(0))?
-                                .into();
+                            result.push_counter_id(
+                                trx.query_one(&s, &[&key, &by])
+                                    .await
+                                    .and_then(|row| row.try_get::<_, i64>(0))?,
+                            );
                         }
                         ValueOp::Clear => {
                             let s = trx
@@ -212,16 +220,50 @@ impl PostgresStore {
                     trx.execute(&s, &[&key]).await?;
                 }
                 Operation::Bitmap { class, set } => {
-                    let key = BitmapKey {
-                        account_id,
-                        collection,
-                        class,
-                        block_num: document_id,
+                    // Find the next available document id
+                    let is_document_id = matches!(class, BitmapClass::DocumentIds);
+                    if *set && is_document_id && document_id == u32::MAX {
+                        let begin = BitmapKey {
+                            account_id,
+                            collection,
+                            class: BitmapClass::DocumentIds,
+                            document_id: 0,
+                        }
+                        .serialize(0);
+                        let end = BitmapKey {
+                            account_id,
+                            collection,
+                            class: BitmapClass::DocumentIds,
+                            document_id: u32::MAX,
+                        }
+                        .serialize(0);
+                        let key_len = begin.len();
+
+                        let s = trx
+                            .prepare_cached("SELECT k FROM b WHERE k >= $1 AND k <= $2")
+                            .await?;
+                        let rows = trx.query_raw(&s, &[&begin, &end]).await?;
+
+                        pin_mut!(rows);
+
+                        let mut found_ids = RoaringBitmap::new();
+
+                        while let Some(row) = rows.try_next().await? {
+                            let key: &[u8] = row.try_get(0)?;
+                            if key.len() == key_len {
+                                found_ids.insert(key.deserialize_be_u32(key_len - U32_LEN)?);
+                            }
+                        }
+
+                        document_id = found_ids.random_available_id();
+                        result.push_document_id(document_id);
                     }
-                    .serialize(0);
+
+                    let key =
+                        class.serialize(account_id, collection, document_id, 0, (&result).into());
 
                     let s = if *set {
-                        if matches!(class, BitmapClass::DocumentIds) {
+                        if is_document_id {
                             trx.prepare_cached("INSERT INTO b (k) VALUES ($1)").await?
                         } else {
                             trx.prepare_cached(
@@ -232,17 +274,21 @@ impl PostgresStore {
                     } else {
                         trx.prepare_cached("DELETE FROM b WHERE k = $1").await?
                     };
-                    trx.execute(&s, &[&key]).await?;
+
+                    trx.execute(&s, &[&key]).await.map_err(|err| {
+                        if is_document_id && matches!(err.code(), Some(&SqlState::UNIQUE_VIOLATION))
+                        {
+                            CommitError::Retry
+                        } else {
+                            CommitError::Postgres(err)
+                        }
+                    })?;
                 }
-                Operation::Log {
-                    collection,
-                    change_id,
-                    set,
-                } => {
+                Operation::Log { set } => {
                     let key = LogKey {
                         account_id,
-                        collection: *collection,
-                        change_id: *change_id,
+                        collection,
+                        change_id: batch.change_id,
                     }
                     .serialize(0);
 
@@ -252,20 +298,17 @@ impl PostgresStore {
                             "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v"
                         ))
                         .await?;
-                    trx.execute(&s, &[&key, set]).await?;
+
+                    trx.execute(&s, &[&key, &set.resolve(&result)?.as_ref()])
+                        .await?;
                 }
                 Operation::AssertValue {
                     class,
                     assert_value,
                 } => {
-                    let key = ValueKey {
-                        account_id,
-                        collection,
-                        document_id,
-                        class,
-                    };
-                    let table = char::from(key.subspace());
-                    let key = key.serialize(0);
+                    let key =
+                        class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let table = char::from(class.subspace(collection));
 
                     let s = trx
                         .prepare_cached(&format!("SELECT v FROM {} WHERE k = $1 FOR UPDATE", table))
@@ -279,14 +322,14 @@ impl PostgresStore {
                         })
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
-                        return Ok(Err(crate::Error::AssertValueFailed));
+                        return Err(crate::Error::AssertValueFailed.into());
                     }
                     asserted_values.insert(key, exists);
                 }
             }
         }
 
-        trx.commit().await.map(|_| Ok(result))
+        trx.commit().await.map(|_| result).map_err(Into::into)
     }
 
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {
@@ -314,5 +357,17 @@ impl PostgresStore {
             .await
             .map(|_| ())
             .map_err(Into::into)
+    }
+}
+
+impl From<crate::Error> for CommitError {
+    fn from(err: crate::Error) -> Self {
+        CommitError::Internal(err)
+    }
+}
+
+impl From<tokio_postgres::Error> for CommitError {
+    fn from(err: tokio_postgres::Error) -> Self {
+        CommitError::Postgres(err)
     }
 }

@@ -100,28 +100,18 @@ impl JMAP {
             if sieve_ids.len() as usize <= self.core.jmap.sieve_max_scripts {
                 match self.sieve_set_item(object, None, &ctx).await? {
                     Ok((mut builder, Some(blob))) => {
-                        // Obtain document id
-                        let document_id = self
-                            .assign_document_id(account_id, Collection::SieveScript)
-                            .await?;
-
                         // Store blob
                         let blob_id = builder.changes_mut().unwrap().blob_id_mut().unwrap();
                         blob_id.hash = self.put_blob(account_id, &blob, false).await?.hash;
-                        blob_id.class = BlobClass::Linked {
-                            account_id,
-                            collection: Collection::SieveScript.into(),
-                            document_id,
-                        };
                         let script_size = blob_id.section.as_ref().unwrap().size;
-                        let blob_id = blob_id.clone();
+                        let mut blob_id = blob_id.clone();
 
                         // Write record
                         let mut batch = BatchBuilder::new();
                         batch
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
-                            .create_document(document_id)
+                            .create_document()
                             .add(DirectoryClass::UsedQuota(account_id), script_size as i64)
                             .set(
                                 BlobOp::Link {
@@ -130,11 +120,17 @@ impl JMAP {
                                 Vec::new(),
                             )
                             .custom(builder);
+
+                        let document_id = self.write_batch_expect_id(batch).await?;
                         sieve_ids.insert(document_id);
-                        self.write_batch(batch).await?;
                         changes.log_insert(Collection::SieveScript, document_id);
 
                         // Add result with updated blobId
+                        blob_id.class = BlobClass::Linked {
+                            account_id,
+                            collection: Collection::SieveScript.into(),
+                            document_id,
+                        };
                         ctx.response.created.insert(
                             id,
                             Object::with_capacity(1)
@@ -206,11 +202,11 @@ impl JMAP {
                             // Store blob
                             let blob_id = builder.changes_mut().unwrap().blob_id_mut().unwrap();
                             blob_id.hash = self.put_blob(account_id, &blob, false).await?.hash;
-                            blob_id.class = BlobClass::Linked {
+                            /*blob_id.class = BlobClass::Linked {
                                 account_id,
                                 collection: Collection::SieveScript.into(),
                                 document_id,
-                            };
+                            };*/
                             let script_size = blob_id.section.as_ref().unwrap().size as i64;
                             let prev_script_size =
                                 prev_blob_id.section.as_ref().unwrap().size as i64;

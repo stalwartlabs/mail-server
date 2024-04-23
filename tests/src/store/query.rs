@@ -23,6 +23,7 @@
 
 use std::{
     fmt::Display,
+    io::Write,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -155,7 +156,7 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
                     builder
                         .with_account_id(0)
                         .with_collection(COLLECTION_ID)
-                        .create_document(document_id as u32);
+                        .create_document_with_id(document_id as u32);
                     for (pos, field) in record.iter().enumerate() {
                         let field_id = pos as u8;
                         match FIELDS_OPTIONS[pos] {
@@ -218,6 +219,7 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
         let mut chunk = Vec::new();
         let mut fts_chunk = Vec::new();
 
+        print!("Inserting... ",);
         for (batch, fts_batch) in batches {
             let chunk_instance = Instant::now();
             chunk.push({
@@ -235,10 +237,8 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
                 for handle in fts_chunk {
                     handle.await.unwrap().unwrap();
                 }
-                println!(
-                    "Store insert took {} ms.",
-                    chunk_instance.elapsed().as_millis()
-                );
+                print!(" [{} ms]", chunk_instance.elapsed().as_millis());
+                std::io::stdout().flush().unwrap();
                 chunk = Vec::new();
                 fts_chunk = Vec::new();
             }
@@ -250,14 +250,18 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
             }
         }
 
-        println!("Insert took {} ms.", now.elapsed().as_millis());
+        println!("\nInsert took {} ms.", now.elapsed().as_millis());
     }
 
     println!("Running filter tests...");
+    let now = Instant::now();
     test_filter(db.clone(), fts_store).await;
+    println!("Filtering took {} ms.", now.elapsed().as_millis());
 
     println!("Running sort tests...");
+    let now = Instant::now();
     test_sort(db).await;
+    println!("Sorting took {} ms.", now.elapsed().as_millis());
 }
 
 pub async fn test_filter(db: Store, fts: FtsStore) {

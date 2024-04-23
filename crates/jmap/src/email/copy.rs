@@ -48,7 +48,10 @@ use jmap_proto::{
 };
 use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue};
 use store::{
-    write::{BatchBuilder, Bincode, ValueClass, F_BITMAP, F_VALUE},
+    write::{
+        log::{Changes, LogInsert},
+        BatchBuilder, Bincode, MaybeDynamicId, TagValue, ValueClass, F_BITMAP, F_VALUE,
+    },
     BlobClass,
 };
 use utils::map::vec_map::VecMap;
@@ -57,7 +60,7 @@ use crate::{auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
-    ingest::IngestedEmail,
+    ingest::{IngestedEmail, LogEmailInsert},
     metadata::MessageMetadata,
 };
 
@@ -359,21 +362,11 @@ impl JMAP {
         };
 
         // Assign id
-        let message_id = self
-            .assign_document_id(account_id, Collection::Email)
-            .await?;
         let mut email = IngestedEmail {
-            blob_id: BlobId::new(
-                metadata.blob_hash.clone(),
-                BlobClass::Linked {
-                    account_id,
-                    collection: Collection::Email.into(),
-                    document_id: message_id,
-                },
-            ),
             size: metadata.size,
             ..Default::default()
         };
+        let blob_hash = metadata.blob_hash.clone();
 
         // Assign IMAP UIDs
         let mut mailbox_ids = Vec::with_capacity(mailboxes.len());
@@ -395,47 +388,42 @@ impl JMAP {
         }
 
         // Prepare batch
+        let change_id = self.assign_change_id(account_id).await?;
         let mut batch = BatchBuilder::new();
-        batch.with_account_id(account_id);
-
-        // Build change log
-        let mut changes = self.begin_changes(account_id).await?;
-        let thread_id = if let Some(thread_id) = thread_id {
-            changes.log_child_update(Collection::Thread, thread_id);
-            thread_id
+        batch
+            .with_account_id(account_id)
+            .with_change_id(change_id)
+            .with_collection(Collection::Thread);
+        if let Some(thread_id) = thread_id {
+            batch.log(Changes::update([thread_id]));
         } else {
-            let thread_id = self
-                .assign_document_id(account_id, Collection::Thread)
-                .await?;
-            batch
-                .with_collection(Collection::Thread)
-                .create_document(thread_id);
-            changes.log_insert(Collection::Thread, thread_id);
-            thread_id
+            batch.create_document().log(LogInsert());
         };
-        email.id = Id::from_parts(thread_id, message_id);
-        email.change_id = changes.change_id;
-        changes.log_insert(Collection::Email, email.id);
-        for mailbox_id in &mailboxes {
-            changes.log_child_update(Collection::Mailbox, *mailbox_id);
-        }
 
         // Build batch
+        let maybe_thread_id = thread_id
+            .map(MaybeDynamicId::Static)
+            .unwrap_or(MaybeDynamicId::Dynamic(0));
         batch
+            .with_collection(Collection::Mailbox)
+            .log(Changes::child_update(mailboxes.iter().copied()))
             .with_collection(Collection::Email)
-            .create_document(message_id)
-            .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP)
+            .create_document()
+            .log(LogEmailInsert::new(thread_id))
+            .set(Property::ThreadId, maybe_thread_id)
+            .tag(Property::ThreadId, TagValue::Id(maybe_thread_id), 0)
             .value(Property::MailboxIds, mailbox_ids, F_VALUE | F_BITMAP)
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
-            .value(Property::Cid, changes.change_id, F_VALUE)
+            .value(Property::Cid, change_id, F_VALUE)
             .set(
                 ValueClass::IndexEmail(self.generate_snowflake_id()?),
-                metadata.blob_hash.clone(),
+                metadata.blob_hash.as_ref(),
             )
-            .custom(EmailIndexBuilder::set(metadata))
-            .custom(changes);
+            .custom(EmailIndexBuilder::set(metadata));
 
-        self.core
+        // Insert and obtain ids
+        let ids = self
+            .core
             .storage
             .data
             .write(batch.build())
@@ -448,9 +436,30 @@ impl JMAP {
                     "Failed to write message to database.");
                 MethodError::ServerPartialFail
             })?;
+        let thread_id = match thread_id {
+            Some(thread_id) => thread_id,
+            None => ids
+                .first_document_id()
+                .map_err(|_| MethodError::ServerPartialFail)?,
+        };
+        let document_id = ids
+            .last_document_id()
+            .map_err(|_| MethodError::ServerPartialFail)?;
 
         // Request FTS index
         let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;
+
+        // Update response
+        email.id = Id::from_parts(thread_id, document_id);
+        email.change_id = change_id;
+        email.blob_id = BlobId::new(
+            blob_hash,
+            BlobClass::Linked {
+                account_id,
+                collection: Collection::Email.into(),
+                document_id,
+            },
+        );
 
         Ok(Ok(email))
     }

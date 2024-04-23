@@ -285,7 +285,7 @@ impl DeserializeFrom for Keyword {
     }
 }
 
-impl From<Keyword> for TagValue {
+impl<T> From<Keyword> for TagValue<T> {
     fn from(value: Keyword) -> Self {
         match value {
             Keyword::Seen => TagValue::Static(SEEN as u8),
@@ -305,7 +305,7 @@ impl From<Keyword> for TagValue {
     }
 }
 
-impl From<&Keyword> for TagValue {
+impl<T> From<&Keyword> for TagValue<T> {
     fn from(value: &Keyword) -> Self {
         match value {
             Keyword::Seen => TagValue::Static(SEEN as u8),

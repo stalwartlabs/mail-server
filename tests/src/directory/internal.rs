@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use ahash::AHashSet;
 use directory::{
     backend::internal::{
         lookup::DirectoryStore, manage::ManageDirectory, PrincipalField, PrincipalUpdate,
@@ -55,20 +56,18 @@ async fn internal_directory() {
         );
 
         // Basic account creation
-        assert_eq!(
-            store
-                .create_account(
-                    Principal {
-                        name: "john".to_string(),
-                        description: Some("John Doe".to_string()),
-                        secrets: vec!["secret".to_string(), "secret2".to_string()],
-                        ..Default::default()
-                    },
-                    vec![]
-                )
-                .await,
-            Ok(0)
-        );
+        let john_id = store
+            .create_account(
+                Principal {
+                    name: "john".to_string(),
+                    description: Some("John Doe".to_string()),
+                    secrets: vec!["secret".to_string(), "secret2".to_string()],
+                    ..Default::default()
+                },
+                vec![],
+            )
+            .await
+            .unwrap();
 
         // Two accounts with the same name should fail
         assert_eq!(
@@ -125,7 +124,7 @@ async fn internal_directory() {
         assert!(store.rcpt("john@example.org").await.unwrap());
         assert_eq!(
             store.email_to_ids("john@example.org").await.unwrap(),
-            vec![0]
+            vec![john_id]
         );
 
         // Using non-existent domain should fail
@@ -145,27 +144,26 @@ async fn internal_directory() {
         );
 
         // Create an account with an email address
-        assert_eq!(
-            store
-                .create_account(
-                    Principal {
-                        name: "jane".to_string(),
-                        description: Some("Jane Doe".to_string()),
-                        secrets: vec!["my_secret".to_string(), "my_secret2".to_string()],
-                        emails: vec!["jane@example.org".to_string()],
-                        quota: 123,
-                        ..Default::default()
-                    },
-                    vec![]
-                )
-                .await,
-            Ok(1)
-        );
+        let jane_id = store
+            .create_account(
+                Principal {
+                    name: "jane".to_string(),
+                    description: Some("Jane Doe".to_string()),
+                    secrets: vec!["my_secret".to_string(), "my_secret2".to_string()],
+                    emails: vec!["jane@example.org".to_string()],
+                    quota: 123,
+                    ..Default::default()
+                },
+                vec![],
+            )
+            .await
+            .unwrap();
+
         assert!(store.rcpt("jane@example.org").await.unwrap());
         assert!(!store.rcpt("jane@otherdomain.org").await.unwrap());
         assert_eq!(
             store.email_to_ids("jane@example.org").await.unwrap(),
-            vec![1]
+            vec![jane_id]
         );
         assert_eq!(store.vrfy("jane").await.unwrap(), vec!["jane@example.org"]);
         assert_eq!(
@@ -180,7 +178,7 @@ async fn internal_directory() {
                 .await
                 .unwrap(),
             Some(Principal {
-                id: 1,
+                id: jane_id,
                 name: "jane".to_string(),
                 description: Some("Jane Doe".to_string()),
                 emails: vec!["jane@example.org".to_string()],
@@ -223,20 +221,18 @@ async fn internal_directory() {
         );
 
         // Create a mailing list
-        assert_eq!(
-            store
-                .create_account(
-                    Principal {
-                        name: "list".to_string(),
-                        typ: Type::List,
-                        emails: vec!["list@example.org".to_string()],
-                        ..Default::default()
-                    },
-                    vec![]
-                )
-                .await,
-            Ok(2)
-        );
+        let list_id = store
+            .create_account(
+                Principal {
+                    name: "list".to_string(),
+                    typ: Type::List,
+                    emails: vec!["list@example.org".to_string()],
+                    ..Default::default()
+                },
+                vec![],
+            )
+            .await
+            .unwrap();
         assert_eq!(
             store
                 .update_account(
@@ -251,8 +247,13 @@ async fn internal_directory() {
         );
         assert!(store.rcpt("list@example.org").await.unwrap());
         assert_eq!(
-            store.email_to_ids("list@example.org").await.unwrap(),
-            vec![0, 1]
+            store
+                .email_to_ids("list@example.org")
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<AHashSet<_>>(),
+            [john_id, jane_id].into_iter().collect::<AHashSet<_>>(),
         );
         assert_eq!(
             store
@@ -262,46 +263,50 @@ async fn internal_directory() {
                 .unwrap(),
             Principal {
                 name: "list".to_string(),
-                id: 2,
+                id: list_id,
                 typ: Type::List,
                 emails: vec!["list@example.org".to_string()],
                 ..Default::default()
             }
         );
         assert_eq!(
-            store.expn("list@example.org").await.unwrap(),
-            vec!["john@example.org", "jane@example.org"]
+            store
+                .expn("list@example.org")
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<AHashSet<_>>(),
+            ["john@example.org", "jane@example.org"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<AHashSet<_>>()
         );
 
         // Create groups
-        assert_eq!(
-            store
-                .create_account(
-                    Principal {
-                        name: "sales".to_string(),
-                        description: Some("Sales Team".to_string()),
-                        typ: Type::Group,
-                        ..Default::default()
-                    },
-                    vec![]
-                )
-                .await,
-            Ok(3)
-        );
-        assert_eq!(
-            store
-                .create_account(
-                    Principal {
-                        name: "support".to_string(),
-                        description: Some("Support Team".to_string()),
-                        typ: Type::Group,
-                        ..Default::default()
-                    },
-                    vec![]
-                )
-                .await,
-            Ok(4)
-        );
+        store
+            .create_account(
+                Principal {
+                    name: "sales".to_string(),
+                    description: Some("Sales Team".to_string()),
+                    typ: Type::Group,
+                    ..Default::default()
+                },
+                vec![],
+            )
+            .await
+            .unwrap();
+        store
+            .create_account(
+                Principal {
+                    name: "support".to_string(),
+                    description: Some("Support Team".to_string()),
+                    typ: Type::Group,
+                    ..Default::default()
+                },
+                vec![],
+            )
+            .await
+            .unwrap();
 
         // Add John to the Sales and Support groups
         assert_eq!(
@@ -332,8 +337,10 @@ async fn internal_directory() {
                         .unwrap()
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .into_sorted(),
             Principal {
+                id: john_id,
                 name: "john".to_string(),
                 description: Some("John Doe".to_string()),
                 secrets: vec!["secret".to_string(), "secret2".to_string()],
@@ -386,8 +393,10 @@ async fn internal_directory() {
                         .unwrap()
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .into_sorted(),
             Principal {
+                id: john_id,
                 name: "john".to_string(),
                 description: Some("John Doe".to_string()),
                 secrets: vec!["secret".to_string(), "secret2".to_string()],
@@ -443,8 +452,10 @@ async fn internal_directory() {
                         .unwrap()
                 )
                 .await
-                .unwrap(),
+                .unwrap()
+                .into_sorted(),
             Principal {
+                id: john_id,
                 name: "john.doe".to_string(),
                 description: Some("Johnny Doe".to_string()),
                 secrets: vec!["12345".to_string()],
@@ -452,7 +463,6 @@ async fn internal_directory() {
                 quota: 1024,
                 typ: Type::Superuser,
                 member_of: vec!["list".to_string(), "sales".to_string()],
-                ..Default::default()
             }
         );
         assert_eq!(store.get_account_id("john").await.unwrap(), None);
@@ -474,7 +484,7 @@ async fn internal_directory() {
         );
         assert_eq!(
             store.email_to_ids("list@example.org").await.unwrap(),
-            vec![1]
+            vec![jane_id]
         );
         assert_eq!(
             store
@@ -489,8 +499,13 @@ async fn internal_directory() {
             Ok(())
         );
         assert_eq!(
-            store.email_to_ids("list@example.org").await.unwrap(),
-            vec![0, 1]
+            store
+                .email_to_ids("list@example.org")
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<AHashSet<_>>(),
+            [john_id, jane_id].into_iter().collect::<AHashSet<_>>()
         );
 
         // Field validation
@@ -527,8 +542,16 @@ async fn internal_directory() {
 
         // List accounts
         assert_eq!(
-            store.list_accounts(None, None).await.unwrap(),
-            vec!["jane", "john.doe", "list", "sales", "support"]
+            store
+                .list_accounts(None, None)
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<AHashSet<_>>(),
+            ["jane", "john.doe", "list", "sales", "support"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<AHashSet<_>>()
         );
         assert_eq!(
             store.list_accounts("john".into(), None).await.unwrap(),
@@ -538,12 +561,25 @@ async fn internal_directory() {
             store
                 .list_accounts(None, Type::Individual.into())
                 .await
-                .unwrap(),
-            vec!["jane", "john.doe"]
+                .unwrap()
+                .into_iter()
+                .collect::<AHashSet<_>>(),
+            ["jane", "john.doe"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<AHashSet<_>>()
         );
         assert_eq!(
-            store.list_accounts(None, Type::Group.into()).await.unwrap(),
-            vec!["sales", "support"]
+            store
+                .list_accounts(None, Type::Group.into())
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<AHashSet<_>>(),
+            ["sales", "support"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<AHashSet<_>>()
         );
         assert_eq!(
             store.list_accounts(None, Type::List.into()).await.unwrap(),
@@ -551,21 +587,20 @@ async fn internal_directory() {
         );
 
         // Write records on John's and Jane's accounts
-        for account_id in [0, 1] {
-            let document_id = store
-                .assign_document_id(account_id, Collection::Email)
-                .await
-                .unwrap();
-            store
+        let mut document_id = u32::MAX;
+        for account_id in [john_id, jane_id] {
+            document_id = store
                 .write(
                     BatchBuilder::new()
                         .with_account_id(account_id)
                         .with_collection(Collection::Email)
-                        .create_document(document_id)
+                        .create_document()
                         .set(ValueClass::Property(0), "hello".as_bytes())
                         .build_batch(),
                 )
                 .await
+                .unwrap()
+                .last_document_id()
                 .unwrap();
             assert_eq!(
                 store
@@ -582,7 +617,7 @@ async fn internal_directory() {
         }
 
         // Delete John's account and make sure his records are gone
-        store.delete_account(QueryBy::Id(0)).await.unwrap();
+        store.delete_account(QueryBy::Id(john_id)).await.unwrap();
         assert_eq!(store.get_account_id("john.doe").await.unwrap(), None);
         assert_eq!(
             store.email_to_ids("john.doe@example.org").await.unwrap(),
@@ -590,16 +625,24 @@ async fn internal_directory() {
         );
         assert!(!store.rcpt("john.doe@example.org").await.unwrap());
         assert_eq!(
-            store.list_accounts(None, None).await.unwrap(),
-            vec!["jane", "list", "sales", "support"]
+            store
+                .list_accounts(None, None)
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<AHashSet<_>>(),
+            ["jane", "list", "sales", "support"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<AHashSet<_>>()
         );
         assert_eq!(
             store
                 .get_bitmap(BitmapKey {
-                    account_id: 0,
+                    account_id: john_id,
                     collection: Collection::Email.into(),
                     class: BitmapClass::DocumentIds,
-                    block_num: 0
+                    document_id: 0
                 })
                 .await
                 .unwrap(),
@@ -608,7 +651,7 @@ async fn internal_directory() {
         assert_eq!(
             store
                 .get_value::<String>(ValueKey {
-                    account_id: 0,
+                    account_id: john_id,
                     collection: Collection::Email.into(),
                     document_id: 0,
                     class: ValueClass::Property(0)
@@ -619,30 +662,30 @@ async fn internal_directory() {
         );
 
         // Make sure Jane's records are still there
-        assert_eq!(store.get_account_id("jane").await.unwrap(), Some(1));
+        assert_eq!(store.get_account_id("jane").await.unwrap(), Some(jane_id));
         assert_eq!(
             store.email_to_ids("jane@example.org").await.unwrap(),
-            vec![1]
+            vec![jane_id]
         );
         assert!(store.rcpt("jane@example.org").await.unwrap());
         assert_eq!(
             store
                 .get_bitmap(BitmapKey {
-                    account_id: 1,
+                    account_id: jane_id,
                     collection: Collection::Email.into(),
                     class: BitmapClass::DocumentIds,
-                    block_num: 0
+                    document_id: 0
                 })
                 .await
                 .unwrap(),
-            Some(RoaringBitmap::from_sorted_iter([0]).unwrap())
+            Some(RoaringBitmap::from_sorted_iter([document_id]).unwrap())
         );
         assert_eq!(
             store
                 .get_value::<String>(ValueKey {
-                    account_id: 1,
+                    account_id: jane_id,
                     collection: Collection::Email.into(),
-                    document_id: 0,
+                    document_id,
                     class: ValueClass::Property(0)
                 })
                 .await

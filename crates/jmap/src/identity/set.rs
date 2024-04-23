@@ -106,16 +106,13 @@ impl JMAP {
 
             // Insert record
             let mut batch = BatchBuilder::new();
-            let document_id = self
-                .assign_document_id(account_id, Collection::Identity)
-                .await?;
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Identity)
-                .create_document(document_id)
+                .create_document()
                 .value(Property::Value, identity, F_VALUE);
+            let document_id = self.write_batch_expect_id(batch).await?;
             identity_ids.insert(document_id);
-            self.write_batch(batch).await?;
             changes.log_insert(Collection::Identity, document_id);
             response.created(id, document_id);
         }

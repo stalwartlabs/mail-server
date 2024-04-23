@@ -26,7 +26,7 @@ use utils::{codec::leb128::Leb128Vec, map::vec_map::VecMap};
 
 use crate::Serialize;
 
-use super::{IntoOperations, Operation};
+use super::{IntoOperations, MaybeDynamicValue, Operation, SerializeWithId};
 
 #[derive(Default)]
 pub struct ChangeLogBuilder {
@@ -144,17 +144,63 @@ impl ChangeLogBuilder {
 
 impl IntoOperations for ChangeLogBuilder {
     fn build(self, batch: &mut super::BatchBuilder) {
+        batch.change_id = self.change_id;
         for (collection, changes) in self.changes {
+            batch.ops.push(Operation::Collection { collection });
             batch.ops.push(Operation::Log {
-                change_id: self.change_id,
-                collection,
-                set: changes.serialize(),
+                set: changes.serialize().into(),
             });
         }
     }
 }
 
-impl Serialize for Changes {
+impl Changes {
+    pub fn insert<T, I>(id: T) -> Self
+    where
+        T: IntoIterator<Item = I>,
+        I: Into<u64>,
+    {
+        Changes {
+            inserts: id.into_iter().map(Into::into).collect(),
+            ..Default::default()
+        }
+    }
+
+    pub fn update<T, I>(id: T) -> Self
+    where
+        T: IntoIterator<Item = I>,
+        I: Into<u64>,
+    {
+        Changes {
+            updates: id.into_iter().map(Into::into).collect(),
+            ..Default::default()
+        }
+    }
+
+    pub fn child_update<T, I>(id: T) -> Self
+    where
+        T: IntoIterator<Item = I>,
+        I: Into<u64>,
+    {
+        Changes {
+            child_updates: id.into_iter().map(Into::into).collect(),
+            ..Default::default()
+        }
+    }
+
+    pub fn delete<T, I>(id: T) -> Self
+    where
+        T: IntoIterator<Item = I>,
+        I: Into<u64>,
+    {
+        Changes {
+            deletes: id.into_iter().map(Into::into).collect(),
+            ..Default::default()
+        }
+    }
+}
+
+impl Serialize for &Changes {
     fn serialize(self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(
             1 + (self.inserts.len()
@@ -170,11 +216,37 @@ impl Serialize for Changes {
         buf.push_leb128(self.child_updates.len());
         buf.push_leb128(self.deletes.len());
 
-        for list in [self.inserts, self.updates, self.child_updates, self.deletes] {
+        for list in [
+            &self.inserts,
+            &self.updates,
+            &self.child_updates,
+            &self.deletes,
+        ] {
             for id in list {
-                buf.push_leb128(id);
+                buf.push_leb128(*id);
             }
         }
         buf
+    }
+}
+
+impl From<Changes> for MaybeDynamicValue {
+    fn from(changes: Changes) -> Self {
+        MaybeDynamicValue::Static(changes.serialize())
+    }
+}
+
+pub struct LogInsert();
+
+impl SerializeWithId for LogInsert {
+    fn serialize_with_id(&self, ids: &super::AssignedIds) -> crate::Result<Vec<u8>> {
+        ids.last_document_id()
+            .map(|id| Changes::insert([id]).serialize())
+    }
+}
+
+impl From<LogInsert> for MaybeDynamicValue {
+    fn from(value: LogInsert) -> Self {
+        MaybeDynamicValue::Dynamic(Box::new(value))
     }
 }

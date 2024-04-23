@@ -73,7 +73,6 @@ pub trait Serialize {
 
 // Key serialization flags
 pub(crate) const WITH_SUBSPACE: u32 = 1;
-pub(crate) const WITHOUT_BLOCK_NUM: u32 = 1 << 1;
 
 pub trait Key: Sync + Send {
     fn serialize(&self, flags: u32) -> Vec<u8>;
@@ -81,11 +80,11 @@ pub trait Key: Sync + Send {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BitmapKey<T: AsRef<BitmapClass>> {
+pub struct BitmapKey<T: AsRef<BitmapClass<u32>>> {
     pub account_id: u32,
     pub collection: u8,
     pub class: T,
-    pub block_num: u32,
+    pub document_id: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -105,7 +104,7 @@ pub struct IndexKeyPrefix {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ValueKey<T: AsRef<ValueClass>> {
+pub struct ValueKey<T: AsRef<ValueClass<u32>>> {
     pub account_id: u32,
     pub collection: u8,
     pub document_id: u32,

@@ -98,7 +98,7 @@ impl Store {
                         account_id,
                         collection,
                         class,
-                        block_num: 0,
+                        document_id: 0,
                     })
                     .await?
                 }

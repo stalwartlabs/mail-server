@@ -169,12 +169,7 @@ impl Store {
                 .unwrap();
                 let until = key.deserialize_be_u64(key.len() - U64_LEN)?;
                 if until <= now {
-                    delete_keys.push(ValueKey {
-                        account_id: key.deserialize_be_u32(1)?,
-                        collection: 0,
-                        document_id: 0,
-                        class: ValueClass::Blob(BlobOp::Reserve { until, hash }),
-                    });
+                    delete_keys.push((key.deserialize_be_u32(1)?, BlobOp::Reserve { until, hash }));
                 } else {
                     active_hashes.insert(hash);
                 }
@@ -220,12 +215,7 @@ impl Store {
                     }
                 } else if last_hash != hash && !active_hashes.contains(&hash) {
                     // Unlinked or expired blob, delete.
-                    delete_keys.push(ValueKey {
-                        account_id: 0,
-                        collection: 0,
-                        document_id: 0,
-                        class: ValueClass::Blob(BlobOp::Commit { hash }),
-                    });
+                    delete_keys.push((0, BlobOp::Commit { hash }));
                 }
 
                 Ok(true)
@@ -234,8 +224,8 @@ impl Store {
         .await?;
 
         // Delete expired or unlinked blobs
-        for key in &delete_keys {
-            if let ValueClass::Blob(BlobOp::Commit { hash }) = &key.class {
+        for (_, op) in &delete_keys {
+            if let BlobOp::Commit { hash } = op {
                 blob_store.delete_blob(hash.as_ref()).await?;
             }
         }
@@ -243,20 +233,18 @@ impl Store {
         // Delete hashes
         let mut batch = BatchBuilder::new();
         let mut last_account_id = u32::MAX;
-        for key in delete_keys.into_iter() {
+        for (account_id, op) in delete_keys.into_iter() {
             if batch.ops.len() >= 1000 {
                 last_account_id = u32::MAX;
                 self.write(batch.build()).await?;
                 batch = BatchBuilder::new();
             }
-            if matches!(key.class, ValueClass::Blob(BlobOp::Reserve { .. }))
-                && key.account_id != last_account_id
-            {
-                batch.with_account_id(key.account_id);
-                last_account_id = key.account_id;
+            if matches!(op, BlobOp::Reserve { .. }) && account_id != last_account_id {
+                batch.with_account_id(account_id);
+                last_account_id = account_id;
             }
             batch.ops.push(Operation::Value {
-                class: key.class,
+                class: ValueClass::Blob(op),
                 op: ValueOp::Clear,
             })
         }
@@ -294,11 +282,10 @@ impl Store {
                 if document_id != u32::MAX
                     && key.deserialize_be_u32(1 + BLOB_HASH_LEN)? == account_id
                 {
-                    delete_keys.push(ValueKey {
-                        account_id,
-                        collection: key[1 + BLOB_HASH_LEN + U32_LEN],
+                    delete_keys.push((
+                        key[1 + BLOB_HASH_LEN + U32_LEN],
                         document_id,
-                        class: ValueClass::Blob(BlobOp::Link {
+                        BlobOp::Link {
                             hash: BlobHash::try_from_hash_slice(
                                 key.get(1..1 + BLOB_HASH_LEN).ok_or_else(|| {
                                     crate::Error::InternalError(format!(
@@ -307,8 +294,8 @@ impl Store {
                                 })?,
                             )
                             .unwrap(),
-                        }),
-                    });
+                        },
+                    ));
                 }
 
                 Ok(true)
@@ -320,20 +307,20 @@ impl Store {
         let mut batch = BatchBuilder::new();
         batch.with_account_id(account_id);
         let mut last_collection = u8::MAX;
-        for key in delete_keys.into_iter() {
+        for (collection, document_id, op) in delete_keys.into_iter() {
             if batch.ops.len() >= 1000 {
                 self.write(batch.build()).await?;
                 batch = BatchBuilder::new();
                 batch.with_account_id(account_id);
                 last_collection = u8::MAX;
             }
-            if key.collection != last_collection {
-                batch.with_collection(key.collection);
-                last_collection = key.collection;
+            if collection != last_collection {
+                batch.with_collection(collection);
+                last_collection = collection;
             }
-            batch.update_document(key.document_id);
+            batch.update_document(document_id);
             batch.ops.push(Operation::Value {
-                class: key.class,
+                class: ValueClass::Blob(op),
                 op: ValueOp::Clear,
             });
         }
