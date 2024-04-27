@@ -28,7 +28,9 @@ use rocksdb::{ColumnFamilyDescriptor, MergeOperands, OptimisticTransactionDB, Op
 use tokio::sync::oneshot;
 use utils::config::{utils::AsKey, Config};
 
-use super::{RocksDbStore, CF_BITMAPS, CF_BLOBS, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES};
+use crate::*;
+
+use super::{RocksDbStore, CF_BLOBS};
 
 impl RocksDbStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
@@ -51,14 +53,28 @@ impl RocksDbStore {
         let mut cfs = Vec::new();
 
         // Bitmaps
-        let mut cf_opts = Options::default();
-        cf_opts.set_max_write_buffer_number(16);
-        cfs.push(ColumnFamilyDescriptor::new(CF_BITMAPS, cf_opts));
+        for subspace in [
+            SUBSPACE_BITMAP_ID,
+            SUBSPACE_BITMAP_TAG,
+            SUBSPACE_BITMAP_TEXT,
+        ] {
+            let mut cf_opts = Options::default();
+            cf_opts.set_max_write_buffer_number(16);
+            cfs.push(ColumnFamilyDescriptor::new(
+                std::str::from_utf8(&[subspace]).unwrap(),
+                cf_opts,
+            ));
+        }
 
         // Counters
-        let mut cf_opts = Options::default();
-        cf_opts.set_merge_operator_associative("merge", numeric_value_merge);
-        cfs.push(ColumnFamilyDescriptor::new(CF_COUNTERS, cf_opts));
+        for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
+            let mut cf_opts = Options::default();
+            cf_opts.set_merge_operator_associative("merge", numeric_value_merge);
+            cfs.push(ColumnFamilyDescriptor::new(
+                std::str::from_utf8(&[subspace]).unwrap(),
+                cf_opts,
+            ));
+        }
 
         // Blobs
         let mut cf_opts = Options::default();
@@ -71,9 +87,30 @@ impl RocksDbStore {
         cfs.push(ColumnFamilyDescriptor::new(CF_BLOBS, cf_opts));
 
         // Other cfs
-        for cf in [CF_INDEXES, CF_LOGS, CF_VALUES] {
+        for subspace in [
+            SUBSPACE_INDEXES,
+            SUBSPACE_ACL,
+            SUBSPACE_DIRECTORY,
+            SUBSPACE_FTS_INDEX,
+            SUBSPACE_BLOB_RESERVE,
+            SUBSPACE_BLOB_LINK,
+            SUBSPACE_LOOKUP_VALUE,
+            SUBSPACE_LOOKUP_EXPIRY,
+            SUBSPACE_PROPERTY,
+            SUBSPACE_SETTINGS,
+            SUBSPACE_QUEUE_MESSAGE,
+            SUBSPACE_QUEUE_EVENT,
+            SUBSPACE_REPORT_OUT,
+            SUBSPACE_REPORT_IN,
+            SUBSPACE_TERM_INDEX,
+            SUBSPACE_LOGS,
+            SUBSPACE_BLOBS,
+        ] {
             let cf_opts = Options::default();
-            cfs.push(ColumnFamilyDescriptor::new(cf, cf_opts));
+            cfs.push(ColumnFamilyDescriptor::new(
+                std::str::from_utf8(&[subspace]).unwrap(),
+                cf_opts,
+            ));
         }
 
         let mut db_opts = Options::default();

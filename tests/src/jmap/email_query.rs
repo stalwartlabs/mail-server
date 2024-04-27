@@ -140,7 +140,10 @@ pub async fn query(client: &mut Client) {
                 (email::query::Filter::in_mailbox(Id::new(1768u64).to_string())),
                 (email::query::Filter::cc("canvas")),
             ]),
-            vec![email::query::Comparator::from()],
+            vec![
+                email::query::Comparator::from(),
+                email::query::Comparator::sent_at(),
+            ],
             vec!["T01882", "N04689", "T00925", "N00121"],
         ),
         (
@@ -156,7 +159,10 @@ pub async fn query(client: &mut Client) {
                     Id::new(1963).to_string(),
                 ])),
             ]),
-            vec![email::query::Comparator::subject()],
+            vec![
+                email::query::Comparator::subject(),
+                email::query::Comparator::sent_at(),
+            ],
             vec![
                 "T10330", "N01744", "N01743", "N04885", "N02688", "N02122", "A00059", "A00058",
                 "N02123", "T00651", "T09439", "N05001", "T05848", "T05508",
@@ -168,7 +174,10 @@ pub async fn query(client: &mut Client) {
                 Filter::not(vec![(email::query::Filter::from("collins"))]),
                 (email::query::Filter::body("bequeathed")).into(),
             ]),
-            vec![email::query::Comparator::subject()],
+            vec![
+                email::query::Comparator::subject(),
+                email::query::Comparator::sent_at(),
+            ],
             vec![
                 "N02640", "A01020", "N01250", "T03430", "N01800", "N00620", "N05250", "N04630",
                 "A01040",
@@ -176,7 +185,10 @@ pub async fn query(client: &mut Client) {
         ),
         (
             email::query::Filter::not_keyword("artist").into(),
-            vec![email::query::Comparator::subject()],
+            vec![
+                email::query::Comparator::subject(),
+                email::query::Comparator::sent_at(),
+            ],
             vec!["T08626", "T09334", "T09455", "N01737", "T10965"],
         ),
         (
@@ -185,7 +197,10 @@ pub async fn query(client: &mut Client) {
                 (email::query::Filter::before(1972)),
                 (email::query::Filter::text("colour")),
             ]),
-            vec![email::query::Comparator::from()],
+            vec![
+                email::query::Comparator::from(),
+                email::query::Comparator::sent_at(),
+            ],
             vec!["T01745", "P01436", "P01437"],
         ),
         (
@@ -210,7 +225,10 @@ pub async fn query(client: &mut Client) {
                 (email::query::Filter::all_in_thread_have_keyword("N")),
                 (email::query::Filter::before(1800)),
             ]),
-            vec![email::query::Comparator::from()],
+            vec![
+                email::query::Comparator::from(),
+                email::query::Comparator::sent_at(),
+            ],
             vec![
                 "N01496", "N05916", "N01046", "N00675", "N01320", "N01321", "N00273", "N01453",
                 "N02984",
@@ -235,7 +253,10 @@ pub async fn query(client: &mut Client) {
                 (email::query::Filter::some_in_thread_have_keyword("Bronze")),
                 (email::query::Filter::before(1878)),
             ]),
-            vec![email::query::Comparator::from()],
+            vec![
+                email::query::Comparator::from(),
+                email::query::Comparator::sent_at(),
+            ],
             vec![
                 "N04326", "N01610", "N02920", "N01587", "T00167", "T00168", "N01554", "N01535",
                 "N01536", "N01622", "N01754", "N01594",

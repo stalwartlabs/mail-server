@@ -41,7 +41,7 @@ use crate::{
         AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId, ValueOp,
         MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTERS, SUBSPACE_VALUES, U32_LEN, WITH_SUBSPACE,
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN, WITH_SUBSPACE,
 };
 
 use super::{
@@ -87,7 +87,7 @@ impl FdbStore {
                             WITH_SUBSPACE,
                             (&result).into(),
                         );
-                        let do_chunk = key[0] == SUBSPACE_VALUES;
+                        let do_chunk = !class.is_counter(collection);
 
                         match op {
                             ValueOp::Set(value) => {
@@ -293,31 +293,27 @@ impl FdbStore {
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {
         // Obtain all zero counters
         let mut delete_keys = Vec::new();
-        let trx = self.db.create_trx()?;
-        let mut iter = trx.get_ranges(
-            RangeOption {
-                begin: KeySelector::first_greater_or_equal(&[SUBSPACE_COUNTERS, 0u8][..]),
-                end: KeySelector::first_greater_or_equal(
-                    &[
-                        SUBSPACE_COUNTERS,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                        u8::MAX,
-                    ][..],
-                ),
-                mode: options::StreamingMode::WantAll,
-                reverse: false,
-                ..Default::default()
-            },
-            true,
-        );
+        for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
+            let trx = self.db.create_trx()?;
+            let from_key = [subspace, 0u8];
+            let to_key = [subspace, u8::MAX, u8::MAX, u8::MAX, u8::MAX, u8::MAX];
 
-        while let Some(values) = iter.next().await {
-            for value in values? {
-                if value.value().iter().all(|byte| *byte == 0) {
-                    delete_keys.push(value.key().to_vec());
+            let mut iter = trx.get_ranges(
+                RangeOption {
+                    begin: KeySelector::first_greater_or_equal(&from_key[..]),
+                    end: KeySelector::first_greater_or_equal(&to_key[..]),
+                    mode: options::StreamingMode::WantAll,
+                    reverse: false,
+                    ..Default::default()
+                },
+                true,
+            );
+
+            while let Some(values) = iter.next().await {
+                for value in values? {
+                    if value.value().iter().all(|byte| *byte == 0) {
+                        delete_keys.push(value.key().to_vec());
+                    }
                 }
             }
         }

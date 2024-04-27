@@ -159,17 +159,16 @@ impl Store {
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
                 let hash = BlobHash::try_from_hash_slice(
-                    key.get(1 + U32_LEN..1 + U32_LEN + BLOB_HASH_LEN)
-                        .ok_or_else(|| {
-                            crate::Error::InternalError(format!(
-                                "Invalid key {key:?} in blob hash tables"
-                            ))
-                        })?,
+                    key.get(U32_LEN..U32_LEN + BLOB_HASH_LEN).ok_or_else(|| {
+                        crate::Error::InternalError(format!(
+                            "Invalid key {key:?} in blob hash tables"
+                        ))
+                    })?,
                 )
                 .unwrap();
                 let until = key.deserialize_be_u64(key.len() - U64_LEN)?;
                 if until <= now {
-                    delete_keys.push((key.deserialize_be_u32(1)?, BlobOp::Reserve { until, hash }));
+                    delete_keys.push((key.deserialize_be_u32(0)?, BlobOp::Reserve { until, hash }));
                 } else {
                     active_hashes.insert(hash);
                 }
@@ -199,14 +198,13 @@ impl Store {
         self.iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
-                let hash = BlobHash::try_from_hash_slice(
-                    key.get(1..1 + BLOB_HASH_LEN).ok_or_else(|| {
+                let hash =
+                    BlobHash::try_from_hash_slice(key.get(0..BLOB_HASH_LEN).ok_or_else(|| {
                         crate::Error::InternalError(format!(
                             "Invalid key {key:?} in blob hash tables"
                         ))
-                    })?,
-                )
-                .unwrap();
+                    })?)
+                    .unwrap();
                 let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
 
                 if document_id != u32::MAX {
@@ -279,15 +277,13 @@ impl Store {
             |key, _| {
                 let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
 
-                if document_id != u32::MAX
-                    && key.deserialize_be_u32(1 + BLOB_HASH_LEN)? == account_id
-                {
+                if document_id != u32::MAX && key.deserialize_be_u32(BLOB_HASH_LEN)? == account_id {
                     delete_keys.push((
-                        key[1 + BLOB_HASH_LEN + U32_LEN],
+                        key[BLOB_HASH_LEN + U32_LEN],
                         document_id,
                         BlobOp::Link {
                             hash: BlobHash::try_from_hash_slice(
-                                key.get(1..1 + BLOB_HASH_LEN).ok_or_else(|| {
+                                key.get(0..BLOB_HASH_LEN).ok_or_else(|| {
                                     crate::Error::InternalError(format!(
                                         "Invalid key {key:?} in blob hash tables"
                                     ))

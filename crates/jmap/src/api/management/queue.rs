@@ -190,7 +190,7 @@ impl JMAP {
                                         if values {
                                             result_values.push(Message::from(&message));
                                         } else {
-                                            result_ids.push(key.deserialize_be_u64(1)?);
+                                            result_ids.push(key.deserialize_be_u64(0)?);
                                         }
                                         total_returned += 1;
                                     }

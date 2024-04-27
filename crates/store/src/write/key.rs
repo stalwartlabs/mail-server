@@ -25,9 +25,12 @@ use std::convert::TryInto;
 use utils::{codec::leb128::Leb128_, BLOB_HASH_LEN};
 
 use crate::{
-    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, SUBSPACE_BITMAPS,
-    SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES, U32_LEN, U64_LEN,
-    WITH_SUBSPACE,
+    BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, SUBSPACE_ACL,
+    SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_BLOB_LINK,
+    SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_FTS_INDEX,
+    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_EXPIRY, SUBSPACE_LOOKUP_VALUE,
+    SUBSPACE_PROPERTY, SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA,
+    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TERM_INDEX, U32_LEN, U64_LEN, WITH_SUBSPACE,
 };
 
 use super::{
@@ -255,119 +258,110 @@ impl<T: ResolveId> ValueClass<T> {
 
         match self {
             ValueClass::Property(field) => serializer
-                .write(0u8)
                 .write(account_id)
                 .write(collection)
                 .write(*field)
                 .write(document_id),
             ValueClass::TermIndex => serializer
-                .write(1u8)
                 .write(account_id)
                 .write(collection)
                 .write_leb128(document_id),
             ValueClass::Acl(grant_account_id) => serializer
-                .write(2u8)
                 .write(*grant_account_id)
                 .write(account_id)
                 .write(collection)
                 .write(document_id),
-            ValueClass::IndexEmail(seq) => serializer
-                .write(5u8)
-                .write(*seq)
-                .write(account_id)
-                .write(document_id),
+            ValueClass::IndexEmail(seq) => {
+                serializer.write(*seq).write(account_id).write(document_id)
+            }
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { hash, until } => serializer
-                    .write(6u8)
                     .write(account_id)
                     .write::<&[u8]>(hash.as_ref())
                     .write(*until),
                 BlobOp::Commit { hash } => serializer
-                    .write(7u8)
                     .write::<&[u8]>(hash.as_ref())
                     .write(u32::MAX)
                     .write(0u8)
                     .write(u32::MAX),
                 BlobOp::Link { hash } => serializer
-                    .write(7u8)
                     .write::<&[u8]>(hash.as_ref())
                     .write(account_id)
                     .write(collection)
                     .write(document_id),
             },
-            ValueClass::Config(key) => serializer.write(8u8).write(key.as_slice()),
+            ValueClass::Config(key) => serializer.write(key.as_slice()),
             ValueClass::Lookup(lookup) => match lookup {
-                LookupClass::Key(key) => serializer.write(4u8).write(key.as_slice()),
-                LookupClass::Counter(key) => serializer.write(9u8).write(key.as_slice()),
-                LookupClass::CounterExpiry(key) => serializer.write(10u8).write(key.as_slice()),
+                LookupClass::Key(key) => serializer.write(key.as_slice()),
+                LookupClass::Counter(key) => serializer.write(key.as_slice()),
+                LookupClass::CounterExpiry(key) => serializer.write(key.as_slice()),
             },
             ValueClass::Directory(directory) => match directory {
-                DirectoryClass::NameToId(name) => serializer.write(20u8).write(name.as_slice()),
-                DirectoryClass::EmailToId(email) => serializer.write(21u8).write(email.as_slice()),
+                DirectoryClass::NameToId(name) => serializer.write(0u8).write(name.as_slice()),
+                DirectoryClass::EmailToId(email) => serializer.write(1u8).write(email.as_slice()),
                 DirectoryClass::Principal(uid) => serializer
-                    .write(22u8)
+                    .write(2u8)
                     .write_leb128(uid.resolve_id(assigned_ids)),
-                DirectoryClass::Domain(name) => serializer.write(23u8).write(name.as_slice()),
-                DirectoryClass::UsedQuota(uid) => serializer.write(24u8).write_leb128(*uid),
+                DirectoryClass::Domain(name) => serializer.write(3u8).write(name.as_slice()),
+                DirectoryClass::UsedQuota(uid) => serializer.write(4u8).write_leb128(*uid),
                 DirectoryClass::MemberOf {
                     principal_id,
                     member_of,
                 } => serializer
-                    .write(25u8)
+                    .write(5u8)
                     .write(principal_id.resolve_id(assigned_ids))
                     .write(member_of.resolve_id(assigned_ids)),
                 DirectoryClass::Members {
                     principal_id,
                     has_member,
                 } => serializer
-                    .write(26u8)
+                    .write(6u8)
                     .write(principal_id.resolve_id(assigned_ids))
                     .write(has_member.resolve_id(assigned_ids)),
             },
             ValueClass::Queue(queue) => match queue {
-                QueueClass::Message(queue_id) => serializer.write(50u8).write(*queue_id),
-                QueueClass::MessageEvent(event) => serializer
-                    .write(51u8)
-                    .write(event.due)
-                    .write(event.queue_id),
+                QueueClass::Message(queue_id) => serializer.write(*queue_id),
+                QueueClass::MessageEvent(event) => {
+                    serializer.write(event.due).write(event.queue_id)
+                }
                 QueueClass::DmarcReportHeader(event) => serializer
-                    .write(52u8)
+                    .write(0u8)
                     .write(event.due)
                     .write(event.domain.as_bytes())
                     .write(event.policy_hash)
                     .write(event.seq_id)
                     .write(0u8),
                 QueueClass::TlsReportHeader(event) => serializer
-                    .write(52u8)
+                    .write(0u8)
                     .write(event.due)
                     .write(event.domain.as_bytes())
                     .write(event.policy_hash)
                     .write(event.seq_id)
                     .write(1u8),
                 QueueClass::DmarcReportEvent(event) => serializer
-                    .write(53u8)
+                    .write(1u8)
                     .write(event.due)
                     .write(event.domain.as_bytes())
                     .write(event.policy_hash)
                     .write(event.seq_id),
                 QueueClass::TlsReportEvent(event) => serializer
-                    .write(54u8)
+                    .write(2u8)
                     .write(event.due)
                     .write(event.domain.as_bytes())
                     .write(event.policy_hash)
                     .write(event.seq_id),
-                QueueClass::QuotaCount(key) => serializer.write(55u8).write(key.as_slice()),
-                QueueClass::QuotaSize(key) => serializer.write(56u8).write(key.as_slice()),
+                QueueClass::QuotaCount(key) => serializer.write(0u8).write(key.as_slice()),
+                QueueClass::QuotaSize(key) => serializer.write(1u8).write(key.as_slice()),
             },
             ValueClass::Report(report) => match report {
                 ReportClass::Tls { id, expires } => {
-                    serializer.write(60u8).write(*expires).write(*id)
+                    serializer.write(0u8).write(*expires).write(*id)
                 }
                 ReportClass::Dmarc { id, expires } => {
-                    serializer.write(61u8).write(*expires).write(*id)
+                    serializer.write(1u8).write(*expires).write(*id)
                 }
                 ReportClass::Arf { id, expires } => {
-                    serializer.write(62u8).write(*expires).write(*id)
+                    serializer.write(2u8).write(*expires).write(*id)
                 }
             },
         }
@@ -401,7 +395,7 @@ impl<T: AsRef<[u8]> + Sync + Send> Key for IndexKey<T> {
 
 impl<T: AsRef<BitmapClass<u32>> + Sync + Send> Key for BitmapKey<T> {
     fn subspace(&self) -> u8 {
-        SUBSPACE_BITMAPS
+        self.class.as_ref().subspace()
     }
 
     fn serialize(&self, flags: u32) -> Vec<u8> {
@@ -416,6 +410,14 @@ impl<T: AsRef<BitmapClass<u32>> + Sync + Send> Key for BitmapKey<T> {
 }
 
 impl<T: ResolveId> BitmapClass<T> {
+    pub fn subspace(&self) -> u8 {
+        match self {
+            BitmapClass::DocumentIds => SUBSPACE_BITMAP_ID,
+            BitmapClass::Tag { .. } => SUBSPACE_BITMAP_TAG,
+            BitmapClass::Text { .. } => SUBSPACE_BITMAP_TEXT,
+        }
+    }
+
     pub fn serialize(
         &self,
         account_id: u32,
@@ -424,65 +426,67 @@ impl<T: ResolveId> BitmapClass<T> {
         flags: u32,
         assigned_ids: Option<&AssignedIds>,
     ) -> Vec<u8> {
-        const BM_DOCUMENT_IDS: u8 = 0;
-        const BM_TAG: u8 = 1 << 6;
-        const BM_TEXT: u8 = 1 << 7;
-
-        const TAG_ID: u8 = 0;
-        const TAG_TEXT: u8 = 1 << 0;
-        const TAG_STATIC: u8 = 1 << 1;
+        const BM_MARKER: u8 = 1 << 7;
 
         match self {
             BitmapClass::DocumentIds => if (flags & WITH_SUBSPACE) != 0 {
-                KeySerializer::new(U32_LEN + 3).write(SUBSPACE_BITMAPS)
+                KeySerializer::new(U32_LEN + 2).write(SUBSPACE_BITMAP_ID)
             } else {
-                KeySerializer::new(U32_LEN + 2)
+                KeySerializer::new(U32_LEN + 1)
             }
             .write(account_id)
-            .write(collection)
-            .write(BM_DOCUMENT_IDS),
+            .write(collection),
             BitmapClass::Tag { field, value } => match value {
                 TagValue::Id(id) => if (flags & WITH_SUBSPACE) != 0 {
-                    KeySerializer::new((U32_LEN * 2) + 4).write(SUBSPACE_BITMAPS)
+                    KeySerializer::new((U32_LEN * 2) + 4).write(SUBSPACE_BITMAP_TAG)
                 } else {
                     KeySerializer::new((U32_LEN * 2) + 3)
                 }
                 .write(account_id)
-                .write(collection)
-                .write(BM_TAG | TAG_ID)
+                .write(collection | BM_MARKER)
                 .write(*field)
                 .write_leb128(id.resolve_id(assigned_ids)),
-                TagValue::Text(text) => if (flags & WITH_SUBSPACE) != 0 {
-                    KeySerializer::new(U32_LEN + 4 + text.len()).write(SUBSPACE_BITMAPS)
-                } else {
-                    KeySerializer::new(U32_LEN + 3 + text.len())
-                }
-                .write(account_id)
-                .write(collection)
-                .write(BM_TAG | TAG_TEXT)
-                .write(*field)
-                .write(text.as_slice()),
                 TagValue::Static(id) => if (flags & WITH_SUBSPACE) != 0 {
-                    KeySerializer::new(U32_LEN + 5).write(SUBSPACE_BITMAPS)
+                    KeySerializer::new(U32_LEN + 5).write(SUBSPACE_BITMAP_TAG)
                 } else {
                     KeySerializer::new(U32_LEN + 4)
                 }
                 .write(account_id)
                 .write(collection)
-                .write(BM_TAG | TAG_STATIC)
                 .write(*field)
                 .write(*id),
+                TagValue::Text(text) => if (flags & WITH_SUBSPACE) != 0 {
+                    KeySerializer::new(U32_LEN + 4 + text.len()).write(SUBSPACE_BITMAP_TAG)
+                } else {
+                    KeySerializer::new(U32_LEN + 3 + text.len())
+                }
+                .write(account_id)
+                .write(collection)
+                .write(*field)
+                .write(text.as_slice()),
             },
-            BitmapClass::Text { field, token } => if (flags & WITH_SUBSPACE) != 0 {
-                KeySerializer::new(U32_LEN + 16 + 3 + 1).write(SUBSPACE_BITMAPS)
-            } else {
-                KeySerializer::new(U32_LEN + 16 + 3)
+            BitmapClass::Text { field, token } => {
+                let serializer = if (flags & WITH_SUBSPACE) != 0 {
+                    KeySerializer::new(U32_LEN + 16 + 3 + 1).write(SUBSPACE_BITMAP_TEXT)
+                } else {
+                    KeySerializer::new(U32_LEN + 16 + 3)
+                }
+                .write(account_id)
+                .write(
+                    token
+                        .hash
+                        .get(0..std::cmp::min(token.len as usize, 8))
+                        .unwrap(),
+                );
+
+                if token.len >= 8 {
+                    serializer.write(token.len)
+                } else {
+                    serializer
+                }
+                .write(collection)
+                .write(*field)
             }
-            .write(account_id)
-            .write(collection)
-            .write(BM_TEXT | token.len)
-            .write(*field)
-            .write(token.hash.as_slice()),
         }
         .write(document_id)
         .finalize()
@@ -543,10 +547,41 @@ impl<T> ValueClass<T> {
     }
 
     pub fn subspace(&self, collection: u8) -> u8 {
-        if self.is_counter(collection) {
-            SUBSPACE_COUNTERS
-        } else {
-            SUBSPACE_VALUES
+        match self {
+            ValueClass::Property(field) => {
+                if *field == 84 && collection == 1 {
+                    SUBSPACE_COUNTER
+                } else {
+                    SUBSPACE_PROPERTY
+                }
+            }
+            ValueClass::TermIndex => SUBSPACE_TERM_INDEX,
+            ValueClass::Acl(_) => SUBSPACE_ACL,
+            ValueClass::IndexEmail(_) => SUBSPACE_FTS_INDEX,
+            ValueClass::Blob(op) => match op {
+                BlobOp::Reserve { .. } => SUBSPACE_BLOB_RESERVE,
+                BlobOp::Commit { .. } | BlobOp::Link { .. } => SUBSPACE_BLOB_LINK,
+            },
+            ValueClass::Config(_) => SUBSPACE_SETTINGS,
+            ValueClass::Lookup(lookup) => match lookup {
+                LookupClass::Key(_) => SUBSPACE_LOOKUP_VALUE,
+                LookupClass::Counter(_) => SUBSPACE_COUNTER,
+                LookupClass::CounterExpiry(_) => SUBSPACE_LOOKUP_EXPIRY,
+            },
+            ValueClass::Directory(directory) => match directory {
+                DirectoryClass::UsedQuota(_) => SUBSPACE_QUOTA,
+                _ => SUBSPACE_DIRECTORY,
+            },
+            ValueClass::Queue(queue) => match queue {
+                QueueClass::Message(_) => SUBSPACE_QUEUE_MESSAGE,
+                QueueClass::MessageEvent(_) => SUBSPACE_QUEUE_EVENT,
+                QueueClass::DmarcReportHeader(_)
+                | QueueClass::TlsReportHeader(_)
+                | QueueClass::DmarcReportEvent(_)
+                | QueueClass::TlsReportEvent(_) => SUBSPACE_REPORT_OUT,
+                QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_) => SUBSPACE_QUOTA,
+            },
+            ValueClass::Report(_) => SUBSPACE_REPORT_OUT,
         }
     }
 

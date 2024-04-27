@@ -66,9 +66,12 @@ impl MysqlStore {
         let key_len = begin.len();
         let end = key.serialize(0);
         let mut conn = self.conn_pool.get_conn().await?;
+        let table = char::from(key.subspace());
 
         let mut bm = RoaringBitmap::new();
-        let s = conn.prep("SELECT k FROM b WHERE k >= ? AND k <= ?").await?;
+        let s = conn
+            .prep(&format!("SELECT k FROM {table} WHERE k >= ? AND k <= ?"))
+            .await?;
         let mut rows = conn.exec_stream::<Vec<u8>, _, _>(&s, (begin, end)).await?;
 
         while let Some(key) = rows.try_next().await? {
@@ -144,9 +147,13 @@ impl MysqlStore {
         &self,
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> crate::Result<i64> {
-        let key = key.into().serialize(0);
+        let key = key.into();
+        let table = char::from(key.subspace());
+        let key = key.serialize(0);
         let mut conn = self.conn_pool.get_conn().await?;
-        let s = conn.prep("SELECT v FROM c WHERE k = ?").await?;
+        let s = conn
+            .prep(&format!("SELECT v FROM {table} WHERE k = ?"))
+            .await?;
         match conn.exec_first::<i64, _, _>(&s, (key,)).await {
             Ok(Some(num)) => Ok(num),
             Ok(None) => Ok(0),

@@ -29,7 +29,7 @@ use crate::{
         key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
         ValueOp,
     },
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTERS, U32_LEN,
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
 };
 
 use super::SqliteStore;
@@ -81,22 +81,30 @@ impl SqliteStore {
                             }
                             ValueOp::AtomicAdd(by) => {
                                 if *by >= 0 {
-                                    trx.prepare_cached(concat!(
-                                        "INSERT INTO c (k, v) VALUES (?, ?) ",
-                                        "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
+                                    trx.prepare_cached(&format!(
+                                        concat!(
+                                            "INSERT INTO {} (k, v) VALUES (?, ?) ",
+                                            "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
+                                        ),
+                                        table
                                     ))?
                                     .execute(params![&key, *by])?;
                                 } else {
-                                    trx.prepare_cached("UPDATE c SET v = v + ? WHERE k = ?")?
-                                        .execute(params![*by, &key])?;
+                                    trx.prepare_cached(&format!(
+                                        "UPDATE {table} SET v = v + ? WHERE k = ?"
+                                    ))?
+                                    .execute(params![*by, &key])?;
                                 }
                             }
                             ValueOp::AddAndGet(by) => {
                                 result.push_counter_id(
-                                    trx.prepare_cached(concat!(
-                                        "INSERT INTO c (k, v) VALUES (?, ?) ",
-                                        "ON CONFLICT(k) DO UPDATE SET v = v + ",
-                                        "excluded.v RETURNING v"
+                                    trx.prepare_cached(&format!(
+                                        concat!(
+                                            "INSERT INTO {} (k, v) VALUES (?, ?) ",
+                                            "ON CONFLICT(k) DO UPDATE SET v = v + ",
+                                            "excluded.v RETURNING v"
+                                        ),
+                                        table
                                     ))?
                                     .query_row(params![&key, &by], |row| row.get::<_, i64>(0))?,
                                 );
@@ -166,17 +174,21 @@ impl SqliteStore {
                             0,
                             (&result).into(),
                         );
+                        let table = char::from(class.subspace());
 
                         if *set {
                             if is_document_id {
                                 trx.prepare_cached("INSERT INTO b (k) VALUES (?)")?
                                     .execute(params![&key])?;
                             } else {
-                                trx.prepare_cached("INSERT OR IGNORE INTO b (k) VALUES (?)")?
-                                    .execute(params![&key])?;
+                                trx.prepare_cached(&format!(
+                                    "INSERT OR IGNORE INTO {} (k) VALUES (?)",
+                                    table
+                                ))?
+                                .execute(params![&key])?;
                             }
                         } else {
-                            trx.prepare_cached("DELETE FROM b WHERE k = ?")?
+                            trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))?
                                 .execute(params![&key])?;
                         };
                     }
@@ -227,11 +239,10 @@ impl SqliteStore {
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
-            conn.prepare_cached(&format!(
-                "DELETE FROM {} WHERE v = 0",
-                char::from(SUBSPACE_COUNTERS),
-            ))?
-            .execute([])?;
+            for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
+                conn.prepare_cached(&format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))?
+                    .execute([])?;
+            }
 
             Ok(())
         })

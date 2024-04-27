@@ -25,10 +25,7 @@ use r2d2::Pool;
 use tokio::sync::oneshot;
 use utils::config::{utils::AsKey, Config};
 
-use crate::{
-    SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-    SUBSPACE_VALUES,
-};
+use crate::*;
 
 use super::{pool::SqliteConnectionManager, SqliteStore};
 
@@ -105,7 +102,24 @@ impl SqliteStore {
     pub(super) fn create_tables(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get()?;
 
-        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS, SUBSPACE_BLOBS] {
+        for table in [
+            SUBSPACE_ACL,
+            SUBSPACE_DIRECTORY,
+            SUBSPACE_FTS_INDEX,
+            SUBSPACE_BLOB_RESERVE,
+            SUBSPACE_BLOB_LINK,
+            SUBSPACE_LOOKUP_VALUE,
+            SUBSPACE_LOOKUP_EXPIRY,
+            SUBSPACE_PROPERTY,
+            SUBSPACE_SETTINGS,
+            SUBSPACE_QUEUE_MESSAGE,
+            SUBSPACE_QUEUE_EVENT,
+            SUBSPACE_REPORT_OUT,
+            SUBSPACE_REPORT_IN,
+            SUBSPACE_TERM_INDEX,
+            SUBSPACE_LOGS,
+            SUBSPACE_BLOBS,
+        ] {
             let table = char::from(table);
             conn.execute(
                 &format!(
@@ -118,7 +132,12 @@ impl SqliteStore {
             )?;
         }
 
-        for table in [SUBSPACE_INDEXES, SUBSPACE_BITMAPS] {
+        for table in [
+            SUBSPACE_INDEXES,
+            SUBSPACE_BITMAP_ID,
+            SUBSPACE_BITMAP_TAG,
+            SUBSPACE_BITMAP_TEXT,
+        ] {
             let table = char::from(table);
             conn.execute(
                 &format!(
@@ -130,16 +149,18 @@ impl SqliteStore {
             )?;
         }
 
-        conn.execute(
-            &format!(
-                "CREATE TABLE IF NOT EXISTS {} (
+        for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
+            conn.execute(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {} (
                     k BLOB PRIMARY KEY,
                     v INTEGER NOT NULL DEFAULT 0
                 )",
-                char::from(SUBSPACE_COUNTERS)
-            ),
-            [],
-        )?;
+                    char::from(table)
+                ),
+                [],
+            )?;
+        }
 
         Ok(())
     }

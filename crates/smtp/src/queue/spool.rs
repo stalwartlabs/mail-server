@@ -93,8 +93,8 @@ impl SMTP {
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
                     let event = QueueEventLock {
-                        due: key.deserialize_be_u64(1)?,
-                        queue_id: key.deserialize_be_u64(U64_LEN + 1)?,
+                        due: key.deserialize_be_u64(0)?,
+                        queue_id: key.deserialize_be_u64(U64_LEN)?,
                         lock_expiry: u64::deserialize(value)?,
                     };
                     let do_continue = event.due <= now;
