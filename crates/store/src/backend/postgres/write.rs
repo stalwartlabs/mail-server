@@ -35,7 +35,7 @@ use crate::{
         key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
         ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTERS, U32_LEN,
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
 };
 
 use super::PostgresStore;
@@ -165,24 +165,32 @@ impl PostgresStore {
                         ValueOp::AtomicAdd(by) => {
                             if *by >= 0 {
                                 let s = trx
-                                    .prepare_cached(concat!(
-                                        "INSERT INTO c (k, v) VALUES ($1, $2) ",
-                                        "ON CONFLICT(k) DO UPDATE SET v = c.v + EXCLUDED.v"
+                                    .prepare_cached(&format!(
+                                        concat!(
+                                            "INSERT INTO {} (k, v) VALUES ($1, $2) ",
+                                            "ON CONFLICT(k) DO UPDATE SET v = {}.v + EXCLUDED.v"
+                                        ),
+                                        table, table
                                     ))
                                     .await?;
                                 trx.execute(&s, &[&key, &by]).await?;
                             } else {
                                 let s = trx
-                                    .prepare_cached("UPDATE c SET v = v + $1 WHERE k = $2")
+                                    .prepare_cached(&format!(
+                                        "UPDATE {table} SET v = v + $1 WHERE k = $2"
+                                    ))
                                     .await?;
                                 trx.execute(&s, &[&by, &key]).await?;
                             }
                         }
                         ValueOp::AddAndGet(by) => {
                             let s = trx
-                                .prepare_cached(concat!(
-                                    "INSERT INTO c (k, v) VALUES ($1, $2) ",
-                                    "ON CONFLICT(k) DO UPDATE SET v = c.v + EXCLUDED.v RETURNING v"
+                                .prepare_cached(&format!(
+                                    concat!(
+                                    "INSERT INTO {} (k, v) VALUES ($1, $2) ",
+                                    "ON CONFLICT(k) DO UPDATE SET v = {}.v + EXCLUDED.v RETURNING v"
+                                ),
+                                    table, table
                                 ))
                                 .await?;
                             result.push_counter_id(
@@ -261,18 +269,21 @@ impl PostgresStore {
 
                     let key =
                         class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let table = char::from(class.subspace());
 
                     let s = if *set {
                         if is_document_id {
                             trx.prepare_cached("INSERT INTO b (k) VALUES ($1)").await?
                         } else {
-                            trx.prepare_cached(
-                                "INSERT INTO b (k) VALUES ($1) ON CONFLICT (k) DO NOTHING",
-                            )
+                            trx.prepare_cached(&format!(
+                                "INSERT INTO {} (k) VALUES ($1) ON CONFLICT (k) DO NOTHING",
+                                table
+                            ))
                             .await?
                         }
                     } else {
-                        trx.prepare_cached("DELETE FROM b WHERE k = $1").await?
+                        trx.prepare_cached(&format!("DELETE FROM {} WHERE k = $1", table))
+                            .await?
                     };
 
                     trx.execute(&s, &[&key]).await.map_err(|err| {
@@ -335,13 +346,14 @@ impl PostgresStore {
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get().await?;
 
-        let s = conn
-            .prepare_cached(&format!(
-                "DELETE FROM {} WHERE v = 0",
-                char::from(SUBSPACE_COUNTERS),
-            ))
-            .await?;
-        conn.execute(&s, &[]).await.map(|_| ()).map_err(Into::into)
+        for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
+            let s = conn
+                .prepare_cached(&format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))
+                .await?;
+            conn.execute(&s, &[]).await.map(|_| ())?
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {

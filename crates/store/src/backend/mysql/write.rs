@@ -34,7 +34,7 @@ use crate::{
         key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
         ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTERS, U32_LEN,
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
 };
 
 use super::MysqlStore;
@@ -158,22 +158,30 @@ impl MysqlStore {
                         ValueOp::AtomicAdd(by) => {
                             if *by >= 0 {
                                 let s = trx
-                                    .prep(concat!(
-                                        "INSERT INTO c (k, v) VALUES (?, ?) ",
-                                        "ON DUPLICATE KEY UPDATE v = v + VALUES(v)"
+                                    .prep(&format!(
+                                        concat!(
+                                            "INSERT INTO {} (k, v) VALUES (?, ?) ",
+                                            "ON DUPLICATE KEY UPDATE v = v + VALUES(v)"
+                                        ),
+                                        table
                                     ))
                                     .await?;
                                 trx.exec_drop(&s, (key, by)).await?;
                             } else {
-                                let s = trx.prep("UPDATE c SET v = v + ? WHERE k = ?").await?;
+                                let s = trx
+                                    .prep(&format!("UPDATE {table} SET v = v + ? WHERE k = ?"))
+                                    .await?;
                                 trx.exec_drop(&s, (by, key)).await?;
                             }
                         }
                         ValueOp::AddAndGet(by) => {
                             let s = trx
-                                .prep(concat!(
-                                    "INSERT INTO c (k, v) VALUES (:k, LAST_INSERT_ID(:v)) ",
-                                    "ON DUPLICATE KEY UPDATE v = LAST_INSERT_ID(v + :v)"
+                                .prep(&format!(
+                                    concat!(
+                                        "INSERT INTO {} (k, v) VALUES (:k, LAST_INSERT_ID(:v)) ",
+                                        "ON DUPLICATE KEY UPDATE v = LAST_INSERT_ID(v + :v)"
+                                    ),
+                                    table
                                 ))
                                 .await?;
                             trx.exec_drop(&s, params! {"k" => key, "v" => by}).await?;
@@ -251,15 +259,18 @@ impl MysqlStore {
                     }
                     let key =
                         class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let table = char::from(class.subspace());
 
                     let s = if *set {
                         if is_document_id {
                             trx.prep("INSERT INTO b (k) VALUES (?)").await?
                         } else {
-                            trx.prep("INSERT IGNORE INTO b (k) VALUES (?)").await?
+                            trx.prep(&format!("INSERT IGNORE INTO {} (k) VALUES (?)", table))
+                                .await?
                         }
                     } else {
-                        trx.prep("DELETE FROM b WHERE k = ?").await?
+                        trx.prep(&format!("DELETE FROM {} WHERE k = ?", table))
+                            .await?
                     };
 
                     if let Err(err) = trx.exec_drop(&s, (key,)).await {
@@ -320,14 +331,14 @@ impl MysqlStore {
 
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {
         let mut conn = self.conn_pool.get_conn().await?;
+        for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
+            let s = conn
+                .prep(&format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))
+                .await?;
+            conn.exec_drop(&s, ()).await?;
+        }
 
-        let s = conn
-            .prep(&format!(
-                "DELETE FROM {} WHERE v = 0",
-                char::from(SUBSPACE_COUNTERS),
-            ))
-            .await?;
-        conn.exec_drop(&s, ()).await.map_err(Into::into)
+        Ok(())
     }
 
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {

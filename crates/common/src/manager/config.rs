@@ -143,12 +143,9 @@ impl ConfigManager {
             .iterate(
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
-                    let mut key =
-                        std::str::from_utf8(key.get(1..).unwrap_or_default()).map_err(|_| {
-                            store::Error::InternalError(
-                                "Failed to deserialize config key".to_string(),
-                            )
-                        })?;
+                    let mut key = std::str::from_utf8(key).map_err(|_| {
+                        store::Error::InternalError("Failed to deserialize config key".to_string())
+                    })?;
 
                     if !patterns.is_local_key(key) {
                         if strip_prefix && !prefix.is_empty() {

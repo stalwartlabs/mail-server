@@ -292,7 +292,7 @@ impl LookupStore {
                 store
                     .iterate(IterateParams::new(from_key, to_key), |key, value| {
                         if value.deserialize_be_u64(0)? <= current_time {
-                            expired_keys.push(key.get(1..).unwrap_or_default().to_vec());
+                            expired_keys.push(key.to_vec());
                         }
                         Ok(true)
                     })
@@ -327,7 +327,7 @@ impl LookupStore {
                 store
                     .iterate(IterateParams::new(from_key, to_key), |key, value| {
                         if value.deserialize_be_u64(0)? <= current_time {
-                            expired_keys.push(key.get(1..).unwrap_or_default().to_vec());
+                            expired_keys.push(key.to_vec());
                         }
                         Ok(true)
                     })

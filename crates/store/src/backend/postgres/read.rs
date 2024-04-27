@@ -65,10 +65,11 @@ impl PostgresStore {
         let key_len = begin.len();
         let end = key.serialize(0);
         let conn = self.conn_pool.get().await?;
+        let table = char::from(key.subspace());
 
         let mut bm = RoaringBitmap::new();
         let s = conn
-            .prepare_cached("SELECT k FROM b WHERE k >= $1 AND k <= $2")
+            .prepare_cached(&format!("SELECT k FROM {table} WHERE k >= $1 AND k <= $2"))
             .await?;
         let rows = conn.query_raw(&s, &[&begin, &end]).await?;
 
@@ -142,9 +143,14 @@ impl PostgresStore {
         &self,
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> crate::Result<i64> {
-        let key = key.into().serialize(0);
+        let key = key.into();
+        let table = char::from(key.subspace());
+        let key = key.serialize(0);
+
         let conn = self.conn_pool.get().await?;
-        let s = conn.prepare_cached("SELECT v FROM c WHERE k = $1").await?;
+        let s = conn
+            .prepare_cached(&format!("SELECT v FROM {table} WHERE k = $1"))
+            .await?;
         match conn.query_opt(&s, &[&key]).await {
             Ok(Some(row)) => row.try_get(0).map_err(Into::into),
             Ok(None) => Ok(0),

@@ -34,14 +34,14 @@ use rocksdb::{
     OptimisticTransactionOptions, WriteOptions,
 };
 
-use super::{RocksDbStore, CF_BITMAPS, CF_COUNTERS, CF_INDEXES, CF_LOGS, CF_VALUES};
+use super::{CfHandle, RocksDbStore, CF_INDEXES, CF_LOGS};
 use crate::{
     backend::deserialize_i64_le,
     write::{
         key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
         ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTERS, U32_LEN,
+    BitmapKey, Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
 };
 
 impl RocksDbStore {
@@ -51,11 +51,8 @@ impl RocksDbStore {
         self.spawn_worker(move || {
             let mut txn = RocksDBTransaction {
                 db: &db,
-                cf_bitmaps: db.cf_handle(CF_BITMAPS).unwrap(),
-                cf_values: db.cf_handle(CF_VALUES).unwrap(),
                 cf_indexes: db.cf_handle(CF_INDEXES).unwrap(),
                 cf_logs: db.cf_handle(CF_LOGS).unwrap(),
-                cf_counters: db.cf_handle(CF_COUNTERS).unwrap(),
                 txn_opts: OptimisticTransactionOptions::default(),
                 batch: &batch,
             };
@@ -121,32 +118,34 @@ impl RocksDbStore {
     pub(crate) async fn purge_store(&self) -> crate::Result<()> {
         let db = self.db.clone();
         self.spawn_worker(move || {
-            let cf = db
-                .cf_handle(std::str::from_utf8(&[SUBSPACE_COUNTERS]).unwrap())
-                .unwrap();
+            for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
+                let cf = db
+                    .cf_handle(std::str::from_utf8(&[subspace]).unwrap())
+                    .unwrap();
 
-            let mut delete_keys = Vec::new();
+                let mut delete_keys = Vec::new();
 
-            for row in db.iterator_cf(&cf, IteratorMode::Start) {
-                let (key, value) = row?;
+                for row in db.iterator_cf(&cf, IteratorMode::Start) {
+                    let (key, value) = row?;
 
-                if i64::deserialize(&value)? <= 0 {
-                    delete_keys.push(key);
+                    if i64::deserialize(&value)? == 0 {
+                        delete_keys.push(key);
+                    }
                 }
-            }
 
-            let txn_opts = OptimisticTransactionOptions::default();
-            for key in delete_keys {
-                let txn = db.transaction_opt(&WriteOptions::default(), &txn_opts);
-                if txn
-                    .get_pinned_for_update_cf(&cf, &key, true)?
-                    .map(|value| i64::deserialize(&value).map(|v| v == 0).unwrap_or(false))
-                    .unwrap_or(false)
-                {
-                    txn.delete(key)?;
-                    txn.commit()?;
-                } else {
-                    txn.rollback()?;
+                let txn_opts = OptimisticTransactionOptions::default();
+                for key in delete_keys {
+                    let txn = db.transaction_opt(&WriteOptions::default(), &txn_opts);
+                    if txn
+                        .get_pinned_for_update_cf(&cf, &key, true)?
+                        .map(|value| i64::deserialize(&value).map(|v| v == 0).unwrap_or(false))
+                        .unwrap_or(false)
+                    {
+                        txn.delete_cf(&cf, key)?;
+                        txn.commit()?;
+                    } else {
+                        txn.rollback()?;
+                    }
                 }
             }
 
@@ -158,11 +157,8 @@ impl RocksDbStore {
 
 struct RocksDBTransaction<'x> {
     db: &'x OptimisticTransactionDB,
-    cf_bitmaps: Arc<BoundColumnFamily<'x>>,
-    cf_values: Arc<BoundColumnFamily<'x>>,
     cf_indexes: Arc<BoundColumnFamily<'x>>,
     cf_logs: Arc<BoundColumnFamily<'x>>,
-    cf_counters: Arc<BoundColumnFamily<'x>>,
     txn_opts: OptimisticTransactionOptions,
     batch: &'x Batch,
 }
@@ -203,18 +199,18 @@ impl<'x> RocksDBTransaction<'x> {
                 Operation::Value { class, op } => {
                     let key =
                         class.serialize(account_id, collection, document_id, 0, (&result).into());
-                    let is_counter = class.is_counter(collection);
+                    let cf = self.db.subspace_handle(class.subspace(collection));
 
                     match op {
                         ValueOp::Set(value) => {
-                            txn.put_cf(&self.cf_values, &key, value.resolve(&result)?.as_ref())?;
+                            txn.put_cf(&cf, &key, value.resolve(&result)?.as_ref())?;
                         }
                         ValueOp::AtomicAdd(by) => {
-                            txn.merge_cf(&self.cf_counters, &key, &by.to_le_bytes()[..])?;
+                            txn.merge_cf(&cf, &key, &by.to_le_bytes()[..])?;
                         }
                         ValueOp::AddAndGet(by) => {
                             let num = txn
-                                .get_pinned_for_update_cf(&self.cf_counters, &key, true)
+                                .get_pinned_for_update_cf(&cf, &key, true)
                                 .map_err(CommitError::from)
                                 .and_then(|bytes| {
                                     if let Some(bytes) = bytes {
@@ -225,18 +221,11 @@ impl<'x> RocksDBTransaction<'x> {
                                         Ok(*by)
                                     }
                                 })?;
-                            txn.put_cf(&self.cf_counters, &key, &num.to_le_bytes()[..])?;
+                            txn.put_cf(&cf, &key, &num.to_le_bytes()[..])?;
                             result.push_counter_id(num);
                         }
                         ValueOp::Clear => {
-                            txn.delete_cf(
-                                if is_counter {
-                                    &self.cf_counters
-                                } else {
-                                    &self.cf_values
-                                },
-                                &key,
-                            )?;
+                            txn.delete_cf(&cf, &key)?;
                         }
                     }
                 }
@@ -258,6 +247,7 @@ impl<'x> RocksDBTransaction<'x> {
                 }
                 Operation::Bitmap { class, set } => {
                     let is_document_id = matches!(class, BitmapClass::DocumentIds);
+                    let cf = self.db.subspace_handle(class.subspace());
                     if *set && is_document_id && document_id == u32::MAX {
                         let begin = BitmapKey {
                             account_id,
@@ -276,10 +266,9 @@ impl<'x> RocksDBTransaction<'x> {
                         let key_len = begin.len();
                         let mut found_ids = RoaringBitmap::new();
 
-                        for row in txn.iterator_cf(
-                            &self.cf_bitmaps,
-                            IteratorMode::From(&begin, Direction::Forward),
-                        ) {
+                        for row in
+                            txn.iterator_cf(&cf, IteratorMode::From(&begin, Direction::Forward))
+                        {
                             let (key, _) = row?;
                             let key = key.as_ref();
                             if key.len() == key_len
@@ -299,9 +288,9 @@ impl<'x> RocksDBTransaction<'x> {
                         class.serialize(account_id, collection, document_id, 0, (&result).into());
 
                     if *set {
-                        txn.put_cf(&self.cf_bitmaps, &key, [])?;
+                        txn.put_cf(&cf, &key, [])?;
                     } else {
-                        txn.delete_cf(&self.cf_bitmaps, &key)?;
+                        txn.delete_cf(&cf, &key)?;
                     }
                 }
                 Operation::Log { set } => {
@@ -320,9 +309,10 @@ impl<'x> RocksDBTransaction<'x> {
                 } => {
                     let key =
                         class.serialize(account_id, collection, document_id, 0, (&result).into());
+                    let cf = self.db.subspace_handle(class.subspace(collection));
 
                     let matches = txn
-                        .get_pinned_for_update_cf(&self.cf_values, &key, true)?
+                        .get_pinned_for_update_cf(&cf, &key, true)?
                         .map(|value| assert_value.matches(&value))
                         .unwrap_or_else(|| assert_value.is_none());
 

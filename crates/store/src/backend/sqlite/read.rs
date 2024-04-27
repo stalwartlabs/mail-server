@@ -63,10 +63,12 @@ impl SqliteStore {
         let key_len = begin.len();
         let end = key.serialize(0);
         let conn = self.conn_pool.get()?;
+        let table = char::from(key.subspace());
 
         self.spawn_worker(move || {
             let mut bm = RoaringBitmap::new();
-            let mut query = conn.prepare_cached("SELECT k FROM b WHERE k >= ? AND k <= ?")?;
+            let mut query =
+                conn.prepare_cached(&format!("SELECT k FROM {table} WHERE k >= ? AND k <= ?"))?;
             let mut rows = query.query([&begin, &end])?;
 
             while let Some(row) = rows.next()? {
@@ -139,11 +141,13 @@ impl SqliteStore {
         &self,
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> crate::Result<i64> {
-        let key = key.into().serialize(0);
+        let key = key.into();
+        let table = char::from(key.subspace());
+        let key = key.serialize(0);
         let conn = self.conn_pool.get()?;
         self.spawn_worker(move || {
             match conn
-                .prepare_cached("SELECT v FROM c WHERE k = ?")?
+                .prepare_cached(&format!("SELECT v FROM {table} WHERE k = ?"))?
                 .query_row([&key], |row| row.get::<_, i64>(0))
             {
                 Ok(value) => Ok(value),

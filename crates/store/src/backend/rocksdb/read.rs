@@ -24,12 +24,13 @@
 use roaring::RoaringBitmap;
 use rocksdb::{Direction, IteratorMode};
 
+use super::RocksDbStore;
+
 use crate::{
+    backend::rocksdb::CfHandle,
     write::{key::DeserializeBigEndian, BitmapClass, ValueClass},
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
 };
-
-use super::{RocksDbStore, CF_BITMAPS, CF_COUNTERS};
 
 impl RocksDbStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
@@ -62,12 +63,13 @@ impl RocksDbStore {
         let db = self.db.clone();
         self.spawn_worker(move || {
             let mut bm = RoaringBitmap::new();
+            let subspace = key.subspace();
             let begin = key.serialize(0);
             key.document_id = u32::MAX;
             let end = key.serialize(0);
             let key_len = begin.len();
             for row in db.iterator_cf(
-                &db.cf_handle(CF_BITMAPS).unwrap(),
+                &db.subspace_handle(subspace),
                 IteratorMode::From(&begin, Direction::Forward),
             ) {
                 let (key, _) = row?;
@@ -92,9 +94,7 @@ impl RocksDbStore {
         let db = self.db.clone();
 
         self.spawn_worker(move || {
-            let cf = db
-                .cf_handle(std::str::from_utf8(&[params.begin.subspace()]).unwrap())
-                .unwrap();
+            let cf = db.subspace_handle(params.begin.subspace());
             let begin = params.begin.serialize(0);
             let end = params.end.serialize(0);
             let it_mode = if params.ascending {
@@ -123,10 +123,13 @@ impl RocksDbStore {
         &self,
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> crate::Result<i64> {
-        let key = key.into().serialize(0);
+        let key = key.into();
         let db = self.db.clone();
         self.spawn_worker(move || {
-            db.get_pinned_cf(&db.cf_handle(CF_COUNTERS).unwrap(), &key)
+            let cf = self.db.subspace_handle(key.subspace());
+            let key = key.serialize(0);
+
+            db.get_pinned_cf(&cf, &key)
                 .map_err(Into::into)
                 .and_then(|bytes| {
                     Ok(if let Some(bytes) = bytes {

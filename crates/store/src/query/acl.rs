@@ -112,9 +112,9 @@ impl Store {
         self.iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
-                if account_id == key.deserialize_be_u32(U32_LEN + 1)? {
+                if account_id == key.deserialize_be_u32(U32_LEN)? {
                     delete_keys.push((
-                        ValueClass::Acl(key.deserialize_be_u32(1)?),
+                        ValueClass::Acl(key.deserialize_be_u32(0)?),
                         AclItem::deserialize(key)?,
                     ));
                 }
@@ -156,11 +156,11 @@ impl Store {
 impl Deserialize for AclItem {
     fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
         Ok(AclItem {
-            to_account_id: bytes.deserialize_be_u32(U32_LEN + 1)?,
+            to_account_id: bytes.deserialize_be_u32(U32_LEN)?,
             to_collection: *bytes
-                .get((U32_LEN * 2) + 1)
+                .get(U32_LEN * 2)
                 .ok_or_else(|| Error::InternalError(format!("Corrupted acl key {bytes:?}")))?,
-            to_document_id: bytes.deserialize_be_u32((U32_LEN * 2) + 2)?,
+            to_document_id: bytes.deserialize_be_u32((U32_LEN * 2) + 1)?,
             permissions: 0,
         })
     }

@@ -178,8 +178,8 @@ impl QueueReceiver {
                 IterateParams::new(from_key, to_key).ascending().no_values(),
                 |key, _| {
                     events.push(QueueEvent {
-                        due: key.deserialize_be_u64(1)?,
-                        queue_id: key.deserialize_be_u64(U64_LEN + 1)?,
+                        due: key.deserialize_be_u64(0)?,
+                        queue_id: key.deserialize_be_u64(U64_LEN)?,
                     });
                     Ok(true)
                 },
@@ -200,7 +200,7 @@ impl QueueReceiver {
                 IterateParams::new(from_key, to_key).descending(),
                 |key, value| {
                     let value = Bincode::<Message>::deserialize(value)?;
-                    assert_eq!(key.deserialize_be_u64(1)?, value.inner.id);
+                    assert_eq!(key.deserialize_be_u64(0)?, value.inner.id);
                     messages.push(value.inner);
                     Ok(true)
                 },

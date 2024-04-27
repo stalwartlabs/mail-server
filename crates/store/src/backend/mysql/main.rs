@@ -26,10 +26,7 @@ use std::time::Duration;
 use mysql_async::{prelude::Queryable, OptsBuilder, Pool, PoolConstraints, PoolOpts, SslOpts};
 use utils::config::{utils::AsKey, Config};
 
-use crate::{
-    SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-    SUBSPACE_VALUES,
-};
+use crate::*;
 
 use super::MysqlStore;
 
@@ -99,7 +96,23 @@ impl MysqlStore {
     pub(super) async fn create_tables(&self) -> crate::Result<()> {
         let mut conn = self.conn_pool.get_conn().await?;
 
-        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS] {
+        for table in [
+            SUBSPACE_ACL,
+            SUBSPACE_DIRECTORY,
+            SUBSPACE_FTS_INDEX,
+            SUBSPACE_BLOB_RESERVE,
+            SUBSPACE_BLOB_LINK,
+            SUBSPACE_LOOKUP_VALUE,
+            SUBSPACE_LOOKUP_EXPIRY,
+            SUBSPACE_PROPERTY,
+            SUBSPACE_SETTINGS,
+            SUBSPACE_QUEUE_MESSAGE,
+            SUBSPACE_QUEUE_EVENT,
+            SUBSPACE_REPORT_OUT,
+            SUBSPACE_REPORT_IN,
+            SUBSPACE_TERM_INDEX,
+            SUBSPACE_LOGS,
+        ] {
             let table = char::from(table);
             conn.query_drop(&format!(
                 "CREATE TABLE IF NOT EXISTS {table} (
@@ -121,7 +134,12 @@ impl MysqlStore {
         ))
         .await?;
 
-        for table in [SUBSPACE_INDEXES, SUBSPACE_BITMAPS] {
+        for table in [
+            SUBSPACE_INDEXES,
+            SUBSPACE_BITMAP_ID,
+            SUBSPACE_BITMAP_TAG,
+            SUBSPACE_BITMAP_TEXT,
+        ] {
             let table = char::from(table);
             conn.query_drop(&format!(
                 "CREATE TABLE IF NOT EXISTS {table} (
@@ -132,15 +150,17 @@ impl MysqlStore {
             .await?;
         }
 
-        conn.query_drop(&format!(
-            "CREATE TABLE IF NOT EXISTS {} (
+        for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
+            conn.query_drop(&format!(
+                "CREATE TABLE IF NOT EXISTS {} (
                 k TINYBLOB,
                 v BIGINT NOT NULL DEFAULT 0,
                 PRIMARY KEY (k(255))
             ) ENGINE=InnoDB",
-            char::from(SUBSPACE_COUNTERS)
-        ))
-        .await?;
+                char::from(table)
+            ))
+            .await?;
+        }
 
         Ok(())
     }

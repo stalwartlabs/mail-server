@@ -23,10 +23,7 @@
 
 use std::time::Duration;
 
-use crate::{
-    backend::postgres::tls::MakeRustlsConnect, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS,
-    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_VALUES,
-};
+use crate::{backend::postgres::tls::MakeRustlsConnect, *};
 
 use super::PostgresStore;
 
@@ -92,7 +89,24 @@ impl PostgresStore {
     pub(super) async fn create_tables(&self) -> crate::Result<()> {
         let conn = self.conn_pool.get().await?;
 
-        for table in [SUBSPACE_VALUES, SUBSPACE_LOGS, SUBSPACE_BLOBS] {
+        for table in [
+            SUBSPACE_ACL,
+            SUBSPACE_DIRECTORY,
+            SUBSPACE_FTS_INDEX,
+            SUBSPACE_BLOB_RESERVE,
+            SUBSPACE_BLOB_LINK,
+            SUBSPACE_LOOKUP_VALUE,
+            SUBSPACE_LOOKUP_EXPIRY,
+            SUBSPACE_PROPERTY,
+            SUBSPACE_SETTINGS,
+            SUBSPACE_QUEUE_MESSAGE,
+            SUBSPACE_QUEUE_EVENT,
+            SUBSPACE_REPORT_OUT,
+            SUBSPACE_REPORT_IN,
+            SUBSPACE_TERM_INDEX,
+            SUBSPACE_LOGS,
+            SUBSPACE_BLOBS,
+        ] {
             let table = char::from(table);
             conn.execute(
                 &format!(
@@ -106,7 +120,12 @@ impl PostgresStore {
             .await?;
         }
 
-        for table in [SUBSPACE_INDEXES, SUBSPACE_BITMAPS] {
+        for table in [
+            SUBSPACE_INDEXES,
+            SUBSPACE_BITMAP_ID,
+            SUBSPACE_BITMAP_TAG,
+            SUBSPACE_BITMAP_TEXT,
+        ] {
             let table = char::from(table);
             conn.execute(
                 &format!(
@@ -119,17 +138,19 @@ impl PostgresStore {
             .await?;
         }
 
-        conn.execute(
-            &format!(
-                "CREATE TABLE IF NOT EXISTS {} (
+        for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
+            conn.execute(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {} (
                     k BYTEA PRIMARY KEY,
                     v BIGINT NOT NULL DEFAULT 0
                 )",
-                char::from(SUBSPACE_COUNTERS)
-            ),
-            &[],
-        )
-        .await?;
+                    char::from(table)
+                ),
+                &[],
+            )
+            .await?;
+        }
 
         Ok(())
     }
