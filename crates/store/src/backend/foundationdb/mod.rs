@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::time::{Duration, Instant};
+
 use foundationdb::{api::NetworkAutoStop, Database, FdbError};
 
 use crate::Error;
@@ -36,6 +38,34 @@ const MAX_VALUE_SIZE: usize = 100000;
 pub struct FdbStore {
     db: Database,
     guard: NetworkAutoStop,
+    version: parking_lot::Mutex<ReadVersion>,
+}
+
+pub(crate) struct ReadVersion {
+    version: i64,
+    expires: Instant,
+}
+
+impl ReadVersion {
+    pub fn new(version: i64) -> Self {
+        Self {
+            version,
+            expires: Instant::now() + Duration::from_secs(60 * 2),
+        }
+    }
+
+    pub fn is_expired(&self) -> bool {
+        self.expires < Instant::now()
+    }
+}
+
+impl Default for ReadVersion {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            expires: Instant::now(),
+        }
+    }
 }
 
 impl From<FdbError> for Error {

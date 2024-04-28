@@ -417,7 +417,6 @@ impl Store {
             SUBSPACE_LOGS,
             SUBSPACE_LOOKUP_VALUE,
             SUBSPACE_COUNTER,
-            SUBSPACE_LOOKUP_EXPIRY,
             SUBSPACE_PROPERTY,
             SUBSPACE_SETTINGS,
             SUBSPACE_BLOBS,
@@ -522,14 +521,20 @@ impl Store {
         let to_key = ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![u8::MAX; 10])));
 
         let mut expired_keys = Vec::new();
+        let mut expired_counters = Vec::new();
+
         self.iterate(IterateParams::new(from_key, to_key), |key, value| {
-            if value.deserialize_be_u64(0)? != 0 {
+            let expiry = value.deserialize_be_u64(0)?;
+            if expiry == 0 {
+                expired_counters.push(key.to_vec());
+            } else if expiry != u64::MAX {
                 expired_keys.push(key.to_vec());
             }
             Ok(true)
         })
         .await
         .unwrap();
+
         if !expired_keys.is_empty() {
             let mut batch = BatchBuilder::new();
             for key in expired_keys {
@@ -547,29 +552,15 @@ impl Store {
             }
         }
 
-        // Delete expired counters
-        let from_key = ValueKey::from(ValueClass::Lookup(LookupClass::CounterExpiry(vec![0u8])));
-        let to_key = ValueKey::from(ValueClass::Lookup(LookupClass::CounterExpiry(vec![
-            u8::MAX;
-            10
-        ])));
-
-        let mut expired_keys = Vec::new();
-        self.iterate(IterateParams::new(from_key, to_key), |key, _| {
-            expired_keys.push(key.to_vec());
-            Ok(true)
-        })
-        .await
-        .unwrap();
-        if !expired_keys.is_empty() {
+        if !expired_counters.is_empty() {
             let mut batch = BatchBuilder::new();
-            for key in expired_keys {
+            for key in expired_counters {
                 batch.ops.push(Operation::Value {
                     class: ValueClass::Lookup(LookupClass::Counter(key.clone())),
                     op: ValueOp::Clear,
                 });
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::CounterExpiry(key)),
+                    class: ValueClass::Lookup(LookupClass::Key(key)),
                     op: ValueOp::Clear,
                 });
                 if batch.ops.len() >= 1000 {
@@ -604,7 +595,6 @@ impl Store {
             //(SUBSPACE_DIRECTORY, true),
             (SUBSPACE_FTS_INDEX, true),
             (SUBSPACE_LOOKUP_VALUE, true),
-            (SUBSPACE_LOOKUP_EXPIRY, true),
             (SUBSPACE_PROPERTY, true),
             (SUBSPACE_SETTINGS, true),
             (SUBSPACE_QUEUE_MESSAGE, true),

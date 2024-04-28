@@ -23,11 +23,11 @@
 
 use std::ops::Range;
 
-use foundationdb::{options::StreamingMode, FdbError, KeySelector, RangeOption};
-use futures::StreamExt;
+use foundationdb::{options::StreamingMode, KeySelector, RangeOption};
+use futures::TryStreamExt;
 use utils::BLOB_HASH_LEN;
 
-use crate::{write::key::KeySerializer, Error, SUBSPACE_BLOBS};
+use crate::{write::key::KeySerializer, SUBSPACE_BLOBS};
 
 use super::{FdbStore, MAX_VALUE_SIZE};
 
@@ -52,8 +52,8 @@ impl FdbStore {
             .write(block_end as u16)
             .finalize();
         let key_len = begin.len();
-        let trx = self.db.create_trx()?;
-        let mut values = trx.get_ranges(
+        let trx = self.read_trx().await?;
+        let mut values = trx.get_ranges_keyvalues(
             RangeOption {
                 begin: KeySelector::first_greater_or_equal(begin),
                 end: KeySelector::first_greater_or_equal(end),
@@ -66,47 +66,42 @@ impl FdbStore {
         let mut blob_data: Option<Vec<u8>> = None;
         let blob_range = range.end - range.start;
 
-        'outer: while let Some(values) = values.next().await {
-            for value in values? {
-                let key = value.key();
-                if key.len() == key_len {
-                    let value = value.value();
-                    if let Some(blob_data) = &mut blob_data {
-                        blob_data.extend_from_slice(
-                            value
-                                .get(
-                                    ..std::cmp::min(
-                                        blob_range.saturating_sub(blob_data.len()),
-                                        value.len(),
-                                    ),
-                                )
-                                .unwrap_or(&[]),
-                        );
-                        if blob_data.len() == blob_range {
-                            break 'outer;
-                        }
-                    } else {
-                        let blob_size = if blob_range <= (5 * (1 << 20)) {
-                            blob_range
-                        } else if value.len() == MAX_VALUE_SIZE {
-                            MAX_VALUE_SIZE * 2
-                        } else {
-                            value.len()
-                        };
-                        let mut blob_data_ = Vec::with_capacity(blob_size);
-                        blob_data_.extend_from_slice(
-                            value
-                                .get(
-                                    bytes_start
-                                        ..std::cmp::min(bytes_start + blob_range, value.len()),
-                                )
-                                .unwrap_or(&[]),
-                        );
-                        if blob_data_.len() == blob_range {
-                            return Ok(Some(blob_data_));
-                        }
-                        blob_data = blob_data_.into();
+        'outer: while let Some(value) = values.try_next().await? {
+            let key = value.key();
+            if key.len() == key_len {
+                let value = value.value();
+                if let Some(blob_data) = &mut blob_data {
+                    blob_data.extend_from_slice(
+                        value
+                            .get(
+                                ..std::cmp::min(
+                                    blob_range.saturating_sub(blob_data.len()),
+                                    value.len(),
+                                ),
+                            )
+                            .unwrap_or(&[]),
+                    );
+                    if blob_data.len() == blob_range {
+                        break 'outer;
                     }
+                } else {
+                    let blob_size = if blob_range <= (5 * (1 << 20)) {
+                        blob_range
+                    } else if value.len() == MAX_VALUE_SIZE {
+                        MAX_VALUE_SIZE * 2
+                    } else {
+                        value.len()
+                    };
+                    let mut blob_data_ = Vec::with_capacity(blob_size);
+                    blob_data_.extend_from_slice(
+                        value
+                            .get(bytes_start..std::cmp::min(bytes_start + blob_range, value.len()))
+                            .unwrap_or(&[]),
+                    );
+                    if blob_data_.len() == blob_range {
+                        return Ok(Some(blob_data_));
+                    }
+                    blob_data = blob_data_.into();
                 }
             }
         }
@@ -137,9 +132,7 @@ impl FdbStore {
                 chunk_bytes,
             );
             if chunk_pos == last_chunk || (chunk_pos > 0 && chunk_pos % N_CHUNKS == 0) {
-                trx.commit()
-                    .await
-                    .map_err(|err| Error::from(FdbError::from(err)))?;
+                self.commit(trx, false).await?;
                 if chunk_pos < last_chunk {
                     trx = self.db.create_trx()?;
                 } else {
@@ -169,9 +162,7 @@ impl FdbStore {
                 .write(u16::MAX)
                 .finalize(),
         );
-        match trx.commit().await {
-            Ok(_) => Ok(true),
-            Err(err) => Err(FdbError::from(err).into()),
-        }
+
+        self.commit(trx, false).await
     }
 }

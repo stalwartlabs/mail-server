@@ -119,6 +119,10 @@ impl FdbStore {
                 .ok()?;
         }
 
-        Some(Self { guard, db })
+        Some(Self {
+            guard,
+            db,
+            version: Default::default(),
+        })
     }
 }

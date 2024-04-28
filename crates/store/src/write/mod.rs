@@ -177,7 +177,6 @@ pub enum ValueClass<T> {
 pub enum LookupClass {
     Key(Vec<u8>),
     Counter(Vec<u8>),
-    CounterExpiry(Vec<u8>),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
