@@ -28,9 +28,9 @@ use crate::{
     BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, SUBSPACE_ACL,
     SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_BLOB_LINK,
     SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_FTS_INDEX,
-    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_EXPIRY, SUBSPACE_LOOKUP_VALUE,
-    SUBSPACE_PROPERTY, SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA,
-    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TERM_INDEX, U32_LEN, U64_LEN, WITH_SUBSPACE,
+    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_VALUE, SUBSPACE_PROPERTY,
+    SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_OUT,
+    SUBSPACE_SETTINGS, SUBSPACE_TERM_INDEX, U32_LEN, U64_LEN, WITH_SUBSPACE,
 };
 
 use super::{
@@ -294,7 +294,6 @@ impl<T: ResolveId> ValueClass<T> {
             ValueClass::Lookup(lookup) => match lookup {
                 LookupClass::Key(key) => serializer.write(key.as_slice()),
                 LookupClass::Counter(key) => serializer.write(key.as_slice()),
-                LookupClass::CounterExpiry(key) => serializer.write(key.as_slice()),
             },
             ValueClass::Directory(directory) => match directory {
                 DirectoryClass::NameToId(name) => serializer.write(0u8).write(name.as_slice()),
@@ -515,9 +514,7 @@ impl<T> ValueClass<T> {
         match self {
             ValueClass::Property(_) | ValueClass::TermIndex => U32_LEN * 2 + 3,
             ValueClass::Acl(_) => U32_LEN * 3 + 2,
-            ValueClass::Lookup(
-                LookupClass::Counter(v) | LookupClass::CounterExpiry(v) | LookupClass::Key(v),
-            )
+            ValueClass::Lookup(LookupClass::Counter(v) | LookupClass::Key(v))
             | ValueClass::Config(v) => v.len(),
             ValueClass::Directory(d) => match d {
                 DirectoryClass::NameToId(v)
@@ -566,7 +563,6 @@ impl<T> ValueClass<T> {
             ValueClass::Lookup(lookup) => match lookup {
                 LookupClass::Key(_) => SUBSPACE_LOOKUP_VALUE,
                 LookupClass::Counter(_) => SUBSPACE_COUNTER,
-                LookupClass::CounterExpiry(_) => SUBSPACE_LOOKUP_EXPIRY,
             },
             ValueClass::Directory(directory) => match directory {
                 DirectoryClass::UsedQuota(_) => SUBSPACE_QUOTA,

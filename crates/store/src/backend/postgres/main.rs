@@ -96,7 +96,6 @@ impl PostgresStore {
             SUBSPACE_BLOB_RESERVE,
             SUBSPACE_BLOB_LINK,
             SUBSPACE_LOOKUP_VALUE,
-            SUBSPACE_LOOKUP_EXPIRY,
             SUBSPACE_PROPERTY,
             SUBSPACE_SETTINGS,
             SUBSPACE_QUEUE_MESSAGE,

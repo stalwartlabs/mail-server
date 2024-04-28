@@ -108,9 +108,10 @@ impl LookupStore {
 
                 if let Some(expires) = expires {
                     batch.ops.push(Operation::Value {
-                        class: ValueClass::Lookup(LookupClass::CounterExpiry(key.clone())),
+                        class: ValueClass::Lookup(LookupClass::Key(key.clone())),
                         op: ValueOp::Set(
-                            KeySerializer::new(U64_LEN)
+                            KeySerializer::new(U64_LEN * 2)
+                                .write(0u64)
                                 .write(now() + expires)
                                 .finalize()
                                 .into(),
@@ -282,21 +283,28 @@ impl LookupStore {
     pub async fn purge_lookup_store(&self) -> crate::Result<()> {
         match self {
             LookupStore::Store(store) => {
-                // Delete expired keys
+                // Delete expired keys and counters
                 let from_key = ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![0u8])));
                 let to_key =
                     ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![u8::MAX; 10])));
 
                 let current_time = now();
                 let mut expired_keys = Vec::new();
+                let mut expired_counters = Vec::new();
                 store
                     .iterate(IterateParams::new(from_key, to_key), |key, value| {
-                        if value.deserialize_be_u64(0)? <= current_time {
+                        let expiry = value.deserialize_be_u64(0)?;
+                        if expiry == 0 {
+                            if value.deserialize_be_u64(U64_LEN)? <= current_time {
+                                expired_counters.push(key.to_vec());
+                            }
+                        } else if expiry <= current_time {
                             expired_keys.push(key.to_vec());
                         }
                         Ok(true)
                     })
                     .await?;
+
                 if !expired_keys.is_empty() {
                     let mut batch = BatchBuilder::new();
                     for key in expired_keys {
@@ -314,33 +322,15 @@ impl LookupStore {
                     }
                 }
 
-                // Delete expired counters
-                let from_key =
-                    ValueKey::from(ValueClass::Lookup(LookupClass::CounterExpiry(vec![0u8])));
-                let to_key = ValueKey::from(ValueClass::Lookup(LookupClass::CounterExpiry(vec![
-                        u8::MAX;
-                        10
-                    ])));
-
-                let current_time = now();
-                let mut expired_keys = Vec::new();
-                store
-                    .iterate(IterateParams::new(from_key, to_key), |key, value| {
-                        if value.deserialize_be_u64(0)? <= current_time {
-                            expired_keys.push(key.to_vec());
-                        }
-                        Ok(true)
-                    })
-                    .await?;
-                if !expired_keys.is_empty() {
+                if !expired_counters.is_empty() {
                     let mut batch = BatchBuilder::new();
-                    for key in expired_keys {
+                    for key in expired_counters {
                         batch.ops.push(Operation::Value {
                             class: ValueClass::Lookup(LookupClass::Counter(key.clone())),
                             op: ValueOp::Clear,
                         });
                         batch.ops.push(Operation::Value {
-                            class: ValueClass::Lookup(LookupClass::CounterExpiry(key)),
+                            class: ValueClass::Lookup(LookupClass::Key(key)),
                             op: ValueOp::Clear,
                         });
                         if batch.ops.len() >= 1000 {

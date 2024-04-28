@@ -28,9 +28,9 @@ use std::{
 
 use foundationdb::{
     options::{self, MutationType, StreamingMode},
-    FdbError, KeySelector, RangeOption,
+    FdbError, KeySelector, RangeOption, Transaction,
 };
-use futures::StreamExt;
+use futures::TryStreamExt;
 use rand::Rng;
 use roaring::RoaringBitmap;
 
@@ -46,7 +46,7 @@ use crate::{
 
 use super::{
     read::{read_chunked_value, ChunkedValue},
-    FdbStore, MAX_VALUE_SIZE,
+    FdbStore, ReadVersion, MAX_VALUE_SIZE,
 };
 
 impl FdbStore {
@@ -180,7 +180,7 @@ impl FdbStore {
                             }
                             .serialize(WITH_SUBSPACE);
                             let key_len = begin.len();
-                            let mut values = trx.get_ranges(
+                            let mut values = trx.get_ranges_keyvalues(
                                 RangeOption {
                                     begin: KeySelector::first_greater_or_equal(begin),
                                     end: KeySelector::first_greater_or_equal(end),
@@ -191,15 +191,12 @@ impl FdbStore {
                                 true,
                             );
                             let mut found_ids = RoaringBitmap::new();
-                            while let Some(values) = values.next().await {
-                                for value in values? {
-                                    let key = value.key();
-                                    if key.len() == key_len {
-                                        found_ids
-                                            .insert(key.deserialize_be_u32(key_len - U32_LEN)?);
-                                    } else {
-                                        break;
-                                    }
+                            while let Some(value) = values.try_next().await? {
+                                let key = value.key();
+                                if key.len() == key_len {
+                                    found_ids.insert(key.deserialize_be_u32(key_len - U32_LEN)?);
+                                } else {
+                                    break;
                                 }
                             }
                             document_id = found_ids.random_available_id();
@@ -272,19 +269,38 @@ impl FdbStore {
                 }
             }
 
-            match trx.commit().await {
-                Ok(_) => {
-                    return Ok(result);
+            if self
+                .commit(
+                    trx,
+                    retry_count < MAX_COMMIT_ATTEMPTS && start.elapsed() < MAX_COMMIT_TIME,
+                )
+                .await?
+            {
+                return Ok(result);
+            } else {
+                let backoff = rand::thread_rng().gen_range(50..=300);
+                tokio::time::sleep(Duration::from_millis(backoff)).await;
+                retry_count += 1;
+            }
+        }
+    }
+
+    pub(crate) async fn commit(&self, trx: Transaction, will_retry: bool) -> crate::Result<bool> {
+        match trx.commit().await {
+            Ok(result) => {
+                let commit_version = result.committed_version()?;
+                let mut version = self.version.lock();
+                if commit_version > version.version {
+                    *version = ReadVersion::new(commit_version);
                 }
-                Err(err) => {
-                    if retry_count < MAX_COMMIT_ATTEMPTS && start.elapsed() < MAX_COMMIT_TIME {
-                        err.on_error().await?;
-                        let backoff = rand::thread_rng().gen_range(50..=300);
-                        tokio::time::sleep(Duration::from_millis(backoff)).await;
-                        retry_count += 1;
-                    } else {
-                        return Err(FdbError::from(err).into());
-                    }
+                Ok(true)
+            }
+            Err(err) => {
+                if will_retry {
+                    err.on_error().await?;
+                    Ok(false)
+                } else {
+                    Err(FdbError::from(err).into())
                 }
             }
         }
@@ -298,7 +314,7 @@ impl FdbStore {
             let from_key = [subspace, 0u8];
             let to_key = [subspace, u8::MAX, u8::MAX, u8::MAX, u8::MAX, u8::MAX];
 
-            let mut iter = trx.get_ranges(
+            let mut values = trx.get_ranges_keyvalues(
                 RangeOption {
                     begin: KeySelector::first_greater_or_equal(&from_key[..]),
                     end: KeySelector::first_greater_or_equal(&to_key[..]),
@@ -309,11 +325,9 @@ impl FdbStore {
                 true,
             );
 
-            while let Some(values) = iter.next().await {
-                for value in values? {
-                    if value.value().iter().all(|byte| *byte == 0) {
-                        delete_keys.push(value.key().to_vec());
-                    }
+            while let Some(value) = values.try_next().await? {
+                if value.value().iter().all(|byte| *byte == 0) {
+                    delete_keys.push(value.key().to_vec());
                 }
             }
         }
@@ -331,18 +345,11 @@ impl FdbStore {
                 for key in chunk {
                     trx.atomic_op(key, &integer, MutationType::CompareAndClear);
                 }
-                match trx.commit().await {
-                    Ok(_) => {
-                        break;
-                    }
-                    Err(err) => {
-                        if retry_count < MAX_COMMIT_ATTEMPTS {
-                            err.on_error().await?;
-                            retry_count += 1;
-                        } else {
-                            return Err(FdbError::from(err).into());
-                        }
-                    }
+
+                if self.commit(trx, retry_count < MAX_COMMIT_ATTEMPTS).await? {
+                    break;
+                } else {
+                    retry_count += 1;
                 }
             }
         }
@@ -356,9 +363,6 @@ impl FdbStore {
 
         let trx = self.db.create_trx()?;
         trx.clear_range(&from, &to);
-        trx.commit()
-            .await
-            .map_err(|err| FdbError::from(err).into())
-            .map(|_| ())
+        self.commit(trx, false).await.map(|_| ())
     }
 }
