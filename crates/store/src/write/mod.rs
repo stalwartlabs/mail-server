@@ -167,10 +167,16 @@ pub enum ValueClass<T> {
     TermIndex,
     Directory(DirectoryClass<T>),
     Blob(BlobOp),
-    IndexEmail(u64),
+    IndexEmail(IndexEmailClass),
     Config(Vec<u8>),
     Queue(QueueClass),
     Report(ReportClass),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum IndexEmailClass {
+    Insert { seq: u64, hash: BlobHash },
+    Delete { seq: u64 },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

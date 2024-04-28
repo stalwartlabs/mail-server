@@ -50,9 +50,10 @@ use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue}
 use store::{
     write::{
         log::{Changes, LogInsert},
-        BatchBuilder, Bincode, MaybeDynamicId, TagValue, ValueClass, F_BITMAP, F_VALUE,
+        BatchBuilder, Bincode, IndexEmailClass, MaybeDynamicId, TagValue, ValueClass, F_BITMAP,
+        F_VALUE,
     },
-    BlobClass,
+    BlobClass, Serialize,
 };
 use utils::map::vec_map::VecMap;
 
@@ -416,8 +417,11 @@ impl JMAP {
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, change_id, F_VALUE)
             .set(
-                ValueClass::IndexEmail(self.generate_snowflake_id()?),
-                metadata.blob_hash.as_ref(),
+                ValueClass::IndexEmail(IndexEmailClass::Insert {
+                    seq: self.generate_snowflake_id()?,
+                    hash: metadata.blob_hash.clone(),
+                }),
+                0u64.serialize(),
             )
             .custom(EmailIndexBuilder::set(metadata));
 

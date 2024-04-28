@@ -40,8 +40,8 @@ use store::{
     query::Filter,
     write::{
         log::{ChangeLogBuilder, Changes, LogInsert},
-        now, AssignedIds, BatchBuilder, BitmapClass, MaybeDynamicId, MaybeDynamicValue,
-        SerializeWithId, TagValue, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
+        now, AssignedIds, BatchBuilder, BitmapClass, IndexEmailClass, MaybeDynamicId,
+        MaybeDynamicValue, SerializeWithId, TagValue, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
     },
     BitmapKey, BlobClass, Serialize,
 };
@@ -340,11 +340,13 @@ impl JMAP {
             .set(Property::ThreadId, maybe_thread_id)
             .tag(Property::ThreadId, TagValue::Id(maybe_thread_id), 0)
             .set(
-                ValueClass::IndexEmail(
-                    self.generate_snowflake_id()
+                ValueClass::IndexEmail(IndexEmailClass::Insert {
+                    seq: self
+                        .generate_snowflake_id()
                         .map_err(|_| IngestError::Temporary)?,
-                ),
-                blob_id.hash.as_ref(),
+                    hash: blob_id.hash.clone(),
+                }),
+                0u64.serialize(),
             );
 
         // Insert and obtain ids
