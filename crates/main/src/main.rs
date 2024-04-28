@@ -41,7 +41,8 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     // Load config and apply macros
-    let init = BootManager::init().await;
+    // To load config through some path, use init(Some(/path/to/config/file))
+    let init = BootManager::init(None).await;
 
     // Parse core
     let mut config = init.config;
