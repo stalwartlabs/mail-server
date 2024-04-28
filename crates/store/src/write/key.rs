@@ -34,8 +34,8 @@ use crate::{
 };
 
 use super::{
-    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportClass,
-    ReportEvent, ResolveId, TagValue, ValueClass,
+    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, IndexEmailClass, LookupClass,
+    QueueClass, ReportClass, ReportEvent, ResolveId, TagValue, ValueClass,
 };
 
 pub struct KeySerializer {
@@ -271,9 +271,16 @@ impl<T: ResolveId> ValueClass<T> {
                 .write(account_id)
                 .write(collection)
                 .write(document_id),
-            ValueClass::IndexEmail(seq) => {
-                serializer.write(*seq).write(account_id).write(document_id)
-            }
+            ValueClass::IndexEmail(index) => match index {
+                IndexEmailClass::Insert { seq, hash } => serializer
+                    .write(*seq)
+                    .write(account_id)
+                    .write(document_id)
+                    .write::<&[u8]>(hash.as_ref()),
+                IndexEmailClass::Delete { seq } => {
+                    serializer.write(*seq).write(account_id).write(document_id)
+                }
+            },
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { hash, until } => serializer
                     .write(account_id)
@@ -527,7 +534,7 @@ impl<T> ValueClass<T> {
                 BlobOp::Reserve { .. } => BLOB_HASH_LEN + U64_LEN + U32_LEN + 1,
                 BlobOp::Commit { .. } | BlobOp::Link { .. } => BLOB_HASH_LEN + U32_LEN * 2 + 2,
             },
-            ValueClass::IndexEmail { .. } => U64_LEN * 2,
+            ValueClass::IndexEmail { .. } => BLOB_HASH_LEN + U64_LEN * 2,
             ValueClass::Queue(q) => match q {
                 QueueClass::Message(_) => U64_LEN,
                 QueueClass::MessageEvent(_) => U64_LEN * 2,
@@ -554,7 +561,7 @@ impl<T> ValueClass<T> {
             }
             ValueClass::TermIndex => SUBSPACE_TERM_INDEX,
             ValueClass::Acl(_) => SUBSPACE_ACL,
-            ValueClass::IndexEmail(_) => SUBSPACE_FTS_INDEX,
+            ValueClass::IndexEmail { .. } => SUBSPACE_FTS_INDEX,
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { .. } => SUBSPACE_BLOB_RESERVE,
                 BlobOp::Commit { .. } | BlobOp::Link { .. } => SUBSPACE_BLOB_LINK,

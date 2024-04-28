@@ -101,7 +101,7 @@ impl SMTP {
                     if event.lock_expiry < now {
                         events.push(event);
                     } else {
-                        tracing::debug!(
+                        tracing::trace!(
                             context = "queue",
                             event = "locked",
                             id = event.queue_id,
