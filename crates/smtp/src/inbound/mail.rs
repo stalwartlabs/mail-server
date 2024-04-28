@@ -109,7 +109,9 @@ impl<T: SessionStream> Session<T> {
         if !self.data.authenticated_as.is_empty()
             && self.params.auth_match_sender
             && (self.data.authenticated_as != address_lcase
-                && !self.data.authenticated_emails.contains(&address_lcase))
+                && !self.data.authenticated_emails.iter().any(|e| {
+                    e == &address_lcase || (e.starts_with('@') && address_lcase.ends_with(e))
+                }))
         {
             return self
                 .write(b"501 5.5.4 You are not allowed to send from this address.\r\n")
