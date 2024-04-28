@@ -210,7 +210,7 @@ fn build_dns_updater(config: &mut Config, acme_id: &str) -> Option<DnsUpdater> {
                 })
                 .ok()?;
             let key = STANDARD
-                .decode(config.value_require(("acme", acme_id, "secret"))?)
+                .decode(config.value_require(("acme", acme_id, "secret"))?.trim())
                 .map_err(|_| {
                     config.new_parse_error(
                         ("acme", acme_id, "secret"),
@@ -230,7 +230,10 @@ fn build_dns_updater(config: &mut Config, acme_id: &str) -> Option<DnsUpdater> {
 
             DnsUpdater::new_rfc2136_tsig(
                 addr,
-                config.value_require(("acme", acme_id, "key"))?.to_string(),
+                config
+                    .value_require(("acme", acme_id, "key"))?
+                    .trim()
+                    .to_string(),
                 key,
                 algorithm,
             )
@@ -250,8 +253,9 @@ fn build_dns_updater(config: &mut Config, acme_id: &str) -> Option<DnsUpdater> {
             DnsUpdater::new_cloudflare(
                 config
                     .value_require(("acme", acme_id, "secret"))?
+                    .trim()
                     .to_string(),
-                config.value(("acme", acme_id, "user")),
+                config.value(("acme", acme_id, "user")).map(|s| s.trim()),
                 timeout.into(),
             )
             .map_err(|err| {
