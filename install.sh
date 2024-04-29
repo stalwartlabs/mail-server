@@ -6,6 +6,7 @@
 set -e
 set -u
 
+readonly EMBED_DIR="$(dirname "$0")/resources"
 readonly BASE_URL="https://github.com/stalwartlabs/mail-server/releases/latest/download"
 
 main() {
@@ -131,29 +132,7 @@ main() {
 # Functions to create service files
 create_service_linux() {
     local _dir="$1"
-    cat <<EOF | sed "s|__PATH__|$_dir|g" > /etc/systemd/system/stalwart-mail.service
-[Unit]
-Description=Stalwart Mail Server Server
-Conflicts=postfix.service sendmail.service exim4.service
-ConditionPathExists=__PATH__/etc/config.toml
-After=network-online.target
- 
-[Service]
-Type=simple
-LimitNOFILE=65536
-KillMode=process
-KillSignal=SIGINT
-Restart=on-failure
-RestartSec=5
-ExecStart=__PATH__/bin/stalwart-mail --config=__PATH__/etc/config.toml
-PermissionsStartOnly=true
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=stalwart-mail
- 
-[Install]
-WantedBy=multi-user.target
-EOF
+    cat <$EMBED_DIR/systemd/stalwart-mail.service | sed "s|__PATH__|$_dir|g" > /etc/systemd/system/stalwart-mail.service
     systemctl daemon-reload
     systemctl enable stalwart-mail.service
     systemctl restart stalwart-mail.service
@@ -161,28 +140,7 @@ EOF
 
 create_service_macos() {
     local _dir="$1"
-    cat <<EOF | sed "s|__PATH__|$_dir|g" > /Library/LaunchAgents/stalwart.mail.plist
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN"
-    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-    <dict>
-        <key>Label</key>
-        <string>stalwart.mail</string>
-        <key>ServiceDescription</key>
-        <string>Stalwart Mail Server</string>
-        <key>ProgramArguments</key>
-        <array>
-            <string>__PATH__/bin/stalwart-mail</string>
-            <string>--config=__PATH__/etc/config.toml</string>
-        </array>
-        <key>RunAtLoad</key>
-        <true/>
-        <key>KeepAlive</key>
-        <true/>
-    </dict>
-</plist>
-EOF
+    cat <$EMBED_DIR/systemd/stalwart.mail.plist | sed "s|__PATH__|$_dir|g" > /Library/LaunchAgents/stalwart.mail.plist
     launchctl load /Library/LaunchAgents/stalwart.mail.plist
     launchctl enable system/stalwart.mail
     launchctl start system/stalwart.mail
