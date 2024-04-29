@@ -7,6 +7,19 @@ on:
     tags: ["v*.*.*"]
 
 jobs:
+  shell:
+    name: Shell Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Individual scripts
+        run: shellcheck -S error heredoc-bundler.sh install.sh
+
+      - name: Bundled script
+        run: ./heredoc-bundler.sh <install.sh | shellcheck -S error -
+
   style:
     name: Check Style
     runs-on: ubuntu-latest
