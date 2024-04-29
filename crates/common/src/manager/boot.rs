@@ -52,6 +52,19 @@ pub struct BootManager {
     pub guards: Option<Vec<WorkerGuard>>,
 }
 
+const HELP: &str = r#"Stalwart Mail Server
+
+Usage: stalwart-mail [OPTIONS]
+
+Options:
+  -c, --config <PATH>              Start server with the specified configuration file
+  -b, --backup <PATH>              Backup all data to a specific path
+  -r, --restore <PATH>             Restore all data from a specific path
+  -i, --init <PATH>                Initialize a new server at a specific path
+  -h, --help                       Print help
+  -V, --version                    Print version
+"#;
+
 impl BootManager {
     pub async fn init() -> Self {
         let mut config_path = std::env::var("CONFIG_PATH").ok();
@@ -64,31 +77,70 @@ impl BootManager {
                 .and_then(|arg| arg.strip_prefix("--").map(|arg| arg.to_string()))
             {
                 let (key, value) = if let Some((key, value)) = arg.split_once('=') {
-                    (key.to_string(), value.trim().to_string())
-                } else if let Some(value) = args.next() {
-                    (arg, value)
+                    (key.to_string(), Some(value.trim().to_string()))
                 } else {
-                    failed(&format!("Invalid command line argument: {arg}"));
+                    (arg, args.next())
                 };
 
                 match key.as_str() {
-                    "config" => {
-                        config_path = Some(value);
+                    "help" | "h" => {
+                        println!("{HELP}");
+                        std::process::exit(0);
                     }
-                    "init" => {
-                        quickstart(value);
+                    "version" | "V" => {
+                        println!("{}", env!("CARGO_PKG_VERSION"));
+                        std::process::exit(0);
+                    }
+                    _ => (),
+                }
+
+                match key.as_str() {
+                    "config" | "c" => {
+                        config_path = Some(value.unwrap_or_else(|| {
+                            failed(&format!(
+                                "Missing value for argument '{key}', try '--help'."
+                            ))
+                        }));
+                    }
+                    "init" | "i" => {
+                        quickstart(value.unwrap_or_else(|| {
+                            failed(&format!(
+                                "Missing value for argument '{key}', try '--help'."
+                            ))
+                        }));
+                        std::process::exit(0);
+                    }
+
+                    "backup" | "b" => {
+                        let path = value.unwrap_or_else(|| {
+                            failed(&format!(
+                                "Missing value for argument '{key}', try '--help'."
+                            ))
+                        });
+                        std::process::exit(0);
+                    }
+                    "restore" | "r" => {
+                        let path = value.unwrap_or_else(|| {
+                            failed(&format!(
+                                "Missing value for argument '{key}', try '--help'."
+                            ))
+                        });
                         std::process::exit(0);
                     }
                     _ => {
-                        failed(&format!("Invalid command line argument: {key}"));
+                        failed(&format!("Unrecognized command '{key}', try '--help'."));
                     }
                 }
+            }
+
+            if config_path.is_none() {
+                println!("{HELP}");
+                std::process::exit(0);
             }
         }
 
         // Read main configuration file
-        let cfg_local_path =
-            PathBuf::from(config_path.failed("Missing parameter --config=<path-to-config>."));
+        let cfg_local_path = PathBuf::from(config_path.unwrap());
         let mut config = Config::default();
         match std::fs::read_to_string(&cfg_local_path) {
             Ok(value) => {
