@@ -147,8 +147,8 @@ Restart=on-failure
 RestartSec=5
 ExecStart=__PATH__/bin/stalwart-mail --config=__PATH__/etc/config.toml
 PermissionsStartOnly=true
-StandardOutput=syslog
-StandardError=syslog
+StandardOutput=journal
+StandardError=journal
 SyslogIdentifier=stalwart-mail
  
 [Install]
