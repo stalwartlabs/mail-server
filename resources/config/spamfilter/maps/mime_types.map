@@ -115,6 +115,9 @@ spam-mime = {
 "xll" = "BAD",
 "xnk" = "BAD",
 "docx" = "NZ",
+"docm" = "BAD",
+"pptm" = "BAD",
+"xlsm" = "BAD",
 "pdf" = "application/pdf|application/x-pdf|NZ",
 "pptx" = "NZ",
 "wsf" = "NZ",
@@ -128,4 +131,3 @@ spam-mime = {
 "xz" = "AR",
 "zip" = "AR",
 "txt" = "text/plain|message/disposition-notification|text/rfc822-headers"}
-
