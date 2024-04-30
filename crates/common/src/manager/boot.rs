@@ -58,21 +58,28 @@ Usage: stalwart-mail [OPTIONS]
 
 Options:
   -c, --config <PATH>              Start server with the specified configuration file
-  -b, --backup <PATH>              Backup all data to a specific path
-  -r, --restore <PATH>             Restore all data from a specific path
-  -i, --init <PATH>                Initialize a new server at a specific path
+  -e, --export <PATH>              Export all store data to a specific path
+  -i, --import <PATH>              Import store data from a specific path
+  -I, --init <PATH>                Initialize a new server at a specific path
   -h, --help                       Print help
   -V, --version                    Print version
 "#;
 
+enum ImportExport {
+    Export(PathBuf),
+    Import(PathBuf),
+    None,
+}
+
 impl BootManager {
     pub async fn init() -> Self {
         let mut config_path = std::env::var("CONFIG_PATH").ok();
+        let mut art_vandelay = ImportExport::None;
 
         if config_path.is_none() {
             let mut args = std::env::args().skip(1);
 
-            if let Some(arg) = args
+            while let Some(arg) = args
                 .next()
                 .and_then(|arg| arg.strip_prefix("--").map(|arg| arg.to_string()))
             {
@@ -82,54 +89,34 @@ impl BootManager {
                     (arg, args.next())
                 };
 
-                match key.as_str() {
-                    "help" | "h" => {
+                match (key.as_str(), value) {
+                    ("help" | "h", _) => {
                         println!("{HELP}");
                         std::process::exit(0);
                     }
-                    "version" | "V" => {
+                    ("version" | "V", _) => {
                         println!("{}", env!("CARGO_PKG_VERSION"));
                         std::process::exit(0);
                     }
-                    _ => (),
-                }
-
-                match key.as_str() {
-                    "config" | "c" => {
-                        config_path = Some(value.unwrap_or_else(|| {
-                            failed(&format!(
-                                "Missing value for argument '{key}', try '--help'."
-                            ))
-                        }));
+                    ("config" | "c", Some(value)) => {
+                        config_path = Some(value);
                     }
-                    "init" | "i" => {
-                        quickstart(value.unwrap_or_else(|| {
-                            failed(&format!(
-                                "Missing value for argument '{key}', try '--help'."
-                            ))
-                        }));
+                    ("init" | "I", Some(value)) => {
+                        quickstart(value);
                         std::process::exit(0);
                     }
-
-                    "backup" | "b" => {
-                        let path = value.unwrap_or_else(|| {
-                            failed(&format!(
-                                "Missing value for argument '{key}', try '--help'."
-                            ))
-                        });
-                        std::process::exit(0);
+                    ("export" | "e", Some(value)) => {
+                        art_vandelay = ImportExport::Export(value.into());
                     }
-                    "restore" | "r" => {
-                        let path = value.unwrap_or_else(|| {
-                            failed(&format!(
-                                "Missing value for argument '{key}', try '--help'."
-                            ))
-                        });
-                        std::process::exit(0);
+                    ("import" | "i", Some(value)) => {
+                        art_vandelay = ImportExport::Import(value.into());
                     }
-                    _ => {
+                    (_, None) => {
                         failed(&format!("Unrecognized command '{key}', try '--help'."));
                     }
+                    (_, Some(_)) => failed(&format!(
+                        "Missing value for argument '{key}', try '--help'."
+                    )),
                 }
             }
 
@@ -312,18 +299,30 @@ impl BootManager {
         stores.parse_lookups(&mut config).await;
 
         // Parse settings and build shared core
-        let core = Core::parse(&mut config, stores, manager)
-            .await
-            .into_shared();
+        let core = Core::parse(&mut config, stores, manager).await;
 
-        // Parse TCP acceptors
-        servers.parse_tcp_acceptors(&mut config, core.clone());
+        match art_vandelay {
+            ImportExport::None => {
+                let core = core.into_shared();
 
-        BootManager {
-            core,
-            guards,
-            config,
-            servers,
+                // Parse TCP acceptors
+                servers.parse_tcp_acceptors(&mut config, core.clone());
+
+                BootManager {
+                    core,
+                    guards,
+                    config,
+                    servers,
+                }
+            }
+            ImportExport::Export(path) => {
+                core.backup(path).await;
+                std::process::exit(0);
+            }
+            ImportExport::Import(path) => {
+                core.restore(path).await;
+                std::process::exit(0);
+            }
         }
     }
 }

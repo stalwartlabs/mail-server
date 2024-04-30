@@ -1,0 +1,375 @@
+/*
+ * Copyright (c) 2023, Stalwart Labs Ltd.
+ *
+ * This file is part of the Stalwart Mail Server.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * in the LICENSE file at the top-level directory of this distribution.
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * You can be released from the requirements of the AGPLv3 license by
+ * purchasing a commercial license. Please contact licensing@stalw.art
+ * for more details.
+*/
+
+use ahash::AHashSet;
+use common::Core;
+use jmap_proto::types::{collection::Collection, property::Property};
+use store::{
+    rand,
+    write::{
+        AnyKey, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass, LookupClass,
+        Operation, QueueClass, QueueEvent, TagValue, ValueClass,
+    },
+    IterateParams, Store, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
+    SUBSPACE_LOGS, SUBSPACE_VALUES,
+};
+use utils::BlobHash;
+
+use crate::store::TempDir;
+
+pub async fn test(db: Store) {
+    let mut core = Core::default();
+    core.storage.data = db.clone();
+    core.storage.blob = db.clone().into();
+    core.storage.fts = db.clone().into();
+    core.storage.lookup = db.clone().into();
+
+    // Make sure the store is empty
+    db.assert_is_empty(db.clone().into()).await;
+
+    // Create blobs
+    println!("Creating blobs...");
+    let mut batch = BatchBuilder::new();
+    let mut blob_hashes = Vec::new();
+    for blob_size in [16, 128, 1024, 2056, 102400] {
+        let data = random_bytes(blob_size);
+        let hash = BlobHash::from(data.as_slice());
+        blob_hashes.push(hash.clone());
+        core.storage
+            .blob
+            .put_blob(hash.as_ref(), &data)
+            .await
+            .unwrap();
+        batch.set(ValueClass::Blob(BlobOp::Commit { hash }), vec![]);
+    }
+    db.write(batch.build()).await.unwrap();
+
+    // Create account data
+    println!("Creating account data...");
+    for account_id in 0u32..10u32 {
+        let mut batch = BatchBuilder::new();
+        batch.with_account_id(account_id);
+
+        // Create properties of different sizes
+        for collection in [0, 1, 2, 3] {
+            batch.with_collection(collection);
+
+            for document_id in [0, 10, 20, 30, 40] {
+                batch.create_document(document_id);
+
+                if collection == u8::from(Collection::Mailbox) {
+                    batch
+                        .set(
+                            ValueClass::Property(Property::Value.into()),
+                            random_bytes(10),
+                        )
+                        .add(
+                            ValueClass::Property(Property::EmailIds.into()),
+                            rand::random(),
+                        );
+                }
+
+                for (idx, value_size) in [16, 128, 1024, 2056, 102400].into_iter().enumerate() {
+                    batch.set(ValueClass::Property(idx as u8), random_bytes(value_size));
+                }
+
+                for value_size in [16, 128, 1024, 2056, 102400] {
+                    batch.set(ValueClass::TermIndex, random_bytes(value_size));
+                }
+
+                for grant_account_id in 0u32..10u32 {
+                    if account_id != grant_account_id {
+                        batch.set(
+                            ValueClass::Acl(grant_account_id),
+                            vec![account_id as u8, grant_account_id as u8, document_id as u8],
+                        );
+                    }
+                }
+
+                for hash in &blob_hashes {
+                    batch.set(
+                        ValueClass::Blob(BlobOp::Link { hash: hash.clone() }),
+                        vec![],
+                    );
+                }
+
+                batch.ops.push(Operation::Log {
+                    change_id: document_id as u64 + account_id as u64 + collection as u64,
+                    collection,
+                    set: vec![account_id as u8, collection, document_id as u8],
+                });
+
+                for field in 0..5 {
+                    batch.ops.push(Operation::Bitmap {
+                        class: BitmapClass::Tag {
+                            field,
+                            value: TagValue::Id(rand::random()),
+                        },
+                        set: true,
+                    });
+
+                    batch.ops.push(Operation::Bitmap {
+                        class: BitmapClass::Tag {
+                            field,
+                            value: TagValue::Static(rand::random()),
+                        },
+                        set: true,
+                    });
+
+                    batch.ops.push(Operation::Bitmap {
+                        class: BitmapClass::Tag {
+                            field,
+                            value: TagValue::Text(random_bytes(field as usize + 2)),
+                        },
+                        set: true,
+                    });
+
+                    batch.ops.push(Operation::Bitmap {
+                        class: BitmapClass::Text {
+                            field,
+                            token: BitmapHash::new(&random_bytes(field as usize + 2)),
+                        },
+                        set: true,
+                    });
+
+                    batch.ops.push(Operation::Index {
+                        field,
+                        key: random_bytes(field as usize + 2),
+                        set: true,
+                    });
+                }
+            }
+        }
+
+        db.write(batch.build()).await.unwrap();
+    }
+
+    // Create queue, config and lookup data
+    println!("Creating queue, config and lookup data...");
+    let mut batch = BatchBuilder::new();
+    for idx in [1, 2, 3, 4, 5] {
+        batch.set(
+            ValueClass::Queue(QueueClass::Message(rand::random())),
+            random_bytes(idx),
+        );
+        batch.set(
+            ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                due: rand::random(),
+                queue_id: rand::random(),
+            })),
+            random_bytes(idx),
+        );
+        batch.set(
+            ValueClass::Lookup(LookupClass::Key(random_bytes(idx))),
+            random_bytes(idx),
+        );
+        batch.add(
+            ValueClass::Lookup(LookupClass::Counter(random_bytes(idx))),
+            rand::random(),
+        );
+        batch.set(
+            ValueClass::Config(random_bytes(idx + 10)),
+            random_bytes(idx + 10),
+        );
+    }
+    db.write(batch.build()).await.unwrap();
+
+    // Create directory data
+    println!("Creating directory data...");
+    let mut batch = BatchBuilder::new();
+    batch
+        .with_account_id(u32::MAX)
+        .with_collection(Collection::Principal);
+
+    for account_id in [1, 2, 3, 4, 5] {
+        batch
+            .create_document(account_id)
+            .add(
+                ValueClass::Directory(DirectoryClass::UsedQuota(account_id)),
+                rand::random(),
+            )
+            .set(
+                ValueClass::Directory(DirectoryClass::NameToId(random_bytes(
+                    2 + account_id as usize,
+                ))),
+                random_bytes(4),
+            )
+            .set(
+                ValueClass::Directory(DirectoryClass::EmailToId(random_bytes(
+                    4 + account_id as usize,
+                ))),
+                random_bytes(4),
+            )
+            .set(
+                ValueClass::Directory(DirectoryClass::Domain(random_bytes(
+                    4 + account_id as usize,
+                ))),
+                random_bytes(4),
+            )
+            .set(
+                ValueClass::Directory(DirectoryClass::Principal(account_id)),
+                random_bytes(30),
+            )
+            .set(
+                ValueClass::Directory(DirectoryClass::MemberOf {
+                    principal_id: account_id,
+                    member_of: rand::random(),
+                }),
+                random_bytes(15),
+            )
+            .set(
+                ValueClass::Directory(DirectoryClass::Members {
+                    principal_id: account_id,
+                    has_member: rand::random(),
+                }),
+                random_bytes(15),
+            );
+    }
+    db.write(batch.build()).await.unwrap();
+
+    // Obtain store hash
+    println!("Calculating store hash...");
+    let snapshot = Snapshot::new(&db).await;
+    assert!(!snapshot.keys.is_empty(), "Store hash counts are empty",);
+
+    // Export store
+    println!("Exporting store...");
+    let temp_dir = TempDir::new("art_vandelay_tests", true);
+    core.backup(temp_dir.path.clone()).await;
+
+    // Destroy store
+    println!("Destroying store...");
+    db.destroy().await;
+    db.assert_is_empty(db.clone().into()).await;
+
+    // Import store
+    println!("Importing store...");
+    core.restore(temp_dir.path.clone()).await;
+
+    // Verify hash
+    print!("Verifying store hash...");
+    snapshot.assert_is_eq(&Snapshot::new(&db).await);
+    println!(" GREAT SUCCESS!");
+
+    // Destroy store
+    db.destroy().await;
+    temp_dir.delete();
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Snapshot {
+    keys: AHashSet<KeyValue>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct KeyValue {
+    subspace: u8,
+    key: Vec<u8>,
+    value: Vec<u8>,
+}
+
+impl Snapshot {
+    async fn new(db: &Store) -> Self {
+        #[cfg(feature = "rocks")]
+        let is_rocks = matches!(db, Store::RocksDb(_));
+        #[cfg(not(feature = "rocks"))]
+        let is_rocks = false;
+        #[cfg(feature = "foundationdb")]
+        let is_fdb = matches!(db, Store::FoundationDb(_));
+        #[cfg(not(feature = "foundationdb"))]
+        let is_fdb = false;
+        let is_sql = matches!(
+            db,
+            Store::SQLite(_) | Store::PostgreSQL(_) | Store::MySQL(_)
+        );
+
+        let mut keys = AHashSet::new();
+
+        for (subspace, with_values) in [
+            (SUBSPACE_VALUES, true),
+            (SUBSPACE_COUNTERS, !is_sql),
+            (SUBSPACE_BLOBS, true),
+            (SUBSPACE_LOGS, true),
+            (SUBSPACE_BITMAPS, is_rocks | is_fdb),
+            (SUBSPACE_INDEXES, false),
+        ] {
+            let from_key = AnyKey {
+                subspace,
+                key: vec![0u8],
+            };
+            let to_key = AnyKey {
+                subspace,
+                key: vec![u8::MAX; 10],
+            };
+
+            db.iterate(
+                IterateParams::new(from_key, to_key).set_values(with_values),
+                |key, value| {
+                    keys.insert(KeyValue {
+                        subspace,
+                        key: key.to_vec(),
+                        value: value.to_vec(),
+                    });
+
+                    Ok(true)
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        Snapshot { keys }
+    }
+
+    fn assert_is_eq(&self, other: &Self) {
+        let mut is_err = false;
+        for key in &self.keys {
+            if !other.keys.contains(key) {
+                println!(
+                    "Subspace {}, Key {:?} not found in restored snapshot",
+                    char::from(key.subspace),
+                    key.key,
+                );
+                is_err = true;
+            }
+        }
+        for key in &other.keys {
+            if !self.keys.contains(key) {
+                println!(
+                    "Subspace {}, Key {:?} not found in original snapshot",
+                    char::from(key.subspace),
+                    key.key,
+                );
+                is_err = true;
+            }
+        }
+
+        if is_err {
+            panic!("Snapshot mismatch");
+        }
+    }
+}
+
+fn random_bytes(len: usize) -> Vec<u8> {
+    (0..len).map(|_| rand::random::<u8>()).collect()
+}

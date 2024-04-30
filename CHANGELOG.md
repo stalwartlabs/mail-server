@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.7.3] - 2024-05-01
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin version.
+
+## Added
+- Full database export and import functionality
+- Add --help and --version command line arguments (#365)
+- Allow catch-all addresses when validating must match sender
+
+### Changed
+- Add `groupOfUniqueNames` to the list of LDAP object classes
+
+### Fixed
+- Trim spaces in DNS-01 ACME secrets (#382)
+- Allow only one journald tracer (#375)
+- `authenticated_as` variable not usable for must-match-sender (#372)
+- Fixed `BOGUS_ENCRYPTED_AND_TEXT` spam filter rule
+- Fixed parsing of IPv6 DNS server addresses
 
 ## [0.7.2] - 2024-04-17
 

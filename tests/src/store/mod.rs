@@ -23,6 +23,7 @@
 
 pub mod assign_id;
 pub mod blob;
+pub mod import_export;
 pub mod lookup;
 pub mod ops;
 pub mod query;
@@ -106,6 +107,8 @@ pub async fn store_tests() {
     if insert {
         store.destroy().await;
     }
+
+    import_export::test(store.clone()).await;
     ops::test(store.clone()).await;
     query::test(store.clone(), FtsStore::Store(store.clone()), insert).await;
     assign_id::test(store).await;

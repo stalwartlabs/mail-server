@@ -27,9 +27,11 @@ use crate::USER_AGENT;
 
 use self::config::ConfigManager;
 
+pub mod backup;
 pub mod boot;
 pub mod config;
 pub mod reload;
+pub mod restore;
 pub mod webadmin;
 
 const DEFAULT_SPAMFILTER_URL: &str = "https://get.stalw.art/resources/config/spamfilter.toml";

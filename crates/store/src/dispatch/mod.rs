@@ -21,7 +21,27 @@
  * for more details.
 */
 
+use crate::Store;
+
 pub mod blob;
 pub mod fts;
 pub mod lookup;
 pub mod store;
+
+impl Store {
+    pub fn id(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Self::SQLite(_) => "sqlite",
+            #[cfg(feature = "foundation")]
+            Self::FoundationDb(_) => "foundationdb",
+            #[cfg(feature = "postgres")]
+            Self::PostgreSQL(_) => "postgresql",
+            #[cfg(feature = "mysql")]
+            Self::MySQL(_) => "mysql",
+            #[cfg(feature = "rocks")]
+            Self::RocksDb(_) => "rocksdb",
+            Self::None => "none",
+        }
+    }
+}
