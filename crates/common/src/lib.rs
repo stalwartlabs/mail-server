@@ -221,10 +221,28 @@ impl Core {
         if let (Some((fallback_admin, fallback_pass)), Credentials::Plain { username, secret }) =
             (&self.jmap.fallback_admin, credentials)
         {
-            if username == fallback_admin && verify_secret_hash(fallback_pass, secret).await {
-                return Ok(AuthResult::Success(Principal::fallback_admin(
-                    fallback_pass,
-                )));
+            // Check master user
+            let (user_account, admin_account) =
+                match (self.jmap.fallback_admin_master, username.rsplit_once('%')) {
+                    (true, Some((user_account, admin_account))) => {
+                        (Some(user_account), admin_account)
+                    }
+                    _ => (None, username.as_str()),
+                };
+
+            if admin_account == fallback_admin && verify_secret_hash(fallback_pass, secret).await {
+                return Ok(if let Some(user_account) = user_account {
+                    if let Some(principal) = directory
+                        .query(QueryBy::Name(user_account), return_member_of)
+                        .await?
+                    {
+                        AuthResult::Success(principal)
+                    } else {
+                        AuthResult::Failure
+                    }
+                } else {
+                    AuthResult::Success(Principal::fallback_admin(fallback_pass))
+                });
             }
         }
 
