@@ -76,6 +76,8 @@ impl Core {
 }
 
 async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
+    println!("Importing database dump from {}.", path.to_str().unwrap());
+
     let mut reader = OpReader::new(path).await;
     let mut account_id = u32::MAX;
     let mut document_id = u32::MAX;

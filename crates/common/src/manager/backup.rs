@@ -1089,6 +1089,8 @@ fn spawn_writer(path: PathBuf) -> (std::thread::JoinHandle<()>, SyncSender<Op>) 
     let (tx, rx) = mpsc::sync_channel(10);
 
     let handle = std::thread::spawn(move || {
+        println!("Exporting database to {}.", path.to_str().unwrap());
+
         let mut file =
             BufWriter::new(std::fs::File::create(path).failed("Failed to create backup file"));
         file.write_all(&[MAGIC_MARKER, FILE_VERSION])
