@@ -23,6 +23,7 @@
 
 use std::str::FromStr;
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use mail_auth::{
@@ -61,6 +62,7 @@ pub struct Message {
     pub priority: i16,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env_id: Option<String>,
+    pub blob_hash: String,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -559,6 +561,7 @@ impl From<&queue::Message> for Message {
                     expires: DateTime::from_timestamp(domain.expires as i64),
                 })
                 .collect(),
+            blob_hash: URL_SAFE_NO_PAD.encode::<&[u8]>(message.blob_hash.as_ref()),
         }
     }
 }

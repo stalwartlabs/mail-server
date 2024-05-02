@@ -21,19 +21,61 @@
  * for more details.
 */
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use common::manager::webadmin::Resource;
 use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
+use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
     JMAP,
 };
 
+use super::decode_path_element;
+
 impl JMAP {
     pub async fn handle_manage_store(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
-        match (path.get(1).copied(), req.method()) {
-            (Some("maintenance"), &Method::GET) => {
+        match (path.get(1).copied(), path.get(2).copied(), req.method()) {
+            (Some("blobs"), Some(blob_hash), &Method::GET) => {
+                match URL_SAFE_NO_PAD.decode(decode_path_element(blob_hash).as_bytes()) {
+                    Ok(blob_hash) => {
+                        match self
+                            .core
+                            .storage
+                            .blob
+                            .get_blob(&blob_hash, 0..usize::MAX)
+                            .await
+                        {
+                            Ok(Some(contents)) => {
+                                let params = UrlParams::new(req.uri().query());
+                                let offset = params.parse("offset").unwrap_or(0);
+                                let limit = params.parse("limit").unwrap_or(usize::MAX);
+
+                                let contents = if offset == 0 && limit == usize::MAX {
+                                    contents
+                                } else {
+                                    contents
+                                        .get(offset..std::cmp::min(offset + limit, contents.len()))
+                                        .unwrap_or_default()
+                                        .to_vec()
+                                };
+
+                                Resource {
+                                    content_type: "application/octet-stream",
+                                    contents,
+                                }
+                                .into_http_response()
+                            }
+                            Ok(None) => RequestError::not_found().into_http_response(),
+                            Err(err) => err.into_http_response(),
+                        }
+                    }
+                    Err(_) => RequestError::invalid_parameters().into_http_response(),
+                }
+            }
+            (Some("maintenance"), _, &Method::GET) => {
                 match self
                     .core
                     .storage
