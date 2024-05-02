@@ -212,14 +212,14 @@ impl JMAP {
             records.push(DnsRecord {
                 typ: "TXT".to_string(),
                 name: format!("{server_name}."),
-                content: "v=spf1 a -all ra=postmaster".to_string(),
+                content: "v=spf1 a -all".to_string(),
             });
         }
 
         records.push(DnsRecord {
             typ: "TXT".to_string(),
             name: format!("{domain_name}."),
-            content: "v=spf1 mx -all ra=postmaster".to_string(),
+            content: "v=spf1 mx -all".to_string(),
         });
 
         // Add DMARC records
