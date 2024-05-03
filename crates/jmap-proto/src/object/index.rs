@@ -26,7 +26,7 @@ use std::{borrow::Cow, collections::HashSet};
 use store::{
     write::{
         assert::HashedValue, BatchBuilder, BitmapClass, BitmapHash, IntoOperations, Operation,
-        TagValue, TokenizeText, ValueClass, ValueOp,
+        TokenizeText, ValueClass, ValueOp,
     },
     Serialize,
 };
@@ -632,14 +632,5 @@ impl IntoIndex for &Id {
 impl<T> From<Property> for ValueClass<T> {
     fn from(value: Property) -> Self {
         ValueClass::Property(value.into())
-    }
-}
-
-impl<T> From<Property> for BitmapClass<T> {
-    fn from(value: Property) -> Self {
-        BitmapClass::Tag {
-            field: value.into(),
-            value: TagValue::Static(0),
-        }
     }
 }

@@ -32,7 +32,7 @@ use store::{
     roaring::RoaringBitmap,
     write::{
         key::DeserializeBigEndian, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass,
-        LookupClass, Operation, TagValue, ValueClass,
+        LookupClass, MaybeDynamicId, MaybeDynamicValue, Operation, TagValue, ValueClass,
     },
     BlobStore, Store, U32_LEN,
 };
@@ -159,60 +159,65 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                 }
                 Family::Directory => {
                     let key = key.as_slice();
-                    let class = match key.first().expect("Failed to read directory key type") {
-                        0 => DirectoryClass::NameToId(
-                            key.get(1..)
-                                .expect("Failed to read directory string")
-                                .to_vec(),
-                        ),
-                        1 => DirectoryClass::EmailToId(
-                            key.get(1..)
-                                .expect("Failed to read directory string")
-                                .to_vec(),
-                        ),
-                        2 => DirectoryClass::Principal(
-                            key.get(1..)
-                                .expect("Failed to read range for principal id")
-                                .deserialize_leb128()
-                                .expect("Failed to deserialize principal id"),
-                        ),
-                        3 => DirectoryClass::Domain(
-                            key.get(1..)
-                                .expect("Failed to read directory string")
-                                .to_vec(),
-                        ),
-                        4 => {
-                            batch.add(
-                                ValueClass::Directory(DirectoryClass::UsedQuota(
-                                    key.get(1..)
-                                        .expect("Failed to read principal id")
-                                        .deserialize_leb128()
+                    let class: DirectoryClass<MaybeDynamicId> =
+                        match key.first().expect("Failed to read directory key type") {
+                            0 => DirectoryClass::NameToId(
+                                key.get(1..)
+                                    .expect("Failed to read directory string")
+                                    .to_vec(),
+                            ),
+                            1 => DirectoryClass::EmailToId(
+                                key.get(1..)
+                                    .expect("Failed to read directory string")
+                                    .to_vec(),
+                            ),
+                            2 => DirectoryClass::Principal(MaybeDynamicId::Static(
+                                key.get(1..)
+                                    .expect("Failed to read range for principal id")
+                                    .deserialize_leb128::<u32>()
+                                    .expect("Failed to deserialize principal id"),
+                            )),
+                            3 => DirectoryClass::Domain(
+                                key.get(1..)
+                                    .expect("Failed to read directory string")
+                                    .to_vec(),
+                            ),
+                            4 => {
+                                batch.add(
+                                    ValueClass::Directory(DirectoryClass::UsedQuota(
+                                        key.get(1..)
+                                            .expect("Failed to read principal id")
+                                            .deserialize_leb128()
+                                            .expect("Failed to read principal id"),
+                                    )),
+                                    i64::deserialize(&value).expect("Failed to deserialize quota"),
+                                );
+
+                                continue;
+                            }
+                            5 => DirectoryClass::MemberOf {
+                                principal_id: MaybeDynamicId::Static(
+                                    key.deserialize_be_u32(1)
                                         .expect("Failed to read principal id"),
-                                )),
-                                i64::deserialize(&value).expect("Failed to deserialize quota"),
-                            );
+                                ),
+                                member_of: MaybeDynamicId::Static(
+                                    key.deserialize_be_u32(1 + U32_LEN)
+                                        .expect("Failed to read principal id"),
+                                ),
+                            },
+                            6 => DirectoryClass::Members {
+                                principal_id: MaybeDynamicId::Static(
+                                    key.deserialize_be_u32(1)
+                                        .expect("Failed to read principal id"),
+                                ),
+                                has_member: MaybeDynamicId::Static(
+                                    key.deserialize_be_u32(1 + U32_LEN)
+                                        .expect("Failed to read principal id"),
+                                ),
+                            },
 
-                            continue;
-                        }
-                        5 => DirectoryClass::MemberOf {
-                            principal_id: key
-                                .deserialize_be_u32(1)
-                                .expect("Failed to read principal id"),
-                            member_of: key
-                                .deserialize_be_u32(1 + U32_LEN)
-                                .expect("Failed to read principal id"),
-                        },
-                        6 => DirectoryClass::Members {
-                            principal_id: key
-                                .deserialize_be_u32(1)
-                                .expect("Failed to read principal id"),
-                            has_member: key
-                                .deserialize_be_u32(1 + U32_LEN)
-                                .expect("Failed to read principal id"),
-                        },
-
-                        _ => failed("Invalid directory key"),
-                    };
+                            _ => failed("Invalid directory key"),
+                        };
                     batch.set(ValueClass::Directory(class), value);
                 }
                 Family::Queue => {
@@ -253,39 +258,43 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                     let document_ids = RoaringBitmap::deserialize_from(&value[..])
                         .expect("Failed to deserialize bitmap");
                     let key = key.as_slice();
-                    let class = match key.first().expect("Failed to read bitmap class") {
-                        0 => BitmapClass::DocumentIds,
-                        1 => BitmapClass::Tag {
-                            field: key.get(1).copied().expect("Failed to read field"),
-                            value: TagValue::Id(
-                                key.deserialize_be_u32(2).expect("Failed to read tag id"),
-                            ),
-                        },
-                        2 => BitmapClass::Tag {
-                            field: key.get(1).copied().expect("Failed to read field"),
-                            value: TagValue::Text(
-                                key.get(2..).expect("Failed to read tag text").to_vec(),
-                            ),
-                        },
-                        3 => BitmapClass::Tag {
-                            field: key.get(1).copied().expect("Failed to read field"),
-                            value: TagValue::Static(
-                                key.get(2).copied().expect("Failed to read tag static id"),
-                            ),
-                        },
-                        4 => BitmapClass::Text {
-                            field: key.get(1).copied().expect("Failed to read field"),
-                            token: BitmapHash {
-                                len: key.get(2).copied().expect("Failed to read tag static id"),
-                                hash: key
-                                    .get(3..11)
-                                    .expect("Failed to read tag static id")
-                                    .try_into()
-                                    .unwrap(),
+                    let class: BitmapClass<MaybeDynamicId> =
+                        match key.first().expect("Failed to read bitmap class") {
+                            0 => BitmapClass::DocumentIds,
+                            1 => BitmapClass::Tag {
+                                field: key.get(1).copied().expect("Failed to read field"),
+                                value: TagValue::Id(MaybeDynamicId::Static(
+                                    key.deserialize_be_u32(2).expect("Failed to read tag id"),
+                                )),
                             },
-                        },
-                        _ => failed("Invalid bitmap class"),
-                    };
+                            2 => BitmapClass::Tag {
+                                field: key.get(1).copied().expect("Failed to read field"),
+                                value: TagValue::Text(
+                                    key.get(2..).expect("Failed to read tag text").to_vec(),
+                                ),
+                            },
+                            3 => BitmapClass::Tag {
+                                field: key.get(1).copied().expect("Failed to read field"),
+                                value: TagValue::Id(MaybeDynamicId::Static(
+                                    key.get(2)
+                                        .copied()
+                                        .expect("Failed to read tag static id")
+                                        .into(),
+                                )),
+                            },
+                            4 => BitmapClass::Text {
+                                field: key.get(1).copied().expect("Failed to read field"),
+                                token: BitmapHash {
+                                    len: key.get(2).copied().expect("Failed to read tag static id"),
+                                    hash: key
+                                        .get(3..11)
+                                        .expect("Failed to read tag static id")
+                                        .try_into()
+                                        .unwrap(),
+                                },
+                            },
+                            _ => failed("Invalid bitmap class"),
+                        };
 
                     for document_id in document_ids {
                         batch.ops.push(Operation::DocumentId { document_id });
@@ -307,13 +316,14 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                     }
                 }
                 Family::Log => {
-                    batch.ops.push(Operation::Log {
+                    batch.ops.push(Operation::ChangeId {
                         change_id: key
                             .as_slice()
                             .deserialize_be_u64(0)
                             .expect("Failed to deserialize change id"),
-                        collection,
-                        set: value,
+                    });
+                    batch.ops.push(Operation::Log {
+                        set: MaybeDynamicValue::Static(value),
                     });
                 }
                 Family::None => failed("No family specified in file"),

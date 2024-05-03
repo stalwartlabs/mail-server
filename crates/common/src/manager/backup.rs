@@ -36,8 +36,8 @@ use store::{
         key::DeserializeBigEndian, AnyKey, BitmapClass, BitmapHash, BlobOp, DirectoryClass,
         LookupClass, QueueClass, QueueEvent, TagValue, ValueClass,
     },
-    BitmapKey, Deserialize, IndexKey, IterateParams, LogKey, Serialize, ValueKey, SUBSPACE_BITMAPS,
-    U32_LEN, U64_LEN,
+    BitmapKey, Deserialize, IndexKey, IterateParams, LogKey, Serialize, ValueKey,
+    SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, U32_LEN, U64_LEN,
 };
 
 use utils::{
@@ -47,7 +47,6 @@ use utils::{
 
 use crate::Core;
 
-const KEY_OFFSET: usize = 1;
 pub(super) const MAGIC_MARKER: u8 = 123;
 pub(super) const FILE_VERSION: u8 = 1;
 
@@ -141,10 +140,10 @@ impl Core {
                         )
                         .no_values(),
                         |key, _| {
-                            let account_id = key.deserialize_be_u32(KEY_OFFSET)?;
-                            let collection = key.deserialize_u8(KEY_OFFSET + U32_LEN)?;
-                            let field = key.deserialize_u8(KEY_OFFSET + U32_LEN + 1)?;
-                            let document_id = key.deserialize_be_u32(KEY_OFFSET + U32_LEN + 2)?;
+                            let account_id = key.deserialize_be_u32(0)?;
+                            let collection = key.deserialize_u8(U32_LEN)?;
+                            let field = key.deserialize_u8(U32_LEN + 1)?;
+                            let document_id = key.deserialize_be_u32(U32_LEN + 2)?;
 
                             keys.insert((account_id, collection, document_id, field));
 
@@ -253,11 +252,10 @@ impl Core {
                         )
                         .no_values(),
                         |key, _| {
-                            let account_id = key.deserialize_be_u32(KEY_OFFSET)?;
-                            let collection = key.deserialize_u8(KEY_OFFSET + U32_LEN)?;
-                            let document_id = key
-                                .range(KEY_OFFSET + U32_LEN + 1..usize::MAX)?
-                                .deserialize_leb128()?;
+                            let account_id = key.deserialize_be_u32(0)?;
+                            let collection = key.deserialize_u8(U32_LEN)?;
+                            let document_id =
+                                key.range(U32_LEN + 1..usize::MAX)?.deserialize_leb128()?;
 
                             keys.insert((account_id, collection, document_id));
 
@@ -340,11 +338,10 @@ impl Core {
                             },
                         ),
                         |key, value| {
-                            let grant_account_id = key.deserialize_be_u32(KEY_OFFSET)?;
-                            let account_id = key.deserialize_be_u32(KEY_OFFSET + U32_LEN)?;
-                            let collection = key.deserialize_u8(KEY_OFFSET + (U32_LEN * 2))?;
-                            let document_id =
-                                key.deserialize_be_u32(KEY_OFFSET + (U32_LEN * 2) + 1)?;
+                            let grant_account_id = key.deserialize_be_u32(0)?;
+                            let account_id = key.deserialize_be_u32(U32_LEN)?;
+                            let collection = key.deserialize_u8(U32_LEN * 2)?;
+                            let document_id = key.deserialize_be_u32((U32_LEN * 2) + 1)?;
 
                             if account_id != last_account_id {
                                 writer
@@ -417,13 +414,12 @@ impl Core {
                             },
                         ),
                         |key, _| {
-                            let account_id = key.deserialize_be_u32(KEY_OFFSET + BLOB_HASH_LEN)?;
-                            let collection =
-                                key.deserialize_u8(KEY_OFFSET + BLOB_HASH_LEN + U32_LEN)?;
+                            let account_id = key.deserialize_be_u32(BLOB_HASH_LEN)?;
+                            let collection = key.deserialize_u8(BLOB_HASH_LEN + U32_LEN)?;
                             let document_id =
-                                key.deserialize_be_u32(KEY_OFFSET + BLOB_HASH_LEN + U32_LEN + 1)?;
+                                key.deserialize_be_u32(BLOB_HASH_LEN + U32_LEN + 1)?;
 
-                            let hash = key.range(KEY_OFFSET..KEY_OFFSET + BLOB_HASH_LEN)?.to_vec();
+                            let hash = key.range(0..BLOB_HASH_LEN)?.to_vec();
 
                             if account_id != u32::MAX && document_id != u32::MAX {
                                 writer
@@ -510,10 +506,7 @@ impl Core {
                         ),
                         |key, value| {
                             writer
-                                .send(Op::KeyValue((
-                                    key.range(KEY_OFFSET..usize::MAX)?.to_vec(),
-                                    value.to_vec(),
-                                )))
+                                .send(Op::KeyValue((key.to_vec(), value.to_vec())))
                                 .failed("Failed to send key value");
 
                             Ok(true)
@@ -560,10 +553,7 @@ impl Core {
                         ),
                         |key, value| {
                             writer
-                                .send(Op::KeyValue((
-                                    key.range(KEY_OFFSET..usize::MAX)?.to_vec(),
-                                    value.to_vec(),
-                                )))
+                                .send(Op::KeyValue((key.to_vec(), value.to_vec())))
                                 .failed("Failed to send key value");
 
                             Ok(true)
@@ -575,41 +565,6 @@ impl Core {
                 writer
                     .send(Op::Family(Family::LookupCounter))
                     .failed("Failed to send family");
-
-                let mut expired_counters = AHashSet::new();
-
-                store
-                    .iterate(
-                        IterateParams::new(
-                            ValueKey {
-                                account_id: 0,
-                                collection: 0,
-                                document_id: 0,
-                                class: ValueClass::Lookup(LookupClass::CounterExpiry(vec![0])),
-                            },
-                            ValueKey {
-                                account_id: u32::MAX,
-                                collection: u8::MAX,
-                                document_id: u32::MAX,
-                                class: ValueClass::Lookup(LookupClass::CounterExpiry(vec![
-                                    u8::MAX,
-                                    u8::MAX,
-                                    u8::MAX,
-                                    u8::MAX,
-                                    u8::MAX,
-                                    u8::MAX,
-                                ])),
-                            },
-                        )
-                        .no_values(),
-                        |key, _| {
-                            expired_counters.insert(key.range(KEY_OFFSET..usize::MAX)?.to_vec());
-
-                            Ok(true)
-                        },
-                    )
-                    .await
-                    .failed("Failed to iterate over data store");
 
                 let mut counters = Vec::new();
 
@@ -638,9 +593,11 @@ impl Core {
                         )
                         .no_values(),
                         |key, _| {
-                            let key = key.range(KEY_OFFSET..usize::MAX)?.to_vec();
-                            if !expired_counters.contains(&key) {
-                                counters.push(key);
+                            if (key.len() != (U32_LEN * 2) + 2)
+                                || key[U32_LEN + 1] != 84
+                                || key[U32_LEN] != 1
+                            {
+                                counters.push(key.to_vec());
                             }
 
                             Ok(true)
@@ -699,15 +656,12 @@ impl Core {
                             },
                         ),
                         |key, value| {
-                            let mut key = key.to_vec();
-                            key[0] -= 20;
-
                             if key[0] == 2 {
-                                principal_ids.push(key.as_slice().range(1..usize::MAX)?.to_vec());
+                                principal_ids.push(key.range(1..usize::MAX)?.to_vec());
                             }
 
                             writer
-                                .send(Op::KeyValue((key, value.to_vec())))
+                                .send(Op::KeyValue((key.to_vec(), value.to_vec())))
                                 .failed("Failed to send key value");
 
                             Ok(true)
@@ -765,15 +719,50 @@ impl Core {
                                 account_id: u32::MAX,
                                 collection: u8::MAX,
                                 document_id: u32::MAX,
+                                class: ValueClass::Queue(QueueClass::Message(u64::MAX)),
+                            },
+                        ),
+                        |key_, value| {
+                            let mut key = Vec::with_capacity(U64_LEN + 1);
+                            key.push(0);
+                            key.extend_from_slice(key_);
+
+                            writer
+                                .send(Op::KeyValue((key, value.to_vec())))
+                                .failed("Failed to send key value");
+
+                            Ok(true)
+                        },
+                    )
+                    .await
+                    .failed("Failed to iterate over data store");
+
+                store
+                    .iterate(
+                        IterateParams::new(
+                            ValueKey {
+                                account_id: 0,
+                                collection: 0,
+                                document_id: 0,
+                                class: ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                                    due: 0,
+                                    queue_id: 0,
+                                })),
+                            },
+                            ValueKey {
+                                account_id: u32::MAX,
+                                collection: u8::MAX,
+                                document_id: u32::MAX,
                                 class: ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                                     due: u64::MAX,
                                     queue_id: u64::MAX,
                                 })),
                             },
                         ),
-                        |key, value| {
-                            let mut key = key.to_vec();
-                            key[0] -= 50;
+                        |key_, value| {
+                            let mut key = Vec::with_capacity(U64_LEN + 1);
+                            key.push(1);
+                            key.extend_from_slice(key_);
 
                             writer
                                 .send(Op::KeyValue((key, value.to_vec())))
@@ -861,95 +850,109 @@ impl Core {
 
     fn backup_bitmaps(&self, dest: &Path) -> TaskHandle {
         let store = self.storage.data.clone();
-        let has_doc_id = store.id() != "rocksdb";
 
         let (handle, writer) = spawn_writer(dest.join("bitmap"));
         (
             tokio::spawn(async move {
-                const BM_DOCUMENT_IDS: u8 = 0;
-                const BM_TEXT: u8 = 1 << 7;
-
-                const TAG_ID: u8 = 1 << 6;
-                const TAG_TEXT: u8 = 1 << 0 | 1 << 6;
-                const TAG_STATIC: u8 = 1 << 1 | 1 << 6;
+                const BM_MARKER: u8 = 1 << 7;
 
                 writer
                     .send(Op::Family(Family::Bitmap))
                     .failed("Failed to send family");
 
-                let mut bitmaps: AHashMap<(u32, u8), AHashSet<BitmapClass>> = AHashMap::new();
+                let mut bitmaps: AHashMap<(u32, u8), AHashSet<BitmapClass<u32>>> = AHashMap::new();
 
-                store
-                    .iterate(
-                        IterateParams::new(
-                            AnyKey {
-                                subspace: SUBSPACE_BITMAPS,
-                                key: vec![0u8],
-                            },
-                            AnyKey {
-                                subspace: SUBSPACE_BITMAPS,
-                                key: vec![u8::MAX; 10],
+                for subspace in [
+                    SUBSPACE_BITMAP_ID,
+                    SUBSPACE_BITMAP_TAG,
+                    SUBSPACE_BITMAP_TEXT,
+                ] {
+                    store
+                        .iterate(
+                            IterateParams::new(
+                                AnyKey {
+                                    subspace,
+                                    key: vec![0u8],
+                                },
+                                AnyKey {
+                                    subspace,
+                                    key: vec![u8::MAX; 10],
+                                },
+                            )
+                            .no_values(),
+                            |key, _| {
+                                let account_id = key.deserialize_be_u32(0)?;
+
+                                let key = key.range(0..key.len() - U32_LEN)?;
+
+                                match subspace {
+                                    SUBSPACE_BITMAP_ID => {
+                                        let collection = key.deserialize_u8(U32_LEN)?;
+                                        bitmaps
+                                            .entry((account_id, collection))
+                                            .or_default()
+                                            .insert(BitmapClass::DocumentIds);
+                                    }
+                                    SUBSPACE_BITMAP_TAG => {
+                                        let collection = key.deserialize_u8(U32_LEN)?;
+                                        let value = key.range(U32_LEN + 2..usize::MAX)?;
+                                        let (field, value) = match key
+                                            .deserialize_u8(U32_LEN + 1)?
+                                        {
+                                            field if field & BM_MARKER == 0 => {
+                                                (field, TagValue::Id(value.deserialize_leb128()?))
+                                            }
+                                            field => {
+                                                (field & !BM_MARKER, TagValue::Text(value.to_vec()))
+                                            }
+                                        };
+
+                                        bitmaps
+                                            .entry((account_id, collection))
+                                            .or_default()
+                                            .insert(BitmapClass::Tag { field, value });
+                                    }
+                                    SUBSPACE_BITMAP_TEXT => {
+                                        let collection = key.deserialize_u8(key.len() - 2)?;
+                                        let mut hash = [0u8; 8];
+                                        let (hash, len) = match key.len() - U32_LEN - 2 {
+                                            9 => {
+                                                hash[..8].copy_from_slice(
+                                                    key.range(U32_LEN..key.len() - 3)?,
+                                                );
+                                                (hash, key.deserialize_u8(key.len() - 3)?)
+                                            }
+                                            len @ (1..=7) => {
+                                                hash[..len].copy_from_slice(
+                                                    key.range(U32_LEN..key.len() - 2)?,
+                                                );
+                                                (hash, len as u8)
+                                            }
+                                            invalid => {
+                                                return Err(format!(
+                                                    "Invalid text bitmap key length {invalid}"
+                                                )
+                                                .into())
+                                            }
+                                        };
+
+                                        bitmaps
+                                            .entry((account_id, collection))
+                                            .or_default()
+                                            .insert(BitmapClass::Text {
+                                                field: key.deserialize_u8(key.len() - 1)?,
+                                                token: BitmapHash { hash, len },
+                                            });
+                                    }
+                                    _ => unreachable!(),
+                                }
+
+                                Ok(true)
                             },
                         )
-                        .no_values(),
-                        |key, _| {
-                            let account_id = key.deserialize_be_u32(0)?;
-                            let collection = key.deserialize_u8(U32_LEN)?;
-
-                            let entry = bitmaps.entry((account_id, collection)).or_default();
-
-                            let key = if has_doc_id {
-                                key.range(0..key.len() - U32_LEN)?
-                            } else {
-                                key
-                            };
-
-                            match key.deserialize_u8(U32_LEN + 1)? {
-                                BM_DOCUMENT_IDS => {
-                                    entry.insert(BitmapClass::DocumentIds);
-                                }
-                                TAG_ID => {
-                                    entry.insert(BitmapClass::Tag {
-                                        field: key.deserialize_u8(U32_LEN + 2)?,
-                                        value: TagValue::Id(
-                                            key.range(U32_LEN + 3..usize::MAX)?
-                                                .deserialize_leb128()?,
-                                        ),
-                                    });
-                                }
-                                TAG_TEXT => {
-                                    entry.insert(BitmapClass::Tag {
-                                        field: key.deserialize_u8(U32_LEN + 2)?,
-                                        value: TagValue::Text(
-                                            key.range(U32_LEN + 3..usize::MAX)?.to_vec(),
-                                        ),
-                                    });
-                                }
-                                TAG_STATIC => {
-                                    entry.insert(BitmapClass::Tag {
-                                        field: key.deserialize_u8(U32_LEN + 2)?,
-                                        value: TagValue::Static(key.deserialize_u8(U32_LEN + 3)?),
-                                    });
-                                }
-                                text => {
-                                    entry.insert(BitmapClass::Text {
-                                        field: key.deserialize_u8(U32_LEN + 2)?,
-                                        token: BitmapHash {
-                                            hash: key
-                                                .range(U32_LEN + 3..U32_LEN + 11)?
-                                                .try_into()
-                                                .unwrap(),
-                                            len: text & !BM_TEXT,
-                                        },
-                                    });
-                                }
-                            }
-
-                            Ok(true)
-                        },
-                    )
-                    .await
-                    .failed("Failed to iterate over data store");
+                        .await
+                        .failed("Failed to iterate over data store");
+                }
 
                 for ((account_id, collection), classes) in bitmaps {
                     writer
@@ -965,7 +968,7 @@ impl Core {
                                 account_id,
                                 collection,
                                 class: class.clone(),
-                                block_num: 0,
+                                document_id: 0,
                             })
                             .await
                             .failed("Failed to get bitmap")
@@ -987,11 +990,6 @@ impl Core {
                                             key.push(2u8);
                                             key.push(field);
                                             key.extend_from_slice(&text);
-                                        }
-                                        TagValue::Static(id) => {
-                                            key.push(3u8);
-                                            key.push(field);
-                                            key.push(id);
                                         }
                                     }
 

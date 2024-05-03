@@ -97,13 +97,11 @@ pub const F_CLEAR: u32 = 1 << 3;
 #[derive(Debug)]
 pub struct Batch {
     pub ops: Vec<Operation>,
-    pub change_id: u64,
 }
 
 #[derive(Debug)]
 pub struct BatchBuilder {
     pub ops: Vec<Operation>,
-    pub change_id: u64,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -116,6 +114,9 @@ pub enum Operation {
     },
     DocumentId {
         document_id: u32,
+    },
+    ChangeId {
+        change_id: u64,
     },
     AssertValue {
         class: ValueClass<MaybeDynamicId>,
@@ -156,7 +157,6 @@ pub struct BitmapHash {
 pub enum TagValue<T> {
     Id(T),
     Text(Vec<u8>),
-    Static(u8),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -275,9 +275,15 @@ impl<T> From<String> for TagValue<T> {
     }
 }
 
-impl<T> From<u8> for TagValue<T> {
+impl From<u8> for TagValue<u32> {
     fn from(value: u8) -> Self {
-        TagValue::Static(value)
+        TagValue::Id(value as u32)
+    }
+}
+
+impl From<u8> for TagValue<MaybeDynamicId> {
+    fn from(value: u8) -> Self {
+        TagValue::Id(MaybeDynamicId::Static(value as u32))
     }
 }
 

@@ -84,6 +84,7 @@ impl MysqlStore {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
+        let mut change_id = u64::MAX;
         let mut asserted_values = AHashMap::new();
         let mut tx_opts = TxOpts::default();
         tx_opts
@@ -108,6 +109,11 @@ impl MysqlStore {
                     document_id: document_id_,
                 } => {
                     document_id = *document_id_;
+                }
+                Operation::ChangeId {
+                    change_id: change_id_,
+                } => {
+                    change_id = *change_id_;
                 }
                 Operation::Value { class, op } => {
                     let key =
@@ -290,7 +296,7 @@ impl MysqlStore {
                     let key = LogKey {
                         account_id,
                         collection,
-                        change_id: batch.change_id,
+                        change_id,
                     }
                     .serialize(0);
 

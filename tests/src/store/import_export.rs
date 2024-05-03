@@ -28,10 +28,9 @@ use store::{
     rand,
     write::{
         AnyKey, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass, LookupClass,
-        Operation, QueueClass, QueueEvent, TagValue, ValueClass,
+        MaybeDynamicId, MaybeDynamicValue, Operation, QueueClass, QueueEvent, TagValue, ValueClass,
     },
-    IterateParams, Store, SUBSPACE_BITMAPS, SUBSPACE_BLOBS, SUBSPACE_COUNTERS, SUBSPACE_INDEXES,
-    SUBSPACE_LOGS, SUBSPACE_VALUES,
+    *,
 };
 use utils::BlobHash;
 
@@ -75,7 +74,7 @@ pub async fn test(db: Store) {
             batch.with_collection(collection);
 
             for document_id in [0, 10, 20, 30, 40] {
-                batch.create_document(document_id);
+                batch.create_document_with_id(document_id);
 
                 if collection == u8::from(Collection::Mailbox) {
                     batch
@@ -113,25 +112,23 @@ pub async fn test(db: Store) {
                     );
                 }
 
-                batch.ops.push(Operation::Log {
+                batch.ops.push(Operation::ChangeId {
                     change_id: document_id as u64 + account_id as u64 + collection as u64,
-                    collection,
-                    set: vec![account_id as u8, collection, document_id as u8],
+                });
+
+                batch.ops.push(Operation::Log {
+                    set: MaybeDynamicValue::Static(vec![
+                        account_id as u8,
+                        collection,
+                        document_id as u8,
+                    ]),
                 });
 
                 for field in 0..5 {
                     batch.ops.push(Operation::Bitmap {
                         class: BitmapClass::Tag {
                             field,
-                            value: TagValue::Id(rand::random()),
-                        },
-                        set: true,
-                    });
-
-                    batch.ops.push(Operation::Bitmap {
-                        class: BitmapClass::Tag {
-                            field,
-                            value: TagValue::Static(rand::random()),
+                            value: TagValue::Id(MaybeDynamicId::Static(rand::random())),
                         },
                         set: true,
                     });
@@ -203,7 +200,7 @@ pub async fn test(db: Store) {
 
     for account_id in [1, 2, 3, 4, 5] {
         batch
-            .create_document(account_id)
+            .create_document_with_id(account_id)
             .add(
                 ValueClass::Directory(DirectoryClass::UsedQuota(account_id)),
                 rand::random(),
@@ -227,20 +224,22 @@ pub async fn test(db: Store) {
                 random_bytes(4),
             )
             .set(
-                ValueClass::Directory(DirectoryClass::Principal(account_id)),
+                ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
+                    account_id,
+                ))),
                 random_bytes(30),
             )
             .set(
                 ValueClass::Directory(DirectoryClass::MemberOf {
-                    principal_id: account_id,
-                    member_of: rand::random(),
+                    principal_id: MaybeDynamicId::Static(account_id),
+                    member_of: MaybeDynamicId::Static(rand::random()),
                 }),
                 random_bytes(15),
             )
             .set(
                 ValueClass::Directory(DirectoryClass::Members {
-                    principal_id: account_id,
-                    has_member: rand::random(),
+                    principal_id: MaybeDynamicId::Static(account_id),
+                    has_member: MaybeDynamicId::Static(rand::random()),
                 }),
                 random_bytes(15),
             );
@@ -290,14 +289,6 @@ struct KeyValue {
 
 impl Snapshot {
     async fn new(db: &Store) -> Self {
-        #[cfg(feature = "rocks")]
-        let is_rocks = matches!(db, Store::RocksDb(_));
-        #[cfg(not(feature = "rocks"))]
-        let is_rocks = false;
-        #[cfg(feature = "foundationdb")]
-        let is_fdb = matches!(db, Store::FoundationDb(_));
-        #[cfg(not(feature = "foundationdb"))]
-        let is_fdb = false;
         let is_sql = matches!(
             db,
             Store::SQLite(_) | Store::PostgreSQL(_) | Store::MySQL(_)
@@ -306,12 +297,27 @@ impl Snapshot {
         let mut keys = AHashSet::new();
 
         for (subspace, with_values) in [
-            (SUBSPACE_VALUES, true),
-            (SUBSPACE_COUNTERS, !is_sql),
+            (SUBSPACE_ACL, true),
+            (SUBSPACE_BITMAP_ID, false),
+            (SUBSPACE_BITMAP_TAG, false),
+            (SUBSPACE_BITMAP_TEXT, false),
+            (SUBSPACE_DIRECTORY, true),
+            (SUBSPACE_FTS_INDEX, true),
+            (SUBSPACE_INDEXES, false),
+            (SUBSPACE_BLOB_RESERVE, true),
+            (SUBSPACE_BLOB_LINK, true),
             (SUBSPACE_BLOBS, true),
             (SUBSPACE_LOGS, true),
-            (SUBSPACE_BITMAPS, is_rocks | is_fdb),
-            (SUBSPACE_INDEXES, false),
+            (SUBSPACE_COUNTER, !is_sql),
+            (SUBSPACE_LOOKUP_VALUE, true),
+            (SUBSPACE_PROPERTY, true),
+            (SUBSPACE_SETTINGS, true),
+            (SUBSPACE_QUEUE_MESSAGE, true),
+            (SUBSPACE_QUEUE_EVENT, true),
+            (SUBSPACE_QUOTA, !is_sql),
+            (SUBSPACE_REPORT_OUT, true),
+            (SUBSPACE_REPORT_IN, true),
+            (SUBSPACE_TERM_INDEX, true),
         ] {
             let from_key = AnyKey {
                 subspace,

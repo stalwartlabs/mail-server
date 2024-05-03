@@ -58,6 +58,7 @@ impl FdbStore {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
+            let mut change_id = u64::MAX;
             let mut result = AssignedIds::default();
 
             let trx = self.db.create_trx()?;
@@ -78,6 +79,11 @@ impl FdbStore {
                         document_id: document_id_,
                     } => {
                         document_id = *document_id_;
+                    }
+                    Operation::ChangeId {
+                        change_id: change_id_,
+                    } => {
+                        change_id = *change_id_;
                     }
                     Operation::Value { class, op } => {
                         let mut key = class.serialize(
@@ -235,7 +241,7 @@ impl FdbStore {
                         let key = LogKey {
                             account_id,
                             collection,
-                            change_id: batch.change_id,
+                            change_id,
                         }
                         .serialize(WITH_SUBSPACE);
                         trx.set(&key, set.resolve(&result)?.as_ref());

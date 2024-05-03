@@ -24,7 +24,9 @@
 use std::fmt::Display;
 
 use store::{
-    write::{BitmapClass, DeserializeFrom, Operation, SerializeInto, TagValue, ToBitmaps},
+    write::{
+        BitmapClass, DeserializeFrom, MaybeDynamicId, Operation, SerializeInto, TagValue, ToBitmaps,
+    },
     Serialize,
 };
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
@@ -285,42 +287,76 @@ impl DeserializeFrom for Keyword {
     }
 }
 
-impl<T> From<Keyword> for TagValue<T> {
-    fn from(value: Keyword) -> Self {
-        match value {
-            Keyword::Seen => TagValue::Static(SEEN as u8),
-            Keyword::Draft => TagValue::Static(DRAFT as u8),
-            Keyword::Flagged => TagValue::Static(FLAGGED as u8),
-            Keyword::Answered => TagValue::Static(ANSWERED as u8),
-            Keyword::Recent => TagValue::Static(RECENT as u8),
-            Keyword::Important => TagValue::Static(IMPORTANT as u8),
-            Keyword::Phishing => TagValue::Static(PHISHING as u8),
-            Keyword::Junk => TagValue::Static(JUNK as u8),
-            Keyword::NotJunk => TagValue::Static(NOTJUNK as u8),
-            Keyword::Deleted => TagValue::Static(DELETED as u8),
-            Keyword::Forwarded => TagValue::Static(FORWARDED as u8),
-            Keyword::MdnSent => TagValue::Static(MDN_SENT as u8),
-            Keyword::Other(string) => TagValue::Text(string.into_bytes()),
+impl Keyword {
+    pub fn id(&self) -> Result<u32, String> {
+        match self {
+            Keyword::Seen => Ok(SEEN as u32),
+            Keyword::Draft => Ok(DRAFT as u32),
+            Keyword::Flagged => Ok(FLAGGED as u32),
+            Keyword::Answered => Ok(ANSWERED as u32),
+            Keyword::Recent => Ok(RECENT as u32),
+            Keyword::Important => Ok(IMPORTANT as u32),
+            Keyword::Phishing => Ok(PHISHING as u32),
+            Keyword::Junk => Ok(JUNK as u32),
+            Keyword::NotJunk => Ok(NOTJUNK as u32),
+            Keyword::Deleted => Ok(DELETED as u32),
+            Keyword::Forwarded => Ok(FORWARDED as u32),
+            Keyword::MdnSent => Ok(MDN_SENT as u32),
+            Keyword::Other(string) => Err(string.clone()),
+        }
+    }
+
+    pub fn into_id(self) -> Result<u32, String> {
+        match self {
+            Keyword::Seen => Ok(SEEN as u32),
+            Keyword::Draft => Ok(DRAFT as u32),
+            Keyword::Flagged => Ok(FLAGGED as u32),
+            Keyword::Answered => Ok(ANSWERED as u32),
+            Keyword::Recent => Ok(RECENT as u32),
+            Keyword::Important => Ok(IMPORTANT as u32),
+            Keyword::Phishing => Ok(PHISHING as u32),
+            Keyword::Junk => Ok(JUNK as u32),
+            Keyword::NotJunk => Ok(NOTJUNK as u32),
+            Keyword::Deleted => Ok(DELETED as u32),
+            Keyword::Forwarded => Ok(FORWARDED as u32),
+            Keyword::MdnSent => Ok(MDN_SENT as u32),
+            Keyword::Other(string) => Err(string),
         }
     }
 }
 
-impl<T> From<&Keyword> for TagValue<T> {
+impl From<Keyword> for TagValue<u32> {
+    fn from(value: Keyword) -> Self {
+        match value.into_id() {
+            Ok(id) => TagValue::Id(id),
+            Err(string) => TagValue::Text(string.into_bytes()),
+        }
+    }
+}
+
+impl From<&Keyword> for TagValue<u32> {
     fn from(value: &Keyword) -> Self {
-        match value {
-            Keyword::Seen => TagValue::Static(SEEN as u8),
-            Keyword::Draft => TagValue::Static(DRAFT as u8),
-            Keyword::Flagged => TagValue::Static(FLAGGED as u8),
-            Keyword::Answered => TagValue::Static(ANSWERED as u8),
-            Keyword::Recent => TagValue::Static(RECENT as u8),
-            Keyword::Important => TagValue::Static(IMPORTANT as u8),
-            Keyword::Phishing => TagValue::Static(PHISHING as u8),
-            Keyword::Junk => TagValue::Static(JUNK as u8),
-            Keyword::NotJunk => TagValue::Static(NOTJUNK as u8),
-            Keyword::Deleted => TagValue::Static(DELETED as u8),
-            Keyword::Forwarded => TagValue::Static(FORWARDED as u8),
-            Keyword::MdnSent => TagValue::Static(MDN_SENT as u8),
-            Keyword::Other(string) => TagValue::Text(string.as_bytes().to_vec()),
+        match value.id() {
+            Ok(id) => TagValue::Id(id),
+            Err(string) => TagValue::Text(string.into_bytes()),
+        }
+    }
+}
+
+impl From<Keyword> for TagValue<MaybeDynamicId> {
+    fn from(value: Keyword) -> Self {
+        match value.into_id() {
+            Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
+            Err(string) => TagValue::Text(string.into_bytes()),
+        }
+    }
+}
+
+impl From<&Keyword> for TagValue<MaybeDynamicId> {
+    fn from(value: &Keyword) -> Self {
+        match value.id() {
+            Ok(id) => TagValue::Id(MaybeDynamicId::Static(id)),
+            Err(string) => TagValue::Text(string.into_bytes()),
         }
     }
 }

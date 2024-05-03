@@ -144,7 +144,7 @@ impl ChangeLogBuilder {
 
 impl IntoOperations for ChangeLogBuilder {
     fn build(self, batch: &mut super::BatchBuilder) {
-        batch.change_id = self.change_id;
+        batch.with_change_id(self.change_id);
         for (collection, changes) in self.changes {
             batch.ops.push(Operation::Collection { collection });
             batch.ops.push(Operation::Log {

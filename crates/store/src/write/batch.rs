@@ -31,12 +31,11 @@ impl BatchBuilder {
     pub fn new() -> Self {
         Self {
             ops: Vec::with_capacity(16),
-            change_id: u64::MAX,
         }
     }
 
     pub fn with_change_id(&mut self, change_id: u64) -> &mut Self {
-        self.change_id = change_id;
+        self.ops.push(Operation::ChangeId { change_id });
         self
     }
 
@@ -208,16 +207,12 @@ impl BatchBuilder {
     }
 
     pub fn build(self) -> Batch {
-        Batch {
-            ops: self.ops,
-            change_id: self.change_id,
-        }
+        Batch { ops: self.ops }
     }
 
     pub fn build_batch(&mut self) -> Batch {
         Batch {
             ops: std::mem::take(&mut self.ops),
-            change_id: self.change_id,
         }
     }
 

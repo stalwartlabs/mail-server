@@ -449,18 +449,9 @@ impl<T: ResolveId> BitmapClass<T> {
                     KeySerializer::new((U32_LEN * 2) + 3)
                 }
                 .write(account_id)
-                .write(collection | BM_MARKER)
-                .write(*field)
-                .write_leb128(id.resolve_id(assigned_ids)),
-                TagValue::Static(id) => if (flags & WITH_SUBSPACE) != 0 {
-                    KeySerializer::new(U32_LEN + 5).write(SUBSPACE_BITMAP_TAG)
-                } else {
-                    KeySerializer::new(U32_LEN + 4)
-                }
-                .write(account_id)
                 .write(collection)
                 .write(*field)
-                .write(*id),
+                .write_leb128(id.resolve_id(assigned_ids)),
                 TagValue::Text(text) => if (flags & WITH_SUBSPACE) != 0 {
                     KeySerializer::new(U32_LEN + 4 + text.len()).write(SUBSPACE_BITMAP_TAG)
                 } else {
@@ -468,7 +459,7 @@ impl<T: ResolveId> BitmapClass<T> {
                 }
                 .write(account_id)
                 .write(collection)
-                .write(*field)
+                .write(*field | BM_MARKER)
                 .write(text.as_slice()),
             },
             BitmapClass::Text { field, token } => {
