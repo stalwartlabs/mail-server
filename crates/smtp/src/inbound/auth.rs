@@ -78,7 +78,7 @@ impl<T: SessionStream> Session<T> {
                 }
                 (AUTH_LOGIN, Credentials::Plain { username, secret }) => {
                     if username.is_empty() && secret.is_empty() {
-                        self.write(b"334 VXNlciBOYW1lAA==\r\n").await?;
+                        self.write(b"334 VXNlcm5hbWU6\r\n").await?;
                         return Ok(true);
                     }
                 }
@@ -115,7 +115,7 @@ impl<T: SessionStream> Session<T> {
                 (AUTH_LOGIN, Credentials::Plain { username, secret }) => {
                     return if username.is_empty() {
                         *username = response.into_string();
-                        self.write(b"334 UGFzc3dvcmQA\r\n").await?;
+                        self.write(b"334 UGFzc3dvcmQ6\r\n").await?;
                         Ok(true)
                     } else {
                         *secret = response.into_string();
