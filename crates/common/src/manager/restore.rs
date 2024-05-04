@@ -84,6 +84,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
     let mut collection = u8::MAX;
     let mut family = Family::None;
 
+    let mut batch_size = 0;
     let mut batch = BatchBuilder::new();
 
     while let Some(op) = reader.next().await {
@@ -101,165 +102,172 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                 document_id = d;
                 batch.update_document(document_id);
             }
-            Op::KeyValue((key, value)) => match family {
-                Family::Property => {
-                    let field = key
-                        .as_slice()
-                        .deserialize_u8(0)
-                        .expect("Failed to deserialize field");
-                    if collection == u8::from(Collection::Mailbox)
-                        && u8::from(Property::EmailIds) == field
-                    {
-                        batch.add(
-                            ValueClass::Property(field),
-                            i64::deserialize(&value)
-                                .expect("Failed to deserialize mailbox uidnext"),
+            Op::KeyValue((key, value)) => {
+                batch_size += key.len() + value.len() + U32_LEN * 2;
+
+                match family {
+                    Family::Property => {
+                        let field = key
+                            .as_slice()
+                            .deserialize_u8(0)
+                            .expect("Failed to deserialize field");
+                        if collection == u8::from(Collection::Mailbox)
+                            && u8::from(Property::EmailIds) == field
+                        {
+                            batch.add(
+                                ValueClass::Property(field),
+                                i64::deserialize(&value)
+                                    .expect("Failed to deserialize mailbox uidnext"),
+                            );
+                        } else {
+                            batch.set(ValueClass::Property(field), value);
+                        }
+                    }
+                    Family::TermIndex => {
+                        batch.set(ValueClass::TermIndex, key);
+                    }
+                    Family::Acl => {
+                        batch.set(
+                            ValueClass::Acl(
+                                key.as_slice()
+                                    .deserialize_be_u32(0)
+                                    .expect("Failed to deserialize acl"),
+                            ),
+                            value,
                         );
-                    } else {
-                        batch.set(ValueClass::Property(field), value);
                     }
-                }
-                Family::TermIndex => {
-                    batch.set(ValueClass::TermIndex, key);
-                }
-                Family::Acl => {
-                    batch.set(
-                        ValueClass::Acl(
-                            key.as_slice()
-                                .deserialize_be_u32(0)
-                                .expect("Failed to deserialize acl"),
-                        ),
-                        value,
-                    );
-                }
-                Family::Blob => {
-                    let hash = BlobHash::try_from_hash_slice(&key).expect("Invalid blob hash");
+                    Family::Blob => {
+                        let hash = BlobHash::try_from_hash_slice(&key).expect("Invalid blob hash");
 
-                    if account_id != u32::MAX && document_id != u32::MAX {
-                        batch.set(ValueClass::Blob(BlobOp::Link { hash }), vec![]);
-                    } else {
-                        blob_store
-                            .put_blob(&key, &value)
-                            .await
-                            .expect("Failed to write blob");
-                        batch.set(ValueClass::Blob(BlobOp::Commit { hash }), vec![]);
+                        if account_id != u32::MAX && document_id != u32::MAX {
+                            batch.set(ValueClass::Blob(BlobOp::Link { hash }), vec![]);
+                        } else {
+                            batch_size -= value.len();
+                            blob_store
+                                .put_blob(&key, &value)
+                                .await
+                                .expect("Failed to write blob");
+                            batch.set(ValueClass::Blob(BlobOp::Commit { hash }), vec![]);
+                        }
                     }
-                }
-                Family::Config => {
-                    batch.set(ValueClass::Config(key), value);
-                }
-                Family::LookupValue => {
-                    batch.set(ValueClass::Lookup(LookupClass::Key(key)), value);
-                }
-                Family::LookupCounter => {
-                    batch.add(
-                        ValueClass::Lookup(LookupClass::Counter(key)),
-                        i64::deserialize(&value).expect("Failed to deserialize counter"),
-                    );
-                }
-                Family::Directory => {
-                    let key = key.as_slice();
-                    let class: DirectoryClass<MaybeDynamicId> =
-                        match key.first().expect("Failed to read directory key type") {
-                            0 => DirectoryClass::NameToId(
-                                key.get(1..)
-                                    .expect("Failed to read directory string")
-                                    .to_vec(),
-                            ),
-                            1 => DirectoryClass::EmailToId(
-                                key.get(1..)
-                                    .expect("Failed to read directory string")
-                                    .to_vec(),
-                            ),
-                            2 => DirectoryClass::Principal(MaybeDynamicId::Static(
-                                key.get(1..)
-                                    .expect("Failed to read range for principal id")
-                                    .deserialize_leb128::<u32>()
-                                    .expect("Failed to deserialize principal id"),
-                            )),
-                            3 => DirectoryClass::Domain(
-                                key.get(1..)
-                                    .expect("Failed to read directory string")
-                                    .to_vec(),
-                            ),
-                            4 => {
-                                batch.add(
-                                    ValueClass::Directory(DirectoryClass::UsedQuota(
-                                        key.get(1..)
-                                            .expect("Failed to read principal id")
-                                            .deserialize_leb128()
-                                            .expect("Failed to read principal id"),
-                                    )),
-                                    i64::deserialize(&value).expect("Failed to deserialize quota"),
-                                );
-
-                                continue;
-                            }
-                            5 => DirectoryClass::MemberOf {
-                                principal_id: MaybeDynamicId::Static(
-                                    key.deserialize_be_u32(1)
-                                        .expect("Failed to read principal id"),
+                    Family::Config => {
+                        batch.set(ValueClass::Config(key), value);
+                    }
+                    Family::LookupValue => {
+                        batch.set(ValueClass::Lookup(LookupClass::Key(key)), value);
+                    }
+                    Family::LookupCounter => {
+                        batch.add(
+                            ValueClass::Lookup(LookupClass::Counter(key)),
+                            i64::deserialize(&value).expect("Failed to deserialize counter"),
+                        );
+                    }
+                    Family::Directory => {
+                        let key = key.as_slice();
+                        let class: DirectoryClass<MaybeDynamicId> =
+                            match key.first().expect("Failed to read directory key type") {
+                                0 => DirectoryClass::NameToId(
+                                    key.get(1..)
+                                        .expect("Failed to read directory string")
+                                        .to_vec(),
                                 ),
-                                member_of: MaybeDynamicId::Static(
-                                    key.deserialize_be_u32(1 + U32_LEN)
-                                        .expect("Failed to read principal id"),
+                                1 => DirectoryClass::EmailToId(
+                                    key.get(1..)
+                                        .expect("Failed to read directory string")
+                                        .to_vec(),
                                 ),
-                            },
-                            6 => DirectoryClass::Members {
-                                principal_id: MaybeDynamicId::Static(
-                                    key.deserialize_be_u32(1)
-                                        .expect("Failed to read principal id"),
-                                ),
-                                has_member: MaybeDynamicId::Static(
-                                    key.deserialize_be_u32(1 + U32_LEN)
-                                        .expect("Failed to read principal id"),
-                                ),
-                            },
-
-                            _ => failed("Invalid directory key"),
-                        };
-                    batch.set(ValueClass::Directory(class), value);
-                }
-                Family::Queue => {
-                    let key = key.as_slice();
-
-                    match key.first().expect("Failed to read queue key type") {
-                        0 => {
-                            batch.set(
-                                ValueClass::Queue(QueueClass::Message(
-                                    key.deserialize_be_u64(1)
-                                        .expect("Failed to deserialize queue message id"),
+                                2 => DirectoryClass::Principal(MaybeDynamicId::Static(
+                                    key.get(1..)
+                                        .expect("Failed to read range for principal id")
+                                        .deserialize_leb128::<u32>()
+                                        .expect("Failed to deserialize principal id"),
                                 )),
-                                value,
-                            );
-                        }
-                        1 => {
-                            batch.set(
-                                ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-                                    due: key
-                                        .deserialize_be_u64(1)
-                                        .expect("Failed to deserialize queue message id"),
-                                    queue_id: key
-                                        .deserialize_be_u64(1 + U64_LEN)
-                                        .expect("Failed to deserialize queue message id"),
-                                })),
-                                value,
-                            );
-                        }
-                        _ => failed("Invalid queue key"),
+                                3 => DirectoryClass::Domain(
+                                    key.get(1..)
+                                        .expect("Failed to read directory string")
+                                        .to_vec(),
+                                ),
+                                4 => {
+                                    batch.add(
+                                        ValueClass::Directory(DirectoryClass::UsedQuota(
+                                            key.get(1..)
+                                                .expect("Failed to read principal id")
+                                                .deserialize_leb128()
+                                                .expect("Failed to read principal id"),
+                                        )),
+                                        i64::deserialize(&value)
+                                            .expect("Failed to deserialize quota"),
+                                    );
+
+                                    continue;
+                                }
+                                5 => DirectoryClass::MemberOf {
+                                    principal_id: MaybeDynamicId::Static(
+                                        key.deserialize_be_u32(1)
+                                            .expect("Failed to read principal id"),
+                                    ),
+                                    member_of: MaybeDynamicId::Static(
+                                        key.deserialize_be_u32(1 + U32_LEN)
+                                            .expect("Failed to read principal id"),
+                                    ),
+                                },
+                                6 => DirectoryClass::Members {
+                                    principal_id: MaybeDynamicId::Static(
+                                        key.deserialize_be_u32(1)
+                                            .expect("Failed to read principal id"),
+                                    ),
+                                    has_member: MaybeDynamicId::Static(
+                                        key.deserialize_be_u32(1 + U32_LEN)
+                                            .expect("Failed to read principal id"),
+                                    ),
+                                },
+
+                                _ => failed("Invalid directory key"),
+                            };
+                        batch.set(ValueClass::Directory(class), value);
                     }
-                }
-                Family::Index => batch.ops.push(Operation::Index {
-                    field: key.first().copied().expect("Failed to read index field"),
-                    key: key.get(1..).expect("Failed to read index key").to_vec(),
-                    set: true,
-                }),
-                Family::Bitmap => {
-                    let document_ids = RoaringBitmap::deserialize_from(&value[..])
-                        .expect("Failed to deserialize bitmap");
-                    let key = key.as_slice();
-                    let class: BitmapClass<MaybeDynamicId> =
-                        match key.first().expect("Failed to read bitmap class") {
+                    Family::Queue => {
+                        let key = key.as_slice();
+
+                        match key.first().expect("Failed to read queue key type") {
+                            0 => {
+                                batch.set(
+                                    ValueClass::Queue(QueueClass::Message(
+                                        key.deserialize_be_u64(1)
+                                            .expect("Failed to deserialize queue message id"),
+                                    )),
+                                    value,
+                                );
+                            }
+                            1 => {
+                                batch.set(
+                                    ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                                        due: key
+                                            .deserialize_be_u64(1)
+                                            .expect("Failed to deserialize queue message id"),
+                                        queue_id: key
+                                            .deserialize_be_u64(1 + U64_LEN)
+                                            .expect("Failed to deserialize queue message id"),
+                                    })),
+                                    value,
+                                );
+                            }
+                            _ => failed("Invalid queue key"),
+                        }
+                    }
+                    Family::Index => batch.ops.push(Operation::Index {
+                        field: key.first().copied().expect("Failed to read index field"),
+                        key: key.get(1..).expect("Failed to read index key").to_vec(),
+                        set: true,
+                    }),
+                    Family::Bitmap => {
+                        let document_ids = RoaringBitmap::deserialize_from(&value[..])
+                            .expect("Failed to deserialize bitmap");
+                        let key = key.as_slice();
+                        let class: BitmapClass<MaybeDynamicId> = match key
+                            .first()
+                            .expect("Failed to read bitmap class")
+                        {
                             0 => BitmapClass::DocumentIds,
                             1 => BitmapClass::Tag {
                                 field: key.get(1).copied().expect("Failed to read field"),
@@ -296,41 +304,42 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                             _ => failed("Invalid bitmap class"),
                         };
 
-                    for document_id in document_ids {
-                        batch.ops.push(Operation::DocumentId { document_id });
-                        batch.ops.push(Operation::Bitmap {
-                            class: class.clone(),
-                            set: true,
-                        });
+                        for document_id in document_ids {
+                            batch.ops.push(Operation::DocumentId { document_id });
+                            batch.ops.push(Operation::Bitmap {
+                                class: class.clone(),
+                                set: true,
+                            });
 
-                        if batch.ops.len() >= 1000 {
-                            store
-                                .write(batch.build())
-                                .await
-                                .failed("Failed to write batch");
-                            batch = BatchBuilder::new();
-                            batch
-                                .with_account_id(account_id)
-                                .with_collection(collection);
+                            if batch.ops.len() >= 1000 {
+                                store
+                                    .write(batch.build())
+                                    .await
+                                    .failed("Failed to write batch");
+                                batch = BatchBuilder::new();
+                                batch
+                                    .with_account_id(account_id)
+                                    .with_collection(collection);
+                            }
                         }
                     }
+                    Family::Log => {
+                        batch.ops.push(Operation::ChangeId {
+                            change_id: key
+                                .as_slice()
+                                .deserialize_be_u64(0)
+                                .expect("Failed to deserialize change id"),
+                        });
+                        batch.ops.push(Operation::Log {
+                            set: MaybeDynamicValue::Static(value),
+                        });
+                    }
+                    Family::None => failed("No family specified in file"),
                 }
-                Family::Log => {
-                    batch.ops.push(Operation::ChangeId {
-                        change_id: key
-                            .as_slice()
-                            .deserialize_be_u64(0)
-                            .expect("Failed to deserialize change id"),
-                    });
-                    batch.ops.push(Operation::Log {
-                        set: MaybeDynamicValue::Static(value),
-                    });
-                }
-                Family::None => failed("No family specified in file"),
-            },
+            }
         }
 
-        if batch.ops.len() >= 1000 {
+        if batch.ops.len() >= 1000 || batch_size >= 5_000_000 {
             store
                 .write(batch.build())
                 .await
@@ -340,6 +349,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                 .with_account_id(account_id)
                 .with_collection(collection)
                 .update_document(document_id);
+            batch_size = 0;
         }
     }
 
