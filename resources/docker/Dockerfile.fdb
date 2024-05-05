@@ -14,7 +14,7 @@ RUN curl https://sh.rustup.rs -sSf | \
     sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path && \
     env CARGO_HOME=/opt/rust/cargo \
     rustup component add rustfmt
-RUN wget https://github.com/apple/foundationdb/releases/download/7.1.0/foundationdb-clients_7.1.0-1_amd64.deb && \
+RUN curl -LO https://github.com/apple/foundationdb/releases/download/7.1.0/foundationdb-clients_7.1.0-1_amd64.deb && \
     dpkg -i foundationdb-clients_7.1.0-1_amd64.deb
 RUN env CARGO_HOME=/opt/rust/cargo cargo install cargo-chef && \
     rm -rf /opt/rust/cargo/registry/
