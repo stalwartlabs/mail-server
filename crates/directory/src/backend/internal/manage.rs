@@ -111,10 +111,11 @@ impl ManageDirectory for Store {
     // Used by all directories except internal
     async fn get_or_create_account_id(&self, name: &str) -> crate::Result<u32> {
         let mut try_count = 0;
+        let name = name.to_lowercase();
 
         loop {
             // Try to obtain ID
-            if let Some(account_id) = self.get_account_id(name).await? {
+            if let Some(account_id) = self.get_account_id(&name).await? {
                 return Ok(account_id);
             }
 
