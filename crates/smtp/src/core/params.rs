@@ -148,6 +148,12 @@ impl<T: SessionStream> Session<T> {
             .eval_if(&ec.vrfy, self)
             .await
             .unwrap_or(false);
+        self.params.auth_match_sender = self
+            .core
+            .core
+            .eval_if(&self.core.core.smtp.session.auth.must_match_sender, self)
+            .await
+            .unwrap_or(true);
     }
 
     pub async fn eval_rcpt_params(&mut self) {
