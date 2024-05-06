@@ -312,17 +312,9 @@ impl Servers {
         // Drop privileges
         #[cfg(not(target_env = "msvc"))]
         {
-            if let Some(run_as_user) = config
-                .value("server.run-as.user")
-                .map(|s| s.to_string())
-                .or_else(|| std::env::var("RUN_AS_USER").ok())
-            {
+            if let Ok(run_as_user) = std::env::var("RUN_AS_USER") {
                 let mut pd = privdrop::PrivDrop::default().user(run_as_user);
-                if let Some(run_as_group) = config
-                    .value("server.run-as.group")
-                    .map(|s| s.to_string())
-                    .or_else(|| std::env::var("RUN_AS_GROUP").ok())
-                {
+                if let Ok(run_as_group) = std::env::var("RUN_AS_GROUP") {
                     pd = pd.group(run_as_group);
                 }
                 pd.apply().failed("Failed to drop privileges");
