@@ -29,7 +29,7 @@ use store::{
 
 use crate::core::{throttle::NewKey, SMTP};
 
-use super::{Message, QuotaKey, SimpleEnvelope, Status};
+use super::{Message, QueueEnvelope, QuotaKey, Status};
 
 impl SMTP {
     pub async fn has_quota(&self, message: &mut Message) -> bool {
@@ -47,13 +47,13 @@ impl SMTP {
         }
 
         for quota in &self.core.smtp.queue.quota.rcpt_domain {
-            for (pos, domain) in message.domains.iter().enumerate() {
+            for domain_idx in 0..message.domains.len() {
                 if !self
                     .check_quota(
                         quota,
-                        &SimpleEnvelope::new(message, &domain.domain),
+                        &QueueEnvelope::new(message, domain_idx),
                         message.size,
-                        ((pos + 1) << 32) as u64,
+                        ((domain_idx + 1) << 32) as u64,
                         &mut quota_keys,
                     )
                     .await
@@ -64,17 +64,13 @@ impl SMTP {
         }
 
         for quota in &self.core.smtp.queue.quota.rcpt {
-            for (pos, rcpt) in message.recipients.iter().enumerate() {
+            for (rcpt_idx, rcpt) in message.recipients.iter().enumerate() {
                 if !self
                     .check_quota(
                         quota,
-                        &SimpleEnvelope::new_rcpt(
-                            message,
-                            &message.domains[rcpt.domain_idx].domain,
-                            &rcpt.address_lcase,
-                        ),
+                        &QueueEnvelope::new_rcpt(message, rcpt.domain_idx, rcpt_idx),
                         message.size,
-                        (pos + 1) as u64,
+                        (rcpt_idx + 1) as u64,
                         &mut quota_keys,
                     )
                     .await

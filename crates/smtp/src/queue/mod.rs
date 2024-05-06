@@ -23,7 +23,7 @@
 
 use std::{
     fmt::Display,
-    net::IpAddr,
+    net::{IpAddr, Ipv4Addr},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -99,7 +99,6 @@ pub struct Domain {
     pub notify: Schedule<u32>,
     pub expires: u64,
     pub status: Status<(), Error>,
-    pub disable_tls: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,49 +192,43 @@ impl<T: Default> Schedule<T> {
     }
 }
 
-pub struct SimpleEnvelope<'x> {
-    pub message: &'x Message,
-    pub domain: &'x str,
-    pub recipient: &'x str,
-}
-
-impl<'x> SimpleEnvelope<'x> {
-    pub fn new(message: &'x Message, domain: &'x str) -> Self {
-        Self {
-            message,
-            domain,
-            recipient: "",
-        }
-    }
-
-    pub fn new_rcpt(message: &'x Message, domain: &'x str, recipient: &'x str) -> Self {
-        Self {
-            message,
-            domain,
-            recipient,
-        }
-    }
-}
-
-impl<'x> ResolveVariable for SimpleEnvelope<'x> {
-    fn resolve_variable(&self, variable: u32) -> expr::Variable<'x> {
-        match variable {
-            V_SENDER => self.message.return_path_lcase.as_str().into(),
-            V_SENDER_DOMAIN => self.message.return_path_domain.as_str().into(),
-            V_PRIORITY => self.message.priority.to_string().into(),
-            V_RECIPIENT => self.recipient.into(),
-            V_RECIPIENT_DOMAIN => self.domain.into(),
-            _ => "".into(),
-        }
-    }
-}
-
 pub struct QueueEnvelope<'x> {
     pub message: &'x Message,
-    pub domain: &'x str,
     pub mx: &'x str,
     pub remote_ip: IpAddr,
     pub local_ip: IpAddr,
+    pub current_domain: usize,
+    pub current_rcpt: usize,
+}
+
+impl<'x> QueueEnvelope<'x> {
+    pub fn new(message: &'x Message, current_domain: usize) -> Self {
+        Self {
+            message,
+            current_domain,
+            current_rcpt: 0,
+            mx: "",
+            remote_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            local_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+        }
+    }
+
+    pub fn new_rcpt(message: &'x Message, current_domain: usize, current_rcpt: usize) -> Self {
+        Self {
+            message,
+            current_domain,
+            current_rcpt,
+            mx: "",
+            remote_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            local_ip: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+        }
+    }
+}
+
+impl<'x> QueueEnvelope<'x> {
+    fn current_domain(&self) -> Option<&'x Domain> {
+        self.message.domains.get(self.current_domain)
+    }
 }
 
 impl<'x> ResolveVariable for QueueEnvelope<'x> {
@@ -243,13 +236,62 @@ impl<'x> ResolveVariable for QueueEnvelope<'x> {
         match variable {
             V_SENDER => self.message.return_path_lcase.as_str().into(),
             V_SENDER_DOMAIN => self.message.return_path_domain.as_str().into(),
-            V_RECIPIENT_DOMAIN => self.domain.into(),
+            V_RECIPIENT_DOMAIN => self
+                .current_domain()
+                .map(|d| d.domain.as_str())
+                .unwrap_or_default()
+                .into(),
+            V_RECIPIENT => self
+                .message
+                .recipients
+                .get(self.current_rcpt)
+                .map(|r| r.address_lcase.as_str())
+                .unwrap_or_default()
+                .into(),
             V_RECIPIENTS => self
                 .message
                 .recipients
                 .iter()
                 .map(|r| Variable::from(r.address_lcase.as_str()))
                 .collect::<Vec<_>>()
+                .into(),
+            V_QUEUE_RETRY_NUM => self
+                .current_domain()
+                .map(|d| d.retry.inner)
+                .unwrap_or_default()
+                .into(),
+            V_QUEUE_NOTIFY_NUM => self
+                .current_domain()
+                .map(|d| d.notify.inner)
+                .unwrap_or_default()
+                .into(),
+            V_QUEUE_EXPIRES_IN => self
+                .current_domain()
+                .map(|d| d.expires.saturating_sub(now()))
+                .unwrap_or_default()
+                .into(),
+            V_QUEUE_LAST_STATUS => self
+                .current_domain()
+                .map(|d| d.status.to_string())
+                .unwrap_or_default()
+                .into(),
+            V_QUEUE_LAST_ERROR => self
+                .current_domain()
+                .map(|d| match &d.status {
+                    Status::Scheduled | Status::Completed(_) => "none",
+                    Status::TemporaryFailure(err) | Status::PermanentFailure(err) => match err {
+                        Error::DnsError(_) => "dns",
+                        Error::UnexpectedResponse(_) => "unexpected-reply",
+                        Error::ConnectionError(_) => "connection",
+                        Error::TlsError(_) => "tls",
+                        Error::DaneError(_) => "dane",
+                        Error::MtaStsError(_) => "mta-sts",
+                        Error::RateLimited => "rate",
+                        Error::ConcurrencyLimited => "concurrency",
+                        Error::Io(_) => "io",
+                    },
+                })
+                .unwrap_or_default()
                 .into(),
             V_MX => self.mx.into(),
             V_PRIORITY => self.message.priority.into(),

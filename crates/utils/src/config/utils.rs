@@ -311,6 +311,15 @@ impl Config {
         );
     }
 
+    pub fn new_build_warning(&mut self, key: impl AsKey, details: impl Into<String>) {
+        self.warnings.insert(
+            key.as_key(),
+            ConfigWarning::Build {
+                error: details.into(),
+            },
+        );
+    }
+
     pub fn new_missing_property(&mut self, key: impl AsKey) {
         self.warnings.insert(key.as_key(), ConfigWarning::Missing);
     }

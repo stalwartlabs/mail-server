@@ -36,7 +36,7 @@ use store::write::now;
 use crate::core::SMTP;
 
 use super::{
-    Domain, Error, ErrorDetails, HostResponse, Message, Recipient, SimpleEnvelope, Status,
+    Domain, Error, ErrorDetails, HostResponse, Message, QueueEnvelope, Recipient, Status,
     RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
 };
 
@@ -222,14 +222,14 @@ impl Message {
 
         // Update next delay notification time
         if has_delay {
-            let mut domains = std::mem::take(&mut self.domains);
-            for domain in &mut domains {
+            let mut changes = Vec::new();
+            for (domain_idx, domain) in self.domains.iter().enumerate() {
                 if matches!(
                     &domain.status,
                     Status::TemporaryFailure(_) | Status::Scheduled
                 ) && domain.notify.due <= now
                 {
-                    let envelope = SimpleEnvelope::new(self, &domain.domain);
+                    let envelope = QueueEnvelope::new(self, domain_idx);
 
                     if let Some(next_notify) = core
                         .core
@@ -239,14 +239,18 @@ impl Message {
                             notify.into_iter().nth((domain.notify.inner + 1) as usize)
                         })
                     {
-                        domain.notify.inner += 1;
-                        domain.notify.due = now + next_notify.as_secs();
+                        changes.push((domain_idx, 1, now + next_notify.as_secs()));
                     } else {
-                        domain.notify.due = domain.expires + 10;
+                        changes.push((domain_idx, 0, domain.expires + 10));
                     }
                 }
             }
-            self.domains = domains;
+
+            for (domain_idx, inner, due) in changes {
+                let domain = &mut self.domains[domain_idx];
+                domain.notify.inner += inner;
+                domain.notify.due = due;
+            }
         }
 
         // Obtain hostname and sender addresses

@@ -96,7 +96,6 @@ async fn generate_dsn() {
                 entity: "mx.domain.org".to_string(),
                 details: "Connection timeout".to_string(),
             })),
-            disable_tls: false,
         }],
         flags: 0,
         env_id: None,

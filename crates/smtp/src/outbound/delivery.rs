@@ -162,11 +162,10 @@ impl DeliveryAttempt {
             let queue_config = &core.core.smtp.queue;
             let mut on_hold = Vec::new();
             let no_ip = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
-
-            let mut domains = std::mem::take(&mut message.domains);
             let mut recipients = std::mem::take(&mut message.recipients);
-            'next_domain: for (domain_idx, domain) in domains.iter_mut().enumerate() {
+            'next_domain: for domain_idx in 0..message.domains.len() {
                 // Only process domains due for delivery
+                let domain = &message.domains[domain_idx];
                 if !matches!(&domain.status, Status::Scheduled | Status::TemporaryFailure(_)
                 if domain.retry.due <= now())
                 {
@@ -182,13 +181,7 @@ impl DeliveryAttempt {
                 );
 
                 // Build envelope
-                let mut envelope = QueueEnvelope {
-                    message: &message,
-                    domain: &domain.domain,
-                    mx: "",
-                    remote_ip: no_ip,
-                    local_ip: no_ip,
-                };
+                let mut envelope = QueueEnvelope::new(&message, domain_idx);
 
                 // Throttle recipient domain
                 let mut in_flight = Vec::new();
@@ -197,7 +190,7 @@ impl DeliveryAttempt {
                         .is_allowed(throttle, &envelope, &mut in_flight, &span)
                         .await
                     {
-                        domain.set_throttle_error(err, &mut on_hold);
+                        message.domains[domain_idx].set_throttle_error(err, &mut on_hold);
                         continue 'next_domain;
                     }
                 }
@@ -221,14 +214,12 @@ impl DeliveryAttempt {
                             .await;
 
                         // Update status for the current domain and continue with the next one
-                        domain.set_status(
-                            delivery_result,
-                            &core
-                                .core
-                                .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
-                                .await
-                                .unwrap_or_else(|| vec![Duration::from_secs(60)]),
-                        );
+                        let schedule = core
+                            .core
+                            .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                            .await
+                            .unwrap_or_else(|| vec![Duration::from_secs(60)]);
+                        message.domains[domain_idx].set_status(delivery_result, &schedule);
                         continue 'next_domain;
                     }
                     Some(next_hop) => (
@@ -239,7 +230,6 @@ impl DeliveryAttempt {
                 };
 
                 // Prepare TLS strategy
-                let mut disable_tls = false;
                 let mut tls_strategy = TlsStrategy {
                     mta_sts: core
                         .core
@@ -271,7 +261,7 @@ impl DeliveryAttempt {
                             .smtp
                             .resolvers
                             .dns
-                            .txt_lookup::<TlsRpt>(format!("_smtp._tls.{}.", envelope.domain))
+                            .txt_lookup::<TlsRpt>(format!("_smtp._tls.{}.", domain.domain))
                             .await
                         {
                             Ok(record) => {
@@ -300,7 +290,7 @@ impl DeliveryAttempt {
                 let mta_sts_policy = if tls_strategy.try_mta_sts() && is_smtp {
                     match core
                         .lookup_mta_sts_policy(
-                            envelope.domain,
+                            &domain.domain,
                             core.core
                                 .eval_if(&queue_config.timeout.mta_sts, &envelope)
                                 .await
@@ -326,7 +316,7 @@ impl DeliveryAttempt {
                                         if tls_strategy.is_mta_sts_required() {
                                             core.schedule_report(TlsEvent {
                                                 policy: PolicyType::Sts(None),
-                                                domain: envelope.domain.to_string(),
+                                                domain: domain.domain.to_string(),
                                                 failure: FailureDetails::new(ResultType::Other)
                                                 .with_failure_reason_code("MTA-STS is required and no policy was found.")
                                                     .into(),
@@ -340,7 +330,7 @@ impl DeliveryAttempt {
                                     _ => {
                                         core.schedule_report(TlsEvent {
                                             policy: PolicyType::Sts(None),
-                                            domain: envelope.domain.to_string(),
+                                            domain: domain.domain.to_string(),
                                             failure: FailureDetails::new(&err)
                                                 .with_failure_reason_code(err.to_string())
                                                 .into(),
@@ -360,14 +350,12 @@ impl DeliveryAttempt {
                                     "Failed to retrieve MTA-STS policy: {}",
                                     err
                                 );
-                                domain.set_status(
-                                    err,
-                                    &core
-                                        .core
-                                        .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
-                                        .await
-                                        .unwrap_or_else(|| vec![Duration::from_secs(60)]),
-                                );
+                                let schedule = core
+                                    .core
+                                    .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                                    .await
+                                    .unwrap_or_else(|| vec![Duration::from_secs(60)]);
+                                message.domains[domain_idx].set_status(err, &schedule);
                                 continue 'next_domain;
                             } else {
                                 tracing::debug!(
@@ -399,14 +387,12 @@ impl DeliveryAttempt {
                                 event = "mx-lookup-failed",
                                 reason = %err,
                             );
-                            domain.set_status(
-                                err,
-                                &core
-                                    .core
-                                    .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
-                                    .await
-                                    .unwrap_or_else(|| vec![Duration::from_secs(60)]),
-                            );
+                            let schedule = core
+                                .core
+                                .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                                .await
+                                .unwrap_or_else(|| vec![Duration::from_secs(60)]);
+                            message.domains[domain_idx].set_status(err, &schedule);
                             continue 'next_domain;
                         }
                     };
@@ -426,15 +412,16 @@ impl DeliveryAttempt {
                             event = "null-mx",
                             reason = "Domain does not accept messages (mull MX)",
                         );
-                        domain.set_status(
+                        let schedule = core
+                            .core
+                            .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                            .await
+                            .unwrap_or_else(|| vec![Duration::from_secs(60)]);
+                        message.domains[domain_idx].set_status(
                             Status::PermanentFailure(Error::DnsError(
                                 "Domain does not accept messages (null MX)".to_string(),
                             )),
-                            &core
-                                .core
-                                .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
-                                .await
-                                .unwrap_or_else(|| vec![Duration::from_secs(60)]),
+                            &schedule,
                         );
                         continue 'next_domain;
                     }
@@ -456,7 +443,7 @@ impl DeliveryAttempt {
                             if let Some(tls_report) = &tls_report {
                                 core.schedule_report(TlsEvent {
                                     policy: mta_sts_policy.into(),
-                                    domain: envelope.domain.to_string(),
+                                    domain: domain.domain.to_string(),
                                     failure: FailureDetails::new(ResultType::ValidationFailure)
                                         .with_receiving_mx_hostname(envelope.mx)
                                         .with_failure_reason_code("MX not authorized by policy.")
@@ -543,7 +530,7 @@ impl DeliveryAttempt {
                                     if let Some(tls_report) = &tls_report {
                                         core.schedule_report(TlsEvent {
                                             policy: tlsa.into(),
-                                            domain: envelope.domain.to_string(),
+                                            domain: domain.domain.to_string(),
                                             failure: FailureDetails::new(ResultType::TlsaInvalid)
                                                 .with_receiving_mx_hostname(envelope.mx)
                                                 .with_failure_reason_code("Invalid TLSA record.")
@@ -573,7 +560,7 @@ impl DeliveryAttempt {
                                     if let Some(tls_report) = &tls_report {
                                         core.schedule_report(TlsEvent {
                                             policy: PolicyType::Tlsa(None),
-                                            domain: envelope.domain.to_string(),
+                                            domain: domain.domain.to_string(),
                                             failure: FailureDetails::new(ResultType::DaneRequired)
                                                 .with_receiving_mx_hostname(envelope.mx)
                                                 .with_failure_reason_code(
@@ -619,7 +606,7 @@ impl DeliveryAttempt {
                                             if let Some(tls_report) = &tls_report {
                                                 core.schedule_report(TlsEvent {
                                                     policy: PolicyType::Tlsa(None),
-                                                    domain: envelope.domain.to_string(),
+                                                    domain: domain.domain.to_string(),
                                                     failure: FailureDetails::new(
                                                         ResultType::DaneRequired,
                                                     )
@@ -670,7 +657,7 @@ impl DeliveryAttempt {
                                 .is_allowed(throttle, &envelope, &mut in_flight_host, &span)
                                 .await
                             {
-                                domain.set_throttle_error(err, &mut on_hold);
+                                message.domains[domain_idx].set_throttle_error(err, &mut on_hold);
                                 continue 'next_domain;
                             }
                         }
@@ -815,7 +802,7 @@ impl DeliveryAttempt {
                             };
 
                             // Try starting TLS
-                            if tls_strategy.try_start_tls() && !domain.disable_tls {
+                            if tls_strategy.try_start_tls() {
                                 smtp_client.timeout = core
                                     .core
                                     .eval_if(&queue_config.timeout.tls, &envelope)
@@ -850,7 +837,7 @@ impl DeliveryAttempt {
                                                 if let Some(tls_report) = &tls_report {
                                                     core.schedule_report(TlsEvent {
                                                         policy: dane_policy.into(),
-                                                        domain: envelope.domain.to_string(),
+                                                        domain: domain.domain.to_string(),
                                                         failure: FailureDetails::new(
                                                             ResultType::ValidationFailure,
                                                         )
@@ -875,7 +862,7 @@ impl DeliveryAttempt {
                                         if let Some(tls_report) = &tls_report {
                                             core.schedule_report(TlsEvent {
                                                 policy: (&mta_sts_policy, &dane_policy).into(),
-                                                domain: envelope.domain.to_string(),
+                                                domain: domain.domain.to_string(),
                                                 failure: None,
                                                 tls_record: tls_report.record.clone(),
                                                 interval: tls_report.interval,
@@ -917,7 +904,7 @@ impl DeliveryAttempt {
                                         if let Some(tls_report) = &tls_report {
                                             core.schedule_report(TlsEvent {
                                                 policy: (&mta_sts_policy, &dane_policy).into(),
-                                                domain: envelope.domain.to_string(),
+                                                domain: domain.domain.to_string(),
                                                 failure: FailureDetails::new(
                                                     ResultType::StartTlsNotSupported,
                                                 )
@@ -963,7 +950,7 @@ impl DeliveryAttempt {
                                         {
                                             core.schedule_report(TlsEvent {
                                                 policy: (&mta_sts_policy, &dane_policy).into(),
-                                                domain: envelope.domain.to_string(),
+                                                domain: domain.domain.to_string(),
                                                 failure: FailureDetails::new(
                                                     ResultType::CertificateNotTrusted,
                                                 )
@@ -980,7 +967,6 @@ impl DeliveryAttempt {
                                         last_status = if is_strict_tls {
                                             Status::from_tls_error(envelope.mx, error)
                                         } else {
-                                            disable_tls = true;
                                             Status::from_tls_error(envelope.mx, error)
                                                 .into_temporary()
                                         };
@@ -994,7 +980,7 @@ impl DeliveryAttempt {
                                     context = "tls",
                                     event = "disabled",
                                     mx = envelope.mx,
-                                    reason = if domain.disable_tls {"TLS is disabled for this host"} else {"TLS is unavailable for this host, falling back to plain-text."},
+                                    reason = "TLS is disabled for this host.",
                                 );
 
                                 message
@@ -1062,30 +1048,24 @@ impl DeliveryAttempt {
                         };
 
                         // Update status for the current domain and continue with the next one
-                        domain.set_status(
-                            delivery_result,
-                            &core
-                                .core
-                                .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
-                                .await
-                                .unwrap_or_else(|| vec![Duration::from_secs(60)]),
-                        );
+                        let schedule = core
+                            .core
+                            .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                            .await
+                            .unwrap_or_else(|| vec![Duration::from_secs(60)]);
+                        message.domains[domain_idx].set_status(delivery_result, &schedule);
                         continue 'next_domain;
                     }
                 }
 
                 // Update status
-                domain.disable_tls = disable_tls;
-                domain.set_status(
-                    last_status,
-                    &core
-                        .core
-                        .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
-                        .await
-                        .unwrap_or_else(|| vec![Duration::from_secs(60)]),
-                );
+                let schedule = core
+                    .core
+                    .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope)
+                    .await
+                    .unwrap_or_else(|| vec![Duration::from_secs(60)]);
+                message.domains[domain_idx].set_status(last_status, &schedule);
             }
-            message.domains = domains;
             message.recipients = recipients;
 
             // Send Delivery Status Notifications

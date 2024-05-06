@@ -42,6 +42,7 @@ use super::{
 
 pub mod dane;
 pub mod extensions;
+pub mod fallback_relay;
 pub mod ip_lookup;
 pub mod lmtp;
 pub mod mta_sts;

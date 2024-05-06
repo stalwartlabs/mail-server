@@ -32,7 +32,7 @@ use utils::BlobHash;
 use crate::core::SMTP;
 
 use super::{
-    Domain, Event, Message, QueueId, QuotaKey, Recipient, Schedule, SimpleEnvelope, Status,
+    Domain, Event, Message, QueueEnvelope, QueueId, QuotaKey, Recipient, Schedule, Status,
 };
 
 pub const LOCK_EXPIRY: u64 = 300;
@@ -341,22 +341,26 @@ impl Message {
                 idx
             } else {
                 let idx = self.domains.len();
-                let expires = core
-                    .core
-                    .eval_if(
-                        &core.core.smtp.queue.expire,
-                        &SimpleEnvelope::new(self, &rcpt_domain),
-                    )
-                    .await
-                    .unwrap_or_else(|| Duration::from_secs(5 * 86400));
+
                 self.domains.push(Domain {
                     domain: rcpt_domain,
                     retry: Schedule::now(),
-                    notify: Schedule::later(expires + Duration::from_secs(10)),
-                    expires: now() + expires.as_secs(),
+                    notify: Schedule::now(),
+                    expires: 0,
                     status: Status::Scheduled,
-                    disable_tls: false,
                 });
+
+                let expires = core
+                    .core
+                    .eval_if(&core.core.smtp.queue.expire, &QueueEnvelope::new(self, idx))
+                    .await
+                    .unwrap_or_else(|| Duration::from_secs(5 * 86400));
+
+                // Update expiration
+                let domain = self.domains.last_mut().unwrap();
+                domain.notify = Schedule::later(expires + Duration::from_secs(10));
+                domain.expires = now() + expires.as_secs();
+
                 idx
             };
         self.recipients.push(Recipient {

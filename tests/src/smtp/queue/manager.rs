@@ -165,7 +165,6 @@ fn domain(domain: &str, retry: u64, notify: u64, expires: u64) -> Domain {
         notify: Schedule::later(Duration::from_secs(notify)),
         expires: now() + expires,
         status: Status::Scheduled,
-        disable_tls: false,
     }
 }
 

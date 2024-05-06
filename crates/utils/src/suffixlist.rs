@@ -133,7 +133,7 @@ impl PublicSuffix {
                         if r.status().is_success() {
                             r.bytes().await
                         } else {
-                            config.new_build_error(
+                            config.new_build_warning(
                                 format!("{value}.{idx}"),
                                 format!(
                                     "Failed to fetch public suffixes from {value:?}: Status {status}",
@@ -150,7 +150,7 @@ impl PublicSuffix {
                 match result {
                     Ok(bytes) => bytes.to_vec(),
                     Err(err) => {
-                        config.new_build_error(
+                        config.new_build_warning(
                             format!("{value}.{idx}"),
                             format!("Failed to fetch public suffixes from {value:?}: {err}",),
                         );
@@ -161,7 +161,7 @@ impl PublicSuffix {
                 match std::fs::read(filename) {
                     Ok(bytes) => bytes,
                     Err(err) => {
-                        config.new_build_error(
+                        config.new_build_warning(
                             format!("{value}.{idx}"),
                             format!("Failed to read public suffixes from {value:?}: {err}",),
                         );
@@ -179,7 +179,7 @@ impl PublicSuffix {
                 {
                     Ok(bytes) => bytes,
                     Err(err) => {
-                        config.new_build_error(
+                        config.new_build_warning(
                             format!("{value}.{idx}"),
                             format!(
                                 "Failed to decompress public suffixes from {value:?}: {err}",
@@ -199,7 +199,7 @@ impl PublicSuffix {
                     return PublicSuffix::from(list.as_str());
                 }
                 Err(err) => {
-                    config.new_build_error(
+                    config.new_build_warning(
                         format!("{value}.{idx}"),
                         format!(
                             "Failed to parse public suffixes from {value:?}: {err}",
@@ -212,7 +212,7 @@ impl PublicSuffix {
         }
 
         #[cfg(not(feature = "test_mode"))]
-        config.new_build_error(key, "Failed to parse public suffixes from any source.");
+        config.new_build_warning(key, "Failed to parse public suffixes from any source.");
 
         PublicSuffix::default()
     }

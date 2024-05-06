@@ -43,6 +43,11 @@ pub const V_PRIORITY: u32 = 12;
 pub const V_PROTOCOL: u32 = 13;
 pub const V_TLS: u32 = 14;
 pub const V_RECIPIENTS: u32 = 15;
+pub const V_QUEUE_RETRY_NUM: u32 = 16;
+pub const V_QUEUE_NOTIFY_NUM: u32 = 17;
+pub const V_QUEUE_EXPIRES_IN: u32 = 18;
+pub const V_QUEUE_LAST_STATUS: u32 = 19;
+pub const V_QUEUE_LAST_ERROR: u32 = 20;
 
 pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("rcpt", V_RECIPIENT),
@@ -61,6 +66,11 @@ pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("protocol", V_PROTOCOL),
     ("is_tls", V_TLS),
     ("recipients", V_RECIPIENTS),
+    ("retry_num", V_QUEUE_RETRY_NUM),
+    ("notify_num", V_QUEUE_NOTIFY_NUM),
+    ("expires_in", V_QUEUE_EXPIRES_IN),
+    ("last_status", V_QUEUE_LAST_STATUS),
+    ("last_error", V_QUEUE_LAST_ERROR),
 ];
 
 use regex::Regex;
@@ -215,8 +225,20 @@ impl From<i64> for Variable<'_> {
     }
 }
 
+impl From<u64> for Variable<'_> {
+    fn from(value: u64) -> Self {
+        Variable::Integer(value as i64)
+    }
+}
+
 impl From<i32> for Variable<'_> {
     fn from(value: i32) -> Self {
+        Variable::Integer(value as i64)
+    }
+}
+
+impl From<u32> for Variable<'_> {
+    fn from(value: u32) -> Self {
         Variable::Integer(value as i64)
     }
 }

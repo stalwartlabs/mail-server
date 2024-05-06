@@ -46,7 +46,7 @@ use utils::config::Rate;
 
 use crate::{
     core::{Session, SessionAddress, State},
-    queue::{self, Message, SimpleEnvelope},
+    queue::{self, Message, QueueEnvelope, Schedule},
     scripts::ScriptResult,
 };
 
@@ -751,7 +751,16 @@ impl<T: SessionStream> Session<T> {
                 .last()
                 .map_or(true, |d| d.domain != rcpt.domain)
             {
-                let envelope = SimpleEnvelope::new(&message, &rcpt.domain);
+                let rcpt_idx = message.domains.len();
+                message.domains.push(queue::Domain {
+                    retry: Schedule::now(),
+                    notify: Schedule::now(),
+                    expires: 0,
+                    status: queue::Status::Scheduled,
+                    domain: rcpt.domain,
+                });
+
+                let envelope = QueueEnvelope::new(&message, rcpt_idx);
 
                 // Set next retry time
                 let retry = if self.data.future_release == 0 {
@@ -816,14 +825,11 @@ impl<T: SessionStream> Session<T> {
                     (notify, now() + expire_secs)
                 };
 
-                message.domains.push(queue::Domain {
-                    retry,
-                    notify,
-                    expires,
-                    status: queue::Status::Scheduled,
-                    domain: rcpt.domain,
-                    disable_tls: false,
-                });
+                // Update domain
+                let domain = message.domains.last_mut().unwrap();
+                domain.retry = retry;
+                domain.notify = notify;
+                domain.expires = expires;
             }
 
             message.recipients.push(queue::Recipient {

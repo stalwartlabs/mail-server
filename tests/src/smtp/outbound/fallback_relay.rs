@@ -27,22 +27,30 @@ use common::config::server::ServerProtocol;
 use mail_auth::MX;
 use store::write::now;
 
-use crate::smtp::{
-    inbound::TestMessage,
-    outbound::TestServer,
-    session::{TestSession, VerifyResponse},
-};
+use crate::smtp::{outbound::TestServer, session::TestSession};
 
 const LOCAL: &str = r#"
+[queue.outbound]
+next-hop = [{if = "retry_num > 0", then = "'fallback'"},
+            {else = false}]
+
 [session.rcpt]
 relay = true
+max-recipients = 100
 
-[queue.outbound]
-hostname = "'badtls.foobar.org'"
+[session.extensions]
+dsn = true
 
-[queue.outbound.tls]
-starttls = [ { if = "retry_num > 0 && last_error == 'tls'", then = "disable"},
-             { else = "optional" }]
+[remote.fallback]
+address = fallback.foobar.org
+port = 9925
+protocol = 'smtp'
+concurrency = 5
+
+[remote.fallback.tls]
+implicit = false
+allow-invalid-certs = true
+
 "#;
 
 const REMOTE: &str = r#"
@@ -59,7 +67,7 @@ chunking = false
 
 #[tokio::test]
 #[serial_test::serial]
-async fn starttls_optional() {
+async fn fallback_relay() {
     /*let disable = 1;
     tracing::subscriber::set_global_default(
         tracing_subscriber::FmtSubscriber::builder()
@@ -69,24 +77,27 @@ async fn starttls_optional() {
     .unwrap();*/
 
     // Start test server
-    let mut remote = TestServer::new("smtp_starttls_remote", REMOTE, true).await;
+    let mut remote = TestServer::new("smtp_fallback_remote", REMOTE, true).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
-
-    // Retry on failed STARTTLS
-    let mut local = TestServer::new("smtp_starttls_local", LOCAL, true).await;
+    let mut local = TestServer::new("smtp_fallback_local", LOCAL, true).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
     core.core.smtp.resolvers.dns.mx_add(
         "foobar.org",
         vec![MX {
-            exchanges: vec!["mx.foobar.org".to_string()],
+            exchanges: vec!["_dns_error.foobar.org".to_string()],
             preference: 10,
         }],
         Instant::now() + Duration::from_secs(10),
     );
+    /*core.core.smtp.resolvers.dns.ipv4_add(
+        "unreachable.foobar.org",
+        vec!["127.0.0.2".parse().unwrap()],
+        Instant::now() + Duration::from_secs(10),
+    );*/
     core.core.smtp.resolvers.dns.ipv4_add(
-        "mx.foobar.org",
+        "fallback.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
@@ -119,11 +130,5 @@ async fn starttls_optional() {
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    remote
-        .qr
-        .expect_message()
-        .await
-        .read_lines(&remote.qr)
-        .await
-        .assert_not_contains("using TLSv1.3 with cipher");
+    remote.qr.expect_message().await;
 }

@@ -48,6 +48,7 @@ pub enum ConfigWarning {
     Missing,
     AppliedDefault { default: String },
     Unread { value: String },
+    Build { error: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -218,6 +219,7 @@ impl Config {
                 ConfigWarning::Unread { value } => {
                     format!("WARNING: Unused setting {key:?} with value {value:?}")
                 }
+                ConfigWarning::Build { error } => format!("WARNING for {key:?}: {error}"),
             };
             if !use_stderr {
                 tracing::debug!("{}", message);
