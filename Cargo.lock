@@ -2951,6 +2951,7 @@ dependencies = [
  "tracing",
  "tungstenite",
  "utils",
+ "x509-parser 0.16.0",
 ]
 
 [[package]]

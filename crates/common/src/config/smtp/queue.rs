@@ -167,6 +167,9 @@ impl Default for QueueConfig {
                 ),
                 invalid_certs: IfBlock::new::<()>(
                     "queue.outbound.tls.allow-invalid-certs",
+                    #[cfg(not(feature = "test_mode"))]
+                    [("retry_num > 0 && last_error == 'tls'", "true")],
+                    #[cfg(feature = "test_mode")]
                     [],
                     "false",
                 ),

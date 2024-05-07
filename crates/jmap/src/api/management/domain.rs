@@ -27,8 +27,10 @@ use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha1::Digest;
 use store::ahash::AHashMap;
 use utils::url_params::UrlParams;
+use x509_parser::parse_x509_certificate;
 
 use crate::{
     api::{
@@ -228,6 +230,48 @@ impl JMAP {
             name: format!("_dmarc.{domain_name}."),
             content: format!("v=DMARC1; p=reject; rua=mailto:postmaster@{domain_name}; ruf=mailto:postmaster@{domain_name}",),
         });
+
+        // Add TLSA records
+        for (name, key) in self.core.tls.certificates.load().iter() {
+            if !name.ends_with(domain_name) {
+                continue;
+            }
+            let cert = if let Some(cert) = key.cert.first().map(|cert| cert.as_ref()) {
+                cert
+            } else {
+                tracing::debug!("No certificate found for domain: {}", domain_name);
+                continue;
+            };
+            let parsed_cert = match parse_x509_certificate(cert) {
+                Ok((_, parsed_cert)) => parsed_cert,
+                Err(err) => {
+                    tracing::debug!("Failed to parse certificate: {}", err);
+                    continue;
+                }
+            };
+
+            let name = if !name.starts_with('.') {
+                format!("_25._tcp.{name}.")
+            } else {
+                format!("_25._tcp.mail.{name}.")
+            };
+
+            for (s, cert) in [cert, parsed_cert.subject_pki.raw].into_iter().enumerate() {
+                for (m, hash) in [
+                    format!("{:x}", sha2::Sha256::digest(cert)),
+                    format!("{:x}", sha2::Sha512::digest(cert)),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    records.push(DnsRecord {
+                        typ: "TLSA".to_string(),
+                        name: name.clone(),
+                        content: format!("3 {} {} {}", s, m + 1, hash),
+                    });
+                }
+            }
+        }
 
         Ok(records)
     }

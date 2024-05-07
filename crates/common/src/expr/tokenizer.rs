@@ -365,6 +365,11 @@ impl TokenMap {
             V_PRIORITY,
             V_PROTOCOL,
             V_TLS,
+            V_QUEUE_RETRY_NUM,
+            V_QUEUE_NOTIFY_NUM,
+            V_QUEUE_EXPIRES_IN,
+            V_QUEUE_LAST_STATUS,
+            V_QUEUE_LAST_ERROR,
         ])
     }
 
