@@ -254,6 +254,17 @@ impl JMAP {
                         };
                     }
                 }
+                ("mta-sts.txt", &Method::GET) => {
+                    if let Some(policy) = self.core.build_mta_sts_policy() {
+                        return Resource {
+                            content_type: "text/plain",
+                            contents: policy.to_string().into_bytes(),
+                        }
+                        .into_http_response();
+                    } else {
+                        return RequestError::not_found().into_http_response();
+                    }
+                }
                 (_, &Method::OPTIONS) => {
                     return ().into_http_response();
                 }

@@ -1,6 +1,9 @@
 use std::{
+    fmt::Display,
+    hash::{DefaultHasher, Hash, Hasher},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
+    time::Duration,
 };
 
 use mail_auth::{
@@ -13,7 +16,12 @@ use mail_auth::{
     Resolver,
 };
 use parking_lot::Mutex;
-use utils::{config::Config, suffixlist::PublicSuffix};
+use utils::{
+    config::{utils::ParseValue, Config},
+    suffixlist::PublicSuffix,
+};
+
+use crate::Core;
 
 pub struct Resolvers {
     pub dns: Resolver,
@@ -47,20 +55,21 @@ pub struct Tlsa {
     pub has_intermediates: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Default, Clone, Copy)]
 pub enum Mode {
     Enforce,
     Testing,
+    #[default]
     None,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Clone)]
 pub enum MxPattern {
     Equals(String),
     StartsWith(String),
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Policy {
     pub id: String,
     pub mode: Mode,
@@ -227,6 +236,97 @@ impl Resolvers {
     }
 }
 
+impl Policy {
+    pub fn try_parse(config: &mut Config) -> Option<Self> {
+        let mode = config
+            .property_or_default::<Option<Mode>>("session.mta-sts.mode", "testing")
+            .unwrap_or_default()?;
+        let max_age = config
+            .property_or_default::<Duration>("session.mta-sts.max-age", "7d")
+            .unwrap_or_else(|| Duration::from_secs(604800))
+            .as_secs();
+        let mut mx = Vec::new();
+
+        for (_, item) in config.values("session.mta-sts.mx") {
+            if let Some(item) = item.strip_prefix("*.") {
+                mx.push(MxPattern::StartsWith(item.to_string()));
+            } else {
+                mx.push(MxPattern::Equals(item.to_string()));
+            }
+        }
+
+        let mut policy = Self {
+            id: Default::default(),
+            mode,
+            mx,
+            max_age,
+        };
+
+        if !policy.mx.is_empty() {
+            policy.mx.sort_unstable();
+            policy.id = policy.hash().to_string();
+        }
+
+        policy.into()
+    }
+
+    pub fn try_build<I, T>(mut self, names: I) -> Option<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<str>,
+    {
+        if self.mx.is_empty() {
+            for name in names {
+                let name = name.as_ref();
+                if let Some(domain) = name.strip_prefix('.') {
+                    self.mx.push(MxPattern::StartsWith(domain.to_string()));
+                } else if name != "*" && !name.is_empty() {
+                    self.mx.push(MxPattern::Equals(name.to_string()));
+                }
+            }
+
+            if !self.mx.is_empty() {
+                self.mx.sort_unstable();
+                self.id = self.hash().to_string();
+                Some(self)
+            } else {
+                None
+            }
+        } else {
+            Some(self)
+        }
+    }
+
+    fn hash(&self) -> u64 {
+        let mut s = DefaultHasher::new();
+        self.mode.hash(&mut s);
+        self.max_age.hash(&mut s);
+        self.mx.hash(&mut s);
+        s.finish()
+    }
+}
+
+impl Core {
+    pub fn build_mta_sts_policy(&self) -> Option<Policy> {
+        self.smtp
+            .session
+            .mta_sts_policy
+            .clone()
+            .and_then(|policy| policy.try_build(self.tls.certificates.load().keys()))
+    }
+}
+
+impl ParseValue for Mode {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
+        match value {
+            "enforce" => Ok(Self::Enforce),
+            "testing" | "test" => Ok(Self::Testing),
+            "none" => Ok(Self::None),
+            _ => Err(format!("Invalid mode value {value:?}")),
+        }
+    }
+}
+
 impl Default for Resolvers {
     fn default() -> Self {
         let (config, opts) = match read_system_conf() {
@@ -250,6 +350,36 @@ impl Default for Resolvers {
             },
             psl: PublicSuffix::default(),
         }
+    }
+}
+
+impl Display for Policy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("version: STSv1\r\n")?;
+        f.write_str("mode: ")?;
+        match self.mode {
+            Mode::Enforce => f.write_str("enforce")?,
+            Mode::Testing => f.write_str("testing")?,
+            Mode::None => unreachable!(),
+        }
+        f.write_str("\r\nmax_age: ")?;
+        self.max_age.fmt(f)?;
+        f.write_str("\r\n")?;
+
+        for mx in &self.mx {
+            f.write_str("mx: ")?;
+            let mx = match mx {
+                MxPattern::StartsWith(mx) => {
+                    f.write_str("*.")?;
+                    mx
+                }
+                MxPattern::Equals(mx) => mx,
+            };
+            f.write_str(mx)?;
+            f.write_str("\r\n")?;
+        }
+
+        Ok(())
     }
 }
 

@@ -27,6 +27,7 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use store::{
     write::{BatchBuilder, ValueClass},
@@ -122,6 +123,32 @@ impl ConfigManager {
         }
 
         Ok(results)
+    }
+
+    pub async fn group(
+        &self,
+        prefix: &str,
+        suffix: &str,
+    ) -> store::Result<AHashMap<String, AHashMap<String, String>>> {
+        let mut grouped = AHashMap::new();
+
+        let mut list = self.list(prefix, true).await?;
+        for (key, _) in &list {
+            if let Some(key) = key.strip_suffix(suffix) {
+                grouped.insert(key.to_string(), AHashMap::new());
+            }
+        }
+
+        for (name, entries) in &mut grouped {
+            let prefix = format!("{name}.");
+            for (key, value) in &mut list {
+                if let Some(key) = key.strip_prefix(&prefix) {
+                    entries.insert(key.to_string(), std::mem::take(value));
+                }
+            }
+        }
+
+        Ok(grouped)
     }
 
     async fn db_list(
@@ -384,6 +411,46 @@ impl ConfigManager {
         } else {
             Err("External configuration file does not contain a version key".to_string())
         }
+    }
+
+    pub async fn get_services(&self) -> store::Result<Vec<(String, u16, bool)>> {
+        let mut result = Vec::new();
+
+        for listener in self
+            .group("server.listener.", ".protocol")
+            .await
+            .unwrap_or_default()
+            .into_values()
+        {
+            let is_tls = listener
+                .get("tls.implicit")
+                .map_or(false, |tls| tls == "true");
+            let protocol = listener
+                .get("protocol")
+                .map(|s| s.as_str())
+                .unwrap_or_default();
+            let port = listener
+                .get("bind")
+                .or_else(|| {
+                    listener.iter().find_map(|(key, value)| {
+                        if key.starts_with("bind.") {
+                            Some(value)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .and_then(|s| s.rsplit_once(':').and_then(|(_, p)| p.parse::<u16>().ok()))
+                .unwrap_or_default();
+
+            if port > 0 {
+                result.push((protocol.to_string(), port, is_tls));
+            }
+        }
+
+        result.sort_unstable();
+
+        Ok(result)
     }
 }
 
