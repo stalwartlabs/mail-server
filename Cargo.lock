@@ -518,6 +518,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bind_helper"
+version = "0.1.0"
+dependencies = [
+ "nix 0.28.0",
+ "zerocopy",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.69.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -992,6 +1000,7 @@ dependencies = [
  "arc-swap",
  "base64 0.22.0",
  "bincode",
+ "bind_helper",
  "chrono",
  "decancer",
  "directory",
@@ -1014,7 +1023,6 @@ dependencies = [
  "opentelemetry_sdk",
  "parking_lot",
  "pem",
- "privdrop",
  "proxy-header",
  "pwhash",
  "rcgen 0.12.1",
@@ -3315,6 +3323,7 @@ dependencies = [
 name = "mail-server"
 version = "0.7.3"
 dependencies = [
+ "bind_helper",
  "common",
  "directory",
  "imap",
@@ -3322,6 +3331,7 @@ dependencies = [
  "jmap",
  "jmap_proto",
  "managesieve",
+ "privdrop",
  "smtp",
  "store",
  "tokio",
@@ -3431,6 +3441,15 @@ name = "memoffset"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
+name = "memoffset"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
 ]
@@ -3602,8 +3621,21 @@ dependencies = [
  "bitflags 1.3.2",
  "cfg-if",
  "libc",
- "memoffset",
+ "memoffset 0.7.1",
  "pin-utils",
+]
+
+[[package]]
+name = "nix"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
+dependencies = [
+ "bitflags 2.5.0",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+ "memoffset 0.9.1",
 ]
 
 [[package]]
@@ -4285,7 +4317,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9bc12de3935536ed9b69488faea4450a298dac44179b54f71806e63f55034bf9"
 dependencies = [
  "libc",
- "nix",
+ "nix 0.26.4",
 ]
 
 [[package]]
@@ -7202,18 +7234,19 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.7.32"
+version = "0.7.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74d4d3961e53fa4c9a25a8637fc2bfaf2595b3d3ae34875568a5cf64787716be"
+checksum = "ae87e3fcd617500e5d106f0380cf7b77f3c6092aae37191433159dda23cfb087"
 dependencies = [
+ "byteorder",
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.7.32"
+version = "0.7.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ce1b18ccd8e73a9321186f97e46f9f04b778851177567b1975109d26a08d2a6"
+checksum = "15e934569e47891f7d9411f1a451d947a60e000ab3bd24fbb970f000387d1b3b"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -36,7 +36,7 @@ use tokio::{
 };
 use tokio_rustls::server::TlsStream;
 use tracing::Span;
-use utils::{config::Config, UnwrapFailure};
+use utils::config::Config;
 
 use crate::{
     config::server::{Listener, Server, ServerProtocol, Servers},
@@ -296,28 +296,36 @@ impl SocketOpts {
 }
 
 impl Servers {
-    pub fn bind_and_drop_priv(&self, config: &mut Config) {
-        // Bind as root
-        for server in &self.servers {
-            for listener in &server.listeners {
-                if let Err(err) = listener.socket.bind(listener.addr) {
+    pub fn bind_all(&self, config: &mut Config, helper: Option<bind_helper::Helper>) {
+        let listeners = self
+            .servers
+            .iter()
+            .flat_map(|s| s.listeners.iter().map(|l| (&s.id, l)));
+        #[cfg(unix)]
+        if let Some(mut helper) = helper {
+            use std::os::fd::AsRawFd;
+            let slice: Vec<_> = listeners
+                .clone()
+                .map(|(_, listener)| (listener.socket.as_raw_fd(), listener.addr))
+                .collect();
+            let results = helper.bind_sockets(&slice[..]);
+            for ((server_id, listener), ret) in listeners.zip(results) {
+                if ret != 0 {
+                    let err = std::io::Error::from_raw_os_error(ret);
                     config.new_build_error(
-                        format!("server.listener.{}", server.id),
+                        format!("server.listener.{}", server_id),
                         format!("Failed to bind to {}: {}", listener.addr, err),
                     );
                 }
             }
+            return;
         }
-
-        // Drop privileges
-        #[cfg(not(target_env = "msvc"))]
-        {
-            if let Ok(run_as_user) = std::env::var("RUN_AS_USER") {
-                let mut pd = privdrop::PrivDrop::default().user(run_as_user);
-                if let Ok(run_as_group) = std::env::var("RUN_AS_GROUP") {
-                    pd = pd.group(run_as_group);
-                }
-                pd.apply().failed("Failed to drop privileges");
+        for (server_id, listener) in listeners {
+            if let Err(err) = listener.socket.bind(listener.addr) {
+                config.new_build_error(
+                    format!("server.listener.{}", server_id),
+                    format!("Failed to bind to {}: {}", listener.addr, err),
+                );
             }
         }
     }

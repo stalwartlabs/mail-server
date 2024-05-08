@@ -1,0 +1,12 @@
+[package]
+name = "bind_helper"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+zerocopy = { version = "0.7.33", features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.28.0", features = ["socket", "process", "net", "uio"] }

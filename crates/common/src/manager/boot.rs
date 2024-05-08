@@ -73,7 +73,7 @@ enum ImportExport {
 }
 
 impl BootManager {
-    pub async fn init() -> Self {
+    pub async fn init(helper: Option<bind_helper::Helper>) -> Self {
         let mut config_path = std::env::var("CONFIG_PATH").ok();
         let mut import_export = ImportExport::None;
 
@@ -151,7 +151,7 @@ impl BootManager {
         let mut servers = Servers::parse(&mut config);
 
         // Bind ports and drop privileges
-        servers.bind_and_drop_priv(&mut config);
+        servers.bind_all(&mut config, helper);
 
         // Load stores
         let mut stores = Stores::parse(&mut config).await;

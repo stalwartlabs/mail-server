@@ -126,7 +126,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Start JMAP server
     let manager = SessionManager::from(push_server.clone());
-    servers.bind_and_drop_priv(&mut settings);
+    servers.bind_all(&mut settings, None);
     settings.assert_no_errors();
     let _shutdown_tx = servers.spawn(|server, acceptor, shutdown_rx| {
         server.spawn(manager.clone(), mock_core.clone(), acceptor, shutdown_rx);
