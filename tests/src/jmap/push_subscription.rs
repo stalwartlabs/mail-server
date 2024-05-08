@@ -40,7 +40,6 @@ use jmap::{
         http::{fetch_body, ToHttpResponse},
         HtmlResponse, StateChangeResponse,
     },
-    auth::AccessToken,
     push::ece::ece_encrypt,
 };
 use jmap_client::{mailbox::Role, push_subscription::Keys};
@@ -323,9 +322,7 @@ impl common::listener::SessionManager for SessionManager {
                                 .map_or(false, |encoding| {
                                     encoding.to_str().unwrap() == "aes128gcm"
                                 });
-                            let body = fetch_body(&mut req, 1024 * 1024, &AccessToken::default())
-                                .await
-                                .unwrap();
+                            let body = fetch_body(&mut req, 1024 * 1024).await.unwrap();
                             let message = serde_json::from_slice::<PushMessage>(&if is_encrypted {
                                 ece::decrypt(
                                     &push.keypair,
