@@ -200,7 +200,7 @@ async fn antispam() {
 
     // Parse config
     let mut config = Config::new(&config).unwrap();
-    config.resolve_macros().await;
+    config.resolve_all_macros().await;
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     //config.assert_no_errors();

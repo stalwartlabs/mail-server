@@ -274,7 +274,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
             .replace("{TMP}", &temp_dir.path.display().to_string()),
     )
     .unwrap();
-    config.resolve_macros().await;
+    config.resolve_all_macros().await;
 
     // Parse servers
     let mut servers = Servers::parse(&mut config);
