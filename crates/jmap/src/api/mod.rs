@@ -28,6 +28,7 @@ use utils::map::vec_map::VecMap;
 
 use crate::JmapInstance;
 
+pub mod autoconfig;
 pub mod event_source;
 pub mod http;
 pub mod management;

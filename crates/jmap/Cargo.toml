@@ -1,6 +1,6 @@
 [package]
 name = "jmap"
-version = "0.7.3"
+version = "0.8.0"
 edition = "2021"
 resolver = "2"
 
@@ -56,6 +56,7 @@ async-trait = "0.1.68"
 lz4_flex = { version = "0.11", default-features = false }
 rev_lines = "0.3.0"
 x509-parser = "0.16.0"
+quick-xml = "0.31"
 
 [dev-dependencies]
 ece = "2.2"

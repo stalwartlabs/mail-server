@@ -448,7 +448,12 @@ impl ConfigManager {
             }
         }
 
-        result.sort_unstable();
+        // Sort by name, then tls and finally port
+        result.sort_unstable_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| b.2.cmp(&a.2))
+                .then_with(|| a.1.cmp(&b.1))
+        });
 
         Ok(result)
     }

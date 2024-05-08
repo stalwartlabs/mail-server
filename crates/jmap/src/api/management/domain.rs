@@ -217,17 +217,10 @@ impl JMAP {
                 content: "v=spf1 a ra=postmaster -all".to_string(),
             });
         }
-
         records.push(DnsRecord {
             typ: "TXT".to_string(),
             name: format!("{domain_name}."),
             content: "v=spf1 mx ra=postmaster -all".to_string(),
-        });
-
-        records.push(DnsRecord {
-            typ: "CNAME".to_string(),
-            name: format!("autoconfig.{domain_name}."),
-            content: format!("{server_name}."),
         });
 
         let mut has_https = false;
@@ -260,22 +253,27 @@ impl JMAP {
                         content: format!("0 1 {port} {server_name}."),
                     });
                 }
-                ("http", port @ 1..=u16::MAX) => {
-                    if is_tls {
-                        has_https = true;
-                        records.push(DnsRecord {
-                            typ: "SRV".to_string(),
-                            name: format!("_autodiscover._tcp.{domain_name}."),
-                            content: format!("0 1 {port} {server_name}."),
-                        });
-                    }
+                ("http", _) if is_tls => {
+                    has_https = true;
                 }
                 _ => (),
             }
         }
 
-        // Add MTA-STS record
         if has_https {
+            // Add autoconfig and autodiscover records
+            records.push(DnsRecord {
+                typ: "CNAME".to_string(),
+                name: format!("autoconfig.{domain_name}."),
+                content: format!("{server_name}."),
+            });
+            records.push(DnsRecord {
+                typ: "CNAME".to_string(),
+                name: format!("autodiscover.{domain_name}."),
+                content: format!("{server_name}."),
+            });
+
+            // Add MTA-STS records
             if let Some(policy) = self.core.build_mta_sts_policy() {
                 records.push(DnsRecord {
                     typ: "CNAME".to_string(),

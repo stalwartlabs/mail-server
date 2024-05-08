@@ -23,11 +23,13 @@
 
 use std::collections::HashMap;
 
-use http_body_util::BodyExt;
 use hyper::{header::CONTENT_TYPE, StatusCode};
 use serde::{Deserialize, Serialize};
 
-use crate::api::{http::ToHttpResponse, HtmlResponse, HttpRequest, HttpResponse};
+use crate::api::{
+    http::{fetch_body, ToHttpResponse},
+    HtmlResponse, HttpRequest, HttpResponse,
+};
 
 pub mod auth;
 pub mod token;
@@ -271,18 +273,4 @@ impl FormData {
     pub fn remove_bytes(&mut self, key: &str) -> Option<Vec<u8>> {
         self.fields.remove(key)
     }
-}
-
-pub async fn fetch_body(req: &mut HttpRequest, max_len: usize) -> Option<Vec<u8>> {
-    let mut bytes = Vec::with_capacity(1024);
-    while let Some(Ok(frame)) = req.frame().await {
-        if let Some(data) = frame.data_ref() {
-            if bytes.len() + data.len() <= max_len {
-                bytes.extend_from_slice(data);
-            } else {
-                return None;
-            }
-        }
-    }
-    bytes.into()
 }
