@@ -76,7 +76,7 @@ impl ConfigManager {
             keys: self.cfg_local.load().as_ref().clone(),
             ..Default::default()
         };
-        config.resolve_macros().await;
+        config.resolve_all_macros().await;
         self.extend_config(&mut config, prefix)
             .await
             .map(|_| config)

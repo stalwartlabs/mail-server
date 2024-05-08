@@ -144,14 +144,17 @@ impl BootManager {
         }
         let cfg_local = config.keys.clone();
 
-        // Resolve macros
-        config.resolve_macros().await;
+        // Resolve environment macros
+        config.resolve_macros(&["env"]).await;
 
         // Parser servers
         let mut servers = Servers::parse(&mut config);
 
         // Bind ports and drop privileges
         servers.bind_and_drop_priv(&mut config);
+
+        // Resolve file and configuration macros
+        config.resolve_macros(&["file", "cfg"]).await;
 
         // Load stores
         let mut stores = Stores::parse(&mut config).await;

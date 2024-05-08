@@ -74,10 +74,14 @@ pub struct Rate {
 pub type Result<T> = std::result::Result<T, String>;
 
 impl Config {
-    pub async fn resolve_macros(&mut self) {
-        for macro_class in ["env", "file", "cfg"] {
+    pub async fn resolve_macros(&mut self, classes: &[&str]) {
+        for macro_class in classes {
             self.resolve_macro_type(macro_class).await;
         }
+    }
+
+    pub async fn resolve_all_macros(&mut self) {
+        self.resolve_macros(&["env", "file", "cfg"]).await;
     }
 
     async fn resolve_macro_type(&mut self, class: &str) {
