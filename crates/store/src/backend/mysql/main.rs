@@ -55,11 +55,16 @@ impl MysqlStore {
         }
 
         if config
-            .property_or_default::<bool>((&prefix, "tls.allow-invalid-certs"), "false")
+            .property_or_default::<bool>((&prefix, "tls.enable"), "false")
             .unwrap_or_default()
         {
+            let allow_invalid = config
+                .property_or_default::<bool>((&prefix, "tls.allow-invalid-certs"), "false")
+                .unwrap_or_default();
             opts = opts.ssl_opts(Some(
-                SslOpts::default().with_danger_accept_invalid_certs(true),
+                SslOpts::default()
+                    .with_danger_accept_invalid_certs(allow_invalid)
+                    .with_danger_skip_domain_validation(allow_invalid),
             ));
         }
 
