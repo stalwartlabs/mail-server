@@ -77,18 +77,18 @@ impl JMAP {
                 "\t\t\t<socketType>{}</socketType>",
                 if is_tls { "SSL" } else { "STARTTLS" }
             );
+            let _ = writeln!(&mut config, "\t\t\t<username>{account_name}</username>");
             let _ = writeln!(
                 &mut config,
                 "\t\t\t<authentication>password-cleartext</authentication>"
             );
-            let _ = writeln!(&mut config, "\t\t\t<username>{account_name}</username>");
             let _ = writeln!(&mut config, "\t\t</{tag}>");
         }
 
         config.push_str("\t</emailProvider>\n");
         let _ = writeln!(
             &mut config,
-            "\t<clientConfigUpdate url=\"https://autoconfig.{domain}/.well-known/mail-v1.xml\"/>"
+            "\t<clientConfigUpdate url=\"https://autoconfig.{domain}/mail/config-v1.1.xml\"></clientConfigUpdate>"
         );
         config.push_str("</clientConfig>\n");
 

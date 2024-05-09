@@ -80,10 +80,11 @@ impl BootManager {
         if config_path.is_none() {
             let mut args = std::env::args().skip(1);
 
-            while let Some(arg) = args
-                .next()
-                .and_then(|arg| arg.strip_prefix("--").map(|arg| arg.to_string()))
-            {
+            while let Some(arg) = args.next().and_then(|arg| {
+                arg.strip_prefix("--")
+                    .or_else(|| arg.strip_prefix('-'))
+                    .map(|arg| arg.to_string())
+            }) {
                 let (key, value) = if let Some((key, value)) = arg.split_once('=') {
                     (key.to_string(), Some(value.trim().to_string()))
                 } else {
