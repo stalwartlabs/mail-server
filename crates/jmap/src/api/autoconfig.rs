@@ -93,7 +93,7 @@ impl JMAP {
         config.push_str("</clientConfig>\n");
 
         Resource {
-            content_type: "text/xml+autoconfig; charset=utf-8",
+            content_type: "application/xml; charset=utf-8",
             contents: config.into_bytes(),
         }
         .into_http_response()
@@ -176,7 +176,7 @@ impl JMAP {
         let _ = writeln!(&mut config, "</Autodiscover>");
 
         Resource {
-            content_type: "text/xml; charset=utf-8",
+            content_type: "application/xml; charset=utf-8",
             contents: config.into_bytes(),
         }
         .into_http_response()
