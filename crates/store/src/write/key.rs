@@ -296,6 +296,11 @@ impl<T: ResolveId> ValueClass<T> {
                     .write(account_id)
                     .write(collection)
                     .write(document_id),
+                BlobOp::LinkId { hash, id } => serializer
+                    .write::<&[u8]>(hash.as_ref())
+                    .write((*id >> 32) as u32)
+                    .write(u8::MAX)
+                    .write(*id as u32),
             },
             ValueClass::Config(key) => serializer.write(key.as_slice()),
             ValueClass::Lookup(lookup) => match lookup {
@@ -523,7 +528,9 @@ impl<T> ValueClass<T> {
             },
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { .. } => BLOB_HASH_LEN + U64_LEN + U32_LEN + 1,
-                BlobOp::Commit { .. } | BlobOp::Link { .. } => BLOB_HASH_LEN + U32_LEN * 2 + 2,
+                BlobOp::Commit { .. } | BlobOp::Link { .. } | BlobOp::LinkId { .. } => {
+                    BLOB_HASH_LEN + U32_LEN * 2 + 2
+                }
             },
             ValueClass::IndexEmail { .. } => BLOB_HASH_LEN + U64_LEN * 2,
             ValueClass::Queue(q) => match q {
@@ -555,7 +562,9 @@ impl<T> ValueClass<T> {
             ValueClass::IndexEmail { .. } => SUBSPACE_FTS_INDEX,
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { .. } => SUBSPACE_BLOB_RESERVE,
-                BlobOp::Commit { .. } | BlobOp::Link { .. } => SUBSPACE_BLOB_LINK,
+                BlobOp::Commit { .. } | BlobOp::Link { .. } | BlobOp::LinkId { .. } => {
+                    SUBSPACE_BLOB_LINK
+                }
             },
             ValueClass::Config(_) => SUBSPACE_SETTINGS,
             ValueClass::Lookup(lookup) => match lookup {

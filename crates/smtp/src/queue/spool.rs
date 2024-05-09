@@ -36,8 +36,6 @@ use super::{
 };
 
 pub const LOCK_EXPIRY: u64 = 300;
-pub const BLOB_EXPIRY: u64 = 3600;
-pub const SPOOL_ACCOUNT_ID: u32 = u32::MAX - 1;
 
 #[derive(Debug)]
 pub struct QueueEventLock {
@@ -152,17 +150,12 @@ impl SMTP {
                     event = "locked",
                     id = event.queue_id,
                     due = event.due,
-                    "Failed to lock event: Event already locked."
+                    "Lock busy: Event already locked."
                 );
                 None
             }
             Err(err) => {
-                tracing::error!(
-                    context = "queue",
-                    event = "error",
-                    "Failed to lock event: {}",
-                    err
-                );
+                tracing::error!(context = "queue", event = "error", "Lock error: {}", err);
                 None
             }
         }
@@ -219,10 +212,11 @@ impl Message {
 
         // Reserve and write blob
         let mut batch = BatchBuilder::new();
-        batch.with_account_id(SPOOL_ACCOUNT_ID).set(
+        let reserve_until = now() + 120;
+        batch.set(
             BlobOp::Reserve {
                 hash: self.blob_hash.clone(),
-                until: self.next_delivery_event() + BLOB_EXPIRY,
+                until: reserve_until,
             },
             0u32.serialize(),
         );
@@ -292,6 +286,17 @@ impl Message {
                     queue_id: self.id,
                 })),
                 0u64.serialize(),
+            )
+            .clear(BlobOp::Reserve {
+                hash: self.blob_hash.clone(),
+                until: reserve_until,
+            })
+            .set(
+                BlobOp::LinkId {
+                    hash: self.blob_hash.clone(),
+                    id: self.id,
+                },
+                vec![],
             )
             .set(
                 BlobOp::Commit {
@@ -411,14 +416,6 @@ impl Message {
                 );
         }
 
-        batch.with_account_id(SPOOL_ACCOUNT_ID).set(
-            BlobOp::Reserve {
-                hash: self.blob_hash.clone(),
-                until: self.next_delivery_event() + BLOB_EXPIRY,
-            },
-            0u32.serialize(),
-        );
-
         batch.set(
             ValueClass::Queue(QueueClass::Message(self.id)),
             Bincode::new(self).serialize(),
@@ -456,18 +453,10 @@ impl Message {
         }
 
         batch
-            .with_account_id(SPOOL_ACCOUNT_ID)
-            .clear(BlobOp::Reserve {
+            .clear(BlobOp::LinkId {
                 hash: self.blob_hash.clone(),
-                until: prev_event + BLOB_EXPIRY,
+                id: self.id,
             })
-            .set(
-                BlobOp::Reserve {
-                    hash: self.blob_hash.clone(),
-                    until: now() - 1,
-                },
-                0u32.serialize(),
-            )
             .clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                 due: prev_event,
                 queue_id: self.id,

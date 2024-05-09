@@ -243,6 +243,7 @@ pub enum BlobOp {
     Reserve { hash: BlobHash, until: u64 },
     Commit { hash: BlobHash },
     Link { hash: BlobHash },
+    LinkId { hash: BlobHash, id: u64 },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

@@ -195,7 +195,7 @@ impl SMTP {
                                 context = "queue",
                                 event = "locked",
                                 key = ?lock,
-                                "Failed to lock report: Event already locked."
+                                "Lock busy: Event already locked."
                             );
                             false
                         }
@@ -203,7 +203,7 @@ impl SMTP {
                             tracing::error!(
                                 context = "queue",
                                 event = "error",
-                                "Failed to lock report: {}",
+                                "Lock busy: {}",
                                 err
                             );
                             false
@@ -215,7 +215,7 @@ impl SMTP {
                         event = "locked",
                         key = ?lock,
                         expiry = expiry - now,
-                        "Failed to lock report: Report already locked."
+                        "Lock busy: Report already locked."
                     );
                     false
                 }
@@ -225,7 +225,7 @@ impl SMTP {
                     context = "queue",
                     event = "locked",
                     key = ?lock,
-                    "Failed to lock report: Report lock deleted."
+                    "Lock busy: Report lock deleted."
                 );
                 false
             }
@@ -234,7 +234,7 @@ impl SMTP {
                     context = "queue",
                     event = "error",
                     key = ?lock,
-                    "Failed to lock report: {}",
+                    "Lock error: {}",
                     err
                 );
                 false
