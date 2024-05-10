@@ -142,18 +142,18 @@ impl FdbStore {
     }
 
     pub(crate) async fn read_trx(&self) -> crate::Result<Transaction> {
-        let trx = self.db.create_trx()?;
         let (is_expired, mut read_version) = {
             let version = self.version.lock();
             (version.is_expired(), version.version)
         };
+        let trx = self.db.create_trx()?;
 
         if is_expired {
             read_version = trx.get_read_version().await?;
             *self.version.lock() = ReadVersion::new(read_version);
+        } else {
+            trx.set_read_version(read_version);
         }
-
-        trx.set_read_version(read_version);
 
         Ok(trx)
     }

@@ -202,10 +202,6 @@ impl<T, E: Display> UnwrapResult<T> for Result<T, E> {
     }
 }
 
-trait TableName {
-    fn table_name(&self) -> &'static str;
-}
-
 pub fn read_file(path: &str) -> Vec<u8> {
     if path == "-" {
         let mut stdin = std::io::stdin().lock();

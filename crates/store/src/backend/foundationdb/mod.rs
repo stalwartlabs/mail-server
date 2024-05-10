@@ -50,7 +50,7 @@ impl ReadVersion {
     pub fn new(version: i64) -> Self {
         Self {
             version,
-            expires: Instant::now() + Duration::from_secs(60 * 2),
+            expires: Instant::now() + Duration::from_secs(1),
         }
     }
 
