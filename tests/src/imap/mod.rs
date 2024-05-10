@@ -280,7 +280,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let mut servers = Servers::parse(&mut config);
 
     // Bind ports and drop privileges
-    servers.bind_and_drop_priv(&mut config);
+    servers.bind_all(&mut config, None);
 
     // Build stores
     let stores = Stores::parse_all(&mut config).await;

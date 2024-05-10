@@ -146,7 +146,7 @@ impl TestServer {
             .retain(|server| protocols.contains(&server.protocol));
 
         // Start servers
-        servers.bind_and_drop_priv(&mut config);
+        servers.bind_all(&mut config, None);
         let instance = self.instance.clone();
         let smtp_manager = SmtpSessionManager::new(instance.clone());
         let jmap = JMAP::init(
