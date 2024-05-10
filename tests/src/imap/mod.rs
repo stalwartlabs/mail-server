@@ -307,7 +307,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     config.assert_no_errors();
 
     // Spawn servers
-    let shutdown_tx = servers.spawn(|server, acceptor, shutdown_rx| {
+    let (shutdown_tx, _) = servers.spawn(|server, acceptor, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
                 SmtpSessionManager::new(smtp.clone()),

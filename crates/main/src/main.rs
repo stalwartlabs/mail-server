@@ -25,7 +25,11 @@ use std::time::Duration;
 
 use common::{config::server::ServerProtocol, manager::boot::BootManager};
 use imap::core::{ImapSessionManager, IMAP};
-use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
+use jmap::{
+    api::JmapSessionManager,
+    services::{gossip::spawn::GossiperBuilder, IPC_CHANNEL_BUFFER},
+    JMAP,
+};
 use managesieve::core::ManageSieveSessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
@@ -52,13 +56,14 @@ async fn main() -> std::io::Result<()> {
     let smtp = SMTP::init(&mut config, core.clone(), delivery_tx).await;
     let jmap = JMAP::init(&mut config, delivery_rx, core.clone(), smtp.inner.clone()).await;
     let imap = IMAP::init(&mut config, jmap.clone()).await;
+    let gossiper = GossiperBuilder::try_parse(&mut config);
 
     // Log configuration errors
     config.log_errors(init.guards.is_none());
     config.log_warnings(init.guards.is_none());
 
     // Spawn servers
-    let shutdown_tx = init.servers.spawn(|server, acceptor, shutdown_rx| {
+    let (shutdown_tx, shutdown_rx) = init.servers.spawn(|server, acceptor, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
                 SmtpSessionManager::new(smtp.clone()),
@@ -86,6 +91,11 @@ async fn main() -> std::io::Result<()> {
             ),
         };
     });
+
+    // Spawn gossip
+    if let Some(gossiper) = gossiper {
+        gossiper.spawn(jmap, shutdown_rx).await;
+    }
 
     // Wait for shutdown signal
     wait_for_shutdown(&format!(

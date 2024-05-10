@@ -159,25 +159,27 @@ impl TestServer {
         let jmap_manager = JmapSessionManager::new(jmap);
         config.assert_no_errors();
 
-        servers.spawn(|server, acceptor, shutdown_rx| {
-            match &server.protocol {
-                ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
-                    smtp_manager.clone(),
-                    instance.core.clone(),
-                    acceptor,
-                    shutdown_rx,
-                ),
-                ServerProtocol::Http => server.spawn(
-                    jmap_manager.clone(),
-                    instance.core.clone(),
-                    acceptor,
-                    shutdown_rx,
-                ),
-                ServerProtocol::Imap | ServerProtocol::ManageSieve => {
-                    unreachable!()
-                }
-            };
-        })
+        servers
+            .spawn(|server, acceptor, shutdown_rx| {
+                match &server.protocol {
+                    ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
+                        smtp_manager.clone(),
+                        instance.core.clone(),
+                        acceptor,
+                        shutdown_rx,
+                    ),
+                    ServerProtocol::Http => server.spawn(
+                        jmap_manager.clone(),
+                        instance.core.clone(),
+                        acceptor,
+                        shutdown_rx,
+                    ),
+                    ServerProtocol::Imap | ServerProtocol::ManageSieve => {
+                        unreachable!()
+                    }
+                };
+            })
+            .0
     }
 
     pub fn new_session(&self) -> Session<DummyIo> {

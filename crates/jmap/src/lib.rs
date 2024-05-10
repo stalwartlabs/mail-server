@@ -21,7 +21,12 @@
  * for more details.
 */
 
-use std::{collections::hash_map::RandomState, fmt::Display, sync::Arc, time::Duration};
+use std::{
+    collections::hash_map::RandomState,
+    fmt::Display,
+    sync::{atomic::AtomicU8, Arc},
+    time::Duration,
+};
 
 use auth::{rate_limit::ConcurrencyLimiters, AccessToken};
 use common::{manager::webadmin::WebAdminManager, Core, DeliveryEvent, SharedCore};
@@ -100,6 +105,7 @@ pub struct Inner {
     pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
     pub snowflake_id: SnowflakeIdGenerator,
     pub webadmin: WebAdminManager,
+    pub config_version: AtomicU8,
 
     pub concurrency_limiter: DashMap<u32, Arc<ConcurrencyLimiters>>,
 
@@ -150,6 +156,7 @@ impl JMAP {
             cache_threads: LruCache::with_capacity(
                 config.property("cache.thread.size").unwrap_or(2048),
             ),
+            config_version: 0.into(),
         };
 
         // Unpack webadmin
@@ -566,6 +573,13 @@ impl JMAP {
                 MethodError::ServerPartialFail
             })
         })
+    }
+}
+
+impl Inner {
+    pub fn increment_config_version(&self) {
+        self.config_version
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

@@ -576,24 +576,6 @@ impl Display for Variable<'_> {
     }
 }
 
-trait IntoBool {
-    fn into_bool(self) -> bool;
-}
-
-impl IntoBool for f64 {
-    #[inline(always)]
-    fn into_bool(self) -> bool {
-        self != 0.0
-    }
-}
-
-impl IntoBool for i64 {
-    #[inline(always)]
-    fn into_bool(self) -> bool {
-        self != 0
-    }
-}
-
 impl<'x> From<&'x Constant> for Variable<'x> {
     fn from(value: &'x Constant) -> Self {
         match value {

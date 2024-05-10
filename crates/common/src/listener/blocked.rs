@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{fmt::Debug, net::IpAddr};
+use std::{fmt::Debug, net::IpAddr, sync::atomic::AtomicU8};
 
 use ahash::AHashSet;
 use parking_lot::RwLock;
@@ -35,6 +35,7 @@ use crate::Core;
 
 pub struct BlockedIps {
     pub ip_addresses: RwLock<AHashSet<IpAddr>>,
+    pub version: AtomicU8,
     ip_networks: Vec<IpAddrMask>,
     has_networks: bool,
     limiter_rate: Option<Rate>,
@@ -71,6 +72,7 @@ impl BlockedIps {
             has_networks: !ip_networks.is_empty(),
             ip_networks,
             limiter_rate: config.property_or_default::<Rate>("authentication.fail2ban", "100/1d"),
+            version: 0.into(),
         }
     }
 }
@@ -103,6 +105,9 @@ impl Core {
                     }])
                     .await?;
 
+                // Increment version
+                self.network.blocked_ips.increment_version();
+
                 return Ok(true);
             }
         }
@@ -126,6 +131,13 @@ impl Core {
     }
 }
 
+impl BlockedIps {
+    pub fn increment_version(&self) {
+        self.version
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 impl Default for BlockedIps {
     fn default() -> Self {
         Self {
@@ -133,6 +145,7 @@ impl Default for BlockedIps {
             ip_networks: Default::default(),
             has_networks: Default::default(),
             limiter_rate: Default::default(),
+            version: Default::default(),
         }
     }
 }
@@ -144,6 +157,10 @@ impl Clone for BlockedIps {
             ip_networks: self.ip_networks.clone(),
             has_networks: self.has_networks,
             limiter_rate: self.limiter_rate.clone(),
+            version: self
+                .version
+                .load(std::sync::atomic::Ordering::Relaxed)
+                .into(),
         }
     }
 }

@@ -22,6 +22,7 @@
 */
 
 pub mod delivery;
+pub mod gossip;
 pub mod housekeeper;
 pub mod index;
 pub mod ingest;

@@ -325,7 +325,7 @@ impl Servers {
     pub fn spawn(
         mut self,
         spawn: impl Fn(Server, TcpAcceptor, watch::Receiver<bool>),
-    ) -> watch::Sender<bool> {
+    ) -> (watch::Sender<bool>, watch::Receiver<bool>) {
         // Spawn listeners
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         for server in self.servers {
@@ -336,7 +336,7 @@ impl Servers {
 
             spawn(server, acceptor, shutdown_rx.clone());
         }
-        shutdown_tx
+        (shutdown_tx, shutdown_rx)
     }
 }
 

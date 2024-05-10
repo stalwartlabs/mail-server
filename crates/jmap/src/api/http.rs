@@ -49,7 +49,7 @@ use crate::{
     auth::oauth::OAuthMetadata,
     blob::{DownloadResponse, UploadResponse},
     services::state,
-    JMAP,
+    JmapInstance, JMAP,
 };
 
 use super::{HtmlResponse, HttpRequest, HttpResponse, JmapSessionManager, JsonResponse};
@@ -356,7 +356,9 @@ impl JMAP {
         }
         RequestError::not_found().into_http_response()
     }
+}
 
+impl JmapInstance {
     async fn handle_session<T: SessionStream>(self, session: SessionData<T>) {
         let span = session.span;
         let _in_flight = session.in_flight;
@@ -367,7 +369,7 @@ impl JMAP {
             .serve_connection(
                 TokioIo::new(session.stream),
                 service_fn(|req: hyper::Request<body::Incoming>| {
-                    let jmap = self.clone();
+                    let jmap_instance = self.clone();
                     let span = span.clone();
                     let instance = session.instance.clone();
 
@@ -377,6 +379,7 @@ impl JMAP {
                             event = "request",
                             uri = req.uri().to_string(),
                         );
+                        let jmap = JMAP::from(jmap_instance);
 
                         // Obtain remote IP
                         let remote_ip = if !jmap.core.jmap.http_use_forwarded {
@@ -442,7 +445,7 @@ impl SessionManager for JmapSessionManager {
         self,
         session: SessionData<T>,
     ) -> impl std::future::Future<Output = ()> + Send {
-        JMAP::from(self.inner).handle_session(session)
+        self.inner.handle_session(session)
     }
 
     #[allow(clippy::manual_async_fn)]

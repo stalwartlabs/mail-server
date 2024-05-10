@@ -37,6 +37,7 @@ use super::IPC_CHANNEL_BUFFER;
 pub enum Event {
     IndexStart,
     IndexDone,
+    AcmeReload,
     AcmeReschedule {
         provider_id: String,
         renew_at: Instant,
@@ -113,11 +114,41 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         loop {
             match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
                 Ok(Some(event)) => match event {
+                    Event::AcmeReload => {
+                        let core_ = core.core.load().clone();
+                        let inner = core.jmap_inner.clone();
+
+                        tokio::spawn(async move {
+                            for provider in core_.tls.acme_providers.values() {
+                                match core_.init_acme(provider).await {
+                                    Ok(renew_at) => {
+                                        inner
+                                            .housekeeper_tx
+                                            .send(Event::AcmeReschedule {
+                                                provider_id: provider.id.clone(),
+                                                renew_at: Instant::now() + renew_at,
+                                            })
+                                            .await
+                                            .ok();
+                                    }
+                                    Err(err) => {
+                                        tracing::error!(
+                                            context = "acme",
+                                            event = "error",
+                                            error = ?err,
+                                            "Failed to reload ACME certificate manager.");
+                                    }
+                                };
+                            }
+                        });
+                    }
                     Event::AcmeReschedule {
                         provider_id,
                         renew_at,
                     } => {
-                        queue.schedule(renew_at, ActionClass::Acme(provider_id));
+                        let action = ActionClass::Acme(provider_id);
+                        queue.remove_action(&action);
+                        queue.schedule(renew_at, action);
                     }
                     Event::IndexStart => {
                         if !index_busy {
@@ -192,6 +223,8 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             }
                                         };
 
+                                        inner.increment_config_version();
+
                                         inner
                                             .housekeeper_tx
                                             .send(Event::AcmeReschedule {
@@ -265,6 +298,10 @@ impl Queue {
     pub fn schedule(&mut self, due: Instant, event: ActionClass) {
         tracing::debug!(due_in = due.saturating_duration_since(Instant::now()).as_secs(), event = ?event, "Scheduling housekeeper event.");
         self.heap.push(Action { due, event });
+    }
+
+    pub fn remove_action(&mut self, event: &ActionClass) {
+        self.heap.retain(|e| &e.event != event);
     }
 
     pub fn wake_up_time(&self) -> Duration {

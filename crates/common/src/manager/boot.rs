@@ -221,6 +221,22 @@ impl BootManager {
                     )));
                 }
 
+                // Generate a Cluster encryption key if missing
+                if config
+                    .value("cluster.key")
+                    .filter(|v| !v.is_empty())
+                    .is_none()
+                {
+                    insert_keys.push(ConfigKey::from((
+                        "cluster.key",
+                        thread_rng()
+                            .sample_iter(Alphanumeric)
+                            .take(64)
+                            .map(char::from)
+                            .collect::<String>(),
+                    )));
+                }
+
                 // Download SPAM filters if missing
                 if config
                     .value("version.spam-filter")
