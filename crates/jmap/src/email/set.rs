@@ -54,7 +54,7 @@ use store::{
     ahash::AHashSet,
     write::{
         assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, Bincode, DeserializeFrom,
-        IndexEmailClass, SerializeInto, ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
+        FtsQueueClass, SerializeInto, ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
     },
     Serialize,
 };
@@ -1091,7 +1091,7 @@ impl JMAP {
             .with_collection(Collection::Email)
             .delete_document(document_id)
             .set(
-                ValueClass::IndexEmail(IndexEmailClass::Delete {
+                ValueClass::FtsQueue(FtsQueueClass::Delete {
                     seq: self.generate_snowflake_id()?,
                 }),
                 0u64.serialize(),

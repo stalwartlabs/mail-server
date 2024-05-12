@@ -32,9 +32,10 @@ use store::{
     roaring::RoaringBitmap,
     write::{
         key::DeserializeBigEndian, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass,
-        LookupClass, MaybeDynamicId, MaybeDynamicValue, Operation, TagValue, ValueClass,
+        FtsQueueClass, LookupClass, MaybeDynamicId, MaybeDynamicValue, Operation, TagValue,
+        ValueClass,
     },
-    BlobStore, Store, U32_LEN,
+    BlobStore, Serialize, Store, U32_LEN,
 };
 use store::{
     write::{QueueClass, QueueEvent},
@@ -83,6 +84,8 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
     let mut document_id = u32::MAX;
     let mut collection = u8::MAX;
     let mut family = Family::None;
+    let email_collection = u8::from(Collection::Email);
+    let mut seq = 0;
 
     let mut batch_size = 0;
     let mut batch = BatchBuilder::new();
@@ -123,8 +126,25 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                             batch.set(ValueClass::Property(field), value);
                         }
                     }
-                    Family::TermIndex => {
-                        batch.set(ValueClass::TermIndex, key);
+                    Family::FtsIndex => {
+                        if reader.version > 1 {
+                            let mut hash = [0u8; 8];
+                            let (hash, len) = match key.len() {
+                                9 => {
+                                    hash[..8].copy_from_slice(&key[..8]);
+                                    (hash, key[key.len() - 1])
+                                }
+                                len @ (1..=7) => {
+                                    hash[..len].copy_from_slice(&key[..len]);
+                                    (hash, len as u8)
+                                }
+                                invalid => {
+                                    panic!("Invalid text bitmap key length {invalid}");
+                                }
+                            };
+
+                            batch.set(ValueClass::FtsIndex(BitmapHash { hash, len }), value);
+                        }
                     }
                     Family::Acl => {
                         batch.set(
@@ -140,6 +160,16 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                         let hash = BlobHash::try_from_hash_slice(&key).expect("Invalid blob hash");
 
                         if account_id != u32::MAX && document_id != u32::MAX {
+                            if reader.version == 1 && collection == email_collection {
+                                batch.set(
+                                    ValueClass::FtsQueue(FtsQueueClass::Insert {
+                                        seq,
+                                        hash: hash.clone(),
+                                    }),
+                                    0u64.serialize(),
+                                );
+                                seq += 1;
+                            }
                             batch.set(ValueClass::Blob(BlobOp::Link { hash }), vec![]);
                         } else {
                             batch_size -= value.len();
@@ -261,48 +291,55 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                         set: true,
                     }),
                     Family::Bitmap => {
+                        let key = key.as_slice();
+                        let class: BitmapClass<MaybeDynamicId> =
+                            match key.first().expect("Failed to read bitmap class") {
+                                0 => BitmapClass::DocumentIds,
+                                1 => BitmapClass::Tag {
+                                    field: key.get(1).copied().expect("Failed to read field"),
+                                    value: TagValue::Id(MaybeDynamicId::Static(
+                                        key.deserialize_be_u32(2).expect("Failed to read tag id"),
+                                    )),
+                                },
+                                2 => BitmapClass::Tag {
+                                    field: key.get(1).copied().expect("Failed to read field"),
+                                    value: TagValue::Text(
+                                        key.get(2..).expect("Failed to read tag text").to_vec(),
+                                    ),
+                                },
+                                3 => BitmapClass::Tag {
+                                    field: key.get(1).copied().expect("Failed to read field"),
+                                    value: TagValue::Id(MaybeDynamicId::Static(
+                                        key.get(2)
+                                            .copied()
+                                            .expect("Failed to read tag static id")
+                                            .into(),
+                                    )),
+                                },
+                                4 => {
+                                    if reader.version == 1 && collection == email_collection {
+                                        continue;
+                                    }
+
+                                    BitmapClass::Text {
+                                        field: key.get(1).copied().expect("Failed to read field"),
+                                        token: BitmapHash {
+                                            len: key
+                                                .get(2)
+                                                .copied()
+                                                .expect("Failed to read tag static id"),
+                                            hash: key
+                                                .get(3..11)
+                                                .expect("Failed to read tag static id")
+                                                .try_into()
+                                                .unwrap(),
+                                        },
+                                    }
+                                }
+                                _ => failed("Invalid bitmap class"),
+                            };
                         let document_ids = RoaringBitmap::deserialize_from(&value[..])
                             .expect("Failed to deserialize bitmap");
-                        let key = key.as_slice();
-                        let class: BitmapClass<MaybeDynamicId> = match key
-                            .first()
-                            .expect("Failed to read bitmap class")
-                        {
-                            0 => BitmapClass::DocumentIds,
-                            1 => BitmapClass::Tag {
-                                field: key.get(1).copied().expect("Failed to read field"),
-                                value: TagValue::Id(MaybeDynamicId::Static(
-                                    key.deserialize_be_u32(2).expect("Failed to read tag id"),
-                                )),
-                            },
-                            2 => BitmapClass::Tag {
-                                field: key.get(1).copied().expect("Failed to read field"),
-                                value: TagValue::Text(
-                                    key.get(2..).expect("Failed to read tag text").to_vec(),
-                                ),
-                            },
-                            3 => BitmapClass::Tag {
-                                field: key.get(1).copied().expect("Failed to read field"),
-                                value: TagValue::Id(MaybeDynamicId::Static(
-                                    key.get(2)
-                                        .copied()
-                                        .expect("Failed to read tag static id")
-                                        .into(),
-                                )),
-                            },
-                            4 => BitmapClass::Text {
-                                field: key.get(1).copied().expect("Failed to read field"),
-                                token: BitmapHash {
-                                    len: key.get(2).copied().expect("Failed to read tag static id"),
-                                    hash: key
-                                        .get(3..11)
-                                        .expect("Failed to read tag static id")
-                                        .try_into()
-                                        .unwrap(),
-                                },
-                            },
-                            _ => failed("Invalid bitmap class"),
-                        };
 
                         for document_id in document_ids {
                             batch.ops.push(Operation::DocumentId { document_id });
@@ -362,6 +399,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
 }
 
 struct OpReader {
+    version: u8,
     file: BufReader<File>,
 }
 
@@ -378,16 +416,16 @@ impl OpReader {
             failed(&format!("Invalid magic marker in {path:?}"));
         }
 
-        if file
+        let version = file
             .read_u8()
             .await
-            .failed(&format!("Failed to read version from {path:?}"))
-            != FILE_VERSION
-        {
+            .failed(&format!("Failed to read version from {path:?}"));
+
+        if version > FILE_VERSION {
             failed(&format!("Invalid file version in {path:?}"));
         }
 
-        Self { file }
+        Self { file, version }
     }
 
     async fn next(&mut self) -> Option<Op> {
@@ -439,7 +477,7 @@ impl TryFrom<u8> for Family {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::Property),
-            1 => Ok(Self::TermIndex),
+            1 => Ok(Self::FtsIndex),
             2 => Ok(Self::Acl),
             3 => Ok(Self::Blob),
             4 => Ok(Self::Config),

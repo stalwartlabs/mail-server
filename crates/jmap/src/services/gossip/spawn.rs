@@ -67,7 +67,7 @@ impl GossiperBuilder {
                 .property_or_default::<u16>("cluster.bind-port", "1179")
                 .unwrap_or(1179),
             ping_interval: config
-                .property_or_default("cluster.ping-interval", "1s")
+                .property_or_default("cluster.heartbeat", "1s")
                 .unwrap_or(Duration::from_secs(1)),
             peers: Vec::new(),
         };

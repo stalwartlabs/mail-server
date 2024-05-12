@@ -50,7 +50,7 @@ use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue}
 use store::{
     write::{
         log::{Changes, LogInsert},
-        BatchBuilder, Bincode, IndexEmailClass, MaybeDynamicId, TagValue, ValueClass, F_BITMAP,
+        BatchBuilder, Bincode, FtsQueueClass, MaybeDynamicId, TagValue, ValueClass, F_BITMAP,
         F_VALUE,
     },
     BlobClass, Serialize,
@@ -417,7 +417,7 @@ impl JMAP {
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, change_id, F_VALUE)
             .set(
-                ValueClass::IndexEmail(IndexEmailClass::Insert {
+                ValueClass::FtsQueue(FtsQueueClass::Insert {
                     seq: self.generate_snowflake_id()?,
                     hash: metadata.blob_hash.clone(),
                 }),

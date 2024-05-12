@@ -28,13 +28,13 @@ use crate::{
     BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, SUBSPACE_ACL,
     SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_BLOB_LINK,
     SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_FTS_INDEX,
-    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_VALUE, SUBSPACE_PROPERTY,
+    SUBSPACE_FTS_QUEUE, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_VALUE, SUBSPACE_PROPERTY,
     SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_OUT,
-    SUBSPACE_SETTINGS, SUBSPACE_TERM_INDEX, U32_LEN, U64_LEN, WITH_SUBSPACE,
+    SUBSPACE_SETTINGS, U32_LEN, U64_LEN, WITH_SUBSPACE,
 };
 
 use super::{
-    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, IndexEmailClass, LookupClass,
+    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, FtsQueueClass, LookupClass,
     QueueClass, ReportClass, ReportEvent, ResolveId, TagValue, ValueClass,
 };
 
@@ -262,24 +262,38 @@ impl<T: ResolveId> ValueClass<T> {
                 .write(collection)
                 .write(*field)
                 .write(document_id),
-            ValueClass::TermIndex => serializer
-                .write(account_id)
+            ValueClass::FtsIndex(hash) => {
+                let serializer = serializer.write(account_id).write(
+                    hash.hash
+                        .get(0..std::cmp::min(hash.len as usize, 8))
+                        .unwrap(),
+                );
+
+                if hash.len >= 8 {
+                    serializer.write(hash.len)
+                } else {
+                    serializer
+                }
                 .write(collection)
-                .write_leb128(document_id),
+                .write(document_id)
+            }
             ValueClass::Acl(grant_account_id) => serializer
                 .write(*grant_account_id)
                 .write(account_id)
                 .write(collection)
                 .write(document_id),
-            ValueClass::IndexEmail(index) => match index {
-                IndexEmailClass::Insert { seq, hash } => serializer
+            ValueClass::FtsQueue(index) => match index {
+                FtsQueueClass::Insert { seq, hash } => serializer
                     .write(*seq)
                     .write(account_id)
+                    .write(collection)
                     .write(document_id)
                     .write::<&[u8]>(hash.as_ref()),
-                IndexEmailClass::Delete { seq } => {
-                    serializer.write(*seq).write(account_id).write(document_id)
-                }
+                FtsQueueClass::Delete { seq } => serializer
+                    .write(*seq)
+                    .write(account_id)
+                    .write(collection)
+                    .write(document_id),
             },
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { hash, until } => serializer
@@ -515,7 +529,14 @@ impl<T: AsRef<[u8]> + Sync + Send> Key for AnyKey<T> {
 impl<T> ValueClass<T> {
     pub fn serialized_size(&self) -> usize {
         match self {
-            ValueClass::Property(_) | ValueClass::TermIndex => U32_LEN * 2 + 3,
+            ValueClass::Property(_) => U32_LEN * 2 + 3,
+            ValueClass::FtsIndex(hash) => {
+                if hash.len >= 8 {
+                    U32_LEN * 2 + 10
+                } else {
+                    hash.len as usize + U32_LEN * 2 + 1
+                }
+            }
             ValueClass::Acl(_) => U32_LEN * 3 + 2,
             ValueClass::Lookup(LookupClass::Counter(v) | LookupClass::Key(v))
             | ValueClass::Config(v) => v.len(),
@@ -532,7 +553,7 @@ impl<T> ValueClass<T> {
                     BLOB_HASH_LEN + U32_LEN * 2 + 2
                 }
             },
-            ValueClass::IndexEmail { .. } => BLOB_HASH_LEN + U64_LEN * 2,
+            ValueClass::FtsQueue { .. } => BLOB_HASH_LEN + U64_LEN * 2,
             ValueClass::Queue(q) => match q {
                 QueueClass::Message(_) => U64_LEN,
                 QueueClass::MessageEvent(_) => U64_LEN * 2,
@@ -557,9 +578,9 @@ impl<T> ValueClass<T> {
                     SUBSPACE_PROPERTY
                 }
             }
-            ValueClass::TermIndex => SUBSPACE_TERM_INDEX,
             ValueClass::Acl(_) => SUBSPACE_ACL,
-            ValueClass::IndexEmail { .. } => SUBSPACE_FTS_INDEX,
+            ValueClass::FtsIndex(_) => SUBSPACE_FTS_INDEX,
+            ValueClass::FtsQueue { .. } => SUBSPACE_FTS_QUEUE,
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { .. } => SUBSPACE_BLOB_RESERVE,
                 BlobOp::Commit { .. } | BlobOp::Link { .. } | BlobOp::LinkId { .. } => {

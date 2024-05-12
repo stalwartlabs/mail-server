@@ -61,13 +61,13 @@ impl FtsStore {
         &self,
         account_id: u32,
         collection: u8,
-        document_id: u32,
-    ) -> crate::Result<bool> {
+        document_ids: &[u32],
+    ) -> crate::Result<()> {
         match self {
-            FtsStore::Store(store) => store.fts_remove(account_id, collection, document_id).await,
+            FtsStore::Store(store) => store.fts_remove(account_id, collection, document_ids).await,
             #[cfg(feature = "elastic")]
             FtsStore::ElasticSearch(store) => {
-                store.fts_remove(account_id, collection, document_id).await
+                store.fts_remove(account_id, collection, document_ids).await
             }
         }
     }

@@ -77,8 +77,8 @@ impl ElasticSearchStore {
         &self,
         account_id: u32,
         collection: u8,
-        document_id: u32,
-    ) -> crate::Result<bool> {
+        document_ids: &[u32],
+    ) -> crate::Result<()> {
         self.index
             .delete_by_query(DeleteByQueryParts::Index(&[
                 INDEX_NAMES[collection as usize]
@@ -88,7 +88,7 @@ impl ElasticSearchStore {
                     "bool": {
                         "must": [
                             { "match": { "account_id": account_id } },
-                            { "match": { "document_id": document_id } }
+                            { "terms": { "document_id": document_ids } }
                         ]
                     }
                 }
@@ -98,7 +98,7 @@ impl ElasticSearchStore {
             .map_err(Into::into)
             .and_then(|response| {
                 if response.status_code().is_success() {
-                    Ok(true)
+                    Ok(())
                 } else {
                     Err(crate::Error::InternalError(format!(
                         "Failed to remove document: {:?}",

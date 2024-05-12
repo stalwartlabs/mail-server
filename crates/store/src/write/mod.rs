@@ -44,7 +44,6 @@ use self::assert::AssertValue;
 
 pub mod assert;
 pub mod batch;
-pub mod bitmap;
 pub mod blob;
 pub mod hash;
 pub mod key;
@@ -164,17 +163,17 @@ pub enum ValueClass<T> {
     Property(u8),
     Acl(u32),
     Lookup(LookupClass),
-    TermIndex,
+    FtsIndex(BitmapHash),
+    FtsQueue(FtsQueueClass),
     Directory(DirectoryClass<T>),
     Blob(BlobOp),
-    IndexEmail(IndexEmailClass),
     Config(Vec<u8>),
     Queue(QueueClass),
     Report(ReportClass),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum IndexEmailClass {
+pub enum FtsQueueClass {
     Insert { seq: u64, hash: BlobHash },
     Delete { seq: u64 },
 }

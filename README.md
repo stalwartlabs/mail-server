@@ -51,7 +51,7 @@ Key features:
 - **JMAP** server:
   - JMAP Core ([RFC 8620](https://datatracker.ietf.org/doc/html/rfc8620))
   - JMAP Mail ([RFC 8621](https://datatracker.ietf.org/doc/html/rfc8621))
-  - JMAP for Sieve Scripts ([DRAFT-SIEVE-19](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-19.html))
+  - JMAP for Sieve Scripts ([DRAFT-SIEVE-22](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-22.html))
   - JMAP over WebSocket ([RFC 8887](https://datatracker.ietf.org/doc/html/rfc8887)), JMAP Blob Management ([RFC9404](https://www.rfc-editor.org/rfc/rfc9404.html)) and JMAP for Quotas ([RFC9425](https://www.rfc-editor.org/rfc/rfc9425.html)) extensions.
 - **IMAP4** server:
   - IMAP4rev2 ([RFC 9051](https://datatracker.ietf.org/doc/html/rfc9051)) full compliance.
@@ -76,12 +76,14 @@ Key features:
   - **Spam traps** to set up decoy email addresses that catch and analyze spam.
 - **Flexible and scalable**:
   - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Redis** and **ElasticSearch** support.
+  - **Clustering** support with node autodiscovery and partition-tolerant failure detection.
   - Built-in, **LDAP** or **SQL** authentication backend support.
   - Full-text search available in 17 languages.
-  - Disk quotas.
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
+  - Automatic account configuration and discovery with [autoconfig](https://www.ietf.org/id/draft-bucksch-autoconfig-02.html) and [autodiscover](https://learn.microsoft.com/en-us/exchange/architecture/client-access/autodiscover?view=exchserver-2019). 
   - Integration with **OpenTelemetry** to enable monitoring, tracing, and performance analysis.
+  - Disk quotas.
 - **Web-based administration**:
   - Account, domain, group and mailing list management.
   - SMTP queue management for messages and outbound DMARC and TLS reports.

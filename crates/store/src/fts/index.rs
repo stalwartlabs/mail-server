@@ -21,9 +21,9 @@
  * for more details.
 */
 
-use std::{borrow::Cow, collections::BTreeSet, fmt::Display};
+use std::{borrow::Cow, fmt::Display};
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use nlp::{
     language::{
         detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
@@ -32,18 +32,17 @@ use nlp::{
     },
     tokenizers::word::WordTokenizer,
 };
-use utils::codec::leb128::Leb128Reader;
 
 use crate::{
     backend::MAX_TOKEN_LENGTH,
     write::{
-        hash::TokenType, key::KeySerializer, BatchBuilder, BitmapClass, BitmapHash, Operation,
-        ValueClass,
+        hash::TokenType, key::DeserializeBigEndian, BatchBuilder, BitmapHash, MaybeDynamicId,
+        Operation, ValueClass, ValueOp,
     },
-    Deserialize, Error, Store, ValueKey, U64_LEN,
+    IterateParams, Serialize, Store, ValueKey, U32_LEN,
 };
 
-use super::Field;
+use super::{postings::Postings, Field};
 pub const TERM_INDEX_VERSION: u8 = 1;
 
 #[derive(Debug)]
@@ -137,8 +136,9 @@ impl Store {
         document: FtsDocument<'_, T>,
     ) -> crate::Result<()> {
         let mut detect = LanguageDetector::new();
-        let mut tokens: AHashMap<BitmapHash, AHashSet<u8>> = AHashMap::new();
+        let mut tokens: AHashMap<BitmapHash, Postings> = AHashMap::new();
         let mut parts = Vec::new();
+        let mut position = 0;
 
         for text in document.parts {
             match text.typ {
@@ -156,15 +156,17 @@ impl Store {
                         tokens
                             .entry(BitmapHash::new(token.word.as_ref()))
                             .or_default()
-                            .insert(TokenType::word(field));
+                            .insert(TokenType::word(field), position);
+                        position += 1;
                     }
+                    position += 10;
                 }
                 Type::Keyword => {
                     let field = u8::from(text.field);
                     tokens
                         .entry(BitmapHash::new(text.text.as_ref()))
                         .or_default()
-                        .insert(TokenType::word(field));
+                        .insert_keyword(TokenType::word(field));
                 }
             }
         }
@@ -172,7 +174,6 @@ impl Store {
         let default_language = detect
             .most_frequent_language()
             .unwrap_or(document.default_language);
-        let mut bigrams = BTreeSet::new();
 
         for (field, language, text) in parts.into_iter() {
             let language = if language != Language::Unknown {
@@ -182,26 +183,23 @@ impl Store {
             };
             let field: u8 = field.into();
 
-            let mut last_token = Cow::Borrowed("");
             for token in Stemmer::new(&text, language, MAX_TOKEN_LENGTH) {
-                if !last_token.is_empty() {
-                    bigrams.insert(BitmapHash::new(&format!("{} {}", last_token, token.word)).hash);
-                }
-
                 tokens
                     .entry(BitmapHash::new(token.word.as_ref()))
                     .or_default()
-                    .insert(TokenType::word(field));
+                    .insert(TokenType::word(field), position);
 
                 if let Some(stemmed_word) = token.stemmed_word {
                     tokens
                         .entry(BitmapHash::new(stemmed_word.as_ref()))
                         .or_default()
-                        .insert(TokenType::stemmed(field));
+                        .insert_keyword(TokenType::stemmed(field));
                 }
 
-                last_token = token.word;
+                position += 1;
             }
+
+            position += 10;
         }
 
         if tokens.is_empty() {
@@ -209,40 +207,34 @@ impl Store {
         }
 
         // Serialize tokens
-        let mut serializer = KeySerializer::new(tokens.len() * U64_LEN * 2);
+        //let mut term_index = KeySerializer::new(tokens.len() * U64_LEN * 2);
         let mut keys = Vec::with_capacity(tokens.len());
 
-        // Write bigrams
-        serializer = serializer.write_leb128(bigrams.len());
-        for bigram in bigrams {
-            serializer = serializer.write(bigram.as_slice());
-        }
-
         // Write index keys
-        for (hash, fields) in tokens.into_iter() {
-            serializer = serializer
-                .write(hash.hash.as_slice())
-                .write(hash.len)
-                .write(fields.len() as u8);
-            for field in fields.into_iter() {
-                serializer = serializer.write(field);
-                keys.push(Operation::Bitmap {
-                    class: BitmapClass::Text { field, token: hash },
-                    set: true,
-                });
-            }
+        for (hash, postings) in tokens.into_iter() {
+            //term_index = term_index.write(hash.hash.as_slice()).write(hash.len);
+            keys.push(Operation::Value {
+                class: ValueClass::FtsIndex(hash),
+                op: ValueOp::Set(postings.serialize().into()),
+            });
         }
 
         // Write term index
-        let mut batch = BatchBuilder::new();
-        let mut term_index = lz4_flex::compress_prepend_size(&serializer.finalize());
+        /*let mut batch = BatchBuilder::new();
+        let mut term_index = lz4_flex::compress_prepend_size(&term_index.finalize());
         term_index.insert(0, TERM_INDEX_VERSION);
         batch
             .with_account_id(document.account_id)
             .with_collection(document.collection)
             .update_document(document.document_id)
-            .set(ValueClass::TermIndex, term_index);
-        self.write(batch.build()).await?;
+            .set(
+                ValueClass::FtsIndex(BitmapHash {
+                    hash: [u8::MAX; 8],
+                    len: u8::MAX,
+                }),
+                term_index,
+            );
+        self.write(batch.build()).await?;*/
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(document.account_id)
@@ -272,65 +264,91 @@ impl Store {
         &self,
         account_id: u32,
         collection: u8,
-        document_id: u32,
-    ) -> crate::Result<bool> {
-        // Obtain term index
-        let term_index = if let Some(term_index) = self
-            .get_value::<TermIndex>(ValueKey {
-                account_id,
-                collection,
-                document_id,
-                class: ValueClass::TermIndex,
-            })
-            .await?
-        {
-            term_index
-        } else {
-            tracing::debug!(
-                context = "fts_remove",
-                event = "not_found",
-                account_id = account_id,
-                collection = collection,
-                document_id = document_id,
-                "Term index not found"
-            );
-            return Ok(false);
-        };
+        document_ids: &[u32],
+    ) -> crate::Result<()> {
+        // Find keys to delete
+        let mut delete_keys: AHashMap<u32, Vec<ValueClass<MaybeDynamicId>>> = AHashMap::new();
+        self.iterate(
+            IterateParams::new(
+                ValueKey {
+                    account_id,
+                    collection,
+                    document_id: 0,
+                    class: ValueClass::FtsIndex(BitmapHash {
+                        hash: [0; 8],
+                        len: 1,
+                    }),
+                },
+                ValueKey {
+                    account_id: account_id + 1,
+                    collection,
+                    document_id: 0,
+                    class: ValueClass::FtsIndex(BitmapHash {
+                        hash: [0; 8],
+                        len: 1,
+                    }),
+                },
+            )
+            .no_values(),
+            |key, _| {
+                let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
+                if document_ids.contains(&document_id) {
+                    let mut hash = [0u8; 8];
+                    let (hash, len) = match key.len() - (U32_LEN * 2) - 1 {
+                        9 => {
+                            hash[..8].copy_from_slice(&key[U32_LEN..U32_LEN + 8]);
+                            (hash, key[key.len() - U32_LEN - 2])
+                        }
+                        len @ (1..=7) => {
+                            hash[..len].copy_from_slice(&key[U32_LEN..U32_LEN + len]);
+                            (hash, len as u8)
+                        }
+                        invalid => {
+                            return Err(format!("Invalid text bitmap key length {invalid}").into())
+                        }
+                    };
+
+                    delete_keys
+                        .entry(document_id)
+                        .or_default()
+                        .push(ValueClass::FtsIndex(BitmapHash { hash, len }));
+                }
+
+                Ok(true)
+            },
+        )
+        .await?;
 
         // Remove keys
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(account_id)
-            .with_collection(collection)
-            .update_document(document_id);
+            .with_collection(collection);
 
-        for key in term_index.ops.into_iter() {
-            if batch.ops.len() >= 1000 {
-                self.write(batch.build()).await?;
-                batch = BatchBuilder::new();
-                batch
-                    .with_account_id(account_id)
-                    .with_collection(collection)
-                    .update_document(document_id);
+        for (document_id, keys) in delete_keys {
+            batch.update_document(document_id);
+
+            for key in keys {
+                if batch.ops.len() >= 1000 {
+                    self.write(batch.build()).await?;
+                    batch = BatchBuilder::new();
+                    batch
+                        .with_account_id(account_id)
+                        .with_collection(collection)
+                        .update_document(document_id);
+                }
+                batch.ops.push(Operation::Value {
+                    class: key,
+                    op: ValueOp::Clear,
+                });
             }
-            batch.ops.push(key);
         }
 
         if !batch.is_empty() {
             self.write(batch.build()).await?;
         }
 
-        // Remove term index
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(account_id)
-            .with_collection(collection)
-            .update_document(document_id)
-            .clear(ValueClass::TermIndex);
-
-        self.write(batch.build()).await?;
-
-        Ok(true)
+        Ok(())
     }
 
     pub async fn fts_remove_all(&self, _: u32) -> crate::Result<()> {
@@ -341,6 +359,7 @@ impl Store {
     }
 }
 
+/*
 struct TermIndex {
     ops: Vec<Operation>,
 }
@@ -403,3 +422,4 @@ impl Deserialize for TermIndex {
         Ok(Self { ops })
     }
 }
+*/

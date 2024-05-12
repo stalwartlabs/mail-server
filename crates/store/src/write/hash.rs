@@ -39,13 +39,6 @@ impl<T> BitmapClass<T> {
             token: BitmapHash::new(token),
         }
     }
-
-    /*pub fn bigram(token: impl AsRef<[u8]>, field: impl Into<u8>) -> Self {
-        BitmapClass::Text {
-            field: field.into() | 1 << 7,
-            token: BitmapHash::new(token),
-        }
-    }*/
 }
 
 impl BitmapHash {
@@ -86,8 +79,4 @@ impl TokenType {
     pub fn stemmed(field: u8) -> u8 {
         1 << 7 | field
     }
-
-    /*pub fn bigram(field: u8) -> u8 {
-        1 << 7 | field
-    }*/
 }

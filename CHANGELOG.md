@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.8.0] - 2024-05-13
+
+This version uses a different database layout which is incompatible with previous versions. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
+
+## Added
+- Clustering support with node auto-discovery and partition-tolerant failure detection.
+- Autoconfig and MS Autodiscover support (#336)
+- New variables `retry_num`, `notify_num`, `last_error` add `last_status` available in queue expressions.
+- Performance improvements, in particular for FoundationDB.
+- Improved full-text indexing with lower disk space usage.
+- MTA-STS policy management.
+- TLSA Records generation for DANE (#397)
+- Queued message visualization from the web-admin.
+- Master user support.
+
+### Changed
+- Make `certificate.*` local keys by default.
+- Removed `server.run-as.*` settings.
+- Add Microsoft Office Macro types to bad mime types (#391)
+
+### Fixed
+- mySQL TLS support (#415)
+- Resolve file macros after dropping root privileges.
+- Updated order of SPF Records (#395).
+- Avoid duplicate accountIds when using case insensitive external directories (#399)
+- `authenticated_as` variable not usable for must-match-sender (#372)
+- Remove `StandardOutput`, `StandardError` in service (#390)
+- SMTP `AUTH=LOGIN` compatibility issues with Microsoft Outlook (#400)
+
 ## [0.7.3] - 2024-05-01
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin version.

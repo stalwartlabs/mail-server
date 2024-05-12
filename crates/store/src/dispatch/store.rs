@@ -27,7 +27,8 @@ use roaring::RoaringBitmap;
 
 use crate::{
     write::{
-        key::KeySerializer, now, AnyKey, AssignedIds, Batch, BitmapClass, ReportClass, ValueClass,
+        key::KeySerializer, now, AnyKey, AssignedIds, Batch, BitmapClass, BitmapHash, ReportClass,
+        ValueClass,
     },
     BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAP_ID,
     SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES, SUBSPACE_LOGS, U32_LEN,
@@ -326,7 +327,16 @@ impl Store {
         for (from_class, to_class) in [
             (ValueClass::Acl(account_id), ValueClass::Acl(account_id + 1)),
             (ValueClass::Property(0), ValueClass::Property(0)),
-            (ValueClass::TermIndex, ValueClass::TermIndex),
+            (
+                ValueClass::FtsIndex(BitmapHash {
+                    hash: [0u8; 8],
+                    len: 0,
+                }),
+                ValueClass::FtsIndex(BitmapHash {
+                    hash: [u8::MAX; 8],
+                    len: u8::MAX,
+                }),
+            ),
         ] {
             self.delete_range(
                 ValueKey {
@@ -410,7 +420,7 @@ impl Store {
             SUBSPACE_BITMAP_TAG,
             SUBSPACE_BITMAP_TEXT,
             SUBSPACE_DIRECTORY,
-            SUBSPACE_FTS_INDEX,
+            SUBSPACE_FTS_QUEUE,
             SUBSPACE_INDEXES,
             SUBSPACE_BLOB_RESERVE,
             SUBSPACE_BLOB_LINK,
@@ -425,7 +435,7 @@ impl Store {
             SUBSPACE_QUOTA,
             SUBSPACE_REPORT_OUT,
             SUBSPACE_REPORT_IN,
-            SUBSPACE_TERM_INDEX,
+            SUBSPACE_FTS_INDEX,
         ] {
             self.delete_range(
                 AnyKey {
@@ -593,7 +603,7 @@ impl Store {
         for (subspace, with_values) in [
             (SUBSPACE_ACL, true),
             //(SUBSPACE_DIRECTORY, true),
-            (SUBSPACE_FTS_INDEX, true),
+            (SUBSPACE_FTS_QUEUE, true),
             (SUBSPACE_LOOKUP_VALUE, true),
             (SUBSPACE_PROPERTY, true),
             (SUBSPACE_SETTINGS, true),
@@ -601,7 +611,7 @@ impl Store {
             (SUBSPACE_QUEUE_EVENT, true),
             (SUBSPACE_REPORT_OUT, true),
             (SUBSPACE_REPORT_IN, true),
-            (SUBSPACE_TERM_INDEX, true),
+            (SUBSPACE_FTS_INDEX, true),
             (SUBSPACE_BLOB_RESERVE, true),
             (SUBSPACE_BLOB_LINK, true),
             (SUBSPACE_BLOBS, true),

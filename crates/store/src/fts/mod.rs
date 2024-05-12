@@ -26,6 +26,7 @@ use std::fmt::Display;
 use nlp::language::Language;
 
 pub mod index;
+pub mod postings;
 pub mod query;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

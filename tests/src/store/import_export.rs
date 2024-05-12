@@ -92,8 +92,11 @@ pub async fn test(db: Store) {
                     batch.set(ValueClass::Property(idx as u8), random_bytes(value_size));
                 }
 
-                for value_size in [16, 128, 1024, 2056, 102400] {
-                    batch.set(ValueClass::TermIndex, random_bytes(value_size));
+                for value_size in [1, 4, 7, 8, 9, 16] {
+                    batch.set(
+                        ValueClass::FtsIndex(BitmapHash::new(random_bytes(value_size))),
+                        random_bytes(value_size * 2),
+                    );
                 }
 
                 for grant_account_id in 0u32..10u32 {
@@ -302,7 +305,7 @@ impl Snapshot {
             (SUBSPACE_BITMAP_TAG, false),
             (SUBSPACE_BITMAP_TEXT, false),
             (SUBSPACE_DIRECTORY, true),
-            (SUBSPACE_FTS_INDEX, true),
+            (SUBSPACE_FTS_QUEUE, true),
             (SUBSPACE_INDEXES, false),
             (SUBSPACE_BLOB_RESERVE, true),
             (SUBSPACE_BLOB_LINK, true),
@@ -317,7 +320,7 @@ impl Snapshot {
             (SUBSPACE_QUOTA, !is_sql),
             (SUBSPACE_REPORT_OUT, true),
             (SUBSPACE_REPORT_IN, true),
-            (SUBSPACE_TERM_INDEX, true),
+            (SUBSPACE_FTS_INDEX, true),
         ] {
             let from_key = AnyKey {
                 subspace,

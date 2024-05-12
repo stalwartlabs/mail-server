@@ -48,7 +48,7 @@ use utils::{
 use crate::Core;
 
 pub(super) const MAGIC_MARKER: u8 = 123;
-pub(super) const FILE_VERSION: u8 = 1;
+pub(super) const FILE_VERSION: u8 = 2;
 
 #[derive(Debug)]
 pub(super) enum Op {
@@ -62,7 +62,7 @@ pub(super) enum Op {
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Family {
     Property = 0,
-    TermIndex = 1,
+    FtsIndex = 1,
     Acl = 2,
     Blob = 3,
     Config = 4,
@@ -229,10 +229,11 @@ impl Core {
         (
             tokio::spawn(async move {
                 writer
-                    .send(Op::Family(Family::TermIndex))
+                    .send(Op::Family(Family::FtsIndex))
                     .failed("Failed to send family");
 
-                let mut keys = BTreeSet::new();
+                let mut last_account_id = u32::MAX;
+                let mut last_collection = u8::MAX;
 
                 store
                     .iterate(
@@ -241,68 +242,56 @@ impl Core {
                                 account_id: 0,
                                 collection: 0,
                                 document_id: 0,
-                                class: ValueClass::TermIndex,
+                                class: ValueClass::FtsIndex(BitmapHash {
+                                    hash: [0; 8],
+                                    len: 1,
+                                }),
                             },
                             ValueKey {
                                 account_id: u32::MAX,
                                 collection: u8::MAX,
                                 document_id: u32::MAX,
-                                class: ValueClass::TermIndex,
+                                class: ValueClass::FtsIndex(BitmapHash {
+                                    hash: [u8::MAX; 8],
+                                    len: u8::MAX,
+                                }),
                             },
-                        )
-                        .no_values(),
-                        |key, _| {
+                        ),
+                        |key, value| {
                             let account_id = key.deserialize_be_u32(0)?;
-                            let collection = key.deserialize_u8(U32_LEN)?;
-                            let document_id =
-                                key.range(U32_LEN + 1..usize::MAX)?.deserialize_leb128()?;
+                            let collection = key.deserialize_u8(key.len() - U32_LEN - 1)?;
+                            let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
 
-                            keys.insert((account_id, collection, document_id));
+                            if account_id != last_account_id {
+                                writer
+                                    .send(Op::AccountId(account_id))
+                                    .failed("Failed to send account id");
+                                last_account_id = account_id;
+                            }
+
+                            if collection != last_collection {
+                                writer
+                                    .send(Op::Collection(collection))
+                                    .failed("Failed to send collection");
+                                last_collection = collection;
+                            }
+
+                            writer
+                                .send(Op::DocumentId(document_id))
+                                .failed("Failed to send document id");
+
+                            writer
+                                .send(Op::KeyValue((
+                                    key.range(U32_LEN..key.len() - U32_LEN - 1)?.to_vec(),
+                                    value.to_vec(),
+                                )))
+                                .failed("Failed to send key value");
 
                             Ok(true)
                         },
                     )
                     .await
                     .failed("Failed to iterate over data store");
-
-                let mut last_account_id = u32::MAX;
-                let mut last_collection = u8::MAX;
-
-                for (account_id, collection, document_id) in keys {
-                    if account_id != last_account_id {
-                        writer
-                            .send(Op::AccountId(account_id))
-                            .failed("Failed to send account id");
-                        last_account_id = account_id;
-                    }
-
-                    if collection != last_collection {
-                        writer
-                            .send(Op::Collection(collection))
-                            .failed("Failed to send collection");
-                        last_collection = collection;
-                    }
-
-                    writer
-                        .send(Op::DocumentId(document_id))
-                        .failed("Failed to send document id");
-
-                    let value = store
-                        .get_value::<RawBytes>(ValueKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            class: ValueClass::TermIndex,
-                        })
-                        .await
-                        .failed("Failed to get value")
-                        .failed("Expected value")
-                        .0;
-
-                    writer
-                        .send(Op::KeyValue((value.to_vec(), vec![])))
-                        .failed("Failed to send key value");
-                }
             }),
             handle,
         )

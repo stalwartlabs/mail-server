@@ -40,7 +40,7 @@ use store::{
     query::Filter,
     write::{
         log::{ChangeLogBuilder, Changes, LogInsert},
-        now, AssignedIds, BatchBuilder, BitmapClass, IndexEmailClass, MaybeDynamicId,
+        now, AssignedIds, BatchBuilder, BitmapClass, FtsQueueClass, MaybeDynamicId,
         MaybeDynamicValue, SerializeWithId, TagValue, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
     },
     BitmapKey, BlobClass, Serialize,
@@ -340,7 +340,7 @@ impl JMAP {
             .set(Property::ThreadId, maybe_thread_id)
             .tag(Property::ThreadId, TagValue::Id(maybe_thread_id), 0)
             .set(
-                ValueClass::IndexEmail(IndexEmailClass::Insert {
+                ValueClass::FtsQueue(FtsQueueClass::Insert {
                     seq: self
                         .generate_snowflake_id()
                         .map_err(|_| IngestError::Temporary)?,
