@@ -74,7 +74,7 @@ Version `0.8.0` includes both performance and security enhancements that require
   or, if you are using the Docker image:
   
   ```bash
-  $ docker run --rm -it stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
+  $ docker run --rm -it stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --import /opt/stalwart-mail/export
   ```
 - Start the service:
   ```bash
