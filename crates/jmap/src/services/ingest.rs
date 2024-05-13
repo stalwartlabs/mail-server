@@ -40,7 +40,14 @@ impl JMAP {
             .await
         {
             Ok(Some(raw_message)) => raw_message,
-            _ => {
+            result => {
+                tracing::error!(
+                    context = "ingest",
+                    rcpts = ?message.recipients,
+                    error = ?result,
+                    "Failed to fetch message blob."
+                );
+
                 return (0..message.recipients.len())
                     .map(|_| DeliveryResult::TemporaryFailure {
                         reason: "Temporary I/O error.".into(),
@@ -53,15 +60,27 @@ impl JMAP {
         let mut recipients = Vec::with_capacity(message.recipients.len());
         let mut deliver_names = AHashMap::with_capacity(message.recipients.len());
         for rcpt in &message.recipients {
-            let uids = self
+            match self
                 .core
                 .email_to_ids(&self.core.storage.directory, rcpt)
                 .await
-                .unwrap_or_default();
-            for uid in &uids {
-                deliver_names.insert(*uid, (DeliveryResult::Success, rcpt));
+            {
+                Ok(uids) => {
+                    for uid in &uids {
+                        deliver_names.insert(*uid, (DeliveryResult::Success, rcpt));
+                    }
+                    recipients.push(uids);
+                }
+                Err(err) => {
+                    tracing::error!(
+                        context = "ingest",
+                        error = ?err,
+                        rcpt = rcpt,
+                        "Failed to lookup recipient"
+                    );
+                    recipients.push(vec![]);
+                }
             }
-            recipients.push(uids);
         }
 
         // Deliver to each recipient

@@ -206,35 +206,16 @@ impl Store {
             return Ok(());
         }
 
-        // Serialize tokens
-        //let mut term_index = KeySerializer::new(tokens.len() * U64_LEN * 2);
+        // Serialize keys
         let mut keys = Vec::with_capacity(tokens.len());
-
-        // Write index keys
         for (hash, postings) in tokens.into_iter() {
-            //term_index = term_index.write(hash.hash.as_slice()).write(hash.len);
             keys.push(Operation::Value {
                 class: ValueClass::FtsIndex(hash),
                 op: ValueOp::Set(postings.serialize().into()),
             });
         }
 
-        // Write term index
-        /*let mut batch = BatchBuilder::new();
-        let mut term_index = lz4_flex::compress_prepend_size(&term_index.finalize());
-        term_index.insert(0, TERM_INDEX_VERSION);
-        batch
-            .with_account_id(document.account_id)
-            .with_collection(document.collection)
-            .update_document(document.document_id)
-            .set(
-                ValueClass::FtsIndex(BitmapHash {
-                    hash: [u8::MAX; 8],
-                    len: u8::MAX,
-                }),
-                term_index,
-            );
-        self.write(batch.build()).await?;*/
+        // Commit index
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(document.account_id)
@@ -358,68 +339,3 @@ impl Store {
         Ok(())
     }
 }
-
-/*
-struct TermIndex {
-    ops: Vec<Operation>,
-}
-
-impl Deserialize for TermIndex {
-    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
-        if bytes.first().copied().unwrap_or_default() != TERM_INDEX_VERSION {
-            return Err(Error::InternalError(
-                "Unsupported term index version".to_string(),
-            ));
-        }
-        let bytes = lz4_flex::decompress_size_prepended(bytes.get(1..).unwrap_or_default())
-            .map_err(|_| Error::InternalError("Failed to decompress term index".to_string()))?;
-        let mut ops = Vec::new();
-
-        // Skip bigrams
-        let (num_items, pos) =
-            bytes
-                .as_slice()
-                .read_leb128::<usize>()
-                .ok_or(Error::InternalError(
-                    "Failed to read term index marker".to_string(),
-                ))?;
-
-        let mut bytes = bytes
-            .get(pos + (num_items * 8)..)
-            .unwrap_or_default()
-            .iter()
-            .peekable();
-
-        while bytes.peek().is_some() {
-            let mut hash = BitmapHash {
-                hash: [0; 8],
-                len: 0,
-            };
-
-            for byte in hash.hash.iter_mut() {
-                *byte = *bytes.next().ok_or(Error::InternalError(
-                    "Unexpected EOF reading term index".to_string(),
-                ))?;
-            }
-
-            hash.len = *bytes.next().ok_or(Error::InternalError(
-                "Unexpected EOF reading term index".to_string(),
-            ))?;
-            let num_fields = *bytes.next().ok_or(Error::InternalError(
-                "Unexpected EOF reading term index".to_string(),
-            ))?;
-            for _ in 0..num_fields {
-                let field = *bytes.next().ok_or(Error::InternalError(
-                    "Unexpected EOF reading term index".to_string(),
-                ))?;
-                ops.push(Operation::Bitmap {
-                    class: BitmapClass::Text { field, token: hash },
-                    set: false,
-                });
-            }
-        }
-
-        Ok(Self { ops })
-    }
-}
-*/

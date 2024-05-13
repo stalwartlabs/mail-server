@@ -184,8 +184,8 @@ password = "password"
 type = "elasticsearch"
 url = "https://localhost:9200"
 user = "elastic"
-password = "RtQ-Lu6+o4rxx=XJplVJ"
-allow-invalid-certs = true
+password = "changeme"
+tls.allow-invalid-certs = true
 disable = true
 
 [certificate.default]

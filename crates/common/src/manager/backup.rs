@@ -91,7 +91,7 @@ impl Core {
 
         for (async_handle, sync_handle) in [
             self.backup_properties(&dest),
-            self.backup_term_index(&dest),
+            self.backup_fts_index(&dest),
             self.backup_acl(&dest),
             self.backup_blob(&dest),
             self.backup_config(&dest),
@@ -223,9 +223,9 @@ impl Core {
         )
     }
 
-    fn backup_term_index(&self, dest: &Path) -> TaskHandle {
+    fn backup_fts_index(&self, dest: &Path) -> TaskHandle {
         let store = self.storage.data.clone();
-        let (handle, writer) = spawn_writer(dest.join("term_index"));
+        let (handle, writer) = spawn_writer(dest.join("fts_index"));
         (
             tokio::spawn(async move {
                 writer
