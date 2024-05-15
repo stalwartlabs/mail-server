@@ -21,9 +21,13 @@
  * for more details.
 */
 
+use std::collections::HashMap;
+
 use prettytable::{Attr, Cell, Row, Table};
 use reqwest::Method;
 use serde_json::Value;
+
+use crate::modules::Response;
 
 use super::cli::{Client, ServerCommands};
 
@@ -70,12 +74,13 @@ impl ServerCommands {
             }
             ServerCommands::ListConfig { prefix } => {
                 let results = client
-                    .http_request::<Vec<(String, String)>, String>(
+                    .http_request::<Response<HashMap<String, String>>, String>(
                         Method::GET,
-                        &format!("/api/settings/{}", prefix.unwrap_or_default()),
+                        &format!("/api/settings/list/{}", prefix.unwrap_or_default()),
                         None,
                     )
-                    .await;
+                    .await
+                    .items;
 
                 if !results.is_empty() {
                     let mut table = Table::new();

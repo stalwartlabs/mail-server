@@ -37,7 +37,7 @@ Version `0.8.0` includes both performance and security enhancements that require
 
   ```bash
   $ docker stop stalwart-mail
-  $ docker run --rm -it stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
+  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
   ```
 - Backup your `v0.7.3` installation:
   - If you are using RocksDB or SQLite, simply rename the `data` directory to `data-backup`, for example:
@@ -74,7 +74,7 @@ Version `0.8.0` includes both performance and security enhancements that require
   or, if you are using the Docker image:
   
   ```bash
-  $ docker run --rm -it stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --import /opt/stalwart-mail/export
+  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --import /opt/stalwart-mail/export
   ```
 - Start the service:
   ```bash
