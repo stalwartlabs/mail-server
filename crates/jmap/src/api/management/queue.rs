@@ -135,14 +135,18 @@ impl JMAP {
                 let to = params.get("to");
                 let before = params.parse::<Timestamp>("before").map(|t| t.into_inner());
                 let after = params.parse::<Timestamp>("after").map(|t| t.into_inner());
-                let page: usize = params.parse::<usize>("page").unwrap_or_default();
-                let limit: usize = params.parse::<usize>("limit").unwrap_or_default();
+                let page = params.parse::<usize>("page").unwrap_or_default();
+                let limit = params.parse::<usize>("limit").unwrap_or_default();
                 let values = params.has_key("values");
+
+                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
 
                 let mut result_ids = Vec::new();
                 let mut result_values = Vec::new();
-                let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(0)));
-                let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX)));
+                let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_start)));
+                let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_end)));
                 let has_filters = text.is_some()
                     || from.is_some()
                     || to.is_some()
@@ -203,7 +207,7 @@ impl JMAP {
                                 total += 1;
                             }
 
-                            Ok(true)
+                            Ok(max_total == 0 || total < max_total)
                         },
                     )
                     .await;
@@ -376,10 +380,14 @@ impl JMAP {
                 let page: usize = params.parse("page").unwrap_or_default();
                 let limit: usize = params.parse("limit").unwrap_or_default();
 
+                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+
                 let mut result = Vec::new();
                 let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
                     ReportEvent {
-                        due: 0,
+                        due: range_start,
                         policy_hash: 0,
                         seq_id: 0,
                         domain: String::new(),
@@ -387,7 +395,7 @@ impl JMAP {
                 )));
                 let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
                     ReportEvent {
-                        due: u64::MAX,
+                        due: range_end,
                         policy_hash: 0,
                         seq_id: 0,
                         domain: String::new(),
@@ -428,7 +436,7 @@ impl JMAP {
                                 }
                             }
 
-                            Ok(true)
+                            Ok(max_total == 0 || total < max_total)
                         },
                     )
                     .await;

@@ -61,30 +61,40 @@ impl JMAP {
                 let page: usize = params.parse::<usize>("page").unwrap_or_default();
                 let limit: usize = params.parse::<usize>("limit").unwrap_or_default();
 
+                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+
                 let (from_key, to_key, typ) = match class {
                     "dmarc" => (
                         ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
-                            id: 0,
+                            id: range_start,
                             expires: 0,
                         })),
                         ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
-                            id: u64::MAX,
+                            id: range_end,
                             expires: u64::MAX,
                         })),
                         ReportType::Dmarc,
                     ),
                     "tls" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Tls { id: 0, expires: 0 })),
                         ValueKey::from(ValueClass::Report(ReportClass::Tls {
-                            id: u64::MAX,
+                            id: range_start,
+                            expires: 0,
+                        })),
+                        ValueKey::from(ValueClass::Report(ReportClass::Tls {
+                            id: range_end,
                             expires: u64::MAX,
                         })),
                         ReportType::Tls,
                     ),
                     "arf" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Arf { id: 0, expires: 0 })),
                         ValueKey::from(ValueClass::Report(ReportClass::Arf {
-                            id: u64::MAX,
+                            id: range_start,
+                            expires: 0,
+                        })),
+                        ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                            id: range_end,
                             expires: u64::MAX,
                         })),
                         ReportType::Arf,
@@ -145,7 +155,7 @@ impl JMAP {
                                 total += 1;
                             }
 
-                            Ok(true)
+                            Ok(max_total == 0 || total < max_total)
                         },
                     )
                     .await;
