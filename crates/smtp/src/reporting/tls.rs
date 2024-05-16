@@ -498,7 +498,7 @@ impl SMTP {
             tracing::error!(
                 context = "report",
                 event = "error",
-                "Failed to write DMARC report event: {}",
+                "Failed to write TLS report event: {}",
                 err
             );
         }

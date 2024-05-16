@@ -81,7 +81,7 @@ impl JMAP {
                 response.not_found.push(id.into());
                 continue;
             }
-            let mut push = if let Some(push) = self
+            let mut identity = if let Some(identity) = self
                 .get_property::<Object<Value>>(
                     account_id,
                     Collection::Identity,
@@ -90,7 +90,7 @@ impl JMAP {
                 )
                 .await?
             {
-                push
+                identity
             } else {
                 response.not_found.push(id.into());
                 continue;
@@ -104,8 +104,17 @@ impl JMAP {
                     Property::MayDelete => {
                         result.append(Property::MayDelete, Value::Bool(true));
                     }
+                    Property::TextSignature | Property::HtmlSignature => {
+                        result.append(
+                            property.clone(),
+                            identity
+                                .properties
+                                .remove(property)
+                                .unwrap_or(Value::Text(String::new())),
+                        );
+                    }
                     property => {
-                        result.append(property.clone(), push.remove(property));
+                        result.append(property.clone(), identity.remove(property));
                     }
                 }
             }
