@@ -7,6 +7,44 @@ Version `0.8.0` includes both performance and security enhancements that require
 - Upgrade to version `0.7.3` if you haven't already. If you are on a version previous to `0.7.0`, you will have to do a manual migration of your data using the Command-line Interface.
 - Create a directory where your data will be exported to, for example `/opt/stalwart-mail/export`.
 
+## Docker Migration migration
+
+- Stop Stalwart and backup your data:
+  ```bash
+  $ docker stop stalwart-mail
+  $ cp -R <STALWART_DIR> <BACKUP_DIR>
+  ```
+  - Export your data from 0.7.3:
+  ```bash
+  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it --entrypoint /usr/local/bin/stalwart-mail stalwartlabs/mail-server:v0.7.3 --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
+  ```
+- Import your data to 0.8.0:
+  ```bash
+  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it --entrypoint /usr/local/bin/stalwart-mail stalwartlabs/mail-server:v0.8.0 --config /opt/stalwart-mail/etc/config.toml --import /opt/stalwart-mail/export
+  ```
+- Start the service in 0.8:
+  ```bash
+  $ docker rm stalwart-mail
+  $ docker run -d -ti -p 443:443 -p 8080:8080 \
+             -p 25:25 -p 587:587 -p 465:465 \
+             -p 143:143 -p 993:993 -p 4190:4190 \
+             -v <STALWART_DIR>:/opt/stalwart-mail \
+             --name stalwart-mail stalwartlabs/mail-server:0.8.0
+  ```
+- If upgrading fail, restore backup and start in 0.7:
+
+  ```bash
+  $ docker stop stalwart-mail
+  $ docker rm stalwart-mail
+  $ rm -r <STALWART_DIR>
+  $ cp -R <BACKUP_DIR> <STALWART_DIR> 
+  $ docker run -d -ti -p 443:443 -p 8080:8080 \
+             -p 25:25 -p 587:587 -p 465:465 \
+             -p 143:143 -p 993:993 -p 4190:4190 \
+             -v <STALWART_DIR>:/opt/stalwart-mail \
+             --name stalwart-mail stalwartlabs/mail-server:0.7.3
+  ```
+
 ## Systemd service upgrade (Linux only)
 - Stop the `v0.7.3` installation:
   ```bash
@@ -33,12 +71,6 @@ Version `0.8.0` includes both performance and security enhancements that require
   $ sudo chown -R stalwart-mail:stalwart-mail /opt/stalwart-mail/export
   ```
 
-  or, if you are using the Docker image:
-
-  ```bash
-  $ docker stop stalwart-mail
-  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
-  ```
 - Backup your `v0.7.3` installation:
   - If you are using RocksDB or SQLite, simply rename the `data` directory to `data-backup`, for example:
     ```bash
@@ -64,27 +96,17 @@ Version `0.8.0` includes both performance and security enhancements that require
     CREATE database stalwart;
     ```
   - If you are using FoundationDB, backup your database and clean the entire key range.
-- Download the `v0.8.0` mail-server for your platform from the [releases page](https://github.com/stalwartlabs/mail-server/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you are using the Docker image, pull the latest image.
+- Download the `v0.8.0` mail-server for your platform from the [releases page](https://github.com/stalwartlabs/mail-server/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`.
 - Import your data:
 
   ```bash
   $ sudo -u stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --import /opt/stalwart-mail/export
   ```
-
-  or, if you are using the Docker image:
-  
-  ```bash
-  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --import /opt/stalwart-mail/export
-  ```
 - Start the service:
   ```bash
   $ sudo systemctl start stalwart-mail
   ```
-
-  Or, if you are using the Docker image:
-  ```bash
-  $ docker start stalwart-mail
-  ```
+  
 
 Upgrading from `v0.6.0` to `v0.7.0`
 -----------------------------------
