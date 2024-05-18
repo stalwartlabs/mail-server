@@ -56,7 +56,10 @@ impl<T: SessionStream> Session<T> {
     pub async fn queue_message(&mut self) -> Cow<'static, [u8]> {
         // Authenticate message
         let raw_message = Arc::new(std::mem::take(&mut self.data.message));
-        let auth_message = if let Some(auth_message) = AuthenticatedMessage::parse(&raw_message) {
+        let auth_message = if let Some(auth_message) = AuthenticatedMessage::parse_with_opts(
+            &raw_message,
+            self.core.core.smtp.mail_auth.dkim.strict,
+        ) {
             auth_message
         } else {
             tracing::info!(parent: &self.span,

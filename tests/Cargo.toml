@@ -29,7 +29,7 @@ common = { path = "../crates/common", features = ["test_mode"] }
 managesieve = { path = "../crates/managesieve", features = ["test_mode"] }
 smtp-proto = { version = "0.1" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
-mail-auth = { version = "0.3", features = ["test"] }
+mail-auth = { version = "0.4", features = ["test"] }
 sieve-rs = { version = "0.5" } 
 utils = { path = "../crates/utils", features = ["test_mode"] }
 jmap-client = { version = "0.3", features = ["websockets", "debug", "async"] } 

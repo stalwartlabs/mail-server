@@ -34,6 +34,7 @@ pub struct MailAuthConfig {
 pub struct DkimAuthConfig {
     pub verify: IfBlock,
     pub sign: IfBlock,
+    pub strict: bool,
 }
 
 #[derive(Clone)]
@@ -95,6 +96,7 @@ impl Default for MailAuthConfig {
                     )],
                     "false",
                 ),
+                strict: true,
             },
             arc: ArcAuthConfig {
                 verify: IfBlock::new::<VerifyStrategy>("auth.arc.verify", [], "relaxed"),
@@ -180,6 +182,9 @@ impl MailAuthConfig {
                 *value = if_block;
             }
         }
+        mail_auth.dkim.strict = config
+            .property_or_default("auth.dkim.strict", "true")
+            .unwrap_or(true);
 
         // Parse signatures
         for id in config
@@ -362,11 +367,6 @@ fn parse_signature<T: SigningKey, U: SigningKey<Hasher = Sha256>>(
     if let Some(c) = config.property::<Duration>(("signature", id, "expire")) {
         signer = signer.expiration(c.as_secs());
         sealer = sealer.expiration(c.as_secs());
-    }
-
-    if let Some(true) = config.property::<bool>(("signature", id, "set-body-length")) {
-        signer = signer.body_length(true);
-        sealer = sealer.body_length(true);
     }
 
     if let Some(true) = config.property::<bool>(("signature", id, "report")) {

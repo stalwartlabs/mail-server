@@ -17,7 +17,7 @@ utils = { path =  "../utils" }
 nlp = { path =  "../nlp" }
 directory = { path =  "../directory" }
 common = { path =  "../common" }
-mail-auth = { version = "0.3" }
+mail-auth = { version = "0.4" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] } 
