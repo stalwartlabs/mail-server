@@ -65,7 +65,7 @@ pub struct JmapConfig {
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
     pub fallback_admin: Option<(String, String)>,
-    pub fallback_admin_master: bool,
+    pub master_user: Option<(String, String)>,
 
     pub spam_header: Option<(HeaderName<'static>, String)>,
 
@@ -321,9 +321,11 @@ impl JmapConfig {
                         .value("authentication.fallback-admin.secret")
                         .map(|p| (u.to_string(), p.to_string()))
                 }),
-            fallback_admin_master: config
-                .property_or_default("authentication.fallback-admin.enable-master", "false")
-                .unwrap_or(false),
+            master_user: config.value("authentication.master.user").and_then(|u| {
+                config
+                    .value("authentication.master.secret")
+                    .map(|p| (u.to_string(), p.to_string()))
+            }),
         };
 
         // Add capabilities
