@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common::scripts::plugins::PluginContext;
 use mail_auth::common::headers::HeaderWriter;
@@ -52,7 +52,7 @@ impl SMTP {
             .core
             .sieve
             .trusted_runtime
-            .filter(params.message.as_deref().map_or(b"", |m| &m[..]))
+            .filter(params.message.as_ref().map_or(b"", |m| &m[..]))
             .with_vars_env(params.variables)
             .with_envelope_list(params.envelope)
             .with_user_address(&params.from_addr)
@@ -259,7 +259,8 @@ impl SMTP {
                         }
 
                         // Queue message
-                        let raw_message = if message_id > 0 {
+                        let is_forward = message_id == 0;
+                        let raw_message = if !is_forward {
                             messages.get(message_id - 1).map(|m| m.as_slice())
                         } else {
                             instance.message().raw_message().into()
@@ -267,6 +268,7 @@ impl SMTP {
                         if let Some(raw_message) = raw_message {
                             let headers = if !params.sign.is_empty() {
                                 let mut headers = Vec::new();
+
                                 for dkim in &params.sign {
                                     if let Some(dkim) = self.core.get_dkim_signer(dkim) {
                                         match dkim.sign(raw_message) {
@@ -282,17 +284,36 @@ impl SMTP {
                                         }
                                     }
                                 }
-                                Some(headers)
+
+                                if is_forward {
+                                    headers.extend_from_slice(params.headers.unwrap_or_default());
+                                }
+
+                                Some(Cow::Owned(headers))
+                            } else if is_forward {
+                                params.headers.map(Cow::Borrowed)
                             } else {
                                 None
                             };
 
-                            handle.block_on(message.queue(
-                                headers.as_deref(),
-                                raw_message,
-                                self,
-                                &span,
-                            ));
+                            if handle.block_on(self.has_quota(&mut message)) {
+                                handle.block_on(message.queue(
+                                    headers.as_deref(),
+                                    raw_message,
+                                    self,
+                                    &span,
+                                ));
+                            } else {
+                                tracing::warn!(
+                                    parent: &span,
+                                    context = "sieve",
+                                    event = "send-message",
+                                    error = "quota-exceeded",
+                                    return_path = %message.return_path_lcase,
+                                    recipient = %message.recipients[0].address_lcase,
+                                    reason = "Queue quota exceeded by sieve script"
+                                );
+                            }
                         }
 
                         input = true.into();

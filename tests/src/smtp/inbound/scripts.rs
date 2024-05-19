@@ -275,7 +275,7 @@ async fn sieve_scripts() {
     qr.read_event().await.assert_reload();
     let messages = qr.read_queued_messages().await;
     assert_eq!(messages.len(), 2);
-    let mut messages = messages.into_iter().rev();
+    let mut messages = messages.into_iter();
     let notification = messages.next().unwrap();
     assert_eq!(notification.return_path, "");
     assert_eq!(notification.recipients.len(), 2);
@@ -322,7 +322,7 @@ async fn sieve_scripts() {
     qr.read_event().await.assert_reload();
     let messages = qr.read_queued_messages().await;
     assert_eq!(messages.len(), 2);
-    let mut messages = messages.into_iter().rev();
+    let mut messages = messages.into_iter();
 
     messages
         .next()
@@ -370,6 +370,7 @@ async fn sieve_scripts() {
         .assert_contains("To: Suzie Q <suzie@shopping.example.net>")
         .assert_contains("Subject: Is dinner ready?")
         .assert_contains("Message-ID: <20030712040037.46341.5F8J@football.example.com>")
+        .assert_contains("Received: ")
         .assert_not_contains("From: Joe SixPack <joe@football.example.com>");
     qr.assert_no_events();
 
@@ -397,7 +398,9 @@ async fn sieve_scripts() {
         .assert_contains("To: Suzie Q <suzie@shopping.example.net>")
         .assert_contains("Subject: Is dinner ready?")
         .assert_contains("Message-ID: <20030712040037.46341.5F8J@football.example.com>")
-        .assert_contains("From: Joe SixPack <joe@football.example.com>");
+        .assert_contains("From: Joe SixPack <joe@football.example.com>")
+        .assert_contains("Received: ")
+        .assert_contains("Authentication-Results: ");
     qr.assert_no_events();
 
     // Test pipes

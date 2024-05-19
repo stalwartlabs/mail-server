@@ -334,6 +334,69 @@ impl<T: SessionStream> Session<T> {
             }
         }
 
+        // Add Received header
+        let message_id = self.core.inner.snowflake_id.generate().unwrap_or_else(now);
+        let mut headers = Vec::with_capacity(64);
+        if self
+            .core
+            .core
+            .eval_if(&dc.add_received, self)
+            .await
+            .unwrap_or(true)
+        {
+            self.write_received(&mut headers, message_id)
+        }
+
+        // Add authentication results header
+        if self
+            .core
+            .core
+            .eval_if(&dc.add_auth_results, self)
+            .await
+            .unwrap_or(true)
+        {
+            auth_results.write_header(&mut headers);
+        }
+
+        // Add Received-SPF header
+        if let Some(spf_output) = &self.data.spf_mail_from {
+            if self
+                .core
+                .core
+                .eval_if(&dc.add_received_spf, self)
+                .await
+                .unwrap_or(true)
+            {
+                ReceivedSpf::new(
+                    spf_output,
+                    self.data.remote_ip,
+                    &self.data.helo_domain,
+                    &mail_from.address_lcase,
+                    &self.hostname,
+                )
+                .write_header(&mut headers);
+            }
+        }
+
+        // ARC Seal
+        if let (Some(arc_sealer), Some(arc_output)) = (arc_sealer, &arc_output) {
+            if !dkim_output.is_empty() && arc_output.can_be_sealed() {
+                match arc_sealer.seal(&auth_message, &auth_results, arc_output) {
+                    Ok(set) => {
+                        set.write_header(&mut headers);
+                    }
+                    Err(err) => {
+                        tracing::info!(parent: &self.span,
+                            context = "arc",
+                            event = "seal-failed",
+                            return_path = mail_from.address_lcase,
+                            from = auth_message.from(),
+                            "Failed to seal message: {}", err);
+                    }
+                }
+            }
+        }
+
         // Run Milter filters
         let mut edited_message = match self.run_milters(&auth_message).await {
             Ok(modifications) => {
@@ -354,7 +417,6 @@ impl<T: SessionStream> Session<T> {
 
                     self.data
                         .apply_milter_modifications(modifications, &auth_message)
-                        .map(Arc::new)
                 } else {
                     None
                 }
@@ -409,7 +471,7 @@ impl<T: SessionStream> Session<T> {
                                                 && !output.stdout.is_empty()
                                                 && output.stdout[..] != piped_message[..]
                                             {
-                                                edited_message = Arc::new(output.stdout).into();
+                                                edited_message = output.stdout.into();
                                             }
 
                                             tracing::debug!(parent: &self.span,
@@ -466,7 +528,6 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Sieve filtering
-        let mut headers = Vec::with_capacity(64);
         if let Some(script) = self
             .core
             .core
@@ -476,7 +537,8 @@ impl<T: SessionStream> Session<T> {
         {
             let params = self
                 .build_script_parameters("data")
-                .with_message(edited_message.as_ref().unwrap_or(&raw_message).clone())
+                .with_message(edited_message.as_ref().unwrap_or(&raw_message))
+                .with_auth_headers(&headers)
                 .set_variable(
                     "arc.result",
                     arc_output
@@ -528,7 +590,7 @@ impl<T: SessionStream> Session<T> {
                     message,
                     modifications,
                 } => {
-                    edited_message = Arc::new(message).into();
+                    edited_message = message.into();
                     modifications
                 }
                 ScriptResult::Reject(message) => {
@@ -565,67 +627,19 @@ impl<T: SessionStream> Session<T> {
         // Build message
         let mail_from = self.data.mail_from.clone().unwrap();
         let rcpt_to = std::mem::take(&mut self.data.rcpt_to);
-        let mut message = self.build_message(mail_from, rcpt_to).await;
+        let mut message = self.build_message(mail_from, rcpt_to, message_id).await;
 
-        // Add Received header
+        // Add Return-Path
         if self
             .core
             .core
-            .eval_if(&dc.add_received, self)
+            .eval_if(&dc.add_return_path, self)
             .await
             .unwrap_or(true)
         {
-            self.write_received(&mut headers, message.id)
-        }
-
-        // Add authentication results header
-        if self
-            .core
-            .core
-            .eval_if(&dc.add_auth_results, self)
-            .await
-            .unwrap_or(true)
-        {
-            auth_results.write_header(&mut headers);
-        }
-
-        // Add Received-SPF header
-        if let Some(spf_output) = &self.data.spf_mail_from {
-            if self
-                .core
-                .core
-                .eval_if(&dc.add_received_spf, self)
-                .await
-                .unwrap_or(true)
-            {
-                ReceivedSpf::new(
-                    spf_output,
-                    self.data.remote_ip,
-                    &self.data.helo_domain,
-                    &message.return_path,
-                    &self.hostname,
-                )
-                .write_header(&mut headers);
-            }
-        }
-
-        // ARC Seal
-        if let (Some(arc_sealer), Some(arc_output)) = (arc_sealer, &arc_output) {
-            if !dkim_output.is_empty() && arc_output.can_be_sealed() {
-                match arc_sealer.seal(&auth_message, &auth_results, arc_output) {
-                    Ok(set) => {
-                        set.write_header(&mut headers);
-                    }
-                    Err(err) => {
-                        tracing::info!(parent: &self.span,
-                            context = "arc",
-                            event = "seal-failed",
-                            return_path = message.return_path,
-                            from = auth_message.from(),
-                            "Failed to seal message: {}", err);
-                    }
-                }
-            }
+            headers.extend_from_slice(b"Return-Path: <");
+            headers.extend_from_slice(message.return_path.as_bytes());
+            headers.extend_from_slice(b">\r\n");
         }
 
         // Add any missing headers
@@ -654,21 +668,10 @@ impl<T: SessionStream> Session<T> {
             headers.extend_from_slice(b"\r\n");
         }
 
-        // Add Return-Path
-        if self
-            .core
-            .core
-            .eval_if(&dc.add_return_path, self)
-            .await
-            .unwrap_or(true)
-        {
-            headers.extend_from_slice(b"Return-Path: <");
-            headers.extend_from_slice(message.return_path.as_bytes());
-            headers.extend_from_slice(b">\r\n");
-        }
-
         // DKIM sign
-        let raw_message = edited_message.unwrap_or(raw_message);
+        let raw_message = edited_message
+            .as_deref()
+            .unwrap_or_else(|| raw_message.as_slice());
         for signer in self
             .core
             .core
@@ -699,7 +702,7 @@ impl<T: SessionStream> Session<T> {
         if self.core.has_quota(&mut message).await {
             let queue_id = message.id;
             if message
-                .queue(Some(&headers), &raw_message, &self.core, &self.span)
+                .queue(Some(&headers), raw_message, &self.core, &self.span)
                 .await
             {
                 self.state = State::Accepted(queue_id);
@@ -724,13 +727,14 @@ impl<T: SessionStream> Session<T> {
         &self,
         mail_from: SessionAddress,
         mut rcpt_to: Vec<SessionAddress>,
+        id: u64,
     ) -> Message {
         // Build message
         let created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         let mut message = Message {
-            id: self.core.inner.snowflake_id.generate().unwrap_or(created),
+            id,
             created,
             return_path: mail_from.address,
             return_path_lcase: mail_from.address_lcase,

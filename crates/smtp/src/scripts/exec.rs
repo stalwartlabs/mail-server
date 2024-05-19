@@ -34,7 +34,7 @@ use crate::{core::Session, inbound::AuthResult};
 use super::{ScriptParameters, ScriptResult};
 
 impl<T: SessionStream> Session<T> {
-    pub fn build_script_parameters(&self, stage: &'static str) -> ScriptParameters {
+    pub fn build_script_parameters(&self, stage: &'static str) -> ScriptParameters<'_> {
         let (tls_version, tls_cipher) = self.stream.tls_version_and_cipher();
         let mut params = ScriptParameters::new()
             .set_variable("remote_ip", self.data.remote_ip.to_string())
@@ -136,7 +136,11 @@ impl<T: SessionStream> Session<T> {
         params
     }
 
-    pub async fn run_script(&self, script: Arc<Sieve>, params: ScriptParameters) -> ScriptResult {
+    pub async fn run_script(
+        &self,
+        script: Arc<Sieve>,
+        params: ScriptParameters<'_>,
+    ) -> ScriptResult {
         let core = self.core.clone();
         let span = self.span.clone();
         let params = params.with_envelope(&self.core.core, self).await;
