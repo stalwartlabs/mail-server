@@ -38,7 +38,10 @@ use config::{
 };
 use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy};
 use expr::if_block::IfBlock;
-use listener::{blocked::BlockedIps, tls::TlsManager};
+use listener::{
+    blocked::{AllowedIps, BlockedIps},
+    tls::TlsManager,
+};
 use mail_send::Credentials;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::{
@@ -81,6 +84,7 @@ pub struct Core {
 #[derive(Clone)]
 pub struct Network {
     pub blocked_ips: BlockedIps,
+    pub allowed_ips: AllowedIps,
     pub url: IfBlock,
 }
 
