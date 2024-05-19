@@ -162,7 +162,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                         if account_id != u32::MAX && document_id != u32::MAX {
                             if reader.version == 1 && collection == email_collection {
                                 batch.set(
-                                    ValueClass::FtsQueue(FtsQueueClass::Insert {
+                                    ValueClass::FtsQueue(FtsQueueClass {
                                         seq,
                                         hash: hash.clone(),
                                     }),

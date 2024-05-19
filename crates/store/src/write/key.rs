@@ -34,8 +34,8 @@ use crate::{
 };
 
 use super::{
-    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, FtsQueueClass, LookupClass,
-    QueueClass, ReportClass, ReportEvent, ResolveId, TagValue, ValueClass,
+    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportClass,
+    ReportEvent, ResolveId, TagValue, ValueClass,
 };
 
 pub struct KeySerializer {
@@ -282,19 +282,12 @@ impl<T: ResolveId> ValueClass<T> {
                 .write(account_id)
                 .write(collection)
                 .write(document_id),
-            ValueClass::FtsQueue(index) => match index {
-                FtsQueueClass::Insert { seq, hash } => serializer
-                    .write(*seq)
-                    .write(account_id)
-                    .write(collection)
-                    .write(document_id)
-                    .write::<&[u8]>(hash.as_ref()),
-                FtsQueueClass::Delete { seq } => serializer
-                    .write(*seq)
-                    .write(account_id)
-                    .write(collection)
-                    .write(document_id),
-            },
+            ValueClass::FtsQueue(queue) => serializer
+                .write(queue.seq)
+                .write(account_id)
+                .write(collection)
+                .write(document_id)
+                .write::<&[u8]>(queue.hash.as_ref()),
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { hash, until } => serializer
                     .write(account_id)
@@ -389,6 +382,7 @@ impl<T: ResolveId> ValueClass<T> {
                     serializer.write(2u8).write(*expires).write(*id)
                 }
             },
+            ValueClass::Any(any) => serializer.write(any.key.as_slice()),
         }
         .finalize()
     }
@@ -566,6 +560,7 @@ impl<T> ValueClass<T> {
                 QueueClass::QuotaCount(v) | QueueClass::QuotaSize(v) => v.len(),
             },
             ValueClass::Report(_) => U64_LEN * 2 + 1,
+            ValueClass::Any(v) => v.key.len(),
         }
     }
 
@@ -606,6 +601,7 @@ impl<T> ValueClass<T> {
                 QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_) => SUBSPACE_QUOTA,
             },
             ValueClass::Report(_) => SUBSPACE_REPORT_OUT,
+            ValueClass::Any(any) => any.subspace,
         }
     }
 

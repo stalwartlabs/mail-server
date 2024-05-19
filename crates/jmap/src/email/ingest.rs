@@ -340,7 +340,7 @@ impl JMAP {
             .set(Property::ThreadId, maybe_thread_id)
             .tag(Property::ThreadId, TagValue::Id(maybe_thread_id), 0)
             .set(
-                ValueClass::FtsQueue(FtsQueueClass::Insert {
+                ValueClass::FtsQueue(FtsQueueClass {
                     seq: self
                         .generate_snowflake_id()
                         .map_err(|_| IngestError::Temporary)?,

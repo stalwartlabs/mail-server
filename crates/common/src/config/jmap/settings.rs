@@ -10,8 +10,10 @@ use utils::config::{cron::SimpleCron, utils::ParseValue, Config, Rate};
 pub struct JmapConfig {
     pub default_language: Language,
     pub query_max_results: usize,
-    pub changes_max_results: usize,
     pub snippet_max_results: usize,
+
+    pub changes_max_results: usize,
+    pub changes_max_history: Option<Duration>,
 
     pub request_max_size: usize,
     pub request_max_calls: usize,
@@ -32,6 +34,7 @@ pub struct JmapConfig {
     pub mail_attachments_max_size: usize,
     pub mail_parse_max_items: usize,
     pub mail_max_size: usize,
+    pub mail_autoexpunge_after: Option<Duration>,
 
     pub sieve_max_script_name: usize,
     pub sieve_max_scripts: usize,
@@ -76,6 +79,7 @@ pub struct JmapConfig {
 
     pub capabilities: BaseCapabilities,
     pub session_purge_frequency: SimpleCron,
+    pub account_purge_frequency: SimpleCron,
 }
 
 impl JmapConfig {
@@ -146,6 +150,9 @@ impl JmapConfig {
             changes_max_results: config
                 .property("jmap.protocol.changes.max-results")
                 .unwrap_or(5000),
+            changes_max_history: config
+                .property_or_default::<Option<Duration>>("jmap.protocol.changes.max-history", "30d")
+                .unwrap_or_default(),
             snippet_max_results: config
                 .property("jmap.protocol.search-snippet.max-results")
                 .unwrap_or(100),
@@ -189,6 +196,9 @@ impl JmapConfig {
                 .unwrap_or(50000000),
             mail_max_size: config.property("jmap.email.max-size").unwrap_or(75000000),
             mail_parse_max_items: config.property("jmap.email.parse.max-items").unwrap_or(10),
+            mail_autoexpunge_after: config
+                .property_or_default::<Option<Duration>>("jmap.email.auto-expunge", "30d")
+                .unwrap_or_default(),
             sieve_max_script_name: config
                 .property("sieve.untrusted.limits.name-length")
                 .unwrap_or(512),
@@ -300,6 +310,9 @@ impl JmapConfig {
                 .unwrap_or_else(|| Duration::from_secs(1)),
             session_purge_frequency: config
                 .property_or_default::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
+                .unwrap_or_else(|| SimpleCron::parse_value("15 * *").unwrap()),
+            account_purge_frequency: config
+                .property_or_default::<SimpleCron>("jmap.account.purge.frequency", "0 0 *")
                 .unwrap_or_else(|| SimpleCron::parse_value("15 * *").unwrap()),
             fallback_admin: config
                 .value("authentication.fallback-admin.user")

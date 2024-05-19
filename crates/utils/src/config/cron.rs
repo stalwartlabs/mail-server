@@ -43,7 +43,7 @@ impl SimpleCron {
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
                     .earliest()
                     .unwrap_or_else(|| now - TimeDelta::try_seconds(1).unwrap_or_default());
-                if next < now {
+                if next <= now {
                     next + TimeDelta::try_days(1).unwrap_or_default()
                 } else {
                     next
@@ -54,7 +54,7 @@ impl SimpleCron {
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), *hour, *minute, 0)
                     .earliest()
                     .unwrap_or_else(|| now - TimeDelta::try_seconds(1).unwrap_or_default());
-                if next < now {
+                if next <= now {
                     next + TimeDelta::try_days(
                         (7 - now.weekday().number_from_monday() + *day).into(),
                     )
@@ -68,7 +68,7 @@ impl SimpleCron {
                     .with_ymd_and_hms(now.year(), now.month(), now.day(), now.hour(), *minute, 0)
                     .earliest()
                     .unwrap_or_else(|| now - TimeDelta::try_seconds(1).unwrap_or_default());
-                if next < now {
+                if next <= now {
                     next + TimeDelta::try_hours(1).unwrap_or_default()
                 } else {
                     next

@@ -370,90 +370,20 @@ impl JMAP {
 
                 // If the message is in multiple mailboxes, untag it from the current mailbox,
                 // otherwise delete it.
-                for message_id in message_ids {
-                    // Obtain mailboxIds
-                    if let Some(mailbox_ids) = self
-                        .get_property::<HashedValue<Vec<UidMailbox>>>(
-                            account_id,
-                            Collection::Email,
-                            message_id,
-                            Property::MailboxIds,
-                        )
-                        .await?
-                        .and_then(|mut ids| {
-                            let idx = ids.inner.iter().position(|&id| {
-                                debug_assert!(id.uid != 0);
-                                id.mailbox_id == document_id
-                            })?;
-                            ids.inner.swap_remove(idx);
-                            Some(ids)
-                        })
-                    {
-                        if !mailbox_ids.inner.is_empty() {
-                            // Obtain threadId
-                            if let Some(thread_id) = self
-                                .get_property::<u32>(
-                                    account_id,
-                                    Collection::Email,
-                                    message_id,
-                                    Property::ThreadId,
-                                )
-                                .await?
-                            {
-                                // Untag message from mailbox
-                                let mut batch = BatchBuilder::new();
-                                batch
-                                    .with_account_id(account_id)
-                                    .with_collection(Collection::Email)
-                                    .update_document(message_id)
-                                    .assert_value(Property::MailboxIds, &mailbox_ids)
-                                    .value(Property::MailboxIds, mailbox_ids.inner, F_VALUE)
-                                    .value(Property::MailboxIds, document_id, F_BITMAP | F_CLEAR);
-                                match self.core.storage.data.write(batch.build()).await {
-                                    Ok(_) => changes.log_update(
-                                        Collection::Email,
-                                        Id::from_parts(thread_id, message_id),
-                                    ),
-                                    Err(store::Error::AssertValueFailed) => {
-                                        return Ok(Err(SetError::forbidden().with_description(
-                                            concat!(
-                                            "Another process modified a message in this mailbox ",
-                                            "while deleting it, please try again."
-                                        ),
-                                        )));
-                                    }
-                                    Err(err) => {
-                                        tracing::error!(
-                                        event = "error",
-                                        context = "mailbox_set",
-                                        account_id = account_id,
-                                        mailbox_id = document_id,
-                                        message_id = message_id,
-                                        error = ?err,
-                                        "Failed to update message while deleting mailbox.");
-                                        return Err(MethodError::ServerPartialFail);
-                                    }
-                                }
-                            } else {
-                                tracing::debug!(
-                                    event = "error",
-                                    context = "mailbox_set",
-                                    account_id = account_id,
-                                    mailbox_id = document_id,
-                                    message_id = message_id,
-                                    "Message does not have a threadId, skipping."
-                                );
-                            }
-                        } else {
-                            // Delete message
-                            if let Ok(mut change) =
-                                self.email_delete(account_id, message_id).await?
-                            {
-                                change.changes.remove(&(Collection::Mailbox as u8));
-                                changes.merge(change);
-                            }
-                        }
-                    } else {
+                let mut destroy_ids = RoaringBitmap::new();
+                for (message_id, mut mailbox_ids) in self
+                    .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
+                        account_id,
+                        Collection::Email,
+                        &message_ids,
+                        Property::MailboxIds,
+                    )
+                    .await?
+                {
+                    // Remove mailbox from list
+                    let orig_len = mailbox_ids.inner.len();
+                    mailbox_ids.inner.retain(|id| id.mailbox_id != document_id);
+                    if mailbox_ids.inner.len() == orig_len {
                         tracing::debug!(
                             event = "error",
                             context = "mailbox_set",
@@ -462,7 +392,76 @@ impl JMAP {
                             message_id = message_id,
                             "Message is not in the mailbox, skipping."
                         );
+
+                        continue;
                     }
+
+                    if !mailbox_ids.inner.is_empty() {
+                        // Obtain threadId
+                        if let Some(thread_id) = self
+                            .get_property::<u32>(
+                                account_id,
+                                Collection::Email,
+                                message_id,
+                                Property::ThreadId,
+                            )
+                            .await?
+                        {
+                            // Untag message from mailbox
+                            let mut batch = BatchBuilder::new();
+                            batch
+                                .with_account_id(account_id)
+                                .with_collection(Collection::Email)
+                                .update_document(message_id)
+                                .assert_value(Property::MailboxIds, &mailbox_ids)
+                                .value(Property::MailboxIds, mailbox_ids.inner, F_VALUE)
+                                .value(Property::MailboxIds, document_id, F_BITMAP | F_CLEAR);
+                            match self.core.storage.data.write(batch.build()).await {
+                                Ok(_) => changes.log_update(
+                                    Collection::Email,
+                                    Id::from_parts(thread_id, message_id),
+                                ),
+                                Err(store::Error::AssertValueFailed) => {
+                                    return Ok(Err(SetError::forbidden().with_description(
+                                        concat!(
+                                            "Another process modified a message in this mailbox ",
+                                            "while deleting it, please try again."
+                                        ),
+                                    )));
+                                }
+                                Err(err) => {
+                                    tracing::error!(
+                                    event = "error",
+                                    context = "mailbox_set",
+                                    account_id = account_id,
+                                    mailbox_id = document_id,
+                                    message_id = message_id,
+                                    error = ?err,
+                                    "Failed to update message while deleting mailbox.");
+                                    return Err(MethodError::ServerPartialFail);
+                                }
+                            }
+                        } else {
+                            tracing::debug!(
+                                event = "error",
+                                context = "mailbox_set",
+                                account_id = account_id,
+                                mailbox_id = document_id,
+                                message_id = message_id,
+                                "Message does not have a threadId, skipping."
+                            );
+                        }
+                    } else {
+                        // Delete message
+                        destroy_ids.insert(message_id);
+                    }
+                }
+
+                // Bulk delete messages
+                if !destroy_ids.is_empty() {
+                    let (mut change, _) = self.emails_tombstone(account_id, destroy_ids).await?;
+                    change.changes.remove(&(Collection::Mailbox as u8));
+                    changes.merge(change);
                 }
             } else {
                 return Ok(Err(SetError::new(SetErrorType::MailboxHasEmail)

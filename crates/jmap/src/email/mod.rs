@@ -25,6 +25,7 @@ pub mod body;
 pub mod cache;
 pub mod copy;
 pub mod crypto;
+pub mod delete;
 pub mod get;
 pub mod headers;
 pub mod import;
