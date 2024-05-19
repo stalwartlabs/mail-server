@@ -29,6 +29,7 @@ use serde_json::json;
 
 use crate::{
     backend::elastic::INDEX_NAMES,
+    dispatch::DocumentSet,
     fts::{index::FtsDocument, Field},
 };
 
@@ -77,8 +78,10 @@ impl ElasticSearchStore {
         &self,
         account_id: u32,
         collection: u8,
-        document_ids: &[u32],
+        document_ids: &impl DocumentSet,
     ) -> crate::Result<()> {
+        let document_ids = document_ids.iterate().collect::<Vec<_>>();
+
         self.index
             .delete_by_query(DeleteByQueryParts::Index(&[
                 INDEX_NAMES[collection as usize]

@@ -27,12 +27,15 @@ use roaring::RoaringBitmap;
 
 use crate::{
     write::{
-        key::KeySerializer, now, AnyKey, AssignedIds, Batch, BitmapClass, BitmapHash, ReportClass,
-        ValueClass,
+        key::{DeserializeBigEndian, KeySerializer},
+        now, AnyClass, AnyKey, AssignedIds, Batch, BatchBuilder, BitmapClass, BitmapHash,
+        Operation, ReportClass, ValueClass, ValueOp,
     },
     BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAP_ID,
     SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES, SUBSPACE_LOGS, U32_LEN,
 };
+
+use super::DocumentSet;
 
 #[cfg(feature = "test_mode")]
 lazy_static::lazy_static! {
@@ -143,7 +146,6 @@ impl Store {
     pub async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
         #[cfg(feature = "test_mode")]
         if std::env::var("PARANOID_WRITE").map_or(false, |v| v == "1") {
-            use crate::write::Operation;
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
@@ -301,6 +303,80 @@ impl Store {
             Self::RocksDb(store) => store.delete_range(from, to).await,
             Self::None => Err(crate::Error::InternalError("No store configured".into())),
         }
+    }
+
+    pub async fn delete_documents(
+        &self,
+        subspace: u8,
+        account_id: u32,
+        collection: u8,
+        collection_offset: Option<usize>,
+        document_ids: &impl DocumentSet,
+    ) -> crate::Result<()> {
+        // Serialize keys
+        let (from_key, to_key) = if collection_offset.is_some() {
+            (
+                KeySerializer::new(U32_LEN + 2)
+                    .write(account_id)
+                    .write(collection),
+                KeySerializer::new(U32_LEN + 2)
+                    .write(account_id)
+                    .write(collection + 1),
+            )
+        } else {
+            (
+                KeySerializer::new(U32_LEN).write(account_id),
+                KeySerializer::new(U32_LEN).write(account_id + 1),
+            )
+        };
+
+        // Find keys to delete
+        let mut delete_keys = Vec::new();
+        self.iterate(
+            IterateParams::new(
+                AnyKey {
+                    subspace,
+                    key: from_key.finalize(),
+                },
+                AnyKey {
+                    subspace,
+                    key: to_key.finalize(),
+                },
+            )
+            .no_values(),
+            |key, _| {
+                if collection_offset.map_or(true, |offset| {
+                    key.get(key.len() - U32_LEN - offset).copied() == Some(collection)
+                }) {
+                    let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
+                    if document_ids.contains(document_id) {
+                        delete_keys.push(key.to_vec());
+                    }
+                }
+
+                Ok(true)
+            },
+        )
+        .await?;
+
+        // Remove keys
+        let mut batch = BatchBuilder::new();
+
+        for key in delete_keys {
+            if batch.ops.len() >= 1000 {
+                self.write(std::mem::take(&mut batch).build()).await?;
+            }
+            batch.ops.push(Operation::Value {
+                class: ValueClass::Any(AnyClass { subspace, key }),
+                op: ValueOp::Clear,
+            });
+        }
+
+        if !batch.is_empty() {
+            self.write(batch.build()).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
@@ -466,10 +542,7 @@ impl Store {
     pub async fn blob_expire_all(&self) {
         use utils::{BlobHash, BLOB_HASH_LEN};
 
-        use crate::{
-            write::{key::DeserializeBigEndian, BatchBuilder, BlobOp, Operation, ValueOp},
-            U64_LEN,
-        };
+        use crate::{write::BlobOp, U64_LEN};
 
         // Delete all temporary hashes
         let from_key = ValueKey {
@@ -522,9 +595,7 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     pub async fn lookup_expire_all(&self) {
-        use crate::write::{
-            key::DeserializeBigEndian, BatchBuilder, LookupClass, Operation, ValueOp,
-        };
+        use crate::write::LookupClass;
 
         // Delete all temporary counters
         let from_key = ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![0u8])));
@@ -649,31 +720,31 @@ impl Store {
 
                             match key[5] {
                                 BM_DOCUMENT_IDS => {
-                                    eprint!("Found document ids bitmap");
+                                    print!("Found document ids bitmap");
                                 }
                                 BM_TAG => {
-                                    eprint!(
+                                    print!(
                                         "Found tagged id {} bitmap",
                                         key[7..].iter().next_leb128::<u32>().unwrap()
                                     );
                                 }
                                 TAG_TEXT => {
-                                    eprint!(
+                                    print!(
                                         "Found tagged text {:?} bitmap",
                                         String::from_utf8_lossy(&key[7..])
                                     );
                                 }
                                 TAG_STATIC => {
-                                    eprint!("Found tagged static {} bitmap", key[7]);
+                                    print!("Found tagged static {} bitmap", key[7]);
                                 }
                                 other => {
                                     if other & BM_TEXT == BM_TEXT {
-                                        eprint!(
+                                        print!(
                                             "Found text hash {:?} bitmap",
                                             String::from_utf8_lossy(&key[7..])
                                         );
                                     } else {
-                                        eprint!("Found unknown bitmap");
+                                        print!("Found unknown bitmap");
                                     }
                                 }
                             }

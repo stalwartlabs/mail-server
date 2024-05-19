@@ -417,7 +417,7 @@ impl JMAP {
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, change_id, F_VALUE)
             .set(
-                ValueClass::FtsQueue(FtsQueueClass::Insert {
+                ValueClass::FtsQueue(FtsQueueClass {
                     seq: self.generate_snowflake_id()?,
                     hash: metadata.blob_hash.clone(),
                 }),

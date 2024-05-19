@@ -49,6 +49,7 @@ use services::{
 
 use smtp::core::SMTP;
 use store::{
+    dispatch::DocumentSet,
     fts::FtsFilter,
     query::{sort::Pagination, Comparator, Filter, ResultSet, SortedResultSet},
     roaring::RoaringBitmap,
@@ -228,7 +229,7 @@ impl JMAP {
         property: P,
     ) -> Result<Vec<(u32, U)>, MethodError>
     where
-        I: PropertiesIterator + Send + Sync,
+        I: DocumentSet + Send + Sync,
         P: AsRef<Property>,
         U: Deserialize + 'static,
     {
@@ -617,49 +618,5 @@ impl UpdateResults for QueryResponse {
         } else {
             Err(MethodError::AnchorNotFound)
         }
-    }
-}
-
-#[allow(clippy::len_without_is_empty)]
-pub trait PropertiesIterator {
-    fn min(&self) -> u32;
-    fn max(&self) -> u32;
-    fn contains(&self, id: u32) -> bool;
-    fn len(&self) -> usize;
-}
-
-impl PropertiesIterator for RoaringBitmap {
-    fn min(&self) -> u32 {
-        self.min().unwrap_or(0)
-    }
-
-    fn max(&self) -> u32 {
-        self.max().map(|m| m + 1).unwrap_or(0)
-    }
-
-    fn contains(&self, id: u32) -> bool {
-        self.contains(id)
-    }
-
-    fn len(&self) -> usize {
-        self.len() as usize
-    }
-}
-
-impl PropertiesIterator for () {
-    fn min(&self) -> u32 {
-        0
-    }
-
-    fn max(&self) -> u32 {
-        u32::MAX
-    }
-
-    fn contains(&self, _: u32) -> bool {
-        true
-    }
-
-    fn len(&self) -> usize {
-        0
     }
 }

@@ -26,7 +26,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use store::write::purge::PurgeStore;
+use store::{write::purge::PurgeStore, BlobStore, LookupStore, Store};
 use tokio::sync::mpsc;
 use utils::map::ttl_dashmap::TtlMap;
 
@@ -42,9 +42,17 @@ pub enum Event {
         provider_id: String,
         renew_at: Instant,
     },
+    Purge(PurgeType),
     #[cfg(feature = "test_mode")]
     IndexIsActive(tokio::sync::oneshot::Sender<bool>),
     Exit,
+}
+
+pub enum PurgeType {
+    Data(Store),
+    Blobs { store: Store, blob_store: BlobStore },
+    Lookup(LookupStore),
+    Account(Option<u32>),
 }
 
 #[derive(PartialEq, Eq)]
@@ -56,6 +64,7 @@ struct Action {
 #[derive(PartialEq, Eq, Debug)]
 enum ActionClass {
     Session,
+    Account,
     Store(usize),
     Acme(String),
 }
@@ -84,6 +93,10 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         queue.schedule(
             Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
             ActionClass::Session,
+        );
+        queue.schedule(
+            Instant::now() + core_.jmap.account_purge_frequency.time_to_next(),
+            ActionClass::Account,
         );
         for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
             queue.schedule(
@@ -172,6 +185,40 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             index_busy = false;
                         }
                     }
+                    Event::Purge(purge) => match purge {
+                        PurgeType::Data(store) => {
+                            tokio::spawn(async move {
+                                if let Err(err) = store.purge_store().await {
+                                    tracing::error!("Failed to purge data store: {err}",);
+                                }
+                            });
+                        }
+                        PurgeType::Blobs { store, blob_store } => {
+                            tokio::spawn(async move {
+                                if let Err(err) = store.purge_blobs(blob_store).await {
+                                    tracing::error!("Failed to purge blob store: {err}",);
+                                }
+                            });
+                        }
+                        PurgeType::Lookup(store) => {
+                            tokio::spawn(async move {
+                                if let Err(err) = store.purge_lookup_store().await {
+                                    tracing::error!("Failed to purge lookup store: {err}",);
+                                }
+                            });
+                        }
+                        PurgeType::Account(account_id) => {
+                            let jmap = JMAP::from(core.clone());
+                            tokio::spawn(async move {
+                                tracing::debug!("Purging accounts.");
+                                if let Some(account_id) = account_id {
+                                    jmap.purge_account(account_id).await;
+                                } else {
+                                    jmap.purge_accounts().await;
+                                }
+                            });
+                        }
+                    },
                     #[cfg(feature = "test_mode")]
                     Event::IndexIsActive(tx) => {
                         tx.send(index_busy).ok();
@@ -235,6 +282,18 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             .ok();
                                     }
                                 });
+                            }
+                            ActionClass::Account => {
+                                let jmap = JMAP::from(core.clone());
+                                tokio::spawn(async move {
+                                    tracing::debug!("Purging accounts.");
+                                    jmap.purge_accounts().await;
+                                });
+                                queue.schedule(
+                                    Instant::now()
+                                        + core_.jmap.account_purge_frequency.time_to_next(),
+                                    ActionClass::Account,
+                                );
                             }
                             ActionClass::Session => {
                                 let inner = core.jmap_inner.clone();

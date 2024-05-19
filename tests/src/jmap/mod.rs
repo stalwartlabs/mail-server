@@ -46,7 +46,11 @@ use reqwest::header;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use smtp::core::{SmtpSessionManager, SMTP};
 
-use store::Stores;
+use store::{
+    roaring::RoaringBitmap,
+    write::{key::DeserializeBigEndian, AnyKey},
+    IterateParams, Stores, SUBSPACE_PROPERTY,
+};
 use tokio::sync::{mpsc, watch};
 use utils::config::Config;
 
@@ -69,6 +73,7 @@ pub mod email_set;
 pub mod email_submission;
 pub mod event_source;
 pub mod mailbox;
+pub mod purge;
 pub mod push_subscription;
 pub mod quota;
 pub mod sieve_script;
@@ -234,6 +239,12 @@ throttle = "500ms"
 throttle = "500ms"
 attempts.interval = "500ms"
 
+[jmap.email]
+auto-expunge = "1s"
+
+[jmap.protocol.changes]
+max-history = "1s"
+
 [store."auth"]
 type = "sqlite"
 path = "{TMP}/auth.db"
@@ -326,6 +337,7 @@ pub async fn jmap_tests() {
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
     blob::test(&mut params).await;
+    purge::test(&mut params).await;
 
     if delete {
         params.temp_dir.delete();
@@ -390,6 +402,9 @@ pub async fn assert_is_empty(server: Arc<JMAP>) {
     // Wait for pending FTS index tasks
     wait_for_index(&server).await;
 
+    // Purge accounts
+    emails_purge_tombstoned(&server).await;
+
     // Assert is empty
     server
         .core
@@ -397,6 +412,38 @@ pub async fn assert_is_empty(server: Arc<JMAP>) {
         .data
         .assert_is_empty(server.core.storage.blob.clone())
         .await;
+}
+
+pub async fn emails_purge_tombstoned(server: &JMAP) {
+    let mut account_ids = RoaringBitmap::new();
+    server
+        .core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(
+                AnyKey {
+                    subspace: SUBSPACE_PROPERTY,
+                    key: vec![0u8],
+                },
+                AnyKey {
+                    subspace: SUBSPACE_PROPERTY,
+                    key: vec![u8::MAX, u8::MAX, u8::MAX, u8::MAX],
+                },
+            )
+            .no_values(),
+            |key, _| {
+                account_ids.insert(key.deserialize_be_u32(0).unwrap());
+
+                Ok(true)
+            },
+        )
+        .await
+        .unwrap();
+
+    for account_id in account_ids {
+        server.emails_purge_tombstoned(account_id).await.unwrap();
+    }
 }
 
 async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {

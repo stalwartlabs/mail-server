@@ -35,6 +35,7 @@ use nlp::{
 
 use crate::{
     backend::MAX_TOKEN_LENGTH,
+    dispatch::DocumentSet,
     write::{
         hash::TokenType, key::DeserializeBigEndian, BatchBuilder, BitmapHash, MaybeDynamicId,
         Operation, ValueClass, ValueOp,
@@ -245,7 +246,7 @@ impl Store {
         &self,
         account_id: u32,
         collection: u8,
-        document_ids: &[u32],
+        document_ids: &impl DocumentSet,
     ) -> crate::Result<()> {
         // Find keys to delete
         let mut delete_keys: AHashMap<u32, Vec<ValueClass<MaybeDynamicId>>> = AHashMap::new();
@@ -273,7 +274,7 @@ impl Store {
             .no_values(),
             |key, _| {
                 let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
-                if document_ids.contains(&document_id) {
+                if document_ids.contains(document_id) {
                     let mut hash = [0u8; 8];
                     let (hash, len) = match key.len() - (U32_LEN * 2) - 1 {
                         9 => {

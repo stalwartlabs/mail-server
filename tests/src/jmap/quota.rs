@@ -22,8 +22,8 @@
 */
 
 use crate::jmap::{
-    assert_is_empty, delivery::SmtpConnection, jmap_raw_request, mailbox::destroy_all_mailboxes,
-    test_account_login,
+    assert_is_empty, delivery::SmtpConnection, emails_purge_tombstoned, jmap_raw_request,
+    mailbox::destroy_all_mailboxes, test_account_login,
 };
 use directory::backend::internal::manage::ManageDirectory;
 use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID};
@@ -191,6 +191,7 @@ pub async fn test(params: &mut JMAPTest) {
     for message_id in message_ids {
         client.email_destroy(&message_id).await.unwrap();
     }
+    emails_purge_tombstoned(&server).await;
     assert_eq!(
         server
             .get_used_quota(account_id.document_id())
@@ -238,6 +239,7 @@ pub async fn test(params: &mut JMAPTest) {
     for message_id in message_ids {
         client.email_destroy(&message_id).await.unwrap();
     }
+    emails_purge_tombstoned(&server).await;
     assert_eq!(
         server
             .get_used_quota(account_id.document_id())
@@ -300,6 +302,7 @@ pub async fn test(params: &mut JMAPTest) {
     for message_id in message_ids {
         client.email_destroy(&message_id).await.unwrap();
     }
+    emails_purge_tombstoned(&server).await;
     assert_eq!(
         server
             .get_used_quota(account_id.document_id())

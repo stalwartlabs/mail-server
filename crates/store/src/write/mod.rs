@@ -170,12 +170,19 @@ pub enum ValueClass<T> {
     Config(Vec<u8>),
     Queue(QueueClass),
     Report(ReportClass),
+    Any(AnyClass),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum FtsQueueClass {
-    Insert { seq: u64, hash: BlobHash },
-    Delete { seq: u64 },
+pub struct FtsQueueClass {
+    pub seq: u64,
+    pub hash: BlobHash,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct AnyClass {
+    pub subspace: u8,
+    pub key: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

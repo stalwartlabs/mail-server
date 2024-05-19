@@ -51,6 +51,16 @@ impl SnowflakeIdGenerator {
         }
     }
 
+    #[inline(always)]
+    pub fn past_id(&self, period: Duration) -> Option<u64> {
+        self.epoch
+            .elapsed()
+            .ok()
+            .and_then(|elapsed| elapsed.checked_sub(period))
+            .map(|elapsed| (elapsed.as_millis() as u64) << (SEQUENCE_LEN + NODE_ID_LEN))
+    }
+
+    #[inline(always)]
     pub fn generate(&self) -> Option<u64> {
         let elapsed = self.epoch.elapsed().ok()?.as_millis() as u64;
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);

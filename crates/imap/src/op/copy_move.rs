@@ -38,7 +38,10 @@ use jmap_proto::{
         type_state::DataType,
     },
 };
-use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE};
+use store::{
+    roaring::RoaringBitmap,
+    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE},
+};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_copy_move(
@@ -286,6 +289,7 @@ impl<T: SessionStream> SessionData<T> {
                         .with_code(ResponseCode::ContactAdmin)
                 })?
                 .quota as i64;
+            let mut destroy_ids = RoaringBitmap::new();
             for (id, imap_id) in ids {
                 match self
                     .jmap
@@ -323,75 +327,21 @@ impl<T: SessionStream> SessionData<T> {
                 };
 
                 if is_move {
-                    // Obtain mailbox tags
-                    let (mut mailboxes, thread_id) = if let Some(result) = self
-                        .get_mailbox_tags(src_account_id, id)
-                        .await
-                        .map_err(|_| StatusResponse::database_failure().with_tag(&arguments.tag))?
-                    {
-                        result
-                    } else {
-                        continue;
-                    };
-
-                    // Make sure the message is still in the mailbox
-                    let src_mailbox_id = UidMailbox::new_unassigned(src_mailbox.id.mailbox_id);
-                    if !mailboxes.current().contains(&src_mailbox_id) {
-                        continue;
-                    } else if mailboxes.current().len() == 1 {
-                        // Delete message if it is no longer in any mailbox
-                        if let Ok(changes) = self
-                            .jmap
-                            .email_delete(src_account_id, id)
-                            .await
-                            .map_err(|_| {
-                                StatusResponse::database_failure().with_tag(&arguments.tag)
-                            })?
-                        {
-                            did_move = true;
-                            changelog.merge(changes);
-                        }
-                    } else {
-                        // Remove mailbox tag from message
-                        let mut batch = BatchBuilder::new();
-                        batch
-                            .with_account_id(src_account_id)
-                            .with_collection(Collection::Email)
-                            .update_document(id);
-                        mailboxes.update(src_mailbox_id, false);
-                        mailboxes.update_batch(&mut batch, Property::MailboxIds);
-                        if changelog.change_id == u64::MAX {
-                            changelog.change_id = self
-                                .jmap
-                                .assign_change_id(src_account_id)
-                                .await
-                                .map_err(|_| {
-                                StatusResponse::database_failure().with_tag(&arguments.tag)
-                            })?
-                        }
-                        batch.value(Property::Cid, changelog.change_id, F_VALUE);
-                        match self.jmap.write_batch(batch).await {
-                            Ok(_) => {
-                                changelog
-                                    .log_update(Collection::Email, Id::from_parts(thread_id, id));
-                                changelog.log_child_update(
-                                    Collection::Mailbox,
-                                    src_mailbox_id.mailbox_id,
-                                );
-                                did_move = true;
-                            }
-                            Err(MethodError::ServerUnavailable) => {
-                                response.rtype = ResponseType::No;
-                                response.message = "Some messages could not be moved.".into();
-                            }
-                            Err(_) => {
-                                return Err(
-                                    StatusResponse::database_failure().with_tag(&arguments.tag)
-                                );
-                            }
-                        }
-                    }
+                    destroy_ids.insert(id);
                 }
+            }
+
+            // Untag or delete emails
+            if !destroy_ids.is_empty() {
+                self.email_untag_or_delete(
+                    src_account_id,
+                    src_mailbox.id.mailbox_id,
+                    destroy_ids,
+                    &mut changelog,
+                )
+                .await
+                .map_err(|err| err.with_tag(&arguments.tag))?;
+                did_move = true;
             }
 
             // Broadcast changes on destination account
