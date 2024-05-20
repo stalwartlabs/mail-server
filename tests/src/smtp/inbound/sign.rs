@@ -231,4 +231,17 @@ async fn sign_and_seal() {
         .assert_contains(
             "ARC-Message-Signature: i=3; a=ed25519-sha256; s=ed; d=example.com; c=relaxed/simple;",
         );
+
+    // Test ARC sealing of a DKIM signed message
+    session
+        .send_message("bill@foobar.org", &["jdoe@example.com"], "test:dkim", "250")
+        .await;
+    qr.expect_message()
+        .await
+        .read_lines(&qr)
+        .await
+        .assert_contains("ARC-Seal: i=1; a=ed25519-sha256; s=ed; d=example.com; cv=none;")
+        .assert_contains(
+            "ARC-Message-Signature: i=1; a=ed25519-sha256; s=ed; d=example.com; c=relaxed/simple;",
+        );
 }
