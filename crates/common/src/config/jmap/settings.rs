@@ -313,7 +313,7 @@ impl JmapConfig {
                 .unwrap_or_else(|| SimpleCron::parse_value("15 * *").unwrap()),
             account_purge_frequency: config
                 .property_or_default::<SimpleCron>("jmap.account.purge.frequency", "0 0 *")
-                .unwrap_or_else(|| SimpleCron::parse_value("15 * *").unwrap()),
+                .unwrap_or_else(|| SimpleCron::parse_value("0 0 *").unwrap()),
             fallback_admin: config
                 .value("authentication.fallback-admin.user")
                 .and_then(|u| {

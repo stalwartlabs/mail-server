@@ -1226,12 +1226,12 @@ foreverypart {
                 if eval "!has_plain_part && ma_ct == 'text/plain'" {
                     let "text_part" "part.text";
                     let "text_part_words" "tokenize(text_part, 'words')";
-                    let "text_part_uris" "count(tokenize(text_part, 'uri_strict'))";
+                    let "text_part_uris" "count(dedup(uri_part(tokenize(text_part, 'uri_strict'), 'host')))";
                     let "has_plain_part" "1";
                 } elsif eval "!has_html_part && ma_ct == 'text/html'" {
                     let "html_part" "html_to_text(part.text)";
                     let "html_part_words" "tokenize(html_part, 'words')";
-                    let "html_part_uris" "count(tokenize(html_part, 'uri_strict'))";
+                    let "html_part_uris" "count(dedup(uri_part(tokenize(part.text, 'uri_strict'), 'host')))";
                     let "has_html_part" "1";
                 }
             }
@@ -2683,7 +2683,7 @@ spam-scores = {"ABUSE_SURBL" = "5.0",
 "RBL_VIRUSFREE_BOTNET" = "2.0",
 "RCPT_ADDR_IN_SUBJECT" = "3.0",
 "RCPT_COUNT_FIVE" = "0.0",
-"RCPT_COUNT_GT_50" = "0.0",
+"RCPT_COUNT_GT_50" = "1.0",
 "RCPT_COUNT_ONE" = "0.0",
 "RCPT_COUNT_SEVEN" = "0.0",
 "RCPT_COUNT_THREE" = "0.0",
@@ -2810,7 +2810,7 @@ spam-scores = {"ABUSE_SURBL" = "5.0",
 "URIBL_BLOCKED" = "0.0",
 "URIBL_GREY" = "1.5",
 "URIBL_RED" = "3.5",
-"URI_COUNT_ODD" = "1.0",
+"URI_COUNT_ODD" = "0.5",
 "URI_HIDDEN_PATH" = "1.0",
 "URL_IN_SUBJECT" = "4.0",
 "URL_REDIRECTOR_NESTED" = "1.0",

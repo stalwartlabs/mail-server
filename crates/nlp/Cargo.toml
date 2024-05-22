@@ -17,7 +17,7 @@ lazy_static = "1.4"
 whatlang = "0.16" # Language detection
 rust-stemmers = "1.2" # Stemmers
 tinysegmenter = "0.1" # Japanese tokenizer
-jieba-rs = "0.6" # Chinese stemmer
+jieba-rs = "0.7" # Chinese stemmer
 phf = { version = "0.11", features = ["macros"] }
 lru-cache = "0.1.2"
 parking_lot = "0.12.1"

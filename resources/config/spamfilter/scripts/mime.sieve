@@ -50,12 +50,12 @@ foreverypart {
                 if eval "!has_plain_part && ma_ct == 'text/plain'" {
                     let "text_part" "part.text";
                     let "text_part_words" "tokenize(text_part, 'words')";
-                    let "text_part_uris" "count(tokenize(text_part, 'uri_strict'))";
+                    let "text_part_uris" "count(dedup(uri_part(tokenize(text_part, 'uri_strict'), 'host')))";
                     let "has_plain_part" "1";
                 } elsif eval "!has_html_part && ma_ct == 'text/html'" {
                     let "html_part" "html_to_text(part.text)";
                     let "html_part_words" "tokenize(html_part, 'words')";
-                    let "html_part_uris" "count(tokenize(html_part, 'uri_strict'))";
+                    let "html_part_uris" "count(dedup(uri_part(tokenize(part.text, 'uri_strict'), 'host')))";
                     let "has_html_part" "1";
                 }
             }

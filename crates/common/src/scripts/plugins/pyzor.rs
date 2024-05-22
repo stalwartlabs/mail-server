@@ -296,6 +296,7 @@ where
                 | TokenType::Url(_)
                 | TokenType::UrlNoScheme(_)
                 | TokenType::UrlNoHost(_)
+                | TokenType::IpAddr(_)
                 | TokenType::Email(_) => {
                     if token_start != usize::MAX {
                         add_line(&mut clean_line, &line[token_start..token_end]);
