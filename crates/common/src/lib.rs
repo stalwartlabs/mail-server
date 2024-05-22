@@ -319,7 +319,7 @@ impl Tracers {
             | Tracer::Otel { level, .. }) = tracer;
 
             let filter = match EnvFilter::builder().parse(format!(
-                "smtp={level},imap={level},jmap={level},store={level},common={level},utils={level},directory={level}"
+                "smtp={level},imap={level},jmap={level},pop3={level},store={level},common={level},utils={level},directory={level}"
             )) {
                 Ok(filter) => {
                     filter

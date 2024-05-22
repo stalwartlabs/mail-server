@@ -174,7 +174,7 @@ impl TestServer {
                         acceptor,
                         shutdown_rx,
                     ),
-                    ServerProtocol::Imap | ServerProtocol::ManageSieve => {
+                    ServerProtocol::Imap | ServerProtocol::Pop3 | ServerProtocol::ManageSieve => {
                         unreachable!()
                     }
                 };

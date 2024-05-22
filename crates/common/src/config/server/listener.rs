@@ -332,6 +332,8 @@ impl ParseValue for ServerProtocol {
             Ok(Self::Http)
         } else if value.eq_ignore_ascii_case("managesieve") {
             Ok(Self::ManageSieve)
+        } else if value.eq_ignore_ascii_case("pop3") {
+            Ok(Self::Pop3)
         } else {
             Err(format!("Invalid server protocol type {:?}.", value,))
         }

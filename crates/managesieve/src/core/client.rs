@@ -89,7 +89,7 @@ impl<T: SessionStream> Session<T> {
                     self.write(&response).await?;
                 }
                 Err(err) => {
-                    let disconnect = err.rtype == ResponseType::Bye;
+                    let disconnect = matches!(err.rtype, ResponseType::Bye | ResponseType::Ok);
                     self.write(&err.into_bytes()).await?;
                     if disconnect {
                         return Err(());

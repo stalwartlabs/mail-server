@@ -37,7 +37,7 @@ impl<T: SessionStream> Session<T> {
         if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
             response.extend_from_slice(b"\"SASL\" \"PLAIN OAUTHBEARER\"\r\n");
         } else {
-            response.extend_from_slice(b"\"SASL\" \"\"\r\n");
+            response.extend_from_slice(b"\"SASL\" \"OAUTHBEARER\"\r\n");
         };
         if let Some(sieve) =
             self.jmap

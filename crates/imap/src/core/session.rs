@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use common::listener::{stream::NullIo, SessionData, SessionManager, SessionStream};
 use imap_proto::{protocol::ProtocolVersion, receiver::Receiver};
@@ -194,20 +194,20 @@ impl<T: SessionStream> Session<T> {
 }
 
 impl<T: SessionStream> Session<T> {
-    pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> crate::OpResult {
-        let bytes = bytes.into();
+    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> crate::OpResult {
+        let bytes = bytes.as_ref();
         /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
             let c = println!("{}", line);
         }*/
         tracing::trace!(
             parent: &self.span,
             event = "write",
-            data = std::str::from_utf8(bytes.as_ref()).unwrap_or_default(),
+            data = std::str::from_utf8(bytes).unwrap_or_default(),
             size = bytes.len()
         );
 
         let mut stream = self.stream_tx.lock().await;
-        if let Err(err) = stream.write_all(bytes.as_ref()).await {
+        if let Err(err) = stream.write_all(bytes).await {
             tracing::trace!(parent: &self.span, "Failed to write to stream: {}", err);
             Err(())
         } else {
@@ -218,15 +218,15 @@ impl<T: SessionStream> Session<T> {
 }
 
 impl<T: SessionStream> super::SessionData<T> {
-    pub async fn write_bytes(&self, bytes: impl Into<Cow<'static, [u8]>>) -> bool {
-        let bytes = bytes.into();
+    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> bool {
+        let bytes = bytes.as_ref();
         /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
             let c = println!("{}", line);
         }*/
         tracing::trace!(
             parent: &self.span,
             event = "write",
-            data = std::str::from_utf8(bytes.as_ref()).unwrap_or_default(),
+            data = std::str::from_utf8(bytes).unwrap_or_default(),
             size = bytes.len()
         );
 

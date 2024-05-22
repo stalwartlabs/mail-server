@@ -21,6 +21,7 @@ jmap = { path = "../jmap" }
 jmap_proto = { path = "../jmap-proto" }
 smtp = { path = "../smtp", features = ["local_delivery"] }
 imap = { path = "../imap" }
+pop3 = { path = "../pop3" }
 managesieve = { path = "../managesieve" }
 common = { path = "../common" }
 directory = { path = "../directory" }

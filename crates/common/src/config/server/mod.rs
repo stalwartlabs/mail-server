@@ -42,6 +42,7 @@ pub enum ServerProtocol {
     Smtp,
     Lmtp,
     Imap,
+    Pop3,
     Http,
     ManageSieve,
 }
@@ -53,6 +54,7 @@ impl ServerProtocol {
             ServerProtocol::Lmtp => "lmtp",
             ServerProtocol::Imap => "imap",
             ServerProtocol::Http => "http",
+            ServerProtocol::Pop3 => "pop3",
             ServerProtocol::ManageSieve => "managesieve",
         }
     }

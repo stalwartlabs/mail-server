@@ -3401,6 +3401,7 @@ dependencies = [
  "jmap",
  "jmap_proto",
  "managesieve",
+ "pop3",
  "smtp",
  "store",
  "tokio",
@@ -4268,6 +4269,24 @@ dependencies = [
  "cpufeatures",
  "opaque-debug",
  "universal-hash",
+]
+
+[[package]]
+name = "pop3"
+version = "0.8.0"
+dependencies = [
+ "common",
+ "imap",
+ "jmap",
+ "jmap_proto",
+ "mail-parser",
+ "mail-send",
+ "rustls 0.22.4",
+ "store",
+ "tokio",
+ "tokio-rustls 0.25.0",
+ "tracing",
+ "utils",
 ]
 
 [[package]]
@@ -6124,6 +6143,7 @@ dependencies = [
  "managesieve",
  "nlp",
  "num_cpus",
+ "pop3",
  "rayon",
  "reqwest 0.12.4",
  "rustls 0.22.4",
