@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.8.1] - 2024-05-23
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin and spam filter versions.
+
+## Added
+- POP3 support.
+- DKIM signature length exploit protection.
+- Faster email deletion.
+- Junk/Trash folder auto-expunge and changelog auto-expiry (#403)
+- IP allowlists
+- HTTP Strict Transport Security option.
+- Add TLS Reporting DNS entry (#464).
+
+### Changed
+- Use separate account for master user.
+- Include server hostname in SMTP greetings (#448).
+
+### Fixed
+- IP addresses trigger `R_SUSPICIOUS_URL` false positive (#461 #419).
+- JMAP identities should not return null signatures.
+- Include authentication headers and check queue quotas on Sieve message forwards.
+- ARC seal using just one signature.
+- Remove technical subdomains from MTA-STS policies and TLS records (#429).
+
 ## [0.8.0] - 2024-05-13
 
 This version uses a different database layout which is incompatible with previous versions. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
