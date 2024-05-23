@@ -137,6 +137,16 @@ impl JmapConfig {
             ));
         }
 
+        // Add HTTP Strict Transport Security
+        if config.property::<bool>("server.http.hsts").unwrap_or(false) {
+            http_headers.push((
+                hyper::header::STRICT_TRANSPORT_SECURITY,
+                hyper::header::HeaderValue::from_static(
+                    "max-age=31536000; includeSubDomains; preload",
+                ),
+            ));
+        }
+
         let mut jmap = JmapConfig {
             default_language: Language::from_iso_639(
                 config
