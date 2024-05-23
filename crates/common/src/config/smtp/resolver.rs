@@ -308,11 +308,13 @@ impl Policy {
 
 impl Core {
     pub fn build_mta_sts_policy(&self) -> Option<Policy> {
-        self.smtp
-            .session
-            .mta_sts_policy
-            .clone()
-            .and_then(|policy| policy.try_build(self.tls.certificates.load().keys()))
+        self.smtp.session.mta_sts_policy.clone().and_then(|policy| {
+            policy.try_build(self.tls.certificates.load().keys().filter(|key| {
+                !key.starts_with("mta-sts.")
+                    && !key.starts_with("autoconfig.")
+                    && !key.starts_with("autodiscover.")
+            }))
+        })
     }
 }
 

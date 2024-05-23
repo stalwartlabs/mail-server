@@ -297,7 +297,11 @@ impl JMAP {
 
         // Add TLSA records
         for (name, key) in self.core.tls.certificates.load().iter() {
-            if !name.ends_with(domain_name) {
+            if !name.ends_with(domain_name)
+                || name.starts_with("mta-sts.")
+                || name.starts_with("autoconfig.")
+                || name.starts_with("autodiscover.")
+            {
                 continue;
             }
 
