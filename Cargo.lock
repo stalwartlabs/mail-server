@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -1580,7 +1580,7 @@ dependencies = [
 
 [[package]]
 name = "directory"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ahash 0.8.11",
  "argon2",
@@ -2785,7 +2785,7 @@ checksum = "029d73f573d8e8d63e6d5020011d3255b28c3ba85d6cf870a07184ed23de9284"
 
 [[package]]
 name = "imap"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ahash 0.8.11",
  "common",
@@ -2987,7 +2987,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -3423,7 +3423,7 @@ dependencies = [
 
 [[package]]
 name = "mail-server"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "common",
  "directory",
@@ -3442,7 +3442,7 @@ dependencies = [
 
 [[package]]
 name = "managesieve"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -3719,7 +3719,7 @@ dependencies = [
 
 [[package]]
 name = "nlp"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -4304,7 +4304,7 @@ dependencies = [
 
 [[package]]
 name = "pop3"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "common",
  "imap",
@@ -5789,7 +5789,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "smtp"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -5905,7 +5905,7 @@ dependencies = [
 
 [[package]]
 name = "stalwart-cli"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "clap",
  "console",
@@ -5936,7 +5936,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "store"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -6786,7 +6786,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "utils"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ahash 0.8.11",
  "base64 0.22.1",

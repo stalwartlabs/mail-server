@@ -28,13 +28,13 @@ use crate::Serialize;
 
 use super::{IntoOperations, MaybeDynamicValue, Operation, SerializeWithId};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ChangeLogBuilder {
     pub change_id: u64,
     pub changes: VecMap<u8, Changes>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Changes {
     pub inserts: AHashSet<u64>,
     pub updates: AHashSet<u64>,

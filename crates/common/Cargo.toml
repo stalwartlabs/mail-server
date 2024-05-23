@@ -1,6 +1,6 @@
 [package]
 name = "common"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 resolver = "2"
 
@@ -16,7 +16,7 @@ mail-auth = { version = "0.4" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
 smtp-proto = { version = "0.1", features = ["serde_support"] }
 dns-update = { version = "0.1" }
-ahash = { version = "0.8.0", features = ["serde"] }
+ahash = { version = "0.8.1", features = ["serde"] }
 parking_lot = "0.12.1"
 regex = "1.7.0"
 tracing = "0.1"

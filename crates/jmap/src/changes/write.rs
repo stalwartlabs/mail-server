@@ -58,7 +58,7 @@ impl JMAP {
         account_id: u32,
         mut changes: ChangeLogBuilder,
     ) -> Result<u64, MethodError> {
-        if changes.change_id == u64::MAX {
+        if changes.change_id == u64::MAX || changes.change_id == 0 {
             changes.change_id = self.assign_change_id(account_id).await?;
         }
         let state = changes.change_id;
