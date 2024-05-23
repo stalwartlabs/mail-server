@@ -265,7 +265,7 @@ impl SMTP {
                         } else {
                             instance.message().raw_message().into()
                         };
-                        if let Some(raw_message) = raw_message {
+                        if let Some(raw_message) = raw_message.filter(|m| !m.is_empty()) {
                             let headers = if !params.sign.is_empty() {
                                 let mut headers = Vec::new();
 
