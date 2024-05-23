@@ -11,7 +11,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 - DKIM signature length exploit protection.
 - Faster email deletion.
 - Junk/Trash folder auto-expunge and changelog auto-expiry (#403)
-- IP allowlists
+- IP allowlists.
 - HTTP Strict Transport Security option.
 - Add TLS Reporting DNS entry (#464).
 
