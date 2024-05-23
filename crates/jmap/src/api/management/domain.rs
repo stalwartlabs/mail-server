@@ -288,11 +288,18 @@ impl JMAP {
             }
         }
 
-        // Add DMARC records
+        // Add DMARC record
         records.push(DnsRecord {
             typ: "TXT".to_string(),
             name: format!("_dmarc.{domain_name}."),
             content: format!("v=DMARC1; p=reject; rua=mailto:postmaster@{domain_name}; ruf=mailto:postmaster@{domain_name}",),
+        });
+
+        // Add TLS reporting record
+        records.push(DnsRecord {
+            typ: "TXT".to_string(),
+            name: format!("_smtp._tls.{domain_name}."),
+            content: format!("v=TLSRPTv1; rua=mailto:postmaster@{domain_name}",),
         });
 
         // Add TLSA records
