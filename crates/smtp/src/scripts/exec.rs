@@ -27,7 +27,6 @@ use common::listener::SessionStream;
 use mail_auth::common::resolver::ToReverseName;
 use sieve::{runtime::Variable, Envelope, Sieve};
 use smtp_proto::*;
-use tokio::runtime::Handle;
 
 use crate::{core::Session, inbound::AuthResult};
 
@@ -145,12 +144,6 @@ impl<T: SessionStream> Session<T> {
         let span = self.span.clone();
         let params = params.with_envelope(&self.core.core, self).await;
 
-        let handle = Handle::current();
-        self.core
-            .spawn_worker(move || core.run_script_blocking(script, params, handle, span))
-            .await
-            .unwrap_or(ScriptResult::Accept {
-                modifications: vec![],
-            })
+        core.run_script(script, params, span).await
     }
 }

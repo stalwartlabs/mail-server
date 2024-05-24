@@ -30,7 +30,6 @@ use nlp::{
 };
 use sieve::{runtime::Variable, FunctionMap};
 use store::{write::key::KeySerializer, LookupStore, U64_LEN};
-use tokio::runtime::Handle;
 
 use super::PluginContext;
 
@@ -50,15 +49,15 @@ pub fn register_is_balanced(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("bayes_is_balanced", plugin_id, 3);
 }
 
-pub fn exec_train(ctx: PluginContext<'_>) -> Variable {
-    train(ctx, true)
+pub async fn exec_train(ctx: PluginContext<'_>) -> Variable {
+    train(ctx, true).await
 }
 
-pub fn exec_untrain(ctx: PluginContext<'_>) -> Variable {
-    train(ctx, false)
+pub async fn exec_untrain(ctx: PluginContext<'_>) -> Variable {
+    train(ctx, false).await
 }
 
-fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
+async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     let span: &tracing::Span = ctx.span;
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
@@ -82,7 +81,6 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     if text.is_empty() {
         return false.into();
     }
-    let handle = ctx.handle;
 
     // Train the model
     let mut model = BayesModel::default();
@@ -109,18 +107,17 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     let bayes_cache = &ctx.core.sieve.bayes_cache;
     if is_train {
         for (hash, weights) in model.weights {
-            if handle
-                .block_on(
-                    store.counter_incr(
-                        KeySerializer::new(U64_LEN)
-                            .write(hash.h1)
-                            .write(hash.h2)
-                            .finalize(),
-                        weights.into(),
-                        None,
-                        false,
-                    ),
+            if store
+                .counter_incr(
+                    KeySerializer::new(U64_LEN)
+                        .write(hash.h1)
+                        .write(hash.h2)
+                        .finalize(),
+                    weights.into(),
+                    None,
+                    false,
                 )
+                .await
                 .is_err()
             {
                 return false.into();
@@ -134,18 +131,17 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
         } else {
             Weights { spam: 0, ham: 1 }
         };
-        if handle
-            .block_on(
-                store.counter_incr(
-                    KeySerializer::new(U64_LEN)
-                        .write(0u64)
-                        .write(0u64)
-                        .finalize(),
-                    weights.into(),
-                    None,
-                    false,
-                ),
+        if store
+            .counter_incr(
+                KeySerializer::new(U64_LEN)
+                    .write(0u64)
+                    .write(0u64)
+                    .finalize(),
+                weights.into(),
+                None,
+                false,
             )
+            .await
             .is_err()
         {
             return false.into();
@@ -160,7 +156,7 @@ fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     true.into()
 }
 
-pub fn exec_classify(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec_classify(ctx: PluginContext<'_>) -> Variable {
     let span = ctx.span;
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
@@ -200,12 +196,10 @@ pub fn exec_classify(ctx: PluginContext<'_>) -> Variable {
         }
     }
 
-    let handle = ctx.handle;
-
     // Obtain training counts
     let bayes_cache = &ctx.core.sieve.bayes_cache;
     let (spam_learns, ham_learns) =
-        if let Some(weights) = bayes_cache.get_or_update(TokenHash::default(), handle, store) {
+        if let Some(weights) = bayes_cache.get_or_update(TokenHash::default(), store).await {
             (weights.spam, weights.ham)
         } else {
             tracing::warn!(
@@ -231,27 +225,25 @@ pub fn exec_classify(ctx: PluginContext<'_>) -> Variable {
     }
 
     // Classify the text
+    let mut tokens = Vec::new();
+    for token in OsbTokenizer::<_, TokenHash>::new(
+        BayesTokenizer::new(text.as_ref(), &ctx.core.smtp.resolvers.psl),
+        5,
+    ) {
+        if let Some(weights) = bayes_cache.get_or_update(token.inner, store).await {
+            tokens.push(OsbToken {
+                inner: weights,
+                idx: token.idx,
+            });
+        }
+    }
     classifier
-        .classify(
-            OsbTokenizer::<_, TokenHash>::new(
-                BayesTokenizer::new(text.as_ref(), &ctx.core.smtp.resolvers.psl),
-                5,
-            )
-            .filter_map(|t| {
-                OsbToken {
-                    inner: bayes_cache.get_or_update(t.inner, handle, store)?,
-                    idx: t.idx,
-                }
-                .into()
-            }),
-            ham_learns,
-            spam_learns,
-        )
+        .classify(tokens.into_iter(), ham_learns, spam_learns)
         .map(Variable::from)
         .unwrap_or_default()
 }
 
-pub fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
     let min_balance = match &ctx.arguments[2] {
         Variable::Float(n) => *n,
         Variable::Integer(n) => *n as f64,
@@ -282,10 +274,9 @@ pub fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
     let learn_spam = ctx.arguments[1].to_bool();
 
     // Obtain training counts
-    let handle = ctx.handle;
     let bayes_cache = &ctx.core.sieve.bayes_cache;
     let (spam_learns, ham_learns) =
-        if let Some(weights) = bayes_cache.get_or_update(TokenHash::default(), handle, store) {
+        if let Some(weights) = bayes_cache.get_or_update(TokenHash::default(), store).await {
             (weights.spam as f64, weights.ham as f64)
         } else {
             tracing::warn!(
@@ -321,31 +312,22 @@ pub fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
 }
 
 trait LookupOrInsert {
-    fn get_or_update(
-        &self,
-        hash: TokenHash,
-        handle: &Handle,
-        get_token: &LookupStore,
-    ) -> Option<Weights>;
+    async fn get_or_update(&self, hash: TokenHash, get_token: &LookupStore) -> Option<Weights>;
 }
 
 impl LookupOrInsert for BayesTokenCache {
-    fn get_or_update(
-        &self,
-        hash: TokenHash,
-        handle: &Handle,
-        get_token: &LookupStore,
-    ) -> Option<Weights> {
+    async fn get_or_update(&self, hash: TokenHash, get_token: &LookupStore) -> Option<Weights> {
         if let Some(weights) = self.get(&hash) {
             weights.unwrap_or_default().into()
-        } else if let Ok(num) = handle.block_on(
-            get_token.counter_get(
+        } else if let Ok(num) = get_token
+            .counter_get(
                 KeySerializer::new(U64_LEN)
                     .write(hash.h1)
                     .write(hash.h2)
                     .finalize(),
-            ),
-        ) {
+            )
+            .await
+        {
             if num != 0 {
                 let weights = Weights::from(num);
                 self.insert_positive(hash, weights);

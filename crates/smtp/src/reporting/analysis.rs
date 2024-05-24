@@ -41,7 +41,6 @@ use store::{
     write::{now, BatchBuilder, Bincode, ReportClass, ValueClass},
     Serialize,
 };
-use tokio::runtime::Handle;
 
 use crate::core::SMTP;
 
@@ -74,8 +73,7 @@ pub struct IncomingReport<T> {
 impl SMTP {
     pub fn analyze_report(&self, message: Arc<Vec<u8>>) {
         let core = self.clone();
-        let handle = Handle::current();
-        self.inner.worker_pool.spawn(move || {
+        tokio::spawn(async move {
             let message = if let Some(message) = MessageParser::default().parse(message.as_ref()) {
                 message
             } else {
@@ -324,17 +322,14 @@ impl SMTP {
                         }
                     }
                     let batch = batch.build();
-                    let _enter = handle.enter();
-                    handle.spawn(async move {
-                        if let Err(err) = core.core.storage.data.write(batch).await {
-                            tracing::warn!(
-                                context = "report",
-                                event = "error",
-                                "Failed to write incoming report: {}",
-                                err
-                            );
-                        }
-                    });
+                    if let Err(err) = core.core.storage.data.write(batch).await {
+                        tracing::warn!(
+                            context = "report",
+                            event = "error",
+                            "Failed to write incoming report: {}",
+                            err
+                        );
+                    }
                 }
                 return;
             }

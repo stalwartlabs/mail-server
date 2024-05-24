@@ -22,7 +22,6 @@ use smtp::{
     scripts::ScriptResult,
 };
 use store::Stores;
-use tokio::runtime::Handle;
 use utils::config::Config;
 
 use crate::smtp::{build_smtp, session::TestSession, TempDir};
@@ -419,15 +418,10 @@ async fn antispam() {
             }
 
             // Run script
-            let handle = Handle::current();
             let span = span.clone();
             let core_ = core.clone();
             let script = script.clone();
-            match core
-                .spawn_worker(move || core_.run_script_blocking(script, params, handle, span))
-                .await
-                .unwrap()
-            {
+            match core_.run_script(script, params, span).await {
                 ScriptResult::Accept { modifications } => {
                     if modifications.len() != expected_headers.len() {
                         panic!(

@@ -60,7 +60,6 @@ use self::throttle::{ThrottleKey, ThrottleKeyHasherBuilder};
 
 pub mod params;
 pub mod throttle;
-pub mod worker;
 
 #[derive(Clone)]
 pub struct SmtpInstance {
@@ -95,7 +94,6 @@ pub struct SMTP {
 }
 
 pub struct Inner {
-    pub worker_pool: rayon::ThreadPool,
     pub session_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
     pub queue_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
     pub queue_tx: mpsc::Sender<queue::Event>,
@@ -431,10 +429,6 @@ impl SessionAddress {
 impl Default for Inner {
     fn default() -> Self {
         Self {
-            worker_pool: rayon::ThreadPoolBuilder::new()
-                .num_threads(num_cpus::get())
-                .build()
-                .unwrap(),
             session_throttle: Default::default(),
             queue_throttle: Default::default(),
             queue_tx: mpsc::channel(1).0,

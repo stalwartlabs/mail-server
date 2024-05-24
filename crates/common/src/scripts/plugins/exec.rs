@@ -31,32 +31,38 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("exec", plugin_id, 2);
 }
 
-pub fn exec(ctx: PluginContext<'_>) -> Variable {
-    let span = ctx.span;
+pub async fn exec(ctx: PluginContext<'_>) -> Variable {
+    let span = ctx.span.clone();
     let mut arguments = ctx.arguments.into_iter();
-    match Command::new(
-        arguments
-            .next()
-            .map(|a| a.to_string().into_owned())
-            .unwrap_or_default(),
-    )
-    .args(
-        arguments
-            .next()
-            .map(|a| a.into_string_array())
-            .unwrap_or_default(),
-    )
-    .output()
-    {
-        Ok(result) => result.status.success().into(),
-        Err(err) => {
-            tracing::warn!(
-                parent: span,
-                context = "sieve",
-                event = "execute-failed",
-                reason = %err,
-            );
-            false.into()
+
+    tokio::task::spawn_blocking(move || {
+        match Command::new(
+            arguments
+                .next()
+                .map(|a| a.to_string().into_owned())
+                .unwrap_or_default(),
+        )
+        .args(
+            arguments
+                .next()
+                .map(|a| a.into_string_array())
+                .unwrap_or_default(),
+        )
+        .output()
+        {
+            Ok(result) => result.status.success(),
+            Err(err) => {
+                tracing::warn!(
+                    parent: span,
+                    context = "sieve",
+                    event = "execute-failed",
+                    reason = %err,
+                );
+                false
+            }
         }
-    }
+    })
+    .await
+    .unwrap_or_default()
+    .into()
 }

@@ -32,7 +32,7 @@ pub fn register_header(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("http_header", plugin_id, 4);
 }
 
-pub fn exec_header(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec_header(ctx: PluginContext<'_>) -> Variable {
     let url = ctx.arguments[0].to_string();
     let header = ctx.arguments[1].to_string();
     let agent = ctx.arguments[2].to_string();
@@ -50,9 +50,10 @@ pub fn exec_header(ctx: PluginContext<'_>) -> Variable {
         .danger_accept_invalid_certs(true)
         .build()
     {
-        let _enter = ctx.handle.enter();
-        ctx.handle
-            .block_on(client.get(url.as_ref()).send())
+        client
+            .get(url.as_ref())
+            .send()
+            .await
             .ok()
             .and_then(|response| {
                 response

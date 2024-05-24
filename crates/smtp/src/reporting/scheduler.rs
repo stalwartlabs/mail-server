@@ -107,7 +107,7 @@ impl SpawnReport for mpsc::Receiver<Event> {
                         // Cleanup expired throttles
                         if last_cleanup.elapsed().as_secs() >= 86400 {
                             last_cleanup = Instant::now();
-                            core.spawn_cleanup();
+                            core.cleanup();
                         }
                     }
                 }

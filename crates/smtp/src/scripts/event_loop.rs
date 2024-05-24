@@ -33,18 +33,16 @@ use smtp_proto::{
     MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
     RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use tokio::runtime::Handle;
 
 use crate::{core::SMTP, inbound::DkimSign, queue::DomainPart};
 
 use super::{ScriptModification, ScriptParameters, ScriptResult};
 
 impl SMTP {
-    pub fn run_script_blocking(
+    pub async fn run_script(
         &self,
         script: Arc<Sieve>,
-        params: ScriptParameters,
-        handle: Handle,
+        params: ScriptParameters<'_>,
         span: tracing::Span,
     ) -> ScriptResult {
         // Create filter instance
@@ -92,16 +90,17 @@ impl SMTP {
                         'outer: for list in lists {
                             if let Some(store) = self.core.storage.lookups.get(&list) {
                                 for value in &values {
-                                    if let Ok(true) = handle.block_on(
-                                        store.key_exists(
+                                    if let Ok(true) = store
+                                        .key_exists(
                                             if !matches!(match_as, MatchAs::Lowercase) {
                                                 value.clone()
                                             } else {
                                                 value.to_lowercase()
                                             }
                                             .into_bytes(),
-                                        ),
-                                    ) {
+                                        )
+                                        .await
+                                    {
                                         input = true.into();
                                         break 'outer;
                                     }
@@ -117,17 +116,19 @@ impl SMTP {
                         }
                     }
                     Event::Function { id, arguments } => {
-                        input = self.core.run_plugin_blocking(
-                            id,
-                            PluginContext {
-                                span: &span,
-                                handle: &handle,
-                                core: &self.core,
-                                message: instance.message(),
-                                modifications: &mut modifications,
-                                arguments,
-                            },
-                        );
+                        input = self
+                            .core
+                            .run_plugin(
+                                id,
+                                PluginContext {
+                                    span: &span,
+                                    core: &self.core,
+                                    message: instance.message(),
+                                    modifications: &mut modifications,
+                                    arguments,
+                                },
+                            )
+                            .await;
                     }
                     Event::Keep { message_id, .. } => {
                         keep_id = message_id;
@@ -158,11 +159,11 @@ impl SMTP {
                         );
                         match recipient {
                             Recipient::Address(rcpt) => {
-                                handle.block_on(message.add_recipient(rcpt, self));
+                                message.add_recipient(rcpt, self).await;
                             }
                             Recipient::Group(rcpt_list) => {
                                 for rcpt in rcpt_list {
-                                    handle.block_on(message.add_recipient(rcpt, self));
+                                    message.add_recipient(rcpt, self).await;
                                 }
                             }
                             Recipient::List(list) => {
@@ -296,13 +297,10 @@ impl SMTP {
                                 None
                             };
 
-                            if handle.block_on(self.has_quota(&mut message)) {
-                                handle.block_on(message.queue(
-                                    headers.as_deref(),
-                                    raw_message,
-                                    self,
-                                    &span,
-                                ));
+                            if self.has_quota(&mut message).await {
+                                message
+                                    .queue(headers.as_deref(), raw_message, self, &span)
+                                    .await;
                             } else {
                                 tracing::warn!(
                                     parent: &span,

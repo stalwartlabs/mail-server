@@ -52,7 +52,7 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("pyzor_check", plugin_id, 2);
 }
 
-pub fn exec(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec(ctx: PluginContext<'_>) -> Variable {
     // Make sure there is at least one text part
     if !ctx
         .message
@@ -101,10 +101,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
         5,
     ));
     // Send message to address
-    match ctx
-        .handle
-        .block_on(pyzor_send_message(address.as_ref(), timeout, &request))
-    {
+    match pyzor_send_message(address.as_ref(), timeout, &request).await {
         Ok(response) => response.into(),
         Err(err) => {
             tracing::debug!(

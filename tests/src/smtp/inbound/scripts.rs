@@ -37,7 +37,6 @@ use smtp::{
     scripts::ScriptResult,
 };
 use store::Stores;
-use tokio::runtime::Handle;
 use utils::config::Config;
 
 const CONFIG: &str = r#"
@@ -182,14 +181,9 @@ async fn sieve_scripts() {
             .set_variable("from", "john.doe@example.org")
             .with_envelope(&core.core, &session)
             .await;
-        let handle = Handle::current();
         let span = span.clone();
         let core_ = core.clone();
-        match core
-            .spawn_worker(move || core_.run_script_blocking(script, params, handle, span))
-            .await
-            .unwrap()
-        {
+        match core_.run_script(script, params, span).await {
             ScriptResult::Accept { .. } => (),
             ScriptResult::Reject(message) => panic!("{}", message),
             err => {
