@@ -2,7 +2,7 @@ use utils::config::Config;
 
 use crate::{
     expr::{if_block::IfBlock, tokenizer::TokenMap},
-    listener::blocked::BlockedIps,
+    listener::blocked::{AllowedIps, BlockedIps},
     Network,
 };
 
@@ -12,6 +12,7 @@ impl Default for Network {
     fn default() -> Self {
         Self {
             blocked_ips: Default::default(),
+            allowed_ips: Default::default(),
             url: IfBlock::new::<()>(
                 "server.http.url",
                 [],
@@ -25,6 +26,7 @@ impl Network {
     pub fn parse(config: &mut Config) -> Self {
         let mut network = Network {
             blocked_ips: BlockedIps::parse(config),
+            allowed_ips: AllowedIps::parse(config),
             ..Default::default()
         };
         let token_map = &TokenMap::default().with_variables(CONNECTION_VARS);

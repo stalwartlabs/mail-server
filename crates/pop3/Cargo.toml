@@ -1,0 +1,22 @@
+[package]
+name = "pop3"
+version = "0.8.1"
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+store = { path = "../store" }
+common = { path = "../common" }
+jmap = { path = "../jmap" }
+imap = { path = "../imap" }
+utils = { path = "../utils" }
+jmap_proto = { path = "../jmap-proto" }
+mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
+tracing = "0.1"
+rustls = "0.22"
+tokio = { version = "1.23", features = ["full"] }
+tokio-rustls = { version = "0.25.0"}
+
+[features]
+test_mode = []

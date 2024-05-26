@@ -57,16 +57,6 @@ impl SMTP {
         let (queue_tx, queue_rx) = mpsc::channel(1024);
         let (report_tx, report_rx) = mpsc::channel(1024);
         let inner = Inner {
-            worker_pool: rayon::ThreadPoolBuilder::new()
-                .num_threads(std::cmp::max(
-                    config
-                        .property::<usize>("global.thread-pool")
-                        .filter(|v| *v > 0)
-                        .unwrap_or_else(num_cpus::get),
-                    4,
-                ))
-                .build()
-                .unwrap(),
             session_throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
                 capacity,
                 ThrottleKeyHasherBuilder::default(),

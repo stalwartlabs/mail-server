@@ -42,6 +42,7 @@ use jmap::{
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::{error::request::RequestError, types::id::Id};
 use managesieve::core::ManageSieveSessionManager;
+use pop3::Pop3SessionManager;
 use reqwest::header;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use smtp::core::{SmtpSessionManager, SMTP};
@@ -514,6 +515,12 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             ),
             ServerProtocol::Imap => server.spawn(
                 ImapSessionManager::new(imap.clone()),
+                shared_core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::Pop3 => server.spawn(
+                Pop3SessionManager::new(imap.clone()),
                 shared_core.clone(),
                 acceptor,
                 shutdown_rx,

@@ -22,6 +22,8 @@
 */
 
 use ahash::AHashSet;
+use directory::backend::internal::manage::ManageDirectory;
+use imap_proto::ResponseType;
 use jmap::{
     mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
     JMAP,
@@ -31,6 +33,8 @@ use store::{
     write::{key::DeserializeBigEndian, TagValue},
     IterateParams, LogKey, U32_LEN, U64_LEN,
 };
+
+use crate::imap::{AssertResult, ImapConnection, Type};
 
 use super::JMAPTest;
 
@@ -42,8 +46,30 @@ pub async fn test(params: &mut JMAPTest) {
     let trash_id = Id::from(TRASH_ID).to_string();
     let junk_id = Id::from(JUNK_ID).to_string();
 
+    // Connect to IMAP
+    params
+        .directory
+        .create_test_user_with_email("jdoe@example.com", "secret", "John Doe")
+        .await;
+    let account_id = server
+        .core
+        .storage
+        .data
+        .get_or_create_account_id("jdoe@example.com")
+        .await
+        .unwrap();
+    let mut imap = ImapConnection::connect(b"_x ").await;
+    imap.assert_read(Type::Untagged, ResponseType::Ok).await;
+    imap.send("AUTHENTICATE PLAIN {32+}\r\nAGpkb2VAZXhhbXBsZS5jb20Ac2VjcmV0")
+        .await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+    imap.send("STATUS INBOX (UIDNEXT MESSAGES UNSEEN)").await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok)
+        .await
+        .assert_contains("MESSAGES 0");
+
     // Create test messages
-    client.set_default_account_id(Id::from(1u64));
+    client.set_default_account_id(Id::from(account_id));
     let mut message_ids = Vec::new();
     let mut pass = 0;
     let mut changes = AHashSet::new();
@@ -84,10 +110,19 @@ pub async fn test(params: &mut JMAPTest) {
         }
     }
 
+    // Check IMAP status
+    imap.send("LIST \"\" \"*\" RETURN (STATUS (MESSAGES))")
+        .await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok)
+        .await
+        .assert_contains("\"INBOX\" (MESSAGES 2)")
+        .assert_contains("\"Deleted Items\" (MESSAGES 2)")
+        .assert_contains("\"Junk Mail\" (MESSAGES 2)");
+
     // Make sure both messages and changes are present
     assert_eq!(
         server
-            .get_document_ids(1, Collection::Email)
+            .get_document_ids(account_id, Collection::Email)
             .await
             .unwrap()
             .unwrap()
@@ -96,12 +131,12 @@ pub async fn test(params: &mut JMAPTest) {
     );
 
     // Purge junk/trash messages and old changes
-    server.purge_account(1).await;
+    server.purge_account(account_id).await;
 
     // Only 4 messages should remain
     assert_eq!(
         server
-            .get_document_ids(1, Collection::Email)
+            .get_document_ids(account_id, Collection::Email)
             .await
             .unwrap()
             .unwrap()
@@ -111,7 +146,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_eq!(
         server
             .get_tag(
-                1,
+                account_id,
                 Collection::Email,
                 Property::MailboxIds,
                 TagValue::Id(INBOX_ID)
@@ -125,7 +160,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_eq!(
         server
             .get_tag(
-                1,
+                account_id,
                 Collection::Email,
                 Property::MailboxIds,
                 TagValue::Id(TRASH_ID)
@@ -139,7 +174,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_eq!(
         server
             .get_tag(
-                1,
+                account_id,
                 Collection::Email,
                 Property::MailboxIds,
                 TagValue::Id(JUNK_ID)
@@ -150,6 +185,15 @@ pub async fn test(params: &mut JMAPTest) {
             .len(),
         1
     );
+
+    // Check IMAP status
+    imap.send("LIST \"\" \"*\" RETURN (STATUS (MESSAGES))")
+        .await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok)
+        .await
+        .assert_contains("\"INBOX\" (MESSAGES 2)")
+        .assert_contains("\"Deleted Items\" (MESSAGES 1)")
+        .assert_contains("\"Junk Mail\" (MESSAGES 1)");
 
     // Compare changes
     let new_changes = get_changes(&server).await;
@@ -186,7 +230,6 @@ async fn get_changes(server: &JMAP) -> AHashSet<(u64, u8)> {
             .ascending()
             .no_values(),
             |key, _| {
-                assert_eq!(key.deserialize_be_u32(0).unwrap(), 1);
                 changes.insert((
                     key.deserialize_be_u64(key.len() - U64_LEN).unwrap(),
                     key[U32_LEN],

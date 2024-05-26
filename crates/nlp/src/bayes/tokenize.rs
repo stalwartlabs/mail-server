@@ -118,6 +118,7 @@ impl<'x, 'y> Iterator for BayesTokenizer<'x, 'y> {
                         continue;
                     }
                 }
+                TokenType::IpAddr(word) => word.into(),
                 TokenType::UrlNoScheme(word) => word
                     .split_once('/')
                     .map_or(word, |(h, _)| h)

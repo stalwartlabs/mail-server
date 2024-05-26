@@ -38,7 +38,10 @@ use config::{
 };
 use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy};
 use expr::if_block::IfBlock;
-use listener::{blocked::BlockedIps, tls::TlsManager};
+use listener::{
+    blocked::{AllowedIps, BlockedIps},
+    tls::TlsManager,
+};
 use mail_send::Credentials;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::{
@@ -81,6 +84,7 @@ pub struct Core {
 #[derive(Clone)]
 pub struct Network {
     pub blocked_ips: BlockedIps,
+    pub allowed_ips: AllowedIps,
     pub url: IfBlock,
 }
 
@@ -240,33 +244,40 @@ impl Core {
             Err(err) => Err(err),
         };
 
-        // Then check if the credentials match the fallback admin
-        if let (Some((fallback_admin, fallback_pass)), Credentials::Plain { username, secret }) =
-            (&self.jmap.fallback_admin, credentials)
-        {
-            // Check master user
-            let (user_account, admin_account) =
-                match (self.jmap.fallback_admin_master, username.rsplit_once('%')) {
-                    (true, Some((user_account, admin_account))) => {
-                        (Some(user_account), admin_account)
-                    }
-                    _ => (None, username.as_str()),
-                };
-
-            if admin_account == fallback_admin && verify_secret_hash(fallback_pass, secret).await {
-                return Ok(if let Some(user_account) = user_account {
-                    if let Some(principal) = directory
-                        .query(QueryBy::Name(user_account), return_member_of)
-                        .await?
-                    {
-                        AuthResult::Success(principal)
-                    } else {
-                        AuthResult::Failure
-                    }
-                } else {
-                    AuthResult::Success(Principal::fallback_admin(fallback_pass))
-                });
+        // Then check if the credentials match the fallback admin or master user
+        match (
+            &self.jmap.fallback_admin,
+            &self.jmap.master_user,
+            credentials,
+        ) {
+            (Some((fallback_admin, fallback_pass)), _, Credentials::Plain { username, secret })
+                if username == fallback_admin =>
+            {
+                if verify_secret_hash(fallback_pass, secret).await {
+                    return Ok(AuthResult::Success(Principal::fallback_admin(
+                        fallback_pass,
+                    )));
+                }
             }
+            (_, Some((master_user, master_pass)), Credentials::Plain { username, secret })
+                if username.ends_with(master_user) =>
+            {
+                if verify_secret_hash(master_pass, secret).await {
+                    let username = username.strip_suffix(master_user).unwrap();
+                    let username = username.strip_suffix('%').unwrap_or(username);
+                    return Ok(
+                        if let Some(principal) = directory
+                            .query(QueryBy::Name(username), return_member_of)
+                            .await?
+                        {
+                            AuthResult::Success(principal)
+                        } else {
+                            AuthResult::Failure
+                        },
+                    );
+                }
+            }
+            _ => {}
         }
 
         if let Err(err) = result {
@@ -308,7 +319,7 @@ impl Tracers {
             | Tracer::Otel { level, .. }) = tracer;
 
             let filter = match EnvFilter::builder().parse(format!(
-                "smtp={level},imap={level},jmap={level},store={level},common={level},utils={level},directory={level}"
+                "smtp={level},imap={level},jmap={level},pop3={level},store={level},common={level},utils={level},directory={level}"
             )) {
                 Ok(filter) => {
                     filter

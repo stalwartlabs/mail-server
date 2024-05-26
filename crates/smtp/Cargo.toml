@@ -7,7 +7,7 @@ homepage = "https://stalw.art/smtp"
 keywords = ["smtp", "email", "mail", "server"]
 categories = ["email"]
 license = "AGPL-3.0-only"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 resolver = "2"
 

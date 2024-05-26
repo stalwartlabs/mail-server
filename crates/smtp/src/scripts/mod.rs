@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 use ahash::AHashMap;
 use common::{expr::functions::ResolveVariable, scripts::ScriptModification, Core};
@@ -44,8 +44,9 @@ pub enum ScriptResult {
     Discard,
 }
 
-pub struct ScriptParameters {
-    message: Option<Arc<Vec<u8>>>,
+pub struct ScriptParameters<'x> {
+    message: Option<&'x [u8]>,
+    headers: Option<&'x [u8]>,
     variables: AHashMap<Cow<'static, str>, Variable>,
     envelope: Vec<(Envelope, Variable)>,
     from_addr: String,
@@ -56,12 +57,13 @@ pub struct ScriptParameters {
     expected_variables: Option<AHashMap<String, Variable>>,
 }
 
-impl ScriptParameters {
+impl<'x> ScriptParameters<'x> {
     pub fn new() -> Self {
         ScriptParameters {
             variables: AHashMap::with_capacity(10),
             envelope: Vec::with_capacity(6),
             message: None,
+            headers: None,
             #[cfg(feature = "test_mode")]
             expected_variables: None,
             from_addr: Default::default(),
@@ -87,9 +89,16 @@ impl ScriptParameters {
         self
     }
 
-    pub fn with_message(self, message: Arc<Vec<u8>>) -> Self {
+    pub fn with_message(self, message: &'x [u8]) -> Self {
         Self {
             message: message.into(),
+            ..self
+        }
+    }
+
+    pub fn with_auth_headers(self, headers: &'x [u8]) -> Self {
+        Self {
+            headers: headers.into(),
             ..self
         }
     }
@@ -113,7 +122,7 @@ impl ScriptParameters {
     }
 }
 
-impl Default for ScriptParameters {
+impl Default for ScriptParameters<'_> {
     fn default() -> Self {
         Self::new()
     }

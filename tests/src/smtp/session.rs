@@ -274,6 +274,7 @@ impl TestSession for Session<DummyIo> {
                         dsn_info: None,
                     },
                 ],
+                self.core.inner.snowflake_id.generate().unwrap(),
             )
             .await;
         assert_eq!(

@@ -502,6 +502,7 @@ impl Patterns {
                 Pattern::Include(MatchType::StartsWith("directory.".to_string())),
                 Pattern::Include(MatchType::StartsWith("tracer.".to_string())),
                 Pattern::Exclude(MatchType::StartsWith("server.blocked-ip.".to_string())),
+                Pattern::Exclude(MatchType::StartsWith("server.allowed-ip.".to_string())),
                 Pattern::Include(MatchType::StartsWith("server.".to_string())),
                 Pattern::Include(MatchType::StartsWith("certificate.".to_string())),
                 Pattern::Include(MatchType::StartsWith(

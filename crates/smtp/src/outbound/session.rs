@@ -225,7 +225,7 @@ impl Message {
 
             if params.is_smtp {
                 // Handle SMTP response
-                match read_smtp_data_respone(&mut smtp_client, params.hostname, &bdat_cmd).await {
+                match read_smtp_data_response(&mut smtp_client, params.hostname, &bdat_cmd).await {
                     Ok(response) => {
                         // Mark recipients as delivered
                         if response.code() == 250 {
@@ -485,7 +485,7 @@ pub async fn read_greeting<T: AsyncRead + AsyncWrite + Unpin>(
         .map_err(|err| Status::from_smtp_error(hostname, "", err))
 }
 
-pub async fn read_smtp_data_respone<T: AsyncRead + AsyncWrite + Unpin>(
+pub async fn read_smtp_data_response<T: AsyncRead + AsyncWrite + Unpin>(
     smtp_client: &mut SmtpClient<T>,
     hostname: &str,
     bdat_cmd: &Option<String>,

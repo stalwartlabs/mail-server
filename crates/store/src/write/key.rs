@@ -661,7 +661,9 @@ impl Deserialize for ReportEvent {
                 .and_then(|domain| std::str::from_utf8(domain).ok())
                 .map(|s| s.to_string())
                 .ok_or_else(|| {
-                    crate::Error::InternalError("Failed to deserialize report domain".into())
+                    crate::Error::InternalError(format!(
+                        "Failed to deserialize report domain: {key:?}"
+                    ))
                 })?,
         })
     }

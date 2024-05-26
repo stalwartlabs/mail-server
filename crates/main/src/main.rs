@@ -31,6 +31,7 @@ use jmap::{
     JMAP,
 };
 use managesieve::core::ManageSieveSessionManager;
+use pop3::Pop3SessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
 use utils::wait_for_shutdown;
@@ -79,6 +80,12 @@ async fn main() -> std::io::Result<()> {
             ),
             ServerProtocol::Imap => server.spawn(
                 ImapSessionManager::new(imap.clone()),
+                core.clone(),
+                acceptor,
+                shutdown_rx,
+            ),
+            ServerProtocol::Pop3 => server.spawn(
+                Pop3SessionManager::new(imap.clone()),
                 core.clone(),
                 acceptor,
                 shutdown_rx,

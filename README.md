@@ -5,7 +5,7 @@
 </p>
 
 <h3 align="center">
-  Secure & Modern All-in-One Mail Server (IMAP, JMAP, SMTP) 🛡️
+  Secure & Modern All-in-One Mail Server (IMAP, JMAP, POP3, SMTP) 🛡️
 </h3>
 
 <br>
@@ -44,27 +44,25 @@
 
 ## Features
 
-**Stalwart Mail Server** is an open-source mail server solution with JMAP, IMAP4, and SMTP support and a wide range of modern features. It is written in Rust and designed to be secure, fast, robust and scalable.
+**Stalwart Mail Server** is an open-source mail server solution with JMAP, IMAP4, POP3, and SMTP support and a wide range of modern features. It is written in Rust and designed to be secure, fast, robust and scalable.
 
 Key features:
 
 - **JMAP** server:
-  - JMAP Core ([RFC 8620](https://datatracker.ietf.org/doc/html/rfc8620))
-  - JMAP Mail ([RFC 8621](https://datatracker.ietf.org/doc/html/rfc8621))
-  - JMAP for Sieve Scripts ([DRAFT-SIEVE-22](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-22.html))
-  - JMAP over WebSocket ([RFC 8887](https://datatracker.ietf.org/doc/html/rfc8887)), JMAP Blob Management ([RFC9404](https://www.rfc-editor.org/rfc/rfc9404.html)) and JMAP for Quotas ([RFC9425](https://www.rfc-editor.org/rfc/rfc9425.html)) extensions.
-- **IMAP4** server:
-  - IMAP4rev2 ([RFC 9051](https://datatracker.ietf.org/doc/html/rfc9051)) full compliance.
-  - IMAP4rev1 ([RFC 3501](https://datatracker.ietf.org/doc/html/rfc3501)) backwards compatible.
-  - ManageSieve ([RFC 5804](https://datatracker.ietf.org/doc/html/rfc5804)) server.
-  - Numerous [extensions](https://stalw.art/docs/development/rfcs#imap4-and-extensions) supported.
+  - [JMAP Core](https://datatracker.ietf.org/doc/html/rfc8620) and [JMAP Mail](https://datatracker.ietf.org/doc/html/rfc8621) full compliance.
+  - [JMAP for Sieve Scripts](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-22.html) extension for managing Sieve scripts.
+  - [JMAP for WebSocket](https://datatracker.ietf.org/doc/html/rfc8887), [JMAP Blob Management](https://www.rfc-editor.org/rfc/rfc9404.html) and [JMAP for Quotas](https://www.rfc-editor.org/rfc/rfc9425.html) extensions.
+- **IMAP4**, **POP3** and **ManageSieve** server:
+  - [IMAP4rev2](https://datatracker.ietf.org/doc/html/rfc9051) and [IMAP4rev1](https://datatracker.ietf.org/doc/html/rfc3501) server with support for [numerous extensions](https://stalw.art/docs/development/rfcs#imap4-and-extensions).
+  - [POP3](https://datatracker.ietf.org/doc/html/rfc1939) server with [extensions](https://datatracker.ietf.org/doc/html/rfc2449), [STLS](https://datatracker.ietf.org/doc/html/rfc2595) and [SASL](https://datatracker.ietf.org/doc/html/rfc5034) support.
+  - [ManageSieve](https://datatracker.ietf.org/doc/html/rfc5804) server for managing Sieve scripts.
 - **SMTP** server:
   - Built-in [DMARC](https://datatracker.ietf.org/doc/html/rfc7489), [DKIM](https://datatracker.ietf.org/doc/html/rfc6376), [SPF](https://datatracker.ietf.org/doc/html/rfc7208) and [ARC](https://datatracker.ietf.org/doc/html/rfc8617) support for message authentication.
   - Strong transport security through [DANE](https://datatracker.ietf.org/doc/html/rfc6698), [MTA-STS](https://datatracker.ietf.org/doc/html/rfc8461) and [SMTP TLS](https://datatracker.ietf.org/doc/html/rfc8460) reporting.
   - Inbound throttling and filtering with granular configuration rules, sieve scripting and milter integration.
   - Distributed virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
   - Envelope rewriting and message modification.
-- **Spam and Phishing** filter:
+- **Spam Phishing** filter:
   - Comprehensive set of filtering **rules** on par with popular solutions.
   - Statistical **spam classifier** with automatic training capabilities.
   - DNS Blocklists (**DNSBLs**) checking of IP addresses, domains, and hashes.

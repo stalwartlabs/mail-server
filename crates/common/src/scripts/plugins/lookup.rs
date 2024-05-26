@@ -55,7 +55,7 @@ pub fn register_local_domain(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("is_local_domain", plugin_id, 2);
 }
 
-pub fn exec(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec(ctx: PluginContext<'_>) -> Variable {
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
@@ -66,9 +66,9 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
             Variable::Array(items) => {
                 for item in items.iter() {
                     if !item.is_empty()
-                        && ctx
-                            .handle
-                            .block_on(store.key_exists(item.to_string().into_owned().into_bytes()))
+                        && store
+                            .key_exists(item.to_string().into_owned().into_bytes())
+                            .await
                             .unwrap_or(false)
                     {
                         return true.into();
@@ -76,9 +76,9 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
                 }
                 false
             }
-            v if !v.is_empty() => ctx
-                .handle
-                .block_on(store.key_exists(v.to_string().into_owned().into_bytes()))
+            v if !v.is_empty() => store
+                .key_exists(v.to_string().into_owned().into_bytes())
+                .await
                 .unwrap_or(false),
             _ => false,
         }
@@ -95,19 +95,16 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
     .into()
 }
 
-pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec_get(ctx: PluginContext<'_>) -> Variable {
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
     };
 
     if let Some(store) = store {
-        ctx.handle
-            .block_on(
-                store.key_get::<VariableWrapper>(
-                    ctx.arguments[1].to_string().into_owned().into_bytes(),
-                ),
-            )
+        store
+            .key_get::<VariableWrapper>(ctx.arguments[1].to_string().into_owned().into_bytes())
+            .await
             .unwrap_or_default()
             .map(|v| v.into_inner())
             .unwrap_or_default()
@@ -123,7 +120,7 @@ pub fn exec_get(ctx: PluginContext<'_>) -> Variable {
     }
 }
 
-pub fn exec_set(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec_set(ctx: PluginContext<'_>) -> Variable {
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
@@ -136,8 +133,8 @@ pub fn exec_set(ctx: PluginContext<'_>) -> Variable {
             _ => None,
         };
 
-        ctx.handle
-            .block_on(store.key_set(
+        store
+            .key_set(
                 ctx.arguments[1].to_string().into_owned().into_bytes(),
                 if !ctx.arguments[2].is_empty() {
                     bincode::serialize(&ctx.arguments[2]).unwrap_or_default()
@@ -145,7 +142,8 @@ pub fn exec_set(ctx: PluginContext<'_>) -> Variable {
                     vec![]
                 },
                 expires,
-            ))
+            )
+            .await
             .is_ok()
             .into()
     } else {
@@ -160,7 +158,7 @@ pub fn exec_set(ctx: PluginContext<'_>) -> Variable {
     }
 }
 
-pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
     let resource = ctx.arguments[0].to_string();
     let item = ctx.arguments[1].to_string();
 
@@ -228,126 +226,129 @@ pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
         }
     }
 
-    // Lock remote list for writing
-    let mut _lock = ctx.core.sieve.remote_lists.write();
-    let list = _lock
-        .entry(resource.to_string())
-        .or_insert_with(|| RemoteList {
-            entries: HashSet::new(),
-            expires: Instant::now(),
-        });
+    match reqwest::Client::builder()
+        .timeout(TIMEOUT)
+        .user_agent(USER_AGENT)
+        .build()
+        .unwrap_or_default()
+        .get(resource.as_ref())
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => {
+            match response.bytes().await {
+                Ok(bytes) => {
+                    let reader: Box<dyn std::io::Read> = if resource.ends_with(".gz") {
+                        Box::new(flate2::read::GzDecoder::new(&bytes[..]))
+                    } else {
+                        Box::new(&bytes[..])
+                    };
 
-    // Make sure that the list is still expired
-    if list.expires > Instant::now() {
-        return list.entries.contains(item.as_ref()).into();
-    }
+                    // Lock remote list for writing
+                    let mut _lock = ctx.core.sieve.remote_lists.write();
+                    let list = _lock
+                        .entry(resource.to_string())
+                        .or_insert_with(|| RemoteList {
+                            entries: HashSet::new(),
+                            expires: Instant::now(),
+                        });
 
-    let _enter = ctx.handle.enter();
-    match ctx
-        .handle
-        .block_on(
-            reqwest::Client::builder()
-                .timeout(TIMEOUT)
-                .user_agent(USER_AGENT)
-                .build()
-                .unwrap_or_default()
-                .get(resource.as_ref())
-                .send(),
-        )
-        .and_then(|r| {
-            if r.status().is_success() {
-                ctx.handle.block_on(r.bytes()).map(Ok)
-            } else {
-                Ok(Err(r))
-            }
-        }) {
-        Ok(Ok(bytes)) => {
-            let reader: Box<dyn std::io::Read> = if resource.ends_with(".gz") {
-                Box::new(flate2::read::GzDecoder::new(&bytes[..]))
-            } else {
-                Box::new(&bytes[..])
-            };
+                    // Make sure that the list is still expired
+                    if list.expires > Instant::now() {
+                        return list.entries.contains(item.as_ref()).into();
+                    }
 
-            for (pos, line) in BufReader::new(reader).lines().enumerate() {
-                match line {
-                    Ok(line_) => {
-                        // Clear list once the first entry has been successfully fetched, decompressed and UTF8-decoded
-                        if pos == 0 {
-                            list.entries.clear();
-                        }
-
-                        match &format {
-                            Format::List => {
-                                let line = line_.trim();
-                                if !line.is_empty() {
-                                    list.entries.insert(line.to_string());
+                    for (pos, line) in BufReader::new(reader).lines().enumerate() {
+                        match line {
+                            Ok(line_) => {
+                                // Clear list once the first entry has been successfully fetched, decompressed and UTF8-decoded
+                                if pos == 0 {
+                                    list.entries.clear();
                                 }
-                            }
-                            Format::Csv {
-                                column,
-                                separator,
-                                skip_first,
-                            } if pos > 0 || !*skip_first => {
-                                let mut in_quote = false;
-                                let mut col_num = 0;
-                                let mut entry = String::new();
 
-                                for ch in line_.chars() {
-                                    if ch != '"' {
-                                        if ch == *separator && !in_quote {
-                                            if col_num == *column {
-                                                break;
+                                match &format {
+                                    Format::List => {
+                                        let line = line_.trim();
+                                        if !line.is_empty() {
+                                            list.entries.insert(line.to_string());
+                                        }
+                                    }
+                                    Format::Csv {
+                                        column,
+                                        separator,
+                                        skip_first,
+                                    } if pos > 0 || !*skip_first => {
+                                        let mut in_quote = false;
+                                        let mut col_num = 0;
+                                        let mut entry = String::new();
+
+                                        for ch in line_.chars() {
+                                            if ch != '"' {
+                                                if ch == *separator && !in_quote {
+                                                    if col_num == *column {
+                                                        break;
+                                                    } else {
+                                                        col_num += 1;
+                                                    }
+                                                } else if col_num == *column {
+                                                    entry.push(ch);
+                                                    if entry.len() > MAX_ENTRY_SIZE {
+                                                        break;
+                                                    }
+                                                }
                                             } else {
-                                                col_num += 1;
-                                            }
-                                        } else if col_num == *column {
-                                            entry.push(ch);
-                                            if entry.len() > MAX_ENTRY_SIZE {
-                                                break;
+                                                in_quote = !in_quote;
                                             }
                                         }
-                                    } else {
-                                        in_quote = !in_quote;
-                                    }
-                                }
 
-                                if !entry.is_empty() {
-                                    list.entries.insert(entry);
+                                        if !entry.is_empty() {
+                                            list.entries.insert(entry);
+                                        }
+                                    }
+                                    _ => (),
                                 }
                             }
-                            _ => (),
+                            Err(err) => {
+                                tracing::warn!(
+                                    parent: ctx.span,
+                                    context = "sieve:key_exists_http",
+                                    event = "failed",
+                                    resource = resource.as_ref(),
+                                    reason = %err,
+                                );
+                                break;
+                            }
+                        }
+
+                        if list.entries.len() == MAX_ENTRIES {
+                            break;
                         }
                     }
-                    Err(err) => {
-                        tracing::warn!(
-                            parent: ctx.span,
-                            context = "sieve:key_exists_http",
-                            event = "failed",
-                            resource = resource.as_ref(),
-                            reason = %err,
-                        );
-                        break;
-                    }
-                }
 
-                if list.entries.len() == MAX_ENTRIES {
-                    break;
+                    tracing::debug!(
+                        parent: ctx.span,
+                        context = "sieve:key_exists_http",
+                        event = "fetch",
+                        resource = resource.as_ref(),
+                        num_entries = list.entries.len(),
+                    );
+
+                    // Update expiration
+                    list.expires = Instant::now() + expires;
+                    return list.entries.contains(item.as_ref()).into();
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        parent: ctx.span,
+                        context = "sieve:key_exists_http",
+                        event = "failed",
+                        resource = resource.as_ref(),
+                        reason = %err,
+                    );
                 }
             }
-
-            tracing::debug!(
-                parent: ctx.span,
-                context = "sieve:key_exists_http",
-                event = "fetch",
-                resource = resource.as_ref(),
-                num_entries = list.entries.len(),
-            );
-
-            // Update expiration
-            list.expires = Instant::now() + expires;
-            return list.entries.contains(item.as_ref()).into();
         }
-        Ok(Err(response)) => {
+        Ok(response) => {
             tracing::warn!(
                 parent: ctx.span,
                 context = "sieve:key_exists_http",
@@ -368,11 +369,22 @@ pub fn exec_remote(ctx: PluginContext<'_>) -> Variable {
     }
 
     // Something went wrong, try again in one hour
-    list.expires = Instant::now() + RETRY;
-    false.into()
+    let mut _lock = ctx.core.sieve.remote_lists.write();
+    let list = _lock
+        .entry(resource.to_string())
+        .or_insert_with(|| RemoteList {
+            entries: HashSet::new(),
+            expires: Instant::now(),
+        });
+    if list.expires > Instant::now() {
+        list.entries.contains(item.as_ref()).into()
+    } else {
+        list.expires = Instant::now() + RETRY;
+        false.into()
+    }
 }
 
-pub fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
     let domain = ctx.arguments[0].to_string();
 
     if !domain.is_empty() {
@@ -382,9 +394,9 @@ pub fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
         };
 
         if let Some(directory) = directory {
-            return ctx
-                .handle
-                .block_on(directory.is_local_domain(domain.as_ref()))
+            return directory
+                .is_local_domain(domain.as_ref())
+                .await
                 .unwrap_or_default()
                 .into();
         } else {

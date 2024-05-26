@@ -29,9 +29,12 @@ use common::{
 use dashmap::mapref::entry::Entry;
 use utils::config::Rate;
 
-use std::hash::{BuildHasher, Hash, Hasher};
+use std::{
+    hash::{BuildHasher, Hash, Hasher},
+    sync::atomic::Ordering,
+};
 
-use super::Session;
+use super::{Session, SMTP};
 
 #[derive(Debug, Clone, Eq)]
 pub struct ThrottleKey {
@@ -316,5 +319,13 @@ impl<T: SessionStream> Session<T> {
             .await
             .unwrap_or_default()
             .is_none()
+    }
+}
+
+impl SMTP {
+    pub fn cleanup(&self) {
+        for throttle in [&self.inner.session_throttle, &self.inner.queue_throttle] {
+            throttle.retain(|_, v| v.concurrent.load(Ordering::Relaxed) > 0);
+        }
     }
 }

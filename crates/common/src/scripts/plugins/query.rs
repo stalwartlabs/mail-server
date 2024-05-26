@@ -33,7 +33,7 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("query", plugin_id, 3);
 }
 
-pub fn exec(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec(ctx: PluginContext<'_>) -> Variable {
     let span = ctx.span;
 
     // Obtain store name
@@ -79,7 +79,7 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
         .get(..6)
         .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
     {
-        if let Ok(mut rows) = ctx.handle.block_on(store.query::<Rows>(&query, arguments)) {
+        if let Ok(mut rows) = store.query::<Rows>(&query, arguments).await {
             match rows.rows.len().cmp(&1) {
                 Ordering::Equal => {
                     let mut row = rows.rows.pop().unwrap().values;
@@ -116,9 +116,6 @@ pub fn exec(ctx: PluginContext<'_>) -> Variable {
             false.into()
         }
     } else {
-        ctx.handle
-            .block_on(store.query::<usize>(&query, arguments))
-            .is_ok()
-            .into()
+        store.query::<usize>(&query, arguments).await.is_ok().into()
     }
 }

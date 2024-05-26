@@ -82,3 +82,25 @@ Subject: plain test
 https://phishing-open.org
 https://phishing-tank.com
 
+<!-- NEXT TEST -->
+expect 
+
+Subject: IPs are not urls
+
+192.168.1.1
+
+<!-- NEXT TEST -->
+expect 
+
+Content-Type: text/html; charset="utf-8"
+Subject: IPs in HTML are not urls
+
+<html>
+Das System wurde um 01.01.1970 08:28:00 für die IP-Adresse
+123.123.123.123 gesperrt.<br>
+<br>
+Der Besucher hat versucht, sich mit folgenden Daten anzumelden.<br>
+Partner: 12345678<br>
+Portal: <a href="https://www.localhost.de/example.php" target="_blank">IP-Sperre einsehen</a>
+</html>
+

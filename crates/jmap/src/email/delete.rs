@@ -396,6 +396,14 @@ impl JMAP {
             return Ok(());
         }
 
+        tracing::debug!(
+            event = "info",
+            context = "email_auto_expunge",
+            account_id = account_id,
+            count = destroy_ids.len(),
+            "Auto-expunging messages."
+        );
+
         // Tombstone messages
         let (changes, _) = self.emails_tombstone(account_id, destroy_ids).await?;
 
@@ -435,6 +443,14 @@ impl JMAP {
         if tombstoned_ids.is_empty() {
             return Ok(());
         }
+
+        tracing::debug!(
+            event = "info",
+            context = "email_purge_tombstoned",
+            account_id = account_id,
+            count = tombstoned_ids.len(),
+            "Purging tombstoned messages."
+        );
 
         // Delete full-text index
         self.core

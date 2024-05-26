@@ -7,7 +7,7 @@ homepage = "https://stalw.art"
 keywords = ["imap", "jmap", "smtp", "email", "mail", "server"]
 categories = ["email"]
 license = "AGPL-3.0-only"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 resolver = "2"
 
@@ -21,6 +21,7 @@ jmap = { path = "../jmap" }
 jmap_proto = { path = "../jmap-proto" }
 smtp = { path = "../smtp", features = ["local_delivery"] }
 imap = { path = "../imap" }
+pop3 = { path = "../pop3" }
 managesieve = { path = "../managesieve" }
 common = { path = "../common" }
 directory = { path = "../directory" }

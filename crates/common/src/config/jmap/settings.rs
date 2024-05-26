@@ -65,7 +65,7 @@ pub struct JmapConfig {
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
     pub fallback_admin: Option<(String, String)>,
-    pub fallback_admin_master: bool,
+    pub master_user: Option<(String, String)>,
 
     pub spam_header: Option<(HeaderName<'static>, String)>,
 
@@ -133,6 +133,16 @@ impl JmapConfig {
                 hyper::header::ACCESS_CONTROL_ALLOW_METHODS,
                 hyper::header::HeaderValue::from_static(
                     "POST, GET, PATCH, PUT, DELETE, HEAD, OPTIONS",
+                ),
+            ));
+        }
+
+        // Add HTTP Strict Transport Security
+        if config.property::<bool>("server.http.hsts").unwrap_or(false) {
+            http_headers.push((
+                hyper::header::STRICT_TRANSPORT_SECURITY,
+                hyper::header::HeaderValue::from_static(
+                    "max-age=31536000; includeSubDomains; preload",
                 ),
             ));
         }
@@ -313,7 +323,7 @@ impl JmapConfig {
                 .unwrap_or_else(|| SimpleCron::parse_value("15 * *").unwrap()),
             account_purge_frequency: config
                 .property_or_default::<SimpleCron>("jmap.account.purge.frequency", "0 0 *")
-                .unwrap_or_else(|| SimpleCron::parse_value("15 * *").unwrap()),
+                .unwrap_or_else(|| SimpleCron::parse_value("0 0 *").unwrap()),
             fallback_admin: config
                 .value("authentication.fallback-admin.user")
                 .and_then(|u| {
@@ -321,9 +331,11 @@ impl JmapConfig {
                         .value("authentication.fallback-admin.secret")
                         .map(|p| (u.to_string(), p.to_string()))
                 }),
-            fallback_admin_master: config
-                .property_or_default("authentication.fallback-admin.enable-master", "false")
-                .unwrap_or(false),
+            master_user: config.value("authentication.master.user").and_then(|u| {
+                config
+                    .value("authentication.master.secret")
+                    .map(|p| (u.to_string(), p.to_string()))
+            }),
         };
 
         // Add capabilities

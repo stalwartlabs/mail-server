@@ -425,6 +425,15 @@ bind = "[::]:993"
 protocol = "imap"
 tls.implicit = true
 
+[server.listener.pop3]
+bind = "[::]:110"
+protocol = "pop3"
+
+[server.listener.pop3s]
+bind = "[::]:995"
+protocol = "pop3"
+tls.implicit = true
+
 [server.listener.sieve]
 bind = "[::]:4190"
 protocol = "managesieve"
@@ -489,6 +498,15 @@ protocol = "imap"
 [server.listener.imaptls]
 bind = "[::]:993"
 protocol = "imap"
+tls.implicit = true
+
+[server.listener.pop3]
+bind = "[::]:110"
+protocol = "pop3"
+
+[server.listener.pop3s]
+bind = "[::]:995"
+protocol = "pop3"
 tls.implicit = true
 
 [server.listener.sieve]

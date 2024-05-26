@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use common::scripts::plugins::PluginContext;
 use mail_auth::common::headers::HeaderWriter;
@@ -33,18 +33,16 @@ use smtp_proto::{
     MAIL_BY_TRACE, MAIL_RET_FULL, MAIL_RET_HDRS, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE,
     RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use tokio::runtime::Handle;
 
 use crate::{core::SMTP, inbound::DkimSign, queue::DomainPart};
 
 use super::{ScriptModification, ScriptParameters, ScriptResult};
 
 impl SMTP {
-    pub fn run_script_blocking(
+    pub async fn run_script(
         &self,
         script: Arc<Sieve>,
-        params: ScriptParameters,
-        handle: Handle,
+        params: ScriptParameters<'_>,
         span: tracing::Span,
     ) -> ScriptResult {
         // Create filter instance
@@ -52,7 +50,7 @@ impl SMTP {
             .core
             .sieve
             .trusted_runtime
-            .filter(params.message.as_deref().map_or(b"", |m| &m[..]))
+            .filter(params.message.as_ref().map_or(b"", |m| &m[..]))
             .with_vars_env(params.variables)
             .with_envelope_list(params.envelope)
             .with_user_address(&params.from_addr)
@@ -92,16 +90,17 @@ impl SMTP {
                         'outer: for list in lists {
                             if let Some(store) = self.core.storage.lookups.get(&list) {
                                 for value in &values {
-                                    if let Ok(true) = handle.block_on(
-                                        store.key_exists(
+                                    if let Ok(true) = store
+                                        .key_exists(
                                             if !matches!(match_as, MatchAs::Lowercase) {
                                                 value.clone()
                                             } else {
                                                 value.to_lowercase()
                                             }
                                             .into_bytes(),
-                                        ),
-                                    ) {
+                                        )
+                                        .await
+                                    {
                                         input = true.into();
                                         break 'outer;
                                     }
@@ -117,17 +116,19 @@ impl SMTP {
                         }
                     }
                     Event::Function { id, arguments } => {
-                        input = self.core.run_plugin_blocking(
-                            id,
-                            PluginContext {
-                                span: &span,
-                                handle: &handle,
-                                core: &self.core,
-                                message: instance.message(),
-                                modifications: &mut modifications,
-                                arguments,
-                            },
-                        );
+                        input = self
+                            .core
+                            .run_plugin(
+                                id,
+                                PluginContext {
+                                    span: &span,
+                                    core: &self.core,
+                                    message: instance.message(),
+                                    modifications: &mut modifications,
+                                    arguments,
+                                },
+                            )
+                            .await;
                     }
                     Event::Keep { message_id, .. } => {
                         keep_id = message_id;
@@ -158,11 +159,11 @@ impl SMTP {
                         );
                         match recipient {
                             Recipient::Address(rcpt) => {
-                                handle.block_on(message.add_recipient(rcpt, self));
+                                message.add_recipient(rcpt, self).await;
                             }
                             Recipient::Group(rcpt_list) => {
                                 for rcpt in rcpt_list {
-                                    handle.block_on(message.add_recipient(rcpt, self));
+                                    message.add_recipient(rcpt, self).await;
                                 }
                             }
                             Recipient::List(list) => {
@@ -259,14 +260,16 @@ impl SMTP {
                         }
 
                         // Queue message
-                        let raw_message = if message_id > 0 {
+                        let is_forward = message_id == 0;
+                        let raw_message = if !is_forward {
                             messages.get(message_id - 1).map(|m| m.as_slice())
                         } else {
                             instance.message().raw_message().into()
                         };
-                        if let Some(raw_message) = raw_message {
+                        if let Some(raw_message) = raw_message.filter(|m| !m.is_empty()) {
                             let headers = if !params.sign.is_empty() {
                                 let mut headers = Vec::new();
+
                                 for dkim in &params.sign {
                                     if let Some(dkim) = self.core.get_dkim_signer(dkim) {
                                         match dkim.sign(raw_message) {
@@ -282,17 +285,33 @@ impl SMTP {
                                         }
                                     }
                                 }
-                                Some(headers)
+
+                                if is_forward {
+                                    headers.extend_from_slice(params.headers.unwrap_or_default());
+                                }
+
+                                Some(Cow::Owned(headers))
+                            } else if is_forward {
+                                params.headers.map(Cow::Borrowed)
                             } else {
                                 None
                             };
 
-                            handle.block_on(message.queue(
-                                headers.as_deref(),
-                                raw_message,
-                                self,
-                                &span,
-                            ));
+                            if self.has_quota(&mut message).await {
+                                message
+                                    .queue(headers.as_deref(), raw_message, self, &span)
+                                    .await;
+                            } else {
+                                tracing::warn!(
+                                    parent: &span,
+                                    context = "sieve",
+                                    event = "send-message",
+                                    error = "quota-exceeded",
+                                    return_path = %message.return_path_lcase,
+                                    recipient = %message.recipients[0].address_lcase,
+                                    reason = "Queue quota exceeded by sieve script"
+                                );
+                            }
                         }
 
                         input = true.into();
