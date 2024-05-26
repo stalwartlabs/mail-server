@@ -370,7 +370,7 @@ impl LdapMappings {
                         }
                         "posixgroup" | "groupofuniquenames" | "group" => {
                             principal.typ = Type::Group
-                        },
+                        }
                         _ => continue,
                     }
                     break;
