@@ -140,10 +140,12 @@ impl<T: SessionStream> Session<T> {
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
     ) -> ScriptResult {
-        let core = self.core.clone();
-        let span = self.span.clone();
-        let params = params.with_envelope(&self.core.core, self).await;
-
-        core.run_script(script, params, span).await
+        self.core
+            .run_script(
+                script,
+                params.with_envelope(&self.core.core, self).await,
+                self.span.clone(),
+            )
+            .await
     }
 }

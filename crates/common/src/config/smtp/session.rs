@@ -609,7 +609,7 @@ impl Default for SessionConfig {
                 rewrite: IfBlock::empty("session.mail.rewrite"),
             },
             rcpt: Rcpt {
-                script: IfBlock::empty("session.rcpt."),
+                script: IfBlock::empty("session.rcpt.script"),
                 relay: IfBlock::new::<()>(
                     "session.rcpt.relay",
                     [("!is_empty(authenticated_as)", "true")],

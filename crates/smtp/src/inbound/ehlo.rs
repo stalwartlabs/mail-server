@@ -116,7 +116,7 @@ impl<T: SessionStream> Session<T> {
 
         if !is_extended {
             return self
-                .write(format!("250 {} says hello\r\n", self.hostname).as_bytes())
+                .write(format!("250 {} you had me at HELO\r\n", self.hostname).as_bytes())
                 .await;
         }
 

@@ -31,11 +31,10 @@ body:
       label: Version
       description: What version of our software are you running?
       options:
+        - v0.8.x
         - v0.7.x
         - v0.6.x
-        - v0.5.x
-        - v0.4.x
-        - v0.3.x or lower
+        - v0.5.x or lower
     validations:
       required: true
   - type: dropdown
