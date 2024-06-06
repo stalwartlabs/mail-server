@@ -228,6 +228,26 @@ throttle = "500ms"
 throttle = "500ms"
 attempts.interval = "500ms"
 
+[jmap.folders.inbox]
+name = "Inbox"
+subscribe = false
+
+[jmap.folders.sent]
+name = "Sent Items"
+subscribe = false
+
+[jmap.folders.trash]
+name = "Deleted Items"
+subscribe = false
+
+[jmap.folders.junk]
+name = "Junk Mail"
+subscribe = false
+
+[jmap.folders.drafts]
+name = "Drafts"
+subscribe = false
+
 [store."auth"]
 type = "sqlite"
 path = "{TMP}/auth.db"

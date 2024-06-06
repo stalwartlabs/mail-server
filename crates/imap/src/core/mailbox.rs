@@ -4,7 +4,10 @@ use std::{
 };
 
 use ahash::AHashMap;
-use common::listener::{limiter::InFlight, SessionStream};
+use common::{
+    config::jmap::settings::SpecialUse,
+    listener::{limiter::InFlight, SessionStream},
+};
 use directory::QueryBy;
 use imap_proto::{protocol::list::Attribute, StatusResponse};
 use jmap::{
@@ -51,7 +54,7 @@ impl<T: SessionStream> SessionData<T> {
                     account_id,
                     format!(
                         "{}/{}",
-                        session.jmap.core.imap.name_shared,
+                        session.jmap.core.jmap.shared_folder,
                         session
                             .jmap
                             .core
@@ -141,6 +144,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Fetch mailboxes
         let mut mailboxes = Vec::with_capacity(10);
+        let mut special_uses = AHashMap::new();
         for (mailbox_id, values) in self
             .jmap
             .get_properties::<Object<Value>, _, _>(
@@ -152,6 +156,23 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .map_err(|_| {})?
         {
+            // Map special uses
+            if let Some(Value::Text(role)) = values.properties.get(&Property::Role) {
+                let special_use = match role.as_str() {
+                    "archive" => SpecialUse::Archive,
+                    "drafts" => SpecialUse::Drafts,
+                    "junk" => SpecialUse::Junk,
+                    "sent" => SpecialUse::Sent,
+                    "trash" => SpecialUse::Trash,
+                    "inbox" => SpecialUse::Inbox,
+                    _ => SpecialUse::None,
+                };
+                if special_use != SpecialUse::None {
+                    special_uses.insert(special_use, mailbox_id);
+                }
+            }
+
+            // Add mailbox id
             mailboxes.push((
                 mailbox_id,
                 values
@@ -258,7 +279,24 @@ impl<T: SessionStream> SessionData<T> {
                         // If there is another mailbox called Inbox, rename it to avoid conflicts
                         mailbox_name = format!("{mailbox_name} 2");
                     }
-                    account.mailbox_names.insert(mailbox_name, *mailbox_id);
+
+                    // Map special use folder aliases to their internal ids
+                    let effective_mailbox_id = self
+                        .jmap
+                        .core
+                        .jmap
+                        .default_folders
+                        .iter()
+                        .find(|f| {
+                            f.name == mailbox_name || f.aliases.iter().any(|a| a == &mailbox_name)
+                        })
+                        .and_then(|f| special_uses.get(&f.special_use))
+                        .copied()
+                        .unwrap_or(*mailbox_id);
+
+                    account
+                        .mailbox_names
+                        .insert(mailbox_name, effective_mailbox_id);
 
                     if has_children && iter_stack.len() < 100 {
                         iter_stack.push((iter, parent_id, path));
@@ -351,7 +389,7 @@ impl<T: SessionStream> SessionData<T> {
             for account_id in added_account_ids {
                 let prefix = format!(
                     "{}/{}",
-                    self.jmap.core.imap.name_shared,
+                    self.jmap.core.jmap.shared_folder,
                     self.jmap
                         .core
                         .storage
@@ -465,7 +503,7 @@ impl<T: SessionStream> SessionData<T> {
                     let mailbox_prefix = if !access_token.is_primary_id(account_id) {
                         format!(
                             "{}/{}",
-                            self.jmap.core.imap.name_shared,
+                            self.jmap.core.jmap.shared_folder,
                             self.jmap
                                 .core
                                 .storage

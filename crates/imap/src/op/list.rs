@@ -178,10 +178,10 @@ impl<T: SessionStream> SessionData<T> {
             if let Some(prefix) = &account.prefix {
                 if !added_shared_folder {
                     if !filter_subscribed
-                        && matches_pattern(&patterns, &self.jmap.core.imap.name_shared)
+                        && matches_pattern(&patterns, &self.jmap.core.jmap.shared_folder)
                     {
                         list_items.push(ListItem {
-                            mailbox_name: self.jmap.core.imap.name_shared.clone(),
+                            mailbox_name: self.jmap.core.jmap.shared_folder.clone(),
                             attributes: if include_children {
                                 vec![Attribute::HasChildren, Attribute::NoSelect]
                             } else {

@@ -40,6 +40,7 @@ pub const TRASH_ID: u32 = 1;
 pub const JUNK_ID: u32 = 2;
 pub const DRAFTS_ID: u32 = 3;
 pub const SENT_ID: u32 = 4;
+pub const ARCHIVE_ID: u32 = 5;
 pub const TOMBSTONE_ID: u32 = u32::MAX - 1;
 
 #[derive(Debug, Clone, Copy)]

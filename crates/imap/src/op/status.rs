@@ -94,11 +94,11 @@ impl<T: SessionStream> SessionData<T> {
             mailbox
         } else {
             // Some IMAP clients will try to get the status of a mailbox with the NoSelect flag
-            return if mailbox_name == self.jmap.core.imap.name_shared
+            return if mailbox_name == self.jmap.core.jmap.shared_folder
                 || mailbox_name
                     .split_once('/')
                     .map_or(false, |(base_name, path)| {
-                        base_name == self.jmap.core.imap.name_shared && !path.contains('/')
+                        base_name == self.jmap.core.jmap.shared_folder && !path.contains('/')
                     })
             {
                 Ok(StatusItem {

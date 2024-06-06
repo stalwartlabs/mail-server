@@ -64,7 +64,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Validate mailbox name
         let mut params = match self
-            .validate_mailbox_create(&arguments.new_mailbox_name, &None)
+            .validate_mailbox_create(&arguments.new_mailbox_name, None)
             .await
         {
             Ok(mut params) => {

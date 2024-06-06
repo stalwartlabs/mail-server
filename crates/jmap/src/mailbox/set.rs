@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use common::config::jmap::settings::SpecialUse;
 use jmap_proto::{
     error::{
         method::MethodError,
@@ -60,7 +61,7 @@ use crate::{
 
 #[allow(unused_imports)]
 use super::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
-use super::{DRAFTS_ID, SENT_ID};
+use super::{ARCHIVE_ID, DRAFTS_ID, SENT_ID};
 
 struct SetContext<'x> {
     account_id: u32,
@@ -838,27 +839,44 @@ impl JMAP {
             .with_collection(Collection::Mailbox);
 
         // Create mailboxes
-        for (name, role, document_id) in [
-            ("Inbox", "inbox", INBOX_ID),
-            ("Deleted Items", "trash", TRASH_ID),
-            ("Junk Mail", "junk", JUNK_ID),
-            ("Drafts", "drafts", DRAFTS_ID),
-            ("Sent Items", "sent", SENT_ID),
-        ] {
-            batch.create_document_with_id(document_id).custom(
-                ObjectIndexBuilder::new(SCHEMA).with_changes(
-                    Object::with_capacity(4)
-                        .with_property(Property::Name, name)
-                        .with_property(Property::Role, role)
-                        .with_property(Property::ParentId, Value::Id(0u64.into()))
-                        .with_property(
-                            Property::Cid,
-                            Value::UnsignedInt(rand::random::<u32>() as u64),
-                        ),
-                ),
-            );
+        let mut last_document_id = ARCHIVE_ID;
+        for folder in &self.core.jmap.default_folders {
+            let (role, document_id) = match folder.special_use {
+                SpecialUse::Inbox => ("inbox", INBOX_ID),
+                SpecialUse::Trash => ("trash", TRASH_ID),
+                SpecialUse::Junk => ("junk", JUNK_ID),
+                SpecialUse::Drafts => ("drafts", DRAFTS_ID),
+                SpecialUse::Sent => ("sent", SENT_ID),
+                SpecialUse::Archive => ("archive", ARCHIVE_ID),
+                SpecialUse::None => {
+                    last_document_id += 1;
+                    ("", last_document_id)
+                }
+                SpecialUse::Shared => unreachable!(),
+            };
+
+            let mut object = Object::with_capacity(4)
+                .with_property(Property::Name, folder.name.clone())
+                .with_property(Property::ParentId, Value::Id(0u64.into()))
+                .with_property(
+                    Property::Cid,
+                    Value::UnsignedInt(rand::random::<u32>() as u64),
+                );
+            if !role.is_empty() {
+                object.set(Property::Role, role);
+            }
+            if folder.subscribe {
+                object.set(
+                    Property::IsSubscribed,
+                    Value::List(vec![Value::Id(account_id.into())]),
+                );
+            }
+            batch
+                .create_document_with_id(document_id)
+                .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(object));
             mailbox_ids.insert(document_id);
         }
+
         self.core
             .storage
             .data

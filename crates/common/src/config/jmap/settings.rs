@@ -68,6 +68,8 @@ pub struct JmapConfig {
     pub master_user: Option<(String, String)>,
 
     pub spam_header: Option<(HeaderName<'static>, String)>,
+    pub default_folders: Vec<DefaultFolder>,
+    pub shared_folder: String,
 
     pub http_headers: Vec<(hyper::header::HeaderName, hyper::header::HeaderValue)>,
     pub http_use_forwarded: bool,
@@ -80,6 +82,27 @@ pub struct JmapConfig {
     pub capabilities: BaseCapabilities,
     pub session_purge_frequency: SimpleCron,
     pub account_purge_frequency: SimpleCron,
+}
+
+#[derive(Clone, Debug)]
+pub struct DefaultFolder {
+    pub name: String,
+    pub aliases: Vec<String>,
+    pub special_use: SpecialUse,
+    pub subscribe: bool,
+    pub create: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum SpecialUse {
+    Inbox,
+    Trash,
+    Junk,
+    Drafts,
+    Archive,
+    Sent,
+    Shared,
+    None,
 }
 
 impl JmapConfig {
@@ -113,6 +136,72 @@ impl JmapConfig {
             .collect::<Result<Vec<_>, String>>()
             .map_err(|e| config.new_parse_error("server.http.headers", e))
             .unwrap_or_default();
+
+        // Parse default folders
+        let mut default_folders = Vec::new();
+        let mut shared_folder = "Shared Folders".to_string();
+        for key in config
+            .sub_keys("jmap.folders", ".name")
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+        {
+            match SpecialUse::parse_value(&key) {
+                Ok(SpecialUse::Shared) => {
+                    if let Some(value) = config.value(&key) {
+                        shared_folder = value.to_string();
+                    }
+                }
+                Ok(special_use) => {
+                    let subscribe = config
+                        .property_or_default(("jmap.folders", key.as_str(), "subscribe"), "true")
+                        .unwrap_or(true);
+                    let create = config
+                        .property_or_default(("jmap.folders", key.as_str(), "create"), "true")
+                        .unwrap_or(true)
+                        | [SpecialUse::Inbox, SpecialUse::Trash, SpecialUse::Junk]
+                            .contains(&special_use);
+                    if let Some(name) = config
+                        .value(("jmap.folders", key.as_str(), "name"))
+                        .map(|name| name.trim())
+                        .filter(|name| !name.is_empty())
+                    {
+                        default_folders.push(DefaultFolder {
+                            name: name.to_string(),
+                            aliases: config
+                                .value(("jmap.folders", key.as_str(), "aliases"))
+                                .unwrap_or_default()
+                                .split(',')
+                                .map(|s| s.trim().to_string())
+                                .filter(|s| !s.is_empty())
+                                .collect(),
+                            special_use,
+                            subscribe,
+                            create,
+                        });
+                    }
+                }
+                Err(err) => {
+                    config.new_parse_error(key, err);
+                }
+            }
+        }
+        for (special_use, name) in [
+            (SpecialUse::Inbox, "Inbox"),
+            (SpecialUse::Trash, "Deleted Items"),
+            (SpecialUse::Junk, "Junk Mail"),
+            (SpecialUse::Drafts, "Drafts"),
+            (SpecialUse::Sent, "Sent Items"),
+        ] {
+            if !default_folders.iter().any(|f| f.special_use == special_use) {
+                default_folders.push(DefaultFolder {
+                    name: name.to_string(),
+                    aliases: Vec::new(),
+                    special_use,
+                    subscribe: true,
+                    create: true,
+                });
+            }
+        }
 
         // Add permissive CORS headers
         if config
@@ -336,10 +425,28 @@ impl JmapConfig {
                     .value("authentication.master.secret")
                     .map(|p| (u.to_string(), p.to_string()))
             }),
+            default_folders,
+            shared_folder,
         };
 
         // Add capabilities
         jmap.add_capabilites(config);
         jmap
+    }
+}
+
+impl ParseValue for SpecialUse {
+    fn parse_value(value: &str) -> utils::config::Result<Self> {
+        match value {
+            "inbox" => Ok(SpecialUse::Inbox),
+            "trash" => Ok(SpecialUse::Trash),
+            "junk" => Ok(SpecialUse::Junk),
+            "drafts" => Ok(SpecialUse::Drafts),
+            "archive" => Ok(SpecialUse::Archive),
+            "sent" => Ok(SpecialUse::Sent),
+            "shared" => Ok(SpecialUse::Shared),
+            "none" => Ok(SpecialUse::None),
+            other => Err(format!("Unknown folder role {other:?}")),
+        }
     }
 }

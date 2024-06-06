@@ -73,7 +73,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Validate mailbox name
         let mut params = match self
-            .validate_mailbox_create(&arguments.mailbox_name, &arguments.mailbox_role)
+            .validate_mailbox_create(&arguments.mailbox_name, arguments.mailbox_role)
             .await
         {
             Ok(response) => response,
@@ -199,9 +199,21 @@ impl<T: SessionStream> SessionData<T> {
                 path_item.to_string()
             };
 
+            let effective_id = self
+                .jmap
+                .core
+                .jmap
+                .default_folders
+                .iter()
+                .find(|f| f.aliases.iter().any(|a| a == &mailbox_name))
+                .and_then(|f| account.mailbox_names.get(&f.name))
+                .copied()
+                .unwrap_or(mailbox_id);
+
             account
                 .mailbox_names
-                .insert(mailbox_name.clone(), mailbox_id);
+                .insert(mailbox_name.clone(), effective_id);
+
             account.mailbox_state.insert(
                 mailbox_id,
                 Mailbox {
@@ -228,7 +240,7 @@ impl<T: SessionStream> SessionData<T> {
     pub async fn validate_mailbox_create<'x>(
         &self,
         mailbox_name: &'x str,
-        mailbox_role: &Option<&'x str>,
+        mailbox_role: Option<&'x str>,
     ) -> Result<CreateParams<'x>, StatusResponse> {
         // Remove leading and trailing separators
         let mut name = mailbox_name.trim();
@@ -273,7 +285,7 @@ impl<T: SessionStream> SessionData<T> {
         let (account_id, path) = {
             let mailboxes = self.mailboxes.lock();
             let first_path_item = path.first().unwrap();
-            let account = if first_path_item == &self.jmap.core.imap.name_shared {
+            let account = if first_path_item == &self.jmap.core.jmap.shared_folder {
                 // Shared Folders/<username>/<folder>
                 if path.len() < 3 {
                     return Err(StatusResponse::no(
@@ -361,7 +373,7 @@ impl<T: SessionStream> SessionData<T> {
             full_path,
             parent_mailbox_id,
             parent_mailbox_name,
-            special_use: if let Some(mailbox_role) = *mailbox_role {
+            special_use: if let Some(mailbox_role) = mailbox_role {
                 // Make sure role is unique
                 if !self
                     .jmap
