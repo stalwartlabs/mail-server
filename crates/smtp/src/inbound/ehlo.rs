@@ -123,7 +123,7 @@ impl<T: SessionStream> Session<T> {
         let mut response = EhloResponse::new(self.hostname.as_str());
         response.capabilities =
             EXT_ENHANCED_STATUS_CODES | EXT_8BIT_MIME | EXT_BINARY_MIME | EXT_SMTP_UTF8;
-        if !self.stream.is_tls() {
+        if !self.stream.is_tls() && self.instance.acceptor.is_tls() {
             response.capabilities |= EXT_START_TLS;
         }
         let ec = &self.core.core.smtp.session.extensions;
