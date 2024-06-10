@@ -31,7 +31,7 @@ pub mod envelope;
 pub mod event_loop;
 pub mod exec;
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub enum ScriptResult {
     Accept {
         modifications: Vec<ScriptModification>,
@@ -109,6 +109,11 @@ impl<'x> ScriptParameters<'x> {
         value: impl Into<Variable>,
     ) -> Self {
         self.variables.insert(name.into(), value.into());
+        self
+    }
+
+    pub fn set_envelope(mut self, envelope: Envelope, value: impl Into<Variable>) -> Self {
+        self.envelope.push((envelope, value.into()));
         self
     }
 

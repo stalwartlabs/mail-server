@@ -8,7 +8,7 @@ use crate::IntoString;
 pub mod functions;
 pub mod plugins;
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub enum ScriptModification {
     SetEnvelope {
         name: Envelope,

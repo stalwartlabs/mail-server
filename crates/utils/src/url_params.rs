@@ -55,4 +55,8 @@ impl<'x> UrlParams<'x> {
     {
         self.get(key).and_then(|v| v.parse().ok())
     }
+
+    pub fn into_inner(self) -> HashMap<Cow<'x, str>, Cow<'x, str>> {
+        self.params
+    }
 }

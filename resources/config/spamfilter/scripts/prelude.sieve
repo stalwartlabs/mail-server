@@ -13,7 +13,7 @@ let "urls" "dedup(tokenize(header.subject, 'uri') + body_urls + html_body_urls)"
 # Obtain thread name and subject
 let "subject_lc" "to_lowercase(header.subject)";
 let "subject_clean" "thread_name(header.subject)";
-let "body_and_subject" "subject_clean + text_body";
+let "body_and_subject" "subject_clean + ' ' + text_body";
 
 # Obtain all recipients
 let "recipients" "to_lowercase(header.to:cc:bcc[*].addr[*])";

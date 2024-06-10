@@ -79,8 +79,16 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     let text = ctx.arguments[1].to_string();
     let is_spam = ctx.arguments[2].to_bool();
     if text.is_empty() {
+        tracing::debug!(
+            parent: span,
+            context = "sieve:bayes_train",
+            event = "failed",
+            reason = "Empty message",
+        );
         return false.into();
     }
+
+    let c = println!("training: {:?} {}", text, is_spam);
 
     // Train the model
     let mut model = BayesModel::default();
@@ -92,6 +100,12 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
         is_spam,
     );
     if model.weights.is_empty() {
+        tracing::debug!(
+            parent: span,
+            context = "sieve:bayes_train",
+            event = "failed",
+            reason = "No weights found",
+        );
         return false.into();
     }
 

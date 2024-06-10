@@ -50,7 +50,7 @@ impl SMTP {
             .core
             .sieve
             .trusted_runtime
-            .filter(params.message.as_ref().map_or(b"", |m| &m[..]))
+            .filter(params.message.unwrap_or_default())
             .with_vars_env(params.variables)
             .with_envelope_list(params.envelope)
             .with_user_address(&params.from_addr)

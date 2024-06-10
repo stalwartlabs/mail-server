@@ -29,6 +29,7 @@ pub mod queue;
 pub mod reload;
 pub mod report;
 pub mod settings;
+pub mod sieve;
 pub mod stores;
 
 use std::{borrow::Cow, sync::Arc};
@@ -89,6 +90,7 @@ impl JMAP {
             "logs" if is_superuser && req.method() == Method::GET => {
                 self.handle_view_logs(req).await
             }
+            "sieve" if is_superuser => self.handle_run_sieve(req, path, body).await,
             "restart" if is_superuser && req.method() == Method::GET => {
                 ManagementApiError::Unsupported {
                     details: "Restart is not yet supported".into(),

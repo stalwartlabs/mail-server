@@ -8,7 +8,7 @@ let "ADD_HEADER_SPAM_RESULT" "key_get('spam-config', 'add-spam-result')";
 let "AUTOLEARN_REPLIES_HAM" "key_get('spam-config', 'learn-ham-replies')";
 
 # Whether the bayes classifier should be trained automatically
-let "AUTOLEARN_ENABLE" "key_get('spam-config', 'learn-enable')";
+let "AUTOLEARN_ENABLE" "key_get('spam-config', 'learn-enable') && !env.test";
 
 # When to learn ham (score >= threshold)
 let "AUTOLEARN_HAM_THRESHOLD" "key_get('spam-config', 'learn-ham-threshold')";

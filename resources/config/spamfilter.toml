@@ -1,5 +1,5 @@
 [version]
-spam-filter = "1.0"
+spam-filter = "1.1"
 
 [sieve.trusted.scripts.spam-filter]
 name = "Spam Filter"
@@ -17,7 +17,7 @@ let "ADD_HEADER_SPAM_RESULT" "key_get('spam-config', 'add-spam-result')";
 let "AUTOLEARN_REPLIES_HAM" "key_get('spam-config', 'learn-ham-replies')";
 
 # Whether the bayes classifier should be trained automatically
-let "AUTOLEARN_ENABLE" "key_get('spam-config', 'learn-enable')";
+let "AUTOLEARN_ENABLE" "key_get('spam-config', 'learn-enable') && !env.test";
 
 # When to learn ham (score >= threshold)
 let "AUTOLEARN_HAM_THRESHOLD" "key_get('spam-config', 'learn-ham-threshold')";
@@ -61,7 +61,7 @@ let "urls" "dedup(tokenize(header.subject, 'uri') + body_urls + html_body_urls)"
 # Obtain thread name and subject
 let "subject_lc" "to_lowercase(header.subject)";
 let "subject_clean" "thread_name(header.subject)";
-let "body_and_subject" "subject_clean + text_body";
+let "body_and_subject" "subject_clean + ' ' + text_body";
 
 # Obtain all recipients
 let "recipients" "to_lowercase(header.to:cc:bcc[*].addr[*])";
@@ -2257,7 +2257,7 @@ while "i > 0" {
 
     if eval "is_empty(token_rep)" {
         # Set reputation
-        eval "key_set(SPAM_DB, token_id, [score, 1], 2592000)";
+        eval "!env.test && key_set(SPAM_DB, token_id, [score, 1], 2592000)";
         continue;
     }
 
@@ -2265,7 +2265,7 @@ while "i > 0" {
     let "token_score" "token_rep[0]";
     let "token_count" "token_rep[1]";
     let "updated_score" "(token_count + 1) * (score + 0.98 * token_score) / (0.98 * token_count + 1)";
-    eval "key_set(SPAM_DB, token_id, [updated_score, token_count + 1], 2592000)";
+    eval "!env.test && key_set(SPAM_DB, token_id, [updated_score, token_count + 1], 2592000)";
 
     # Assign weight
     let "weight" "";
@@ -2343,7 +2343,7 @@ let "ADD_HEADER_SPAM_RESULT" "key_get('spam-config', 'add-spam-result')";
 let "AUTOLEARN_REPLIES_HAM" "key_get('spam-config', 'learn-ham-replies')";
 
 # Whether the bayes classifier should be trained automatically
-let "AUTOLEARN_ENABLE" "key_get('spam-config', 'learn-enable')";
+let "AUTOLEARN_ENABLE" "key_get('spam-config', 'learn-enable') && !env.test";
 
 # When to learn ham (score >= threshold)
 let "AUTOLEARN_HAM_THRESHOLD" "key_get('spam-config', 'learn-ham-threshold')";
@@ -2403,7 +2403,7 @@ let "ADD_HEADER_SPAM_RESULT" "key_get('spam-config', 'add-spam-result')";
 let "AUTOLEARN_REPLIES_HAM" "key_get('spam-config', 'learn-ham-replies')";
 
 # Whether the bayes classifier should be trained automatically
-let "AUTOLEARN_ENABLE" "key_get('spam-config', 'learn-enable')";
+let "AUTOLEARN_ENABLE" "key_get('spam-config', 'learn-enable') && !env.test";
 
 # When to learn ham (score >= threshold)
 let "AUTOLEARN_HAM_THRESHOLD" "key_get('spam-config', 'learn-ham-threshold')";
@@ -2440,6 +2440,66 @@ if eval "!key_exists(SPAM_DB, triplet)" {
     eval "key_set(SPAM_DB, triplet, '', 2592000)";
     reject "422 4.2.2 Greylisted, please try again in a few moments.";
     stop;
+}
+
+'''
+
+[sieve.trusted.scripts.train]
+name = "Train Bayes Classifier"
+contents = '''
+
+#### Script config.sieve ####
+
+# Whether to add an X-Spam-Status header
+let "ADD_HEADER_SPAM" "key_get('spam-config', 'add-spam')";
+
+# Whether to add an X-Spam-Result header
+let "ADD_HEADER_SPAM_RESULT" "key_get('spam-config', 'add-spam-result')";
+
+# Whether message replies from authenticated users should be learned as ham
+let "AUTOLEARN_REPLIES_HAM" "key_get('spam-config', 'learn-ham-replies')";
+
+# Whether the bayes classifier should be trained automatically
+let "AUTOLEARN_ENABLE" "key_get('spam-config', 'learn-enable') && !env.test";
+
+# When to learn ham (score >= threshold)
+let "AUTOLEARN_HAM_THRESHOLD" "key_get('spam-config', 'learn-ham-threshold')";
+
+# When to learn spam (score <= threshold)
+let "AUTOLEARN_SPAM_THRESHOLD" "key_get('spam-config', 'learn-spam-threshold')";
+
+# Keep difference for spam/ham learns for at least this value
+let "AUTOLEARN_SPAM_HAM_BALANCE" "key_get('spam-config', 'learn-balance')";
+
+# If ADD_HEADER_SPAM is enabled, mark as SPAM messages with a score above this threshold
+let "SCORE_SPAM_THRESHOLD" "key_get('spam-config', 'threshold-spam')";
+
+# Discard messages with a score above this threshold
+let "SCORE_DISCARD_THRESHOLD" "key_get('spam-config', 'threshold-discard')";
+
+# Reject messages with a score above this threshold
+let "SCORE_REJECT_THRESHOLD" "key_get('spam-config', 'threshold-reject')";
+
+# Directory name to use for local domain lookups (leave empty for default)
+let "DOMAIN_DIRECTORY" "key_get('spam-config', 'directory')";
+
+# Store to use for Bayes tokens and ids (leave empty for default)
+let "SPAM_DB" "key_get('spam-config', 'lookup')";
+
+
+#### Script train.sieve ####
+
+
+
+# Obtain thread name and subject
+let "contents" "thread_name(header.subject) + ' ' + body.to_text";
+
+if eval "env.train == 'spam'" {
+    eval "bayes_train(SPAM_DB, contents, true)";
+} elsif eval "env.train == 'ham'" {
+    eval "bayes_train(SPAM_DB, contents, false)";
+} else {
+    reject "Missing variable 'train'";
 }
 
 '''

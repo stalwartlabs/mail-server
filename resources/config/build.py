@@ -37,12 +37,17 @@ scripts = {
     "greylist": [
                 "config.sieve",
                 "greylist.sieve"
+    ],
+    "train": [
+                "config.sieve",
+                "train.sieve"
     ]
 }
 script_names = {
     "spam-filter" : "Spam Filter",
     "track-replies" : "Track Replies",
-    "greylist" : "Greylisting"
+    "greylist" : "Greylisting",
+    "train": "Train Bayes Classifier"
 }
 
 maps = ["spam_config.map",
@@ -69,7 +74,7 @@ def read_file(file):
         return f.read() + "\n"
 
 def build_spam_filters(scripts):
-    spam_filter = "[version]\nspam-filter = \"1.0\"\n\n"
+    spam_filter = "[version]\nspam-filter = \"1.1\"\n\n"
     for script_name, file_list in scripts.items():
         script_content = read_and_concatenate(file_list).replace("'''", "\\'\\'\\'")
         script_description = script_names[script_name]
