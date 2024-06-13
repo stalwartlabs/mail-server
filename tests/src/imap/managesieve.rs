@@ -48,6 +48,7 @@ pub async fn test() {
     sieve
         .send("AUTHENTICATE \"PLAIN\" \"AGpkb2VAZXhhbXBsZS5jb20Ac2VjcmV0\"")
         .await;
+    sieve.assert_read(ResponseType::Ok).await;
     sieve
         .assert_read(ResponseType::Ok)
         .await

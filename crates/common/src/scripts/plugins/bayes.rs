@@ -88,8 +88,6 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
         return false.into();
     }
 
-    let c = println!("training: {:?} {}", text, is_spam);
-
     // Train the model
     let mut model = BayesModel::default();
     model.train(
