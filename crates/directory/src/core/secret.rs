@@ -109,6 +109,43 @@ async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> bool {
     }
 }
 
+/// Converts FreeIPA' Password hashing convention into something readable by Stalwart
+/// Because the hash length isn't included, it is defined to 64.
+///
+/// # Arguments
+///
+/// * `algo`: The algorithm found between curly braces
+/// * `hashed_secret`: The hashed secret (without the algorithm at the beginning)
+///
+/// returns: A more conventional hashed password
+///
+/// # Examples
+///
+/// ```
+/// use directory::core::secret::hash_braces_converter;
+/// let sanitized_hash = hash_braces_converter("PBKDF2-SHA256", "1000$azjfzojezoezjl$zeiezjpezpiezfpifezj");
+///
+/// assert_eq!("$pbkdf-sha256$i=1000,l=64$azjfzojezoezjl$zeiezjpezpiezfpifezj", sanitized_hash);
+///
+/// ```
+///
+/// ```
+pub async fn hash_braces_converter(algo: &str, hashed_secret: &str) -> String {
+    let simplified_hash;
+
+    // Remove the trailing newline in base64
+    if hashed_secret.ends_with("==") {
+        simplified_hash = hashed_secret.strip_suffix("==").unwrap();
+    } else { simplified_hash = hashed_secret; }
+
+    // Get the iterator
+    let Some((iterations,hashed_data)) = simplified_hash.split_once("$")
+    else { return simplified_hash.to_string(); };
+
+    // Reformat
+    return format!("${}$i={},l=64${}", algo.to_ascii_lowercase().as_str(), iterations, hashed_data);
+}
+
 pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
     if hashed_secret.starts_with('$') {
         verify_hash_prefix(hashed_secret, secret).await
@@ -118,8 +155,16 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> bool {
     } else if let Some(hashed_secret) = hashed_secret.strip_prefix('{') {
         if let Some((algo, hashed_secret)) = hashed_secret.split_once('}') {
             match algo {
-                "ARGON2" | "ARGON2I" | "ARGON2ID" | "PBKDF2" => {
-                    verify_hash_prefix(hashed_secret, secret).await
+                "ARGON2" | "ARGON2I" | "ARGON2ID" | "PBKDF2" | _ if algo.starts_with("PBKDF2-") => {
+                    // Use a different behavior if the password hash is in a FreeIPA-like convention
+                    if !hashed_secret.contains(",")
+                        && hashed_secret.chars().filter(|&ch| ch == '$').count() == 2
+                    {
+                        let final_hash = hash_braces_converter(algo, hashed_secret).await;
+                        verify_hash_prefix(final_hash.as_str(), secret).await
+                    } else {
+                        verify_hash_prefix(hashed_secret, secret).await
+                    }
                 }
                 "SHA" => {
                     // SHA-1
