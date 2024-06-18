@@ -23,7 +23,10 @@
 
 use std::borrow::Cow;
 
-use common::{config::smtp::session::Milter, listener::SessionStream};
+use common::{
+    config::smtp::session::{Milter, Stage},
+    listener::SessionStream,
+};
 use mail_auth::AuthenticatedMessage;
 use smtp_proto::request::parser::Rfc5321Parser;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -45,21 +48,23 @@ enum Rejection {
 impl<T: SessionStream> Session<T> {
     pub async fn run_milters(
         &self,
-        message: &AuthenticatedMessage<'_>,
+        stage: Stage,
+        message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, Cow<'static, [u8]>> {
-        let milters = &self.core.core.smtp.session.data.milters;
+        let milters = &self.core.core.smtp.session.milters;
         if milters.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut modifications = Vec::new();
         for milter in milters {
-            if !self
-                .core
-                .core
-                .eval_if(&milter.enable, self)
-                .await
-                .unwrap_or(false)
+            if !milter.run_on_stage.contains(&stage)
+                || !self
+                    .core
+                    .core
+                    .eval_if(&milter.enable, self)
+                    .await
+                    .unwrap_or(false)
             {
                 continue;
             }
@@ -132,7 +137,7 @@ impl<T: SessionStream> Session<T> {
     async fn connect_and_run(
         &self,
         milter: &Milter,
-        message: &AuthenticatedMessage<'_>,
+        message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, Rejection> {
         // Build client
         let client = MilterClient::connect(milter, self.span.clone()).await?;
@@ -159,7 +164,7 @@ impl<T: SessionStream> Session<T> {
     async fn run<S: AsyncRead + AsyncWrite + Unpin>(
         &self,
         mut client: MilterClient<S>,
-        message: &AuthenticatedMessage<'_>,
+        message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, Rejection> {
         // Option negotiation
         client.init().await?;
@@ -187,65 +192,74 @@ impl<T: SessionStream> Session<T> {
             .assert_continue()?;
 
         // EHLO/HELO
-        let (tls_version, tls_ciper) = self.stream.tls_version_and_cipher();
+        let (tls_version, tls_cipher) = self.stream.tls_version_and_cipher();
         client
             .helo(
                 &self.data.helo_domain,
                 Macros::new()
-                    .with_cipher(tls_ciper.as_ref())
+                    .with_cipher(tls_cipher.as_ref())
                     .with_tls_version(tls_version.as_ref()),
             )
             .await?
             .assert_continue()?;
 
         // Mail from
-        let addr = &self.data.mail_from.as_ref().unwrap().address_lcase;
-        client
-            .mail_from(
-                &format!("<{addr}>"),
-                None::<&[&str]>,
-                Macros::new()
-                    .with_mail_address(addr)
-                    .with_sasl_login_name(&self.data.authenticated_as),
-            )
-            .await?
-            .assert_continue()?;
-
-        // Rcpt to
-        for rcpt in &self.data.rcpt_to {
+        if let Some(mail_from) = &self.data.mail_from {
+            let addr = &mail_from.address_lcase;
             client
-                .rcpt_to(
-                    &format!("<{}>", rcpt.address_lcase),
+                .mail_from(
+                    &format!("<{addr}>"),
                     None::<&[&str]>,
-                    Macros::new().with_rcpt_address(&rcpt.address_lcase),
+                    Macros::new()
+                        .with_mail_address(addr)
+                        .with_sasl_login_name(&self.data.authenticated_as),
                 )
                 .await?
                 .assert_continue()?;
+
+            // Rcpt to
+            for rcpt in &self.data.rcpt_to {
+                client
+                    .rcpt_to(
+                        &format!("<{}>", rcpt.address_lcase),
+                        None::<&[&str]>,
+                        Macros::new().with_rcpt_address(&rcpt.address_lcase),
+                    )
+                    .await?
+                    .assert_continue()?;
+            }
         }
 
-        // Data
-        client.data().await?.assert_continue()?;
+        if let Some(message) = message {
+            // Data
+            client.data().await?.assert_continue()?;
 
-        // Headers
-        client
-            .headers(message.raw_parsed_headers().iter().map(|(k, v)| {
-                (
-                    std::str::from_utf8(k).unwrap_or_default(),
-                    std::str::from_utf8(v).unwrap_or_default(),
-                )
-            }))
-            .await?
-            .assert_continue()?;
+            // Headers
+            client
+                .headers(message.raw_parsed_headers().iter().map(|(k, v)| {
+                    (
+                        std::str::from_utf8(k).unwrap_or_default(),
+                        std::str::from_utf8(v).unwrap_or_default(),
+                    )
+                }))
+                .await?
+                .assert_continue()?;
 
-        // Message body
-        let (action, modifications) = client.body(message.raw_message()).await?;
-        action.assert_continue()?;
+            // Message body
+            let (action, modifications) = client.body(message.raw_message()).await?;
+            action.assert_continue()?;
 
-        // Quit
-        let _ = client.quit().await;
+            // Quit
+            let _ = client.quit().await;
 
-        // Return modifications
-        Ok(modifications)
+            // Return modifications
+            Ok(modifications)
+        } else {
+            // Quit
+            let _ = client.quit().await;
+
+            Ok(Vec::new())
+        }
     }
 }
 

@@ -3,6 +3,7 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashSet;
 use smtp_proto::*;
 use utils::config::{utils::ParseValue, Config};
 
@@ -30,6 +31,9 @@ pub struct SessionConfig {
     pub data: Data,
     pub extensions: Extensions,
     pub mta_sts_policy: Option<Policy>,
+
+    pub milters: Vec<Milter>,
+    pub jmilters: Vec<JMilter>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -114,7 +118,6 @@ pub enum AddressMapping {
 pub struct Data {
     pub script: IfBlock,
     pub pipe_commands: Vec<Pipe>,
-    pub milters: Vec<Milter>,
 
     // Limits
     pub max_messages: IfBlock,
@@ -154,12 +157,33 @@ pub struct Milter {
     pub protocol_version: MilterVersion,
     pub flags_actions: Option<u32>,
     pub flags_protocol: Option<u32>,
+    pub run_on_stage: AHashSet<Stage>,
 }
 
 #[derive(Clone, Copy)]
 pub enum MilterVersion {
     V2,
     V6,
+}
+
+#[derive(Clone)]
+pub struct JMilter {
+    pub enable: IfBlock,
+    pub url: String,
+    pub timeout: Duration,
+    pub tls_allow_invalid_certs: bool,
+    pub tempfail_on_error: bool,
+    pub run_on_stage: AHashSet<Stage>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Stage {
+    Connect,
+    Ehlo,
+    Auth,
+    Mail,
+    Rcpt,
+    Data,
 }
 
 impl SessionConfig {
@@ -174,12 +198,19 @@ impl SessionConfig {
         let mut session = SessionConfig::default();
         session.rcpt.catch_all = AddressMapping::parse(config, "session.rcpt.catch-all");
         session.rcpt.subaddressing = AddressMapping::parse(config, "session.rcpt.sub-addressing");
-        session.data.milters = config
-            .sub_keys("session.data.milter", "")
+        session.milters = config
+            .sub_keys("session.milter", "")
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
             .into_iter()
             .filter_map(|id| parse_milter(config, &id, &has_rcpt_vars))
+            .collect();
+        session.jmilters = config
+            .sub_keys("session.jmilter", "")
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|id| parse_jmilter(config, &id, &has_rcpt_vars))
             .collect();
         session.data.pipe_commands = config
             .sub_keys("session.data.pipe", "")
@@ -479,19 +510,19 @@ fn parse_pipe(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Pip
 
 fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Milter> {
     let hostname = config
-        .value_require(("session.data.milter", id, "hostname"))?
+        .value_require(("session.milter", id, "hostname"))?
         .to_string();
-    let port = config.property_require(("session.data.milter", id, "port"))?;
+    let port = config.property_require(("session.milter", id, "port"))?;
     Some(Milter {
-        enable: IfBlock::try_parse(config, ("session.data.milter", id, "enable"), token_map)
+        enable: IfBlock::try_parse(config, ("session.milter", id, "enable"), token_map)
             .unwrap_or_else(|| {
-                IfBlock::new::<()>(format!("session.data.milter.{id}.enable"), [], "false")
+                IfBlock::new::<()>(format!("session.milter.{id}.enable"), [], "false")
             }),
         addrs: format!("{}:{}", hostname, port)
             .to_socket_addrs()
             .map_err(|err| {
                 config.new_build_error(
-                    ("session.data.milter", id, "hostname"),
+                    ("session.milter", id, "hostname"),
                     format!("Unable to resolve milter hostname {hostname}: {err}"),
                 )
             })
@@ -500,49 +531,103 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
         hostname,
         port,
         timeout_connect: config
-            .property_or_default(("session.data.milter", id, "timeout.connect"), "30s")
+            .property_or_default(("session.milter", id, "timeout.connect"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30)),
         timeout_command: config
-            .property_or_default(("session.data.milter", id, "timeout.command"), "30s")
+            .property_or_default(("session.milter", id, "timeout.command"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30)),
         timeout_data: config
-            .property_or_default(("session.data.milter", id, "timeout.data"), "60s")
+            .property_or_default(("session.milter", id, "timeout.data"), "60s")
             .unwrap_or_else(|| Duration::from_secs(60)),
         tls: config
-            .property_or_default(("session.data.milter", id, "tls"), "false")
+            .property_or_default(("session.milter", id, "tls"), "false")
             .unwrap_or_default(),
         tls_allow_invalid_certs: config
-            .property_or_default(("session.data.milter", id, "allow-invalid-certs"), "false")
+            .property_or_default(("session.milter", id, "allow-invalid-certs"), "false")
             .unwrap_or_default(),
         tempfail_on_error: config
-            .property_or_default(
-                ("session.data.milter", id, "options.tempfail-on-error"),
-                "true",
-            )
+            .property_or_default(("session.milter", id, "options.tempfail-on-error"), "true")
             .unwrap_or(true),
         max_frame_len: config
             .property_or_default(
-                ("session.data.milter", id, "options.max-response-size"),
+                ("session.milter", id, "options.max-response-size"),
                 "52428800",
             )
             .unwrap_or(52428800),
         protocol_version: match config
-            .property_or_default::<u32>(("session.data.milter", id, "options.version"), "6")
+            .property_or_default::<u32>(("session.milter", id, "options.version"), "6")
             .unwrap_or(6)
         {
             6 => MilterVersion::V6,
             2 => MilterVersion::V2,
             v => {
                 config.new_parse_error(
-                    ("session.data.milter", id, "options.version"),
+                    ("session.milter", id, "options.version"),
                     format!("Unsupported milter protocol version {v}"),
                 );
                 MilterVersion::V6
             }
         },
-        flags_actions: config.property(("session.data.milter", id, "options.flags.actions")),
-        flags_protocol: config.property(("session.data.milter", id, "options.flags.protocol")),
+        flags_actions: config.property(("session.milter", id, "options.flags.actions")),
+        flags_protocol: config.property(("session.milter", id, "options.flags.protocol")),
+        run_on_stage: parse_stages(config, "session.milter", id),
     })
+}
+
+fn parse_jmilter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<JMilter> {
+    Some(JMilter {
+        enable: IfBlock::try_parse(config, ("session.jmilter", id, "enable"), token_map)
+            .unwrap_or_else(|| {
+                IfBlock::new::<()>(format!("session.jmilter.{id}.enable"), [], "false")
+            }),
+        url: config
+            .value_require(("session.jmilter", id, "hostname"))?
+            .to_string(),
+        timeout: config
+            .property_or_default(("session.jmilter", id, "timeout"), "30s")
+            .unwrap_or_else(|| Duration::from_secs(30)),
+        tls_allow_invalid_certs: config
+            .property_or_default(("session.jmilter", id, "allow-invalid-certs"), "false")
+            .unwrap_or_default(),
+        tempfail_on_error: config
+            .property_or_default(("session.jmilter", id, "options.tempfail-on-error"), "true")
+            .unwrap_or(true),
+        run_on_stage: parse_stages(config, "session.jmilter", id),
+    })
+}
+
+fn parse_stages(config: &mut Config, prefix: &str, id: &str) -> AHashSet<Stage> {
+    let mut stages = AHashSet::default();
+    let mut invalid = Vec::new();
+    for (_, value) in config.values((prefix, id, "stages")) {
+        let value = value.to_ascii_lowercase();
+        let state = match value.as_str() {
+            "connect" => Stage::Connect,
+            "ehlo" => Stage::Ehlo,
+            "auth" => Stage::Auth,
+            "mail" => Stage::Mail,
+            "rcpt" => Stage::Rcpt,
+            "data" => Stage::Data,
+            _ => {
+                invalid.push(value);
+                continue;
+            }
+        };
+        stages.insert(state);
+    }
+
+    if !invalid.is_empty() {
+        config.new_parse_error(
+            (prefix, id, "stages"),
+            format!("Invalid stages: {}", invalid.join(", ")),
+        );
+    }
+
+    if stages.is_empty() {
+        stages.insert(Stage::Data);
+    }
+
+    stages
 }
 
 impl Default for SessionConfig {
@@ -640,7 +725,6 @@ impl Default for SessionConfig {
                     "'track-replies'",
                 ),
                 pipe_commands: Default::default(),
-                milters: Default::default(),
                 max_messages: IfBlock::new::<()>("session.data.limits.messages", [], "10"),
                 max_message_size: IfBlock::new::<()>("session.data.limits.size", [], "104857600"),
                 max_received_headers: IfBlock::new::<()>(
@@ -716,6 +800,8 @@ impl Default for SessionConfig {
                 ),
             },
             mta_sts_policy: None,
+            milters: Default::default(),
+            jmilters: Default::default(),
         }
     }
 }

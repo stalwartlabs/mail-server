@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use common::{listener::SessionStream, scripts::ScriptModification};
+use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
 use smtp_proto::{
     RcptTo, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
@@ -85,7 +85,17 @@ impl<T: SessionStream> Session<T> {
             .and_then(|name| self.core.core.get_sieve_script(&name))
             .cloned();
 
-        if rcpt_script.is_some() || !self.core.core.smtp.session.rcpt.rewrite.is_empty() {
+        if rcpt_script.is_some()
+            || !self.core.core.smtp.session.rcpt.rewrite.is_empty()
+            || self
+                .core
+                .core
+                .smtp
+                .session
+                .milters
+                .iter()
+                .any(|m| m.run_on_stage.contains(&Stage::Rcpt))
+        {
             // Sieve filtering
             if let Some(script) = rcpt_script {
                 match self
@@ -119,6 +129,18 @@ impl<T: SessionStream> Session<T> {
                     }
                     _ => (),
                 }
+            }
+
+            // Milter filtering
+            if let Err(message) = self.run_milters(Stage::Rcpt, None).await {
+                tracing::info!(parent: &self.span,
+                    context = "milter",
+                    event = "reject",
+                    address = self.data.rcpt_to.last().unwrap().address,
+                    reason = std::str::from_utf8(message.as_ref()).unwrap_or_default());
+
+                self.data.rcpt_to.pop();
+                return self.write(message.as_ref()).await;
             }
 
             // Address rewriting

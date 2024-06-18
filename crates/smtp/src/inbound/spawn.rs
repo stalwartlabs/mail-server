@@ -23,7 +23,10 @@
 
 use std::time::Instant;
 
-use common::listener::{self, SessionManager, SessionStream};
+use common::{
+    config::smtp::session::Stage,
+    listener::{self, SessionManager, SessionStream},
+};
 use tokio_rustls::server::TlsStream;
 
 use crate::{
@@ -116,6 +119,16 @@ impl<T: SessionStream> Session<T> {
                 let _ = self.write(message.as_bytes()).await;
                 return false;
             }
+        }
+
+        // Milter filtering
+        if let Err(message) = self.run_milters(Stage::Connect, None).await {
+            tracing::debug!(parent: &self.span,
+                context = "connext",
+                event = "milter-reject",
+                reason = std::str::from_utf8(message.as_ref()).unwrap_or_default());
+            let _ = self.write(message.as_ref()).await;
+            return false;
         }
 
         // Obtain hostname

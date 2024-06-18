@@ -24,7 +24,10 @@
 use std::time::{Duration, SystemTime};
 
 use crate::{core::Session, scripts::ScriptResult};
-use common::{config::smtp::session::Mechanism, listener::SessionStream};
+use common::{
+    config::smtp::session::{Mechanism, Stage},
+    listener::SessionStream,
+};
 use mail_auth::spf::verify::HasLabels;
 use smtp_proto::*;
 
@@ -100,6 +103,20 @@ impl<T: SessionStream> Session<T> {
                     self.data.spf_ehlo = None;
                     return self.write(message.as_bytes()).await;
                 }
+            }
+
+            // Milter filtering
+            if let Err(message) = self.run_milters(Stage::Ehlo, None).await {
+                tracing::info!(parent: &self.span,
+                    context = "milter",
+                    event = "reject",
+                    domain = &self.data.helo_domain,
+                    reason = std::str::from_utf8(message.as_ref()).unwrap_or_default());
+
+                self.data.mail_from = None;
+                self.data.helo_domain = prev_helo_domain;
+                self.data.spf_ehlo = None;
+                return self.write(message.as_ref()).await;
             }
 
             tracing::debug!(parent: &self.span,

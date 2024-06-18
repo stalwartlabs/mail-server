@@ -23,8 +23,9 @@
 
 use std::{fs, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
+use ahash::AHashSet;
 use common::{
-    config::smtp::session::{Milter, MilterVersion},
+    config::smtp::session::{Milter, MilterVersion, Stage},
     expr::if_block::IfBlock,
     Core,
 };
@@ -73,7 +74,7 @@ path = "{TMP}/queue.db"
 [session.rcpt]
 relay = true
 
-[[session.data.milter]]
+[[session.milter]]
 hostname = "127.0.0.1"
 port = 9332
 #port = 11332
@@ -81,6 +82,7 @@ port = 9332
 enable = true
 options.version = 6
 tls = false
+stages = ["data"]
 
 "#;
 
@@ -419,6 +421,7 @@ async fn milter_client_test() {
             protocol_version: MilterVersion::V6,
             flags_actions: None,
             flags_protocol: None,
+            run_on_stage: AHashSet::from([Stage::Data]),
         },
         tracing::span!(tracing::Level::TRACE, "hi"),
     )

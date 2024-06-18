@@ -23,7 +23,7 @@
 
 use std::time::{Duration, SystemTime};
 
-use common::{listener::SessionStream, scripts::ScriptModification};
+use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
 use mail_auth::{IprevOutput, IprevResult, SpfOutput, SpfResult};
 use smtp_proto::{MailFrom, MtPriority, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
 use utils::config::Rate;
@@ -165,6 +165,18 @@ impl<T: SessionStream> Session<T> {
                 }
                 _ => (),
             }
+        }
+
+        // Milter filtering
+        if let Err(message) = self.run_milters(Stage::Mail, None).await {
+            tracing::info!(parent: &self.span,
+                context = "milter",
+                event = "reject",
+                address = &self.data.mail_from.as_ref().unwrap().address,
+                reason = std::str::from_utf8(message.as_ref()).unwrap_or_default());
+
+            self.data.mail_from = None;
+            return self.write(message.as_ref()).await;
         }
 
         // Address rewriting
