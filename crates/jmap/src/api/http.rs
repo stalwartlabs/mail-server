@@ -340,6 +340,13 @@ impl JMAP {
                         .await;
                 }
             }
+            "robots.txt" => {
+                return Resource {
+                    content_type: "text/plain",
+                    contents: b"User-agent: *\nDisallow: /\n".to_vec(),
+                }
+                .into_http_response();
+            }
             _ => {
                 let path = req.uri().path();
                 return match self
