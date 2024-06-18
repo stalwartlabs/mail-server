@@ -173,10 +173,22 @@ impl<T: SessionStream> Session<T> {
                 context = "milter",
                 event = "reject",
                 address = &self.data.mail_from.as_ref().unwrap().address,
-                reason = std::str::from_utf8(message.as_ref()).unwrap_or_default());
+                reason = message.message.as_ref());
 
             self.data.mail_from = None;
-            return self.write(message.as_ref()).await;
+            return self.write(message.message.as_bytes()).await;
+        }
+
+        // JMilter filtering
+        if let Err(message) = self.run_jmilters(Stage::Mail, None).await {
+            tracing::info!(parent: &self.span,
+                            context = "jmilter",
+                            event = "reject",
+                            address = &self.data.mail_from.as_ref().unwrap().address,
+                            reason = message.message.as_ref());
+
+            self.data.mail_from = None;
+            return self.write(message.message.as_bytes()).await;
         }
 
         // Address rewriting

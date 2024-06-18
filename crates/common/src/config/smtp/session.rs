@@ -1,9 +1,12 @@
 use std::{
     net::{SocketAddr, ToSocketAddrs},
+    str::FromStr,
     time::Duration,
 };
 
 use ahash::AHashSet;
+use base64::{engine::general_purpose::STANDARD, Engine};
+use hyper::{header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE}, HeaderMap};
 use smtp_proto::*;
 use utils::config::{utils::ParseValue, Config};
 
@@ -171,6 +174,7 @@ pub struct JMilter {
     pub enable: IfBlock,
     pub url: String,
     pub timeout: Duration,
+    pub headers: HeaderMap,
     pub tls_allow_invalid_certs: bool,
     pub tempfail_on_error: bool,
     pub run_on_stage: AHashSet<Stage>,
@@ -575,13 +579,52 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
 }
 
 fn parse_jmilter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<JMilter> {
+    let mut headers = HeaderMap::new();
+
+    for (header, value) in config
+        .values(("session.jmilter", id, "headers"))
+        .map(|(_, v)| {
+            if let Some((k, v)) = v.split_once(':') {
+                Ok((
+                    HeaderName::from_str(k.trim()).map_err(|err| {
+                        format!(
+                            "Invalid header found in property \"session.jmilter.{id}.headers\": {err}",
+                            
+                        )
+                    })?,
+                    HeaderValue::from_str(v.trim()).map_err(|err| {
+                        format!(
+                            "Invalid header found in property \"session.jmilter.{id}.headers\": {err}",
+                           
+                        )
+                    })?,
+                ))
+            } else {
+                Err(format!(
+                    "Invalid header found in property \"session.jmilter.{id}.headers\": {v}",
+                    
+                ))
+            }
+        })
+        .collect::<Result<Vec<(HeaderName, HeaderValue)>, String>>()
+        .map_err(|e| config.new_parse_error(("session.jmilter", id, "headers"), e))
+        .unwrap_or_default()
+    {
+        headers.insert(header, value);
+    }
+
+    headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+    if let (Some(name), Some(secret)) = (config.value(("session.jmilter", id, "user")), config.value(("session.jmilter", id, "secret"))) {
+        headers.insert(AUTHORIZATION, format!("Basic {}", STANDARD.encode(format!("{}:{}", name, secret))).parse().unwrap());
+    }
+
     Some(JMilter {
         enable: IfBlock::try_parse(config, ("session.jmilter", id, "enable"), token_map)
             .unwrap_or_else(|| {
                 IfBlock::new::<()>(format!("session.jmilter.{id}.enable"), [], "false")
             }),
         url: config
-            .value_require(("session.jmilter", id, "hostname"))?
+            .value_require(("session.jmilter", id, "url"))?
             .to_string(),
         timeout: config
             .property_or_default(("session.jmilter", id, "timeout"), "30s")
@@ -593,6 +636,7 @@ fn parse_jmilter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<
             .property_or_default(("session.jmilter", id, "options.tempfail-on-error"), "true")
             .unwrap_or(true),
         run_on_stage: parse_stages(config, "session.jmilter", id),
+        headers,
     })
 }
 

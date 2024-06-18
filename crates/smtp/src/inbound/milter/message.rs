@@ -28,12 +28,12 @@ use common::{
     listener::SessionStream,
 };
 use mail_auth::AuthenticatedMessage;
-use smtp_proto::request::parser::Rfc5321Parser;
+use smtp_proto::{request::parser::Rfc5321Parser, IntoString};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
     core::{Session, SessionAddress, SessionData},
-    inbound::milter::MilterClient,
+    inbound::{milter::MilterClient, FilterResponse},
     queue::DomainPart,
     DAEMON_NAME,
 };
@@ -50,7 +50,7 @@ impl<T: SessionStream> Session<T> {
         &self,
         stage: Stage,
         message: Option<&AuthenticatedMessage<'_>>,
-    ) -> Result<Vec<Modification>, Cow<'static, [u8]>> {
+    ) -> Result<Vec<Modification>, FilterResponse> {
         let milters = &self.core.core.smtp.session.milters;
         if milters.is_empty() {
             return Ok(Vec::new());
@@ -74,7 +74,13 @@ impl<T: SessionStream> Session<T> {
                     if !modifications.is_empty() {
                         // The message body can only be replaced once, so we need to remove
                         // any previous replacements.
-                        modifications.retain(|m| !matches!(m, Modification::ReplaceBody { .. }));
+                        if new_modifications
+                            .iter()
+                            .any(|m| matches!(m, Modification::ReplaceBody { .. }))
+                        {
+                            modifications
+                                .retain(|m| !matches!(m, Modification::ReplaceBody { .. }));
+                        }
                         modifications.extend(new_modifications);
                     } else {
                         modifications = new_modifications;
@@ -91,13 +97,9 @@ impl<T: SessionStream> Session<T> {
                         "Milter rejected message.");
 
                     return Err(match action {
-                        Action::Discard => {
-                            (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into()
-                        }
-                        Action::Reject => (b"503 5.5.3 Message rejected.\r\n"[..]).into(),
-                        Action::TempFail => {
-                            (b"451 4.3.5 Unable to accept message at this time.\r\n"[..]).into()
-                        }
+                        Action::Discard => FilterResponse::accept(),
+                        Action::Reject => FilterResponse::reject(),
+                        Action::TempFail => FilterResponse::temp_fail(),
                         Action::ReplyCode { code, text } => {
                             let mut response = Vec::with_capacity(text.len() + 6);
                             response.extend_from_slice(code.as_slice());
@@ -106,10 +108,13 @@ impl<T: SessionStream> Session<T> {
                             if !text.ends_with('\n') {
                                 response.extend_from_slice(b"\r\n");
                             }
-                            response.into()
+                            FilterResponse {
+                                message: response.into_string().into(),
+                                disconnect: false,
+                            }
                         }
-                        Action::Shutdown => (b"421 4.3.0 Server shutting down.\r\n"[..]).into(),
-                        Action::ConnectionFailure => (b""[..]).into(), // TODO: Not very elegant design, fix.
+                        Action::Shutdown => FilterResponse::shutdown(),
+                        Action::ConnectionFailure => FilterResponse::default().disconnect(),
                         Action::Accept | Action::Continue => unreachable!(),
                     });
                 }
@@ -123,9 +128,7 @@ impl<T: SessionStream> Session<T> {
                         reason = ?err,
                         "Milter filter failed");
                     if milter.tempfail_on_error {
-                        return Err(
-                            (b"451 4.3.5 Unable to accept message at this time.\r\n"[..]).into(),
-                        );
+                        return Err(FilterResponse::server_failure());
                     }
                 }
             }

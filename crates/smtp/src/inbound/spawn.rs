@@ -124,10 +124,20 @@ impl<T: SessionStream> Session<T> {
         // Milter filtering
         if let Err(message) = self.run_milters(Stage::Connect, None).await {
             tracing::debug!(parent: &self.span,
-                context = "connext",
+                context = "connect",
                 event = "milter-reject",
-                reason = std::str::from_utf8(message.as_ref()).unwrap_or_default());
-            let _ = self.write(message.as_ref()).await;
+                reason = message.message.as_ref());
+            let _ = self.write(message.message.as_bytes()).await;
+            return false;
+        }
+
+        // JMilter filtering
+        if let Err(message) = self.run_jmilters(Stage::Connect, None).await {
+            tracing::debug!(parent: &self.span,
+                context = "connect",
+                event = "jmilter-reject",
+                reason = message.message.as_ref());
+            let _ = self.write(message.message.as_bytes()).await;
             return false;
         }
 

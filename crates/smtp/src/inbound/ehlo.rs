@@ -111,12 +111,26 @@ impl<T: SessionStream> Session<T> {
                     context = "milter",
                     event = "reject",
                     domain = &self.data.helo_domain,
-                    reason = std::str::from_utf8(message.as_ref()).unwrap_or_default());
+                    reason = message.message.as_ref());
 
                 self.data.mail_from = None;
                 self.data.helo_domain = prev_helo_domain;
                 self.data.spf_ehlo = None;
-                return self.write(message.as_ref()).await;
+                return self.write(message.message.as_bytes()).await;
+            }
+
+            // JMilter filtering
+            if let Err(message) = self.run_jmilters(Stage::Ehlo, None).await {
+                tracing::info!(parent: &self.span,
+                                context = "jmilter",
+                                event = "reject",
+                                domain = &self.data.helo_domain,
+                                reason = message.message.as_ref());
+
+                self.data.mail_from = None;
+                self.data.helo_domain = prev_helo_domain;
+                self.data.spf_ehlo = None;
+                return self.write(message.message.as_bytes()).await;
             }
 
             tracing::debug!(parent: &self.span,

@@ -27,16 +27,23 @@ use ahash::AHashSet;
 use common::{
     config::smtp::session::{Milter, MilterVersion, Stage},
     expr::if_block::IfBlock,
+    manager::webadmin::Resource,
     Core,
 };
+use hyper::{body, server::conn::http1, service::service_fn};
+use hyper_util::rt::TokioIo;
+use jmap::api::http::{fetch_body, ToHttpResponse};
 use mail_auth::AuthenticatedMessage;
 use mail_parser::MessageParser;
 use serde::Deserialize;
 use smtp::{
     core::{Inner, Session, SessionData},
-    inbound::milter::{
-        receiver::{FrameResult, Receiver},
-        Action, Command, Macros, MilterClient, Modification, Options, Response,
+    inbound::{
+        jmilter::{self, Request, SmtpResponse},
+        milter::{
+            receiver::{FrameResult, Receiver},
+            Action, Command, Macros, MilterClient, Modification, Options, Response,
+        },
     },
 };
 use store::Stores;
@@ -60,7 +67,7 @@ struct HeaderTest {
     result: String,
 }
 
-const CONFIG: &str = r#"
+const CONFIG_MILTER: &str = r#"
 [storage]
 data = "sqlite"
 lookup = "sqlite"
@@ -86,6 +93,26 @@ stages = ["data"]
 
 "#;
 
+const CONFIG_JMILTER: &str = r#"
+[storage]
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
+
+[session.rcpt]
+relay = true
+
+[[session.jmilter]]
+url = "http://127.0.0.1:9333"
+enable = true
+stages = ["data"]
+"#;
+
 #[tokio::test]
 async fn milter_session() {
     // Enable logging
@@ -99,10 +126,143 @@ async fn milter_session() {
 
     // Configure tests
     let tmp_dir = TempDir::new("smtp_milter_test", true);
-    let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
+    let mut config = Config::new(tmp_dir.update_config(CONFIG_MILTER)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let _rx = spawn_mock_milter_server();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut inner = Inner::default();
+    let mut qr = inner.init_test_queue(&core);
+
+    // Build session
+    let mut session = Session::test(build_smtp(core, inner));
+    session.data.remote_ip_str = "10.0.0.1".to_string();
+    session.eval_session_params().await;
+    session.ehlo("mx.doe.org").await;
+
+    // Test reject
+    session
+        .send_message(
+            "reject@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "503 5.5.3",
+        )
+        .await;
+    qr.assert_no_events();
+
+    // Test discard
+    session
+        .send_message(
+            "discard@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "250 2.0.0",
+        )
+        .await;
+    qr.assert_no_events();
+
+    // Test temp fail
+    session
+        .send_message(
+            "temp_fail@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "451 4.3.5",
+        )
+        .await;
+    qr.assert_no_events();
+
+    // Test shutdown
+    session
+        .send_message(
+            "shutdown@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "421 4.3.0",
+        )
+        .await;
+    qr.assert_no_events();
+
+    // Test reply code
+    session
+        .send_message(
+            "reply_code@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "321",
+        )
+        .await;
+    qr.assert_no_events();
+
+    // Test accept with header addition
+    session
+        .send_message(
+            "0@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "250 2.0.0",
+        )
+        .await;
+    qr.expect_message()
+        .await
+        .read_lines(&qr)
+        .await
+        .assert_contains("X-Hello: World")
+        .assert_contains("Subject: Is dinner ready?")
+        .assert_contains("Are you hungry yet?");
+
+    // Test accept with header replacement
+    session
+        .send_message(
+            "3@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "250 2.0.0",
+        )
+        .await;
+    qr.expect_message()
+        .await
+        .read_lines(&qr)
+        .await
+        .assert_contains("Subject: [SPAM] Saying Hello")
+        .assert_count("References: ", 1)
+        .assert_contains("Are you hungry yet?");
+
+    // Test accept with body replacement
+    session
+        .send_message(
+            "2@doe.org",
+            &["bill@foobar.org"],
+            "test:no_dkim",
+            "250 2.0.0",
+        )
+        .await;
+    qr.expect_message()
+        .await
+        .read_lines(&qr)
+        .await
+        .assert_contains("X-Spam: Yes")
+        .assert_contains("123456");
+}
+
+#[tokio::test]
+async fn jmilter_session() {
+    // Enable logging
+    /*let disable = "true";
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::TRACE)
+            .finish(),
+    )
+    .unwrap();*/
+
+    // Configure tests
+    let tmp_dir = TempDir::new("smtp_jmilter_test", true);
+    let mut config = Config::new(tmp_dir.update_config(CONFIG_JMILTER)).unwrap();
+    let stores = Stores::parse_all(&mut config).await;
+    let core = Core::parse(&mut config, stores, Default::default()).await;
+    let _rx = spawn_mock_jmilter_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut inner = Inner::default();
     let mut qr = inner.init_test_queue(&core);
@@ -521,7 +681,7 @@ async fn accept_milter(
     let mut buf = vec![0u8; 1024];
     let mut receiver = Receiver::with_max_frame_len(5000000);
     let mut action = None;
-    let mut modidications = None;
+    let mut modifications = None;
 
     'outer: loop {
         let br = tokio::select! {
@@ -585,7 +745,7 @@ async fn accept_milter(
                                     text: "test".to_string(),
                                 },
                                 test_num => {
-                                    modidications = tests[test_num.parse::<usize>().unwrap()]
+                                    modifications = tests[test_num.parse::<usize>().unwrap()]
                                         .modifications
                                         .clone()
                                         .into();
@@ -597,7 +757,7 @@ async fn accept_milter(
                         }
                         Command::Quit => break 'outer,
                         Command::EndOfBody => {
-                            if let Some(modifications) = modidications.take() {
+                            if let Some(modifications) = modifications.take() {
                                 for modification in modifications {
                                     // Write modifications
                                     stream
@@ -622,5 +782,210 @@ async fn accept_milter(
                 }
             }
         }
+    }
+}
+
+pub fn spawn_mock_jmilter_server() -> watch::Sender<bool> {
+    let (tx, rx) = watch::channel(true);
+    let tests = Arc::new(
+        serde_json::from_str::<Vec<HeaderTest>>(
+            &fs::read_to_string(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("resources")
+                    .join("smtp")
+                    .join("milter")
+                    .join("message.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap(),
+    );
+
+    tokio::spawn(async move {
+        let listener = TcpListener::bind("127.0.0.1:9333")
+            .await
+            .unwrap_or_else(|e| {
+                panic!("Failed to bind mock Milter server to 127.0.0.1:9333: {e}");
+            });
+        let mut rx_ = rx.clone();
+        //println!("Mock jMilter server listening on port 9333");
+        loop {
+            tokio::select! {
+                stream = listener.accept() => {
+                    match stream {
+                        Ok((stream, _)) => {
+
+                            let _ = http1::Builder::new()
+                            .keep_alive(false)
+                            .serve_connection(
+                                TokioIo::new(stream),
+                                service_fn(|mut req: hyper::Request<body::Incoming>| {
+                                    let tests = tests.clone();
+
+                                    async move {
+
+                                        let request = serde_json::from_slice::<Request>(&fetch_body(&mut req, 1024 * 1024).await.unwrap())
+                                        .unwrap();
+                                        let response = handle_jmilter(request, tests);
+
+                                        Ok::<_, hyper::Error>(
+                                            Resource {
+                                                content_type: "application/json",
+                                                contents: serde_json::to_string(&response).unwrap().into_bytes(),
+                                            }
+                                            .into_http_response(),
+                                        )
+                                    }
+                                }),
+                            )
+                            .await;
+                        }
+                        Err(err) => {
+                            panic!("Something went wrong: {err}" );
+                        }
+                    }
+                },
+                _ = rx_.changed() => {
+                    //println!("Mock jMilter server stopping");
+                    break;
+                }
+            };
+        }
+    });
+
+    tx
+}
+
+fn handle_jmilter(request: Request, tests: Arc<Vec<HeaderTest>>) -> jmilter::Response {
+    match request
+        .envelope
+        .unwrap()
+        .from
+        .address
+        .split_once('@')
+        .unwrap()
+        .0
+    {
+        "accept" => jmilter::Response {
+            action: jmilter::Action::Accept,
+            response: None,
+            modifications: vec![],
+        },
+        "reject" => jmilter::Response {
+            action: jmilter::Action::Reject,
+            response: None,
+            modifications: vec![],
+        },
+        "discard" => jmilter::Response {
+            action: jmilter::Action::Discard,
+            response: None,
+            modifications: vec![],
+        },
+        "temp_fail" => jmilter::Response {
+            action: jmilter::Action::Reject,
+            response: SmtpResponse {
+                status: 451.into(),
+                enhanced_status: "4.3.5".to_string().into(),
+                message: "Unable to accept message at this time.".to_string().into(),
+                disconnect: false,
+            }
+            .into(),
+            modifications: vec![],
+        },
+        "shutdown" => jmilter::Response {
+            action: jmilter::Action::Reject,
+            response: SmtpResponse {
+                status: 421.into(),
+                enhanced_status: "4.3.0".to_string().into(),
+                message: "Server shutting down".to_string().into(),
+                disconnect: false,
+            }
+            .into(),
+            modifications: vec![],
+        },
+        "conn_fail" => jmilter::Response {
+            action: jmilter::Action::Accept,
+            response: SmtpResponse {
+                disconnect: true,
+                ..Default::default()
+            }
+            .into(),
+            modifications: vec![],
+        },
+        "reply_code" => jmilter::Response {
+            action: jmilter::Action::Reject,
+            response: SmtpResponse {
+                status: 321.into(),
+                enhanced_status: "3.1.1".to_string().into(),
+                message: "Test".to_string().into(),
+                disconnect: false,
+            }
+            .into(),
+            modifications: vec![],
+        },
+        test_num => jmilter::Response {
+            action: jmilter::Action::Accept,
+            response: None,
+            modifications: tests[test_num.parse::<usize>().unwrap()]
+                .modifications
+                .iter()
+                .map(|m| match m {
+                    Modification::ChangeFrom { sender, args } => {
+                        jmilter::Modification::ChangeFrom {
+                            value: sender.clone(),
+                            parameters: args
+                                .split_whitespace()
+                                .map(|arg| {
+                                    let (key, value) = arg.split_once('=').unwrap();
+                                    (key.to_string(), Some(value.to_string()))
+                                })
+                                .collect(),
+                        }
+                    }
+                    Modification::AddRcpt { recipient, args } => {
+                        jmilter::Modification::AddRecipient {
+                            value: recipient.clone(),
+                            parameters: args
+                                .split_whitespace()
+                                .map(|arg| {
+                                    let (key, value) = arg.split_once('=').unwrap();
+                                    (key.to_string(), Some(value.to_string()))
+                                })
+                                .collect(),
+                        }
+                    }
+                    Modification::DeleteRcpt { recipient } => {
+                        jmilter::Modification::DeleteRecipient {
+                            value: recipient.clone(),
+                        }
+                    }
+                    Modification::ReplaceBody { value } => jmilter::Modification::ReplaceContents {
+                        value: String::from_utf8(value.clone()).unwrap(),
+                    },
+                    Modification::AddHeader { name, value } => jmilter::Modification::AddHeader {
+                        name: name.clone(),
+                        value: value.clone(),
+                    },
+                    Modification::InsertHeader { index, name, value } => {
+                        jmilter::Modification::InsertHeader {
+                            index: *index,
+                            name: name.clone(),
+                            value: value.clone(),
+                        }
+                    }
+                    Modification::ChangeHeader { index, name, value } => {
+                        jmilter::Modification::ChangeHeader {
+                            index: *index,
+                            name: name.clone(),
+                            value: value.clone(),
+                        }
+                    }
+                    Modification::Quarantine { reason } => jmilter::Modification::AddHeader {
+                        name: "X-Quarantine".to_string(),
+                        value: reason.to_string(),
+                    },
+                })
+                .collect(),
+        },
     }
 }

@@ -21,6 +21,8 @@
  * for more details.
 */
 
+use std::borrow::Cow;
+
 use common::config::smtp::auth::{ArcSealer, DkimSigner};
 use mail_auth::{
     arc::ArcSet, dkim::Signature, dmarc::Policy, ArcOutput, AuthenticatedMessage,
@@ -37,6 +39,12 @@ pub mod rcpt;
 pub mod session;
 pub mod spawn;
 pub mod vrfy;
+
+#[derive(Debug, Default)]
+pub struct FilterResponse {
+    pub message: Cow<'static, str>,
+    pub disconnect: bool,
+}
 
 pub trait ArcSeal {
     fn seal<'x>(
@@ -142,6 +150,57 @@ impl AuthResult for Policy {
             Policy::Reject => "reject",
             Policy::Quarantine => "quarantine",
             Policy::None | Policy::Unspecified => "none",
+        }
+    }
+}
+
+impl FilterResponse {
+    pub fn accept() -> Self {
+        Self {
+            message: Cow::Borrowed("250 2.0.0 Message queued for delivery.\r\n"),
+            disconnect: false,
+        }
+    }
+
+    pub fn reject() -> Self {
+        Self {
+            message: Cow::Borrowed("503 5.5.3 Message rejected.\r\n"),
+            disconnect: false,
+        }
+    }
+
+    pub fn temp_fail() -> Self {
+        Self {
+            message: Cow::Borrowed("451 4.3.5 Unable to accept message at this time.\r\n"),
+            disconnect: false,
+        }
+    }
+
+    pub fn shutdown() -> Self {
+        Self {
+            message: Cow::Borrowed("421 4.3.0 Server shutting down.\r\n"),
+            disconnect: true,
+        }
+    }
+
+    pub fn server_failure() -> Self {
+        Self {
+            message: Cow::Borrowed("451 4.3.5 Unable to accept message at this time.\r\n"),
+            disconnect: false,
+        }
+    }
+
+    pub fn disconnect(self) -> Self {
+        Self {
+            disconnect: true,
+            ..self
+        }
+    }
+
+    pub fn into_bytes(self) -> Cow<'static, [u8]> {
+        match self.message {
+            Cow::Borrowed(s) => Cow::Borrowed(s.as_bytes()),
+            Cow::Owned(s) => Cow::Owned(s.into_bytes()),
         }
     }
 }

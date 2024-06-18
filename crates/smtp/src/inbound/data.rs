@@ -48,6 +48,7 @@ use utils::config::Rate;
 
 use crate::{
     core::{Session, SessionAddress, State},
+    inbound::milter::Modification,
     queue::{self, Message, QueueEnvelope, Schedule},
     scripts::ScriptResult,
 };
@@ -400,9 +401,10 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Run Milter filters
-        let mut edited_message = match self.run_milters(Stage::Data, (&auth_message).into()).await {
-            Ok(modifications) => {
-                if !modifications.is_empty() {
+        let mut modifications = Vec::new();
+        match self.run_milters(Stage::Data, (&auth_message).into()).await {
+            Ok(modifications_) => {
+                if !modifications_.is_empty() {
                     tracing::debug!(
                     parent: &self.span,
                     context = "milter",
@@ -416,14 +418,35 @@ impl<T: SessionStream> Session<T> {
                         s
                     }),
                     "Milter filter(s) accepted message.");
-
-                    self.data
-                        .apply_milter_modifications(modifications, &auth_message)
-                } else {
-                    None
+                    modifications = modifications_;
                 }
             }
-            Err(response) => return response,
+            Err(response) => return response.into_bytes(),
+        };
+
+        // Run JMilter filters
+        match self.run_jmilters(Stage::Data, (&auth_message).into()).await {
+            Ok(modifications_) => {
+                if !modifications_.is_empty() {
+                    tracing::debug!(
+                            parent: &self.span,
+                            context = "jmilter",
+                            event = "accept",
+                            "JMilter filter(s) accepted message.");
+
+                    modifications.retain(|m| !matches!(m, Modification::ReplaceBody { .. }));
+                    modifications.extend(modifications_);
+                }
+            }
+            Err(response) => return response.into_bytes(),
+        };
+
+        // Apply modifications
+        let mut edited_message = if !modifications.is_empty() {
+            self.data
+                .apply_milter_modifications(modifications, &auth_message)
+        } else {
+            None
         };
 
         // Pipe message
