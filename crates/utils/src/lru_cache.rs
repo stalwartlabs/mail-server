@@ -29,10 +29,10 @@ pub type LruCache<K, V> = Mutex<lru_cache::LruCache<K, V, ahash::RandomState>>;
 
 pub trait LruCached<K, V>: Sized {
     fn with_capacity(capacity: usize) -> Self;
-    fn get<Q: ?Sized>(&self, name: &Q) -> Option<V>
+    fn get<Q>(&self, name: &Q) -> Option<V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq;
+        Q: Hash + Eq + ?Sized;
     fn insert(&self, name: K, value: V) -> Option<V>;
 }
 
@@ -44,10 +44,10 @@ impl<K: Hash + Eq, V: Clone> LruCached<K, V> for LruCache<K, V> {
         ))
     }
 
-    fn get<Q: ?Sized>(&self, name: &Q) -> Option<V>
+    fn get<Q>(&self, name: &Q) -> Option<V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         self.lock().get_mut(name).map(|entry| entry.clone())
     }

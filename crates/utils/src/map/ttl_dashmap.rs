@@ -22,10 +22,10 @@ pub struct LruItem<V> {
 
 pub trait TtlMap<K, V>: Sized {
     fn with_capacity(capacity: usize, shard_amount: usize) -> Self;
-    fn get_with_ttl<Q: ?Sized>(&self, name: &Q) -> Option<V>
+    fn get_with_ttl<Q>(&self, name: &Q) -> Option<V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq;
+        Q: Hash + Eq + ?Sized;
     fn insert_with_ttl(&self, name: K, value: V, valid_until: Instant) -> V;
     fn cleanup(&self);
 }
@@ -39,10 +39,10 @@ impl<K: Hash + Eq, V: Clone> TtlMap<K, V> for TtlDashMap<K, V> {
         )
     }
 
-    fn get_with_ttl<Q: ?Sized>(&self, name: &Q) -> Option<V>
+    fn get_with_ttl<Q>(&self, name: &Q) -> Option<V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         match self.get(name) {
             Some(entry) if entry.valid_until >= Instant::now() => entry.item.clone().into(),

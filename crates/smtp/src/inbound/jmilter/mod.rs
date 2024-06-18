@@ -125,14 +125,8 @@ pub enum Action {
     Discard,
     #[serde(rename = "reject")]
     Reject,
-    #[serde(rename = "tempFail")]
-    Tempfail,
-    #[serde(rename = "shutdown")]
-    Shutdown,
-    #[serde(rename = "connectionFailure")]
-    ConnectionFailure,
-    #[serde(rename = "replyCode")]
-    ReplyCode,
+    #[serde(rename = "quarantine")]
+    Quarantine,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -174,6 +168,4 @@ pub enum Modification {
         index: Option<i32>,
         name: String,
     },
-    #[serde(rename = "quarantine")]
-    Quarantine { value: String },
 }

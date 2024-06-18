@@ -21,7 +21,7 @@
  * for more details.
 */
 
-use std::{borrow::Borrow, io::Write};
+use std::borrow::Borrow;
 
 use store::{
     write::{DeserializeFrom, SerializeInto},
@@ -145,7 +145,7 @@ impl BlobId {
         .into()
     }
 
-    fn serialize_as(&self, writer: &mut (impl Write + Leb128Writer)) {
+    fn serialize_as(&self, writer: &mut impl Leb128Writer) {
         let marker = self
             .section
             .as_ref()

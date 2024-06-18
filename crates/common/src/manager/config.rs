@@ -384,8 +384,8 @@ impl ConfigManager {
         };
         for (key, value) in config.keys {
             if key.starts_with("version.") {
-                external.id = key.clone();
-                external.version = value.clone();
+                external.id.clone_from(&key);
+                external.version.clone_from(&value);
                 external.keys.push(ConfigKey::from((key, value)));
             } else if key.starts_with("queue.quota.")
                 || key.starts_with("queue.throttle.")

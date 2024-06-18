@@ -109,7 +109,8 @@ impl JMAP {
                 // Process next call
                 if let Some(next_call) = next_call {
                     call = next_call;
-                    call.id = response.method_responses.last().unwrap().id.clone();
+                    call.id
+                        .clone_from(&response.method_responses.last().unwrap().id);
                 } else {
                     break;
                 }

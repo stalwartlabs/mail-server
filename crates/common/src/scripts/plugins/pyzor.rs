@@ -96,10 +96,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
 
     let span = ctx.span;
     let address = ctx.arguments[0].to_string();
-    let timeout = Duration::from_secs(std::cmp::max(
-        std::cmp::min(ctx.arguments[1].to_integer() as u64, 60),
-        5,
-    ));
+    let timeout = Duration::from_secs((ctx.arguments[1].to_integer() as u64).clamp(5, 60));
     // Send message to address
     match pyzor_send_message(address.as_ref(), timeout, &request).await {
         Ok(response) => response.into(),

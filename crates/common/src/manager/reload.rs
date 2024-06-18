@@ -145,7 +145,9 @@ impl Core {
                 .or_insert(cert.clone());
         }
         core.tls.certificates.store(certificates.into());
-        core.tls.self_signed_cert = self.tls.self_signed_cert.clone();
+        core.tls
+            .self_signed_cert
+            .clone_from(&self.tls.self_signed_cert);
 
         // Parser servers
         let mut servers = Servers::parse(&mut config);

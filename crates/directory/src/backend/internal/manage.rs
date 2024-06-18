@@ -405,7 +405,7 @@ impl ManageDirectory for Store {
                             principal.inner.name.as_bytes().to_vec(),
                         )));
 
-                        principal.inner.name = new_name.clone();
+                        principal.inner.name.clone_from(&new_name);
 
                         batch.set(
                             ValueClass::Directory(DirectoryClass::NameToId(new_name.into_bytes())),

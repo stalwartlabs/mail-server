@@ -104,10 +104,10 @@ impl<T: Hash + Eq> LookupCache<T> {
         }
     }
 
-    pub fn get<Q: ?Sized>(&mut self, name: &Q) -> Option<bool>
+    pub fn get<Q>(&mut self, name: &Q) -> Option<bool>
     where
         T: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         // Check positive cache
         if let Some(valid_until) = self.cache_pos.get_mut(name) {

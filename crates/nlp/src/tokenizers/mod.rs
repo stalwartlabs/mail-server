@@ -64,8 +64,8 @@ impl<'x> InnerToken<'x> for Cow<'x, str> {
 
 impl<T> Token<T> {
     pub fn new(offset: usize, len: usize, word: T) -> Token<T> {
-        debug_assert!(offset <= u32::max_value() as usize);
-        debug_assert!(len <= u8::max_value() as usize);
+        debug_assert!(offset <= u32::MAX as usize);
+        debug_assert!(len <= u8::MAX as usize);
         Token {
             from: offset,
             to: offset + len,

@@ -1072,13 +1072,9 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
 #[inline(always)]
 fn get_partial_bytes(bytes: &[u8], partial: Option<(u32, u32)>) -> &[u8] {
     if let Some((start, end)) = partial {
-        if let Some(bytes) =
-            bytes.get(start as usize..std::cmp::min((start + end) as usize, bytes.len()))
-        {
-            bytes
-        } else {
-            &[]
-        }
+        bytes
+            .get(start as usize..std::cmp::min((start + end) as usize, bytes.len()))
+            .unwrap_or_default()
     } else {
         bytes
     }

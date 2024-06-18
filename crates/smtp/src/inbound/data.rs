@@ -682,7 +682,7 @@ impl<T: SessionStream> Session<T> {
             .unwrap_or_default()
         {
             if let Some(signer) = self.core.core.get_dkim_signer(&signer) {
-                match signer.sign_chained(&[headers.as_ref(), &raw_message]) {
+                match signer.sign_chained(&[headers.as_ref(), raw_message]) {
                     Ok(signature) => {
                         signature.write_header(&mut headers);
                     }

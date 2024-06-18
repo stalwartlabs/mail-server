@@ -159,7 +159,7 @@ async fn report_scheduler() {
             }
             QueueClass::TlsReportHeader(event) => {
                 if event.domain != last_domain {
-                    last_domain = event.domain.clone();
+                    last_domain.clone_from(&event.domain);
                     total_tls += 1;
                 }
                 total_tls_policies += 1;
