@@ -113,6 +113,16 @@ pub enum AccountCommands {
         member_of: Option<Vec<String>>,
     },
 
+    /// Generate a hash for a given password
+    HashPassword {
+        /// The password to use as secret
+        #[clap(short, long, env = "PASSWORD")]
+        password: String,
+        /// The algorithm to use
+        #[clap(short, long, default_value = "Sha512-Crypt", value_parser = clap::builder::PossibleValuesParser::new(["Sha512-Crypt", "Bcrypt"]))]
+        algorithm: String,
+    },
+
     /// Update an existing user account
     Update {
         /// Account login
