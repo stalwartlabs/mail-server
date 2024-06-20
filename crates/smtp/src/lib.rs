@@ -24,7 +24,7 @@
 use crate::core::{throttle::ThrottleKeyHasherBuilder, TlsConnectors};
 use core::{Inner, SmtpInstance, SMTP};
 
-use common::SharedCore;
+use common::{config::scripts::ScriptCache, Ipc, SharedCore};
 use dashmap::DashMap;
 use mail_send::smtp::tls::build_tls_connector;
 use queue::manager::SpawnQueue;
@@ -39,15 +39,8 @@ pub mod queue;
 pub mod reporting;
 pub mod scripts;
 
-pub static USER_AGENT: &str = concat!("StalwartSMTP/", env!("CARGO_PKG_VERSION"),);
-pub static DAEMON_NAME: &str = concat!("Stalwart SMTP v", env!("CARGO_PKG_VERSION"),);
-
 impl SMTP {
-    pub async fn init(
-        config: &mut Config,
-        core: SharedCore,
-        #[cfg(feature = "local_delivery")] delivery_tx: mpsc::Sender<common::DeliveryEvent>,
-    ) -> SmtpInstance {
+    pub async fn init(config: &mut Config, core: SharedCore, ipc: Ipc) -> SmtpInstance {
         // Build inner
         let capacity = config.property("cache.capacity").unwrap_or(2);
         let shard = config
@@ -77,8 +70,8 @@ impl SMTP {
                 pki_verify: build_tls_connector(false),
                 dummy_verify: build_tls_connector(true),
             },
-            #[cfg(feature = "local_delivery")]
-            delivery_tx,
+            ipc,
+            script_cache: ScriptCache::parse(config),
         };
         let inner = SmtpInstance::new(core, inner);
 

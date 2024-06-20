@@ -26,13 +26,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::IPC_CHANNEL_BUFFER;
 use store::{write::purge::PurgeStore, BlobStore, LookupStore, Store};
 use tokio::sync::mpsc;
 use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{Inner, JmapInstance, JMAP, LONG_SLUMBER};
-
-use super::IPC_CHANNEL_BUFFER;
 
 pub enum Event {
     IndexStart,

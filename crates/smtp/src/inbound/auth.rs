@@ -183,7 +183,14 @@ impl<T: SessionStream> Session<T> {
             match self
                 .core
                 .core
-                .authenticate(directory, &credentials, self.data.remote_ip, false)
+                .authenticate(
+                    directory,
+                    &self.core.inner.ipc,
+                    &credentials,
+                    self.data.remote_ip,
+                    self.instance.protocol,
+                    false,
+                )
                 .await
             {
                 Ok(AuthResult::Success(principal)) => {

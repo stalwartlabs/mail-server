@@ -23,6 +23,7 @@
 
 use std::time::{Duration, Instant, SystemTime};
 
+use common::IPC_CHANNEL_BUFFER;
 use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
 use store::ahash::AHashMap;
 use tokio::sync::mpsc;
@@ -32,8 +33,6 @@ use crate::{
     push::{manager::spawn_push_manager, UpdateSubscription},
     JmapInstance, JMAP,
 };
-
-use super::IPC_CHANNEL_BUFFER;
 
 #[derive(Debug)]
 pub enum Event {

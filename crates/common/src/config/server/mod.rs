@@ -1,6 +1,7 @@
 use std::{fmt::Display, net::SocketAddr, time::Duration};
 
 use ahash::AHashMap;
+use serde::{Deserialize, Serialize};
 use tokio::net::TcpSocket;
 use utils::config::ipmask::IpAddrMask;
 
@@ -36,7 +37,7 @@ pub struct Listener {
     pub nodelay: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Serialize, Deserialize)]
 pub enum ServerProtocol {
     #[default]
     Smtp,

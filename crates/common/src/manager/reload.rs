@@ -23,7 +23,6 @@
 
 use ahash::AHashSet;
 use arc_swap::ArcSwap;
-use parking_lot::RwLock;
 use store::Stores;
 use utils::config::{ipmask::IpAddrOrMask, utils::ParseValue, Config};
 
@@ -133,9 +132,6 @@ impl Core {
         if !config.errors.is_empty() {
             return Ok(config.into());
         }
-        // Transfer Sieve cache
-        core.sieve.bayes_cache = self.sieve.bayes_cache.clone();
-        core.sieve.remote_lists = RwLock::new(self.sieve.remote_lists.read().clone());
 
         // Copy ACME certificates
         let mut certificates = core.tls.certificates.load().as_ref().clone();

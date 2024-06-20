@@ -30,15 +30,12 @@ use base64::{
 use common::{
     config::server::{ServerProtocol, Servers},
     manager::config::{ConfigManager, Patterns},
-    Core,
+    webhooks::manager::spawn_webhook_manager,
+    Core, Ipc, IPC_CHANNEL_BUFFER,
 };
 use hyper::{header::AUTHORIZATION, Method};
 use imap::core::{ImapSessionManager, IMAP};
-use jmap::{
-    api::JmapSessionManager,
-    services::{housekeeper::Event, IPC_CHANNEL_BUFFER},
-    JMAP,
-};
+use jmap::{api::JmapSessionManager, services::housekeeper::Event, JMAP};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::{error::request::RequestError, types::id::Id};
 use managesieve::core::ManageSieveSessionManager;
@@ -54,6 +51,7 @@ use store::{
 };
 use tokio::sync::{mpsc, watch};
 use utils::config::Config;
+use webhooks::{spawn_mock_webhook_endpoint, MockWebhookEndpoint};
 
 use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
 
@@ -82,6 +80,7 @@ pub mod stress_test;
 pub mod thread_get;
 pub mod thread_merge;
 pub mod vacation_response;
+pub mod webhooks;
 pub mod websocket;
 
 const SERVER: &str = r#"
@@ -287,6 +286,15 @@ refresh-token-renew = "2s"
 expn = true
 vrfy = true
 
+[webhook."test"]
+url = "http://127.0.0.1:8821/hook"
+events = ["auth.success", "auth.failure", "auth.banned", "auth.error", 
+          "message.accepted", "message.rejected", "message.appended", 
+          "account.over-quota", "dsn", "double-bounce", "report.incoming.dmarc", 
+          "report.incoming.tls", "report.incoming.arf", "report.outgoing"]
+signature-key = "ovos-moles"
+throttle = "100ms"
+
 "#;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -314,6 +322,7 @@ pub async fn jmap_tests() {
     )
     .await;
 
+    webhooks::test(&mut params).await;
     email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
@@ -379,6 +388,7 @@ pub struct JMAPTest {
     client: Client,
     directory: DirectoryStore,
     temp_dir: TempDir,
+    webhook: Arc<MockWebhookEndpoint>,
     shutdown_tx: watch::Sender<bool>,
 }
 
@@ -485,9 +495,18 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     // Parse acceptors
     servers.parse_tcp_acceptors(&mut config, shared_core.clone());
 
-    // Init servers
+    // Spawn webhook manager
+    let webhook_tx = spawn_webhook_manager(shared_core.clone());
+
+    // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&mut config, shared_core.clone(), delivery_tx).await;
+    let ipc = Ipc {
+        delivery_tx,
+        webhook_tx,
+    };
+
+    // Init servers
+    let smtp = SMTP::init(&mut config, shared_core.clone(), ipc).await;
     let jmap = JMAP::init(
         &mut config,
         delivery_rx,
@@ -569,6 +588,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         client,
         directory,
         shutdown_tx,
+        webhook: spawn_mock_webhook_endpoint(),
     }
 }
 

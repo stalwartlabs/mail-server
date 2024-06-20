@@ -23,6 +23,7 @@
 
 use std::{borrow::Cow, time::Duration};
 
+use common::webhooks::{WebhookIngestSource, WebhookPayload, WebhookType};
 use jmap_proto::{
     object::Object,
     types::{
@@ -76,8 +77,15 @@ pub struct IngestEmail<'x> {
     pub mailbox_ids: Vec<u32>,
     pub keywords: Vec<Keyword>,
     pub received_at: Option<u64>,
-    pub skip_duplicates: bool,
+    pub source: IngestSource,
     pub encrypt: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IngestSource {
+    Smtp,
+    Jmap,
+    Imap,
 }
 
 const MAX_RETRIES: u32 = 10;
@@ -90,13 +98,10 @@ impl JMAP {
     ) -> Result<IngestedEmail, IngestError> {
         // Check quota
         let mut raw_message_len = params.raw_message.len() as i64;
-        if params.account_quota > 0
-            && raw_message_len
-                + self
-                    .get_used_quota(params.account_id)
-                    .await
-                    .map_err(|_| IngestError::Temporary)?
-                > params.account_quota
+        if !self
+            .has_available_quota(params.account_id, params.account_quota, raw_message_len)
+            .await
+            .map_err(|_| IngestError::Temporary)?
         {
             return Err(IngestError::OverQuota);
         }
@@ -162,7 +167,7 @@ impl JMAP {
             }
 
             // Check for duplicates
-            if params.skip_duplicates
+            if params.source == IngestSource::Smtp
                 && !message_id.is_empty()
                 && !self
                     .core
@@ -386,6 +391,31 @@ impl JMAP {
             blob_id = ?blob_id.hash,
             size = raw_message_len,
             "Ingested e-mail.");
+
+        // Send webhook event
+        if self
+            .core
+            .has_webhook_subscribers(WebhookType::MessageAppended)
+        {
+            self.smtp
+                .inner
+                .ipc
+                .send_webhook(
+                    WebhookType::MessageAppended,
+                    WebhookPayload::MessageAppended {
+                        account_id: params.account_id,
+                        mailbox_ids: params.mailbox_ids,
+                        source: match params.source {
+                            IngestSource::Smtp => WebhookIngestSource::Smtp,
+                            IngestSource::Jmap => WebhookIngestSource::Jmap,
+                            IngestSource::Imap => WebhookIngestSource::Imap,
+                        },
+                        encrypt: params.encrypt,
+                        size: raw_message_len as usize,
+                    },
+                )
+                .await;
+        }
 
         Ok(IngestedEmail {
             id,

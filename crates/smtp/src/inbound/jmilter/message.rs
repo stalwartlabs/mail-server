@@ -25,6 +25,7 @@ use ahash::AHashMap;
 use common::{
     config::smtp::session::{JMilter, Stage},
     listener::SessionStream,
+    DAEMON_NAME,
 };
 use mail_auth::AuthenticatedMessage;
 
@@ -37,7 +38,6 @@ use crate::{
         milter::Modification,
         FilterResponse,
     },
-    DAEMON_NAME,
 };
 
 use super::{client::send_jmilter_request, Action, Response};

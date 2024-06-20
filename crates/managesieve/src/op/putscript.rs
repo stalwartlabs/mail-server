@@ -55,12 +55,18 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         // Check quota
         let access_token = self.state.access_token();
         let account_id = access_token.primary_id();
-        if access_token.quota > 0
-            && script_bytes.len() as i64 + self.jmap.get_used_quota(account_id).await?
-                > access_token.quota as i64
+        if !self
+            .jmap
+            .has_available_quota(
+                account_id,
+                access_token.quota as i64,
+                script_bytes.len() as i64,
+            )
+            .await?
         {
             return Err(StatusResponse::no("Quota exceeded.").with_code(ResponseCode::Quota));
         }
+
         if self
             .jmap
             .get_document_ids(account_id, Collection::SieveScript)

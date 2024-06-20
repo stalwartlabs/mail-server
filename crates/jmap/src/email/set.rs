@@ -63,7 +63,7 @@ use crate::{auth::AccessToken, mailbox::UidMailbox, IngestError, JMAP};
 
 use super::{
     headers::{BuildHeader, ValueToHeader},
-    ingest::IngestEmail,
+    ingest::{IngestEmail, IngestSource},
 };
 
 impl JMAP {
@@ -737,7 +737,7 @@ impl JMAP {
                     mailbox_ids: mailboxes,
                     keywords,
                     received_at,
-                    skip_duplicates: false,
+                    source: IngestSource::Jmap,
                     encrypt: self.core.jmap.encrypt && self.core.jmap.encrypt_append,
                 })
                 .await

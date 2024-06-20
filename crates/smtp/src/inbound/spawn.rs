@@ -82,10 +82,10 @@ impl SessionManager for SmtpSessionManager {
                 .report_tx
                 .send(reporting::Event::Stop)
                 .await;
-            #[cfg(feature = "local_delivery")]
             let _ = self
                 .inner
                 .inner
+                .ipc
                 .delivery_tx
                 .send(common::DeliveryEvent::Stop)
                 .await;

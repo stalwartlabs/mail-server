@@ -22,7 +22,10 @@
 */
 
 use core::cache::CachedDirectory;
-use std::{fmt::Debug, sync::Arc};
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
 
 use ahash::AHashMap;
 use backend::{
@@ -308,6 +311,21 @@ impl PartialEq for DirectoryError {
             (Self::Pool(l0), Self::Pool(r0)) => l0 == r0,
             (Self::Management(l0), Self::Management(r0)) => l0 == r0,
             _ => false,
+        }
+    }
+}
+
+impl Display for DirectoryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ldap(error) => write!(f, "LDAP error: {}", error),
+            Self::Store(error) => write!(f, "Store error: {}", error),
+            Self::Imap(error) => write!(f, "IMAP error: {}", error),
+            Self::Smtp(error) => write!(f, "SMTP error: {}", error),
+            Self::Pool(error) => write!(f, "Pool error: {}", error),
+            Self::Management(error) => write!(f, "Management error: {:?}", error),
+            Self::TimedOut => write!(f, "Directory timed out"),
+            Self::Unsupported => write!(f, "Method not supported by directory"),
         }
     }
 }

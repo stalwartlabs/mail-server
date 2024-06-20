@@ -24,9 +24,12 @@
 use std::{collections::hash_map::Entry, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
-use common::config::smtp::{
-    report::AggregateFrequency,
-    resolver::{Mode, MxPattern},
+use common::{
+    config::smtp::{
+        report::AggregateFrequency,
+        resolver::{Mode, MxPattern},
+    },
+    USER_AGENT,
 };
 use mail_auth::{
     flate2::{write::GzEncoder, Compression},
@@ -44,7 +47,7 @@ use store::{
     Deserialize, IterateParams, Serialize, ValueKey,
 };
 
-use crate::{core::SMTP, queue::RecipientDomain, USER_AGENT};
+use crate::{core::SMTP, queue::RecipientDomain};
 
 use super::{scheduler::ToHash, AggregateTimestamp, ReportLock, SerializedSize, TlsEvent};
 

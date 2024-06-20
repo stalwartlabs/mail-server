@@ -34,7 +34,7 @@ pub mod text;
 use mail_parser::Message;
 use sieve::{runtime::Variable, FunctionMap, Input};
 
-use crate::Core;
+use crate::{config::scripts::ScriptCache, Core};
 
 use super::ScriptModification;
 
@@ -43,6 +43,7 @@ type RegisterPluginFnc = fn(u32, &mut FunctionMap) -> ();
 pub struct PluginContext<'x> {
     pub span: &'x tracing::Span,
     pub core: &'x Core,
+    pub cache: &'x ScriptCache,
     pub message: &'x Message<'x>,
     pub modifications: &'x mut Vec<ScriptModification>,
     pub arguments: Vec<Variable>,

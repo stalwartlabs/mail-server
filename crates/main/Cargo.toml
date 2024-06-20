@@ -19,7 +19,7 @@ path = "src/main.rs"
 store = { path = "../store" }
 jmap = { path = "../jmap" }
 jmap_proto = { path = "../jmap-proto" }
-smtp = { path = "../smtp", features = ["local_delivery"] }
+smtp = { path = "../smtp" }
 imap = { path = "../imap" }
 pop3 = { path = "../pop3" }
 managesieve = { path = "../managesieve" }

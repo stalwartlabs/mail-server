@@ -25,7 +25,7 @@ jmap_proto = { path = "../crates/jmap-proto" }
 imap = { path = "../crates/imap", features = ["test_mode"] }
 imap_proto = { path = "../crates/imap-proto" }
 pop3 = { path = "../crates/pop3", features = ["test_mode"] }
-smtp = { path = "../crates/smtp", features = ["test_mode", "local_delivery"] }
+smtp = { path = "../crates/smtp", features = ["test_mode"] }
 common = { path = "../crates/common", features = ["test_mode"] }
 managesieve = { path = "../crates/managesieve", features = ["test_mode"] }
 smtp-proto = { version = "0.1" }
@@ -61,6 +61,7 @@ serial_test = "3.0.0"
 num_cpus = "1.15.0"
 async-trait = "0.1.68"
 chrono = "0.4"
+ring = { version = "0.17" }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = "0.5.0"

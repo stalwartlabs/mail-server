@@ -368,7 +368,9 @@ impl LdapMappings {
                         "posixaccount" | "individual" | "person" | "inetorgperson" => {
                             principal.typ = Type::Individual
                         }
-                        "posixgroup" | "groupofuniquenames" | "group" => principal.typ = Type::Group,
+                        "posixgroup" | "groupofuniquenames" | "group" => {
+                            principal.typ = Type::Group
+                        }
                         _ => continue,
                     }
                     break;

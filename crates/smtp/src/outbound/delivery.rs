@@ -202,13 +202,12 @@ impl DeliveryAttempt {
                     .await
                     .and_then(|name| core.core.get_relay_host(&name))
                 {
-                    #[cfg(feature = "local_delivery")]
                     Some(next_hop) if next_hop.protocol == ServerProtocol::Http => {
                         // Deliver message locally
                         let delivery_result = message
                             .deliver_local(
                                 recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
-                                &core.inner.delivery_tx,
+                                &core.inner.ipc.delivery_tx,
                                 &span,
                             )
                             .await;

@@ -21,7 +21,6 @@
  * for more details.
 */
 
-use async_trait::async_trait;
 use deadpool::managed;
 use redis::{
     aio::{ConnectionLike, MultiplexedConnection},
@@ -30,7 +29,6 @@ use redis::{
 
 use super::{RedisClusterConnectionManager, RedisConnectionManager};
 
-#[async_trait]
 impl managed::Manager for RedisConnectionManager {
     type Type = MultiplexedConnection;
     type Error = crate::Error;
@@ -58,7 +56,6 @@ impl managed::Manager for RedisConnectionManager {
     }
 }
 
-#[async_trait]
 impl managed::Manager for RedisClusterConnectionManager {
     type Type = ClusterConnection;
     type Error = crate::Error;

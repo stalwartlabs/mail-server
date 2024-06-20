@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use common::webhooks::{WebhookDSN, WebhookDSNType, WebhookPayload, WebhookType};
 use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::HeaderType;
 use mail_builder::mime::{make_boundary, BodyPart, MimePart};
@@ -42,7 +43,11 @@ use super::{
 
 impl SMTP {
     pub async fn send_dsn(&self, message: &mut Message, span: &tracing::Span) {
+        // Send webhook event
+        self.send_dsn_webhook(message).await;
+
         if !message.return_path.is_empty() {
+            // Build DSN
             if let Some(dsn) = message.build_dsn(self, span).await {
                 let mut dsn_message = self.new_message("", "", "");
                 dsn_message
@@ -58,12 +63,140 @@ impl SMTP {
                 let signature = self
                     .sign_message(message, &self.core.smtp.queue.dsn.sign, &dsn, span)
                     .await;
+
+                // Queue DSN
                 dsn_message
                     .queue(signature.as_deref(), &dsn, self, span)
                     .await;
             }
         } else {
+            // Handle double bounce
             message.handle_double_bounce(span);
+        }
+    }
+
+    async fn send_dsn_webhook(&self, message: &Message) {
+        let typ = if !message.return_path.is_empty() {
+            WebhookType::DSN
+        } else {
+            WebhookType::DoubleBounce
+        };
+        if !self.core.has_webhook_subscribers(typ) {
+            return;
+        }
+
+        let now = now();
+        let mut webhook_data = Vec::new();
+
+        for rcpt in &message.recipients {
+            if rcpt.has_flag(RCPT_DSN_SENT) {
+                continue;
+            }
+
+            let domain = &message.domains[rcpt.domain_idx];
+            match &rcpt.status {
+                Status::Completed(response) => {
+                    webhook_data.push(WebhookDSN {
+                        address: rcpt.address_lcase.clone(),
+                        typ: WebhookDSNType::Success,
+                        remote_host: response.hostname.clone().into(),
+                        message: response.response.to_string(),
+                        next_retry: None,
+                        expires: None,
+                        retry_count: None,
+                    });
+                }
+                Status::TemporaryFailure(response) if domain.notify.due <= now => {
+                    webhook_data.push(WebhookDSN {
+                        address: rcpt.address_lcase.clone(),
+                        typ: WebhookDSNType::TemporaryFailure,
+                        remote_host: response.hostname.entity.clone().into(),
+                        message: response.response.to_string(),
+                        next_retry: DateTime::from_timestamp(domain.retry.due as i64)
+                            .to_rfc3339()
+                            .into(),
+                        expires: DateTime::from_timestamp(domain.expires as i64)
+                            .to_rfc3339()
+                            .into(),
+                        retry_count: domain.retry.inner.into(),
+                    });
+                }
+                Status::PermanentFailure(response) => {
+                    webhook_data.push(WebhookDSN {
+                        address: rcpt.address_lcase.clone(),
+                        typ: WebhookDSNType::PermanentFailure,
+                        remote_host: response.hostname.entity.clone().into(),
+                        message: response.response.to_string(),
+                        next_retry: None,
+                        expires: None,
+                        retry_count: domain.retry.inner.into(),
+                    });
+                }
+                Status::Scheduled => {
+                    // There is no status for this address, use the domain's status.
+                    match &domain.status {
+                        Status::PermanentFailure(err) => {
+                            webhook_data.push(WebhookDSN {
+                                address: rcpt.address_lcase.clone(),
+                                typ: WebhookDSNType::PermanentFailure,
+                                remote_host: None,
+                                message: err.to_string(),
+                                next_retry: None,
+                                expires: None,
+                                retry_count: domain.retry.inner.into(),
+                            });
+                        }
+                        Status::TemporaryFailure(err) if domain.notify.due <= now => {
+                            webhook_data.push(WebhookDSN {
+                                address: rcpt.address_lcase.clone(),
+                                typ: WebhookDSNType::TemporaryFailure,
+                                remote_host: None,
+                                message: err.to_string(),
+                                next_retry: DateTime::from_timestamp(domain.retry.due as i64)
+                                    .to_rfc3339()
+                                    .into(),
+                                expires: DateTime::from_timestamp(domain.expires as i64)
+                                    .to_rfc3339()
+                                    .into(),
+                                retry_count: domain.retry.inner.into(),
+                            });
+                        }
+                        Status::Scheduled if domain.notify.due <= now => {
+                            webhook_data.push(WebhookDSN {
+                                address: rcpt.address_lcase.clone(),
+                                typ: WebhookDSNType::TemporaryFailure,
+                                remote_host: None,
+                                message: "Concurrency limited".to_string(),
+                                next_retry: DateTime::from_timestamp(domain.retry.due as i64)
+                                    .to_rfc3339()
+                                    .into(),
+                                expires: DateTime::from_timestamp(domain.expires as i64)
+                                    .to_rfc3339()
+                                    .into(),
+                                retry_count: domain.retry.inner.into(),
+                            });
+                        }
+                        _ => continue,
+                    }
+                }
+                _ => continue,
+            }
+        }
+
+        // Send webhook event
+        if !webhook_data.is_empty() {
+            self.inner
+                .ipc
+                .send_webhook(
+                    typ,
+                    WebhookPayload::DSN {
+                        id: message.id,
+                        sender: message.return_path_lcase.clone(),
+                        status: webhook_data,
+                        created: DateTime::from_timestamp(message.created as i64).to_rfc3339(),
+                    },
+                )
+                .await;
         }
     }
 }
@@ -273,7 +406,7 @@ impl Message {
         // Prepare DSN
         let mut dsn_header = String::with_capacity(dsn.len() + 128);
         self.write_dsn_headers(&mut dsn_header, &reporting_mta);
-        let dsn = dsn_header + &dsn;
+        let dsn = dsn_header + dsn.as_str();
 
         // Fetch up to 1024 bytes of message headers
         let headers = match core

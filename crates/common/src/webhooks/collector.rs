@@ -23,25 +23,28 @@
 
 use std::sync::Arc;
 
-use ahash::AHashMap;
-use directory::Directory;
-use store::{write::purge::PurgeSchedule, BlobStore, FtsStore, LookupStore, Store};
+use crate::{Core, Ipc};
 
-use crate::manager::config::ConfigManager;
+use super::{manager::WebhookEvent, WebhookPayload, WebhookType};
 
-#[derive(Default, Clone)]
-pub struct Storage {
-    pub data: Store,
-    pub blob: BlobStore,
-    pub fts: FtsStore,
-    pub lookup: LookupStore,
-    pub directory: Arc<Directory>,
-    pub directories: AHashMap<String, Arc<Directory>>,
-    pub purge_schedules: Vec<PurgeSchedule>,
-    pub config: ConfigManager,
+impl Core {
+    #[inline(always)]
+    pub fn has_webhook_subscribers(&self, event_type: WebhookType) -> bool {
+        self.web_hooks.events.contains(&event_type)
+    }
+}
 
-    pub stores: AHashMap<String, Store>,
-    pub blobs: AHashMap<String, BlobStore>,
-    pub lookups: AHashMap<String, LookupStore>,
-    pub ftss: AHashMap<String, FtsStore>,
+impl Ipc {
+    pub async fn send_webhook(&self, event_type: WebhookType, payload: WebhookPayload) {
+        if let Err(err) = self
+            .webhook_tx
+            .send(WebhookEvent::Send {
+                typ: event_type,
+                payload: Arc::new(payload),
+            })
+            .await
+        {
+            tracing::warn!("Failed to send webhook event: {:?}", err);
+        }
+    }
 }

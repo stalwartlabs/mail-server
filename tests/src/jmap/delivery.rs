@@ -104,6 +104,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Delivering to individuals
     let mut lmtp = SmtpConnection::connect().await;
+    params.webhook.clear();
 
     lmtp.ingest(
         "bill@example.com",
@@ -320,6 +321,17 @@ pub async fn test(params: &mut JMAPTest) {
         destroy_all_mailboxes(params).await;
     }
     assert_is_empty(server).await;
+
+    // Check webhook events
+    params.webhook.assert_contains(&[
+        "message.accepted",
+        "message.appended",
+        "dsn",
+        "\"returnPath\": \"bill@example.com\"",
+        "\"sender\": \"bill@example.com\"",
+        "\"address\": \"john.doe@example.com\"",
+        "\"type\": \"success\"",
+    ]);
 }
 
 pub struct SmtpConnection {

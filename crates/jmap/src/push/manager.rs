@@ -22,11 +22,12 @@
 */
 
 use base64::{engine::general_purpose, Engine};
+use common::IPC_CHANNEL_BUFFER;
 use jmap_proto::types::id::Id;
 use store::ahash::{AHashMap, AHashSet};
 use tokio::sync::mpsc;
 
-use crate::{api::StateChangeResponse, services::IPC_CHANNEL_BUFFER, JmapInstance, LONG_SLUMBER};
+use crate::{api::StateChangeResponse, JmapInstance, LONG_SLUMBER};
 
 use super::{ece::ece_encrypt, EncryptionKeys, Event, PushServer, PushUpdate};
 
@@ -48,6 +49,9 @@ pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
         let mut retry_ids = AHashSet::default();
 
         loop {
+            // Wait for the next event or timeout
+            let event_or_timeout = tokio::time::timeout(retry_timeout, push_rx.recv()).await;
+
             // Load settings
             let core_ = core.core.load();
             let push_attempt_interval = core_.jmap.push_attempt_interval;
@@ -57,7 +61,7 @@ pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
             let push_verify_timeout = core_.jmap.push_verify_timeout;
             let push_throttle = core_.jmap.push_throttle;
 
-            match tokio::time::timeout(retry_timeout, push_rx.recv()).await {
+            match event_or_timeout {
                 Ok(Some(event)) => match event {
                     Event::Update { updates } => {
                         for update in updates {

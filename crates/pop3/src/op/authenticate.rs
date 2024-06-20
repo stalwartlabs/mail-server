@@ -22,6 +22,7 @@
 */
 
 use common::{
+    config::server::ServerProtocol,
     listener::{limiter::ConcurrencyLimiter, SessionStream},
     AuthResult,
 };
@@ -103,7 +104,7 @@ impl<T: SessionStream> Session<T> {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
                 match self
                     .jmap
-                    .authenticate_plain(&username, &secret, self.remote_addr)
+                    .authenticate_plain(&username, &secret, self.remote_addr, ServerProtocol::Pop3)
                     .await
                 {
                     AuthResult::Success(token) => Some(token),

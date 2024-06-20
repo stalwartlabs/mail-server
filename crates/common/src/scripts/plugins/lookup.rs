@@ -180,7 +180,7 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
     const MAX_ENTRY_SIZE: usize = 256;
     const MAX_ENTRIES: usize = 100000;
 
-    match ctx.core.sieve.remote_lists.read().get(resource.as_ref()) {
+    match ctx.cache.remote_lists.read().get(resource.as_ref()) {
         Some(remote_list) if remote_list.expires < Instant::now() => {
             return remote_list.entries.contains(item.as_ref()).into()
         }
@@ -245,7 +245,7 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
                     };
 
                     // Lock remote list for writing
-                    let mut _lock = ctx.core.sieve.remote_lists.write();
+                    let mut _lock = ctx.cache.remote_lists.write();
                     let list = _lock
                         .entry(resource.to_string())
                         .or_insert_with(|| RemoteList {
@@ -369,7 +369,7 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
     }
 
     // Something went wrong, try again in one hour
-    let mut _lock = ctx.core.sieve.remote_lists.write();
+    let mut _lock = ctx.cache.remote_lists.write();
     let list = _lock
         .entry(resource.to_string())
         .or_insert_with(|| RemoteList {

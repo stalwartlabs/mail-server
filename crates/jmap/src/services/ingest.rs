@@ -27,7 +27,11 @@ use jmap_proto::types::{state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 use store::ahash::AHashMap;
 
-use crate::{email::ingest::IngestEmail, mailbox::INBOX_ID, IngestError, JMAP};
+use crate::{
+    email::ingest::{IngestEmail, IngestSource},
+    mailbox::INBOX_ID,
+    IngestError, JMAP,
+};
 
 impl JMAP {
     pub async fn deliver_message(&self, message: IngestMessage) -> Vec<DeliveryResult> {
@@ -123,7 +127,7 @@ impl JMAP {
                         mailbox_ids: vec![INBOX_ID],
                         keywords: vec![],
                         received_at: None,
-                        skip_duplicates: true,
+                        source: IngestSource::Smtp,
                         encrypt: self.core.jmap.encrypt,
                     })
                     .await

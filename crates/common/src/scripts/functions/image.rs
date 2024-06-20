@@ -33,14 +33,13 @@ pub fn fn_img_metadata<'x>(ctx: &'x Context<'x>, v: Vec<Variable>) -> Variable {
                 "type" => imagesize::image_type(bytes).ok().map(|t| {
                     Variable::from(match t {
                         imagesize::ImageType::Aseprite => "aseprite",
-                        imagesize::ImageType::Avif => "avif",
                         imagesize::ImageType::Bmp => "bmp",
                         imagesize::ImageType::Dds => "dds",
                         imagesize::ImageType::Exr => "exr",
                         imagesize::ImageType::Farbfeld => "farbfeld",
                         imagesize::ImageType::Gif => "gif",
                         imagesize::ImageType::Hdr => "hdr",
-                        imagesize::ImageType::Heif => "heif",
+                        imagesize::ImageType::Heif(_) => "heif",
                         imagesize::ImageType::Ico => "ico",
                         imagesize::ImageType::Jpeg => "jpeg",
                         imagesize::ImageType::Jxl => "jxl",
@@ -53,6 +52,8 @@ pub fn fn_img_metadata<'x>(ctx: &'x Context<'x>, v: Vec<Variable>) -> Variable {
                         imagesize::ImageType::Tiff => "tiff",
                         imagesize::ImageType::Vtf => "vtf",
                         imagesize::ImageType::Webp => "webp",
+                        imagesize::ImageType::Ilbm => "ilbm",
+                        _ => "unknown",
                     })
                 }),
                 "width" => imagesize::blob_size(bytes)

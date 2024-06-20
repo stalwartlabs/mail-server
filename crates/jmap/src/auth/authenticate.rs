@@ -23,7 +23,7 @@
 
 use std::{net::IpAddr, sync::Arc, time::Instant};
 
-use common::{listener::limiter::InFlight, AuthResult};
+use common::{config::server::ServerProtocol, listener::limiter::InFlight, AuthResult};
 use directory::{Principal, QueryBy};
 use hyper::header;
 use jmap_proto::error::request::RequestError;
@@ -63,8 +63,9 @@ impl JMAP {
                             })
                         })
                     {
-                        if let AuthResult::Success(access_token) =
-                            self.authenticate_plain(&account, &secret, remote_ip).await
+                        if let AuthResult::Success(access_token) = self
+                            .authenticate_plain(&account, &secret, remote_ip, ServerProtocol::Http)
+                            .await
                         {
                             Some(access_token)
                         } else {
@@ -154,16 +155,19 @@ impl JMAP {
         username: &str,
         secret: &str,
         remote_ip: IpAddr,
+        protocol: ServerProtocol,
     ) -> AuthResult<AccessToken> {
         match self
             .core
             .authenticate(
                 &self.core.storage.directory,
+                &self.smtp.inner.ipc,
                 &Credentials::Plain {
                     username: username.to_string(),
                     secret: secret.to_string(),
                 },
                 remote_ip,
+                protocol,
                 true,
             )
             .await

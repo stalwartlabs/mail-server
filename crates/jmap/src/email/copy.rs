@@ -314,8 +314,9 @@ impl JMAP {
         };
 
         // Check quota
-        if account_quota > 0
-            && metadata.size as i64 + self.get_used_quota(account_id).await? > account_quota
+        if !self
+            .has_available_quota(account_id, account_quota, metadata.size as i64)
+            .await?
         {
             return Ok(Err(SetError::over_quota()));
         }

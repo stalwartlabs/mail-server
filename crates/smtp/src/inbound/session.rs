@@ -164,7 +164,7 @@ impl<T: SessionStream> Session<T> {
                             }
                             Request::Help { .. } => {
                                 self.write(
-                                    b"250 2.0.0 Help can be found at https://stalw.art/smtp/\r\n",
+                                    b"250 2.0.0 Help can be found at https://stalw.art/docs/\r\n",
                                 )
                                 .await?;
                             }

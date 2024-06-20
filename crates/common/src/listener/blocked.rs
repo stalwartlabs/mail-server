@@ -21,11 +21,7 @@
  * for more details.
 */
 
-use std::{
-    fmt::Debug,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    sync::atomic::AtomicU8,
-};
+use std::{fmt::Debug, net::IpAddr, sync::atomic::AtomicU8};
 
 use ahash::AHashSet;
 use parking_lot::RwLock;
@@ -113,9 +109,12 @@ impl AllowedIps {
             }
         }
 
-        // Add loopback addresses
-        ip_addresses.insert(IpAddr::V4(Ipv4Addr::LOCALHOST));
-        ip_addresses.insert(IpAddr::V6(Ipv6Addr::LOCALHOST));
+        #[cfg(not(feature = "test_mode"))]
+        {
+            // Add loopback addresses
+            ip_addresses.insert(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+            ip_addresses.insert(IpAddr::V6(std::net::IIpv6Addr::LOCALHOST));
+        }
 
         AllowedIps {
             ip_addresses,
@@ -210,14 +209,18 @@ impl Default for BlockedIps {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for AllowedIps {
     fn default() -> Self {
         // Add IPv4 and IPv6 loopback addresses
         Self {
+            #[cfg(not(feature = "test_mode"))]
             ip_addresses: AHashSet::from_iter([
-                IpAddr::V4(Ipv4Addr::LOCALHOST),
-                IpAddr::V6(Ipv6Addr::LOCALHOST),
+                IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+                IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
             ]),
+            #[cfg(feature = "test_mode")]
+            ip_addresses: Default::default(),
             ip_networks: Default::default(),
             has_networks: Default::default(),
         }

@@ -27,7 +27,10 @@ use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
     store::deflate_test_resource,
 };
-use jmap::{email::ingest::IngestEmail, IngestError};
+use jmap::{
+    email::ingest::{IngestEmail, IngestSource},
+    IngestError,
+};
 use jmap_client::{email, mailbox::Role};
 use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{mailbox::mbox::MessageIterator, MessageParser};
@@ -264,7 +267,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                         mailbox_ids: vec![mailbox_id],
                         keywords: vec![],
                         received_at: None,
-                        skip_duplicates: true,
+                        source: IngestSource::Smtp,
                         encrypt: false,
                     })
                     .await

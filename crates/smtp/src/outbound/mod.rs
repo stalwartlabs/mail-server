@@ -36,7 +36,7 @@ use crate::queue::{
 
 pub mod dane;
 pub mod delivery;
-#[cfg(feature = "local_delivery")]
+
 pub mod local;
 pub mod lookup;
 pub mod mta_sts;
@@ -158,7 +158,6 @@ impl Status<(), Error> {
         }))
     }
 
-    #[cfg(feature = "local_delivery")]
     pub fn local_error() -> Self {
         Status::TemporaryFailure(Error::ConnectionError(ErrorDetails {
             entity: "localhost".to_string(),

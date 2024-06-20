@@ -80,7 +80,11 @@ impl S3Store {
             })
             .ok()?
             .with_path_style()
-            .with_request_timeout(timeout),
+            .with_request_timeout(timeout)
+            .map_err(|err| {
+                config.new_build_error(prefix.as_str(), format!("Failed to create bucket: {err:?}"))
+            })
+            .ok()?,
             prefix: config.value((&prefix, "key-prefix")).map(|s| s.to_string()),
         })
     }

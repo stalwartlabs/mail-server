@@ -144,9 +144,13 @@ impl JMAP {
                     _ => unreachable!(),
                 }
             } else {
-                ctx.response.not_created.append(id, SetError::new(SetErrorType::OverQuota).with_description(
-                    "There are too many sieve scripts, please delete some before adding a new one.",
-                ));
+                ctx.response.not_created.append(
+                    id,
+                    SetError::new(SetErrorType::OverQuota).with_description(concat!(
+                        "There are too many sieve scripts, ",
+                        "please delete some before adding a new one."
+                    )),
+                );
             }
         }
 
@@ -422,9 +426,10 @@ impl JMAP {
         // Vacation script cannot be modified
         if matches!(update.as_ref().and_then(|(_, obj)| obj.inner.properties.get(&Property::Name)), Some(Value::Text ( value )) if value.eq_ignore_ascii_case("vacation"))
         {
-            return Ok(Err(SetError::forbidden().with_description(
-                "The 'vacation' script cannot be modified, use VacationResponse/set instead.",
-            )));
+            return Ok(Err(SetError::forbidden().with_description(concat!(
+                "The 'vacation' script cannot be modified, ",
+                "use VacationResponse/set instead."
+            ))));
         }
 
         // Parse properties
@@ -521,12 +526,12 @@ impl JMAP {
                 // Check access
                 if let Some(mut bytes) = self.blob_download(&blob_id, ctx.access_token).await? {
                     // Check quota
-                    if ctx.account_quota > 0
-                        && bytes.len() as i64 + self.get_used_quota(ctx.account_id).await?
-                            > ctx.account_quota
-                    {
-                        return Ok(Err(SetError::over_quota()));
-                    }
+                    if !self
+                        .has_available_quota(ctx.account_id, ctx.account_quota, bytes.len() as i64)
+                        .await?
+                        {
+                            return Ok(Err(SetError::over_quota()));
+                        }
 
                     // Compile script
                     match self.core.sieve.untrusted_compiler.compile(&bytes) {

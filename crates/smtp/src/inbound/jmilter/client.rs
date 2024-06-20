@@ -36,10 +36,14 @@ pub(super) async fn send_jmilter_request(
         .map_err(|err| format!("Failed to create HTTP client: {}", err))?
         .post(&jmilter.url)
         .headers(jmilter.headers.clone())
-        .body(serde_json::to_string(&request).unwrap())
+        .body(
+            serde_json::to_string(&request)
+                .map_err(|err| format!("Failed to serialize jMilter request: {}", err))?,
+        )
         .send()
         .await
         .map_err(|err| format!("jMilter request failed: {err}"))?;
+
     if response.status().is_success() {
         serde_json::from_slice(
             response

@@ -35,7 +35,7 @@ use store::{
 };
 
 use crate::{
-    email::ingest::{IngestEmail, IngestedEmail},
+    email::ingest::{IngestEmail, IngestSource, IngestedEmail},
     mailbox::{INBOX_ID, TRASH_ID},
     sieve::SeenIdHash,
     IngestError, JMAP,
@@ -446,7 +446,7 @@ impl JMAP {
                         mailbox_ids: sieve_message.file_into,
                         keywords: sieve_message.flags,
                         received_at: None,
-                        skip_duplicates: true,
+                        source: IngestSource::Smtp,
                         encrypt: self.core.jmap.encrypt,
                     })
                     .await

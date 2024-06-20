@@ -29,12 +29,12 @@ use std::{
 };
 
 use common::{
-    config::smtp::auth::VerifyStrategy,
+    config::{scripts::ScriptCache, smtp::auth::VerifyStrategy},
     listener::{
         limiter::{ConcurrencyLimiter, InFlight},
         ServerInstance,
     },
-    Core, DeliveryEvent, SharedCore,
+    Core, Ipc, SharedCore,
 };
 use dashmap::DashMap;
 use directory::Directory;
@@ -100,8 +100,8 @@ pub struct Inner {
     pub report_tx: mpsc::Sender<reporting::Event>,
     pub snowflake_id: SnowflakeIdGenerator,
     pub connectors: TlsConnectors,
-    #[cfg(feature = "local_delivery")]
-    pub delivery_tx: mpsc::Sender<DeliveryEvent>,
+    pub ipc: Ipc,
+    pub script_cache: ScriptCache,
 }
 
 pub struct TlsConnectors {
@@ -279,7 +279,6 @@ impl From<SmtpInstance> for SMTP {
     }
 }
 
-#[cfg(feature = "local_delivery")]
 lazy_static::lazy_static! {
 static ref SIEVE: Arc<ServerInstance> = Arc::new(ServerInstance {
     id: "sieve".to_string(),
@@ -291,7 +290,6 @@ static ref SIEVE: Arc<ServerInstance> = Arc::new(ServerInstance {
 });
 }
 
-#[cfg(feature = "local_delivery")]
 impl Session<common::listener::stream::NullIo> {
     pub fn local(core: SMTP, instance: std::sync::Arc<ServerInstance>, data: SessionData) -> Self {
         Session {
@@ -368,7 +366,6 @@ impl Session<common::listener::stream::NullIo> {
     }
 }
 
-#[cfg(feature = "local_delivery")]
 impl SessionData {
     pub fn local(
         mail_from: Option<SessionAddress>,
@@ -404,14 +401,12 @@ impl SessionData {
     }
 }
 
-#[cfg(feature = "local_delivery")]
 impl Default for SessionData {
     fn default() -> Self {
         Self::local(None, vec![], vec![])
     }
 }
 
-#[cfg(feature = "local_delivery")]
 impl SessionAddress {
     pub fn new(address: String) -> Self {
         let address_lcase = address.to_lowercase();
@@ -438,7 +433,11 @@ impl Default for Inner {
                 pki_verify: mail_send::smtp::tls::build_tls_connector(false),
                 dummy_verify: mail_send::smtp::tls::build_tls_connector(true),
             },
-            delivery_tx: mpsc::channel(1).0,
+            ipc: Ipc {
+                delivery_tx: mpsc::channel(1).0,
+                webhook_tx: mpsc::channel(1).0,
+            },
+            script_cache: Default::default(),
         }
     }
 }

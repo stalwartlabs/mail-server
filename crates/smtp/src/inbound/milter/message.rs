@@ -26,6 +26,7 @@ use std::borrow::Cow;
 use common::{
     config::smtp::session::{Milter, Stage},
     listener::SessionStream,
+    DAEMON_NAME,
 };
 use mail_auth::AuthenticatedMessage;
 use smtp_proto::{request::parser::Rfc5321Parser, IntoString};
@@ -35,7 +36,6 @@ use crate::{
     core::{Session, SessionAddress, SessionData},
     inbound::{milter::MilterClient, FilterResponse},
     queue::DomainPart,
-    DAEMON_NAME,
 };
 
 use super::{Action, Error, Macros, Modification};

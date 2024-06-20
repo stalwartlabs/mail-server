@@ -1,3 +1,26 @@
+/*
+ * Copyright (c) 2023 Stalwart Labs Ltd.
+ *
+ * This file is part of Stalwart Mail Server.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ * in the LICENSE file at the top-level directory of this distribution.
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * You can be released from the requirements of the AGPLv3 license by
+ * purchasing a commercial license. Please contact licensing@stalw.art
+ * for more details.
+*/
+
 use std::{
     collections::HashSet,
     sync::Arc,
@@ -24,6 +47,9 @@ pub struct Scripting {
     pub return_path: IfBlock,
     pub sign: IfBlock,
     pub scripts: AHashMap<String, Arc<Sieve>>,
+}
+
+pub struct ScriptCache {
     pub bayes_cache: BayesTokenCache,
     pub remote_lists: RwLock<AHashMap<String, RemoteList>>,
 }
@@ -307,29 +333,32 @@ impl Scripting {
                         "'MAILER-DAEMON@' + key_get('default', 'domain')",
                     )
                 }),
-                from_name: IfBlock::try_parse(config, "sieve.trusted.from-name", &token_map)
+            from_name: IfBlock::try_parse(config, "sieve.trusted.from-name", &token_map)
                 .unwrap_or_else(|| {
-                    IfBlock::new::<()>(
-                        "sieve.trusted.from-name",
-                        [],
-                        "'Automated Message'",
-                    )
+                    IfBlock::new::<()>("sieve.trusted.from-name", [], "'Automated Message'")
                 }),
-                return_path: IfBlock::try_parse(config, "sieve.trusted.return-path", &token_map)
-                .unwrap_or_else(|| {
-                    IfBlock::empty(
-                        "sieve.trusted.return-path",
-                    )
-                }),
-                sign: IfBlock::try_parse(config, "sieve.trusted.sign", &token_map)
-                .unwrap_or_else(|| {
+            return_path: IfBlock::try_parse(config, "sieve.trusted.return-path", &token_map)
+                .unwrap_or_else(|| IfBlock::empty("sieve.trusted.return-path")),
+            sign: IfBlock::try_parse(config, "sieve.trusted.sign", &token_map).unwrap_or_else(
+                || {
                     IfBlock::new::<()>(
                         "sieve.trusted.sign",
                         [],
-                        "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
+                        concat!(
+                            "['rsa-' + key_get('default', 'domain'), ",
+                            "'ed25519-' + key_get('default', 'domain')]"
+                        ),
                     )
-                }),
+                },
+            ),
             scripts,
+        }
+    }
+}
+
+impl ScriptCache {
+    pub fn parse(config: &mut Config) -> Self {
+        ScriptCache {
             bayes_cache: BayesTokenCache::new(
                 config
                     .property_or_default("cache.bayes.capacity", "8192")
@@ -362,9 +391,19 @@ impl Default for Scripting {
             sign: IfBlock::new::<()>(
                 "sieve.trusted.sign",
                 [],
-                "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
+                concat!(
+                    "['rsa-' + key_get('default', 'domain'), ",
+                    "'ed25519-' + key_get('default', 'domain')]"
+                ),
             ),
             scripts: AHashMap::new(),
+        }
+    }
+}
+
+impl Default for ScriptCache {
+    fn default() -> Self {
+        Self {
             bayes_cache: BayesTokenCache::new(
                 8192,
                 Duration::from_secs(3600),
@@ -386,8 +425,6 @@ impl Clone for Scripting {
             return_path: self.return_path.clone(),
             sign: self.sign.clone(),
             scripts: self.scripts.clone(),
-            bayes_cache: self.bayes_cache.clone(),
-            remote_lists: RwLock::new(self.remote_lists.read().clone()),
         }
     }
 }

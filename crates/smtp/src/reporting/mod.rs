@@ -29,6 +29,8 @@ use common::{
         resolver::{Policy, Tlsa},
     },
     expr::if_block::IfBlock,
+    webhooks::{WebhookPayload, WebhookType},
+    USER_AGENT,
 };
 use mail_auth::{
     common::headers::HeaderWriter,
@@ -47,7 +49,6 @@ use crate::{
     core::{Session, SMTP},
     inbound::DkimSign,
     queue::{DomainPart, Message},
-    USER_AGENT,
 };
 
 pub mod analysis;
@@ -163,6 +164,36 @@ impl SMTP {
                     domain.notify.due += delivery_time;
                 }
             }
+        }
+
+        // Send webhook
+        if self
+            .core
+            .has_webhook_subscribers(WebhookType::OutgoingReport)
+        {
+            self.inner
+                .ipc
+                .send_webhook(
+                    WebhookType::OutgoingReport,
+                    WebhookPayload::MessageAccepted {
+                        id: message.id,
+                        remote_ip: None,
+                        local_port: None,
+                        authenticated_as: None,
+                        return_path: message.return_path_lcase.clone(),
+                        recipients: message
+                            .recipients
+                            .iter()
+                            .map(|r| r.address_lcase.clone())
+                            .collect(),
+                        next_retry: DateTime::from_timestamp(message.next_delivery_event() as i64)
+                            .to_rfc3339(),
+                        next_dsn: DateTime::from_timestamp(message.next_dsn() as i64).to_rfc3339(),
+                        expires: DateTime::from_timestamp(message.expires() as i64).to_rfc3339(),
+                        size: message.size,
+                    },
+                )
+                .await;
         }
 
         // Queue message

@@ -31,7 +31,7 @@ use imap_proto::{
 
 use crate::core::{ImapUidToId, MailboxId, SelectedMailbox, Session, SessionData};
 use common::listener::SessionStream;
-use jmap::email::ingest::IngestEmail;
+use jmap::email::ingest::{IngestEmail, IngestSource};
 use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 
@@ -131,7 +131,7 @@ impl<T: SessionStream> SessionData<T> {
                     mailbox_ids: vec![mailbox_id],
                     keywords: message.flags.into_iter().map(Keyword::from).collect(),
                     received_at: message.received_at.map(|d| d as u64),
-                    skip_duplicates: false,
+                    source: IngestSource::Imap,
                     encrypt: self.jmap.core.jmap.encrypt && self.jmap.core.jmap.encrypt_append,
                 })
                 .await

@@ -6,7 +6,10 @@ use std::{
 
 use ahash::AHashSet;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use hyper::{header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE}, HeaderMap};
+use hyper::{
+    header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
+    HeaderMap,
+};
 use smtp_proto::*;
 use utils::config::{utils::ParseValue, Config};
 
@@ -203,14 +206,14 @@ impl SessionConfig {
         session.rcpt.catch_all = AddressMapping::parse(config, "session.rcpt.catch-all");
         session.rcpt.subaddressing = AddressMapping::parse(config, "session.rcpt.sub-addressing");
         session.milters = config
-            .sub_keys("session.milter", "")
+            .sub_keys("session.milter", ".hostname")
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
             .into_iter()
             .filter_map(|id| parse_milter(config, &id, &has_rcpt_vars))
             .collect();
         session.jmilters = config
-            .sub_keys("session.jmilter", "")
+            .sub_keys("session.jmilter", ".url")
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
             .into_iter()
@@ -589,20 +592,17 @@ fn parse_jmilter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<
                     HeaderName::from_str(k.trim()).map_err(|err| {
                         format!(
                             "Invalid header found in property \"session.jmilter.{id}.headers\": {err}",
-                            
                         )
                     })?,
                     HeaderValue::from_str(v.trim()).map_err(|err| {
                         format!(
                             "Invalid header found in property \"session.jmilter.{id}.headers\": {err}",
-                           
                         )
                     })?,
                 ))
             } else {
                 Err(format!(
                     "Invalid header found in property \"session.jmilter.{id}.headers\": {v}",
-                    
                 ))
             }
         })
@@ -614,8 +614,16 @@ fn parse_jmilter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<
     }
 
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
-    if let (Some(name), Some(secret)) = (config.value(("session.jmilter", id, "user")), config.value(("session.jmilter", id, "secret"))) {
-        headers.insert(AUTHORIZATION, format!("Basic {}", STANDARD.encode(format!("{}:{}", name, secret))).parse().unwrap());
+    if let (Some(name), Some(secret)) = (
+        config.value(("session.jmilter", id, "user")),
+        config.value(("session.jmilter", id, "secret")),
+    ) {
+        headers.insert(
+            AUTHORIZATION,
+            format!("Basic {}", STANDARD.encode(format!("{}:{}", name, secret)))
+                .parse()
+                .unwrap(),
+        );
     }
 
     Some(JMilter {

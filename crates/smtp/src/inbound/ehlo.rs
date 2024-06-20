@@ -28,7 +28,7 @@ use common::{
     config::smtp::session::{Mechanism, Stage},
     listener::SessionStream,
 };
-use mail_auth::spf::verify::HasLabels;
+use mail_auth::spf::verify::HasValidLabels;
 use smtp_proto::*;
 
 impl<T: SessionStream> Session<T> {
@@ -37,7 +37,7 @@ impl<T: SessionStream> Session<T> {
 
         if domain != self.data.helo_domain {
             // Reject non-FQDN EHLO domains - simply checks that the hostname has at least one dot
-            if self.params.ehlo_reject_non_fqdn && !domain.as_str().has_labels() {
+            if self.params.ehlo_reject_non_fqdn && !domain.as_str().has_valid_labels() {
                 tracing::info!(parent: &self.span,
                     context = "ehlo",
                     event = "reject",

@@ -116,7 +116,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     );
 
     // Update weight and invalidate cache
-    let bayes_cache = &ctx.core.sieve.bayes_cache;
+    let bayes_cache = &ctx.cache.bayes_cache;
     if is_train {
         for (hash, weights) in model.weights {
             if store
@@ -209,7 +209,7 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> Variable {
     }
 
     // Obtain training counts
-    let bayes_cache = &ctx.core.sieve.bayes_cache;
+    let bayes_cache = &ctx.cache.bayes_cache;
     let (spam_learns, ham_learns) =
         if let Some(weights) = bayes_cache.get_or_update(TokenHash::default(), store).await {
             (weights.spam, weights.ham)
@@ -286,7 +286,7 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
     let learn_spam = ctx.arguments[1].to_bool();
 
     // Obtain training counts
-    let bayes_cache = &ctx.core.sieve.bayes_cache;
+    let bayes_cache = &ctx.cache.bayes_cache;
     let (spam_learns, ham_learns) =
         if let Some(weights) = bayes_cache.get_or_update(TokenHash::default(), store).await {
             (weights.spam as f64, weights.ham as f64)

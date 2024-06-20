@@ -23,13 +23,12 @@
 
 use std::time::Duration;
 
-use common::{config::server::ServerProtocol, manager::boot::BootManager};
-use imap::core::{ImapSessionManager, IMAP};
-use jmap::{
-    api::JmapSessionManager,
-    services::{gossip::spawn::GossiperBuilder, IPC_CHANNEL_BUFFER},
-    JMAP,
+use common::{
+    config::server::ServerProtocol, manager::boot::BootManager,
+    webhooks::manager::spawn_webhook_manager, Ipc, IPC_CHANNEL_BUFFER,
 };
+use imap::core::{ImapSessionManager, IMAP};
+use jmap::{api::JmapSessionManager, services::gossip::spawn::GossiperBuilder, JMAP};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
@@ -52,9 +51,18 @@ async fn main() -> std::io::Result<()> {
     let mut config = init.config;
     let core = init.core;
 
-    // Init servers
+    // Spawn webhook manager
+    let webhook_tx = spawn_webhook_manager(core.clone());
+
+    // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&mut config, core.clone(), delivery_tx).await;
+    let ipc = Ipc {
+        delivery_tx,
+        webhook_tx,
+    };
+
+    // Init servers
+    let smtp = SMTP::init(&mut config, core.clone(), ipc).await;
     let jmap = JMAP::init(&mut config, delivery_rx, core.clone(), smtp.inner.clone()).await;
     let imap = IMAP::init(&mut config, jmap.clone()).await;
     let gossiper = GossiperBuilder::try_parse(&mut config);
@@ -101,7 +109,7 @@ async fn main() -> std::io::Result<()> {
 
     // Spawn gossip
     if let Some(gossiper) = gossiper {
-        gossiper.spawn(jmap, shutdown_rx).await;
+        gossiper.spawn(jmap, shutdown_rx.clone()).await;
     }
 
     // Wait for shutdown signal

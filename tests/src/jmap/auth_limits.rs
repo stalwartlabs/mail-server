@@ -71,6 +71,16 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Reset rate limiters
     server.inner.concurrency_limiter.clear();
+    params.webhook.clear();
+
+    // Incorrect passwords should be rejected with a 401 error
+    assert!(matches!(
+        Client::new()
+            .credentials(Credentials::basic("jdoe@example.com", "abcde"))
+            .accept_invalid_certs(true)
+            .connect("https://127.0.0.1:8899")
+            .await,
+        Err(jmap_client::Error::Problem(err)) if err.status() == Some(401)));
 
     // Wait until the beginning of the 5 seconds bucket
     const LIMIT: u64 = 5;
@@ -78,15 +88,6 @@ pub async fn test(params: &mut JMAPTest) {
     let range_start = now / LIMIT;
     let range_end = (range_start * LIMIT) + LIMIT;
     tokio::time::sleep(Duration::from_secs(range_end - now)).await;
-
-    // Incorrect passwords should be rejected with a 401 error
-    assert!(matches!(
-            Client::new()
-                .credentials(Credentials::basic("jdoe@example.com", "abcde"))
-                .accept_invalid_certs(true)
-                .connect("https://127.0.0.1:8899")
-                .await,
-            Err(jmap_client::Error::Problem(err)) if err.status() == Some(401)));
 
     // Invalid authentication requests should be rate limited
     let mut n_401 = 0;
@@ -280,4 +281,13 @@ pub async fn test(params: &mut JMAPTest) {
     params.client.set_default_account_id(&account_id);
     destroy_all_mailboxes(params).await;
     assert_is_empty(server).await;
+
+    // Check webhook events
+    params.webhook.assert_contains(&[
+        "auth.failure",
+        "auth.success",
+        "auth.banned",
+        "\"login\": \"jdoe@example.com\"",
+        "\"accountType\": \"individual\"",
+    ]);
 }

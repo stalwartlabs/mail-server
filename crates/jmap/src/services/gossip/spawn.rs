@@ -22,11 +22,11 @@
 */
 
 use crate::auth::SymmetricEncrypt;
-use crate::services::IPC_CHANNEL_BUFFER;
 use crate::JmapInstance;
 
 use super::request::Request;
 use super::{Gossiper, Peer, UDP_MAX_PAYLOAD};
+use common::IPC_CHANNEL_BUFFER;
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use std::{net::SocketAddr, sync::Arc};

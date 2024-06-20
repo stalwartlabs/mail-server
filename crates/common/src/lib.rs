@@ -28,6 +28,7 @@ use config::{
     imap::ImapConfig,
     jmap::settings::JmapConfig,
     scripts::Scripting,
+    server::ServerProtocol,
     smtp::{
         auth::{ArcSealer, DkimSigner},
         queue::RelayHost,
@@ -36,7 +37,7 @@ use config::{
     storage::Storage,
     tracers::{OtelTracer, Tracer, Tracers},
 };
-use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy};
+use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy, Type};
 use expr::if_block::IfBlock;
 use listener::{
     blocked::{AllowedIps, BlockedIps},
@@ -51,12 +52,13 @@ use opentelemetry_sdk::{
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use sieve::Sieve;
 use store::LookupStore;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer, Registry,
 };
 use utils::{config::Config, BlobHash};
+use webhooks::{manager::WebhookEvent, WebhookPayload, WebhookType, Webhooks};
 
 pub mod addresses;
 pub mod config;
@@ -64,9 +66,12 @@ pub mod expr;
 pub mod listener;
 pub mod manager;
 pub mod scripts;
+pub mod webhooks;
 
 pub static USER_AGENT: &str = concat!("StalwartMail/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);
+
+pub const IPC_CHANNEL_BUFFER: usize = 1024;
 
 pub type SharedCore = Arc<ArcSwap<Core>>;
 
@@ -79,6 +84,7 @@ pub struct Core {
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
     pub imap: ImapConfig,
+    pub web_hooks: Webhooks,
 }
 
 #[derive(Clone)]
@@ -101,6 +107,11 @@ pub enum DeliveryEvent {
         result_tx: oneshot::Sender<Vec<DeliveryResult>>,
     },
     Stop,
+}
+
+pub struct Ipc {
+    pub delivery_tx: mpsc::Sender<DeliveryEvent>,
+    pub webhook_tx: mpsc::Sender<WebhookEvent>,
 }
 
 #[derive(Debug)]
@@ -230,8 +241,10 @@ impl Core {
     pub async fn authenticate(
         &self,
         directory: &Directory,
+        ipc: &Ipc,
         credentials: &Credentials<String>,
         remote_ip: IpAddr,
+        protocol: ServerProtocol,
         return_member_of: bool,
     ) -> directory::Result<AuthResult<Principal<u32>>> {
         // First try to authenticate the user against the default directory
@@ -239,7 +252,24 @@ impl Core {
             .query(QueryBy::Credentials(credentials), return_member_of)
             .await
         {
-            Ok(Some(principal)) => return Ok(AuthResult::Success(principal)),
+            Ok(Some(principal)) => {
+                // Send webhook event
+                if self.has_webhook_subscribers(WebhookType::AuthSuccess) {
+                    ipc.send_webhook(
+                        WebhookType::AuthSuccess,
+                        WebhookPayload::Authentication {
+                            login: credentials.login().to_string(),
+                            protocol,
+                            remote_ip,
+                            typ: principal.typ.into(),
+                            as_master: None,
+                        },
+                    )
+                    .await;
+                }
+
+                return Ok(AuthResult::Success(principal));
+            }
             Ok(None) => Ok(()),
             Err(err) => Err(err),
         };
@@ -254,6 +284,20 @@ impl Core {
                 if username == fallback_admin =>
             {
                 if verify_secret_hash(fallback_pass, secret).await {
+                    // Send webhook event
+                    if self.has_webhook_subscribers(WebhookType::AuthSuccess) {
+                        ipc.send_webhook(
+                            WebhookType::AuthSuccess,
+                            WebhookPayload::Authentication {
+                                login: username.to_string(),
+                                protocol,
+                                remote_ip,
+                                typ: Type::Superuser.into(),
+                                as_master: None,
+                            },
+                        )
+                        .await;
+                    }
                     return Ok(AuthResult::Success(Principal::fallback_admin(
                         fallback_pass,
                     )));
@@ -270,8 +314,37 @@ impl Core {
                             .query(QueryBy::Name(username), return_member_of)
                             .await?
                         {
+                            // Send webhook event
+                            if self.has_webhook_subscribers(WebhookType::AuthSuccess) {
+                                ipc.send_webhook(
+                                    WebhookType::AuthSuccess,
+                                    WebhookPayload::Authentication {
+                                        login: username.to_string(),
+                                        protocol,
+                                        remote_ip,
+                                        typ: principal.typ.into(),
+                                        as_master: true.into(),
+                                    },
+                                )
+                                .await;
+                            }
                             AuthResult::Success(principal)
                         } else {
+                            // Send webhook event
+                            if self.has_webhook_subscribers(WebhookType::AuthFailure) {
+                                ipc.send_webhook(
+                                    WebhookType::AuthFailure,
+                                    WebhookPayload::Authentication {
+                                        login: username.to_string(),
+                                        protocol,
+                                        remote_ip,
+                                        typ: None,
+                                        as_master: true.into(),
+                                    },
+                                )
+                                .await;
+                            }
+
                             AuthResult::Failure
                         },
                     );
@@ -281,13 +354,20 @@ impl Core {
         }
 
         if let Err(err) = result {
+            // Send webhook event
+            if self.has_webhook_subscribers(WebhookType::AuthError) {
+                ipc.send_webhook(
+                    WebhookType::AuthError,
+                    WebhookPayload::Error {
+                        message: err.to_string(),
+                    },
+                )
+                .await;
+            }
+
             Err(err)
         } else if self.has_fail2ban() {
-            let login = match credentials {
-                Credentials::Plain { username, .. }
-                | Credentials::XOauth2 { username, .. }
-                | Credentials::OAuthBearer { token: username } => username,
-            };
+            let login = credentials.login();
             if self.is_fail2banned(remote_ip, login.to_string()).await? {
                 tracing::info!(
                     context = "directory",
@@ -297,11 +377,55 @@ impl Core {
                     "IP address blocked after too many failed login attempts",
                 );
 
+                // Send webhook event
+                if self.has_webhook_subscribers(WebhookType::AuthBanned) {
+                    ipc.send_webhook(
+                        WebhookType::AuthBanned,
+                        WebhookPayload::Authentication {
+                            login: credentials.login().to_string(),
+                            protocol,
+                            remote_ip,
+                            typ: None,
+                            as_master: None,
+                        },
+                    )
+                    .await;
+                }
+
                 Ok(AuthResult::Banned)
             } else {
+                // Send webhook event
+                if self.has_webhook_subscribers(WebhookType::AuthFailure) {
+                    ipc.send_webhook(
+                        WebhookType::AuthFailure,
+                        WebhookPayload::Authentication {
+                            login: credentials.login().to_string(),
+                            protocol,
+                            remote_ip,
+                            typ: None,
+                            as_master: None,
+                        },
+                    )
+                    .await;
+                }
+
                 Ok(AuthResult::Failure)
             }
         } else {
+            // Send webhook event
+            if self.has_webhook_subscribers(WebhookType::AuthFailure) {
+                ipc.send_webhook(
+                    WebhookType::AuthFailure,
+                    WebhookPayload::Authentication {
+                        login: credentials.login().to_string(),
+                        protocol,
+                        remote_ip,
+                        typ: None,
+                        as_master: None,
+                    },
+                )
+                .await;
+            }
             Ok(AuthResult::Failure)
         }
     }
@@ -418,6 +542,20 @@ impl Tracers {
                 config.new_build_error("tracer", format!("Failed to start tracing: {err}"));
                 None
             }
+        }
+    }
+}
+
+trait CredentialsUsername {
+    fn login(&self) -> &str;
+}
+
+impl CredentialsUsername for Credentials<String> {
+    fn login(&self) -> &str {
+        match self {
+            Credentials::Plain { username, .. }
+            | Credentials::XOauth2 { username, .. }
+            | Credentials::OAuthBearer { token: username } => username,
         }
     }
 }

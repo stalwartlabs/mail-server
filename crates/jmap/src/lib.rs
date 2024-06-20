@@ -29,7 +29,11 @@ use std::{
 };
 
 use auth::{rate_limit::ConcurrencyLimiters, AccessToken};
-use common::{manager::webadmin::WebAdminManager, Core, DeliveryEvent, SharedCore};
+use common::{
+    manager::webadmin::WebAdminManager,
+    webhooks::{WebhookPayload, WebhookType},
+    Core, DeliveryEvent, SharedCore,
+};
 use dashmap::DashMap;
 use directory::QueryBy;
 use email::cache::Threads;
@@ -402,6 +406,43 @@ impl JMAP {
                 "Failed to obtain used disk quota for account.");
                 MethodError::ServerPartialFail
             })
+    }
+
+    pub async fn has_available_quota(
+        &self,
+        account_id: u32,
+        account_quota: i64,
+        item_size: i64,
+    ) -> Result<bool, MethodError> {
+        if account_quota == 0 {
+            return Ok(true);
+        }
+        let used_quota = self.get_used_quota(account_id).await?;
+        if used_quota + item_size <= account_quota {
+            Ok(true)
+        } else {
+            // Send webhook
+            if self
+                .core
+                .has_webhook_subscribers(WebhookType::AccountOverQuota)
+            {
+                self.smtp
+                    .inner
+                    .ipc
+                    .send_webhook(
+                        WebhookType::AccountOverQuota,
+                        WebhookPayload::AccountOverQuota {
+                            account_id,
+                            quota_limit: account_quota as usize,
+                            quota_used: used_quota as usize,
+                            object_size: item_size as usize,
+                        },
+                    )
+                    .await;
+            }
+
+            Ok(false)
+        }
     }
 
     pub async fn filter(

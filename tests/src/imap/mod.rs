@@ -45,7 +45,8 @@ use std::{
 use ::managesieve::core::ManageSieveSessionManager;
 use common::{
     config::server::{ServerProtocol, Servers},
-    Core,
+    webhooks::manager::spawn_webhook_manager,
+    Core, Ipc, IPC_CHANNEL_BUFFER,
 };
 
 use ::store::Stores;
@@ -53,7 +54,7 @@ use ahash::AHashSet;
 use directory::backend::internal::manage::ManageDirectory;
 use imap::core::{ImapSessionManager, Inner, IMAP};
 use imap_proto::ResponseType;
-use jmap::{api::JmapSessionManager, services::IPC_CHANNEL_BUFFER, JMAP};
+use jmap::{api::JmapSessionManager, JMAP};
 use pop3::Pop3SessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::{
@@ -321,9 +322,18 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     // Parse acceptors
     servers.parse_tcp_acceptors(&mut config, shared_core.clone());
 
-    // Init servers
+    // Spawn webhook manager
+    let webhook_tx = spawn_webhook_manager(shared_core.clone());
+
+    // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let smtp = SMTP::init(&mut config, shared_core.clone(), delivery_tx).await;
+    let ipc = Ipc {
+        delivery_tx,
+        webhook_tx,
+    };
+
+    // Init servers
+    let smtp = SMTP::init(&mut config, shared_core.clone(), ipc).await;
     let jmap = JMAP::init(
         &mut config,
         delivery_rx,
@@ -369,6 +379,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
             ),
         };
     });
+
     // Create tables and test accounts
     let lookup = DirectoryStore {
         store: shared_core

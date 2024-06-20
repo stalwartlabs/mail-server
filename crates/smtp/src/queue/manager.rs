@@ -165,6 +165,40 @@ impl Message {
         next_delivery
     }
 
+    pub fn next_dsn(&self) -> u64 {
+        let mut next_dsn = now();
+
+        for (pos, domain) in self
+            .domains
+            .iter()
+            .filter(|d| matches!(d.status, Status::Scheduled | Status::TemporaryFailure(_)))
+            .enumerate()
+        {
+            if pos == 0 || domain.notify.due < next_dsn {
+                next_dsn = domain.notify.due;
+            }
+        }
+
+        next_dsn
+    }
+
+    pub fn expires(&self) -> u64 {
+        let mut expires = now();
+
+        for (pos, domain) in self
+            .domains
+            .iter()
+            .filter(|d| matches!(d.status, Status::Scheduled | Status::TemporaryFailure(_)))
+            .enumerate()
+        {
+            if pos == 0 || domain.expires < expires {
+                expires = domain.expires;
+            }
+        }
+
+        expires
+    }
+
     pub fn next_event_after(&self, instant: u64) -> Option<u64> {
         let mut next_event = None;
 

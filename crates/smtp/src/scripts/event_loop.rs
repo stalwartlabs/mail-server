@@ -123,6 +123,7 @@ impl SMTP {
                                 PluginContext {
                                     span: &span,
                                     core: &self.core,
+                                    cache: &self.inner.script_cache,
                                     message: instance.message(),
                                     modifications: &mut modifications,
                                     arguments,

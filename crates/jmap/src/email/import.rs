@@ -41,7 +41,7 @@ use utils::map::vec_map::VecMap;
 
 use crate::{auth::AccessToken, IngestError, JMAP};
 
-use super::ingest::IngestEmail;
+use super::ingest::{IngestEmail, IngestSource};
 
 impl JMAP {
     pub async fn email_import(
@@ -140,7 +140,7 @@ impl JMAP {
                     mailbox_ids,
                     keywords: email.keywords,
                     received_at: email.received_at.map(|r| r.into()),
-                    skip_duplicates: true,
+                    source: IngestSource::Jmap,
                     encrypt: self.core.jmap.encrypt && self.core.jmap.encrypt_append,
                 })
                 .await
