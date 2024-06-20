@@ -1,5 +1,6 @@
 /target
 .vscode
+.idea
 *.failed
 *_failed
 run.sh
