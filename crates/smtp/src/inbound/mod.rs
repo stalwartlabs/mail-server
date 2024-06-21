@@ -32,7 +32,7 @@ use mail_auth::{
 pub mod auth;
 pub mod data;
 pub mod ehlo;
-pub mod jmilter;
+pub mod hooks;
 pub mod mail;
 pub mod milter;
 pub mod rcpt;

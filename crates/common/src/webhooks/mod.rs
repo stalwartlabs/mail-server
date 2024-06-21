@@ -136,10 +136,10 @@ pub enum WebhookPayload {
         return_path: String,
         recipients: Vec<String>,
         #[serde(rename = "nextRetry")]
-        next_retry: String,
+        next_retry: DateTime<Utc>,
         #[serde(rename = "nextDSN")]
-        next_dsn: String,
-        expires: String,
+        next_dsn: DateTime<Utc>,
+        expires: DateTime<Utc>,
         size: usize,
     },
     MessageRejected {
@@ -172,7 +172,7 @@ pub enum WebhookPayload {
         sender: String,
         status: Vec<WebhookDSN>,
         #[serde(rename = "createdAt")]
-        created: String,
+        created: DateTime<Utc>,
     },
     IncomingDmarcReport {
         #[serde(rename = "rangeFrom")]
@@ -296,9 +296,9 @@ pub struct WebhookDSN {
     pub message: String,
     #[serde(rename = "nextRetry")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_retry: Option<String>,
+    pub next_retry: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expires: Option<String>,
+    pub expires: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "retryCount")]
     pub retry_count: Option<u32>,

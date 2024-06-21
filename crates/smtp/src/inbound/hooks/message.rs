@@ -23,7 +23,7 @@
 
 use ahash::AHashMap;
 use common::{
-    config::smtp::session::{JMilter, Stage},
+    config::smtp::session::{FilterHook, Stage},
     listener::SessionStream,
     DAEMON_NAME,
 };
@@ -32,7 +32,7 @@ use mail_auth::AuthenticatedMessage;
 use crate::{
     core::Session,
     inbound::{
-        jmilter::{
+        hooks::{
             Address, Client, Context, Envelope, Message, Protocol, Request, Sasl, Server, Tls,
         },
         milter::Modification,
@@ -40,33 +40,33 @@ use crate::{
     },
 };
 
-use super::{client::send_jmilter_request, Action, Response};
+use super::{client::send_filter_hook_request, Action, Response};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn run_jmilters(
+    pub async fn run_filter_hooks(
         &self,
         stage: Stage,
         message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, FilterResponse> {
-        let jmilters = &self.core.core.smtp.session.jmilters;
-        if jmilters.is_empty() {
+        let filter_hooks = &self.core.core.smtp.session.hooks;
+        if filter_hooks.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut modifications = Vec::new();
-        for jmilter in jmilters {
-            if !jmilter.run_on_stage.contains(&stage)
+        for filter_hook in filter_hooks {
+            if !filter_hook.run_on_stage.contains(&stage)
                 || !self
                     .core
                     .core
-                    .eval_if(&jmilter.enable, self)
+                    .eval_if(&filter_hook.enable, self)
                     .await
                     .unwrap_or(false)
             {
                 continue;
             }
 
-            match self.run_jmilter(stage, jmilter, message).await {
+            match self.run_filter_hook(stage, filter_hook, message).await {
                 Ok(response) => {
                     let mut new_modifications = Vec::with_capacity(response.modifications.len());
                     for modification in response.modifications {
@@ -154,12 +154,12 @@ impl<T: SessionStream> Session<T> {
                 Err(err) => {
                     tracing::warn!(
                         parent: &self.span,
-                        jmilter.url = &jmilter.url,
-                        context = "jmilter",
+                        filter_hook.url = &filter_hook.url,
+                        context = "filter_hook",
                         event = "error",
                         reason = ?err,
-                        "JMilter filter failed");
-                    if jmilter.tempfail_on_error {
+                        "FilterHook filter failed");
+                    if filter_hook.tempfail_on_error {
                         return Err(FilterResponse::server_failure());
                     }
                 }
@@ -169,10 +169,10 @@ impl<T: SessionStream> Session<T> {
         Ok(modifications)
     }
 
-    pub async fn run_jmilter(
+    pub async fn run_filter_hook(
         &self,
         stage: Stage,
-        jmilter: &JMilter,
+        filter_hook: &FilterHook,
         message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Response, String> {
         // Build request
@@ -245,7 +245,7 @@ impl<T: SessionStream> Session<T> {
             }),
         };
 
-        send_jmilter_request(jmilter, request).await
+        send_filter_hook_request(filter_hook, request).await
     }
 }
 

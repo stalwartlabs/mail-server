@@ -23,6 +23,7 @@
 
 use std::{io, sync::Arc, time::SystemTime};
 
+use chrono::{TimeZone, Utc};
 use common::{
     config::smtp::{
         report::{AddressMatch, AggregateFrequency},
@@ -186,10 +187,18 @@ impl SMTP {
                             .iter()
                             .map(|r| r.address_lcase.clone())
                             .collect(),
-                        next_retry: DateTime::from_timestamp(message.next_delivery_event() as i64)
-                            .to_rfc3339(),
-                        next_dsn: DateTime::from_timestamp(message.next_dsn() as i64).to_rfc3339(),
-                        expires: DateTime::from_timestamp(message.expires() as i64).to_rfc3339(),
+                        next_retry: Utc
+                            .timestamp_opt(message.next_delivery_event() as i64, 0)
+                            .single()
+                            .unwrap_or_else(Utc::now),
+                        next_dsn: Utc
+                            .timestamp_opt(message.next_dsn() as i64, 0)
+                            .single()
+                            .unwrap_or_else(Utc::now),
+                        expires: Utc
+                            .timestamp_opt(message.expires() as i64, 0)
+                            .single()
+                            .unwrap_or_else(Utc::now),
                         size: message.size,
                     },
                 )

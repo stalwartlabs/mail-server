@@ -7,7 +7,7 @@ homepage = "https://stalw.art/smtp"
 keywords = ["smtp", "email", "mail", "server"]
 categories = ["email"]
 license = "AGPL-3.0-only"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 resolver = "2"
 
@@ -51,13 +51,8 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 num_cpus = "1.15.0"
 lazy_static = "1.4"
-whatlang = "0.16"
-imagesize = "0.12"
-idna = "0.5"
-decancer = "3.0.1"
-unicode-security = "0.1.0"
-infer = "0.15.0"
 bincode = "1.3.1"
+chrono = "0.4"
 
 [features]
 test_mode = []

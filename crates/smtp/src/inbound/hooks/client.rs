@@ -21,41 +21,52 @@
  * for more details.
 */
 
-use common::config::smtp::session::JMilter;
+use common::config::smtp::session::FilterHook;
 
 use super::{Request, Response};
 
-pub(super) async fn send_jmilter_request(
-    jmilter: &JMilter,
+pub(super) async fn send_filter_hook_request(
+    filter_hook: &FilterHook,
     request: Request,
 ) -> Result<Response, String> {
     let response = reqwest::Client::builder()
-        .timeout(jmilter.timeout)
-        .danger_accept_invalid_certs(jmilter.tls_allow_invalid_certs)
+        .timeout(filter_hook.timeout)
+        .danger_accept_invalid_certs(filter_hook.tls_allow_invalid_certs)
         .build()
         .map_err(|err| format!("Failed to create HTTP client: {}", err))?
-        .post(&jmilter.url)
-        .headers(jmilter.headers.clone())
+        .post(&filter_hook.url)
+        .headers(filter_hook.headers.clone())
         .body(
             serde_json::to_string(&request)
-                .map_err(|err| format!("Failed to serialize jMilter request: {}", err))?,
+                .map_err(|err| format!("Failed to serialize Hook request: {}", err))?,
         )
         .send()
         .await
-        .map_err(|err| format!("jMilter request failed: {err}"))?;
+        .map_err(|err| format!("Hook request failed: {err}"))?;
 
     if response.status().is_success() {
+        if response
+            .content_length()
+            .map_or(false, |len| len as usize > filter_hook.max_response_size)
+        {
+            return Err(format!(
+                "Hook response too large ({} bytes)",
+                response.content_length().unwrap()
+            ));
+        }
+
+        // TODO: Stream response body to limit response size
         serde_json::from_slice(
             response
                 .bytes()
                 .await
-                .map_err(|err| format!("Failed to parse jMilter response: {}", err))?
+                .map_err(|err| format!("Failed to parse Hook response: {}", err))?
                 .as_ref(),
         )
-        .map_err(|err| format!("Failed to parse jMilter response: {}", err))
+        .map_err(|err| format!("Failed to parse Hook response: {}", err))
     } else {
         Err(format!(
-            "jMilter request failed with code {}: {}",
+            "Hook request failed with code {}: {}",
             response.status().as_u16(),
             response.status().canonical_reason().unwrap_or("Unknown")
         ))

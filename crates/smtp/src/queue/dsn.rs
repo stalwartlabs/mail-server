@@ -21,6 +21,7 @@
  * for more details.
 */
 
+use chrono::{TimeZone, Utc};
 use common::webhooks::{WebhookDSN, WebhookDSNType, WebhookPayload, WebhookType};
 use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::HeaderType;
@@ -112,12 +113,8 @@ impl SMTP {
                         typ: WebhookDSNType::TemporaryFailure,
                         remote_host: response.hostname.entity.clone().into(),
                         message: response.response.to_string(),
-                        next_retry: DateTime::from_timestamp(domain.retry.due as i64)
-                            .to_rfc3339()
-                            .into(),
-                        expires: DateTime::from_timestamp(domain.expires as i64)
-                            .to_rfc3339()
-                            .into(),
+                        next_retry: Utc.timestamp_opt(domain.retry.due as i64, 0).single(),
+                        expires: Utc.timestamp_opt(domain.expires as i64, 0).single(),
                         retry_count: domain.retry.inner.into(),
                     });
                 }
@@ -152,12 +149,8 @@ impl SMTP {
                                 typ: WebhookDSNType::TemporaryFailure,
                                 remote_host: None,
                                 message: err.to_string(),
-                                next_retry: DateTime::from_timestamp(domain.retry.due as i64)
-                                    .to_rfc3339()
-                                    .into(),
-                                expires: DateTime::from_timestamp(domain.expires as i64)
-                                    .to_rfc3339()
-                                    .into(),
+                                next_retry: Utc.timestamp_opt(domain.retry.due as i64, 0).single(),
+                                expires: Utc.timestamp_opt(domain.expires as i64, 0).single(),
                                 retry_count: domain.retry.inner.into(),
                             });
                         }
@@ -167,12 +160,8 @@ impl SMTP {
                                 typ: WebhookDSNType::TemporaryFailure,
                                 remote_host: None,
                                 message: "Concurrency limited".to_string(),
-                                next_retry: DateTime::from_timestamp(domain.retry.due as i64)
-                                    .to_rfc3339()
-                                    .into(),
-                                expires: DateTime::from_timestamp(domain.expires as i64)
-                                    .to_rfc3339()
-                                    .into(),
+                                next_retry: Utc.timestamp_opt(domain.retry.due as i64, 0).single(),
+                                expires: Utc.timestamp_opt(domain.expires as i64, 0).single(),
                                 retry_count: domain.retry.inner.into(),
                             });
                         }
@@ -193,7 +182,10 @@ impl SMTP {
                         id: message.id,
                         sender: message.return_path_lcase.clone(),
                         status: webhook_data,
-                        created: DateTime::from_timestamp(message.created as i64).to_rfc3339(),
+                        created: Utc
+                            .timestamp_opt(message.created as i64, 0)
+                            .single()
+                            .unwrap_or_else(Utc::now),
                     },
                 )
                 .await;

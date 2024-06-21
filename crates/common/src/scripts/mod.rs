@@ -9,6 +9,8 @@ pub mod functions;
 pub mod plugins;
 
 #[derive(Debug, serde::Serialize)]
+#[serde(tag = "action")]
+#[serde(rename_all = "camelCase")]
 pub enum ScriptModification {
     SetEnvelope {
         name: Envelope,

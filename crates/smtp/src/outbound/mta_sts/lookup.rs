@@ -74,7 +74,7 @@ impl SMTP {
         // Fetch policy
         #[cfg(not(feature = "test_mode"))]
         let bytes = reqwest::Client::builder()
-            .user_agent(crate::USER_AGENT)
+            .user_agent(common::USER_AGENT)
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::none())
             .build()?

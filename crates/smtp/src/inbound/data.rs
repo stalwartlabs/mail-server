@@ -28,6 +28,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use chrono::{TimeZone, Utc};
 use common::{
     config::smtp::{auth::VerifyStrategy, session::Stage},
     listener::SessionStream,
@@ -39,7 +40,6 @@ use mail_auth::{
     dmarc, AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, ReceivedSpf,
 };
 use mail_builder::headers::{date::Date, message_id::generate_message_id_header};
-use mail_parser::DateTime;
 use sieve::runtime::Variable;
 use smtp_proto::{
     MAIL_BY_RETURN, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
@@ -447,15 +447,18 @@ impl<T: SessionStream> Session<T> {
             }
         };
 
-        // Run JMilter filters
-        match self.run_jmilters(Stage::Data, (&auth_message).into()).await {
+        // Run filter hooks
+        match self
+            .run_filter_hooks(Stage::Data, (&auth_message).into())
+            .await
+        {
             Ok(modifications_) => {
                 if !modifications_.is_empty() {
                     tracing::debug!(
                             parent: &self.span,
-                            context = "jmilter",
+                            context = "filter_hook",
                             event = "accept",
-                            "JMilter filter(s) accepted message.");
+                            "FilterHook filter(s) accepted message.");
 
                     modifications.retain(|m| !matches!(m, Modification::ReplaceBody { .. }));
                     modifications.extend(modifications_);
@@ -777,10 +780,18 @@ impl<T: SessionStream> Session<T> {
                         .iter()
                         .map(|r| r.address_lcase.clone())
                         .collect(),
-                    next_retry: DateTime::from_timestamp(message.next_delivery_event() as i64)
-                        .to_rfc3339(),
-                    next_dsn: DateTime::from_timestamp(message.next_dsn() as i64).to_rfc3339(),
-                    expires: DateTime::from_timestamp(message.expires() as i64).to_rfc3339(),
+                    next_retry: Utc
+                        .timestamp_opt(message.next_delivery_event() as i64, 0)
+                        .single()
+                        .unwrap_or_else(Utc::now),
+                    next_dsn: Utc
+                        .timestamp_opt(message.next_dsn() as i64, 0)
+                        .single()
+                        .unwrap_or_else(Utc::now),
+                    expires: Utc
+                        .timestamp_opt(message.expires() as i64, 0)
+                        .single()
+                        .unwrap_or_else(Utc::now),
                     size: message.size,
                 });
 

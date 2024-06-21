@@ -1010,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -1024,8 +1024,8 @@ dependencies = [
  "hostname 0.4.0",
  "hyper 1.3.1",
  "idna 1.0.1",
- "imagesize 0.13.0",
- "infer 0.16.0",
+ "imagesize",
+ "infer",
  "jmap_proto",
  "mail-auth",
  "mail-parser",
@@ -1612,7 +1612,7 @@ dependencies = [
 
 [[package]]
 name = "directory"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "ahash 0.8.11",
  "argon2",
@@ -2943,19 +2943,13 @@ dependencies = [
 
 [[package]]
 name = "imagesize"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "029d73f573d8e8d63e6d5020011d3255b28c3ba85d6cf870a07184ed23de9284"
-
-[[package]]
-name = "imagesize"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edcd27d72f2f071c64249075f42e205ff93c9a4c5f6c6da53e79ed9f9832c285"
 
 [[package]]
 name = "imap"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "ahash 0.8.11",
  "common",
@@ -3022,15 +3016,6 @@ dependencies = [
  "number_prefix",
  "portable-atomic",
  "unicode-width",
-]
-
-[[package]]
-name = "infer"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb33622da908807a06f9513c19b3c1ad50fab3e4137d82a78107d502075aa199"
-dependencies = [
- "cfb",
 ]
 
 [[package]]
@@ -3166,7 +3151,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -3604,7 +3589,7 @@ dependencies = [
 
 [[package]]
 name = "mail-server"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "common",
  "directory",
@@ -3623,7 +3608,7 @@ dependencies = [
 
 [[package]]
 name = "managesieve"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -3917,7 +3902,7 @@ dependencies = [
 
 [[package]]
 name = "nlp"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -4473,7 +4458,7 @@ dependencies = [
 
 [[package]]
 name = "pop3"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "common",
  "imap",
@@ -6021,22 +6006,19 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "smtp"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
  "blake3",
+ "chrono",
  "common",
  "dashmap",
- "decancer",
  "directory",
  "form_urlencoded",
  "http-body-util",
  "hyper 1.3.1",
  "hyper-util",
- "idna 0.5.0",
- "imagesize 0.12.0",
- "infer 0.15.0",
  "lazy_static",
  "lru-cache",
  "mail-auth",
@@ -6064,10 +6046,8 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.25.0",
  "tracing",
- "unicode-security",
  "utils",
  "webpki-roots 0.26.3",
- "whatlang",
  "x509-parser 0.16.0",
 ]
 
@@ -6143,7 +6123,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "stalwart-cli"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "clap",
  "console",
@@ -6174,7 +6154,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "store"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -7085,7 +7065,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utils"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "ahash 0.8.11",
  "base64 0.22.1",

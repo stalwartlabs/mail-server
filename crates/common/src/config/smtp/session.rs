@@ -39,7 +39,7 @@ pub struct SessionConfig {
     pub mta_sts_policy: Option<Policy>,
 
     pub milters: Vec<Milter>,
-    pub jmilters: Vec<JMilter>,
+    pub hooks: Vec<FilterHook>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -173,7 +173,7 @@ pub enum MilterVersion {
 }
 
 #[derive(Clone)]
-pub struct JMilter {
+pub struct FilterHook {
     pub enable: IfBlock,
     pub url: String,
     pub timeout: Duration,
@@ -181,6 +181,7 @@ pub struct JMilter {
     pub tls_allow_invalid_certs: bool,
     pub tempfail_on_error: bool,
     pub run_on_stage: AHashSet<Stage>,
+    pub max_response_size: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -212,12 +213,12 @@ impl SessionConfig {
             .into_iter()
             .filter_map(|id| parse_milter(config, &id, &has_rcpt_vars))
             .collect();
-        session.jmilters = config
-            .sub_keys("session.jmilter", ".url")
+        session.hooks = config
+            .sub_keys("session.hook", ".url")
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
             .into_iter()
-            .filter_map(|id| parse_jmilter(config, &id, &has_rcpt_vars))
+            .filter_map(|id| parse_hooks(config, &id, &has_rcpt_vars))
             .collect();
         session.data.pipe_commands = config
             .sub_keys("session.data.pipe", "")
@@ -581,33 +582,33 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
     })
 }
 
-fn parse_jmilter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<JMilter> {
+fn parse_hooks(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<FilterHook> {
     let mut headers = HeaderMap::new();
 
     for (header, value) in config
-        .values(("session.jmilter", id, "headers"))
+        .values(("session.hook", id, "headers"))
         .map(|(_, v)| {
             if let Some((k, v)) = v.split_once(':') {
                 Ok((
                     HeaderName::from_str(k.trim()).map_err(|err| {
                         format!(
-                            "Invalid header found in property \"session.jmilter.{id}.headers\": {err}",
+                            "Invalid header found in property \"session.hook.{id}.headers\": {err}",
                         )
                     })?,
                     HeaderValue::from_str(v.trim()).map_err(|err| {
                         format!(
-                            "Invalid header found in property \"session.jmilter.{id}.headers\": {err}",
+                            "Invalid header found in property \"session.hook.{id}.headers\": {err}",
                         )
                     })?,
                 ))
             } else {
                 Err(format!(
-                    "Invalid header found in property \"session.jmilter.{id}.headers\": {v}",
+                    "Invalid header found in property \"session.hook.{id}.headers\": {v}",
                 ))
             }
         })
         .collect::<Result<Vec<(HeaderName, HeaderValue)>, String>>()
-        .map_err(|e| config.new_parse_error(("session.jmilter", id, "headers"), e))
+        .map_err(|e| config.new_parse_error(("session.hook", id, "headers"), e))
         .unwrap_or_default()
     {
         headers.insert(header, value);
@@ -615,8 +616,8 @@ fn parse_jmilter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<
 
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     if let (Some(name), Some(secret)) = (
-        config.value(("session.jmilter", id, "user")),
-        config.value(("session.jmilter", id, "secret")),
+        config.value(("session.hook", id, "auth.username")),
+        config.value(("session.hook", id, "auth.secret")),
     ) {
         headers.insert(
             AUTHORIZATION,
@@ -626,24 +627,30 @@ fn parse_jmilter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<
         );
     }
 
-    Some(JMilter {
-        enable: IfBlock::try_parse(config, ("session.jmilter", id, "enable"), token_map)
+    Some(FilterHook {
+        enable: IfBlock::try_parse(config, ("session.hook", id, "enable"), token_map)
             .unwrap_or_else(|| {
-                IfBlock::new::<()>(format!("session.jmilter.{id}.enable"), [], "false")
+                IfBlock::new::<()>(format!("session.hook.{id}.enable"), [], "false")
             }),
         url: config
-            .value_require(("session.jmilter", id, "url"))?
+            .value_require(("session.hook", id, "url"))?
             .to_string(),
         timeout: config
-            .property_or_default(("session.jmilter", id, "timeout"), "30s")
+            .property_or_default(("session.hook", id, "timeout"), "30s")
             .unwrap_or_else(|| Duration::from_secs(30)),
         tls_allow_invalid_certs: config
-            .property_or_default(("session.jmilter", id, "allow-invalid-certs"), "false")
+            .property_or_default(("session.hook", id, "allow-invalid-certs"), "false")
             .unwrap_or_default(),
         tempfail_on_error: config
-            .property_or_default(("session.jmilter", id, "options.tempfail-on-error"), "true")
+            .property_or_default(("session.hook", id, "options.tempfail-on-error"), "true")
             .unwrap_or(true),
-        run_on_stage: parse_stages(config, "session.jmilter", id),
+        run_on_stage: parse_stages(config, "session.hook", id),
+        max_response_size: config
+            .property_or_default(
+                ("session.hook", id, "options.max-response-size"),
+                "52428800",
+            )
+            .unwrap_or(52428800),
         headers,
     })
 }
@@ -853,7 +860,7 @@ impl Default for SessionConfig {
             },
             mta_sts_policy: None,
             milters: Default::default(),
-            jmilters: Default::default(),
+            hooks: Default::default(),
         }
     }
 }

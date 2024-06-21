@@ -124,8 +124,8 @@ fn parse_webhook(config: &mut Config, id: &str) -> Option<Webhook> {
 
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
     if let (Some(name), Some(secret)) = (
-        config.value(("webhook", id, "user")),
-        config.value(("webhook", id, "secret")),
+        config.value(("webhook", id, "auth.username")),
+        config.value(("webhook", id, "auth.secret")),
     ) {
         headers.insert(
             AUTHORIZATION,

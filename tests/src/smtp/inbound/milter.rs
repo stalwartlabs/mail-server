@@ -39,7 +39,7 @@ use serde::Deserialize;
 use smtp::{
     core::{Inner, Session, SessionData},
     inbound::{
-        jmilter::{self, Request, SmtpResponse},
+        hooks::{self, Request, SmtpResponse},
         milter::{
             receiver::{FrameResult, Receiver},
             Action, Command, Macros, MilterClient, Modification, Options, Response,
@@ -107,7 +107,7 @@ path = "{TMP}/queue.db"
 [session.rcpt]
 relay = true
 
-[[session.jmilter]]
+[[session.hook]]
 url = "http://127.0.0.1:9333"
 enable = true
 stages = ["data"]
@@ -247,7 +247,7 @@ async fn milter_session() {
 }
 
 #[tokio::test]
-async fn jmilter_session() {
+async fn filter_hook_session() {
     // Enable logging
     /*let disable = "true";
     tracing::subscriber::set_global_default(
@@ -258,11 +258,11 @@ async fn jmilter_session() {
     .unwrap();*/
 
     // Configure tests
-    let tmp_dir = TempDir::new("smtp_jmilter_test", true);
+    let tmp_dir = TempDir::new("smtp_filter_hook_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG_JMILTER)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
-    let _rx = spawn_mock_jmilter_server();
+    let _rx = spawn_mock_filter_hook_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut inner = Inner::default();
     let mut qr = inner.init_test_queue(&core);
@@ -785,7 +785,7 @@ async fn accept_milter(
     }
 }
 
-pub fn spawn_mock_jmilter_server() -> watch::Sender<bool> {
+pub fn spawn_mock_filter_hook_server() -> watch::Sender<bool> {
     let (tx, rx) = watch::channel(true);
     let tests = Arc::new(
         serde_json::from_str::<Vec<HeaderTest>>(
@@ -826,7 +826,7 @@ pub fn spawn_mock_jmilter_server() -> watch::Sender<bool> {
 
                                         let request = serde_json::from_slice::<Request>(&fetch_body(&mut req, 1024 * 1024).await.unwrap())
                                         .unwrap();
-                                        let response = handle_jmilter(request, tests);
+                                        let response = handle_filter_hook(request, tests);
 
                                         Ok::<_, hyper::Error>(
                                             Resource {
@@ -856,7 +856,7 @@ pub fn spawn_mock_jmilter_server() -> watch::Sender<bool> {
     tx
 }
 
-fn handle_jmilter(request: Request, tests: Arc<Vec<HeaderTest>>) -> jmilter::Response {
+fn handle_filter_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Response {
     match request
         .envelope
         .unwrap()
@@ -866,23 +866,23 @@ fn handle_jmilter(request: Request, tests: Arc<Vec<HeaderTest>>) -> jmilter::Res
         .unwrap()
         .0
     {
-        "accept" => jmilter::Response {
-            action: jmilter::Action::Accept,
+        "accept" => hooks::Response {
+            action: hooks::Action::Accept,
             response: None,
             modifications: vec![],
         },
-        "reject" => jmilter::Response {
-            action: jmilter::Action::Reject,
+        "reject" => hooks::Response {
+            action: hooks::Action::Reject,
             response: None,
             modifications: vec![],
         },
-        "discard" => jmilter::Response {
-            action: jmilter::Action::Discard,
+        "discard" => hooks::Response {
+            action: hooks::Action::Discard,
             response: None,
             modifications: vec![],
         },
-        "temp_fail" => jmilter::Response {
-            action: jmilter::Action::Reject,
+        "temp_fail" => hooks::Response {
+            action: hooks::Action::Reject,
             response: SmtpResponse {
                 status: 451.into(),
                 enhanced_status: "4.3.5".to_string().into(),
@@ -892,8 +892,8 @@ fn handle_jmilter(request: Request, tests: Arc<Vec<HeaderTest>>) -> jmilter::Res
             .into(),
             modifications: vec![],
         },
-        "shutdown" => jmilter::Response {
-            action: jmilter::Action::Reject,
+        "shutdown" => hooks::Response {
+            action: hooks::Action::Reject,
             response: SmtpResponse {
                 status: 421.into(),
                 enhanced_status: "4.3.0".to_string().into(),
@@ -903,8 +903,8 @@ fn handle_jmilter(request: Request, tests: Arc<Vec<HeaderTest>>) -> jmilter::Res
             .into(),
             modifications: vec![],
         },
-        "conn_fail" => jmilter::Response {
-            action: jmilter::Action::Accept,
+        "conn_fail" => hooks::Response {
+            action: hooks::Action::Accept,
             response: SmtpResponse {
                 disconnect: true,
                 ..Default::default()
@@ -912,8 +912,8 @@ fn handle_jmilter(request: Request, tests: Arc<Vec<HeaderTest>>) -> jmilter::Res
             .into(),
             modifications: vec![],
         },
-        "reply_code" => jmilter::Response {
-            action: jmilter::Action::Reject,
+        "reply_code" => hooks::Response {
+            action: hooks::Action::Reject,
             response: SmtpResponse {
                 status: 321.into(),
                 enhanced_status: "3.1.1".to_string().into(),
@@ -923,27 +923,25 @@ fn handle_jmilter(request: Request, tests: Arc<Vec<HeaderTest>>) -> jmilter::Res
             .into(),
             modifications: vec![],
         },
-        test_num => jmilter::Response {
-            action: jmilter::Action::Accept,
+        test_num => hooks::Response {
+            action: hooks::Action::Accept,
             response: None,
             modifications: tests[test_num.parse::<usize>().unwrap()]
                 .modifications
                 .iter()
                 .map(|m| match m {
-                    Modification::ChangeFrom { sender, args } => {
-                        jmilter::Modification::ChangeFrom {
-                            value: sender.clone(),
-                            parameters: args
-                                .split_whitespace()
-                                .map(|arg| {
-                                    let (key, value) = arg.split_once('=').unwrap();
-                                    (key.to_string(), Some(value.to_string()))
-                                })
-                                .collect(),
-                        }
-                    }
+                    Modification::ChangeFrom { sender, args } => hooks::Modification::ChangeFrom {
+                        value: sender.clone(),
+                        parameters: args
+                            .split_whitespace()
+                            .map(|arg| {
+                                let (key, value) = arg.split_once('=').unwrap();
+                                (key.to_string(), Some(value.to_string()))
+                            })
+                            .collect(),
+                    },
                     Modification::AddRcpt { recipient, args } => {
-                        jmilter::Modification::AddRecipient {
+                        hooks::Modification::AddRecipient {
                             value: recipient.clone(),
                             parameters: args
                                 .split_whitespace()
@@ -955,32 +953,32 @@ fn handle_jmilter(request: Request, tests: Arc<Vec<HeaderTest>>) -> jmilter::Res
                         }
                     }
                     Modification::DeleteRcpt { recipient } => {
-                        jmilter::Modification::DeleteRecipient {
+                        hooks::Modification::DeleteRecipient {
                             value: recipient.clone(),
                         }
                     }
-                    Modification::ReplaceBody { value } => jmilter::Modification::ReplaceContents {
+                    Modification::ReplaceBody { value } => hooks::Modification::ReplaceContents {
                         value: String::from_utf8(value.clone()).unwrap(),
                     },
-                    Modification::AddHeader { name, value } => jmilter::Modification::AddHeader {
+                    Modification::AddHeader { name, value } => hooks::Modification::AddHeader {
                         name: name.clone(),
                         value: value.clone(),
                     },
                     Modification::InsertHeader { index, name, value } => {
-                        jmilter::Modification::InsertHeader {
+                        hooks::Modification::InsertHeader {
                             index: *index,
                             name: name.clone(),
                             value: value.clone(),
                         }
                     }
                     Modification::ChangeHeader { index, name, value } => {
-                        jmilter::Modification::ChangeHeader {
+                        hooks::Modification::ChangeHeader {
                             index: *index,
                             name: name.clone(),
                             value: value.clone(),
                         }
                     }
-                    Modification::Quarantine { reason } => jmilter::Modification::AddHeader {
+                    Modification::Quarantine { reason } => hooks::Modification::AddHeader {
                         name: "X-Quarantine".to_string(),
                         value: reason.to_string(),
                     },

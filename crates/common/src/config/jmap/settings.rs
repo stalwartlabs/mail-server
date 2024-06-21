@@ -445,7 +445,7 @@ impl ParseValue for SpecialUse {
             "archive" => Ok(SpecialUse::Archive),
             "sent" => Ok(SpecialUse::Sent),
             "shared" => Ok(SpecialUse::Shared),
-            "none" => Ok(SpecialUse::None),
+            //"none" => Ok(SpecialUse::None),
             other => Err(format!("Unknown folder role {other:?}")),
         }
     }

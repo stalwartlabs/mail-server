@@ -113,7 +113,7 @@ impl AllowedIps {
         {
             // Add loopback addresses
             ip_addresses.insert(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
-            ip_addresses.insert(IpAddr::V6(std::net::IIpv6Addr::LOCALHOST));
+            ip_addresses.insert(IpAddr::V6(std::net::Ipv6Addr::LOCALHOST));
         }
 
         AllowedIps {

@@ -143,10 +143,10 @@ impl<T: SessionStream> Session<T> {
                 return self.write(message.message.as_bytes()).await;
             }
 
-            // JMilter filtering
-            if let Err(message) = self.run_jmilters(Stage::Rcpt, None).await {
+            // FilterHook filtering
+            if let Err(message) = self.run_filter_hooks(Stage::Rcpt, None).await {
                 tracing::info!(parent: &self.span,
-                    context = "jmilter",
+                    context = "filter_hook",
                     event = "reject",
                     address = self.data.rcpt_to.last().unwrap().address,
                     reason = message.message.as_ref());
