@@ -82,7 +82,7 @@ impl JMAP {
                     })
                     .unwrap_or_default();
                 let field = params.get("field");
-                let filter = params.get("filter").unwrap_or_default();
+                let filter = params.get("filter").unwrap_or_default().to_lowercase();
                 let limit: usize = params.parse("limit").unwrap_or(0);
                 let mut offset =
                     params.parse::<usize>("page").unwrap_or(0).saturating_sub(1) * limit;
@@ -129,7 +129,10 @@ impl JMAP {
                             }
 
                             if has_filter {
-                                if record.iter().any(|(_, v)| v.contains(filter)) {
+                                if record
+                                    .iter()
+                                    .any(|(_, v)| v.to_lowercase().contains(&filter))
+                                {
                                     if offset == 0 {
                                         if limit == 0 || records.len() < limit {
                                             records.push(record);
@@ -155,7 +158,10 @@ impl JMAP {
                         let items = settings
                             .into_iter()
                             .filter_map(|(k, v)| {
-                                if filter.is_empty() || k.contains(filter) || v.contains(filter) {
+                                if filter.is_empty()
+                                    || k.to_lowercase().contains(&filter)
+                                    || v.to_lowercase().contains(&filter)
+                                {
                                     let k =
                                         k.strip_prefix(&prefix).map(|k| k.to_string()).unwrap_or(k);
                                     Some(json!({
