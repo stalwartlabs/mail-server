@@ -29,20 +29,25 @@ use std::{
     time::Duration,
 };
 
+#[cfg(feature = "test_push_encryption")]
 use base64::{engine::general_purpose, Engine};
 use common::{config::server::Servers, listener::SessionData, Core};
 use directory::backend::internal::manage::ManageDirectory;
+#[cfg(feature = "test_push_encryption")]
 use ece::EcKeyComponents;
-use hyper::{body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn, StatusCode};
+#[cfg(feature = "test_push_encryption")]
+use hyper::header::CONTENT_ENCODING;
+use hyper::{body, server::conn::http1, service::service_fn, StatusCode};
 use hyper_util::rt::TokioIo;
-use jmap::{
-    api::{
-        http::{fetch_body, ToHttpResponse},
-        HtmlResponse, StateChangeResponse,
-    },
-    push::ece::ece_encrypt,
+use jmap::api::{
+    http::{fetch_body, ToHttpResponse},
+    HtmlResponse, StateChangeResponse,
 };
-use jmap_client::{mailbox::Role, push_subscription::Keys};
+
+#[cfg(feature = "test_push_encryption")]
+use jmap_client::push_subscription::Keys;
+
+use jmap_client::mailbox::Role;
 use jmap_proto::types::{id::Id, type_state::DataType};
 use store::ahash::AHashSet;
 
@@ -101,12 +106,17 @@ pub async fn test(params: &mut JMAPTest) {
     let (event_tx, mut event_rx) = mpsc::channel::<PushMessage>(100);
 
     // Create subscription keys
+    #[cfg(feature = "test_push_encryption")]
     let (keypair, auth_secret) = ece::generate_keypair_and_auth_secret().unwrap();
+    #[cfg(feature = "test_push_encryption")]
     let pubkey = keypair.pub_as_raw().unwrap();
+    #[cfg(feature = "test_push_encryption")]
     let keys = Keys::new(&pubkey, &auth_secret);
 
     let push_server = Arc::new(PushServer {
+        #[cfg(feature = "test_push_encryption")]
         keypair: keypair.raw_components().unwrap(),
+        #[cfg(feature = "test_push_encryption")]
         auth_secret: auth_secret.to_vec(),
         tx: event_tx,
         fail_requests: false.into(),
@@ -185,7 +195,10 @@ pub async fn test(params: &mut JMAPTest) {
         .push_subscription_create(
             "123",
             "https://127.0.0.1:9000/push?skip_checks=true", // skip_checks only works in cfg(test)
+            #[cfg(feature = "test_push_encryption")]
             keys.into(),
+            #[cfg(not(feature = "test_push_encryption"))]
+            None,
         )
         .await
         .unwrap()
@@ -249,7 +262,9 @@ impl From<Arc<PushServer>> for SessionManager {
     }
 }
 pub struct PushServer {
+    #[cfg(feature = "test_push_encryption")]
     keypair: EcKeyComponents,
+    #[cfg(feature = "test_push_encryption")]
     auth_secret: Vec<u8>,
     tx: mpsc::Sender<PushMessage>,
     fail_requests: AtomicBool,
@@ -316,6 +331,7 @@ impl common::listener::SessionManager for SessionManager {
                                 )
                                 .into_http_response());
                             }
+                            #[cfg(feature = "test_push_encryption")]
                             let is_encrypted = req
                                 .headers()
                                 .get(CONTENT_ENCODING)
@@ -323,6 +339,7 @@ impl common::listener::SessionManager for SessionManager {
                                     encoding.to_str().unwrap() == "aes128gcm"
                                 });
                             let body = fetch_body(&mut req, 1024 * 1024).await.unwrap();
+                            #[cfg(feature = "test_push_encryption")]
                             let message = serde_json::from_slice::<PushMessage>(&if is_encrypted {
                                 ece::decrypt(
                                     &push.keypair,
@@ -334,6 +351,8 @@ impl common::listener::SessionManager for SessionManager {
                                 body
                             })
                             .unwrap();
+                            #[cfg(not(feature = "test_push_encryption"))]
+                            let message = serde_json::from_slice::<PushMessage>(&body).unwrap();
 
                             //println!("Push received ({}): {:?}", is_encrypted, message);
 
@@ -391,6 +410,7 @@ async fn assert_state(event_rx: &mut mpsc::Receiver<PushMessage>, id: &Id, state
     );
 }
 
+#[cfg(feature = "test_push_encryption")]
 #[test]
 fn ece_roundtrip() {
     for len in [1, 2, 5, 16, 256, 1024, 2048, 4096, 1024 * 1024] {
@@ -399,7 +419,7 @@ fn ece_roundtrip() {
         let bytes: Vec<u8> = (0..len).map(|_| store::rand::random::<u8>()).collect();
 
         let encrypted_bytes =
-            ece_encrypt(&keypair.pub_as_raw().unwrap(), &auth_secret, &bytes).unwrap();
+            push::ece::ece_encrypt(&keypair.pub_as_raw().unwrap(), &auth_secret, &bytes).unwrap();
 
         let decrypted_bytes = ece::decrypt(
             &keypair.raw_components().unwrap(),

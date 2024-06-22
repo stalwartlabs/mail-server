@@ -58,8 +58,5 @@ rev_lines = "0.3.0"
 x509-parser = "0.16.0"
 quick-xml = "0.31"
 
-[dev-dependencies]
-ece = "2.2"
-
 [features]
 test_mode = []

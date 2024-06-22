@@ -50,7 +50,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "multipart", "http2"]}
 bytes = "1.4.0"
 futures = "0.3"
-ece = "2.2"
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.1", features = ["tokio"] }
 http-body-util = "0.1.0"
