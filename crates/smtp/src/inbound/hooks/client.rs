@@ -21,21 +21,21 @@
  * for more details.
 */
 
-use common::config::smtp::session::FilterHook;
+use common::config::smtp::session::MTAHook;
 
 use super::{Request, Response};
 
-pub(super) async fn send_filter_hook_request(
-    filter_hook: &FilterHook,
+pub(super) async fn send_mta_hook_request(
+    mta_hook: &MTAHook,
     request: Request,
 ) -> Result<Response, String> {
     let response = reqwest::Client::builder()
-        .timeout(filter_hook.timeout)
-        .danger_accept_invalid_certs(filter_hook.tls_allow_invalid_certs)
+        .timeout(mta_hook.timeout)
+        .danger_accept_invalid_certs(mta_hook.tls_allow_invalid_certs)
         .build()
         .map_err(|err| format!("Failed to create HTTP client: {}", err))?
-        .post(&filter_hook.url)
-        .headers(filter_hook.headers.clone())
+        .post(&mta_hook.url)
+        .headers(mta_hook.headers.clone())
         .body(
             serde_json::to_string(&request)
                 .map_err(|err| format!("Failed to serialize Hook request: {}", err))?,
@@ -47,7 +47,7 @@ pub(super) async fn send_filter_hook_request(
     if response.status().is_success() {
         if response
             .content_length()
-            .map_or(false, |len| len as usize > filter_hook.max_response_size)
+            .map_or(false, |len| len as usize > mta_hook.max_response_size)
         {
             return Err(format!(
                 "Hook response too large ({} bytes)",

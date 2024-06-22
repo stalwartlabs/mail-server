@@ -247,7 +247,7 @@ async fn milter_session() {
 }
 
 #[tokio::test]
-async fn filter_hook_session() {
+async fn mta_hook_session() {
     // Enable logging
     /*let disable = "true";
     tracing::subscriber::set_global_default(
@@ -258,11 +258,11 @@ async fn filter_hook_session() {
     .unwrap();*/
 
     // Configure tests
-    let tmp_dir = TempDir::new("smtp_filter_hook_test", true);
+    let tmp_dir = TempDir::new("smtp_mta_hook_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG_JMILTER)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
-    let _rx = spawn_mock_filter_hook_server();
+    let _rx = spawn_mock_mta_hook_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
     let mut inner = Inner::default();
     let mut qr = inner.init_test_queue(&core);
@@ -785,7 +785,7 @@ async fn accept_milter(
     }
 }
 
-pub fn spawn_mock_filter_hook_server() -> watch::Sender<bool> {
+pub fn spawn_mock_mta_hook_server() -> watch::Sender<bool> {
     let (tx, rx) = watch::channel(true);
     let tests = Arc::new(
         serde_json::from_str::<Vec<HeaderTest>>(
@@ -826,7 +826,7 @@ pub fn spawn_mock_filter_hook_server() -> watch::Sender<bool> {
 
                                         let request = serde_json::from_slice::<Request>(&fetch_body(&mut req, 1024 * 1024).await.unwrap())
                                         .unwrap();
-                                        let response = handle_filter_hook(request, tests);
+                                        let response = handle_mta_hook(request, tests);
 
                                         Ok::<_, hyper::Error>(
                                             Resource {
@@ -856,7 +856,7 @@ pub fn spawn_mock_filter_hook_server() -> watch::Sender<bool> {
     tx
 }
 
-fn handle_filter_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Response {
+fn handle_mta_hook(request: Request, tests: Arc<Vec<HeaderTest>>) -> hooks::Response {
     match request
         .envelope
         .unwrap()

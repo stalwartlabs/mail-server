@@ -23,7 +23,7 @@
 
 use ahash::AHashMap;
 use common::{
-    config::smtp::session::{FilterHook, Stage},
+    config::smtp::session::{MTAHook, Stage},
     listener::SessionStream,
     DAEMON_NAME,
 };
@@ -40,33 +40,33 @@ use crate::{
     },
 };
 
-use super::{client::send_filter_hook_request, Action, Response};
+use super::{client::send_mta_hook_request, Action, Response};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn run_filter_hooks(
+    pub async fn run_mta_hooks(
         &self,
         stage: Stage,
         message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, FilterResponse> {
-        let filter_hooks = &self.core.core.smtp.session.hooks;
-        if filter_hooks.is_empty() {
+        let mta_hooks = &self.core.core.smtp.session.hooks;
+        if mta_hooks.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut modifications = Vec::new();
-        for filter_hook in filter_hooks {
-            if !filter_hook.run_on_stage.contains(&stage)
+        for mta_hook in mta_hooks {
+            if !mta_hook.run_on_stage.contains(&stage)
                 || !self
                     .core
                     .core
-                    .eval_if(&filter_hook.enable, self)
+                    .eval_if(&mta_hook.enable, self)
                     .await
                     .unwrap_or(false)
             {
                 continue;
             }
 
-            match self.run_filter_hook(stage, filter_hook, message).await {
+            match self.run_mta_hook(stage, mta_hook, message).await {
                 Ok(response) => {
                     let mut new_modifications = Vec::with_capacity(response.modifications.len());
                     for modification in response.modifications {
@@ -154,12 +154,12 @@ impl<T: SessionStream> Session<T> {
                 Err(err) => {
                     tracing::warn!(
                         parent: &self.span,
-                        filter_hook.url = &filter_hook.url,
-                        context = "filter_hook",
+                        mta_hook.url = &mta_hook.url,
+                        context = "mta_hook",
                         event = "error",
                         reason = ?err,
-                        "FilterHook filter failed");
-                    if filter_hook.tempfail_on_error {
+                        "MTAHook filter failed");
+                    if mta_hook.tempfail_on_error {
                         return Err(FilterResponse::server_failure());
                     }
                 }
@@ -169,10 +169,10 @@ impl<T: SessionStream> Session<T> {
         Ok(modifications)
     }
 
-    pub async fn run_filter_hook(
+    pub async fn run_mta_hook(
         &self,
         stage: Stage,
-        filter_hook: &FilterHook,
+        mta_hook: &MTAHook,
         message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Response, String> {
         // Build request
@@ -245,7 +245,7 @@ impl<T: SessionStream> Session<T> {
             }),
         };
 
-        send_filter_hook_request(filter_hook, request).await
+        send_mta_hook_request(mta_hook, request).await
     }
 }
 

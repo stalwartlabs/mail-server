@@ -131,11 +131,11 @@ impl<T: SessionStream> Session<T> {
             return false;
         }
 
-        // FilterHook filtering
-        if let Err(message) = self.run_filter_hooks(Stage::Connect, None).await {
+        // MTAHook filtering
+        if let Err(message) = self.run_mta_hooks(Stage::Connect, None).await {
             tracing::debug!(parent: &self.span,
                 context = "connect",
-                event = "filter_hook-reject",
+                event = "mta_hook-reject",
                 reason = message.message.as_ref());
             let _ = self.write(message.message.as_bytes()).await;
             return false;

@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.8.2] - 2024-06-22
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin and spam filter versions.
+
+## Added
+- Webhooks support (#480)
+- MTA Hooks (like milter but over HTTP)
+- Manually train and test spam classifier (#473 #264 #257 #471)
+- Allow configuring default mailbox names, roles and subscriptions (#125 #290 #458 #498)
+- Include `robots.txt` (#542)
+
+### Changed
+- Milter support on all SMTP stages (#183)
+- Do not announce `STARTTLS` if the listener does not support it.
+
+### Fixed
+- Incoming reports stored in the wrong subspace (#543)
+- Return `OK` after a successful ManageSieve SASL authentication flow (#187)
+- Case-insensitive search in settings API (#487)
+- Fix `session.rcpt.script` default variable name (#502)
+
 ## [0.8.1] - 2024-05-23
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin and spam filter versions.

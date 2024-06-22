@@ -447,18 +447,18 @@ impl<T: SessionStream> Session<T> {
             }
         };
 
-        // Run filter hooks
+        // Run MTA Hooks
         match self
-            .run_filter_hooks(Stage::Data, (&auth_message).into())
+            .run_mta_hooks(Stage::Data, (&auth_message).into())
             .await
         {
             Ok(modifications_) => {
                 if !modifications_.is_empty() {
                     tracing::debug!(
                             parent: &self.span,
-                            context = "filter_hook",
+                            context = "mta_hook",
                             event = "accept",
-                            "FilterHook filter(s) accepted message.");
+                            "MTAHook filter(s) accepted message.");
 
                     modifications.retain(|m| !matches!(m, Modification::ReplaceBody { .. }));
                     modifications.extend(modifications_);

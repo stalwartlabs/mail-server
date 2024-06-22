@@ -39,7 +39,7 @@ pub struct SessionConfig {
     pub mta_sts_policy: Option<Policy>,
 
     pub milters: Vec<Milter>,
-    pub hooks: Vec<FilterHook>,
+    pub hooks: Vec<MTAHook>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -173,7 +173,7 @@ pub enum MilterVersion {
 }
 
 #[derive(Clone)]
-pub struct FilterHook {
+pub struct MTAHook {
     pub enable: IfBlock,
     pub url: String,
     pub timeout: Duration,
@@ -582,7 +582,7 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
     })
 }
 
-fn parse_hooks(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<FilterHook> {
+fn parse_hooks(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<MTAHook> {
     let mut headers = HeaderMap::new();
 
     for (header, value) in config
@@ -627,7 +627,7 @@ fn parse_hooks(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Fi
         );
     }
 
-    Some(FilterHook {
+    Some(MTAHook {
         enable: IfBlock::try_parse(config, ("session.hook", id, "enable"), token_map)
             .unwrap_or_else(|| {
                 IfBlock::new::<()>(format!("session.hook.{id}.enable"), [], "false")

@@ -143,10 +143,10 @@ impl<T: SessionStream> Session<T> {
                 return self.write(message.message.as_bytes()).await;
             }
 
-            // FilterHook filtering
-            if let Err(message) = self.run_filter_hooks(Stage::Rcpt, None).await {
+            // MTAHook filtering
+            if let Err(message) = self.run_mta_hooks(Stage::Rcpt, None).await {
                 tracing::info!(parent: &self.span,
-                    context = "filter_hook",
+                    context = "mta_hook",
                     event = "reject",
                     address = self.data.rcpt_to.last().unwrap().address,
                     reason = message.message.as_ref());
