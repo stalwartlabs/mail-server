@@ -164,10 +164,7 @@ impl<T: SessionStream> Session<T> {
                 in_flight,
             };
 
-            let _ = self
-                .write(&StatusResponse::ok("Authentication successful").into_bytes())
-                .await;
-            self.handle_capability("Authentication successful").await
+            Ok(StatusResponse::ok("Authentication successful").into_bytes())
         } else {
             match &self.state {
                 State::NotAuthenticated { auth_failures }

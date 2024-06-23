@@ -59,7 +59,7 @@ Key features:
 - **SMTP** server:
   - Built-in [DMARC](https://datatracker.ietf.org/doc/html/rfc7489), [DKIM](https://datatracker.ietf.org/doc/html/rfc6376), [SPF](https://datatracker.ietf.org/doc/html/rfc7208) and [ARC](https://datatracker.ietf.org/doc/html/rfc8617) support for message authentication.
   - Strong transport security through [DANE](https://datatracker.ietf.org/doc/html/rfc6698), [MTA-STS](https://datatracker.ietf.org/doc/html/rfc8461) and [SMTP TLS](https://datatracker.ietf.org/doc/html/rfc8460) reporting.
-  - Inbound throttling and filtering with granular configuration rules, sieve scripting and milter integration.
+  - Inbound throttling and filtering with granular configuration rules, sieve scripting, MTA hooks and milter integration.
   - Distributed virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
   - Envelope rewriting and message modification.
 - **Spam Phishing** filter:
@@ -81,6 +81,7 @@ Key features:
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
   - Automatic account configuration and discovery with [autoconfig](https://www.ietf.org/id/draft-bucksch-autoconfig-02.html) and [autodiscover](https://learn.microsoft.com/en-us/exchange/architecture/client-access/autodiscover?view=exchserver-2019). 
   - Integration with **OpenTelemetry** to enable monitoring, tracing, and performance analysis.
+  - Webhooks for event-driven automation.
   - Disk quotas.
 - **Web-based administration**:
   - Account, domain, group and mailing list management.
