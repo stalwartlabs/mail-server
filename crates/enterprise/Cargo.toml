@@ -1,0 +1,13 @@
+[package]
+name = "enterprise"
+version = "0.8.2"
+edition = "2021"
+license = "LicenseRef-SEL"
+resolver = "2"
+
+[dependencies]
+base64 = "0.22.1"
+ring = "0.17.8"
+
+[features]
+test_mode = []

@@ -9,3 +9,6 @@ contact_links:
   - name: Join Stalwart's Discord
     url: https://discord.gg/aVQr3jF8jd
     about: Join our Discord server for help, discussions and release announcements.
+  - name: Join Stalwart's Matrix
+    url: https://matrix.to/#/#stalwart:matrix.org
+    about: Join our Matrix room for help, discussions and release announcements.

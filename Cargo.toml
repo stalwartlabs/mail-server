@@ -12,6 +12,7 @@ members = [
     "crates/nlp",
     "crates/store",
     "crates/directory",
+    "crates/enterprise",
     "crates/utils",
     "crates/common",
     "crates/cli",

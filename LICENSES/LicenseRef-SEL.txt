@@ -1,0 +1,63 @@
+Stalwart Enterprise License 1.0 (SELv1) Agreement
+=================================================
+
+Last Update: June 25, 2024
+
+GRANT OF LICENSE
+
+Stalwart Labs Ltd. ("Licensor") grants you ("Licensee") a non-exclusive, non-transferable, non-sublicensable, limited license to use the software ("Software") under the terms set forth in this Stalwart Enterprise License Agreement ("Agreement").
+
+LICENSE RESTRICTIONS
+
+1. Commercial Use: Licensee is authorized to use the Software for commercial purposes, including the provision of services utilizing the Software. However, Licensee is expressly prohibited from reselling, leasing, sublicensing, or otherwise redistributing the Software itself.
+
+2. Subscription Requirement: The use of the Software is conditioned upon Licensee maintaining an active and valid paid subscription with Licensor. The Software shall not be used without a valid subscription.
+
+3. Source-Available Commercial License: The Software provided under this Agreement is not open source. Accordingly, the Software may not be distributed or modified by Licensee. While the source code may be available for review, it is not open source and remains proprietary.
+
+4. Additional Licensing Terms: This license is further governed by the terms and conditions set forth in any licensing agreements separately executed between Licensor and Licensee. In the event of any conflict between the terms of this Agreement and the terms of a signed licensing agreement, the terms of the signed licensing agreement shall control.
+
+
+INTELLECTUAL PROPERTY RIGHTS
+
+1. Ownership: The Licensor retains all rights, title, and interest in and to the Software, including all intellectual property rights therein. This Agreement does not transfer any ownership rights to the Licensee.
+
+2. Proprietary Notices: The Licensee must not remove, alter, or obscure any proprietary notices (including copyright and trademark notices) on the Software.
+
+
+TERMINATION
+
+1. Termination by Licensor: The Licensor may terminate this Agreement immediately if the Licensee fails to comply with any terms and conditions of this Agreement.
+
+2. Effect of Termination: Upon termination of this Agreement, the Licensee must cease all use of the Software and destroy all copies of the Software in their possession or control.
+
+
+DISCLAIMER OF WARRANTIES
+
+The Software is provided "as is" without warranty of any kind. The Licensor disclaims all warranties, express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, and non-infringement.
+
+
+LIMITATION OF LIABILITY
+
+In no event will the Licensor be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly, or any loss of data, use, goodwill, or other intangible losses, resulting from (i) your use or inability to use the Software; (ii) any unauthorized access to or use of our servers and/or any personal information stored therein.
+
+
+GOVERNING LAW
+
+This Agreement shall be governed by and construed in accordance with the laws of the United Kingdom, without regard to its conflict of law principles.
+
+
+ENTIRE AGREEMENT
+
+This Agreement constitutes the entire agreement between the Licensor and the Licensee with respect to the subject matter hereof and supersedes all prior or contemporaneous understandings regarding such subject matter. No amendment to or modification of this Agreement will be binding unless in writing and signed by the Licensor.
+
+
+CONTACT INFORMATION
+
+If you have any questions about this Agreement, please contact Stalwart Labs Ltd. at:
+
+Stalwart Labs Ltd.
+128 City Road
+London, United Kingdom
+hello@stalw.art
+

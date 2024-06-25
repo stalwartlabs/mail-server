@@ -1,6 +1,12 @@
 #!/usr/bin/env sh
 # shellcheck shell=dash
 
+#
+# SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+#
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+#
+
 # Stalwart Mail Server install script -- based on the rustup installation script.
 
 set -e
