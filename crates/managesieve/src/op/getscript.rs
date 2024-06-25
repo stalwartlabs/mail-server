@@ -39,7 +39,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .blob_id()
             .and_then(|id| (id.section.as_ref()?.clone(), id.hash.clone()).into())
             .ok_or_else(|| {
-                StatusResponse::no("Filed to retrieve blobId").with_code(ResponseCode::TryLater)
+                StatusResponse::no("Failed to retrieve blobId").with_code(ResponseCode::TryLater)
             })?;
         let script = self
             .jmap
@@ -50,11 +50,12 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             })?;
         debug_assert_eq!(script.len(), blob_section.size);
 
-        let mut response = Vec::with_capacity(script.len() + 30);
+        let mut response = Vec::with_capacity(script.len() + 32);
         response.push(b'{');
         response.extend_from_slice(blob_section.size.to_string().as_bytes());
         response.extend_from_slice(b"}\r\n");
         response.extend(script);
+        response.extend_from_slice(b"\r\n");
 
         Ok(StatusResponse::ok("").serialize(response))
     }
