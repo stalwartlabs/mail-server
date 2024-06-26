@@ -1,58 +1,93 @@
 Stalwart Enterprise License 1.0 (SELv1) Agreement
 =================================================
 
-Last Update: June 25, 2024
+Last Update: June 26, 2024
 
-GRANT OF LICENSE
+PLEASE CAREFULLY READ THIS STALWART ENTERPRISE LICENSE AGREEMENT ("AGREEMENT"). THIS AGREEMENT CONSTITUTES A LEGALLY BINDING AGREEMENT BETWEEN YOU AND STALWART LABS LTD AND GOVERNS YOUR USE OF THE SOFTWARE (DEFINED BELOW). IF YOU DO NOT AGREE WITH THIS AGREEMENT, YOU MAY NOT USE THE SOFTWARE. IF YOU ARE USING THE SOFTWARE ON BEHALF OF A LEGAL ENTITY, YOU REPRESENT AND WARRANT THAT YOU HAVE AUTHORITY TO AGREE TO THIS AGREEMENT ON BEHALF OF SUCH ENTITY. IF YOU DO NOT HAVE SUCH AUTHORITY, DO NOT USE THE SOFTWARE IN ANY MANNER.
 
-Stalwart Labs Ltd. ("Licensor") grants you ("Licensee") a non-exclusive, non-transferable, non-sublicensable, limited license to use the software ("Software") under the terms set forth in this Stalwart Enterprise License Agreement ("Agreement").
+This Agreement is entered into by and between Stalwart Labs Ltd and you, or the legal entity on behalf of whom you are acting.
 
-LICENSE RESTRICTIONS
+1. DEFINITIONS
 
-1. Commercial Use: Licensee is authorized to use the Software for commercial purposes, including the provision of services utilizing the Software. However, Licensee is expressly prohibited from reselling, leasing, sublicensing, or otherwise redistributing the Software itself.
+1.1. "Software" refers to the Stalwart Mail Server Enterprise Edition software, including all its versions, updates, modifications, accompanying documentation, and related materials.
+1.2. "Licensor" refers to Stalwart Labs Ltd, the entity providing the Software.
+1.3. "Licensee" refers to the individual or entity installing, accessing, or using the Software.
+1.4. "License Key" refers to the unique code provided by Licensor upon purchasing a subscription which activates the full features of the Software.
 
-2. Subscription Requirement: The use of the Software is conditioned upon Licensee maintaining an active and valid paid subscription with Licensor. The Software shall not be used without a valid subscription.
+2. GRANT OF LICENSE
 
-3. Source-Available Commercial License: The Software provided under this Agreement is not open source. Accordingly, the Software may not be distributed or modified by Licensee. While the source code may be available for review, it is not open source and remains proprietary.
+2.1. Licensor grants Licensee a revocable, non-exclusive, non-transferable, non-sublicensable, limited license to download, install, and use the Software.
+2.2. The use of the Software is conditioned upon Licensee maintaining an active and valid paid subscription with Licensor. The paid subscription covers all versions of the Software and all updates and modifications.
+2.3. This license grants Licensee the right to use the Software for both personal and commercial purposes. However, Licensee is expressly prohibited from reselling, leasing, sublicensing, or otherwise redistributing the Software itself.
+2.4. This license is further governed by the terms and conditions set forth in any licensing agreements separately executed between Licensor and Licensee. In the event of any conflict between the terms of this Agreement and the terms of a signed licensing agreement, the terms of the signed licensing agreement shall control.
 
-4. Additional Licensing Terms: This license is further governed by the terms and conditions set forth in any licensing agreements separately executed between Licensor and Licensee. In the event of any conflict between the terms of this Agreement and the terms of a signed licensing agreement, the terms of the signed licensing agreement shall control.
+3. LICENSE KEYS
 
+3.1. The Software shall not be used without a valid License Key issued by Licensor.
+3.1. Distribution or sharing of License Keys to third parties, not associated with Licensee, is strictly prohibited.
+3.2. License Keys are bound to the subscription period. Should your subscription expire, all License Keys will become invalid after 15 days from the subscription expiration date.
+3.3. Any instance of the Software using such an expired key will revert to the Community Edition functionality after the aforementioned 15-day period.
 
-INTELLECTUAL PROPERTY RIGHTS
+4. SOURCE CODE USAGE
 
-1. Ownership: The Licensor retains all rights, title, and interest in and to the Software, including all intellectual property rights therein. This Agreement does not transfer any ownership rights to the Licensee.
+4.1. Licensee is permitted to view, copy, and modify the Software's source code, as made available by Licensor, solely for Licensee's internal business use and in compliance with this Agreement's terms.
+4.2. Any modifications to the source code do not grant Licensee any ownership rights to the original Software or any modifications. All rights, title, and interest to the Software and its source code remain exclusively with Licensor.
+4.3. Licensee is strictly prohibited from altering, removing, or in any way tampering with the license key validation system within the Software. Any such unauthorized modifications will be considered a material breach of this Agreement and may result in legal action.
+4.4. Licensee is required to use valid License Keys issued by Licensor to run the Software, including any modified versions. Any attempts to bypass the License Key requirement is a violation of this Agreement.
+4.5. Notwithstanding the availability of the Software's source code for review and limited modification, the Software and its source code are not open source and remain proprietary to Licensor. The provision of access to the source code does not confer any rights typically associated with open source software, including but not limited to the right to freely distribute, sublicense, or create derivative works for public distribution. All rights not expressly granted herein are reserved by Licensor.
 
-2. Proprietary Notices: The Licensee must not remove, alter, or obscure any proprietary notices (including copyright and trademark notices) on the Software.
+5. INTELLECTUAL PROPERTY RIGHTS
 
+5.1. The Licensor retains all rights, title, and interest in and to the Software, including all intellectual property rights therein. This Agreement does not transfer any ownership rights to the Licensee.
+5.2. The Licensee must not remove, alter, or obscure any proprietary notices (including copyright and trademark notices) on the Software.
 
-TERMINATION
+6. TERMINATION
 
-1. Termination by Licensor: The Licensor may terminate this Agreement immediately if the Licensee fails to comply with any terms and conditions of this Agreement.
+6.1. Licensor reserves the right to terminate this Agreement immediately if the Licensee fails to comply with any terms and conditions of this Agreement.
+6.2. In the event of a termination, you will be provided with a written notice, sent to the email address used during your subscription to the Software, outlining the reasons for the termination.
+6.3. Upon termination, all rights granted to you under this Agreement will cease, and you must promptly cease all use of the Software.
 
-2. Effect of Termination: Upon termination of this Agreement, the Licensee must cease all use of the Software and destroy all copies of the Software in their possession or control.
-
-
-DISCLAIMER OF WARRANTIES
-
-The Software is provided "as is" without warranty of any kind. The Licensor disclaims all warranties, express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, and non-infringement.
-
-
-LIMITATION OF LIABILITY
+7. LIMITATION OF LIABILITY
 
 In no event will the Licensor be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues, whether incurred directly or indirectly, or any loss of data, use, goodwill, or other intangible losses, resulting from (i) your use or inability to use the Software; (ii) any unauthorized access to or use of our servers and/or any personal information stored therein.
 
+8. GOVERNING LAW & JURISDICTION
 
-GOVERNING LAW
+This Agreement shall be governed by and construed under the laws of the United Kingdom. Any disputes arising from or related to this Agreement shall be resolved in the jurisdiction of London, UK.
 
-This Agreement shall be governed by and construed in accordance with the laws of the United Kingdom, without regard to its conflict of law principles.
+9. DATA PROTECTION & PRIVACY
 
+By using the Software, you consent to the collection, processing, and use of any personal data as required for the functionality of the Software. The specifics of data handling and storage will be outlined in the company's Privacy Policy, which can be accessed on the company's website.
 
-ENTIRE AGREEMENT
+10. ACCEPTANCE
+
+By downloading, installing, or using the Software software, even without explicitly clicking on an "I Agree" button or a similar mechanism, you acknowledge that you have read, understood, and agreed to be bound by the terms and conditions of this Agreement.
+
+11. ASSIGNMENT
+
+This Agreement and the rights granted hereunder may not be transferred or assigned by you but may be assigned by Licensor without restriction.
+
+12. SEVERABILITY
+
+If any provision of this Agreement is held to be unenforceable or invalid for any reason, that provision shall be reformed to the extent necessary to make it enforceable and consistent with the intent of the parties, and the remaining provisions shall remain in full force and effect.
+
+13. ENTIRE AGREEMENT
 
 This Agreement constitutes the entire agreement between the Licensor and the Licensee with respect to the subject matter hereof and supersedes all prior or contemporaneous understandings regarding such subject matter. No amendment to or modification of this Agreement will be binding unless in writing and signed by the Licensor.
 
+14. DISCLAIMERS AND WARRANTIES
 
-CONTACT INFORMATION
+The Software is provided "AS IS" and "AS AVAILABLE", without warranty of any kind, either express or implied, including, without limitation, warranties of merchantability, fitness for a particular purpose, and non-infringement. Licensor does not warrant that the Software will be error-free, that access thereto will be uninterrupted, or that defects will be corrected.
+
+15. INDEMNIFICATION
+
+Licensee agrees to indemnify, defend, and hold harmless Licensor, its officers, directors, employees, agents, licensors, suppliers, and any third-party information providers from and against all claims, losses, expenses, damages, and costs, including reasonable attorneys' fees, resulting from any violation of this Agreement or any activity related to your use or misuse of the Software (including negligent or wrongful conduct).
+
+16. FORCE MAJEURE
+
+Neither party shall be in default or otherwise liable for any delay in or failure of its performance under this Agreement if such delay or failure arises by any reason of any event beyond the reasonable control of a party, including acts of God, the elements, earthquakes, floods, fires, epidemics, riots, failures or delays in transportation or communications, or any act or failure to act by the other party or such other party’s officers, employees, agents, or contractors. The parties will promptly inform and consult with each other as to any of the above causes which, in their judgment, may or could be the cause of a delay in the performance of this Agreement.
+
+17. CONTACT INFORMATION
 
 If you have any questions about this Agreement, please contact Stalwart Labs Ltd. at:
 
@@ -60,4 +95,3 @@ Stalwart Labs Ltd.
 128 City Road
 London, United Kingdom
 hello@stalw.art
-

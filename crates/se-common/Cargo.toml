@@ -1,0 +1,13 @@
+[package]
+name = "se_common"
+version = "0.8.2"
+edition = "2021"
+license = "LicenseRef-SEL"
+resolver = "2"
+
+[dependencies]
+common = { path = "../common" }
+tracing = "0.1"
+
+[features]
+test_mode = []

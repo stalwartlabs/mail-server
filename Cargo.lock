@@ -1048,6 +1048,7 @@ dependencies = [
  "rustls 0.22.4",
  "rustls-pemfile 2.1.2",
  "rustls-pki-types",
+ "se_licensing",
  "serde",
  "serde_json",
  "sha1",
@@ -1889,14 +1890,6 @@ name = "endian-type"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
-
-[[package]]
-name = "enterprise"
-version = "0.8.2"
-dependencies = [
- "base64 0.22.1",
- "ring 0.17.8",
-]
 
 [[package]]
 name = "enum-as-inner"
@@ -3581,6 +3574,7 @@ dependencies = [
  "jmap_proto",
  "managesieve",
  "pop3",
+ "se_common",
  "smtp",
  "store",
  "tokio",
@@ -5591,6 +5585,22 @@ name = "sdd"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b84345e4c9bd703274a082fb80caaa99b7612be48dfaa1dd9266577ec412309d"
+
+[[package]]
+name = "se_common"
+version = "0.8.2"
+dependencies = [
+ "common",
+ "tracing",
+]
+
+[[package]]
+name = "se_licensing"
+version = "0.8.2"
+dependencies = [
+ "base64 0.22.1",
+ "ring 0.17.8",
+]
 
 [[package]]
 name = "seahash"

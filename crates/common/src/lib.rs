@@ -33,6 +33,7 @@ use opentelemetry_sdk::{
     Resource,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
+use se_licensing::license::LicenseKey;
 use sieve::Sieve;
 use store::LookupStore;
 use tokio::sync::{mpsc, oneshot};
@@ -68,6 +69,7 @@ pub struct Core {
     pub jmap: JmapConfig,
     pub imap: ImapConfig,
     pub web_hooks: Webhooks,
+    pub enterprise: Option<Enterprise>,
 }
 
 #[derive(Clone)]
@@ -76,6 +78,17 @@ pub struct Network {
     pub allowed_ips: AllowedIps,
     pub url: IfBlock,
 }
+
+// SPDX-SnippetBegin
+// SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+// SPDX-License-Identifier: LicenseRef-SEL
+
+#[derive(Clone)]
+pub struct Enterprise {
+    pub license: LicenseKey,
+}
+
+// SPDX-SnippetEnd
 
 pub enum AuthResult<T> {
     Success(T),
@@ -426,7 +439,7 @@ impl Tracers {
             | Tracer::Otel { level, .. }) = tracer;
 
             let filter = match EnvFilter::builder().parse(format!(
-                "smtp={level},imap={level},jmap={level},pop3={level},store={level},common={level},utils={level},directory={level}"
+                "smtp={level},imap={level},jmap={level},pop3={level},store={level},common={level},utils={level},directory={level},se_common={level}"
             )) {
                 Ok(filter) => {
                     filter

@@ -14,6 +14,7 @@ use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::gossip::spawn::GossiperBuilder, JMAP};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
+use se_common::EnterpriseCore;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
 use utils::wait_for_shutdown;
@@ -53,6 +54,9 @@ async fn main() -> std::io::Result<()> {
     // Log configuration errors
     config.log_errors(init.guards.is_none());
     config.log_warnings(init.guards.is_none());
+
+    // Log licensing information
+    core.load().as_ref().log_license_details();
 
     // Spawn servers
     let (shutdown_tx, shutdown_rx) = init.servers.spawn(|server, acceptor, shutdown_rx| {

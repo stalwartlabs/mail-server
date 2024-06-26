@@ -26,6 +26,7 @@ managesieve = { path = "../managesieve" }
 common = { path = "../common" }
 directory = { path = "../directory" }
 utils = { path = "../utils" }
+se_common = { path = "../se-common" }
 tokio = { version = "1.23", features = ["full"] }
 tracing = "0.1"
 

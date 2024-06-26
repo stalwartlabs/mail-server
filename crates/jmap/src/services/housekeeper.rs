@@ -49,6 +49,7 @@ enum ActionClass {
     Account,
     Store(usize),
     Acme(String),
+    ReloadLicense,
 }
 
 #[derive(Default)]
@@ -68,42 +69,57 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         tokio::spawn(async move {
             jmap.fts_index_queued().await;
         });
-        let mut queue = Queue::default();
 
         // Add all events to queue
-        let core_ = core.core.load();
-        queue.schedule(
-            Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
-            ActionClass::Session,
-        );
-        queue.schedule(
-            Instant::now() + core_.jmap.account_purge_frequency.time_to_next(),
-            ActionClass::Account,
-        );
-        for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
+        let mut queue = Queue::default();
+        {
+            let core_ = core.core.load();
             queue.schedule(
-                Instant::now() + schedule.cron.time_to_next(),
-                ActionClass::Store(idx),
+                Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
+                ActionClass::Session,
             );
-        }
+            queue.schedule(
+                Instant::now() + core_.jmap.account_purge_frequency.time_to_next(),
+                ActionClass::Account,
+            );
+            for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
+                queue.schedule(
+                    Instant::now() + schedule.cron.time_to_next(),
+                    ActionClass::Store(idx),
+                );
+            }
 
-        // Add all ACME renewals to heap
-        for provider in core_.tls.acme_providers.values() {
-            match core_.init_acme(provider).await {
-                Ok(renew_at) => {
-                    queue.schedule(
-                        Instant::now() + renew_at,
-                        ActionClass::Acme(provider.id.clone()),
-                    );
-                }
-                Err(err) => {
-                    tracing::error!(
+            // Add all ACME renewals to heap
+            for provider in core_.tls.acme_providers.values() {
+                match core_.init_acme(provider).await {
+                    Ok(renew_at) => {
+                        queue.schedule(
+                            Instant::now() + renew_at,
+                            ActionClass::Acme(provider.id.clone()),
+                        );
+                    }
+                    Err(err) => {
+                        tracing::error!(
                         context = "acme",
                         event = "error",
                         error = ?err,
                         "Failed to initialize ACME certificate manager.");
-                }
-            };
+                    }
+                };
+            }
+
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+
+            // Enterprise Edition license management
+            if let Some(enterprise) = &core_.enterprise {
+                queue.schedule(
+                    Instant::now() + enterprise.license.expires_in(),
+                    ActionClass::ReloadLicense,
+                );
+            }
+            // SPDX-SnippetEnd
         }
 
         loop {
@@ -327,6 +343,34 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     });
                                 }
                             }
+
+                            // SPDX-SnippetBegin
+                            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                            // SPDX-License-Identifier: LicenseRef-SEL
+                            ActionClass::ReloadLicense => {
+                                match core_.reload().await {
+                                    Ok(result) => {
+                                        if let Some(new_core) = result.new_core {
+                                            if let Some(enterprise) = &new_core.enterprise {
+                                                queue.schedule(
+                                                    Instant::now()
+                                                        + enterprise.license.expires_in(),
+                                                    ActionClass::ReloadLicense,
+                                                );
+                                            }
+
+                                            // Update core
+                                            core.core.store(new_core.into());
+
+                                            // Increment version counter
+                                            core.jmap_inner.increment_config_version();
+                                        }
+                                    }
+                                    Err(err) => {
+                                        tracing::warn!("Failed to reload configuration: {err}",);
+                                    }
+                                }
+                            } // SPDX-SnippetEnd
                         }
                     }
                 }

@@ -8,12 +8,14 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use directory::{Directories, Directory};
-use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
+use jmap_proto::types::collection::Collection;
+use se_licensing::license::LicenseValidator;
+use store::{BitmapKey, BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use utils::config::Config;
 
 use crate::{
     expr::*, listener::tls::TlsManager, manager::config::ConfigManager, webhooks::Webhooks, Core,
-    Network,
+    Enterprise, Network,
 };
 
 use self::{
@@ -116,6 +118,48 @@ impl Core {
             .directories
             .insert("*".to_string(), directory.clone());
 
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+
+        let enterprise = match config.value("enterprise.license-key").map(|key| {
+            LicenseValidator::new().try_parse(key).and_then(|key| {
+                key.into_validated_key(config.value("lookup.default.hostname").unwrap_or_default())
+            })
+        }) {
+            Some(Ok(license)) => {
+                match data
+                    .get_bitmap(BitmapKey::document_ids(u32::MAX, Collection::Principal))
+                    .await
+                {
+                    Ok(Some(bitmap)) if bitmap.len() > license.accounts as u64 => {
+                        config.new_build_warning(
+                            "enterprise.license-key",
+                            format!(
+                                "License key is valid but only allows {} accounts, found {}.",
+                                license.accounts,
+                                bitmap.len()
+                            ),
+                        );
+                        None
+                    }
+                    Err(e) => {
+                        if !matches!(data, Store::None) {
+                            config.new_build_error("enterprise.license-key", e.to_string());
+                        }
+                        None
+                    }
+                    _ => Some(Enterprise { license }),
+                }
+            }
+            Some(Err(e)) => {
+                config.new_build_warning("enterprise.license-key", e.to_string());
+                None
+            }
+            None => None,
+        };
+        // SPDX-SnippetEnd
+
         // If any of the stores are missing, disable all stores to avoid data loss
         if matches!(data, Store::None)
             || matches!(&blob.backend, BlobBackend::Store(Store::None))
@@ -154,6 +198,7 @@ impl Core {
                 blobs: stores.blob_stores,
                 ftss: stores.fts_stores,
             },
+            enterprise,
         }
     }
 
