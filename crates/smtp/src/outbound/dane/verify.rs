@@ -123,8 +123,13 @@ impl TlsaVerify for Tlsa {
             }
         }
 
-        if (self.has_end_entities == matched_end_entity)
-            && (self.has_intermediates == matched_intermediate)
+        // DANE is valid if:
+        // - EE matched even if no TA matched
+        // - Both EE and TA matched
+        // - EE is not present and TA matched
+        if (self.has_end_entities && matched_end_entity)
+            || ((self.has_end_entities == matched_end_entity)
+                && (self.has_intermediates == matched_intermediate))
         {
             tracing::info!(
                 parent: span,
