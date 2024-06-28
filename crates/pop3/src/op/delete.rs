@@ -89,6 +89,11 @@ impl<T: SessionStream> Session<T> {
                         self.write_err("Failed to delete messages").await?;
                     }
                 }
+            } else {
+                self.write_ok(format!(
+                    "Stalwart POP3 bids you farewell (no messages deleted)."
+                ))
+                .await?;
             }
         } else {
             self.write_ok("Stalwart POP3 bids you farewell.").await?;
