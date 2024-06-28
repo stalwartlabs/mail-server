@@ -46,13 +46,22 @@ impl JMAP {
                             })
                         })
                     {
-                        if let AuthResult::Success(access_token) = self
+                        match self
                             .authenticate_plain(&account, &secret, remote_ip, ServerProtocol::Http)
                             .await
                         {
-                            Some(access_token)
-                        } else {
-                            None
+                            AuthResult::Success(access_token) => Some(access_token),
+                            AuthResult::MissingTotp => {
+                                return Err(RequestError::blank(
+                                    401,
+                                    "TOTP code required",
+                                    concat!(
+                                        "A TOTP code is required to authenticate this account. ",
+                                        "Try authenticating again using 'secret$totp_token'."
+                                    ),
+                                ));
+                            }
+                            _ => None,
                         }
                     } else {
                         tracing::debug!(
@@ -161,6 +170,7 @@ impl JMAP {
                 AuthResult::Failure
             }
             Ok(AuthResult::Banned) => AuthResult::Banned,
+            Ok(AuthResult::MissingTotp) => AuthResult::MissingTotp,
             Err(_) => AuthResult::Failure,
         }
     }

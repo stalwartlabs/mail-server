@@ -90,10 +90,8 @@ impl<T: SessionStream> Session<T> {
                     }
                 }
             } else {
-                self.write_ok(format!(
-                    "Stalwart POP3 bids you farewell (no messages deleted)."
-                ))
-                .await?;
+                self.write_ok("Stalwart POP3 bids you farewell (no messages deleted).")
+                    .await?;
             }
         } else {
             self.write_ok("Stalwart POP3 bids you farewell.").await?;

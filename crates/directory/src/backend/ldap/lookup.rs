@@ -87,7 +87,7 @@ impl LdapDirectory {
                     .find_principal(&mut conn, &self.mappings.filter_name.build(username))
                     .await?
                 {
-                    if principal.verify_secret(secret).await {
+                    if principal.verify_secret(secret).await? {
                         principal
                     } else {
                         tracing::debug!(

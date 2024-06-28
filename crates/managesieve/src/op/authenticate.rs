@@ -79,6 +79,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Authenticate
+        let mut is_totp_error = false;
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
                 match self
@@ -93,6 +94,10 @@ impl<T: SessionStream> Session<T> {
                 {
                     AuthResult::Success(token) => Some(token),
                     AuthResult::Failure => None,
+                    AuthResult::MissingTotp => {
+                        is_totp_error = true;
+                        None
+                    }
                     AuthResult::Banned => {
                         return Err(StatusResponse::bye(
                             "Too many authentication requests from this IP address.",
@@ -156,7 +161,12 @@ impl<T: SessionStream> Session<T> {
                     self.state = State::NotAuthenticated {
                         auth_failures: auth_failures + 1,
                     };
-                    Ok(StatusResponse::no("Authentication failed").into_bytes())
+                    Ok(StatusResponse::no(if is_totp_error {
+                        "Missing TOTP code, try with 'secret$totp_code'."
+                    } else {
+                        "Authentication failed."
+                    })
+                    .into_bytes())
                 }
                 _ => {
                     tracing::debug!(

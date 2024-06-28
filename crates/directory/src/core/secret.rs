@@ -16,17 +16,51 @@ use sha1::Sha1;
 use sha2::Sha256;
 use sha2::Sha512;
 use tokio::sync::oneshot;
+use totp_rs::TOTP;
 
+use crate::DirectoryError;
 use crate::Principal;
 
 impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
-    pub async fn verify_secret(&self, secret: &str) -> bool {
-        for hashed_secret in &self.secrets {
-            if verify_secret_hash(hashed_secret, secret).await {
-                return true;
+    pub async fn verify_secret(&self, mut code: &str) -> crate::Result<bool> {
+        let mut totp_token = None;
+
+        for secret in &self.secrets {
+            let mut secret = secret.as_str();
+
+            if secret == "$disabled$" {
+                return Ok(false);
+            } else if secret.starts_with("otpauth://") && totp_token.is_none() {
+                let totp_token = if let Some(totp_token) = totp_token {
+                    totp_token
+                } else {
+                    let (_code, _totp_token) = code
+                        .rsplit_once('$')
+                        .filter(|(c, t)| !c.is_empty() && !t.is_empty())
+                        .ok_or(DirectoryError::MissingTotpCode)?;
+                    totp_token = Some(_totp_token);
+                    code = _code;
+                    _totp_token
+                };
+                if !TOTP::from_url(secret)
+                    .map_err(DirectoryError::InvalidTotpUrl)?
+                    .check_current(totp_token)
+                    .unwrap_or(false)
+                {
+                    return Ok(false);
+                }
+            } else if let Some((_, app_secret)) =
+                secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
+            {
+                secret = app_secret;
+            }
+
+            if verify_secret_hash(secret, code).await {
+                return Ok(true);
             }
         }
-        false
+
+        Ok(false)
     }
 }
 

@@ -66,9 +66,9 @@ impl AccountCommands {
                     ));
                 }
                 if let Some(password) = password {
-                    changes.push(PrincipalUpdate::set(
+                    changes.push(PrincipalUpdate::add_item(
                         PrincipalField::Secrets,
-                        PrincipalValue::StringList(vec![sha512_crypt::hash(password).unwrap()]),
+                        PrincipalValue::String(sha512_crypt::hash(password).unwrap()),
                     ));
                 }
                 if let Some(description) = description {

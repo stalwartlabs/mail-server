@@ -55,7 +55,7 @@ hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.1", features = ["tokio"] }
 http-body-util = "0.1.0"
 base64 = "0.22"
-dashmap = "5.4"
+dashmap = "6.0"
 ahash = { version = "0.8" }
 serial_test = "3.0.0"
 num_cpus = "1.15.0"

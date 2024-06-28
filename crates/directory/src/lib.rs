@@ -23,6 +23,7 @@ use deadpool::managed::PoolError;
 use ldap3::LdapError;
 use mail_send::Credentials;
 use store::Store;
+use totp_rs::TotpUrlError;
 
 pub mod backend;
 pub mod core;
@@ -81,6 +82,8 @@ pub enum DirectoryError {
     Management(ManagementError),
     TimedOut,
     Unsupported,
+    InvalidTotpUrl(TotpUrlError),
+    MissingTotpCode,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -309,6 +312,8 @@ impl Display for DirectoryError {
             Self::Management(error) => write!(f, "Management error: {:?}", error),
             Self::TimedOut => write!(f, "Directory timed out"),
             Self::Unsupported => write!(f, "Method not supported by directory"),
+            Self::InvalidTotpUrl(error) => write!(f, "Invalid TOTP URL: {}", error),
+            Self::MissingTotpCode => write!(f, "Missing TOTP code"),
         }
     }
 }

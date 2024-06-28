@@ -2,7 +2,7 @@
 name = "stalwart-cli"
 description = "Stalwart Mail Server CLI"
 authors = ["Stalwart Labs Ltd. <hello@stalw.art>"]
-license = "AGPL-3.0-only"
+license = "AGPL-3.0-only OR LicenseRef-SEL"
 repository = "https://github.com/stalwartlabs/cli"
 homepage = "https://github.com/stalwartlabs/cli"
 version = "0.8.2"

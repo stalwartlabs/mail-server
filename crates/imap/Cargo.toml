@@ -23,7 +23,7 @@ parking_lot = "0.12"
 tracing = "0.1"
 ahash = { version = "0.8" }
 md5 = "0.7.0"
-dashmap = "5.4"
+dashmap = "6.0"
 rand = "0.8.5"
 
 [features]

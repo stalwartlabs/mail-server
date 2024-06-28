@@ -68,7 +68,7 @@ impl SqlDirectory {
 
         // Validate password
         if let Some(secret) = secret {
-            if !principal.verify_secret(secret).await {
+            if !principal.verify_secret(secret).await? {
                 tracing::debug!(
                     context = "directory",
                     event = "invalid_password",

@@ -39,10 +39,10 @@ hkdf = "0.12.3"
 sha1 = "0.10"
 sha2 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2"]}
-tokio-tungstenite = "0.21"
-tungstenite = "0.21"
+tokio-tungstenite = "0.23"
+tungstenite = "0.23"
 chrono = "0.4"
-dashmap = "5.4"
+dashmap = "6.0"
 aes = "0.8.3"
 cbc = { version = "0.1.2", features = ["alloc"] }
 sequoia-openpgp = { version = "1.16", default-features = false, features = ["crypto-rust", "allow-experimental-crypto", "allow-variable-time-crypto"] }
@@ -56,7 +56,7 @@ async-trait = "0.1.68"
 lz4_flex = { version = "0.11", default-features = false }
 rev_lines = "0.3.0"
 x509-parser = "0.16.0"
-quick-xml = "0.31"
+quick-xml = "0.34"
 
 [features]
 test_mode = []

@@ -221,7 +221,7 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
     }
 
     let mut reader = Reader::from_reader(bytes);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
     let mut buf = Vec::with_capacity(128);
 
     'outer: for tag_name in ["Autodiscover", "Request", "EMailAddress"] {

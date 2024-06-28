@@ -415,6 +415,35 @@ impl ManageDirectory for Store {
                     principal.inner.secrets = secrets;
                 }
                 (
+                    PrincipalAction::AddItem,
+                    PrincipalField::Secrets,
+                    PrincipalValue::String(secret),
+                ) => {
+                    let mut do_add = true;
+                    let mut new_secrets = Vec::with_capacity(principal.inner.secrets.len() + 1);
+                    for prev_secret in principal.inner.secrets {
+                        if prev_secret == secret {
+                            do_add = false;
+                        } else if prev_secret.starts_with("otpauth://")
+                            || prev_secret == "$disabled$"
+                            || prev_secret.starts_with("$app$")
+                        {
+                            new_secrets.push(prev_secret);
+                        }
+                    }
+                    if do_add {
+                        new_secrets.push(secret);
+                    }
+                    principal.inner.secrets = new_secrets;
+                }
+                (
+                    PrincipalAction::RemoveItem,
+                    PrincipalField::Secrets,
+                    PrincipalValue::String(secret),
+                ) => {
+                    principal.inner.secrets.retain(|v| *v != secret);
+                }
+                (
                     PrincipalAction::Set,
                     PrincipalField::Description,
                     PrincipalValue::String(description),

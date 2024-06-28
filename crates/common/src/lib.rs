@@ -20,7 +20,9 @@ use config::{
     storage::Storage,
     tracers::{OtelTracer, Tracer, Tracers},
 };
-use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy, Type};
+use directory::{
+    core::secret::verify_secret_hash, Directory, DirectoryError, Principal, QueryBy, Type,
+};
 use expr::if_block::IfBlock;
 use listener::{
     blocked::{AllowedIps, BlockedIps},
@@ -94,6 +96,7 @@ pub enum AuthResult<T> {
     Success(T),
     Failure,
     Banned,
+    MissingTotp,
 }
 
 #[derive(Debug)]
@@ -267,6 +270,7 @@ impl Core {
                 return Ok(AuthResult::Success(principal));
             }
             Ok(None) => Ok(()),
+            Err(DirectoryError::MissingTotpCode) => return Ok(AuthResult::MissingTotp),
             Err(err) => Err(err),
         };
 

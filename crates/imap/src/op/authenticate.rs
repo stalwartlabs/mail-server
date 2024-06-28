@@ -101,6 +101,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Authenticate
+        let mut is_totp_error = false;
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
                 match self
@@ -110,6 +111,10 @@ impl<T: SessionStream> Session<T> {
                 {
                     AuthResult::Success(token) => Some(token),
                     AuthResult::Failure => None,
+                    AuthResult::MissingTotp => {
+                        is_totp_error = true;
+                        None
+                    }
                     AuthResult::Banned => return Err(()),
                 }
             }
@@ -174,10 +179,14 @@ impl<T: SessionStream> Session<T> {
             Ok(())
         } else {
             self.write_bytes(
-                StatusResponse::no("Authentication failed")
-                    .with_tag(tag)
-                    .with_code(ResponseCode::AuthenticationFailed)
-                    .into_bytes(),
+                StatusResponse::no(if is_totp_error {
+                    "Missing TOTP code, try with 'secret$totp_code'."
+                } else {
+                    "Authentication failed."
+                })
+                .with_tag(tag)
+                .with_code(ResponseCode::AuthenticationFailed)
+                .into_bytes(),
             )
             .await?;
 

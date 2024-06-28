@@ -331,9 +331,9 @@ impl JMAP {
             .data
             .update_account(
                 QueryBy::Id(access_token.primary_id()),
-                vec![PrincipalUpdate::set(
+                vec![PrincipalUpdate::add_item(
                     PrincipalField::Secrets,
-                    PrincipalValue::StringList(vec![new_password]),
+                    PrincipalValue::String(new_password),
                 )],
             )
             .await

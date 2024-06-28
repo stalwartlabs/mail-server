@@ -217,6 +217,20 @@ impl<T: SessionStream> Session<T> {
 
                     return Err(());
                 }
+                Ok(AuthResult::MissingTotp) => {
+                    tracing::debug!(
+                        parent: &self.span,
+                        context = "auth",
+                        event = "authenticate",
+                        result = "missing-totp"
+                    );
+
+                    return self
+                        .auth_error(
+                            b"334 5.7.8 Missing TOTP token, try with 'secret$totp_code'.\r\n",
+                        )
+                        .await;
+                }
                 _ => (),
             }
         } else {

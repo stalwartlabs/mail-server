@@ -17,9 +17,8 @@ tokio-rustls = { version = "0.25.0"}
 rustls = "0.22"
 rustls-pki-types = { version = "1" }
 ldap3 = { version = "0.11.1", default-features = false, features = ["tls-rustls"] }
-deadpool = { version = "0.10.0", features = ["managed", "rt_tokio_1"] }
+deadpool = { version = "0.12", features = ["managed", "rt_tokio_1"] }
 parking_lot = "0.12"
-async-trait = "0.1.68"
 ahash = { version = "0.8" }
 tracing = "0.1"
 lru-cache = "0.1.2"
@@ -34,6 +33,7 @@ md5 = "0.7.0"
 futures = "0.3"
 regex = "1.7.0"
 serde = { version = "1.0", features = ["derive"]}
+totp-rs = { version = "5.5.1", features = ["otpauth"] }
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

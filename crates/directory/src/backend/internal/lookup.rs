@@ -59,7 +59,7 @@ impl DirectoryStore for Store {
                 .await?,
                 secret,
             ) {
-                (Some(mut principal), Some(secret)) if principal.verify_secret(secret).await => {
+                (Some(mut principal), Some(secret)) if principal.verify_secret(secret).await? => {
                     if return_member_of {
                         principal.member_of = self.get_member_of(principal.id).await?;
                     }
