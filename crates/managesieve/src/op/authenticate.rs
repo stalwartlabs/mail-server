@@ -7,7 +7,7 @@
 use common::{
     config::server::ServerProtocol,
     listener::{limiter::ConcurrencyLimiter, SessionStream},
-    AuthResult,
+    AuthFailureReason, AuthResult,
 };
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use imap_proto::{
@@ -93,12 +93,14 @@ impl<T: SessionStream> Session<T> {
                     .await
                 {
                     AuthResult::Success(token) => Some(token),
-                    AuthResult::Failure => None,
-                    AuthResult::MissingTotp => {
+                    AuthResult::Failure(
+                        AuthFailureReason::InvalidCredentials | AuthFailureReason::InternalError(_),
+                    ) => None,
+                    AuthResult::Failure(AuthFailureReason::MissingTotp) => {
                         is_totp_error = true;
                         None
                     }
-                    AuthResult::Banned => {
+                    AuthResult::Failure(AuthFailureReason::Banned) => {
                         return Err(StatusResponse::bye(
                             "Too many authentication requests from this IP address.",
                         ))

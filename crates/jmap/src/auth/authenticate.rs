@@ -6,7 +6,9 @@
 
 use std::{net::IpAddr, sync::Arc, time::Instant};
 
-use common::{config::server::ServerProtocol, listener::limiter::InFlight, AuthResult};
+use common::{
+    config::server::ServerProtocol, listener::limiter::InFlight, AuthFailureReason, AuthResult,
+};
 use directory::{Principal, QueryBy};
 use hyper::header;
 use jmap_proto::error::request::RequestError;
@@ -51,9 +53,9 @@ impl JMAP {
                             .await
                         {
                             AuthResult::Success(access_token) => Some(access_token),
-                            AuthResult::MissingTotp => {
+                            AuthResult::Failure(AuthFailureReason::MissingTotp) => {
                                 return Err(RequestError::blank(
-                                    401,
+                                    403,
                                     "TOTP code required",
                                     concat!(
                                         "A TOTP code is required to authenticate this account. ",
@@ -165,13 +167,13 @@ impl JMAP {
             .await
         {
             Ok(AuthResult::Success(principal)) => AuthResult::Success(AccessToken::new(principal)),
-            Ok(AuthResult::Failure) => {
-                let _ = self.is_auth_allowed_hard(&remote_ip).await;
-                AuthResult::Failure
+            Ok(AuthResult::Failure(reason)) => {
+                if !matches!(reason, AuthFailureReason::MissingTotp) {
+                    let _ = self.is_auth_allowed_hard(&remote_ip).await;
+                }
+                AuthResult::Failure(reason)
             }
-            Ok(AuthResult::Banned) => AuthResult::Banned,
-            Ok(AuthResult::MissingTotp) => AuthResult::MissingTotp,
-            Err(_) => AuthResult::Failure,
+            Err(err) => AuthResult::Failure(AuthFailureReason::InternalError(err)),
         }
     }
 

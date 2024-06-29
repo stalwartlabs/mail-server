@@ -18,49 +18,83 @@ use sha2::Sha512;
 use tokio::sync::oneshot;
 use totp_rs::TOTP;
 
+use crate::backend::internal::SpecialSecrets;
 use crate::DirectoryError;
 use crate::Principal;
 
 impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
     pub async fn verify_secret(&self, mut code: &str) -> crate::Result<bool> {
         let mut totp_token = None;
+        let mut is_totp_token_missing = false;
+        let mut is_totp_required = false;
+        let mut is_totp_verified = false;
+        let mut is_authenticated = false;
+        let mut is_app_authenticated = false;
 
         for secret in &self.secrets {
-            let mut secret = secret.as_str();
+            if secret.is_disabled() {
+                // Account is disabled, no need to check further
 
-            if secret == "$disabled$" {
                 return Ok(false);
-            } else if secret.starts_with("otpauth://") && totp_token.is_none() {
+            } else if secret.is_otp_auth() && !is_totp_verified && !is_totp_token_missing {
+                is_totp_required = true;
+
                 let totp_token = if let Some(totp_token) = totp_token {
                     totp_token
-                } else {
-                    let (_code, _totp_token) = code
-                        .rsplit_once('$')
-                        .filter(|(c, t)| !c.is_empty() && !t.is_empty())
-                        .ok_or(DirectoryError::MissingTotpCode)?;
+                } else if let Some((_code, _totp_token)) = code
+                    .rsplit_once('$')
+                    .filter(|(c, t)| !c.is_empty() && !t.is_empty())
+                {
                     totp_token = Some(_totp_token);
                     code = _code;
                     _totp_token
+                } else {
+                    is_totp_token_missing = true;
+                    continue;
                 };
-                if !TOTP::from_url(secret)
+
+                // Token needs to validate with at least one of the TOPT secrets
+                is_totp_verified = TOTP::from_url(secret)
                     .map_err(DirectoryError::InvalidTotpUrl)?
                     .check_current(totp_token)
-                    .unwrap_or(false)
-                {
-                    return Ok(false);
-                }
-            } else if let Some((_, app_secret)) =
-                secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
-            {
-                secret = app_secret;
+                    .unwrap_or(false);
             }
 
-            if verify_secret_hash(secret, code).await {
-                return Ok(true);
+            if is_app_authenticated || is_authenticated {
+                continue;
+            }
+
+            if let Some((_, app_secret)) =
+                secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
+            {
+                is_app_authenticated = verify_secret_hash(app_secret, code).await;
+            } else {
+                is_authenticated = verify_secret_hash(secret, code).await;
             }
         }
 
-        Ok(false)
+        if is_authenticated {
+            if !is_totp_required {
+                // Authenticated without TOTP enabled
+
+                Ok(true)
+            } else if is_totp_token_missing {
+                // Only let the client know if the TOTP code is missing
+                // if the password is correct
+
+                Err(DirectoryError::MissingTotpCode)
+            } else {
+                // Return the TOTP verification status
+
+                Ok(is_totp_verified)
+            }
+        } else if is_app_authenticated {
+            // App passwords do not require TOTP
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 

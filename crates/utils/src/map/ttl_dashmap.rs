@@ -12,7 +12,7 @@ pub type TtlDashMap<K, V> = DashMap<K, LruItem<V>, ahash::RandomState>;
 
 #[derive(Debug, Clone)]
 pub struct LruItem<V> {
-    item: V,
+    pub item: V,
     valid_until: Instant,
 }
 

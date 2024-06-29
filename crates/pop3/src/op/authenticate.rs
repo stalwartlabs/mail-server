@@ -7,7 +7,7 @@
 use common::{
     config::server::ServerProtocol,
     listener::{limiter::ConcurrencyLimiter, SessionStream},
-    AuthResult,
+    AuthFailureReason, AuthResult,
 };
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use jmap::auth::rate_limit::ConcurrencyLimiters;
@@ -92,12 +92,14 @@ impl<T: SessionStream> Session<T> {
                     .await
                 {
                     AuthResult::Success(token) => Some(token),
-                    AuthResult::Failure => None,
-                    AuthResult::MissingTotp => {
+                    AuthResult::Failure(
+                        AuthFailureReason::InvalidCredentials | AuthFailureReason::InternalError(_),
+                    ) => None,
+                    AuthResult::Failure(AuthFailureReason::MissingTotp) => {
                         is_totp_error = true;
                         None
                     }
-                    AuthResult::Banned => {
+                    AuthResult::Failure(AuthFailureReason::Banned) => {
                         self.write_err("Too many authentication requests from this IP address.")
                             .await?;
                         return Err(());

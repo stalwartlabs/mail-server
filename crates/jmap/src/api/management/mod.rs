@@ -81,14 +81,15 @@ impl JMAP {
                 .into_http_response()
             }
             "oauth" => self.handle_oauth_api_request(access_token, body).await,
-            "crypto" => match *req.method() {
-                Method::POST => self.handle_crypto_post(access_token, body).await,
-                Method::GET => self.handle_crypto_get(access_token).await,
+            "account" => match (path.get(1).copied().unwrap_or_default(), req.method()) {
+                ("crypto", &Method::POST) => self.handle_crypto_post(access_token, body).await,
+                ("crypto", &Method::GET) => self.handle_crypto_get(access_token).await,
+                ("auth", &Method::GET) => self.handle_account_auth_get(access_token).await,
+                ("auth", &Method::POST) => {
+                    self.handle_account_auth_post(req, access_token, body).await
+                }
                 _ => RequestError::not_found().into_http_response(),
             },
-            "password" if req.method() == Method::POST => {
-                self.handle_change_password(req, access_token, body).await
-            }
             _ => RequestError::not_found().into_http_response(),
         }
     }

@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{config::server::ServerProtocol, listener::SessionStream, AuthResult};
+use common::{
+    config::server::ServerProtocol, listener::SessionStream, AuthFailureReason, AuthResult,
+};
 use imap_proto::{
     protocol::{authenticate::Mechanism, capability::Capability},
     receiver::{self, Request},
@@ -110,12 +112,14 @@ impl<T: SessionStream> Session<T> {
                     .await
                 {
                     AuthResult::Success(token) => Some(token),
-                    AuthResult::Failure => None,
-                    AuthResult::MissingTotp => {
+                    AuthResult::Failure(
+                        AuthFailureReason::InvalidCredentials | AuthFailureReason::InternalError(_),
+                    ) => None,
+                    AuthResult::Failure(AuthFailureReason::MissingTotp) => {
                         is_totp_error = true;
                         None
                     }
-                    AuthResult::Banned => return Err(()),
+                    AuthResult::Failure(AuthFailureReason::Banned) => return Err(()),
                 }
             }
             Credentials::OAuthBearer { token } => {

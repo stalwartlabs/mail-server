@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{listener::SessionStream, AuthResult};
+use common::{listener::SessionStream, AuthFailureReason, AuthResult};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
@@ -195,7 +195,7 @@ impl<T: SessionStream> Session<T> {
                         .await?;
                     return Ok(false);
                 }
-                Ok(AuthResult::Failure) => {
+                Ok(AuthResult::Failure(AuthFailureReason::InvalidCredentials)) => {
                     tracing::debug!(
                         parent: &self.span,
                         context = "auth",
@@ -207,7 +207,7 @@ impl<T: SessionStream> Session<T> {
                         .auth_error(b"535 5.7.8 Authentication credentials invalid.\r\n")
                         .await;
                 }
-                Ok(AuthResult::Banned) => {
+                Ok(AuthResult::Failure(AuthFailureReason::Banned)) => {
                     tracing::debug!(
                         parent: &self.span,
                         context = "auth",
@@ -217,7 +217,7 @@ impl<T: SessionStream> Session<T> {
 
                     return Err(());
                 }
-                Ok(AuthResult::MissingTotp) => {
+                Ok(AuthResult::Failure(AuthFailureReason::MissingTotp)) => {
                     tracing::debug!(
                         parent: &self.span,
                         context = "auth",

@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use directory::{
     backend::internal::{
-        lookup::DirectoryStore, manage::ManageDirectory, PrincipalField, PrincipalUpdate,
-        PrincipalValue,
+        lookup::DirectoryStore, manage::ManageDirectory, PrincipalAction, PrincipalField,
+        PrincipalUpdate, PrincipalValue, SpecialSecrets,
     },
     DirectoryError, DirectoryInner, ManagementError, Principal, QueryBy, Type,
 };
@@ -51,6 +51,27 @@ pub struct PrincipalResponse {
     pub members: Vec<String>,
     #[serde(default)]
     pub description: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
+pub enum AccountAuthRequest {
+    SetPassword { password: String },
+    EnableOtpAuth { url: String },
+    DisableOtpAuth { url: Option<String> },
+    AddAppPassword { name: String },
+    RemoveAppPassword { name: String },
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct AccountAuthResponse {
+    #[serde(rename = "otpEnabled")]
+    pub otp_auth: bool,
+    #[serde(rename = "isAdministrator")]
+    pub is_admin: bool,
+    #[serde(rename = "appPasswords")]
+    pub app_passwords: Vec<String>,
 }
 
 impl JMAP {
@@ -223,10 +244,15 @@ impl JMAP {
                             .delete_account(QueryBy::Id(account_id))
                             .await
                         {
-                            Ok(_) => JsonResponse::new(json!({
-                                "data": (),
-                            }))
-                            .into_http_response(),
+                            Ok(_) => {
+                                // Remove entries from cache
+                                self.inner.sessions.retain(|_, id| id.item != account_id);
+
+                                JsonResponse::new(json!({
+                                    "data": (),
+                                }))
+                                .into_http_response()
+                            }
                             Err(err) => err.into_http_response(),
                         }
                     }
@@ -246,6 +272,9 @@ impl JMAP {
                                         return response;
                                     }
                                 }
+                                let is_password_change = changes
+                                    .iter()
+                                    .any(|change| matches!(change.field, PrincipalField::Secrets));
 
                                 match self
                                     .core
@@ -254,10 +283,19 @@ impl JMAP {
                                     .update_account(QueryBy::Id(account_id), changes)
                                     .await
                                 {
-                                    Ok(_) => JsonResponse::new(json!({
-                                        "data": (),
-                                    }))
-                                    .into_http_response(),
+                                    Ok(_) => {
+                                        if is_password_change {
+                                            // Remove entries from cache
+                                            self.inner
+                                                .sessions
+                                                .retain(|_, id| id.item != account_id);
+                                        }
+
+                                        JsonResponse::new(json!({
+                                            "data": (),
+                                        }))
+                                        .into_http_response()
+                                    }
                                     Err(err) => err.into_http_response(),
                                 }
                             }
@@ -272,14 +310,71 @@ impl JMAP {
         }
     }
 
-    pub async fn handle_change_password(
+    pub async fn handle_account_auth_get(&self, access_token: Arc<AccessToken>) -> HttpResponse {
+        let mut response = AccountAuthResponse {
+            otp_auth: false,
+            is_admin: access_token.is_super_user(),
+            app_passwords: Vec::new(),
+        };
+
+        if access_token.primary_id() != u32::MAX {
+            match self
+                .core
+                .storage
+                .directory
+                .query(QueryBy::Id(access_token.primary_id()), false)
+                .await
+            {
+                Ok(Some(principal)) => {
+                    for secret in principal.secrets {
+                        if secret.is_otp_auth() {
+                            response.otp_auth = true;
+                        } else if let Some((app_name, _)) =
+                            secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
+                        {
+                            response.app_passwords.push(app_name.to_string());
+                        }
+                    }
+                }
+                Ok(None) => {
+                    return RequestError::not_found().into_http_response();
+                }
+                Err(err) => return err.into_http_response(),
+            }
+        }
+
+        JsonResponse::new(json!({
+            "data": response,
+        }))
+        .into_http_response()
+    }
+
+    pub async fn handle_account_auth_post(
         &self,
         req: &HttpRequest,
         access_token: Arc<AccessToken>,
         body: Option<Vec<u8>>,
     ) -> HttpResponse {
+        // Parse request
+        let requests = match serde_json::from_slice::<Vec<AccountAuthRequest>>(
+            body.as_deref().unwrap_or_default(),
+        ) {
+            Ok(request) => request,
+            Err(err) => return err.into_http_response(),
+        };
+        if requests.is_empty() {
+            return RequestError::invalid_parameters().into_http_response();
+        }
+
         // Make sure the user authenticated using Basic auth
-        if req
+        if requests.iter().any(|r| {
+            matches!(
+                r,
+                AccountAuthRequest::DisableOtpAuth { .. }
+                    | AccountAuthRequest::EnableOtpAuth { .. }
+                    | AccountAuthRequest::SetPassword { .. }
+            )
+        }) && req
             .headers()
             .get(header::AUTHORIZATION)
             .and_then(|h| h.to_str().ok())
@@ -291,32 +386,38 @@ impl JMAP {
             .into_http_response();
         }
 
-        // Obtain new password
-        let new_password = match String::from_utf8(body.unwrap_or_default()) {
-            Ok(new_password) if !new_password.is_empty() => new_password,
-            _ => {
-                return ManagementApiError::Other {
-                    details: "Invalid change password request".into(),
-                }
-                .into_http_response()
-            }
-        };
-
         // Handle Fallback admin password changes
         if access_token.is_super_user() && access_token.primary_id() == u32::MAX {
-            return match self
-                .core
-                .storage
-                .config
-                .set([("authentication.fallback-admin.secret", new_password)])
-                .await
-            {
-                Ok(_) => JsonResponse::new(json!({
-                    "data": (),
-                }))
-                .into_http_response(),
-                Err(err) => err.into_http_response(),
-            };
+            match requests.into_iter().next().unwrap() {
+                AccountAuthRequest::SetPassword { password } => {
+                    return match self
+                        .core
+                        .storage
+                        .config
+                        .set([("authentication.fallback-admin.secret", password)])
+                        .await
+                    {
+                        Ok(_) => {
+                            // Remove entries from cache
+                            self.inner.sessions.retain(|_, id| id.item != u32::MAX);
+
+                            JsonResponse::new(json!({
+                                "data": (),
+                            }))
+                            .into_http_response()
+                        }
+                        Err(err) => err.into_http_response(),
+                    };
+                }
+                _ => {
+                    return ManagementApiError::Other {
+                        details:
+                            "Fallback administrator accounts do not support 2FA or AppPasswords"
+                                .into(),
+                    }
+                    .into_http_response()
+                }
+            }
         }
 
         // Make sure the current directory supports updates
@@ -324,24 +425,56 @@ impl JMAP {
             return response;
         }
 
+        // Build actions
+        let mut actions = Vec::with_capacity(requests.len());
+        for request in requests {
+            let (action, secret) = match request {
+                AccountAuthRequest::SetPassword { password } => {
+                    actions.push(PrincipalUpdate {
+                        action: PrincipalAction::RemoveItem,
+                        field: PrincipalField::Secrets,
+                        value: PrincipalValue::String(String::new()),
+                    });
+
+                    (PrincipalAction::AddItem, password)
+                }
+                AccountAuthRequest::EnableOtpAuth { url } => (PrincipalAction::AddItem, url),
+                AccountAuthRequest::DisableOtpAuth { url } => (
+                    PrincipalAction::RemoveItem,
+                    url.unwrap_or_else(|| "otpauth://".to_string()),
+                ),
+                AccountAuthRequest::AddAppPassword { name } => (PrincipalAction::AddItem, name),
+                AccountAuthRequest::RemoveAppPassword { name } => {
+                    (PrincipalAction::RemoveItem, name)
+                }
+            };
+
+            actions.push(PrincipalUpdate {
+                action,
+                field: PrincipalField::Secrets,
+                value: PrincipalValue::String(secret),
+            });
+        }
+
         // Update password
         match self
             .core
             .storage
             .data
-            .update_account(
-                QueryBy::Id(access_token.primary_id()),
-                vec![PrincipalUpdate::add_item(
-                    PrincipalField::Secrets,
-                    PrincipalValue::String(new_password),
-                )],
-            )
+            .update_account(QueryBy::Id(access_token.primary_id()), actions)
             .await
         {
-            Ok(_) => JsonResponse::new(json!({
-                "data": (),
-            }))
-            .into_http_response(),
+            Ok(_) => {
+                // Remove entries from cache
+                self.inner
+                    .sessions
+                    .retain(|_, id| id.item != access_token.primary_id());
+
+                JsonResponse::new(json!({
+                    "data": (),
+                }))
+                .into_http_response()
+            }
             Err(err) => err.into_http_response(),
         }
     }

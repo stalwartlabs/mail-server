@@ -17,7 +17,7 @@ use crate::{DirectoryError, ManagementError, Principal, QueryBy, Type};
 
 use super::{
     lookup::DirectoryStore, PrincipalAction, PrincipalField, PrincipalIdType, PrincipalUpdate,
-    PrincipalValue,
+    PrincipalValue, SpecialSecrets,
 };
 
 #[allow(async_fn_in_trait)]
@@ -419,29 +419,25 @@ impl ManageDirectory for Store {
                     PrincipalField::Secrets,
                     PrincipalValue::String(secret),
                 ) => {
-                    let mut do_add = true;
-                    let mut new_secrets = Vec::with_capacity(principal.inner.secrets.len() + 1);
-                    for prev_secret in principal.inner.secrets {
-                        if prev_secret == secret {
-                            do_add = false;
-                        } else if prev_secret.starts_with("otpauth://")
-                            || prev_secret == "$disabled$"
-                            || prev_secret.starts_with("$app$")
-                        {
-                            new_secrets.push(prev_secret);
-                        }
+                    if !principal.inner.secrets.contains(&secret) {
+                        principal.inner.secrets.push(secret);
                     }
-                    if do_add {
-                        new_secrets.push(secret);
-                    }
-                    principal.inner.secrets = new_secrets;
                 }
                 (
                     PrincipalAction::RemoveItem,
                     PrincipalField::Secrets,
                     PrincipalValue::String(secret),
                 ) => {
-                    principal.inner.secrets.retain(|v| *v != secret);
+                    if secret.is_app_password() || secret.is_otp_auth() {
+                        principal
+                            .inner
+                            .secrets
+                            .retain(|v| *v != secret && !v.starts_with(&secret));
+                    } else if !secret.is_empty() {
+                        principal.inner.secrets.retain(|v| *v != secret);
+                    } else {
+                        principal.inner.secrets.retain(|v| !v.is_password());
+                    }
                 }
                 (
                     PrincipalAction::Set,

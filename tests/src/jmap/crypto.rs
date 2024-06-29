@@ -67,7 +67,7 @@ pub async fn test(params: &mut JMAPTest) {
             };
 
             assert_eq!(
-                api.post::<u32>("/api/crypto", &request)
+                api.post::<u32>("/api/account/crypto", &request)
                     .await
                     .unwrap()
                     .unwrap_data(),
@@ -118,7 +118,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Disable encryption
     assert_eq!(
-        api.post::<Option<String>>("/api/crypto", &EncryptionType::Disabled)
+        api.post::<Option<String>>("/api/account/crypto", &EncryptionType::Disabled)
             .await
             .unwrap()
             .unwrap_data(),

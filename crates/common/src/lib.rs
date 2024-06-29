@@ -94,9 +94,14 @@ pub struct Enterprise {
 
 pub enum AuthResult<T> {
     Success(T),
-    Failure,
-    Banned,
+    Failure(AuthFailureReason),
+}
+
+pub enum AuthFailureReason {
+    InvalidCredentials,
     MissingTotp,
+    Banned,
+    InternalError(DirectoryError),
 }
 
 #[derive(Debug)]
@@ -270,7 +275,9 @@ impl Core {
                 return Ok(AuthResult::Success(principal));
             }
             Ok(None) => Ok(()),
-            Err(DirectoryError::MissingTotpCode) => return Ok(AuthResult::MissingTotp),
+            Err(DirectoryError::MissingTotpCode) => {
+                return Ok(AuthResult::Failure(AuthFailureReason::MissingTotp))
+            }
             Err(err) => Err(err),
         };
 
@@ -345,7 +352,7 @@ impl Core {
                                 .await;
                             }
 
-                            AuthResult::Failure
+                            AuthResult::Failure(AuthFailureReason::InvalidCredentials)
                         },
                     );
                 }
@@ -392,7 +399,7 @@ impl Core {
                     .await;
                 }
 
-                Ok(AuthResult::Banned)
+                Ok(AuthResult::Failure(AuthFailureReason::Banned))
             } else {
                 // Send webhook event
                 if self.has_webhook_subscribers(WebhookType::AuthFailure) {
@@ -409,7 +416,7 @@ impl Core {
                     .await;
                 }
 
-                Ok(AuthResult::Failure)
+                Ok(AuthResult::Failure(AuthFailureReason::InvalidCredentials))
             }
         } else {
             // Send webhook event
@@ -426,7 +433,7 @@ impl Core {
                 )
                 .await;
             }
-            Ok(AuthResult::Failure)
+            Ok(AuthResult::Failure(AuthFailureReason::InvalidCredentials))
         }
     }
 }

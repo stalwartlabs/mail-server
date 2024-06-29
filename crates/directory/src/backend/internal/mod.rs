@@ -260,3 +260,31 @@ impl FromStr for Type {
         Type::parse(s).ok_or(())
     }
 }
+
+pub trait SpecialSecrets {
+    fn is_disabled(&self) -> bool;
+    fn is_otp_auth(&self) -> bool;
+    fn is_app_password(&self) -> bool;
+    fn is_password(&self) -> bool;
+}
+
+impl<T> SpecialSecrets for T
+where
+    T: AsRef<str>,
+{
+    fn is_disabled(&self) -> bool {
+        self.as_ref() == "$disabled$"
+    }
+
+    fn is_otp_auth(&self) -> bool {
+        self.as_ref().starts_with("otpauth://")
+    }
+
+    fn is_app_password(&self) -> bool {
+        self.as_ref().starts_with("$app$")
+    }
+
+    fn is_password(&self) -> bool {
+        !self.is_disabled() && !self.is_otp_auth() && !self.is_app_password()
+    }
+}
