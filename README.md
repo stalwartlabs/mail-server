@@ -94,7 +94,8 @@ Key features:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
   - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555) using `TLS-ALPN-01`, `DNS-01` or `HTTP-01` challenges.
   - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
-  - Two-factor authentication with Time-based One-Time Passwords (2FA-TOTP) and Application passwords (App Passwords).
+  - Two-factor authentication with Time-based One-Time Passwords (`2FA-TOTP`) 
+  - Application passwords (App Passwords).
   - Automated blocking of hosts that cause multiple authentication errors (aka **fail2ban**).
   - Access Control Lists (ACLs).
   - Rate limiting.
@@ -142,7 +143,7 @@ These are some of our open-source sponsors:
 
 <!-- sponsors --><a href="https://github.com/kbjr"><img src="https://github.com/kbjr.png" width="60px" alt="James Brumond" /></a><a href="https://github.com/CarlSchwan"><img src="https://github.com/CarlSchwan.png" width="60px" alt="Carl Schwan" /></a><a href="https://github.com/cvalka2"><img src="https://github.com/cvalka2.png" width="60px" alt="" /></a><a href="https://github.com/EliRibble"><img src="https://github.com/EliRibble.png" width="60px" alt="Eli Ribble" /></a><a href="https://github.com/JAMflow-Cloud"><img src="https://github.com/JAMflow-Cloud.png" width="60px" alt="JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https://github.com/starsong-consulting.png" width="60px" alt="Starsong Consulting" /></a><a href="https://github.com/Vie-eco"><img src="https://github.com/Vie-eco.png" width="60px" alt="Vie.eco" /></a><!-- sponsors -->
 
-If you would like to support our work, please consider [becoming a sponsor](https://github.com/sponsors/stalwartlabs).
+<br/>If you would like to support our work, please consider [becoming a sponsor](https://github.com/sponsors/stalwartlabs).
 
 ## License
 
