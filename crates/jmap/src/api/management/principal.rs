@@ -60,7 +60,7 @@ pub enum AccountAuthRequest {
     SetPassword { password: String },
     EnableOtpAuth { url: String },
     DisableOtpAuth { url: Option<String> },
-    AddAppPassword { name: String },
+    AddAppPassword { name: String, password: String },
     RemoveAppPassword { name: String },
 }
 
@@ -443,9 +443,11 @@ impl JMAP {
                     PrincipalAction::RemoveItem,
                     url.unwrap_or_else(|| "otpauth://".to_string()),
                 ),
-                AccountAuthRequest::AddAppPassword { name } => (PrincipalAction::AddItem, name),
+                AccountAuthRequest::AddAppPassword { name, password } => {
+                    (PrincipalAction::AddItem, format!("$app${name}${password}"))
+                }
                 AccountAuthRequest::RemoveAppPassword { name } => {
-                    (PrincipalAction::RemoveItem, name)
+                    (PrincipalAction::RemoveItem, format!("$app${name}"))
                 }
             };
 

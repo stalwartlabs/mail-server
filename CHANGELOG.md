@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.8.3] - 2024-07-01
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+## Added
+- Two-factor authentication with Time-based One-Time Passwords (#436)
+- Application passwords (#479).
+
+### Changed
+- DANE success on EndEntity match regardless of TrustAnchor validation.
+
+### Fixed
+- Fix ManageSieve GETSCRIPT response: Add missing CRLF (#563)
+- Do not return CAPABILITIES after ManageSieve AUTH=PLAIN SASL exchange (#548)
+- POP3 QUIT must write a response (#568)
+
 ## [0.8.2] - 2024-06-22
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin and spam filter versions.

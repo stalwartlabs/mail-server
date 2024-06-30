@@ -1016,7 +1016,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -1614,7 +1614,7 @@ dependencies = [
 
 [[package]]
 name = "directory"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ahash 0.8.11",
  "argon2",
@@ -2926,7 +2926,7 @@ checksum = "edcd27d72f2f071c64249075f42e205ff93c9a4c5f6c6da53e79ed9f9832c285"
 
 [[package]]
 name = "imap"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ahash 0.8.11",
  "common",
@@ -3128,7 +3128,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -3565,7 +3565,7 @@ dependencies = [
 
 [[package]]
 name = "mail-server"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "common",
  "directory",
@@ -3585,7 +3585,7 @@ dependencies = [
 
 [[package]]
 name = "managesieve"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -3862,7 +3862,7 @@ dependencies = [
 
 [[package]]
 name = "nlp"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -4418,7 +4418,7 @@ dependencies = [
 
 [[package]]
 name = "pop3"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "common",
  "imap",
@@ -5589,7 +5589,7 @@ checksum = "b84345e4c9bd703274a082fb80caaa99b7612be48dfaa1dd9266577ec412309d"
 
 [[package]]
 name = "se_common"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "common",
  "tracing",
@@ -5597,7 +5597,7 @@ dependencies = [
 
 [[package]]
 name = "se_licensing"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "base64 0.22.1",
  "ring 0.17.8",
@@ -5975,7 +5975,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "smtp"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -6092,7 +6092,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "stalwart-cli"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "clap",
  "console",
@@ -6123,7 +6123,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "store"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -7063,7 +7063,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utils"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ahash 0.8.11",
  "base64 0.22.1",
