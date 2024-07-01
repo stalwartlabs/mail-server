@@ -9,6 +9,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 ## Added
 - Two-factor authentication with Time-based One-Time Passwords (#436)
 - Application passwords (#479).
+- Option to disable user accounts.
 
 ### Changed
 - DANE success on EndEntity match regardless of TrustAnchor validation.

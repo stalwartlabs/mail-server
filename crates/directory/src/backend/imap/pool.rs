@@ -6,12 +6,14 @@
 
 use std::sync::atomic::Ordering;
 
+use async_trait::async_trait;
 use deadpool::managed;
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 
 use super::{ImapClient, ImapConnectionManager, ImapError};
 
+#[async_trait]
 impl managed::Manager for ImapConnectionManager {
     type Type = ImapClient<TlsStream<TcpStream>>;
     type Error = ImapError;

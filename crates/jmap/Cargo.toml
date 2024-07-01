@@ -56,7 +56,7 @@ async-trait = "0.1.68"
 lz4_flex = { version = "0.11", default-features = false }
 rev_lines = "0.3.0"
 x509-parser = "0.16.0"
-quick-xml = "0.34"
+quick-xml = "0.35"
 
 [features]
 test_mode = []
