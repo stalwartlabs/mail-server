@@ -420,7 +420,12 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(secret),
                 ) => {
                     if !principal.inner.secrets.contains(&secret) {
-                        principal.inner.secrets.push(secret);
+                        if secret.is_otp_auth() && !principal.inner.secrets.is_empty() {
+                            // Add OTP Auth URLs to the beginning of the list
+                            principal.inner.secrets.insert(0, secret);
+                        } else {
+                            principal.inner.secrets.push(secret);
+                        }
                     }
                 }
                 (

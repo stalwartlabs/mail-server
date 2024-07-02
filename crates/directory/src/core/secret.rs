@@ -36,40 +36,38 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
                 // Account is disabled, no need to check further
 
                 return Ok(false);
-            } else if secret.is_otp_auth() && !is_totp_verified && !is_totp_token_missing {
-                is_totp_required = true;
+            } else if secret.is_otp_auth() {
+                if !is_totp_verified && !is_totp_token_missing {
+                    is_totp_required = true;
 
-                let totp_token = if let Some(totp_token) = totp_token {
-                    totp_token
-                } else if let Some((_code, _totp_token)) = code
-                    .rsplit_once('$')
-                    .filter(|(c, t)| !c.is_empty() && !t.is_empty())
+                    let totp_token = if let Some(totp_token) = totp_token {
+                        totp_token
+                    } else if let Some((_code, _totp_token)) = code
+                        .rsplit_once('$')
+                        .filter(|(c, t)| !c.is_empty() && !t.is_empty())
+                    {
+                        totp_token = Some(_totp_token);
+                        code = _code;
+                        _totp_token
+                    } else {
+                        is_totp_token_missing = true;
+                        continue;
+                    };
+
+                    // Token needs to validate with at least one of the TOTP secrets
+                    is_totp_verified = TOTP::from_url(secret)
+                        .map_err(DirectoryError::InvalidTotpUrl)?
+                        .check_current(totp_token)
+                        .unwrap_or(false);
+                }
+            } else if !is_authenticated && !is_app_authenticated {
+                if let Some((_, app_secret)) =
+                    secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
                 {
-                    totp_token = Some(_totp_token);
-                    code = _code;
-                    _totp_token
+                    is_app_authenticated = verify_secret_hash(app_secret, code).await;
                 } else {
-                    is_totp_token_missing = true;
-                    continue;
-                };
-
-                // Token needs to validate with at least one of the TOPT secrets
-                is_totp_verified = TOTP::from_url(secret)
-                    .map_err(DirectoryError::InvalidTotpUrl)?
-                    .check_current(totp_token)
-                    .unwrap_or(false);
-            }
-
-            if is_app_authenticated || is_authenticated {
-                continue;
-            }
-
-            if let Some((_, app_secret)) =
-                secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
-            {
-                is_app_authenticated = verify_secret_hash(app_secret, code).await;
-            } else {
-                is_authenticated = verify_secret_hash(secret, code).await;
+                    is_authenticated = verify_secret_hash(secret, code).await;
+                }
             }
         }
 
@@ -93,6 +91,15 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
 
             Ok(true)
         } else {
+            if is_totp_verified {
+                // TOTP URL appeared after password hash in secrets list
+                for secret in &self.secrets {
+                    if secret.is_password() && verify_secret_hash(secret, code).await {
+                        return Ok(true);
+                    }
+                }
+            }
+
             Ok(false)
         }
     }
