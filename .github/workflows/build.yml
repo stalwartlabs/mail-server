@@ -24,6 +24,7 @@ jobs:
             use_cross: true
           - target: armv7-unknown-linux-gnueabihf
             host_os: ubuntu-20.04
+            env: "JEMALLOC_SYS_WITH_LG_PAGE=16"
             use_cross: true
           #- target: arm-unknown-linux-gnueabihf
           #  host_os: ubuntu-20.04
