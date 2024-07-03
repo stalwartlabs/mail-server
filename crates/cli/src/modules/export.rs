@@ -82,34 +82,36 @@ impl ExportCommands {
                     let mut blob_path = path.clone();
                     blob_path.push(&blob_id);
 
-                    futures.push(async move {
-                        let mut retry_count = 0;
+                    if tokio::fs::metadata(&blob_path).await.is_err() {
+                        futures.push(async move {
+                            let mut retry_count = 0;
 
-                        let bytes = loop {
-                            match client.download(&blob_id).await {
-                                Ok(bytes) => break bytes,
-                                Err(_) if retry_count < RETRY_ATTEMPTS => {
-                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                                    retry_count += 1;
+                            let bytes = loop {
+                                match client.download(&blob_id).await {
+                                    Ok(bytes) => break bytes,
+                                    Err(_) if retry_count < RETRY_ATTEMPTS => {
+                                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                        retry_count += 1;
+                                    }
+                                    result => {
+                                        result.unwrap_result("download blob");
+                                        return;
+                                    }
                                 }
-                                result => {
-                                    result.unwrap_result("download blob");
-                                    return;
-                                }
-                            }
-                        };
+                            };
 
-                        tokio::fs::OpenOptions::new()
-                            .create(true)
-                            .write(true)
-                            .truncate(true)
-                            .open(&blob_path)
-                            .await
-                            .unwrap_result(&format!("open {}", blob_path.display()))
-                            .write_all(&bytes)
-                            .await
-                            .unwrap_result(&format!("write {}", blob_path.display()));
-                    });
+                            tokio::fs::OpenOptions::new()
+                                .create(true)
+                                .write(true)
+                                .truncate(true)
+                                .open(&blob_path)
+                                .await
+                                .unwrap_result(&format!("open {}", blob_path.display()))
+                                .write_all(&bytes)
+                                .await
+                                .unwrap_result(&format!("write {}", blob_path.display()));
+                        });
+                    }
 
                     if futures.len() == num_concurrent {
                         futures.next().await.unwrap();

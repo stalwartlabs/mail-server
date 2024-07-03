@@ -233,10 +233,14 @@ pub fn decode_challenge_plain(challenge: &[u8]) -> Result<Credentials<String>, &
     let mut arg_num = 0;
     for &ch in challenge {
         if ch != 0 {
-            if arg_num == 1 {
-                username.push(ch);
-            } else if arg_num == 2 {
-                secret.push(ch);
+            match arg_num.cmp(&2) {
+                std::cmp::Ordering::Less => {
+                    username.push(ch);
+                }
+                std::cmp::Ordering::Equal => {
+                    secret.push(ch);
+                }
+                std::cmp::Ordering::Greater => (),
             }
         } else {
             arg_num += 1;
