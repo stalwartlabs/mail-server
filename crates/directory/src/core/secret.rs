@@ -42,9 +42,12 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
 
                     let totp_token = if let Some(totp_token) = totp_token {
                         totp_token
-                    } else if let Some((_code, _totp_token)) = code
-                        .rsplit_once('$')
-                        .filter(|(c, t)| !c.is_empty() && !t.is_empty())
+                    } else if let Some((_code, _totp_token)) =
+                        code.rsplit_once('$').filter(|(c, t)| {
+                            !c.is_empty()
+                                && (6..=8).contains(&t.len())
+                                && t.as_bytes().iter().all(|b| b.is_ascii_digit())
+                        })
                     {
                         totp_token = Some(_totp_token);
                         code = _code;
