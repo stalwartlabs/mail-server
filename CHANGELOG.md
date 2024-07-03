@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.8.4] - 2024-07-03
+
+To upgrade replace the `stalwart-mail` binary.
+
+## Added
+
+### Changed
+
+### Fixed
+- Fix TOTP validation order.
+- Increase Jemalloc page size on armv7 builds.
+
 ## [0.8.3] - 2024-07-01
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.

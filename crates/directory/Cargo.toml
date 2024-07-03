@@ -1,6 +1,6 @@
 [package]
 name = "directory"
-version = "0.8.3"
+version = "0.8.4"
 edition = "2021"
 resolver = "2"
 
@@ -10,11 +10,11 @@ store = { path =  "../store" }
 jmap_proto = { path =  "../jmap-proto" }
 smtp-proto = { version = "0.1" }
 mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
-mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
 tokio = { version = "1.23", features = ["net"] }
-tokio-rustls = { version = "0.25.0"}
-rustls = "0.22"
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "0.23.5", default-features = false, features = ["std", "ring", "tls12"] }
 rustls-pki-types = { version = "1" }
 ldap3 = { version = "0.11.1", default-features = false, features = ["tls-rustls"] }
 deadpool = { version = "0.10", features = ["managed", "rt_tokio_1"] }

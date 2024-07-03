@@ -1016,7 +1016,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -1028,8 +1028,8 @@ dependencies = [
  "dns-update",
  "futures",
  "hostname 0.4.0",
- "hyper 1.3.1",
- "idna 1.0.1",
+ "hyper 1.4.0",
+ "idna 1.0.2",
  "imagesize",
  "infer",
  "jmap_proto",
@@ -1051,7 +1051,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.5",
  "ring 0.17.8",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pemfile 2.1.2",
  "rustls-pki-types",
  "se_licensing",
@@ -1063,7 +1063,7 @@ dependencies = [
  "smtp-proto",
  "store",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "tracing",
  "tracing-appender",
  "tracing-journald",
@@ -1488,9 +1488,9 @@ dependencies = [
 
 [[package]]
 name = "decancer"
-version = "3.2.2"
+version = "3.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89dc48fa5c407ad29590bc5cc17a56684ed7b4f8215a9b65a31644ff051557f4"
+checksum = "0d14bdff2b0fd0e3eb4f1af30efc2cb6419c734b5cb93da37521a13313218e3f"
 dependencies = [
  "lazy_static",
  "paste",
@@ -1626,7 +1626,7 @@ dependencies = [
 
 [[package]]
 name = "directory"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "ahash 0.8.11",
  "argon2",
@@ -1645,7 +1645,7 @@ dependencies = [
  "pbkdf2",
  "pwhash",
  "regex",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pki-types",
  "scrypt",
  "serde",
@@ -1654,7 +1654,7 @@ dependencies = [
  "smtp-proto",
  "store",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "totp-rs",
  "tracing",
  "utils",
@@ -2660,9 +2660,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.3.1"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe575dd17d0862a9a33781c8c4696a55c320909004a67a00fb286ba8b1bc496d"
+checksum = "c4fe55fb7a772d59a5ff1dfbff4fe0258d19b89fec4b233e75d35d5d2316badc"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2701,7 +2701,7 @@ checksum = "5ee4be2c948921a1a5320b629c4193916ed787a7f7f293fd3f7f5a6c9de74155"
 dependencies = [
  "futures-util",
  "http 1.1.0",
- "hyper 1.3.1",
+ "hyper 1.4.0",
  "hyper-util",
  "rustls 0.23.10",
  "rustls-pki-types",
@@ -2725,16 +2725,16 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b875924a60b96e5d7b9ae7b066540b1dd1cbd90d1828f54c92e02a283351c56"
+checksum = "3ab92f4f49ee4fb4f997c784b7a2e0fa70050211e0b6a287f898c3c9785ca956"
 dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
  "http 1.1.0",
  "http-body 1.0.0",
- "hyper 1.3.1",
+ "hyper 1.4.0",
  "pin-project-lite",
  "socket2",
  "tokio",
@@ -2921,9 +2921,9 @@ dependencies = [
 
 [[package]]
 name = "idna"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44a986806a1cc899952ba462bc1f28afbfd5850ab6cb030ccb20dd02cc527a24"
+checksum = "bd69211b9b519e98303c015e21a007e293db403b6c85b9b124e133d25e242cdd"
 dependencies = [
  "icu_normalizer",
  "icu_properties",
@@ -2939,7 +2939,7 @@ checksum = "edcd27d72f2f071c64249075f42e205ff93c9a4c5f6c6da53e79ed9f9832c285"
 
 [[package]]
 name = "imap"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "ahash 0.8.11",
  "common",
@@ -2954,11 +2954,11 @@ dependencies = [
  "nlp",
  "parking_lot",
  "rand",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pemfile 2.1.2",
  "store",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "tracing",
  "utils",
 ]
@@ -3141,7 +3141,7 @@ dependencies = [
 
 [[package]]
 name = "jmap"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -3160,7 +3160,7 @@ dependencies = [
  "futures-util",
  "hkdf",
  "http-body-util",
- "hyper 1.3.1",
+ "hyper 1.4.0",
  "hyper-util",
  "jmap_proto",
  "lz4_flex",
@@ -3561,24 +3561,24 @@ dependencies = [
 
 [[package]]
 name = "mail-send"
-version = "0.4.8"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d9f578319ab6d0ef6bf39ca7051ad4ae960e1d647a55cc71b86e04236b25167"
+checksum = "7a575d25cf00ed68e5790b473b29242a47e991c6187785d47b45e31fc5816554"
 dependencies = [
  "base64 0.22.1",
  "gethostname",
  "md5",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pki-types",
  "smtp-proto",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "webpki-roots 0.26.3",
 ]
 
 [[package]]
 name = "mail-server"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "common",
  "directory",
@@ -3598,7 +3598,7 @@ dependencies = [
 
 [[package]]
 name = "managesieve"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -3612,12 +3612,12 @@ dependencies = [
  "mail-send",
  "md5",
  "parking_lot",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pemfile 2.1.2",
  "sieve-rs",
  "store",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "tracing",
  "utils",
 ]
@@ -3875,7 +3875,7 @@ dependencies = [
 
 [[package]]
 name = "nlp"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -4457,7 +4457,7 @@ dependencies = [
 
 [[package]]
 name = "pop3"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "common",
  "imap",
@@ -4465,10 +4465,10 @@ dependencies = [
  "jmap_proto",
  "mail-parser",
  "mail-send",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "store",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "tracing",
  "utils",
 ]
@@ -5090,7 +5090,7 @@ dependencies = [
  "http 1.1.0",
  "http-body 1.0.0",
  "http-body-util",
- "hyper 1.3.1",
+ "hyper 1.4.0",
  "hyper-rustls 0.27.2",
  "hyper-util",
  "ipnet",
@@ -5219,9 +5219,9 @@ dependencies = [
 
 [[package]]
 name = "roaring"
-version = "0.10.5"
+version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7699249cc2c7d71939f30868f47e9d7add0bdc030d90ee10bfd16887ff8bb1c8"
+checksum = "8f4b84ba6e838ceb47b41de5194a60244fac43d9fe03b71dbe8c5a201081d6d1"
 dependencies = [
  "bytemuck",
  "byteorder",
@@ -5628,7 +5628,7 @@ checksum = "b84345e4c9bd703274a082fb80caaa99b7612be48dfaa1dd9266577ec412309d"
 
 [[package]]
 name = "se_common"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "common",
  "tracing",
@@ -5636,7 +5636,7 @@ dependencies = [
 
 [[package]]
 name = "se_licensing"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "base64 0.22.1",
  "ring 0.17.8",
@@ -5735,7 +5735,7 @@ dependencies = [
  "ed25519-dalek",
  "getrandom",
  "idea",
- "idna 1.0.1",
+ "idna 1.0.2",
  "lalrpop",
  "lalrpop-util",
  "lazy_static",
@@ -5793,9 +5793,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.119"
+version = "1.0.120"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8eddb61f0697cc3989c5d64b452f5488e2b8a60fd7d5076a3045076ffef8cb0"
+checksum = "4e0d21c9a8cae1235ad58a00c11cb40d4b1e5c784f1ef2c537876ed6ffd8b7c5"
 dependencies = [
  "itoa",
  "ryu",
@@ -6016,7 +6016,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "smtp"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "ahash 0.8.11",
  "bincode",
@@ -6027,7 +6027,7 @@ dependencies = [
  "directory",
  "form_urlencoded",
  "http-body-util",
- "hyper 1.3.1",
+ "hyper 1.4.0",
  "hyper-util",
  "lazy_static",
  "lru-cache",
@@ -6043,7 +6043,7 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest 0.12.5",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pemfile 2.1.2",
  "rustls-pki-types",
  "serde",
@@ -6054,7 +6054,7 @@ dependencies = [
  "smtp-proto",
  "store",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "tracing",
  "utils",
  "webpki-roots 0.26.3",
@@ -6133,7 +6133,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "stalwart-cli"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "clap",
  "console",
@@ -6164,7 +6164,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "store"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "ahash 0.8.11",
  "arc-swap",
@@ -6197,13 +6197,13 @@ dependencies = [
  "rocksdb",
  "rusqlite",
  "rust-s3",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pki-types",
  "serde",
  "serde_json",
  "tokio",
  "tokio-postgres",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "tracing",
  "utils",
  "xxhash-rust",
@@ -6394,7 +6394,7 @@ dependencies = [
  "flate2",
  "futures",
  "http-body-util",
- "hyper 1.3.1",
+ "hyper 1.4.0",
  "hyper-util",
  "imap",
  "imap_proto",
@@ -6412,7 +6412,7 @@ dependencies = [
  "rayon",
  "reqwest 0.12.5",
  "ring 0.17.8",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pemfile 2.1.2",
  "rustls-pki-types",
  "serde",
@@ -6423,7 +6423,7 @@ dependencies = [
  "smtp-proto",
  "store",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "tracing",
  "tracing-subscriber",
  "utils",
@@ -7104,7 +7104,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utils"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "ahash 0.8.11",
  "base64 0.22.1",
@@ -7125,14 +7125,14 @@ dependencies = [
  "regex",
  "reqwest 0.12.5",
  "ring 0.17.8",
- "rustls 0.22.4",
+ "rustls 0.23.10",
  "rustls-pemfile 2.1.2",
  "rustls-pki-types",
  "serde",
  "serde_json",
  "smtp-proto",
  "tokio",
- "tokio-rustls 0.25.0",
+ "tokio-rustls 0.26.0",
  "tracing",
  "tracing-journald",
  "webpki-roots 0.26.3",
@@ -7697,18 +7697,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.7.34"
+version = "0.7.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae87e3fcd617500e5d106f0380cf7b77f3c6092aae37191433159dda23cfb087"
+checksum = "1b9b4fd18abc82b8136838da5d50bae7bdea537c574d8dc1a34ed098d6c166f0"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.7.34"
+version = "0.7.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15e934569e47891f7d9411f1a451d947a60e000ab3bd24fbb970f000387d1b3b"
+checksum = "fa4f8080344d4671fb4e831a13ad1e68092748387dfc4f55e356242fae12ce3e"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -1,6 +1,6 @@
 [package]
 name = "jmap"
-version = "0.8.3"
+version = "0.8.4"
 edition = "2021"
 resolver = "2"
 
@@ -15,7 +15,7 @@ directory = { path =  "../directory" }
 smtp-proto = { version = "0.1" }
 mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
-mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 mail-auth = { version = "0.4", features = ["generate"] }
 sieve-rs = { version = "0.5" } 
 serde = { version = "1.0", features = ["derive"]}

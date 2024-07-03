@@ -1,6 +1,6 @@
 [package]
 name = "common"
-version = "0.8.3"
+version = "0.8.4"
 edition = "2021"
 resolver = "2"
 
@@ -14,7 +14,7 @@ se_licensing = { path = "../se-licensing" }
 sieve-rs = { version = "0.5" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-auth = { version = "0.4" }
-mail-send = { version = "0.4", default-features = false, features = ["cram-md5"] }
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 smtp-proto = { version = "0.1", features = ["serde_support"] }
 dns-update = { version = "0.1" }
 ahash = { version = "0.8.2", features = ["serde"] }
@@ -23,12 +23,12 @@ regex = "1.7.0"
 tracing = "0.1"
 proxy-header = { version = "0.1.0", features = ["tokio"] }
 arc-swap = "1.6.0"
-rustls = { version = "0.22", default-features = false, features = ["tls12"]}
+rustls = { version = "0.23.5", default-features = false, features = ["std", "ring", "tls12"] }
 rustls-pemfile = "2.0"
 rustls-pki-types = { version = "1" }
 ring = { version = "0.17" }
 tokio = { version = "1.23", features = ["net", "macros"] }
-tokio-rustls = { version = "0.25.0"}
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 futures = "0.3"
 rcgen = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2"]}
