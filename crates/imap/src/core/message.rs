@@ -215,7 +215,7 @@ impl<T: SessionStream> SessionData<T> {
 
     pub async fn get_modseq(&self, account_id: u32) -> crate::op::Result<Option<u64>> {
         // Obtain current modseq
-        if let Ok(modseq) = self
+        match self
             .jmap
             .core
             .storage
@@ -223,15 +223,17 @@ impl<T: SessionStream> SessionData<T> {
             .get_last_change_id(account_id, Collection::Email)
             .await
         {
-            Ok(modseq)
-        } else {
-            tracing::error!(parent: &self.span,
-                event = "error",
-                context = "store",
-                account_id = account_id,
-                collection = ?Collection::Email,
-                "Failed to obtain modseq");
-            Err(StatusResponse::database_failure())
+            Ok(modseq) => Ok(modseq),
+            Err(err) => {
+                tracing::error!(parent: &self.span,
+                    event = "error",
+                    context = "store",
+                    account_id = account_id,
+                    collection = ?Collection::Email,
+                    reason = ?err,
+                    "Failed to obtain modseq");
+                Err(StatusResponse::database_failure())
+            }
         }
     }
 
