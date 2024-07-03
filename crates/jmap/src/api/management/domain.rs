@@ -238,6 +238,11 @@ impl JMAP {
                 }
                 ("http", _) if is_tls => {
                     has_https = true;
+                    records.push(DnsRecord {
+                        typ: "SRV".to_string(),
+                        name: format!("_jmap._tcp.{domain_name}.",),
+                        content: format!("0 1 {port} {server_name}."),
+                    });
                 }
                 _ => (),
             }
