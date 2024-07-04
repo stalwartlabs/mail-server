@@ -65,7 +65,7 @@ impl JMAP {
                             return if req.method() != Method::OPTIONS {
                                 RequestError::unauthorized().into_http_response()
                             } else {
-                                ().into_http_response()
+                                StatusCode::NO_CONTENT.into_http_response()
                             }
                         }
                         Err(err) => return err.into_http_response(),
@@ -188,7 +188,7 @@ impl JMAP {
                             .await;
                     }
                     (_, &Method::OPTIONS) => {
-                        return ().into_http_response();
+                        return StatusCode::NO_CONTENT.into_http_response();
                     }
                     _ => (),
                 }
@@ -265,7 +265,7 @@ impl JMAP {
                     }
                 }
                 (_, &Method::OPTIONS) => {
-                    return ().into_http_response();
+                    return StatusCode::NO_CONTENT.into_http_response();
                 }
                 _ => (),
             },
@@ -286,14 +286,14 @@ impl JMAP {
                     }
                 }
                 (_, &Method::OPTIONS) => {
-                    return ().into_http_response();
+                    return StatusCode::NO_CONTENT.into_http_response();
                 }
                 _ => (),
             },
             "api" => {
                 // Allow CORS preflight requests
                 if req.method() == Method::OPTIONS {
-                    return ().into_http_response();
+                    return StatusCode::NO_CONTENT.into_http_response();
                 }
 
                 // Authenticate user
@@ -330,6 +330,22 @@ impl JMAP {
                 }
                 .into_http_response();
             }
+            "healthz" => match path.next().unwrap_or_default() {
+                "live" => {
+                    return StatusCode::OK.into_http_response();
+                }
+                "ready" => {
+                    return {
+                        if !self.core.storage.data.is_none() {
+                            StatusCode::OK
+                        } else {
+                            StatusCode::SERVICE_UNAVAILABLE
+                        }
+                    }
+                    .into_http_response();
+                }
+                _ => (),
+            },
             _ => {
                 let path = req.uri().path();
                 return match self
@@ -653,10 +669,10 @@ impl ToHttpResponse for HtmlResponse {
     }
 }
 
-impl ToHttpResponse for () {
+impl ToHttpResponse for StatusCode {
     fn into_http_response(self) -> HttpResponse {
         hyper::Response::builder()
-            .status(StatusCode::NO_CONTENT)
+            .status(self)
             .body(
                 Full::new(Bytes::new())
                     .map_err(|never| match never {})
