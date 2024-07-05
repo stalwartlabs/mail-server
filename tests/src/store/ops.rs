@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashSet, time::Duration};
+use std::collections::HashSet;
 
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     write::{
         BatchBuilder, BitmapClass, DirectoryClass, MaybeDynamicId, TagValue, ValueClass, F_CLEAR,
     },
-    BitmapKey, IterateParams, Store, ValueKey,
+    BitmapKey, Store, ValueKey,
 };
 
 // FDB max value
@@ -49,7 +49,7 @@ pub async fn test(db: Store) {
         // Iterate over all keys
         let mut n = 0;
         db.iterate(
-            IterateParams::new(
+            store::IterateParams::new(
                 ValueKey {
                     account_id: 0,
                     collection: 0,
@@ -69,7 +69,7 @@ pub async fn test(db: Store) {
                 n += 1;
                 if n % 10000 == 0 {
                     println!("Iterated over {n} keys");
-                    std::thread::sleep(Duration::from_millis(1000));
+                    std::thread::sleep(std::time::Duration::from_millis(1000));
                 }
                 Ok(true)
             },

@@ -85,10 +85,9 @@ impl FdbStore {
         let end = params.end.serialize(WITH_SUBSPACE);
 
         if !params.first {
-            let mut has_more = true;
             let mut begin_selector = KeySelector::first_greater_or_equal(&begin);
 
-            while has_more {
+            loop {
                 let mut last_key_bytes = None;
 
                 {
@@ -105,7 +104,6 @@ impl FdbStore {
                     );
 
                     while let Some(values) = values.try_next().await? {
-                        has_more = values.more();
                         let mut last_key = &[] as &[u8];
 
                         for value in values.iter() {
@@ -115,7 +113,7 @@ impl FdbStore {
                             }
                         }
 
-                        if has_more && trx.is_expired() {
+                        if values.more() && trx.is_expired() {
                             last_key_bytes = last_key.to_vec().into();
                             break;
                         }
