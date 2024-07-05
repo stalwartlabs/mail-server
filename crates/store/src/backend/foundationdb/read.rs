@@ -21,7 +21,7 @@ use crate::{
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE,
 };
 
-use super::{FdbStore, ReadVersion, MAX_VALUE_SIZE};
+use super::{FdbStore, ReadVersion, TimedTransaction, MAX_VALUE_SIZE};
 
 #[allow(dead_code)]
 pub(crate) enum ChunkedValue {
@@ -81,31 +81,69 @@ impl FdbStore {
         params: IterateParams<T>,
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
     ) -> crate::Result<()> {
-        let begin = params.begin.serialize(WITH_SUBSPACE);
+        let mut begin = params.begin.serialize(WITH_SUBSPACE);
         let end = params.end.serialize(WITH_SUBSPACE);
 
-        let trx = self.read_trx().await?;
-        let mut values = trx.get_ranges_keyvalues(
-            RangeOption {
-                begin: KeySelector::first_greater_or_equal(&begin),
-                end: KeySelector::first_greater_than(&end),
-                mode: if params.first {
-                    options::StreamingMode::Small
+        if !params.first {
+            let mut has_more = true;
+            let mut begin_selector = KeySelector::first_greater_or_equal(&begin);
+
+            while has_more {
+                let mut last_key_bytes = None;
+
+                {
+                    let trx = self.timed_read_trx().await?;
+                    let mut values = trx.as_ref().get_ranges(
+                        RangeOption {
+                            begin: begin_selector,
+                            end: KeySelector::first_greater_than(&end),
+                            mode: options::StreamingMode::WantAll,
+                            reverse: !params.ascending,
+                            ..Default::default()
+                        },
+                        true,
+                    );
+
+                    while let Some(values) = values.try_next().await? {
+                        has_more = values.more();
+                        let mut last_key = &[] as &[u8];
+
+                        for value in values.iter() {
+                            last_key = value.key();
+                            if !cb(last_key.get(1..).unwrap_or_default(), value.value())? {
+                                return Ok(());
+                            }
+                        }
+
+                        if has_more && trx.is_expired() {
+                            last_key_bytes = last_key.to_vec().into();
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(last_key_bytes) = last_key_bytes {
+                    begin = last_key_bytes;
+                    begin_selector = KeySelector::first_greater_than(&begin);
                 } else {
-                    options::StreamingMode::WantAll
+                    break;
+                }
+            }
+        } else {
+            let trx = self.read_trx().await?;
+            let mut values = trx.get_ranges_keyvalues(
+                RangeOption {
+                    begin: KeySelector::first_greater_or_equal(&begin),
+                    end: KeySelector::first_greater_than(&end),
+                    mode: options::StreamingMode::Small,
+                    reverse: !params.ascending,
+                    ..Default::default()
                 },
-                reverse: !params.ascending,
-                ..Default::default()
-            },
-            true,
-        );
+                true,
+            );
 
-        while let Some(value) = values.try_next().await? {
-            let key = value.key().get(1..).unwrap_or_default();
-            let value = value.value();
-
-            if !cb(key, value)? || params.first {
-                return Ok(());
+            if let Some(value) = values.try_next().await? {
+                cb(value.key().get(1..).unwrap_or_default(), value.value())?;
             }
         }
 
@@ -139,6 +177,13 @@ impl FdbStore {
         }
 
         Ok(trx)
+    }
+
+    pub(crate) async fn timed_read_trx(&self) -> crate::Result<TimedTransaction> {
+        self.db
+            .create_trx()
+            .map_err(Into::into)
+            .map(TimedTransaction::new)
     }
 }
 

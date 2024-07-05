@@ -160,6 +160,7 @@ pub async fn test() {
     pop3.send("DELE 2").await;
     pop3.assert_read(ResponseType::Ok).await;
     pop3.send("QUIT").await;
+    pop3.assert_read(ResponseType::Ok).await;
     let mut pop3 = Pop3Connection::connect_and_login().await;
     pop3.send("STAT").await;
     pop3.assert_read(ResponseType::Ok)
@@ -179,6 +180,7 @@ pub async fn test() {
     pop3.assert_read(ResponseType::Ok).await;
     pop3.assert_read(ResponseType::Ok).await;
     pop3.send("QUIT").await;
+    pop3.assert_read(ResponseType::Ok).await;
     let mut pop3 = Pop3Connection::connect_and_login().await;
     pop3.send("STAT").await;
     pop3.assert_read(ResponseType::Ok)

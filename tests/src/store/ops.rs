@@ -4,20 +4,100 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     write::{
         BatchBuilder, BitmapClass, DirectoryClass, MaybeDynamicId, TagValue, ValueClass, F_CLEAR,
     },
-    BitmapKey, Store, ValueKey,
+    BitmapKey, IterateParams, Store, ValueKey,
 };
 
 // FDB max value
 const MAX_VALUE_SIZE: usize = 100000;
 
 pub async fn test(db: Store) {
+    #[cfg(feature = "foundationdb")]
+    if matches!(db, Store::FoundationDb(_)) && std::env::var("SLOW_FDB_TRX").is_ok() {
+        println!("Running slow FoundationDB transaction tests...");
+
+        // Create 900000 keys
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(0)
+            .with_collection(0)
+            .update_document(0);
+        for n in 0..900000 {
+            batch.set(
+                ValueClass::Config(format!("key{n:10}").into_bytes()),
+                format!("value{n:10}").into_bytes(),
+            );
+
+            if n % 10000 == 0 {
+                db.write(batch.build_batch()).await.unwrap();
+                batch = BatchBuilder::new();
+                batch
+                    .with_account_id(0)
+                    .with_collection(0)
+                    .update_document(0);
+            }
+        }
+        db.write(batch.build_batch()).await.unwrap();
+        println!("Created 900.000 keys...");
+
+        // Iterate over all keys
+        let mut n = 0;
+        db.iterate(
+            IterateParams::new(
+                ValueKey {
+                    account_id: 0,
+                    collection: 0,
+                    document_id: 0,
+                    class: ValueClass::Config(b"".to_vec()),
+                },
+                ValueKey {
+                    account_id: 0,
+                    collection: 0,
+                    document_id: 0,
+                    class: ValueClass::Config(b"\xFF".to_vec()),
+                },
+            ),
+            |key, value| {
+                assert_eq!(std::str::from_utf8(key).unwrap(), format!("key{n:10}"));
+                assert_eq!(std::str::from_utf8(value).unwrap(), format!("value{n:10}"));
+                n += 1;
+                if n % 10000 == 0 {
+                    println!("Iterated over {n} keys");
+                    std::thread::sleep(Duration::from_millis(1000));
+                }
+                Ok(true)
+            },
+        )
+        .await
+        .unwrap();
+
+        // Delete 100 keys
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(0)
+            .with_collection(0)
+            .update_document(0);
+        for n in 0..900000 {
+            batch.clear(ValueClass::Config(format!("key{n:10}").into_bytes()));
+
+            if n % 10000 == 0 {
+                db.write(batch.build_batch()).await.unwrap();
+                batch = BatchBuilder::new();
+                batch
+                    .with_account_id(0)
+                    .with_collection(0)
+                    .update_document(0);
+            }
+        }
+        db.write(batch.build_batch()).await.unwrap();
+    }
+
     // Testing ID assignment
     println!("Running dynamic ID assignment tests...");
     let mut builder = BatchBuilder::new();
