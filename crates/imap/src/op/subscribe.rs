@@ -98,7 +98,7 @@ impl<T: SessionStream> SessionData<T> {
         };
 
         // Subscribe/unsubscribe to mailbox
-        if let Some(value) = mailbox.inner.mailbox_subscribe(account_id, subscribe) {
+        if let Some(value) = mailbox.inner.mailbox_subscribe(self.account_id, subscribe) {
             // Build batch
             let mut changes = match self.jmap.begin_changes(account_id).await {
                 Ok(changes) => changes,
