@@ -239,6 +239,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Verify DMARC
+        let is_report = self.is_report();
         let (dmarc_result, dmarc_policy) = match &self.data.spf_mail_from {
             Some(spf_output) if dmarc.verify() => {
                 let dmarc_output = self
@@ -301,7 +302,7 @@ impl<T: SessionStream> Session<T> {
                 }
 
                 // Send DMARC report
-                if dmarc_output.requested_reports() {
+                if dmarc_output.requested_reports() && !is_report {
                     self.send_dmarc_report(
                         &auth_message,
                         &auth_results,
@@ -330,7 +331,7 @@ impl<T: SessionStream> Session<T> {
         };
 
         // Analyze reports
-        if self.is_report() {
+        if is_report {
             self.core.analyze_report(raw_message.clone());
             if !rc.analysis.forward {
                 self.data.messages_sent += 1;
