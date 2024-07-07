@@ -30,3 +30,8 @@ futures = "0.3.28"
 pwhash = "1.0.0"
 rand = "0.8.5"
 mail-auth = { version = "0.6" }
+maildir = { version = "0.6.4", default-features = false, optional = true }
+
+[features]
+default = ["maildir"]
+maildir = ["dep:maildir"]

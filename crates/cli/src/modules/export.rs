@@ -20,7 +20,7 @@ use jmap_client::{
 use serde::Serialize;
 use tokio::io::AsyncWriteExt;
 
-use crate::modules::RETRY_ATTEMPTS;
+use crate::modules::{cli::ExportAccountFormat, RETRY_ATTEMPTS};
 
 use super::{
     cli::{Client, ExportCommands},
@@ -35,6 +35,7 @@ impl ExportCommands {
                 num_concurrent,
                 account,
                 path,
+                format,
             } => {
                 client.set_default_account_id(name_to_id(&client, &account).await);
                 let max_objects_in_get = client
@@ -60,7 +61,15 @@ impl ExportCommands {
                 // Export metadata
                 let mut blobs = Vec::new();
                 export_mailboxes(&client, max_objects_in_get, &path).await;
-                export_emails(&client, max_objects_in_get, &mut blobs, &path).await;
+                match format {
+                    ExportAccountFormat::Blobs => {
+                        export_emails(&client, max_objects_in_get, &mut blobs, &path).await
+                    }
+                    #[cfg(feature = "maildir")]
+                    ExportAccountFormat::Maildir => {
+                        export_emails_maildir(&client, max_objects_in_get, &path).await
+                    }
+                }
                 export_sieve_scripts(&client, max_objects_in_get, &mut blobs, &path).await;
                 export_identities(&client, &path).await;
                 export_vacation_responses(&client, &path).await;
@@ -260,6 +269,54 @@ pub async fn fetch_emails(
     }
 
     results
+}
+
+#[cfg(feature = "maildir")]
+async fn export_emails_maildir(
+    client: &jmap_client::client::Client,
+    max_objects_in_get: usize,
+    path: &Path,
+) {
+    use maildir::Maildir;
+
+    let emails = fetch_emails(client, max_objects_in_get).await;
+
+    let maildir = Maildir::from(path.join("maildir"));
+    if let Err(err) = maildir.create_dirs() {
+        eprintln!("Error: dirs count not be created: {err}");
+        return;
+    }
+
+    for email in &emails {
+        if let Some(blob_id) = email.blob_id() {
+            match client.download(&blob_id).await {
+                Ok(bytes) => {
+                    if let Err(err) = maildir.store_new(bytes.as_slice()) {
+                        eprintln!(
+                            "Error: email {:?} could not be stored: {err}",
+                            email.id().unwrap_or_default()
+                        );
+                    }
+                }
+                Err(err) => {
+                    eprintln!(
+                        "Error: email {:?} could not be downloaded: {err}",
+                        email.id().unwrap_or_default()
+                    );
+                }
+            };
+        } else {
+            eprintln!(
+                "Warning: email {:?} has no blobId",
+                email.id().unwrap_or_default()
+            );
+        }
+    }
+
+    eprintln!(
+        "Exported {} emails.",
+        write_file(path, "emails.json", emails,).await
+    );
 }
 
 async fn export_emails(
