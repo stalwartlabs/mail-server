@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    str::FromStr,
+};
 
 use utils::map::bitmap::BitmapItem;
 
@@ -97,6 +100,24 @@ impl Display for Collection {
             Collection::SieveScript => write!(f, "sieveScript"),
             Collection::Principal => write!(f, "principal"),
             Collection::None => write!(f, ""),
+        }
+    }
+}
+
+impl FromStr for Collection {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pushSubscription" => Ok(Collection::PushSubscription),
+            "email" => Ok(Collection::Email),
+            "mailbox" => Ok(Collection::Mailbox),
+            "thread" => Ok(Collection::Thread),
+            "identity" => Ok(Collection::Identity),
+            "emailSubmission" => Ok(Collection::EmailSubmission),
+            "sieveScript" => Ok(Collection::SieveScript),
+            "principal" => Ok(Collection::Principal),
+            _ => Err(()),
         }
     }
 }

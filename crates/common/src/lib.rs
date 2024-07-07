@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc};
+use std::{borrow::Cow, net::IpAddr, sync::Arc, time::Duration};
 
 use arc_swap::ArcSwap;
 use config::{
@@ -88,6 +88,7 @@ pub struct Network {
 #[derive(Clone)]
 pub struct Enterprise {
     pub license: LicenseKey,
+    pub undelete_period: Option<Duration>,
 }
 
 // SPDX-SnippetEnd

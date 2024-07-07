@@ -9,6 +9,7 @@
  * Unauthorized use, modification, or distribution is strictly prohibited.
  */
 
+pub mod undelete;
 use common::Core;
 
 pub trait EnterpriseCore {

@@ -23,6 +23,7 @@ use crate::{
     auth::{oauth::OAuthStatus, AccessToken},
     JMAP,
 };
+use se_common::EnterpriseCore;
 
 use super::{
     DeviceAuthResponse, FormData, OAuthCode, OAuthCodeRequest, CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN,
@@ -93,6 +94,7 @@ impl JMAP {
                             "data": {
                                 "code": client_code,
                                 "is_admin": access_token.is_super_user(),
+                                "is_enterprise": self.core.is_enterprise_edition(),
                             },
                         })
                     }

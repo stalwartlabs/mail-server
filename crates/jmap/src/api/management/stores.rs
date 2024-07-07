@@ -6,6 +6,7 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use common::manager::webadmin::Resource;
+use directory::backend::internal::manage::ManageDirectory;
 use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde_json::json;
@@ -101,10 +102,16 @@ impl JMAP {
             }
             (Some("purge"), Some("account"), id, &Method::GET) => {
                 let account_id = if let Some(id) = id {
-                    if let Ok(account_id) = id.parse::<u32>() {
-                        account_id.into()
-                    } else {
-                        return RequestError::invalid_parameters().into_http_response();
+                    match self
+                        .core
+                        .storage
+                        .data
+                        .get_account_id(decode_path_element(id).as_ref())
+                        .await
+                    {
+                        Ok(Some(id)) => id.into(),
+                        Ok(None) => return RequestError::not_found().into_http_response(),
+                        Err(err) => return err.into_http_response(),
                     }
                 } else {
                     None

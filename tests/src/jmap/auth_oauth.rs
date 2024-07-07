@@ -28,6 +28,7 @@ use super::JMAPTest;
 struct OAuthCodeResponse {
     code: String,
     is_admin: bool,
+    is_enterprise: bool,
 }
 
 pub async fn test(params: &mut JMAPTest) {

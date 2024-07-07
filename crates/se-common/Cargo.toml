@@ -1,13 +1,16 @@
 [package]
 name = "se_common"
-version = "0.8.4"
+version = "0.8.5"
 edition = "2021"
 license = "LicenseRef-SEL"
 resolver = "2"
 
 [dependencies]
 common = { path = "../common" }
+store = { path = "../store" }
+utils = { path = "../utils" }
 tracing = "0.1"
+serde = { version = "1.0", features = ["derive"]}
 
 [features]
 test_mode = []

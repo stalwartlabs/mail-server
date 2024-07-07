@@ -13,6 +13,7 @@ use jmap_proto::{
         type_state::DataType,
     },
 };
+use se_common::undelete::Undelete;
 use store::{
     ahash::AHashMap,
     roaring::RoaringBitmap,
@@ -250,6 +251,36 @@ impl JMAP {
 
     pub async fn purge_account(&self, account_id: u32) {
         // Lock account
+        match self
+            .core
+            .storage
+            .lookup
+            .counter_get(format!("purge:{account_id}").into_bytes())
+            .await
+        {
+            Ok(count) => {
+                if count > 0 {
+                    tracing::debug!(
+                        event = "skipped",
+                        context = "email_purge_account",
+                        account_id = account_id,
+                        count,
+                        "Account is already being purged."
+                    );
+                    return;
+                }
+            }
+            Err(err) => {
+                tracing::error!(
+                    event = "error",
+                    context = "email_purge_account",
+                    account_id = account_id,
+                    error = ?err,
+                    "Failed to lock account."
+                );
+                return;
+            }
+        }
         match self
             .core
             .storage
@@ -493,7 +524,23 @@ impl JMAP {
                 })
                 .await?
             {
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+
+                // Hold blob for undeletion
+                self.core.hold_undelete(
+                    &mut batch,
+                    Collection::Email.into(),
+                    &metadata.inner.blob_hash,
+                    metadata.inner.size,
+                );
+
+                // SPDX-SnippetEnd
+
+                // Delete message
                 batch.custom(EmailIndexBuilder::clear(metadata.inner));
+
                 // Commit batch
                 self.core.storage.data.write(batch.build()).await?;
             } else {

@@ -6,6 +6,7 @@
 
 pub mod dkim;
 pub mod domain;
+pub mod enterprise;
 pub mod log;
 pub mod principal;
 pub mod queue;
@@ -21,9 +22,9 @@ use hyper::Method;
 use jmap_proto::error::request::RequestError;
 use serde::Serialize;
 
-use crate::{auth::AccessToken, JMAP};
-
 use super::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
+use crate::{auth::AccessToken, JMAP};
+use se_common::EnterpriseCore;
 
 #[derive(Serialize)]
 #[serde(tag = "error")]
@@ -90,6 +91,30 @@ impl JMAP {
                 }
                 _ => RequestError::not_found().into_http_response(),
             },
+
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+            "pro" if is_superuser => {
+                // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
+                // Any attempt to modify, bypass, or disable this license validation mechanism
+                // constitutes a severe violation of the Stalwart Enterprise License Agreement.
+                // Such actions may result in immediate termination of your license, legal action,
+                // and substantial financial penalties. Stalwart Labs Ltd. actively monitors for
+                // unauthorized modifications and will pursue all available legal remedies against
+                // violators to the fullest extent of the law, including but not limited to claims
+                // for copyright infringement, breach of contract, and fraud.
+
+                if self.core.is_enterprise_edition() {
+                    self.handle_enterprise_api_request(req, path, body).await
+                } else {
+                    ManagementApiError::Unsupported {
+                        details: "This feature is only available in the Enterprise version".into(),
+                    }
+                    .into_http_response()
+                }
+            }
+            // SPDX-SnippetEnd
             _ => RequestError::not_found().into_http_response(),
         }
     }

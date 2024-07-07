@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use arc_swap::ArcSwap;
 use directory::{Directories, Directory};
@@ -149,7 +149,15 @@ impl Core {
                         }
                         None
                     }
-                    _ => Some(Enterprise { license }),
+                    _ => Some(Enterprise {
+                        license,
+                        undelete_period: config
+                            .property_or_default::<Option<Duration>>(
+                                "enterprise.undelete-period",
+                                "false",
+                            )
+                            .unwrap_or_default(),
+                    }),
                 }
             }
             Some(Err(e)) => {

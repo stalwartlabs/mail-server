@@ -1,6 +1,6 @@
 [package]
 name = "se_licensing"
-version = "0.8.4"
+version = "0.8.5"
 edition = "2021"
 license = "LicenseRef-SEL"
 resolver = "2"

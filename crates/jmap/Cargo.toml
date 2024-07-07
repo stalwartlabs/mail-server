@@ -1,6 +1,6 @@
 [package]
 name = "jmap"
-version = "0.8.4"
+version = "0.8.5"
 edition = "2021"
 resolver = "2"
 
@@ -11,6 +11,7 @@ jmap_proto = { path = "../jmap-proto" }
 smtp = { path =  "../smtp" }
 utils = { path =  "../utils" }
 common = { path =  "../common" }
+se_common = { path =  "../se-common" }
 directory = { path =  "../directory" }
 smtp-proto = { version = "0.1" }
 mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 

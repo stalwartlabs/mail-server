@@ -64,7 +64,7 @@ impl Store {
             IterateParams::new(from_key, to_key).ascending(),
             |key, value| {
                 let until = key.deserialize_be_u64(key.len() - U64_LEN)?;
-                if until > now {
+                if until > now && value.len() == U32_LEN {
                     let bytes = u32::deserialize(value)?;
                     if bytes > 0 {
                         quota.bytes += bytes as usize;

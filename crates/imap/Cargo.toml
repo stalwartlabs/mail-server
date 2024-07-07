@@ -1,6 +1,6 @@
 [package]
 name = "imap"
-version = "0.8.4"
+version = "0.8.5"
 edition = "2021"
 resolver = "2"
 
