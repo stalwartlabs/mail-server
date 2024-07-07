@@ -1,4 +1,4 @@
-expect REPLYTO_UNPARSEABLE
+expect REPLYTO_UNPARSABLE
 
 Reply-to: hello
 

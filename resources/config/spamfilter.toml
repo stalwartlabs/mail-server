@@ -611,7 +611,7 @@ if eval "!is_empty(rto_raw)" {
         }
 
     } else {
-        let "t.REPLYTO_UNPARSEABLE" "1";
+        let "t.REPLYTO_UNPARSABLE" "1";
     }
 
     if eval "is_ascii(header.reply-to) && contains(rto_raw, '=?') && contains(rto_raw, '?=')" {
@@ -2793,7 +2793,7 @@ spam-scores = {"ABUSE_SURBL" = "5.0",
 "REPLYTO_EQ_TO_ADDR" = "5.0",
 "REPLYTO_EXCESS_BASE64" = "1.5",
 "REPLYTO_EXCESS_QP" = "1.2",
-"REPLYTO_UNPARSEABLE" = "1.0",
+"REPLYTO_UNPARSABLE" = "1.0",
 "RWL_MAILSPIKE_EXCELLENT" = "-0.4",
 "RWL_MAILSPIKE_GOOD" = "-0.1",
 "RWL_MAILSPIKE_NEUTRAL" = "0.0",
