@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.8.5] - 2024-07-07
+
+To upgrade replace the `stalwart-mail` binary.
+
+## Added
+- Restore deleted e-mails (Enterprise Edition only)
+- Kubernetes (K8S) livenessProbe and readinessProbe endpoints
+
+### Changed
+- Avoid sending reports for DMARC/delivery reports (#173)
+
+### Fixed
+- Refresh old FoundationDB read transactions (#520)
+- Subscribing shared mailboxes doesn't work (#251)
+
 ## [0.8.4] - 2024-07-03
 
 To upgrade replace the `stalwart-mail` binary.
