@@ -767,7 +767,7 @@ impl DeliveryAttempt {
                             }
 
                             // Say EHLO
-                            let capabilties = match say_helo(&mut smtp_client, &params).await {
+                            let capabilities = match say_helo(&mut smtp_client, &params).await {
                                 Ok(capabilities) => capabilities,
                                 Err(status) => {
                                     tracing::info!(
@@ -794,7 +794,7 @@ impl DeliveryAttempt {
                                     smtp_client,
                                     tls_connector,
                                     envelope.mx,
-                                    &capabilties,
+                                    &capabilities,
                                 )
                                 .await
                                 {

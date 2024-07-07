@@ -436,7 +436,7 @@ impl JmapConfig {
         };
 
         // Add capabilities
-        jmap.add_capabilites(config);
+        jmap.add_capabilities(config);
         jmap
     }
 }

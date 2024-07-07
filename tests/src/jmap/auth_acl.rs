@@ -180,7 +180,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
 
-    // John shoud have ReadItems access to Inbox
+    // John should have ReadItems access to Inbox
     assert_eq!(
         john_client
             .set_default_account_id(&jane_id.to_string())

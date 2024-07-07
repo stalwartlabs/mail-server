@@ -290,7 +290,7 @@ async fn dmarc() {
         .await;
     qr.assert_no_events();
 
-    // Messagess passing DMARC should be accepted
+    // Messages passing DMARC should be accepted
     session
         .send_message(
             "bill@example.com",

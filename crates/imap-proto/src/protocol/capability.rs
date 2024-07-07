@@ -96,7 +96,7 @@ impl Capability {
     }
 
     pub fn all_capabilities(is_authenticated: bool, is_tls: bool) -> Vec<Capability> {
-        let mut capabilties = vec![
+        let mut capabilities = vec![
             Capability::IMAP4rev2,
             Capability::IMAP4rev1,
             Capability::Enable,
@@ -107,7 +107,7 @@ impl Capability {
         ];
 
         if is_authenticated {
-            capabilties.extend([
+            capabilities.extend([
                 Capability::Idle,
                 Capability::Namespace,
                 Capability::Children,
@@ -135,16 +135,16 @@ impl Capability {
                 Capability::Preview,
             ]);
         } else {
-            capabilties.extend([
+            capabilities.extend([
                 Capability::Auth(Mechanism::OAuthBearer),
                 Capability::Auth(Mechanism::Plain),
             ]);
         }
         if !is_tls {
-            capabilties.push(Capability::StartTLS);
+            capabilities.push(Capability::StartTLS);
         }
 
-        capabilties
+        capabilities
     }
 }
 

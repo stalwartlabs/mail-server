@@ -240,7 +240,7 @@ impl<T: SessionStream> Session<T> {
             }
         }
 
-        // Send agregate reports
+        // Send aggregate reports
         let interval = self
             .core
             .core

@@ -15,7 +15,7 @@ if specialuse_exists "dingleberry" {
 }
 
 if specialuse_exists "archive" {
-    error "A non-existant special-use exists.";
+    error "A non-existent special-use exists.";
 }
 
 # MailboxId tests

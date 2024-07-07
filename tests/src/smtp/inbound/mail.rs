@@ -303,7 +303,7 @@ async fn mail() {
     assert_eq!(session.data.future_release, 10);
     session.rset().await;
 
-    // Test FUTURERELEASE extension with invalud HOLDUNTIL value
+    // Test FUTURERELEASE extension with invalid HOLDUNTIL value
     session
         .ingest(format!("MAIL FROM:<jane@foobar.org> HOLDUNTIL={}\r\n", now + 99999).as_bytes())
         .await
