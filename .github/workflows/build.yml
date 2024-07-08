@@ -132,7 +132,7 @@ jobs:
           mkdir -p "${root}/target/${target}/release" && cd "$_"
 
           if [ "${USE_FOUNDATIONDB:-0}" = 1 ]; then
-            build -p mail-server --no-default-features --features "foundationdb elastic s3 redis"
+            build -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise"
             artifact stalwart-mail stalwart-mail-foundationdb
           fi
 

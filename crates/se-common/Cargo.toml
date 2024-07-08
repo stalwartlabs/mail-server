@@ -14,3 +14,4 @@ serde = { version = "1.0", features = ["derive"]}
 
 [features]
 test_mode = []
+enterprise = ["common/enterprise"]

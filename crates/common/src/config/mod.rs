@@ -4,19 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use directory::{Directories, Directory};
-use jmap_proto::types::collection::Collection;
-use se_licensing::license::LicenseValidator;
-use store::{BitmapKey, BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
+use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use utils::config::Config;
 
 use crate::{
     expr::*, listener::tls::TlsManager, manager::config::ConfigManager, webhooks::Webhooks, Core,
-    Enterprise, Network,
+    Network,
 };
+
+#[cfg(feature = "enterprise")]
+use crate::Enterprise;
+#[cfg(feature = "enterprise")]
+use jmap_proto::types::collection::Collection;
+#[cfg(feature = "enterprise")]
+use se_licensing::license::LicenseValidator;
 
 use self::{
     imap::ImapConfig, jmap::settings::JmapConfig, scripts::Scripting, smtp::SmtpConfig,
@@ -122,6 +127,7 @@ impl Core {
         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
 
+        #[cfg(feature = "enterprise")]
         let enterprise = match config.value("enterprise.license-key").map(|key| {
             LicenseValidator::new().try_parse(key).and_then(|key| {
                 key.into_validated_key(config.value("lookup.default.hostname").unwrap_or_default())
@@ -129,7 +135,10 @@ impl Core {
         }) {
             Some(Ok(license)) => {
                 match data
-                    .get_bitmap(BitmapKey::document_ids(u32::MAX, Collection::Principal))
+                    .get_bitmap(store::BitmapKey::document_ids(
+                        u32::MAX,
+                        Collection::Principal,
+                    ))
                     .await
                 {
                     Ok(Some(bitmap)) if bitmap.len() > license.accounts as u64 => {
@@ -152,7 +161,7 @@ impl Core {
                     _ => Some(Enterprise {
                         license,
                         undelete_period: config
-                            .property_or_default::<Option<Duration>>(
+                            .property_or_default::<Option<std::time::Duration>>(
                                 "enterprise.undelete-period",
                                 "false",
                             )
@@ -206,6 +215,7 @@ impl Core {
                 blobs: stores.blob_stores,
                 ftss: stores.fts_stores,
             },
+            #[cfg(feature = "enterprise")]
             enterprise,
         }
     }

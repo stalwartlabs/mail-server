@@ -26,7 +26,7 @@ managesieve = { path = "../managesieve" }
 common = { path = "../common" }
 directory = { path = "../directory" }
 utils = { path = "../utils" }
-se_common = { path = "../se-common" }
+se_common = { path = "../se-common", optional = true }
 tokio = { version = "1.23", features = ["full"] }
 tracing = "0.1"
 
@@ -34,8 +34,8 @@ tracing = "0.1"
 jemallocator = "0.5.0"
 
 [features]
-default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis"]
-#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "foundationdb"]
+default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "enterprise"]
+#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "foundationdb", "enterprise"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation"]
 postgres = ["store/postgres"]
@@ -44,3 +44,4 @@ rocks = ["store/rocks"]
 elastic = ["store/elastic"]
 s3 = ["store/s3"]
 redis = ["store/redis"]
+enterprise = ["se_common", "se_common/enterprise", "jmap/enterprise", "common/enterprise"]

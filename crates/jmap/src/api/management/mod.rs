@@ -6,6 +6,7 @@
 
 pub mod dkim;
 pub mod domain;
+#[cfg(feature = "enterprise")]
 pub mod enterprise;
 pub mod log;
 pub mod principal;
@@ -24,6 +25,8 @@ use serde::Serialize;
 
 use super::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 use crate::{auth::AccessToken, JMAP};
+
+#[cfg(feature = "enterprise")]
 use se_common::EnterpriseCore;
 
 #[derive(Serialize)]
@@ -95,6 +98,7 @@ impl JMAP {
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
+            #[cfg(feature = "enterprise")]
             "pro" if is_superuser => {
                 // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
                 // Any attempt to modify, bypass, or disable this license validation mechanism

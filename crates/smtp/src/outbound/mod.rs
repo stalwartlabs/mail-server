@@ -38,7 +38,7 @@ impl Status<(), Error> {
             mail_send::Error::Io(_)
             | mail_send::Error::Tls(_)
             | mail_send::Error::Base64(_)
-            | mail_send::Error::UnparsableReply
+            | mail_send::Error::UnparseableReply
             | mail_send::Error::AuthenticationFailed(_)
             | mail_send::Error::MissingCredentials
             | mail_send::Error::MissingMailFrom

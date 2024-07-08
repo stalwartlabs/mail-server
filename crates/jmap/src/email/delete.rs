@@ -13,6 +13,7 @@ use jmap_proto::{
         type_state::DataType,
     },
 };
+#[cfg(feature = "enterprise")]
 use se_common::undelete::Undelete;
 use store::{
     ahash::AHashMap,
@@ -516,6 +517,7 @@ impl JMAP {
                 // SPDX-License-Identifier: LicenseRef-SEL
 
                 // Hold blob for undeletion
+                #[cfg(feature = "enterprise")]
                 self.core.hold_undelete(
                     &mut batch,
                     Collection::Email.into(),

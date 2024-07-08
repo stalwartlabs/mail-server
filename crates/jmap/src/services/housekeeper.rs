@@ -49,6 +49,7 @@ enum ActionClass {
     Account,
     Store(usize),
     Acme(String),
+    #[cfg(feature = "enterprise")]
     ReloadLicense,
 }
 
@@ -113,6 +114,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
             // SPDX-License-Identifier: LicenseRef-SEL
 
             // Enterprise Edition license management
+            #[cfg(feature = "enterprise")]
             if let Some(enterprise) = &core_.enterprise {
                 queue.schedule(
                     Instant::now() + enterprise.license.expires_in(),
@@ -347,6 +349,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             // SPDX-SnippetBegin
                             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                             // SPDX-License-Identifier: LicenseRef-SEL
+                            #[cfg(feature = "enterprise")]
                             ActionClass::ReloadLicense => {
                                 match core_.reload().await {
                                     Ok(result) => {

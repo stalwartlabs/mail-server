@@ -11,7 +11,7 @@ jmap_proto = { path = "../jmap-proto" }
 smtp = { path =  "../smtp" }
 utils = { path =  "../utils" }
 common = { path =  "../common" }
-se_common = { path =  "../se-common" }
+se_common = { path =  "../se-common", optional = true }
 directory = { path =  "../directory" }
 smtp-proto = { version = "0.1" }
 mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
@@ -61,3 +61,4 @@ quick-xml = "0.35"
 
 [features]
 test_mode = []
+enterprise = ["se_common"]

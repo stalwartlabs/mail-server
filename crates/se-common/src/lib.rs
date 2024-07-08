@@ -4,21 +4,22 @@
  * SPDX-License-Identifier: LicenseRef-SEL
  *
  * This file is subject to the Stalwart Enterprise License Agreement (SEL) and
- * is not open source software. It must not be modified or distributed without
- * explicit permission from Stalwart Labs Ltd.
- * Unauthorized use, modification, or distribution is strictly prohibited.
+ * is NOT open source software.
+ *
  */
 
+#[cfg(feature = "enterprise")]
 pub mod undelete;
-use common::Core;
 
+#[cfg(feature = "enterprise")]
 pub trait EnterpriseCore {
     fn is_enterprise_edition(&self) -> bool;
     fn log_license_details(&self);
     fn licensed_accounts(&self) -> u32;
 }
 
-impl EnterpriseCore for Core {
+#[cfg(feature = "enterprise")]
+impl EnterpriseCore for common::Core {
     // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
     // Any attempt to modify, bypass, or disable this license validation mechanism
     // constitutes a severe violation of the Stalwart Enterprise License Agreement.

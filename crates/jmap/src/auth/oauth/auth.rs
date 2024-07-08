@@ -23,6 +23,8 @@ use crate::{
     auth::{oauth::OAuthStatus, AccessToken},
     JMAP,
 };
+
+#[cfg(feature = "enterprise")]
 use se_common::EnterpriseCore;
 
 use super::{
@@ -90,11 +92,16 @@ impl JMAP {
                             return err.into_http_response();
                         }
 
+                        #[cfg(not(feature = "enterprise"))]
+                        let is_enterprise = false;
+                        #[cfg(feature = "enterprise")]
+                        let is_enterprise = self.core.is_enterprise_edition();
+
                         json!({
                             "data": {
                                 "code": client_code,
                                 "is_admin": access_token.is_super_user(),
-                                "is_enterprise": self.core.is_enterprise_edition(),
+                                "is_enterprise": is_enterprise,
                             },
                         })
                     }

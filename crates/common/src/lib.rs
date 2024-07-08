@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc, time::Duration};
+use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use arc_swap::ArcSwap;
 use config::{
@@ -35,6 +35,7 @@ use opentelemetry_sdk::{
     Resource,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
+#[cfg(feature = "enterprise")]
 use se_licensing::license::LicenseKey;
 use sieve::Sieve;
 use store::LookupStore;
@@ -71,6 +72,7 @@ pub struct Core {
     pub jmap: JmapConfig,
     pub imap: ImapConfig,
     pub web_hooks: Webhooks,
+    #[cfg(feature = "enterprise")]
     pub enterprise: Option<Enterprise>,
 }
 
@@ -85,10 +87,11 @@ pub struct Network {
 // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
 // SPDX-License-Identifier: LicenseRef-SEL
 
+#[cfg(feature = "enterprise")]
 #[derive(Clone)]
 pub struct Enterprise {
     pub license: LicenseKey,
-    pub undelete_period: Option<Duration>,
+    pub undelete_period: Option<std::time::Duration>,
 }
 
 // SPDX-SnippetEnd

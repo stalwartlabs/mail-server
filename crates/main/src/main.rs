@@ -14,6 +14,7 @@ use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::gossip::spawn::GossiperBuilder, JMAP};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
+#[cfg(feature = "enterprise")]
 use se_common::EnterpriseCore;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
@@ -56,6 +57,7 @@ async fn main() -> std::io::Result<()> {
     config.log_warnings(init.guards.is_none());
 
     // Log licensing information
+    #[cfg(feature = "enterprise")]
     core.load().as_ref().log_license_details();
 
     // Spawn servers
