@@ -18,7 +18,7 @@ use utils::{config::Config, map::vec_map::VecMap};
 use super::settings::JmapConfig;
 
 impl JmapConfig {
-    pub fn add_capabilites(&mut self, config: &mut Config) {
+    pub fn add_capabilities(&mut self, config: &mut Config) {
         // Add core capabilities
         self.capabilities.session.append(
             Capability::Core,

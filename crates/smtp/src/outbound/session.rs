@@ -258,7 +258,7 @@ impl Message {
                 }
             } else {
                 // Handle LMTP responses
-                match read_lmtp_data_respone(
+                match read_lmtp_data_response(
                     &mut smtp_client,
                     params.hostname,
                     accepted_rcpts.len(),
@@ -481,7 +481,7 @@ pub async fn read_smtp_data_response<T: AsyncRead + AsyncWrite + Unpin>(
         })
 }
 
-pub async fn read_lmtp_data_respone<T: AsyncRead + AsyncWrite + Unpin>(
+pub async fn read_lmtp_data_response<T: AsyncRead + AsyncWrite + Unpin>(
     smtp_client: &mut SmtpClient<T>,
     hostname: &str,
     num_responses: usize,

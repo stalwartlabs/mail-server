@@ -59,7 +59,7 @@ if eval "!is_empty(rto_raw)" {
         }
 
     } else {
-        let "t.REPLYTO_UNPARSEABLE" "1";
+        let "t.REPLYTO_UNPARSABLE" "1";
     }
 
     if eval "is_ascii(header.reply-to) && contains(rto_raw, '=?') && contains(rto_raw, '?=')" {

@@ -498,7 +498,7 @@ impl SmtpConnection {
 
 pub trait AssertResult: Sized {
     fn assert_contains(self, text: &str) -> Self;
-    fn assert_count(self, text: &str, occurences: usize) -> Self;
+    fn assert_count(self, text: &str, occurrences: usize) -> Self;
     fn assert_equals(self, text: &str) -> Self;
 }
 
@@ -512,12 +512,12 @@ impl AssertResult for Vec<String> {
         panic!("Expected response to contain {:?}, got {:?}", text, self);
     }
 
-    fn assert_count(self, text: &str, occurences: usize) -> Self {
+    fn assert_count(self, text: &str, occurrences: usize) -> Self {
         assert_eq!(
             self.iter().filter(|l| l.contains(text)).count(),
-            occurences,
+            occurrences,
             "Expected {} occurrences of {:?}, found {}.",
-            occurences,
+            occurrences,
             text,
             self.iter().filter(|l| l.contains(text)).count()
         );

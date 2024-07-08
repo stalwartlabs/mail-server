@@ -113,7 +113,7 @@ pub struct Rcpt {
     // Limits
     pub max_recipients: IfBlock,
 
-    // Catch-all and sub-adressing
+    // Catch-all and sub-addressing
     pub catch_all: AddressMapping,
     pub subaddressing: AddressMapping,
 }

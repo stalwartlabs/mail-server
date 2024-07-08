@@ -196,7 +196,7 @@ impl SMTP {
 
     pub async fn schedule_report(&self, report: impl Into<Event>) {
         if self.inner.report_tx.send(report.into()).await.is_err() {
-            tracing::warn!(contex = "report", "Channel send failed.");
+            tracing::warn!(context = "report", "Channel send failed.");
         }
     }
 

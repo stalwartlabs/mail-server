@@ -220,7 +220,7 @@ async fn lookup_sql() {
     // External domain
     session.rcpt_to("user@otherdomain.org", "550 5.1.2").await;
 
-    // Non-existant user
+    // Non-existent user
     session.rcpt_to("jack@foobar.org", "550 5.1.2").await;
 
     // Valid users
