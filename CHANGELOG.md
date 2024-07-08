@@ -8,7 +8,7 @@ To upgrade replace the `stalwart-mail` binary.
 
 ## Added
 - Restore deleted e-mails (Enterprise Edition only)
-- Kubernetes (K8S) livenessProbe and readinessProbe endpoints
+- Kubernetes (K8S) livenessProbe and readinessProbe endpoints.
 
 ### Changed
 - Avoid sending reports for DMARC/delivery reports (#173)
