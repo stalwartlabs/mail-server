@@ -8,9 +8,6 @@
  *
  */
 
-use std::future::Future;
-
-use common::Core;
 use serde::{Deserialize, Serialize};
 use store::{
     write::{
@@ -20,6 +17,8 @@ use store::{
     IterateParams, ValueKey, U32_LEN, U64_LEN,
 };
 use utils::{BlobHash, BLOB_HASH_LEN};
+
+use crate::Core;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeletedBlob<H, T, C> {
@@ -32,22 +31,8 @@ pub struct DeletedBlob<H, T, C> {
     pub collection: C,
 }
 
-pub trait Undelete: Sync + Send {
-    fn hold_undelete(
-        &self,
-        batch: &mut BatchBuilder,
-        collection: u8,
-        blob_hash: &BlobHash,
-        blob_size: usize,
-    );
-    fn list_deleted(
-        &self,
-        account_id: u32,
-    ) -> impl Future<Output = store::Result<Vec<DeletedBlob<BlobHash, u64, u8>>>> + Send;
-}
-
-impl Undelete for Core {
-    fn hold_undelete(
+impl Core {
+    pub fn hold_undelete(
         &self,
         batch: &mut BatchBuilder,
         collection: u8,
@@ -71,7 +56,7 @@ impl Undelete for Core {
         }
     }
 
-    async fn list_deleted(
+    pub async fn list_deleted(
         &self,
         account_id: u32,
     ) -> store::Result<Vec<DeletedBlob<BlobHash, u64, u8>>> {

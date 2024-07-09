@@ -10,7 +10,6 @@ nlp = { path = "../nlp" }
 store = { path = "../store" }
 directory = { path = "../directory" }
 jmap_proto = { path = "../jmap-proto" }
-se_licensing = { path = "../se-licensing", optional = true }
 sieve-rs = { version = "0.5" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-auth = { version = "0.4" }
@@ -67,4 +66,4 @@ tracing-journald = "0.3"
 
 [features]
 test_mode = []
-enterprise = ["se_licensing"]
+enterprise = []

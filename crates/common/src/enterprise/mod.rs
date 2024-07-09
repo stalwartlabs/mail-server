@@ -8,18 +8,23 @@
  *
  */
 
-#[cfg(feature = "enterprise")]
+pub mod config;
+pub mod license;
 pub mod undelete;
 
-#[cfg(feature = "enterprise")]
-pub trait EnterpriseCore {
-    fn is_enterprise_edition(&self) -> bool;
-    fn log_license_details(&self);
-    fn licensed_accounts(&self) -> u32;
+use std::time::Duration;
+
+use license::LicenseKey;
+
+use crate::Core;
+
+#[derive(Clone)]
+pub struct Enterprise {
+    pub license: LicenseKey,
+    pub undelete_period: Option<Duration>,
 }
 
-#[cfg(feature = "enterprise")]
-impl EnterpriseCore for common::Core {
+impl Core {
     // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
     // Any attempt to modify, bypass, or disable this license validation mechanism
     // constitutes a severe violation of the Stalwart Enterprise License Agreement.
@@ -29,17 +34,17 @@ impl EnterpriseCore for common::Core {
     // violators to the fullest extent of the law, including but not limited to claims
     // for copyright infringement, breach of contract, and fraud.
 
-    fn is_enterprise_edition(&self) -> bool {
+    pub fn is_enterprise_edition(&self) -> bool {
         self.enterprise
             .as_ref()
             .map_or(false, |e| !e.license.is_expired())
     }
 
-    fn licensed_accounts(&self) -> u32 {
+    pub fn licensed_accounts(&self) -> u32 {
         self.enterprise.as_ref().map_or(0, |e| e.license.accounts)
     }
 
-    fn log_license_details(&self) {
+    pub fn log_license_details(&self) {
         if let Some(enterprise) = &self.enterprise {
             tracing::info!(
                 licensed_to = enterprise.license.hostname,

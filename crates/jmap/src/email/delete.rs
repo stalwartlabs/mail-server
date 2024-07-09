@@ -13,8 +13,6 @@ use jmap_proto::{
         type_state::DataType,
     },
 };
-#[cfg(feature = "enterprise")]
-use se_common::undelete::Undelete;
 use store::{
     ahash::AHashMap,
     roaring::RoaringBitmap,

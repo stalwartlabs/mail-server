@@ -1054,7 +1054,6 @@ dependencies = [
  "rustls 0.23.10",
  "rustls-pemfile 2.1.2",
  "rustls-pki-types",
- "se_licensing",
  "serde",
  "serde_json",
  "sha1",
@@ -3180,7 +3179,6 @@ dependencies = [
  "reqwest 0.12.5",
  "rev_lines",
  "rsa",
- "se_common",
  "sequoia-openpgp",
  "serde",
  "serde_json",
@@ -3589,7 +3587,6 @@ dependencies = [
  "jmap_proto",
  "managesieve",
  "pop3",
- "se_common",
  "smtp",
  "store",
  "tokio",
@@ -5626,25 +5623,6 @@ name = "sdd"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b84345e4c9bd703274a082fb80caaa99b7612be48dfaa1dd9266577ec412309d"
-
-[[package]]
-name = "se_common"
-version = "0.8.5"
-dependencies = [
- "common",
- "serde",
- "store",
- "tracing",
- "utils",
-]
-
-[[package]]
-name = "se_licensing"
-version = "0.8.5"
-dependencies = [
- "base64 0.22.1",
- "ring 0.17.8",
-]
 
 [[package]]
 name = "seahash"

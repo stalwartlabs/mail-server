@@ -12,8 +12,6 @@ members = [
     "crates/nlp",
     "crates/store",
     "crates/directory",
-    "crates/se-licensing",
-    "crates/se-common",
     "crates/utils",
     "crates/common",
     "crates/cli",

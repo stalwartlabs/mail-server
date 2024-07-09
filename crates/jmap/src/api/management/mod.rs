@@ -26,9 +26,6 @@ use serde::Serialize;
 use super::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 use crate::{auth::AccessToken, JMAP};
 
-#[cfg(feature = "enterprise")]
-use se_common::EnterpriseCore;
-
 #[derive(Serialize)]
 #[serde(tag = "error")]
 pub enum ManagementApiError {

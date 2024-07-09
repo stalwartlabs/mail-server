@@ -16,13 +16,6 @@ use crate::{
     Network,
 };
 
-#[cfg(feature = "enterprise")]
-use crate::Enterprise;
-#[cfg(feature = "enterprise")]
-use jmap_proto::types::collection::Collection;
-#[cfg(feature = "enterprise")]
-use se_licensing::license::LicenseValidator;
-
 use self::{
     imap::ImapConfig, jmap::settings::JmapConfig, scripts::Scripting, smtp::SmtpConfig,
     storage::Storage,
@@ -123,60 +116,6 @@ impl Core {
             .directories
             .insert("*".to_string(), directory.clone());
 
-        // SPDX-SnippetBegin
-        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
-        // SPDX-License-Identifier: LicenseRef-SEL
-
-        #[cfg(feature = "enterprise")]
-        let enterprise = match config.value("enterprise.license-key").map(|key| {
-            LicenseValidator::new().try_parse(key).and_then(|key| {
-                key.into_validated_key(config.value("lookup.default.hostname").unwrap_or_default())
-            })
-        }) {
-            Some(Ok(license)) => {
-                match data
-                    .get_bitmap(store::BitmapKey::document_ids(
-                        u32::MAX,
-                        Collection::Principal,
-                    ))
-                    .await
-                {
-                    Ok(Some(bitmap)) if bitmap.len() > license.accounts as u64 => {
-                        config.new_build_warning(
-                            "enterprise.license-key",
-                            format!(
-                                "License key is valid but only allows {} accounts, found {}.",
-                                license.accounts,
-                                bitmap.len()
-                            ),
-                        );
-                        None
-                    }
-                    Err(e) => {
-                        if !matches!(data, Store::None) {
-                            config.new_build_error("enterprise.license-key", e.to_string());
-                        }
-                        None
-                    }
-                    _ => Some(Enterprise {
-                        license,
-                        undelete_period: config
-                            .property_or_default::<Option<std::time::Duration>>(
-                                "enterprise.undelete-period",
-                                "false",
-                            )
-                            .unwrap_or_default(),
-                    }),
-                }
-            }
-            Some(Err(e)) => {
-                config.new_build_warning("enterprise.license-key", e.to_string());
-                None
-            }
-            None => None,
-        };
-        // SPDX-SnippetEnd
-
         // If any of the stores are missing, disable all stores to avoid data loss
         if matches!(data, Store::None)
             || matches!(&blob.backend, BlobBackend::Store(Store::None))
@@ -194,6 +133,8 @@ impl Core {
         }
 
         Self {
+            #[cfg(feature = "enterprise")]
+            enterprise: crate::enterprise::Enterprise::parse(config, &data).await,
             sieve: Scripting::parse(config, &stores).await,
             network: Network::parse(config),
             smtp: SmtpConfig::parse(config).await,
@@ -215,8 +156,6 @@ impl Core {
                 blobs: stores.blob_stores,
                 ftss: stores.fts_stores,
             },
-            #[cfg(feature = "enterprise")]
-            enterprise,
         }
     }
 

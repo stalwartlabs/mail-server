@@ -24,9 +24,6 @@ use crate::{
     JMAP,
 };
 
-#[cfg(feature = "enterprise")]
-use se_common::EnterpriseCore;
-
 use super::{
     DeviceAuthResponse, FormData, OAuthCode, OAuthCodeRequest, CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN,
     MAX_POST_LEN, USER_CODE_ALPHABET, USER_CODE_LEN,

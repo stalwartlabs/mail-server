@@ -35,8 +35,6 @@ use opentelemetry_sdk::{
     Resource,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
-#[cfg(feature = "enterprise")]
-use se_licensing::license::LicenseKey;
 use sieve::Sieve;
 use store::LookupStore;
 use tokio::sync::{mpsc, oneshot};
@@ -49,6 +47,8 @@ use webhooks::{manager::WebhookEvent, WebhookPayload, WebhookType, Webhooks};
 
 pub mod addresses;
 pub mod config;
+#[cfg(feature = "enterprise")]
+pub mod enterprise;
 pub mod expr;
 pub mod listener;
 pub mod manager;
@@ -73,7 +73,7 @@ pub struct Core {
     pub imap: ImapConfig,
     pub web_hooks: Webhooks,
     #[cfg(feature = "enterprise")]
-    pub enterprise: Option<Enterprise>,
+    pub enterprise: Option<enterprise::Enterprise>,
 }
 
 #[derive(Clone)]
@@ -82,19 +82,6 @@ pub struct Network {
     pub allowed_ips: AllowedIps,
     pub url: IfBlock,
 }
-
-// SPDX-SnippetBegin
-// SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
-// SPDX-License-Identifier: LicenseRef-SEL
-
-#[cfg(feature = "enterprise")]
-#[derive(Clone)]
-pub struct Enterprise {
-    pub license: LicenseKey,
-    pub undelete_period: Option<std::time::Duration>,
-}
-
-// SPDX-SnippetEnd
 
 pub enum AuthResult<T> {
     Success(T),

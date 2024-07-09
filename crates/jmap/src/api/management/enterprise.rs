@@ -11,11 +11,11 @@
 use std::str::FromStr;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use common::enterprise::undelete::DeletedBlob;
 use directory::backend::internal::manage::ManageDirectory;
 use hyper::Method;
 use jmap_proto::{error::request::RequestError, types::collection::Collection};
 use mail_parser::{DateTime, MessageParser};
-use se_common::undelete::{DeletedBlob, Undelete};
 use serde_json::json;
 use store::write::{BatchBuilder, BlobOp, ValueClass};
 use utils::{url_params::UrlParams, BlobHash};
