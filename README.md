@@ -129,7 +129,7 @@ Additionally you may purchase a subscription to obtain priority support from Sta
 - [ ] CalDAV and CardDAV support
 - [ ] ActiveSync support
 
-See the [open issues](https://github.com/stalwartlabs/mail-server/issues) for a full list of proposed features (and known issues).
+See the [enhancement requests](https://github.com/stalwartlabs/mail-server/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc+label%3Aenhancement) page for a full list of proposed features by the community.
 
 ## Funding
 
