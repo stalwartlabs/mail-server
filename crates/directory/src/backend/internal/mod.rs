@@ -56,9 +56,12 @@ impl Serialize for &Principal<u32> {
 }
 
 impl Deserialize for Principal<u32> {
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
-        deserialize(bytes)
-            .ok_or_else(|| store::Error::InternalError("Failed to deserialize principal".into()))
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
+        deserialize(bytes).ok_or_else(|| {
+            trc::Cause::DataCorruption
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Value, bytes)
+        })
     }
 }
 
@@ -72,14 +75,18 @@ impl Serialize for PrincipalIdType {
 }
 
 impl Deserialize for PrincipalIdType {
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
-        let mut bytes = bytes.iter();
+    fn deserialize(bytes_: &[u8]) -> trc::Result<Self> {
+        let mut bytes = bytes_.iter();
         Ok(PrincipalIdType {
             account_id: bytes.next_leb128().ok_or_else(|| {
-                store::Error::InternalError("Failed to deserialize principal account id".into())
+                trc::Cause::DataCorruption
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, bytes_)
             })?,
             typ: Type::from_u8(*bytes.next().ok_or_else(|| {
-                store::Error::InternalError("Failed to deserialize principal id type".into())
+                trc::Cause::DataCorruption
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, bytes_)
             })?),
         })
     }
@@ -189,15 +196,21 @@ impl PrincipalUpdate {
 
 impl Display for PrincipalField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
+impl PrincipalField {
+    pub fn as_str(&self) -> &'static str {
         match self {
-            PrincipalField::Name => write!(f, "name"),
-            PrincipalField::Type => write!(f, "type"),
-            PrincipalField::Quota => write!(f, "quota"),
-            PrincipalField::Description => write!(f, "description"),
-            PrincipalField::Secrets => write!(f, "secrets"),
-            PrincipalField::Emails => write!(f, "emails"),
-            PrincipalField::MemberOf => write!(f, "memberOf"),
-            PrincipalField::Members => write!(f, "members"),
+            PrincipalField::Name => "name",
+            PrincipalField::Type => "type",
+            PrincipalField::Quota => "quota",
+            PrincipalField::Description => "description",
+            PrincipalField::Secrets => "secrets",
+            PrincipalField::Emails => "emails",
+            PrincipalField::MemberOf => "memberOf",
+            PrincipalField::Members => "members",
         }
     }
 }

@@ -33,7 +33,7 @@ impl JMAP {
         &self,
         mut request: GetRequest<GetArguments>,
         access_token: &AccessToken,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let ids = request
             .unwrap_blob_ids(self.core.jmap.get_max_objects)?
             .unwrap_or_default();
@@ -151,7 +151,7 @@ impl JMAP {
     pub async fn blob_lookup(
         &self,
         request: BlobLookupRequest,
-    ) -> Result<BlobLookupResponse, MethodError> {
+    ) -> trc::Result<BlobLookupResponse> {
         let mut include_email = false;
         let mut include_mailbox = false;
         let mut include_thread = false;

@@ -41,7 +41,6 @@ impl Directories {
                     .property_or_default::<bool>(("directory", id, "disable"), "false")
                     .unwrap_or(false)
                 {
-                    tracing::debug!("Skipping disabled directory {id:?}.");
                     continue;
                 }
             }
@@ -104,7 +103,7 @@ pub(crate) fn build_pool<M: Manager>(
     config: &mut Config,
     prefix: &str,
     manager: M,
-) -> utils::config::Result<Pool<M>> {
+) -> Result<Pool<M>, String> {
     Pool::builder(manager)
         .runtime(Runtime::Tokio1)
         .max_size(

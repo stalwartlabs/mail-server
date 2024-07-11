@@ -139,9 +139,9 @@ impl RocksDbStore {
         })
     }
 
-    pub async fn spawn_worker<U, V>(&self, mut f: U) -> crate::Result<V>
+    pub async fn spawn_worker<U, V>(&self, mut f: U) -> trc::Result<V>
     where
-        U: FnMut() -> crate::Result<V> + Send,
+        U: FnMut() -> trc::Result<V> + Send,
         V: Sync + Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
@@ -154,10 +154,7 @@ impl RocksDbStore {
 
         match rx.await {
             Ok(result) => result,
-            Err(err) => Err(crate::Error::InternalError(format!(
-                "Worker thread failed: {}",
-                err
-            ))),
+            Err(err) => Err(trc::Cause::Thread.reason(err)),
         }
     }
 }

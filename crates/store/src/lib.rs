@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Display, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 pub mod backend;
 pub mod config;
@@ -47,7 +47,7 @@ use backend::elastic::ElasticSearchStore;
 use backend::redis::RedisStore;
 
 pub trait Deserialize: Sized + Sync + Send {
-    fn deserialize(bytes: &[u8]) -> crate::Result<Self>;
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self>;
 }
 
 pub trait Serialize {
@@ -104,8 +104,6 @@ pub struct LogKey {
 pub const U64_LEN: usize = std::mem::size_of::<u64>();
 pub const U32_LEN: usize = std::mem::size_of::<u32>();
 
-pub type Result<T> = std::result::Result<T, Error>;
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BlobClass {
     Reserved {
@@ -125,29 +123,6 @@ impl Default for BlobClass {
             account_id: 0,
             expires: 0,
         }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Error {
-    InternalError(String),
-    AssertValueFailed,
-}
-
-impl std::error::Error for Error {}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::InternalError(msg) => write!(f, "Internal Error: {}", msg),
-            Error::AssertValueFailed => write!(f, "Transaction failed: Hash mismatch"),
-        }
-    }
-}
-
-impl From<String> for Error {
-    fn from(msg: String) -> Self {
-        Error::InternalError(msg)
     }
 }
 
@@ -708,6 +683,19 @@ impl std::fmt::Debug for Store {
             #[cfg(feature = "rocks")]
             Self::RocksDb(_) => f.debug_tuple("RocksDb").finish(),
             Self::None => f.debug_tuple("None").finish(),
+        }
+    }
+}
+
+impl From<Value<'_>> for trc::Value {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Integer(v) => trc::Value::Int(v),
+            Value::Bool(v) => trc::Value::Bool(v),
+            Value::Float(v) => trc::Value::Float(v),
+            Value::Text(v) => trc::Value::String(v.into_owned()),
+            Value::Blob(v) => trc::Value::Bytes(v.into_owned()),
+            Value::Null => trc::Value::None,
         }
     }
 }

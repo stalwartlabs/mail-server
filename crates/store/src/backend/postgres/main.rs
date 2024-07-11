@@ -8,11 +8,9 @@ use std::time::Duration;
 
 use crate::{backend::postgres::tls::MakeRustlsConnect, *};
 
-use super::PostgresStore;
+use super::{into_error, PostgresStore};
 
-use deadpool_postgres::{
-    Config, CreatePoolError, ManagerConfig, PoolConfig, RecyclingMethod, Runtime,
-};
+use deadpool_postgres::{Config, ManagerConfig, PoolConfig, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
 use utils::{config::utils::AsKey, rustls_client_config};
 
@@ -69,8 +67,8 @@ impl PostgresStore {
         Some(db)
     }
 
-    pub(super) async fn create_tables(&self) -> crate::Result<()> {
-        let conn = self.conn_pool.get().await?;
+    pub(super) async fn create_tables(&self) -> trc::Result<()> {
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
 
         for table in [
             SUBSPACE_ACL,
@@ -99,7 +97,8 @@ impl PostgresStore {
                 ),
                 &[],
             )
-            .await?;
+            .await
+            .map_err(into_error)?;
         }
 
         for table in [
@@ -117,7 +116,8 @@ impl PostgresStore {
                 ),
                 &[],
             )
-            .await?;
+            .await
+            .map_err(into_error)?;
         }
 
         for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
@@ -131,15 +131,10 @@ impl PostgresStore {
                 ),
                 &[],
             )
-            .await?;
+            .await
+            .map_err(into_error)?;
         }
 
         Ok(())
-    }
-}
-
-impl From<CreatePoolError> for crate::Error {
-    fn from(err: CreatePoolError) -> Self {
-        crate::Error::InternalError(format!("Failed to create connection pool: {}", err))
     }
 }

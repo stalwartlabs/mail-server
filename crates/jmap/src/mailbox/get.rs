@@ -5,12 +5,12 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property, value::Value},
 };
 use store::{ahash::AHashSet, query::Filter, roaring::RoaringBitmap};
+use trc::AddContext;
 
 use crate::{
     auth::{acl::EffectiveAcl, AccessToken},
@@ -22,7 +22,7 @@ impl JMAP {
         &self,
         mut request: GetRequest<RequestArguments>,
         access_token: &AccessToken,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
@@ -241,19 +241,12 @@ impl JMAP {
         &self,
         account_id: u32,
         document_ids: Option<RoaringBitmap>,
-    ) -> Result<usize, MethodError> {
+    ) -> trc::Result<usize> {
         if let Some(document_ids) = document_ids {
             let mut thread_ids = AHashSet::default();
             self.get_cached_thread_ids(account_id, document_ids.into_iter())
                 .await
-                .map_err(|err| {
-                    tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                error = ?err,
-                                "Failed to retrieve thread Ids");
-                    MethodError::ServerPartialFail
-                })?
+                .caused_by(trc::location!())?
                 .into_iter()
                 .for_each(|(_, thread_id)| {
                     thread_ids.insert(thread_id);
@@ -269,7 +262,7 @@ impl JMAP {
         account_id: u32,
         document_id: u32,
         message_ids: &Option<RoaringBitmap>,
-    ) -> Result<Option<RoaringBitmap>, MethodError> {
+    ) -> trc::Result<Option<RoaringBitmap>> {
         if let (Some(message_ids), Some(mailbox_message_ids)) = (
             message_ids,
             self.get_tag(
@@ -309,7 +302,7 @@ impl JMAP {
         account_id: u32,
         path: &'x str,
         exact_match: bool,
-    ) -> Result<Option<ExpandPath<'x>>, MethodError> {
+    ) -> trc::Result<Option<ExpandPath<'x>>> {
         let path = path
             .split('/')
             .filter_map(|p| {
@@ -376,7 +369,7 @@ impl JMAP {
         &self,
         account_id: u32,
         path: &str,
-    ) -> Result<Option<u32>, MethodError> {
+    ) -> trc::Result<Option<u32>> {
         Ok(self
             .mailbox_expand_path(account_id, path, true)
             .await?
@@ -399,7 +392,7 @@ impl JMAP {
         &self,
         account_id: u32,
         role: &str,
-    ) -> Result<Option<u32>, MethodError> {
+    ) -> trc::Result<Option<u32>> {
         self.filter(
             account_id,
             Collection::Mailbox,

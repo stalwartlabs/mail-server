@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use ldap3::{Ldap, LdapConnAsync, LdapError, Scope, SearchEntry};
+use ldap3::{Ldap, LdapConnAsync, Scope, SearchEntry};
 use mail_send::Credentials;
 
-use crate::{backend::internal::manage::ManageDirectory, DirectoryError, Principal, QueryBy, Type};
+use crate::{backend::internal::manage::ManageDirectory, IntoError, Principal, QueryBy, Type};
 
 use super::{LdapDirectory, LdapMappings};
 
@@ -16,8 +16,8 @@ impl LdapDirectory {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> crate::Result<Option<Principal<u32>>> {
-        let mut conn = self.pool.get().await?;
+    ) -> trc::Result<Option<Principal<u32>>> {
+        let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;
         let mut account_id = None;
         let account_name;
 
@@ -64,19 +64,26 @@ impl LdapDirectory {
                         self.pool.manager().settings.clone(),
                         &self.pool.manager().address,
                     )
-                    .await?;
+                    .await
+                    .map_err(|err| err.into_error().caused_by(trc::location!()))?;
 
                     ldap3::drive!(conn);
 
-                    ldap.simple_bind(&auth_bind.build(username), secret).await?;
+                    ldap.simple_bind(&auth_bind.build(username), secret)
+                        .await
+                        .map_err(|err| err.into_error().caused_by(trc::location!()))?;
 
                     match self
                         .find_principal(&mut ldap, &self.mappings.filter_name.build(username))
                         .await
                     {
                         Ok(Some(principal)) => principal,
-                        Err(DirectoryError::Ldap(LdapError::LdapResult { result }))
-                            if [49, 50].contains(&result.rc) =>
+                        Err(err)
+                            if err.matches(trc::Cause::Ldap)
+                                && err
+                                    .value(trc::Key::Code)
+                                    .and_then(|v| v.to_uint())
+                                    .map_or(false, |rc| [49, 50].contains(&rc)) =>
                         {
                             return Ok(None);
                         }
@@ -90,13 +97,6 @@ impl LdapDirectory {
                     if principal.verify_secret(secret).await? {
                         principal
                     } else {
-                        tracing::debug!(
-                            context = "directory",
-                            event = "invalid_password",
-                            protocol = "ldap",
-                            account = username,
-                            "Invalid password for account"
-                        );
                         return Ok(None);
                     }
                 } else {
@@ -128,8 +128,10 @@ impl LdapDirectory {
                             "objectClass=*",
                             &self.mappings.attr_name,
                         )
-                        .await?
-                        .success()?;
+                        .await
+                        .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                        .success()
+                        .map_err(|err| err.into_error().caused_by(trc::location!()))?;
                     for entry in rs {
                         'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
                             if self.mappings.attr_name.contains(&attr) {
@@ -156,20 +158,23 @@ impl LdapDirectory {
         }
     }
 
-    pub async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
+    pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
         let rs = self
             .pool
             .get()
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
                 &self.mappings.filter_email.build(address.as_ref()),
                 &self.mappings.attr_name,
             )
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .success()
-            .map(|(rs, _res)| rs)?;
+            .map(|(rs, _res)| rs)
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
 
         let mut ids = Vec::with_capacity(rs.len());
         for entry in rs {
@@ -187,38 +192,46 @@ impl LdapDirectory {
         Ok(ids)
     }
 
-    pub async fn rcpt(&self, address: &str) -> crate::Result<bool> {
+    pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
         self.pool
             .get()
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
                 &self.mappings.filter_email.build(address.as_ref()),
                 &self.mappings.attr_email_address,
             )
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .next()
             .await
             .map(|entry| entry.is_some())
-            .map_err(|e| e.into())
+            .map_err(|err| err.into_error().caused_by(trc::location!()))
     }
 
-    pub async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut stream = self
             .pool
             .get()
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
                 &self.mappings.filter_verify.build(address),
                 &self.mappings.attr_email_address,
             )
-            .await?;
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
 
         let mut emails = Vec::new();
-        while let Some(entry) = stream.next().await? {
+        while let Some(entry) = stream
+            .next()
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
+        {
             let entry = SearchEntry::construct(entry);
             for attr in &self.mappings.attr_email_address {
                 if let Some(values) = entry.attrs.get(attr) {
@@ -234,21 +247,27 @@ impl LdapDirectory {
         Ok(emails)
     }
 
-    pub async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut stream = self
             .pool
             .get()
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
                 &self.mappings.filter_expand.build(address),
                 &self.mappings.attr_email_address,
             )
-            .await?;
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
 
         let mut emails = Vec::new();
-        while let Some(entry) = stream.next().await? {
+        while let Some(entry) = stream
+            .next()
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
+        {
             let entry = SearchEntry::construct(entry);
             for attr in &self.mappings.attr_email_address {
                 if let Some(values) = entry.attrs.get(attr) {
@@ -264,21 +283,23 @@ impl LdapDirectory {
         Ok(emails)
     }
 
-    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
         self.pool
             .get()
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
                 &self.mappings.filter_domains.build(domain),
                 Vec::<String>::new(),
             )
-            .await?
+            .await
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .next()
             .await
             .map(|entry| entry.is_some())
-            .map_err(|e| e.into())
+            .map_err(|err| err.into_error().caused_by(trc::location!()))
     }
 }
 
@@ -287,14 +308,15 @@ impl LdapDirectory {
         &self,
         conn: &mut Ldap,
         filter: &str,
-    ) -> crate::Result<Option<Principal<String>>> {
+    ) -> trc::Result<Option<Principal<String>>> {
         conn.search(
             &self.mappings.base_dn,
             Scope::Subtree,
             filter,
             &self.mappings.attrs_principal,
         )
-        .await?
+        .await
+        .map_err(|err| err.into_error().caused_by(trc::location!()))?
         .success()
         .map(|(rs, _)| {
             rs.into_iter().next().map(|entry| {
@@ -302,7 +324,7 @@ impl LdapDirectory {
                     .entry_to_principal(SearchEntry::construct(entry))
             })
         })
-        .map_err(Into::into)
+        .map_err(|err| err.into_error().caused_by(trc::location!()))
     }
 }
 
@@ -310,12 +332,7 @@ impl LdapMappings {
     fn entry_to_principal(&self, entry: SearchEntry) -> Principal<String> {
         let mut principal = Principal::default();
 
-        tracing::debug!(
-            context = "ldap",
-            event = "fetch_principal",
-            entry = ?entry,
-            "LDAP entry"
-        );
+        trc::trace!(LdapQuery, Value = format!("{entry:?}"));
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {

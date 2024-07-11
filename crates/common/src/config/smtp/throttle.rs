@@ -104,7 +104,7 @@ fn parse_throttle_item(
     }
 }
 
-pub(crate) fn parse_throttle_key(value: &str) -> utils::config::Result<u16> {
+pub(crate) fn parse_throttle_key(value: &str) -> Result<u16, String> {
     match value {
         "rcpt" => Ok(THROTTLE_RCPT),
         "rcpt_domain" => Ok(THROTTLE_RCPT_DOMAIN),

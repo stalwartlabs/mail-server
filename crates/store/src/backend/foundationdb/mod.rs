@@ -8,8 +8,6 @@ use std::time::{Duration, Instant};
 
 use foundationdb::{api::NetworkAutoStop, Database, FdbError, Transaction};
 
-use crate::Error;
-
 pub mod blob;
 pub mod main;
 pub mod read;
@@ -77,8 +75,9 @@ impl TimedTransaction {
     }
 }
 
-impl From<FdbError> for Error {
-    fn from(error: FdbError) -> Self {
-        Self::InternalError(format!("FoundationDB error: {}", error.message()))
-    }
+#[inline(always)]
+fn into_error(error: FdbError) -> trc::Error {
+    trc::Cause::FoundationDB
+        .reason(error.message())
+        .ctx(trc::Key::Code, error.code())
 }

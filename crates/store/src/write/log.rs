@@ -222,7 +222,7 @@ impl From<Changes> for MaybeDynamicValue {
 pub struct LogInsert();
 
 impl SerializeWithId for LogInsert {
-    fn serialize_with_id(&self, ids: &super::AssignedIds) -> crate::Result<Vec<u8>> {
+    fn serialize_with_id(&self, ids: &super::AssignedIds) -> trc::Result<Vec<u8>> {
         ids.last_document_id()
             .map(|id| Changes::insert([id]).serialize())
     }

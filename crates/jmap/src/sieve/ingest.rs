@@ -16,12 +16,13 @@ use store::{
     ahash::AHashSet,
     write::{now, BatchBuilder, Bincode, F_VALUE},
 };
+use trc::AddContext;
 
 use crate::{
     email::ingest::{IngestEmail, IngestSource, IngestedEmail},
     mailbox::{INBOX_ID, TRASH_ID},
     sieve::SeenIdHash,
-    IngestError, JMAP,
+    JMAP,
 };
 
 use super::ActiveScript;
@@ -41,22 +42,21 @@ impl JMAP {
         envelope_to: &str,
         account_id: u32,
         mut active_script: ActiveScript,
-    ) -> Result<IngestedEmail, IngestError> {
+    ) -> trc::Result<IngestedEmail> {
         // Parse message
         let message = if let Some(message) = MessageParser::new().parse(raw_message) {
             message
         } else {
-            return Err(IngestError::Permanent {
-                code: [5, 5, 0],
-                reason: "Failed to parse message.".to_string(),
-            });
+            return Err(trc::Cause::Ingest
+                .ctx(trc::Key::Code, 550)
+                .ctx(trc::Key::Reason, "Failed to parse e-mail message."));
         };
 
         // Obtain mailboxIds
         let mailbox_ids = self
             .mailbox_get_or_create(account_id)
             .await
-            .map_err(|_| IngestError::Temporary)?;
+            .caused_by(trc::location!())?;
 
         // Create Sieve instance
         let mut instance = self.core.sieve.untrusted_runtime.filter_parsed(message);
@@ -74,8 +74,8 @@ impl JMAP {
                 (p.quota as i64, p.emails.into_iter().next())
             }
             Ok(None) => (0, None),
-            Err(_) => {
-                return Err(IngestError::Temporary);
+            Err(err) => {
+                return Err(err.caused_by(trc::location!()));
             }
         };
 
@@ -462,10 +462,9 @@ impl JMAP {
         }
 
         if let Some(reject_reason) = reject_reason {
-            Err(IngestError::Permanent {
-                code: [5, 7, 1],
-                reason: reject_reason,
-            })
+            Err(trc::Cause::Ingest
+                .ctx(trc::Key::Code, 571)
+                .ctx(trc::Key::Reason, reject_reason))
         } else if has_delivered || last_temp_error.is_none() {
             Ok(ingested_message)
         } else {

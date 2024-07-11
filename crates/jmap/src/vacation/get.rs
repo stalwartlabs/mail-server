@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     request::reference::MaybeReference,
@@ -19,7 +18,7 @@ impl JMAP {
     pub async fn vacation_response_get(
         &self,
         mut request: GetRequest<RequestArguments>,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let account_id = request.account_id.document_id();
         let properties = request.unwrap_properties(&[
             Property::Id,
@@ -101,10 +100,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn get_vacation_sieve_script_id(
-        &self,
-        account_id: u32,
-    ) -> Result<Option<u32>, MethodError> {
+    pub async fn get_vacation_sieve_script_id(&self, account_id: u32) -> trc::Result<Option<u32>> {
         self.filter(
             account_id,
             Collection::SieveScript,

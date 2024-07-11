@@ -6,16 +6,19 @@
 
 use std::ops::Range;
 
-use super::PostgresStore;
+use super::{into_error, PostgresStore};
 
 impl PostgresStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
         range: Range<usize>,
-    ) -> crate::Result<Option<Vec<u8>>> {
-        let conn = self.conn_pool.get().await?;
-        let s = conn.prepare_cached("SELECT v FROM t WHERE k = $1").await?;
+    ) -> trc::Result<Option<Vec<u8>>> {
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let s = conn
+            .prepare_cached("SELECT v FROM t WHERE k = $1")
+            .await
+            .map_err(into_error)?;
         conn.query_opt(&s, &[&key])
             .await
             .and_then(|row| {
@@ -33,28 +36,32 @@ impl PostgresStore {
                     Ok(None)
                 }
             })
-            .map_err(Into::into)
+            .map_err(into_error)
     }
 
-    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
-        let conn = self.conn_pool.get().await?;
+    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
         let s = conn
             .prepare_cached(
                 "INSERT INTO t (k, v) VALUES ($1, $2) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v",
             )
-            .await?;
+            .await
+            .map_err(into_error)?;
         conn.execute(&s, &[&key, &data])
             .await
-            .map_err(|e| crate::Error::InternalError(format!("Failed to insert blob: {}", e)))
+            .map_err(into_error)
             .map(|_| ())
     }
 
-    pub(crate) async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
-        let conn = self.conn_pool.get().await?;
-        let s = conn.prepare_cached("DELETE FROM t WHERE k = $1").await?;
+    pub(crate) async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
+        let s = conn
+            .prepare_cached("DELETE FROM t WHERE k = $1")
+            .await
+            .map_err(into_error)?;
         conn.execute(&s, &[&key])
             .await
-            .map_err(|e| crate::Error::InternalError(format!("Failed to delete blob: {}", e)))
+            .map_err(into_error)
             .map(|hits| hits > 0)
     }
 }

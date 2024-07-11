@@ -7,10 +7,7 @@
 use std::{borrow::Cow, collections::HashMap, slice::IterMut};
 
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
     response::references::EvalObjectReferences,
     types::{
@@ -41,8 +38,9 @@ use store::{
     },
     Serialize,
 };
+use trc::AddContext;
 
-use crate::{auth::AccessToken, mailbox::UidMailbox, IngestError, JMAP};
+use crate::{auth::AccessToken, mailbox::UidMailbox, JMAP};
 
 use super::{
     headers::{BuildHeader, ValueToHeader},
@@ -54,7 +52,7 @@ impl JMAP {
         &self,
         mut request: SetRequest<RequestArguments>,
         access_token: &AccessToken,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         // Prepare response
         let account_id = request.account_id.document_id();
         let mut response = self
@@ -728,14 +726,14 @@ impl JMAP {
                 Ok(message) => {
                     response.created.insert(id, message.into());
                 }
-                Err(IngestError::OverQuota) => {
+                Err(err) if err.matches(trc::Cause::OverQuota) => {
                     response.not_created.append(
                         id,
                         SetError::new(SetErrorType::OverQuota)
                             .with_description("You have exceeded your disk quota."),
                     );
                 }
-                Err(_) => return Err(MethodError::ServerPartialFail),
+                Err(err) => return Err(err),
             }
         }
 
@@ -944,14 +942,7 @@ impl JMAP {
                         uid_mailbox.uid = self
                             .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
                             .await
-                            .map_err(|err| {
-                                tracing::error!(
-                                    event = "error",
-                                    context = "email_copy",
-                                    error = ?err,
-                                    "Failed to assign IMAP UID.");
-                                MethodError::ServerPartialFail
-                            })?;
+                            .caused_by(trc::location!())?;
                     }
                 }
 
@@ -971,7 +962,7 @@ impl JMAP {
                         // Add to updated list
                         response.updated.append(id, None);
                     }
-                    Err(store::Error::AssertValueFailed) => {
+                    Err(err) if err.matches(trc::Cause::AssertValue) => {
                         response.not_updated.append(
                             id,
                             SetError::forbidden().with_description(
@@ -980,12 +971,7 @@ impl JMAP {
                         );
                     }
                     Err(err) => {
-                        tracing::error!(
-                            event = "error",
-                            context = "email_set",
-                            error = ?err,
-                            "Failed to write message changes to database.");
-                        return Err(MethodError::ServerPartialFail);
+                        return Err(err.caused_by(trc::location!()));
                     }
                 }
             }

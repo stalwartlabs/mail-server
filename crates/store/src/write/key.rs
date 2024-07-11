@@ -30,8 +30,8 @@ pub trait KeySerialize {
 }
 
 pub trait DeserializeBigEndian {
-    fn deserialize_be_u32(&self, index: usize) -> crate::Result<u32>;
-    fn deserialize_be_u64(&self, index: usize) -> crate::Result<u64>;
+    fn deserialize_be_u32(&self, index: usize) -> trc::Result<u32>;
+    fn deserialize_be_u64(&self, index: usize) -> trc::Result<u64>;
 }
 
 impl KeySerializer {
@@ -99,35 +99,35 @@ impl KeySerialize for u64 {
 }
 
 impl DeserializeBigEndian for &[u8] {
-    fn deserialize_be_u32(&self, index: usize) -> crate::Result<u32> {
+    fn deserialize_be_u32(&self, index: usize) -> trc::Result<u32> {
         self.get(index..index + U32_LEN)
             .ok_or_else(|| {
-                crate::Error::InternalError(
-                    "Index out of range while deserializing u32.".to_string(),
-                )
+                trc::Cause::DataCorruption
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, *self)
             })
             .and_then(|bytes| {
                 bytes.try_into().map_err(|_| {
-                    crate::Error::InternalError(
-                        "Index out of range while deserializing u32.".to_string(),
-                    )
+                    trc::Cause::DataCorruption
+                        .caused_by(trc::location!())
+                        .ctx(trc::Key::Value, *self)
                 })
             })
             .map(u32::from_be_bytes)
     }
 
-    fn deserialize_be_u64(&self, index: usize) -> crate::Result<u64> {
+    fn deserialize_be_u64(&self, index: usize) -> trc::Result<u64> {
         self.get(index..index + U64_LEN)
             .ok_or_else(|| {
-                crate::Error::InternalError(
-                    "Index out of range while deserializing u64.".to_string(),
-                )
+                trc::Cause::DataCorruption
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Value, *self)
             })
             .and_then(|bytes| {
                 bytes.try_into().map_err(|_| {
-                    crate::Error::InternalError(
-                        "Index out of range while deserializing u64.".to_string(),
-                    )
+                    trc::Cause::DataCorruption
+                        .caused_by(trc::location!())
+                        .ctx(trc::Key::Value, *self)
                 })
             })
             .map(u64::from_be_bytes)
@@ -634,7 +634,7 @@ impl<U> From<BlobOp> for ValueClass<U> {
 }
 
 impl Deserialize for ReportEvent {
-    fn deserialize(key: &[u8]) -> crate::Result<Self> {
+    fn deserialize(key: &[u8]) -> trc::Result<Self> {
         Ok(ReportEvent {
             due: key.deserialize_be_u64(1)?,
             policy_hash: key.deserialize_be_u64(key.len() - (U64_LEN * 2 + 1))?,
@@ -644,9 +644,9 @@ impl Deserialize for ReportEvent {
                 .and_then(|domain| std::str::from_utf8(domain).ok())
                 .map(|s| s.to_string())
                 .ok_or_else(|| {
-                    crate::Error::InternalError(format!(
-                        "Failed to deserialize report domain: {key:?}"
-                    ))
+                    trc::Cause::DataCorruption
+                        .caused_by(trc::location!())
+                        .ctx(trc::Key::Key, key)
                 })?,
         })
     }

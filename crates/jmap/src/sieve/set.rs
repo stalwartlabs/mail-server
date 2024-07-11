@@ -5,10 +5,7 @@
  */
 
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
     object::{
         index::{IndexAs, IndexProperty, ObjectIndexBuilder},
@@ -61,7 +58,7 @@ impl JMAP {
         &self,
         mut request: SetRequest<SetArguments>,
         access_token: &AccessToken,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
         let mut sieve_ids = self
             .get_document_ids(account_id, Collection::SieveScript)
@@ -162,14 +159,9 @@ impl JMAP {
                     .inner
                     .blob_id()
                     .ok_or_else(|| {
-                        tracing::warn!(
-                            event = "error",
-                            context = "sieve_set",
-                            account_id = account_id,
-                            document_id = document_id,
-                            "Sieve does not contain a blobId."
-                        );
-                        MethodError::ServerPartialFail
+                        trc::Cause::NotFound
+                            .caused_by(trc::location!())
+                            .document_id(document_id)
                     })?
                     .clone();
 
@@ -233,20 +225,14 @@ impl JMAP {
                             changes.log_update(Collection::SieveScript, document_id);
                             match self.core.storage.data.write(batch.build()).await {
                                 Ok(_) => (),
-                                Err(store::Error::AssertValueFailed) => {
+                                Err(err) if err.matches(trc::Cause::AssertValue) => {
                                     ctx.response.not_updated.append(id, SetError::forbidden().with_description(
                                         "Another process modified this sieve, please try again.",
                                     ));
                                     continue 'update;
                                 }
                                 Err(err) => {
-                                    tracing::error!(
-                                        event = "error",
-                                        context = "sieve_set",
-                                        account_id = account_id,
-                                        error = ?err,
-                                        "Failed to update sieve script(s).");
-                                    return Err(MethodError::ServerPartialFail);
+                                    return Err(err.caused_by(trc::location!()));
                                 }
                             }
                         }
@@ -339,7 +325,7 @@ impl JMAP {
         account_id: u32,
         document_id: u32,
         fail_if_active: bool,
-    ) -> Result<bool, MethodError> {
+    ) -> trc::Result<bool> {
         // Fetch record
         let obj = self
             .get_property::<HashedValue<Object<Value>>>(
@@ -350,14 +336,9 @@ impl JMAP {
             )
             .await?
             .ok_or_else(|| {
-                tracing::warn!(
-                    event = "error",
-                    context = "sieve_script_delete",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Sieve script not found."
-                );
-                MethodError::ServerPartialFail
+                trc::Cause::NotFound
+                    .caused_by(trc::location!())
+                    .document_id(document_id)
             })?;
 
         // Make sure the script is not active
@@ -373,14 +354,9 @@ impl JMAP {
         // Delete record
         let mut batch = BatchBuilder::new();
         let blob_id = obj.inner.blob_id().ok_or_else(|| {
-            tracing::warn!(
-                event = "error",
-                context = "sieve_script_delete",
-                account_id = account_id,
-                document_id = document_id,
-                "Sieve does not contain a blobId."
-            );
-            MethodError::ServerPartialFail
+            trc::Cause::NotFound
+                .caused_by(trc::location!())
+                .document_id(document_id)
         })?;
         batch
             .with_account_id(account_id)
@@ -405,7 +381,7 @@ impl JMAP {
         changes_: Object<SetValue>,
         update: Option<(u32, HashedValue<Object<Value>>)>,
         ctx: &SetContext<'_>,
-    ) -> Result<Result<(ObjectIndexBuilder, Option<Vec<u8>>), SetError>, MethodError> {
+    ) -> trc::Result<Result<(ObjectIndexBuilder, Option<Vec<u8>>), SetError>> {
         // Vacation script cannot be modified
         if matches!(update.as_ref().and_then(|(_, obj)| obj.inner.properties.get(&Property::Name)), Some(Value::Text ( value )) if value.eq_ignore_ascii_case("vacation"))
         {
@@ -562,7 +538,7 @@ impl JMAP {
         &self,
         account_id: u32,
         mut activate_id: Option<u32>,
-    ) -> Result<Vec<(u32, bool)>, MethodError> {
+    ) -> trc::Result<Vec<(u32, bool)>> {
         let mut changed_ids = Vec::new();
         // Find the currently active script
         let mut active_ids = self
@@ -640,17 +616,11 @@ impl JMAP {
         if !changed_ids.is_empty() {
             match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => (),
-                Err(store::Error::AssertValueFailed) => {
+                Err(err) if err.matches(trc::Cause::AssertValue) => {
                     return Ok(vec![]);
                 }
                 Err(err) => {
-                    tracing::error!(
-                        event = "error",
-                        context = "sieve_activate_script",
-                        account_id = account_id,
-                        error = ?err,
-                        "Failed to activate sieve script(s).");
-                    return Err(MethodError::ServerPartialFail);
+                    return Err(err.caused_by(trc::location!()));
                 }
             }
         }

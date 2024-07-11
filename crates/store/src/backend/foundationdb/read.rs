@@ -21,7 +21,7 @@ use crate::{
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE,
 };
 
-use super::{FdbStore, ReadVersion, TimedTransaction, MAX_VALUE_SIZE};
+use super::{into_error, FdbStore, ReadVersion, TimedTransaction, MAX_VALUE_SIZE};
 
 #[allow(dead_code)]
 pub(crate) enum ChunkedValue {
@@ -31,7 +31,7 @@ pub(crate) enum ChunkedValue {
 }
 
 impl FdbStore {
-    pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
+    pub(crate) async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
     where
         U: Deserialize,
     {
@@ -48,7 +48,7 @@ impl FdbStore {
     pub(crate) async fn get_bitmap(
         &self,
         mut key: BitmapKey<BitmapClass<u32>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
+    ) -> trc::Result<Option<RoaringBitmap>> {
         let mut bm = RoaringBitmap::new();
         let begin = key.serialize(WITH_SUBSPACE);
         key.document_id = u32::MAX;
@@ -66,7 +66,7 @@ impl FdbStore {
             true,
         );
 
-        while let Some(value) = values.try_next().await? {
+        while let Some(value) = values.try_next().await.map_err(into_error)? {
             let key = value.key();
             if key.len() == key_len {
                 bm.insert(key.deserialize_be_u32(key.len() - U32_LEN)?);
@@ -79,8 +79,8 @@ impl FdbStore {
     pub(crate) async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,
-        mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()> {
+        mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
+    ) -> trc::Result<()> {
         let mut begin = params.begin.serialize(WITH_SUBSPACE);
         let end = params.end.serialize(WITH_SUBSPACE);
 
@@ -103,7 +103,7 @@ impl FdbStore {
                         true,
                     );
 
-                    while let Some(values) = values.try_next().await? {
+                    while let Some(values) = values.try_next().await.map_err(into_error)? {
                         let mut last_key = &[] as &[u8];
 
                         for value in values.iter() {
@@ -140,7 +140,7 @@ impl FdbStore {
                 true,
             );
 
-            if let Some(value) = values.try_next().await? {
+            if let Some(value) = values.try_next().await.map_err(into_error)? {
                 cb(value.key().get(1..).unwrap_or_default(), value.value())?;
             }
         }
@@ -151,24 +151,30 @@ impl FdbStore {
     pub(crate) async fn get_counter(
         &self,
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
-    ) -> crate::Result<i64> {
+    ) -> trc::Result<i64> {
         let key = key.into().serialize(WITH_SUBSPACE);
-        if let Some(bytes) = self.read_trx().await?.get(&key, true).await? {
-            deserialize_i64_le(&bytes)
+        if let Some(bytes) = self
+            .read_trx()
+            .await?
+            .get(&key, true)
+            .await
+            .map_err(into_error)?
+        {
+            deserialize_i64_le(&key, &bytes)
         } else {
             Ok(0)
         }
     }
 
-    pub(crate) async fn read_trx(&self) -> crate::Result<Transaction> {
+    pub(crate) async fn read_trx(&self) -> trc::Result<Transaction> {
         let (is_expired, mut read_version) = {
             let version = self.version.lock();
             (version.is_expired(), version.version)
         };
-        let trx = self.db.create_trx()?;
+        let trx = self.db.create_trx().map_err(into_error)?;
 
         if is_expired {
-            read_version = trx.get_read_version().await?;
+            read_version = trx.get_read_version().await.map_err(into_error)?;
             *self.version.lock() = ReadVersion::new(read_version);
         } else {
             trx.set_read_version(read_version);
@@ -177,10 +183,10 @@ impl FdbStore {
         Ok(trx)
     }
 
-    pub(crate) async fn timed_read_trx(&self) -> crate::Result<TimedTransaction> {
+    pub(crate) async fn timed_read_trx(&self) -> trc::Result<TimedTransaction> {
         self.db
             .create_trx()
-            .map_err(Into::into)
+            .map_err(into_error)
             .map(TimedTransaction::new)
     }
 }
@@ -189,8 +195,8 @@ pub(crate) async fn read_chunked_value(
     key: &[u8],
     trx: &Transaction,
     snapshot: bool,
-) -> crate::Result<ChunkedValue> {
-    if let Some(bytes) = trx.get(key, snapshot).await? {
+) -> trc::Result<ChunkedValue> {
+    if let Some(bytes) = trx.get(key, snapshot).await.map_err(into_error)? {
         if bytes.len() < MAX_VALUE_SIZE {
             Ok(ChunkedValue::Single(bytes))
         } else {
@@ -201,7 +207,7 @@ pub(crate) async fn read_chunked_value(
                 .write(0u8)
                 .finalize();
 
-            while let Some(bytes) = trx.get(&key, snapshot).await? {
+            while let Some(bytes) = trx.get(&key, snapshot).await.map_err(into_error)? {
                 value.extend_from_slice(&bytes);
                 *key.last_mut().unwrap() += 1;
             }

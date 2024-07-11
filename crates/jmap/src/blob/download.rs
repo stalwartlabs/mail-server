@@ -6,19 +6,17 @@
 
 use std::ops::Range;
 
-use jmap_proto::{
-    error::method::MethodError,
-    types::{
-        acl::Acl,
-        blob::{BlobId, BlobSection},
-        collection::Collection,
-    },
+use jmap_proto::types::{
+    acl::Acl,
+    blob::{BlobId, BlobSection},
+    collection::Collection,
 };
 use mail_parser::{
     decoders::{base64::base64_decode, quoted_printable::quoted_printable_decode},
     Encoding,
 };
 use store::BlobClass;
+use trc::AddContext;
 use utils::BlobHash;
 
 use crate::{auth::AccessToken, JMAP};
@@ -29,20 +27,14 @@ impl JMAP {
         &self,
         blob_id: &BlobId,
         access_token: &AccessToken,
-    ) -> Result<Option<Vec<u8>>, MethodError> {
+    ) -> trc::Result<Option<Vec<u8>>> {
         if !self
             .core
             .storage
             .data
             .blob_has_access(&blob_id.hash, &blob_id.class)
             .await
-            .map_err(|err| {
-                tracing::error!(event = "error",
-                            context = "blob_download",
-                            error = ?err,
-                            "Failed to validate blob access");
-                MethodError::ServerPartialFail
-            })?
+            .caused_by(trc::location!())?
         {
             return Ok(None);
         }
@@ -95,7 +87,7 @@ impl JMAP {
         &self,
         hash: &BlobHash,
         section: &BlobSection,
-    ) -> Result<Option<Vec<u8>>, MethodError> {
+    ) -> trc::Result<Option<Vec<u8>>> {
         Ok(self
             .get_blob(
                 hash,
@@ -113,38 +105,27 @@ impl JMAP {
         &self,
         hash: &BlobHash,
         range: Range<usize>,
-    ) -> Result<Option<Vec<u8>>, MethodError> {
-        match self.core.storage.blob.get_blob(hash.as_ref(), range).await {
-            Ok(blob) => Ok(blob),
-            Err(err) => {
-                tracing::error!(event = "error",
-                                context = "blob_store",
-                                blob_id = ?hash,
-                                error = ?err,
-                                "Failed to retrieve blob");
-                Err(MethodError::ServerPartialFail)
-            }
-        }
+    ) -> trc::Result<Option<Vec<u8>>> {
+        self.core
+            .storage
+            .blob
+            .get_blob(hash.as_ref(), range)
+            .await
+            .caused_by(trc::location!())
     }
 
     pub async fn has_access_blob(
         &self,
         blob_id: &BlobId,
         access_token: &AccessToken,
-    ) -> Result<bool, MethodError> {
+    ) -> trc::Result<bool> {
         Ok(self
             .core
             .storage
             .data
             .blob_has_access(&blob_id.hash, &blob_id.class)
             .await
-            .map_err(|err| {
-                tracing::error!(event = "error",
-                                context = "has_access_blob",
-                                error = ?err,
-                                "Failed to validate blob access");
-                MethodError::ServerPartialFail
-            })?
+            .caused_by(trc::location!())?
             && match &blob_id.class {
                 BlobClass::Linked {
                     account_id,

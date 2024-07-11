@@ -13,11 +13,13 @@ use store::ahash::AHashMap;
 use crate::{
     email::ingest::{IngestEmail, IngestSource},
     mailbox::INBOX_ID,
-    IngestError, JMAP,
+    JMAP,
 };
 
 impl JMAP {
     pub async fn deliver_message(&self, message: IngestMessage) -> Vec<DeliveryResult> {
+        let todo = "trace all errors";
+
         // Read message
         let raw_message = match self
             .core
@@ -137,21 +139,28 @@ impl JMAP {
                         .await;
                     }
                 }
-                Err(err) => match err {
-                    IngestError::OverQuota => {
+                Err(mut err) => match err.as_ref() {
+                    trc::Cause::OverQuota => {
                         *status = DeliveryResult::TemporaryFailure {
                             reason: "Mailbox over quota.".into(),
                         }
                     }
-                    IngestError::Temporary => {
-                        *status = DeliveryResult::TemporaryFailure {
-                            reason: "Transient server failure.".into(),
+                    trc::Cause::Ingest => {
+                        *status = DeliveryResult::PermanentFailure {
+                            code: err
+                                .value(trc::Key::Reason)
+                                .and_then(|v| v.to_uint())
+                                .map(|n| [(n / 100) as u8, ((n % 100) / 10) as u8, (n % 10) as u8])
+                                .unwrap(),
+                            reason: err
+                                .take_value(trc::Key::Reason)
+                                .and_then(|v| v.into_string())
+                                .unwrap(),
                         }
                     }
-                    IngestError::Permanent { code, reason } => {
-                        *status = DeliveryResult::PermanentFailure {
-                            code,
-                            reason: reason.into(),
+                    _ => {
+                        *status = DeliveryResult::TemporaryFailure {
+                            reason: "Transient server failure.".into(),
                         }
                     }
                 },

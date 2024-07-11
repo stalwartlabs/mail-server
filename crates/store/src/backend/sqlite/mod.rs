@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::fmt::Display;
+
 use r2d2::Pool;
 
 use self::pool::SqliteConnectionManager;
@@ -15,25 +17,12 @@ pub mod pool;
 pub mod read;
 pub mod write;
 
-impl From<r2d2::Error> for crate::Error {
-    fn from(err: r2d2::Error) -> Self {
-        Self::InternalError(format!("Connection pool error: {}", err))
-    }
-}
-
-impl From<rusqlite::Error> for crate::Error {
-    fn from(err: rusqlite::Error) -> Self {
-        Self::InternalError(format!("SQLite error: {}", err))
-    }
-}
-
-impl From<rusqlite::types::FromSqlError> for crate::Error {
-    fn from(err: rusqlite::types::FromSqlError) -> Self {
-        Self::InternalError(format!("SQLite error: {}", err))
-    }
-}
-
 pub struct SqliteStore {
     pub(crate) conn_pool: Pool<SqliteConnectionManager>,
     pub(crate) worker_pool: rayon::ThreadPool,
+}
+
+#[inline(always)]
+fn into_error(err: impl Display) -> trc::Error {
+    trc::Cause::SQLite.reason(err)
 }

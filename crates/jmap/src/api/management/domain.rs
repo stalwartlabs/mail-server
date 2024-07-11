@@ -123,7 +123,7 @@ impl JMAP {
         }
     }
 
-    async fn build_dns_records(&self, domain_name: &str) -> store::Result<Vec<DnsRecord>> {
+    async fn build_dns_records(&self, domain_name: &str) -> trc::Result<Vec<DnsRecord>> {
         // Obtain server name
         let server_name = self
             .core

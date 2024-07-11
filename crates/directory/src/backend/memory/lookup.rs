@@ -11,7 +11,7 @@ use crate::{Principal, QueryBy};
 use super::{EmailType, MemoryDirectory};
 
 impl MemoryDirectory {
-    pub async fn query(&self, by: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+    pub async fn query(&self, by: QueryBy<'_>) -> trc::Result<Option<Principal<u32>>> {
         match by {
             QueryBy::Name(name) => {
                 for principal in &self.principals {
@@ -48,7 +48,7 @@ impl MemoryDirectory {
         Ok(None)
     }
 
-    pub async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
+    pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
         Ok(self
             .emails_to_ids
             .get(address)
@@ -65,11 +65,11 @@ impl MemoryDirectory {
             .unwrap_or_default())
     }
 
-    pub async fn rcpt(&self, address: &str) -> crate::Result<bool> {
+    pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
         Ok(self.emails_to_ids.contains_key(address))
     }
 
-    pub async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut result = Vec::new();
         for (key, value) in &self.emails_to_ids {
             if key.contains(address) && value.iter().any(|t| matches!(t, EmailType::Primary(_))) {
@@ -79,7 +79,7 @@ impl MemoryDirectory {
         Ok(result)
     }
 
-    pub async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut result = Vec::new();
         for (key, value) in &self.emails_to_ids {
             if key == address {
@@ -100,7 +100,7 @@ impl MemoryDirectory {
         Ok(result)
     }
 
-    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
         Ok(self.domains.contains(domain))
     }
 }

@@ -23,7 +23,7 @@ impl JMAP {
         &self,
         mut request: QueryRequest<QueryArguments>,
         access_token: &AccessToken,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let sort_as_tree = request.arguments.sort_as_tree.unwrap_or(false);
         let filter_as_tree = request.arguments.filter_as_tree.unwrap_or(false);
@@ -80,7 +80,7 @@ impl JMAP {
                     filters.push(cond.into());
                 }
 
-                other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                other => return Err(MethodError::UnsupportedFilter(other.to_string()).into()),
             }
         }
 
@@ -182,7 +182,7 @@ impl JMAP {
                         query::Comparator::field(Property::ParentId, comparator.is_ascending)
                     }
 
-                    other => return Err(MethodError::UnsupportedSort(other.to_string())),
+                    other => return Err(MethodError::UnsupportedSort(other.to_string()).into()),
                 });
             }
 

@@ -28,12 +28,13 @@ use crate::{
 };
 
 use super::{
+    into_error,
     read::{read_chunked_value, ChunkedValue},
     FdbStore, ReadVersion, MAX_VALUE_SIZE,
 };
 
 impl FdbStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
+    pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
         let start = Instant::now();
         let mut retry_count = 0;
 
@@ -44,7 +45,7 @@ impl FdbStore {
             let mut change_id = u64::MAX;
             let mut result = AssignedIds::default();
 
-            let trx = self.db.create_trx()?;
+            let trx = self.db.create_trx().map_err(into_error)?;
 
             for op in &batch.ops {
                 match op {
@@ -93,8 +94,9 @@ impl FdbStore {
                                                     *key.last_mut().unwrap() += 1;
                                                 } else {
                                                     trx.cancel();
-                                                    return Err(crate::Error::InternalError(
-                                                        "Value too large".into(),
+                                                    return Err(trc::Cause::FoundationDB.ctx(
+                                                        trc::Key::Reason,
+                                                        "Value is too large",
                                                     ));
                                                 }
                                             }
@@ -109,8 +111,10 @@ impl FdbStore {
                                 trx.atomic_op(&key, &by.to_le_bytes()[..], MutationType::Add);
                             }
                             ValueOp::AddAndGet(by) => {
-                                let num = if let Some(bytes) = trx.get(&key, false).await? {
-                                    deserialize_i64_le(&bytes)? + *by
+                                let num = if let Some(bytes) =
+                                    trx.get(&key, false).await.map_err(into_error)?
+                                {
+                                    deserialize_i64_le(&key, &bytes)? + *by
                                 } else {
                                     *by
                                 };
@@ -180,7 +184,7 @@ impl FdbStore {
                                 true,
                             );
                             let mut found_ids = RoaringBitmap::new();
-                            while let Some(value) = values.try_next().await? {
+                            while let Some(value) = values.try_next().await.map_err(into_error)? {
                                 let key = value.key();
                                 if key.len() == key_len {
                                     found_ids.insert(key.deserialize_be_u32(key_len - U32_LEN)?);
@@ -212,7 +216,8 @@ impl FdbStore {
                                         (&result).into(),
                                     ),
                                     options::ConflictRangeType::Read,
-                                )?;
+                                )
+                                .map_err(into_error)?;
                             }
 
                             trx.set(&key, &[]);
@@ -252,7 +257,7 @@ impl FdbStore {
 
                         if !matches {
                             trx.cancel();
-                            return Err(crate::Error::AssertValueFailed);
+                            return Err(trc::Cause::AssertValue.into());
                         }
                     }
                 }
@@ -274,10 +279,10 @@ impl FdbStore {
         }
     }
 
-    pub(crate) async fn commit(&self, trx: Transaction, will_retry: bool) -> crate::Result<bool> {
+    pub(crate) async fn commit(&self, trx: Transaction, will_retry: bool) -> trc::Result<bool> {
         match trx.commit().await {
             Ok(result) => {
-                let commit_version = result.committed_version()?;
+                let commit_version = result.committed_version().map_err(into_error)?;
                 let mut version = self.version.lock();
                 if commit_version > version.version {
                     *version = ReadVersion::new(commit_version);
@@ -286,20 +291,20 @@ impl FdbStore {
             }
             Err(err) => {
                 if will_retry {
-                    err.on_error().await?;
+                    err.on_error().await.map_err(into_error)?;
                     Ok(false)
                 } else {
-                    Err(FdbError::from(err).into())
+                    Err(into_error(FdbError::from(err)))
                 }
             }
         }
     }
 
-    pub(crate) async fn purge_store(&self) -> crate::Result<()> {
+    pub(crate) async fn purge_store(&self) -> trc::Result<()> {
         // Obtain all zero counters
         let mut delete_keys = Vec::new();
         for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
-            let trx = self.db.create_trx()?;
+            let trx = self.db.create_trx().map_err(into_error)?;
             let from_key = [subspace, 0u8];
             let to_key = [subspace, u8::MAX, u8::MAX, u8::MAX, u8::MAX, u8::MAX];
 
@@ -314,7 +319,7 @@ impl FdbStore {
                 true,
             );
 
-            while let Some(value) = values.try_next().await? {
+            while let Some(value) = values.try_next().await.map_err(into_error)? {
                 if value.value().iter().all(|byte| *byte == 0) {
                     delete_keys.push(value.key().to_vec());
                 }
@@ -330,7 +335,7 @@ impl FdbStore {
         for chunk in delete_keys.chunks(1024) {
             let mut retry_count = 0;
             loop {
-                let trx = self.db.create_trx()?;
+                let trx = self.db.create_trx().map_err(into_error)?;
                 for key in chunk {
                     trx.atomic_op(key, &integer, MutationType::CompareAndClear);
                 }
@@ -346,11 +351,11 @@ impl FdbStore {
         Ok(())
     }
 
-    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
         let from = from.serialize(WITH_SUBSPACE);
         let to = to.serialize(WITH_SUBSPACE);
 
-        let trx = self.db.create_trx()?;
+        let trx = self.db.create_trx().map_err(into_error)?;
         trx.clear_range(&from, &to);
         self.commit(trx, false).await.map(|_| ())
     }

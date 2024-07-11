@@ -19,12 +19,6 @@ static CF_LOGS: &str = unsafe { std::str::from_utf8_unchecked(&[SUBSPACE_LOGS]) 
 static CF_INDEXES: &str = unsafe { std::str::from_utf8_unchecked(&[SUBSPACE_INDEXES]) };
 static CF_BLOBS: &str = unsafe { std::str::from_utf8_unchecked(&[SUBSPACE_BLOBS]) };
 
-impl From<rocksdb::Error> for crate::Error {
-    fn from(value: rocksdb::Error) -> Self {
-        Self::InternalError(format!("RocksDB error: {}", value))
-    }
-}
-
 pub(crate) trait CfHandle {
     fn subspace_handle(&self, subspace: u8) -> Arc<BoundColumnFamily<'_>>;
 }
@@ -40,4 +34,9 @@ impl CfHandle for OptimisticTransactionDB<MultiThreaded> {
 pub struct RocksDbStore {
     db: Arc<OptimisticTransactionDB<MultiThreaded>>,
     worker_pool: rayon::ThreadPool,
+}
+
+#[inline(always)]
+fn into_error(err: rocksdb::Error) -> trc::Error {
+    trc::Cause::RocksDB.reason(err)
 }

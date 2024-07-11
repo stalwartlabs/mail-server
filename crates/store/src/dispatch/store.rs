@@ -7,6 +7,7 @@
 use std::ops::{BitAndAssign, Range};
 
 use roaring::RoaringBitmap;
+use trc::AddContext;
 
 use crate::{
     write::{
@@ -27,7 +28,7 @@ pub static ref BITMAPS: std::sync::Arc<parking_lot::Mutex<std::collections::Hash
 }
 
 impl Store {
-    pub async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
+    pub async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
     where
         U: Deserialize + 'static,
     {
@@ -42,14 +43,15 @@ impl Store {
             Self::MySQL(store) => store.get_value(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_value(key).await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
+        .caused_by( trc::location!())
     }
 
     pub async fn get_bitmap(
         &self,
         key: BitmapKey<BitmapClass<u32>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
+    ) -> trc::Result<Option<RoaringBitmap>> {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_bitmap(key).await,
@@ -61,17 +63,18 @@ impl Store {
             Self::MySQL(store) => store.get_bitmap(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_bitmap(key).await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
+        .caused_by( trc::location!())
     }
 
     pub async fn get_bitmaps_intersection(
         &self,
         keys: Vec<BitmapKey<BitmapClass<u32>>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
+    ) -> trc::Result<Option<RoaringBitmap>> {
         let mut result: Option<RoaringBitmap> = None;
         for key in keys {
-            if let Some(bitmap) = self.get_bitmap(key).await? {
+            if let Some(bitmap) = self.get_bitmap(key).await.caused_by( trc::location!())? {
                 if let Some(result) = &mut result {
                     result.bitand_assign(&bitmap);
                     if result.is_empty() {
@@ -90,8 +93,8 @@ impl Store {
     pub async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,
-        cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()> {
+        cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
+    ) -> trc::Result<()> {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.iterate(params, cb).await,
@@ -103,14 +106,15 @@ impl Store {
             Self::MySQL(store) => store.iterate(params, cb).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.iterate(params, cb).await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
+        .caused_by( trc::location!())
     }
 
     pub async fn get_counter(
         &self,
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
-    ) -> crate::Result<i64> {
+    ) -> trc::Result<i64> {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_counter(key).await,
@@ -122,11 +126,12 @@ impl Store {
             Self::MySQL(store) => store.get_counter(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_counter(key).await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
+        .caused_by( trc::location!())
     }
 
-    pub async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
+    pub async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
         #[cfg(feature = "test_mode")]
         if std::env::var("PARANOID_WRITE").map_or(false, |v| v == "1") {
             let mut account_id = u32::MAX;
@@ -184,8 +189,9 @@ impl Store {
                 Self::MySQL(store) => store.write(batch).await,
                 #[cfg(feature = "rocks")]
                 Self::RocksDb(store) => store.write(batch).await,
-                Self::None => Err(crate::Error::InternalError("No store configured".into())),
-            }?;
+                Self::None => Err(trc::Cause::NotConfigured.into()),
+            }
+            .caused_by( trc::location!())?;
 
             for (key, class, document_id, set) in bitmaps {
                 let mut bitmaps = BITMAPS.lock();
@@ -225,11 +231,11 @@ impl Store {
             Self::MySQL(store) => store.write(batch).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.write(batch).await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
     }
 
-    pub async fn purge_store(&self) -> crate::Result<()> {
+    pub async fn purge_store(&self) -> trc::Result<()> {
         // Delete expired reports
         let now = now();
         self.delete_range(
@@ -239,7 +245,8 @@ impl Store {
                 expires: now,
             })),
         )
-        .await?;
+        .await
+        .caused_by( trc::location!())?;
         self.delete_range(
             ValueKey::from(ValueClass::Report(ReportClass::Tls { id: 0, expires: 0 })),
             ValueKey::from(ValueClass::Report(ReportClass::Tls {
@@ -247,7 +254,8 @@ impl Store {
                 expires: now,
             })),
         )
-        .await?;
+        .await
+        .caused_by( trc::location!())?;
         self.delete_range(
             ValueKey::from(ValueClass::Report(ReportClass::Arf { id: 0, expires: 0 })),
             ValueKey::from(ValueClass::Report(ReportClass::Arf {
@@ -255,7 +263,8 @@ impl Store {
                 expires: now,
             })),
         )
-        .await?;
+        .await
+        .caused_by( trc::location!())?;
 
         match self {
             #[cfg(feature = "sqlite")]
@@ -268,11 +277,12 @@ impl Store {
             Self::MySQL(store) => store.purge_store().await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.purge_store().await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
+        .caused_by( trc::location!())
     }
 
-    pub async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
+    pub async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.delete_range(from, to).await,
@@ -284,8 +294,9 @@ impl Store {
             Self::MySQL(store) => store.delete_range(from, to).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_range(from, to).await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
+        .caused_by( trc::location!())
     }
 
     pub async fn delete_documents(
@@ -295,7 +306,7 @@ impl Store {
         collection: u8,
         collection_offset: Option<usize>,
         document_ids: &impl DocumentSet,
-    ) -> crate::Result<()> {
+    ) -> trc::Result<()> {
         // Serialize keys
         let (from_key, to_key) = if collection_offset.is_some() {
             (
@@ -340,14 +351,17 @@ impl Store {
                 Ok(true)
             },
         )
-        .await?;
+        .await
+        .caused_by( trc::location!())?;
 
         // Remove keys
         let mut batch = BatchBuilder::new();
 
         for key in delete_keys {
             if batch.ops.len() >= 1000 {
-                self.write(std::mem::take(&mut batch).build()).await?;
+                self.write(std::mem::take(&mut batch).build())
+                    .await
+                    .caused_by( trc::location!())?;
             }
             batch.ops.push(Operation::Value {
                 class: ValueClass::Any(AnyClass { subspace, key }),
@@ -356,13 +370,15 @@ impl Store {
         }
 
         if !batch.is_empty() {
-            self.write(batch.build()).await?;
+            self.write(batch.build())
+                .await
+                .caused_by( trc::location!())?;
         }
 
         Ok(())
     }
 
-    pub async fn purge_account(&self, account_id: u32) -> crate::Result<()> {
+    pub async fn purge_account(&self, account_id: u32) -> trc::Result<()> {
         for subspace in [
             SUBSPACE_BITMAP_ID,
             SUBSPACE_BITMAP_TAG,
@@ -380,7 +396,8 @@ impl Store {
                     key: KeySerializer::new(U32_LEN).write(account_id + 1).finalize(),
                 },
             )
-            .await?;
+            .await
+            .caused_by( trc::location!())?;
         }
 
         for (from_class, to_class) in [
@@ -411,17 +428,14 @@ impl Store {
                     class: to_class,
                 },
             )
-            .await?;
+            .await
+            .caused_by( trc::location!())?;
         }
 
         Ok(())
     }
 
-    pub async fn get_blob(
-        &self,
-        key: &[u8],
-        range: Range<usize>,
-    ) -> crate::Result<Option<Vec<u8>>> {
+    pub async fn get_blob(&self, key: &[u8], range: Range<usize>) -> trc::Result<Option<Vec<u8>>> {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_blob(key, range).await,
@@ -433,11 +447,12 @@ impl Store {
             Self::MySQL(store) => store.get_blob(key, range).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_blob(key, range).await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
+        .caused_by( trc::location!())
     }
 
-    pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
+    pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.put_blob(key, data).await,
@@ -449,11 +464,12 @@ impl Store {
             Self::MySQL(store) => store.put_blob(key, data).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.put_blob(key, data).await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
+        .caused_by( trc::location!())
     }
 
-    pub async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
+    pub async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.delete_blob(key).await,
@@ -465,8 +481,9 @@ impl Store {
             Self::MySQL(store) => store.delete_blob(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_blob(key).await,
-            Self::None => Err(crate::Error::InternalError("No store configured".into())),
+            Self::None => Err(trc::Cause::NotConfigured.into()),
         }
+        .caused_by( trc::location!())
     }
 
     #[cfg(feature = "test_mode")]
@@ -551,7 +568,7 @@ impl Store {
         self.iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
-                let account_id = key.deserialize_be_u32(0)?;
+                let account_id = key.deserialize_be_u32(0).caused_by( trc::location!())?;
                 if account_id != last_account_id {
                     last_account_id = account_id;
                     batch.with_account_id(account_id);
@@ -563,7 +580,9 @@ impl Store {
                             key.get(U32_LEN..U32_LEN + BLOB_HASH_LEN).unwrap(),
                         )
                         .unwrap(),
-                        until: key.deserialize_be_u64(key.len() - U64_LEN)?,
+                        until: key
+                            .deserialize_be_u64(key.len() - U64_LEN)
+                            .caused_by( trc::location!())?,
                     }),
                     op: ValueOp::Clear,
                 });
@@ -588,7 +607,7 @@ impl Store {
         let mut expired_counters = Vec::new();
 
         self.iterate(IterateParams::new(from_key, to_key), |key, value| {
-            let expiry = value.deserialize_be_u64(0)?;
+            let expiry = value.deserialize_be_u64(0).caused_by( trc::location!())?;
             if expiry == 0 {
                 expired_counters.push(key.to_vec());
             } else if expiry != u64::MAX {

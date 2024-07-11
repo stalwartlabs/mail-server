@@ -85,8 +85,7 @@ impl SqliteConnectionManager {
     }
 }
 
-fn sleeper(attempts: i32) -> bool {
-    tracing::debug!("SQLITE_BUSY, retrying after 200ms (attempt {})", attempts);
+fn sleeper(_: i32) -> bool {
     std::thread::sleep(std::time::Duration::from_millis(200));
     true
 }

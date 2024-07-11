@@ -4,13 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{io::Write, ops::Range, time::Duration};
+use std::{fmt::Display, io::Write, ops::Range, time::Duration};
 
-use s3::{
-    creds::{error::CredentialsError, Credentials},
-    error::S3Error,
-    Bucket, Region,
-};
+use s3::{creds::Credentials, Bucket, Region};
 use utils::{
     codec::base32_custom::Base32Writer,
     config::{utils::AsKey, Config},
@@ -76,7 +72,7 @@ impl S3Store {
         &self,
         key: &[u8],
         range: Range<usize>,
-    ) -> crate::Result<Option<Vec<u8>>> {
+    ) -> trc::Result<Option<Vec<u8>>> {
         let path = self.build_key(key);
         let response = if range.start != 0 || range.end != usize::MAX {
             self.bucket
@@ -88,39 +84,47 @@ impl S3Store {
                 .await
         } else {
             self.bucket.get_object(path).await
-        };
-        match response {
-            Ok(response) if (200..300).contains(&response.status_code()) => {
-                Ok(Some(response.to_vec()))
-            }
-            Ok(response) if response.status_code() == 404 => Ok(None),
-            Ok(response) => Err(crate::Error::InternalError(format!(
-                "S3 error code {}: {}",
-                response.status_code(),
-                String::from_utf8_lossy(response.as_slice())
-            ))),
-            Err(err) => Err(err.into()),
+        }
+        .map_err(into_error)?;
+
+        match response.status_code() {
+            200..=299 => Ok(Some(response.to_vec())),
+            404 => Ok(None),
+            code => Err(trc::Cause::S3
+                .reason(String::from_utf8_lossy(response.as_slice()))
+                .ctx(trc::Key::Code, code)),
         }
     }
 
-    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
-        match self.bucket.put_object(self.build_key(key), data).await {
-            Ok(response) if (200..300).contains(&response.status_code()) => Ok(()),
-            Ok(response) => Err(crate::Error::InternalError(format!(
-                "S3 error code {}: {}",
-                response.status_code(),
-                String::from_utf8_lossy(response.as_slice())
-            ))),
-            Err(e) => Err(e.into()),
+    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
+        let response = self
+            .bucket
+            .put_object(self.build_key(key), data)
+            .await
+            .map_err(into_error)?;
+
+        match response.status_code() {
+            200..=299 => Ok(()),
+            code => Err(trc::Cause::S3
+                .reason(String::from_utf8_lossy(response.as_slice()))
+                .ctx(trc::Key::Code, code)),
         }
     }
 
-    pub(crate) async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
-        self.bucket
+    pub(crate) async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
+        let response = self
+            .bucket
             .delete_object(self.build_key(key))
             .await
-            .map(|response| (200..300).contains(&response.status_code()))
-            .map_err(|e| e.into())
+            .map_err(into_error)?;
+
+        match response.status_code() {
+            200..=299 => Ok(true),
+            404 => Ok(false),
+            code => Err(trc::Cause::S3
+                .reason(String::from_utf8_lossy(response.as_slice()))
+                .ctx(trc::Key::Code, code)),
+        }
     }
 
     fn build_key(&self, key: &[u8]) -> String {
@@ -136,14 +140,7 @@ impl S3Store {
     }
 }
 
-impl From<S3Error> for crate::Error {
-    fn from(err: S3Error) -> Self {
-        Self::InternalError(format!("S3 error: {}", err))
-    }
-}
-
-impl From<CredentialsError> for crate::Error {
-    fn from(err: CredentialsError) -> Self {
-        Self::InternalError(format!("S3 Credentials error: {}", err))
-    }
+#[inline(always)]
+fn into_error(err: impl Display) -> trc::Error {
+    trc::Cause::S3.reason(err)
 }

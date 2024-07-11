@@ -6,7 +6,7 @@
 
 use directory::QueryBy;
 use jmap_proto::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
     object::Object,
     response::references::EvalObjectReferences,
@@ -24,7 +24,7 @@ impl JMAP {
     pub async fn identity_set(
         &self,
         mut request: SetRequest<RequestArguments>,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
         let mut identity_ids = self
             .get_document_ids(account_id, Collection::Identity)

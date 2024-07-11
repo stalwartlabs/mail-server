@@ -13,24 +13,25 @@ use crate::{
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
 };
 
-use super::MysqlStore;
+use super::{into_error, MysqlStore};
 
 impl MysqlStore {
-    pub(crate) async fn get_value<U>(&self, key: impl Key) -> crate::Result<Option<U>>
+    pub(crate) async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
     where
         U: Deserialize + 'static,
     {
-        let mut conn = self.conn_pool.get_conn().await?;
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
         let s = conn
             .prep(&format!(
                 "SELECT v FROM {} WHERE k = ?",
                 char::from(key.subspace())
             ))
-            .await?;
+            .await
+            .map_err(into_error)?;
         let key = key.serialize(0);
         conn.exec_first::<Vec<u8>, _, _>(&s, (key,))
             .await
-            .map_err(Into::into)
+            .map_err(into_error)
             .and_then(|r| {
                 if let Some(r) = r {
                     Ok(Some(U::deserialize(&r)?))
@@ -43,21 +44,25 @@ impl MysqlStore {
     pub(crate) async fn get_bitmap(
         &self,
         mut key: BitmapKey<BitmapClass<u32>>,
-    ) -> crate::Result<Option<RoaringBitmap>> {
+    ) -> trc::Result<Option<RoaringBitmap>> {
         let begin = key.serialize(0);
         key.document_id = u32::MAX;
         let key_len = begin.len();
         let end = key.serialize(0);
-        let mut conn = self.conn_pool.get_conn().await?;
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
         let table = char::from(key.subspace());
 
         let mut bm = RoaringBitmap::new();
         let s = conn
             .prep(&format!("SELECT k FROM {table} WHERE k >= ? AND k <= ?"))
-            .await?;
-        let mut rows = conn.exec_stream::<Vec<u8>, _, _>(&s, (begin, end)).await?;
+            .await
+            .map_err(into_error)?;
+        let mut rows = conn
+            .exec_stream::<Vec<u8>, _, _>(&s, (begin, end))
+            .await
+            .map_err(into_error)?;
 
-        while let Some(key) = rows.try_next().await? {
+        while let Some(key) = rows.try_next().await.map_err(into_error)? {
             if key.len() == key_len {
                 bm.insert(key.as_slice().deserialize_be_u32(key.len() - U32_LEN)?);
             }
@@ -68,9 +73,9 @@ impl MysqlStore {
     pub(crate) async fn iterate<T: Key>(
         &self,
         params: IterateParams<T>,
-        mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> crate::Result<bool> + Sync + Send,
-    ) -> crate::Result<()> {
-        let mut conn = self.conn_pool.get_conn().await?;
+        mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
+    ) -> trc::Result<()> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
         let table = char::from(params.begin.subspace());
         let begin = params.begin.serialize(0);
         let end = params.end.serialize(0);
@@ -95,27 +100,34 @@ impl MysqlStore {
                     format!("SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC")
                 }
             })
-            .await?;
-        let mut rows = conn.exec_stream::<Row, _, _>(&s, (begin, end)).await?;
+            .await
+            .map_err(into_error)?;
+        let mut rows = conn
+            .exec_stream::<Row, _, _>(&s, (begin, end))
+            .await
+            .map_err(into_error)?;
 
         if params.values {
-            while let Some(mut row) = rows.try_next().await? {
+            while let Some(mut row) = rows.try_next().await.map_err(into_error)? {
                 let value = row
                     .take_opt::<Vec<u8>, _>(1)
-                    .unwrap_or_else(|| Ok(vec![]))?;
+                    .unwrap_or_else(|| Ok(vec![]))
+                    .map_err(into_error)?;
                 let key = row
                     .take_opt::<Vec<u8>, _>(0)
-                    .unwrap_or_else(|| Ok(vec![]))?;
+                    .unwrap_or_else(|| Ok(vec![]))
+                    .map_err(into_error)?;
 
                 if !cb(&key, &value)? {
                     break;
                 }
             }
         } else {
-            while let Some(mut row) = rows.try_next().await? {
+            while let Some(mut row) = rows.try_next().await.map_err(into_error)? {
                 if !cb(
                     &row.take_opt::<Vec<u8>, _>(0)
-                        .unwrap_or_else(|| Ok(vec![]))?,
+                        .unwrap_or_else(|| Ok(vec![]))
+                        .map_err(into_error)?,
                     b"",
                 )? {
                     break;
@@ -129,18 +141,19 @@ impl MysqlStore {
     pub(crate) async fn get_counter(
         &self,
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
-    ) -> crate::Result<i64> {
+    ) -> trc::Result<i64> {
         let key = key.into();
         let table = char::from(key.subspace());
         let key = key.serialize(0);
-        let mut conn = self.conn_pool.get_conn().await?;
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
         let s = conn
             .prep(&format!("SELECT v FROM {table} WHERE k = ?"))
-            .await?;
+            .await
+            .map_err(into_error)?;
         match conn.exec_first::<i64, _, _>(&s, (key,)).await {
             Ok(Some(num)) => Ok(num),
             Ok(None) => Ok(0),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(into_error(e)),
         }
     }
 }

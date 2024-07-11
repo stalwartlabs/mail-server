@@ -529,7 +529,7 @@ impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
     }
 }
 
-impl ToHttpResponse for store::Error {
+impl ToHttpResponse for trc::Error {
     fn into_http_response(self) -> HttpResponse {
         tracing::error!(context = "store", error = %self, "Database error");
 

@@ -8,6 +8,7 @@ use jmap_proto::{
     error::method::MethodError,
     types::{collection::Collection, state::State},
 };
+use trc::AddContext;
 
 use crate::JMAP;
 
@@ -16,26 +17,15 @@ impl JMAP {
         &self,
         account_id: u32,
         collection: impl Into<u8>,
-    ) -> Result<State, MethodError> {
+    ) -> trc::Result<State> {
         let collection = collection.into();
-        match self
-            .core
+        self.core
             .storage
             .data
             .get_last_change_id(account_id, collection)
             .await
-        {
-            Ok(id) => Ok(id.into()),
-            Err(err) => {
-                tracing::error!(event = "error",
-                    context = "store",
-                    account_id = account_id,
-                    collection = ?Collection::from(collection),
-                    error = ?err,
-                    "Failed to obtain state");
-                Err(MethodError::ServerPartialFail)
-            }
-        }
+            .caused_by(trc::location!())
+            .map(State::from)
     }
 
     pub async fn assert_state(
@@ -43,11 +33,11 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
         if_in_state: &Option<State>,
-    ) -> Result<State, MethodError> {
+    ) -> trc::Result<State> {
         let old_state: State = self.get_state(account_id, collection).await?;
         if let Some(if_in_state) = if_in_state {
             if &old_state != if_in_state {
-                return Err(MethodError::StateMismatch);
+                return Err(MethodError::StateMismatch.into());
             }
         }
 

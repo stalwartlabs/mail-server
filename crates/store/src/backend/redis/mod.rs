@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
 use deadpool::{
-    managed::{Manager, Pool, PoolError},
+    managed::{Manager, Pool},
     Runtime,
 };
 use redis::{
     cluster::{ClusterClient, ClusterClientBuilder},
-    Client, RedisError,
+    Client,
 };
 use utils::config::{utils::AsKey, Config};
 
@@ -149,7 +149,7 @@ fn build_pool<M: Manager>(
     config: &mut Config,
     prefix: &str,
     manager: M,
-) -> utils::config::Result<Pool<M>> {
+) -> Result<Pool<M>, String> {
     Pool::builder(manager)
         .runtime(Runtime::Tokio1)
         .max_size(
@@ -182,20 +182,7 @@ fn build_pool<M: Manager>(
         })
 }
 
-impl From<PoolError<RedisError>> for crate::Error {
-    fn from(value: PoolError<RedisError>) -> Self {
-        crate::Error::InternalError(format!("Redis pool error: {}", value))
-    }
-}
-
-impl From<PoolError<crate::Error>> for crate::Error {
-    fn from(value: PoolError<crate::Error>) -> Self {
-        crate::Error::InternalError(format!("Connection pool {}", value))
-    }
-}
-
-impl From<RedisError> for crate::Error {
-    fn from(value: RedisError) -> Self {
-        crate::Error::InternalError(format!("Redis error: {}", value))
-    }
+#[inline(always)]
+fn into_error(err: impl Display) -> trc::Error {
+    trc::Cause::Redis.reason(err)
 }

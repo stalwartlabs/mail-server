@@ -7,6 +7,7 @@
 use std::cmp::Ordering;
 
 use ahash::{AHashMap, AHashSet};
+use trc::AddContext;
 
 use crate::{
     write::{key::DeserializeBigEndian, ValueClass},
@@ -34,7 +35,7 @@ impl Store {
         result_set: ResultSet,
         mut comparators: Vec<Comparator>,
         mut paginate: Pagination,
-    ) -> crate::Result<SortedResultSet> {
+    ) -> trc::Result<SortedResultSet> {
         paginate.limit = match (result_set.results.len(), paginate.limit) {
             (0, _) => {
                 return Ok(SortedResultSet {
@@ -73,7 +74,8 @@ impl Store {
                             Ok(!results.remove(document_id) || paginate.add(0, document_id))
                         },
                     )
-                    .await?;
+                    .await
+                    .caused_by(trc::location!())?;
 
                     // Add remaining items not present in the index
                     if !results.is_empty() && !paginate.is_full() {
@@ -109,7 +111,8 @@ impl Store {
                 for id in sorted_results.ids.iter_mut() {
                     if let Some(prefix_id) = self
                         .get_value::<u32>(prefix_key.clone().with_document_id(*id as u32))
-                        .await?
+                        .await
+                        .caused_by(trc::location!())?
                     {
                         *id |= (prefix_id as u64) << 32;
                     }
@@ -150,11 +153,7 @@ impl Store {
 
                                 Ok(if results.remove(document_id) {
                                     let data = key.get(IndexKeyPrefix::len()..id_pos).ok_or_else(
-                                        || {
-                                            crate::Error::InternalError(
-                                                "Invalid key found in index".to_string(),
-                                            )
-                                        },
+                                        || trc::Error::corrupted_key(key, None, trc::location!()),
                                     )?;
                                     debug_assert!(!data.is_empty());
 
@@ -173,7 +172,8 @@ impl Store {
                                 })
                             },
                         )
-                        .await?;
+                        .await
+                        .caused_by(trc::location!())?;
 
                         // Add remaining items not present in the index
                         if !results.is_empty() {
@@ -216,7 +216,8 @@ impl Store {
                 let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
                     if let Some(prefix_id) = self
                         .get_value(prefix_key.clone().with_document_id(document_id))
-                        .await?
+                        .await
+                        .caused_by(trc::location!())?
                     {
                         if paginate.prefix_unique && !seen_prefixes.insert(prefix_id) {
                             continue;
@@ -244,7 +245,8 @@ impl Store {
                 let prefix_id = if let Some(prefix_key) = &paginate.prefix_key {
                     if let Some(prefix_id) = self
                         .get_value(prefix_key.clone().with_document_id(document_id))
-                        .await?
+                        .await
+                        .caused_by(trc::location!())?
                     {
                         if paginate.prefix_unique && !seen_prefixes.insert(prefix_id) {
                             continue;

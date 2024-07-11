@@ -20,7 +20,7 @@ impl JMAP {
         &self,
         request: QueryChangesRequest,
         access_token: &AccessToken,
-    ) -> Result<QueryChangesResponse, MethodError> {
+    ) -> trc::Result<QueryChangesResponse> {
         // Query changes
         let changes = self
             .changes(
@@ -35,7 +35,11 @@ impl JMAP {
                             changes::RequestArguments::EmailSubmission
                         }
                         query::RequestArguments::Quota => changes::RequestArguments::Quota,
-                        _ => return Err(MethodError::UnknownMethod("Unknown method".to_string())),
+                        _ => {
+                            return Err(
+                                MethodError::UnknownMethod("Unknown method".to_string()).into()
+                            )
+                        }
                     },
                 },
                 access_token,

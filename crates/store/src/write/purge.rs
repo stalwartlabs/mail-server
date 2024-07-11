@@ -27,24 +27,31 @@ pub struct PurgeSchedule {
 
 impl PurgeSchedule {
     pub fn spawn(self, mut shutdown_rx: watch::Receiver<bool>) {
-        tracing::debug!(
-            "Purge {} task started for store {:?}.",
-            self.store,
-            self.store_id
+        trc::trace!(
+            PurgeTaskStarted,
+            Type = self.store.as_str(),
+            Id = self.store_id.to_string()
         );
+
         tokio::spawn(async move {
             loop {
                 if tokio::time::timeout(self.cron.time_to_next(), shutdown_rx.changed())
                     .await
                     .is_ok()
                 {
-                    tracing::debug!(
-                        "Purge {} task exiting for store {:?}.",
-                        self.store,
-                        self.store_id
+                    trc::trace!(
+                        PurgeTaskFinished,
+                        Type = self.store.as_str(),
+                        Id = self.store_id.to_string()
                     );
                     return;
                 }
+
+                trc::trace!(
+                    PurgeTaskRunning,
+                    Type = self.store.as_str(),
+                    Id = self.store_id.to_string()
+                );
 
                 let result = match &self.store {
                     PurgeStore::Data(store) => store.purge_store().await,
@@ -55,15 +62,25 @@ impl PurgeSchedule {
                 };
 
                 if let Err(err) = result {
-                    tracing::warn!(
-                        "Purge {} task failed for store {:?}: {:?}",
-                        self.store,
-                        self.store_id,
-                        err
+                    trc::error!(
+                        Purge,
+                        Type = self.store.as_str(),
+                        Id = self.store_id.to_string(),
+                        CausedBy = err
                     );
                 }
             }
         });
+    }
+}
+
+impl PurgeStore {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PurgeStore::Data(_) => "data",
+            PurgeStore::Blobs { .. } => "blobs",
+            PurgeStore::Lookup(_) => "lookup",
+        }
     }
 }
 

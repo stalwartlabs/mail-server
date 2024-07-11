@@ -900,11 +900,12 @@ impl Core {
                                                 );
                                                 (hash, len as u8)
                                             }
-                                            invalid => {
-                                                return Err(format!(
-                                                    "Invalid text bitmap key length {invalid}"
-                                                )
-                                                .into())
+                                            _ => {
+                                                return Err(trc::Error::corrupted_key(
+                                                    key,
+                                                    None,
+                                                    trc::location!(),
+                                                ));
                                             }
                                         };
 
@@ -1108,34 +1109,34 @@ fn spawn_writer(path: PathBuf) -> (std::thread::JoinHandle<()>, SyncSender<Op>) 
 }
 
 pub(super) trait DeserializeBytes {
-    fn range(&self, range: Range<usize>) -> store::Result<&[u8]>;
-    fn deserialize_u8(&self, offset: usize) -> store::Result<u8>;
-    fn deserialize_leb128<U: Leb128_>(&self) -> store::Result<U>;
+    fn range(&self, range: Range<usize>) -> trc::Result<&[u8]>;
+    fn deserialize_u8(&self, offset: usize) -> trc::Result<u8>;
+    fn deserialize_leb128<U: Leb128_>(&self) -> trc::Result<U>;
 }
 
 impl DeserializeBytes for &[u8] {
-    fn range(&self, range: Range<usize>) -> store::Result<&[u8]> {
+    fn range(&self, range: Range<usize>) -> trc::Result<&[u8]> {
         self.get(range.start..std::cmp::min(range.end, self.len()))
-            .ok_or_else(|| store::Error::InternalError("Failed to read range".to_string()))
+            .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))
     }
 
-    fn deserialize_u8(&self, offset: usize) -> store::Result<u8> {
+    fn deserialize_u8(&self, offset: usize) -> trc::Result<u8> {
         self.get(offset)
             .copied()
-            .ok_or_else(|| store::Error::InternalError("Failed to read u8".to_string()))
+            .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))
     }
 
-    fn deserialize_leb128<U: Leb128_>(&self) -> store::Result<U> {
+    fn deserialize_leb128<U: Leb128_>(&self) -> trc::Result<U> {
         self.read_leb128::<U>()
             .map(|(v, _)| v)
-            .ok_or_else(|| store::Error::InternalError("Failed to read leb128".to_string()))
+            .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))
     }
 }
 
 struct RawBytes(Vec<u8>);
 
 impl Deserialize for RawBytes {
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         Ok(Self(bytes.to_vec()))
     }
 }

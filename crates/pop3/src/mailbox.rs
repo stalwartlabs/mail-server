@@ -36,7 +36,7 @@ pub struct Message {
 }
 
 impl<T: SessionStream> Session<T> {
-    pub async fn fetch_mailbox(&self, account_id: u32) -> Result<Mailbox, MethodError> {
+    pub async fn fetch_mailbox(&self, account_id: u32) -> trc::Result<Mailbox> {
         // Obtain message ids
         let message_ids = self
             .jmap

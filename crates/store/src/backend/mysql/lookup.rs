@@ -8,35 +8,35 @@ use mysql_async::{prelude::Queryable, Params, Row};
 
 use crate::{IntoRows, QueryResult, QueryType, Value};
 
-use super::MysqlStore;
+use super::{into_error, MysqlStore};
 
 impl MysqlStore {
     pub(crate) async fn query<T: QueryResult>(
         &self,
         query: &str,
-        params: Vec<Value<'_>>,
-    ) -> crate::Result<T> {
-        let mut conn = self.conn_pool.get_conn().await?;
-        let s = conn.prep(query).await?;
-        let params = Params::Positional(params.into_iter().map(Into::into).collect());
+        params: &[Value<'_>],
+    ) -> trc::Result<T> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
+        let s = conn.prep(query).await.map_err(into_error)?;
+        let params = Params::Positional(params.iter().map(Into::into).collect());
 
         match T::query_type() {
             QueryType::Execute => conn.exec_drop(s, params).await.map_or_else(
-                |e| Err(e.into()),
+                |e| Err(into_error(e)),
                 |_| Ok(T::from_exec(conn.affected_rows() as usize)),
             ),
             QueryType::Exists => conn
                 .exec_first::<Row, _, _>(s, params)
                 .await
-                .map_or_else(|e| Err(e.into()), |r| Ok(T::from_exists(r.is_some()))),
+                .map_or_else(|e| Err(into_error(e)), |r| Ok(T::from_exists(r.is_some()))),
             QueryType::QueryOne => conn
                 .exec_first::<Row, _, _>(s, params)
                 .await
-                .map_or_else(|e| Err(e.into()), |r| Ok(T::from_query_one(r))),
+                .map_or_else(|e| Err(into_error(e)), |r| Ok(T::from_query_one(r))),
             QueryType::QueryAll => conn
                 .exec::<Row, _, _>(s, params)
                 .await
-                .map_or_else(|e| Err(e.into()), |r| Ok(T::from_query_all(r))),
+                .map_or_else(|e| Err(into_error(e)), |r| Ok(T::from_query_all(r))),
         }
     }
 }

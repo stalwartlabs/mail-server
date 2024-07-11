@@ -415,7 +415,7 @@ impl SMTP {
         event: &ReportEvent,
         rua: &mut Vec<URI>,
         mut serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
-    ) -> store::Result<Option<Report>> {
+    ) -> trc::Result<Option<Report>> {
         // Deserialize report
         let dmarc = match self
             .core

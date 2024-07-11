@@ -400,7 +400,7 @@ pub async fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
 pub struct VariableWrapper(Variable);
 
 impl Deserialize for VariableWrapper {
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         Ok(VariableWrapper(
             bincode::deserialize::<Variable>(bytes).unwrap_or_else(|_| {
                 Variable::String(String::from_utf8_lossy(bytes).into_owned().into())

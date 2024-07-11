@@ -6,7 +6,6 @@
 
 use directory::QueryBy;
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
@@ -15,6 +14,7 @@ use store::{
     roaring::RoaringBitmap,
     write::{BatchBuilder, F_VALUE},
 };
+use trc::AddContext;
 
 use crate::JMAP;
 
@@ -24,7 +24,7 @@ impl JMAP {
     pub async fn identity_get(
         &self,
         mut request: GetRequest<RequestArguments>,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
@@ -107,10 +107,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn identity_get_or_create(
-        &self,
-        account_id: u32,
-    ) -> Result<RoaringBitmap, MethodError> {
+    pub async fn identity_get_or_create(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
         let mut identity_ids = self
             .get_document_ids(account_id, Collection::Identity)
             .await?
@@ -126,14 +123,7 @@ impl JMAP {
             .directory
             .query(QueryBy::Id(account_id), false)
             .await
-            .map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "identity_get_or_create",
-                    error = ?err,
-                    "Failed to query directory.");
-                MethodError::ServerPartialFail
-            })?
+            .caused_by(trc::location!())?
             .unwrap_or_default();
         if principal.emails.is_empty() {
             return Ok(identity_ids);
@@ -178,14 +168,7 @@ impl JMAP {
             .data
             .write(batch.build())
             .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "identity_get_or_create",
-                error = ?err,
-                "Failed to create identities.");
-                MethodError::ServerPartialFail
-            })?;
+            .caused_by(trc::location!())?;
 
         Ok(identity_ids)
     }

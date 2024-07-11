@@ -294,6 +294,15 @@ impl Config {
         );
     }
 
+    pub fn new_parse_warning(&mut self, key: impl AsKey, details: impl Into<String>) {
+        self.warnings.insert(
+            key.as_key(),
+            ConfigWarning::Parse {
+                error: details.into(),
+            },
+        );
+    }
+
     pub fn new_build_warning(&mut self, key: impl AsKey, details: impl Into<String>) {
         self.warnings.insert(
             key.as_key(),

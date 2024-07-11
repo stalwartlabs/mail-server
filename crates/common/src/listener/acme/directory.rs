@@ -5,18 +5,18 @@ use std::time::Duration;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use rcgen::{Certificate, CustomExtension, PKCS_ECDSA_P256_SHA256};
-use reqwest::header::{ToStrError, CONTENT_TYPE};
-use reqwest::{Method, Response, StatusCode};
-use ring::error::{KeyRejected, Unspecified};
+use reqwest::header::CONTENT_TYPE;
+use reqwest::{Method, Response};
 use ring::rand::SystemRandom;
 use ring::signature::{EcdsaKeyPair, EcdsaSigningAlgorithm, ECDSA_P256_SHA256_FIXED_SIGNING};
 use serde::Deserialize;
 use serde_json::json;
 use store::write::Bincode;
 use store::Serialize;
+use trc::conv::AssertSuccess;
 
 use super::jose::{
-    key_authorization, key_authorization_sha256, key_authorization_sha256_base64, sign, JoseError,
+    key_authorization, key_authorization_sha256, key_authorization_sha256_base64, sign,
 };
 
 pub const LETS_ENCRYPT_STAGING_DIRECTORY: &str =
@@ -42,7 +42,7 @@ impl Account {
             .to_vec()
     }
 
-    pub async fn create<'a, S, I>(directory: Directory, contact: I) -> Result<Self, DirectoryError>
+    pub async fn create<'a, S, I>(directory: Directory, contact: I) -> trc::Result<Self>
     where
         S: AsRef<str> + 'a,
         I: IntoIterator<Item = &'a S>,
@@ -54,12 +54,13 @@ impl Account {
         directory: Directory,
         contact: I,
         key_pair: &[u8],
-    ) -> Result<Self, DirectoryError>
+    ) -> trc::Result<Self>
     where
         S: AsRef<str> + 'a,
         I: IntoIterator<Item = &'a S>,
     {
-        let key_pair = EcdsaKeyPair::from_pkcs8(ALG, key_pair, &SystemRandom::new())?;
+        let key_pair = EcdsaKeyPair::from_pkcs8(ALG, key_pair, &SystemRandom::new())
+            .map_err(|err| trc::Cause::Crypto.reason(err).caused_by(trc::location!()))?;
         let contact: Vec<&'a str> = contact.into_iter().map(AsRef::<str>::as_ref).collect();
         let payload = json!({
             "termsOfServiceAgreed": true,
@@ -86,7 +87,7 @@ impl Account {
         &self,
         url: impl AsRef<str>,
         payload: &str,
-    ) -> Result<(Option<String>, String), DirectoryError> {
+    ) -> trc::Result<(Option<String>, String)> {
         let body = sign(
             &self.key_pair,
             Some(&self.kid),
@@ -100,68 +101,66 @@ impl Account {
         Ok((location, body))
     }
 
-    pub async fn new_order(&self, domains: Vec<String>) -> Result<(String, Order), DirectoryError> {
+    pub async fn new_order(&self, domains: Vec<String>) -> trc::Result<(String, Order)> {
         let domains: Vec<Identifier> = domains.into_iter().map(Identifier::Dns).collect();
         let payload = format!("{{\"identifiers\":{}}}", serde_json::to_string(&domains)?);
         let response = self.request(&self.directory.new_order, &payload).await?;
-        let url = response
-            .0
-            .ok_or(DirectoryError::MissingHeader("Location"))?;
+        let url = response.0.ok_or(
+            trc::Cause::Acme
+                .caused_by(trc::location!())
+                .details("Missing header")
+                .ctx(trc::Key::Id, "Location"),
+        )?;
         let order = serde_json::from_str(&response.1)?;
         Ok((url, order))
     }
 
-    pub async fn auth(&self, url: impl AsRef<str>) -> Result<Auth, DirectoryError> {
+    pub async fn auth(&self, url: impl AsRef<str>) -> trc::Result<Auth> {
         let response = self.request(url, "").await?;
         serde_json::from_str(&response.1).map_err(Into::into)
     }
 
-    pub async fn challenge(&self, url: impl AsRef<str>) -> Result<(), DirectoryError> {
+    pub async fn challenge(&self, url: impl AsRef<str>) -> trc::Result<()> {
         self.request(&url, "{}").await.map(|_| ())
     }
 
-    pub async fn order(&self, url: impl AsRef<str>) -> Result<Order, DirectoryError> {
+    pub async fn order(&self, url: impl AsRef<str>) -> trc::Result<Order> {
         let response = self.request(&url, "").await?;
         serde_json::from_str(&response.1).map_err(Into::into)
     }
 
-    pub async fn finalize(
-        &self,
-        url: impl AsRef<str>,
-        csr: Vec<u8>,
-    ) -> Result<Order, DirectoryError> {
+    pub async fn finalize(&self, url: impl AsRef<str>, csr: Vec<u8>) -> trc::Result<Order> {
         let payload = format!("{{\"csr\":\"{}\"}}", URL_SAFE_NO_PAD.encode(csr));
         let response = self.request(&url, &payload).await?;
         serde_json::from_str(&response.1).map_err(Into::into)
     }
 
-    pub async fn certificate(&self, url: impl AsRef<str>) -> Result<String, DirectoryError> {
+    pub async fn certificate(&self, url: impl AsRef<str>) -> trc::Result<String> {
         Ok(self.request(&url, "").await?.1)
     }
 
-    pub fn http_proof(&self, challenge: &Challenge) -> Result<Vec<u8>, DirectoryError> {
+    pub fn http_proof(&self, challenge: &Challenge) -> trc::Result<Vec<u8>> {
         key_authorization(&self.key_pair, &challenge.token)
             .map(|key| key.into_bytes())
             .map_err(Into::into)
     }
 
-    pub fn dns_proof(&self, challenge: &Challenge) -> Result<String, DirectoryError> {
+    pub fn dns_proof(&self, challenge: &Challenge) -> trc::Result<String> {
         key_authorization_sha256_base64(&self.key_pair, &challenge.token).map_err(Into::into)
     }
 
-    pub fn tls_alpn_key(
-        &self,
-        challenge: &Challenge,
-        domain: String,
-    ) -> Result<Vec<u8>, DirectoryError> {
+    pub fn tls_alpn_key(&self, challenge: &Challenge, domain: String) -> trc::Result<Vec<u8>> {
         let mut params = rcgen::CertificateParams::new(vec![domain]);
         let key_auth = key_authorization_sha256(&self.key_pair, &challenge.token)?;
         params.alg = &PKCS_ECDSA_P256_SHA256;
         params.custom_extensions = vec![CustomExtension::new_acme_identifier(key_auth.as_ref())];
-        let cert = Certificate::from_params(params)?;
+        let cert = Certificate::from_params(params)
+            .map_err(|err| trc::Cause::Crypto.caused_by(trc::location!()).reason(err))?;
 
         Ok(Bincode::new(SerializedCert {
-            certificate: cert.serialize_der()?,
+            certificate: cert
+                .serialize_der()
+                .map_err(|err| trc::Cause::Crypto.caused_by(trc::location!()).reason(err))?,
             private_key: cert.serialize_private_key_der(),
         })
         .serialize())
@@ -183,12 +182,12 @@ pub struct Directory {
 }
 
 impl Directory {
-    pub async fn discover(url: impl AsRef<str>) -> Result<Self, DirectoryError> {
+    pub async fn discover(url: impl AsRef<str>) -> trc::Result<Self> {
         Ok(serde_json::from_str(
             &https(url, Method::GET, None).await?.text().await?,
         )?)
     }
-    pub async fn nonce(&self) -> Result<String, DirectoryError> {
+    pub async fn nonce(&self) -> trc::Result<String> {
         get_header(
             &https(&self.new_nonce.as_str(), Method::HEAD, None).await?,
             "replay-nonce",
@@ -269,27 +268,12 @@ pub struct Problem {
     pub detail: Option<String>,
 }
 
-#[derive(Debug)]
-pub enum DirectoryError {
-    Io(std::io::Error),
-    Rcgen(rcgen::Error),
-    Jose(JoseError),
-    Json(serde_json::Error),
-    HttpRequest(reqwest::Error),
-    HttpRequestCode { code: StatusCode, reason: String },
-    HttpResponseNonStringHeader(ToStrError),
-    KeyRejected(KeyRejected),
-    Crypto(Unspecified),
-    MissingHeader(&'static str),
-    NoChallenge(ChallengeType),
-}
-
 #[allow(unused_mut)]
 async fn https(
     url: impl AsRef<str>,
     method: Method,
     body: Option<String>,
-) -> Result<Response, DirectoryError> {
+) -> trc::Result<Response> {
     let url = url.as_ref();
     let mut builder = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
@@ -310,68 +294,38 @@ async fn https(
             .body(body);
     }
 
-    let response = request.send().await?;
-    if response.status().is_success() {
-        Ok(response)
-    } else {
-        Err(DirectoryError::HttpRequestCode {
-            code: response.status(),
-            reason: response.text().await?,
-        })
-    }
+    request.send().await?.assert_success().await
 }
 
-fn get_header(response: &Response, header: &'static str) -> Result<String, DirectoryError> {
+fn get_header(response: &Response, header: &'static str) -> trc::Result<String> {
     match response.headers().get_all(header).iter().last() {
         Some(value) => Ok(value.to_str()?.to_string()),
-        None => Err(DirectoryError::MissingHeader(header)),
+        None => Err(trc::Cause::Acme
+            .caused_by(trc::location!())
+            .details("Missing header")
+            .ctx(trc::Key::Id, header)),
     }
 }
 
-impl From<std::io::Error> for DirectoryError {
-    fn from(err: std::io::Error) -> Self {
-        Self::Io(err)
+impl ChallengeType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Http01 => "http-01",
+            Self::Dns01 => "dns-01",
+            Self::TlsAlpn01 => "tls-alpn-01",
+        }
     }
 }
 
-impl From<rcgen::Error> for DirectoryError {
-    fn from(err: rcgen::Error) -> Self {
-        Self::Rcgen(err)
-    }
-}
-
-impl From<JoseError> for DirectoryError {
-    fn from(err: JoseError) -> Self {
-        Self::Jose(err)
-    }
-}
-
-impl From<serde_json::Error> for DirectoryError {
-    fn from(err: serde_json::Error) -> Self {
-        Self::Json(err)
-    }
-}
-
-impl From<reqwest::Error> for DirectoryError {
-    fn from(err: reqwest::Error) -> Self {
-        Self::HttpRequest(err)
-    }
-}
-
-impl From<KeyRejected> for DirectoryError {
-    fn from(err: KeyRejected) -> Self {
-        Self::KeyRejected(err)
-    }
-}
-
-impl From<Unspecified> for DirectoryError {
-    fn from(err: Unspecified) -> Self {
-        Self::Crypto(err)
-    }
-}
-
-impl From<ToStrError> for DirectoryError {
-    fn from(err: ToStrError) -> Self {
-        Self::HttpResponseNonStringHeader(err)
+impl AuthStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Valid => "valid",
+            Self::Invalid => "invalid",
+            Self::Revoked => "revoked",
+            Self::Expired => "expired",
+            Self::Deactivated => "deactivated",
+        }
     }
 }

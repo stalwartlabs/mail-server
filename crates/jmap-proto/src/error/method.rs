@@ -31,6 +31,123 @@ pub enum MethodError {
     UnknownDataType,
 }
 
+#[derive(Debug)]
+pub struct MethodErrorWrapper(trc::Error);
+
+impl From<MethodError> for trc::Error {
+    fn from(value: MethodError) -> Self {
+        let (typ, description): (&'static str, trc::Value) = match value {
+            MethodError::InvalidArguments(description) => ("invalidArguments", description.into()),
+            MethodError::RequestTooLarge => (
+                "requestTooLarge",
+                concat!(
+                    "The number of ids requested by the client exceeds the maximum number ",
+                    "the server is willing to process in a single method call."
+                )
+                .into(),
+            ),
+            MethodError::StateMismatch => (
+                "stateMismatch",
+                concat!(
+                    "An \"ifInState\" argument was supplied, but ",
+                    "it does not match the current state."
+                )
+                .into(),
+            ),
+            MethodError::AnchorNotFound => (
+                "anchorNotFound",
+                concat!(
+                    "An anchor argument was supplied, but it ",
+                    "cannot be found in the results of the query."
+                )
+                .into(),
+            ),
+            MethodError::UnsupportedFilter(description) => {
+                ("unsupportedFilter", description.into())
+            }
+            MethodError::UnsupportedSort(description) => ("unsupportedSort", description.into()),
+            MethodError::ServerFail(_) => ("serverFail", {
+                concat!(
+                    "An unexpected error occurred while processing ",
+                    "this call, please contact the system administrator."
+                )
+                .into()
+            }),
+            MethodError::NotFound => ("serverPartialFail", {
+                concat!(
+                    "One or more items are no longer available on the ",
+                    "server, please try again."
+                )
+                .into()
+            }),
+            MethodError::UnknownMethod(description) => ("unknownMethod", description.into()),
+            MethodError::ServerUnavailable => (
+                "serverUnavailable",
+                concat!(
+                    "This server is temporarily unavailable. ",
+                    "Attempting this same operation later may succeed."
+                )
+                .into(),
+            ),
+            MethodError::ServerPartialFail => (
+                "serverPartialFail",
+                concat!(
+                    "Some, but not all, expected changes described by the method ",
+                    "occurred. Please resynchronize to determine server state."
+                )
+                .into(),
+            ),
+            MethodError::InvalidResultReference(description) => {
+                ("invalidResultReference", description.into())
+            }
+            MethodError::Forbidden(description) => ("forbidden", description.into()),
+            MethodError::AccountNotFound => (
+                "accountNotFound",
+                "The accountId does not correspond to a valid account".into(),
+            ),
+            MethodError::AccountNotSupportedByMethod => (
+                "accountNotSupportedByMethod",
+                concat!(
+                    "The accountId given corresponds to a valid account, ",
+                    "but the account does not support this method or data type."
+                )
+                .into(),
+            ),
+            MethodError::AccountReadOnly => (
+                "accountReadOnly",
+                "This method modifies state, but the account is read-only.".into(),
+            ),
+            MethodError::UnknownDataType => (
+                "unknownDataType",
+                concat!(
+                    "The server does not recognise this data type, ",
+                    "or the capability to enable it is not present ",
+                    "in the current Request Object."
+                )
+                .into(),
+            ),
+            MethodError::CannotCalculateChanges => (
+                "cannotCalculateChanges",
+                concat!(
+                    "The server cannot calculate the changes ",
+                    "between the old and new states."
+                )
+                .into(),
+            ),
+        };
+
+        trc::Cause::Jmap
+            .ctx(trc::Key::Type, typ)
+            .ctx(trc::Key::Details, description)
+    }
+}
+
+impl From<trc::Error> for MethodErrorWrapper {
+    fn from(value: trc::Error) -> Self {
+        MethodErrorWrapper(value)
+    }
+}
+
 impl Display for MethodError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -60,103 +177,32 @@ impl Display for MethodError {
     }
 }
 
-impl Serialize for MethodError {
+impl Serialize for MethodErrorWrapper {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         let mut map = serializer.serialize_map(2.into())?;
 
-        let (error_type, description) = match self {
-            MethodError::InvalidArguments(description) => {
-                ("invalidArguments", description.as_str())
-            }
-            MethodError::RequestTooLarge => (
-                "requestTooLarge",
-                concat!(
-                    "The number of ids requested by the client exceeds the maximum number ",
-                    "the server is willing to process in a single method call."
-                ),
-            ),
-            MethodError::StateMismatch => (
-                "stateMismatch",
-                concat!(
-                    "An \"ifInState\" argument was supplied, but ",
-                    "it does not match the current state."
-                ),
-            ),
-            MethodError::AnchorNotFound => (
-                "anchorNotFound",
-                concat!(
-                    "An anchor argument was supplied, but it ",
-                    "cannot be found in the results of the query."
-                ),
-            ),
-            MethodError::UnsupportedFilter(description) => {
-                ("unsupportedFilter", description.as_str())
-            }
-            MethodError::UnsupportedSort(description) => ("unsupportedSort", description.as_str()),
-            MethodError::ServerFail(_) => ("serverFail", {
-                concat!(
-                    "An unexpected error occurred while processing ",
-                    "this call, please contact the system administrator."
-                )
-            }),
-            MethodError::NotFound => ("serverPartialFail", {
-                concat!(
-                    "One or more items are no longer available on the ",
-                    "server, please try again."
-                )
-            }),
-            MethodError::UnknownMethod(description) => ("unknownMethod", description.as_str()),
-            MethodError::ServerUnavailable => (
+        let (error_type, description) = if self.0.matches(trc::Cause::Jmap) {
+            (
+                self.0
+                    .value(trc::Key::Type)
+                    .and_then(|v| v.as_str())
+                    .unwrap(),
+                self.0
+                    .value(trc::Key::Details)
+                    .and_then(|v| v.as_str())
+                    .unwrap(),
+            )
+        } else {
+            (
                 "serverUnavailable",
                 concat!(
                     "This server is temporarily unavailable. ",
                     "Attempting this same operation later may succeed."
                 ),
-            ),
-            MethodError::ServerPartialFail => (
-                "serverPartialFail",
-                concat!(
-                    "Some, but not all, expected changes described by the method ",
-                    "occurred. Please resynchronize to determine server state."
-                ),
-            ),
-            MethodError::InvalidResultReference(description) => {
-                ("invalidResultReference", description.as_str())
-            }
-            MethodError::Forbidden(description) => ("forbidden", description.as_str()),
-            MethodError::AccountNotFound => (
-                "accountNotFound",
-                "The accountId does not correspond to a valid account",
-            ),
-            MethodError::AccountNotSupportedByMethod => (
-                "accountNotSupportedByMethod",
-                concat!(
-                    "The accountId given corresponds to a valid account, ",
-                    "but the account does not support this method or data type."
-                ),
-            ),
-            MethodError::AccountReadOnly => (
-                "accountReadOnly",
-                "This method modifies state, but the account is read-only.",
-            ),
-            MethodError::UnknownDataType => (
-                "unknownDataType",
-                concat!(
-                    "The server does not recognise this data type, ",
-                    "or the capability to enable it is not present ",
-                    "in the current Request Object."
-                ),
-            ),
-            MethodError::CannotCalculateChanges => (
-                "cannotCalculateChanges",
-                concat!(
-                    "The server cannot calculate the changes ",
-                    "between the old and new states."
-                ),
-            ),
+            )
         };
 
         map.serialize_entry("type", error_type)?;

@@ -14,6 +14,7 @@ members = [
     "crates/directory",
     "crates/utils",
     "crates/common",
+    "crates/trc",
     "crates/cli",
     "tests",
 ]

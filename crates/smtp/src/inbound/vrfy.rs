@@ -5,7 +5,6 @@
  */
 
 use common::listener::SessionStream;
-use directory::DirectoryError;
 
 use crate::core::Session;
 use std::fmt::Write;
@@ -44,7 +43,7 @@ impl<T: SessionStream> Session<T> {
 
                         self.write(result.as_bytes()).await
                     }
-                    Ok(_) | Err(DirectoryError::Unsupported) => {
+                    Ok(_) => {
                         tracing::debug!(parent: &self.span,
                             context = "vrfy",
                             event = "not-found",
@@ -52,14 +51,18 @@ impl<T: SessionStream> Session<T> {
 
                         self.write(b"550 5.1.2 Address not found.\r\n").await
                     }
-                    Err(_) => {
+                    Err(err) => {
                         tracing::debug!(parent: &self.span,
                             context = "vrfy",
                             event = "temp-fail",
                             address = &address);
 
-                        self.write(b"252 2.4.3 Unable to verify address at this time.\r\n")
-                            .await
+                        if !err.matches(trc::Cause::Unsupported) {
+                            self.write(b"252 2.4.3 Unable to verify address at this time.\r\n")
+                                .await
+                        } else {
+                            self.write(b"550 5.1.2 Address not found.\r\n").await
+                        }
                     }
                 }
             }
@@ -105,7 +108,7 @@ impl<T: SessionStream> Session<T> {
                             address = &address);
                         self.write(result.as_bytes()).await
                     }
-                    Ok(_) | Err(DirectoryError::Unsupported) => {
+                    Ok(_) => {
                         tracing::debug!(parent: &self.span,
                             context = "expn",
                             event = "not-found",
@@ -113,14 +116,18 @@ impl<T: SessionStream> Session<T> {
 
                         self.write(b"550 5.1.2 Mailing list not found.\r\n").await
                     }
-                    Err(_) => {
+                    Err(err) => {
                         tracing::debug!(parent: &self.span,
                             context = "expn",
                             event = "temp-fail",
                             address = &address);
 
-                        self.write(b"252 2.4.3 Unable to expand mailing list at this time.\r\n")
-                            .await
+                        if !err.matches(trc::Cause::Unsupported) {
+                            self.write(b"252 2.4.3 Unable to expand mailing list at this time.\r\n")
+                                .await
+                        } else {
+                            self.write(b"550 5.1.2 Mailing list not found.\r\n").await
+                        }
                     }
                 }
             }

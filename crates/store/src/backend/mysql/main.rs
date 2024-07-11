@@ -11,7 +11,7 @@ use utils::config::{utils::AsKey, Config};
 
 use crate::*;
 
-use super::MysqlStore;
+use super::{into_error, MysqlStore};
 
 impl MysqlStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
@@ -81,8 +81,8 @@ impl MysqlStore {
         Some(db)
     }
 
-    pub(super) async fn create_tables(&self) -> crate::Result<()> {
-        let mut conn = self.conn_pool.get_conn().await?;
+    pub(super) async fn create_tables(&self) -> trc::Result<()> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
 
         for table in [
             SUBSPACE_ACL,
@@ -108,7 +108,8 @@ impl MysqlStore {
                     PRIMARY KEY (k(255))
                 ) ENGINE=InnoDB"
             ))
-            .await?;
+            .await
+            .map_err(into_error)?;
         }
 
         conn.query_drop(&format!(
@@ -119,7 +120,8 @@ impl MysqlStore {
             ) ENGINE=InnoDB",
             char::from(SUBSPACE_BLOBS),
         ))
-        .await?;
+        .await
+        .map_err(into_error)?;
 
         for table in [
             SUBSPACE_INDEXES,
@@ -134,7 +136,8 @@ impl MysqlStore {
                     PRIMARY KEY (k(400))
                 ) ENGINE=InnoDB"
             ))
-            .await?;
+            .await
+            .map_err(into_error)?;
         }
 
         for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
@@ -146,7 +149,8 @@ impl MysqlStore {
             ) ENGINE=InnoDB",
                 char::from(table)
             ))
-            .await?;
+            .await
+            .map_err(into_error)?;
         }
 
         Ok(())

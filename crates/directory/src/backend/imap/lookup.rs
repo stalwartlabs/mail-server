@@ -7,14 +7,18 @@
 use mail_send::Credentials;
 use smtp_proto::{AUTH_CRAM_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
 
-use crate::{DirectoryError, Principal, QueryBy};
+use crate::{IntoError, Principal, QueryBy};
 
 use super::{ImapDirectory, ImapError};
 
 impl ImapDirectory {
-    pub async fn query(&self, query: QueryBy<'_>) -> crate::Result<Option<Principal<u32>>> {
+    pub async fn query(&self, query: QueryBy<'_>) -> trc::Result<Option<Principal<u32>>> {
         if let QueryBy::Credentials(credentials) = query {
-            let mut client = self.pool.get().await?;
+            let mut client = self
+                .pool
+                .get()
+                .await
+                .map_err(|err| err.into_error().caused_by(trc::location!()))?;
             let mechanism = match credentials {
                 Credentials::Plain { .. }
                     if (client.mechanisms & (AUTH_PLAIN | AUTH_LOGIN | AUTH_CRAM_MD5)) != 0 =>
@@ -34,13 +38,12 @@ impl ImapDirectory {
                     AUTH_XOAUTH2
                 }
                 _ => {
-                    tracing::warn!(
-                        context = "remote",
-                        event = "error",
-                        protocol = "imap",
-                        "IMAP server does not offer any supported auth mechanisms.",
-                    );
-                    return Ok(None);
+                    trc::bail!(trc::Cause::Unsupported
+                        .ctx(
+                            trc::Key::Reason,
+                            "IMAP server does not offer any supported auth mechanisms."
+                        )
+                        .protocol(trc::Protocol::Imap));
                 }
             };
 
@@ -51,31 +54,41 @@ impl ImapDirectory {
                 }
                 Err(err) => match &err {
                     ImapError::AuthenticationFailed => Ok(None),
-                    _ => Err(err.into()),
+                    _ => Err(err.into_error()),
                 },
             }
         } else {
-            Err(DirectoryError::unsupported("imap", "query"))
+            Err(trc::Cause::Unsupported
+                .caused_by(trc::location!())
+                .protocol(trc::Protocol::Imap))
         }
     }
 
-    pub async fn email_to_ids(&self, _address: &str) -> crate::Result<Vec<u32>> {
-        Err(DirectoryError::unsupported("imap", "email_to_ids"))
+    pub async fn email_to_ids(&self, _address: &str) -> trc::Result<Vec<u32>> {
+        Err(trc::Cause::Unsupported
+            .caused_by(trc::location!())
+            .protocol(trc::Protocol::Imap))
     }
 
-    pub async fn rcpt(&self, _address: &str) -> crate::Result<bool> {
-        Err(DirectoryError::unsupported("imap", "rcpt"))
+    pub async fn rcpt(&self, _address: &str) -> trc::Result<bool> {
+        Err(trc::Cause::Unsupported
+            .caused_by(trc::location!())
+            .protocol(trc::Protocol::Imap))
     }
 
-    pub async fn vrfy(&self, _address: &str) -> crate::Result<Vec<String>> {
-        Err(DirectoryError::unsupported("imap", "vrfy"))
+    pub async fn vrfy(&self, _address: &str) -> trc::Result<Vec<String>> {
+        Err(trc::Cause::Unsupported
+            .caused_by(trc::location!())
+            .protocol(trc::Protocol::Imap))
     }
 
-    pub async fn expn(&self, _address: &str) -> crate::Result<Vec<String>> {
-        Err(DirectoryError::unsupported("imap", "expn"))
+    pub async fn expn(&self, _address: &str) -> trc::Result<Vec<String>> {
+        Err(trc::Cause::Unsupported
+            .caused_by(trc::location!())
+            .protocol(trc::Protocol::Imap))
     }
 
-    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
         Ok(self.domains.contains(domain))
     }
 }

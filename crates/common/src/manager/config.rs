@@ -54,7 +54,7 @@ pub(crate) struct ExternalConfig {
 }
 
 impl ConfigManager {
-    pub async fn build_config(&self, prefix: &str) -> store::Result<Config> {
+    pub async fn build_config(&self, prefix: &str) -> trc::Result<Config> {
         let mut config = Config {
             keys: self.cfg_local.load().as_ref().clone(),
             ..Default::default()
@@ -65,11 +65,7 @@ impl ConfigManager {
             .map(|_| config)
     }
 
-    pub(crate) async fn extend_config(
-        &self,
-        config: &mut Config,
-        prefix: &str,
-    ) -> store::Result<()> {
+    pub(crate) async fn extend_config(&self, config: &mut Config, prefix: &str) -> trc::Result<()> {
         for (key, value) in self.db_list(prefix, false).await? {
             config.keys.entry(key).or_insert(value);
         }
@@ -77,7 +73,7 @@ impl ConfigManager {
         Ok(())
     }
 
-    pub async fn get(&self, key: impl AsRef<str>) -> store::Result<Option<String>> {
+    pub async fn get(&self, key: impl AsRef<str>) -> trc::Result<Option<String>> {
         let key = key.as_ref();
         match self.cfg_local.load().get(key) {
             Some(value) => Ok(Some(value.to_string())),
@@ -95,7 +91,7 @@ impl ConfigManager {
         &self,
         prefix: &str,
         strip_prefix: bool,
-    ) -> store::Result<Vec<(String, String)>> {
+    ) -> trc::Result<Vec<(String, String)>> {
         let mut results = self.db_list(prefix, strip_prefix).await?;
         for (key, value) in self.cfg_local.load().iter() {
             if prefix.is_empty() || (!strip_prefix && key.starts_with(prefix)) {
@@ -112,7 +108,7 @@ impl ConfigManager {
         &self,
         prefix: &str,
         suffix: &str,
-    ) -> store::Result<AHashMap<String, AHashMap<String, String>>> {
+    ) -> trc::Result<AHashMap<String, AHashMap<String, String>>> {
         let mut grouped = AHashMap::new();
 
         let mut list = self.list(prefix, true).await?;
@@ -138,7 +134,7 @@ impl ConfigManager {
         &self,
         prefix: &str,
         strip_prefix: bool,
-    ) -> store::Result<Vec<(String, String)>> {
+    ) -> trc::Result<Vec<(String, String)>> {
         let key = prefix.as_bytes();
         let from_key = ValueKey::from(ValueClass::Config(key.to_vec()));
         let to_key = ValueKey::from(ValueClass::Config(
@@ -154,7 +150,7 @@ impl ConfigManager {
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
                     let mut key = std::str::from_utf8(key).map_err(|_| {
-                        store::Error::InternalError("Failed to deserialize config key".to_string())
+                        trc::Error::corrupted_key(key, value.into(), trc::location!())
                     })?;
 
                     if !patterns.is_local_key(key) {
@@ -173,7 +169,7 @@ impl ConfigManager {
         Ok(results)
     }
 
-    pub async fn set<I, T>(&self, keys: I) -> store::Result<()>
+    pub async fn set<I, T>(&self, keys: I) -> trc::Result<()>
     where
         I: IntoIterator<Item = T>,
         T: Into<ConfigKey>,
@@ -220,7 +216,7 @@ impl ConfigManager {
         Ok(())
     }
 
-    pub async fn clear(&self, key: impl AsRef<str>) -> store::Result<()> {
+    pub async fn clear(&self, key: impl AsRef<str>) -> trc::Result<()> {
         let key = key.as_ref();
 
         if self.cfg_local_patterns.is_local_key(key) {
@@ -237,7 +233,7 @@ impl ConfigManager {
         }
     }
 
-    pub async fn clear_prefix(&self, key: impl AsRef<str>) -> store::Result<()> {
+    pub async fn clear_prefix(&self, key: impl AsRef<str>) -> trc::Result<()> {
         let key = key.as_ref();
 
         // Delete local keys
@@ -263,7 +259,7 @@ impl ConfigManager {
             .await
     }
 
-    async fn update_local(&self, map: BTreeMap<String, String>) -> store::Result<()> {
+    async fn update_local(&self, map: BTreeMap<String, String>) -> trc::Result<()> {
         let mut cfg_text = String::with_capacity(1024);
         for (key, value) in &map {
             cfg_text.push_str(key);
@@ -319,17 +315,21 @@ impl ConfigManager {
         tokio::fs::write(&self.cfg_local_path, cfg_text)
             .await
             .map_err(|err| {
-                store::Error::InternalError(format!(
-                    "Failed to write local configuration file: {err}"
-                ))
+                trc::Cause::Configuration
+                    .caused_by(trc::Error::from(err))
+                    .ctx(trc::Key::Path, self.cfg_local_path.display().to_string())
             })
     }
 
-    pub async fn update_config_resource(&self, resource_id: &str) -> store::Result<Option<String>> {
+    pub async fn update_config_resource(&self, resource_id: &str) -> trc::Result<Option<String>> {
         let external = self
             .fetch_config_resource(resource_id)
             .await
-            .map_err(store::Error::InternalError)?;
+            .map_err(|reason| {
+                trc::Cause::Fetch
+                    .caused_by(trc::location!())
+                    .ctx(trc::Key::Reason, reason)
+            })?;
 
         if self
             .get(&external.id)
@@ -396,7 +396,7 @@ impl ConfigManager {
         }
     }
 
-    pub async fn get_services(&self) -> store::Result<Vec<(String, u16, bool)>> {
+    pub async fn get_services(&self) -> trc::Result<Vec<(String, u16, bool)>> {
         let mut result = Vec::new();
 
         for listener in self

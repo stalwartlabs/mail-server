@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::query::{QueryRequest, QueryResponse, RequestArguments},
     types::{id::Id, state::State},
 };
@@ -17,7 +16,7 @@ impl JMAP {
         &self,
         request: QueryRequest<RequestArguments>,
         access_token: &AccessToken,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         Ok(QueryResponse {
             account_id: request.account_id,
             query_state: State::Initial,

@@ -5,10 +5,7 @@
  */
 
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::copy::{CopyBlobRequest, CopyBlobResponse},
     types::blob::BlobId,
 };
@@ -26,7 +23,7 @@ impl JMAP {
         &self,
         request: CopyBlobRequest,
         access_token: &AccessToken,
-    ) -> Result<CopyBlobResponse, MethodError> {
+    ) -> trc::Result<CopyBlobResponse> {
         let mut response = CopyBlobResponse {
             from_account_id: request.from_account_id,
             account_id: request.account_id,

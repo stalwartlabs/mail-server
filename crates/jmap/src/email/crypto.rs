@@ -605,24 +605,17 @@ impl Serialize for &EncryptionParams {
 }
 
 impl Deserialize for EncryptionParams {
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
-        let version = *bytes.first().ok_or_else(|| {
-            store::Error::InternalError(
-                "Failed to read version while deserializing encryption params".to_string(),
-            )
-        })?;
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
+        let version = *bytes
+            .first()
+            .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))?;
         match version {
-            1 if bytes.len() > 1 => bincode::deserialize(&bytes[1..]).map_err(|err| {
-                store::Error::InternalError(format!(
-                    "Failed to deserialize encryption params: {}",
-                    err
-                ))
-            }),
+            1 if bytes.len() > 1 => bincode::deserialize(&bytes[1..])
+                .map_err(|err| trc::Error::from(err).caused_by(trc::location!())),
 
-            _ => Err(store::Error::InternalError(format!(
-                "Unknown encryption params version: {}",
-                version
-            ))),
+            _ => Err(trc::Cause::Deserialize
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Value, version as u64)),
         }
     }
 }

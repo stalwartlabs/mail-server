@@ -875,7 +875,7 @@ impl Default for SessionConfig {
 pub struct Mechanism(u64);
 
 impl ParseValue for Mechanism {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         Ok(Mechanism(match value.to_ascii_uppercase().as_str() {
             "LOGIN" => AUTH_LOGIN,
             "PLAIN" => AUTH_PLAIN,

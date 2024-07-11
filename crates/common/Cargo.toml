@@ -8,6 +8,7 @@ resolver = "2"
 utils = { path = "../utils" }
 nlp = { path = "../nlp" }
 store = { path = "../store" }
+trc = { path = "../trc" }
 directory = { path = "../directory" }
 jmap_proto = { path = "../jmap-proto" }
 sieve-rs = { version = "0.5" }

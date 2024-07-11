@@ -47,6 +47,7 @@ use store::{
     BitmapKey, Deserialize, IterateParams, ValueKey, U32_LEN,
 };
 use tokio::sync::mpsc;
+use trc::AddContext;
 use utils::{
     config::Config,
     lru_cache::{LruCache, LruCached},
@@ -101,13 +102,6 @@ pub struct Inner {
     pub housekeeper_tx: mpsc::Sender<housekeeper::Event>,
 
     pub cache_threads: LruCache<u32, Arc<Threads>>,
-}
-
-#[derive(Debug)]
-pub enum IngestError {
-    Temporary,
-    OverQuota,
-    Permanent { code: [u8; 3], reason: String },
 }
 
 impl JMAP {
@@ -176,13 +170,13 @@ impl JMAP {
         collection: Collection,
         document_id: u32,
         property: impl AsRef<Property>,
-    ) -> Result<Option<U>, MethodError>
+    ) -> trc::Result<Option<U>>
     where
         U: Deserialize + 'static,
     {
         let property = property.as_ref();
-        match self
-            .core
+
+        self.core
             .storage
             .data
             .get_value::<U>(ValueKey {
@@ -192,20 +186,13 @@ impl JMAP {
                 class: ValueClass::Property(property.into()),
             })
             .await
-        {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                collection = ?collection,
-                                document_id = document_id,
-                                property = ?property,
-                                error = ?err,
-                                "Failed to retrieve property");
-                Err(MethodError::ServerPartialFail)
-            }
-        }
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .account_id(account_id)
+                    .collection(collection)
+                    .document_id(document_id)
+                    .property(property)
+            })
     }
 
     pub async fn get_properties<U, I, P>(
@@ -214,7 +201,7 @@ impl JMAP {
         collection: Collection,
         iterate: &I,
         property: P,
-    ) -> Result<Vec<(u32, U)>, MethodError>
+    ) -> trc::Result<Vec<(u32, U)>>
     where
         I: DocumentSet + Send + Sync,
         P: AsRef<Property>,
@@ -254,43 +241,30 @@ impl JMAP {
                 },
             )
             .await
-            .map_err(|err| {
-                tracing::error!(event = "error",
-            context = "store",
-            account_id = account_id,
-            collection = ?collection,
-            property = ?property,
-            error = ?err,
-            "Failed to retrieve properties");
-                MethodError::ServerPartialFail
-            })?;
-
-        Ok(results)
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .account_id(account_id)
+                    .collection(collection)
+                    .property(property)
+            })
+            .map(|_| results)
     }
 
     pub async fn get_document_ids(
         &self,
         account_id: u32,
         collection: Collection,
-    ) -> Result<Option<RoaringBitmap>, MethodError> {
-        match self
-            .core
+    ) -> trc::Result<Option<RoaringBitmap>> {
+        self.core
             .storage
             .data
             .get_bitmap(BitmapKey::document_ids(account_id, collection))
             .await
-        {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                collection = ?collection,
-                                error = ?err,
-                                "Failed to retrieve document ids bitmap");
-                Err(MethodError::ServerPartialFail)
-            }
-        }
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .account_id(account_id)
+                    .collection(collection)
+            })
     }
 
     pub async fn get_tag(
@@ -299,10 +273,9 @@ impl JMAP {
         collection: Collection,
         property: impl AsRef<Property>,
         value: impl Into<TagValue<u32>>,
-    ) -> Result<Option<RoaringBitmap>, MethodError> {
+    ) -> trc::Result<Option<RoaringBitmap>> {
         let property = property.as_ref();
-        match self
-            .core
+        self.core
             .storage
             .data
             .get_bitmap(BitmapKey {
@@ -315,26 +288,19 @@ impl JMAP {
                 document_id: 0,
             })
             .await
-        {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                collection = ?collection,
-                                property = ?property,
-                                error = ?err,
-                                "Failed to retrieve tag bitmap");
-                Err(MethodError::ServerPartialFail)
-            }
-        }
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .account_id(account_id)
+                    .collection(collection)
+                    .property(property)
+            })
     }
 
     pub async fn prepare_set_response<T>(
         &self,
         request: &SetRequest<T>,
         collection: Collection,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         Ok(
             SetResponse::from_request(request, self.core.jmap.set_max_objects)?.with_state(
                 self.assert_state(
@@ -347,11 +313,7 @@ impl JMAP {
         )
     }
 
-    pub async fn get_quota(
-        &self,
-        access_token: &AccessToken,
-        account_id: u32,
-    ) -> Result<i64, MethodError> {
+    pub async fn get_quota(&self, access_token: &AccessToken, account_id: u32) -> trc::Result<i64> {
         Ok(if access_token.primary_id == account_id {
             access_token.quota as i64
         } else {
@@ -360,35 +322,19 @@ impl JMAP {
                 .directory
                 .query(QueryBy::Id(account_id), false)
                 .await
-                .map_err(|err| {
-                    tracing::error!(
-                        event = "error",
-                        context = "get_quota",
-                        account_id = account_id,
-                        error = ?err,
-                        "Failed to obtain disk quota for account.");
-                    MethodError::ServerPartialFail
-                })?
+                .add_context(|err| err.caused_by(trc::location!()).account_id(account_id))?
                 .map(|p| p.quota as i64)
                 .unwrap_or_default()
         })
     }
 
-    pub async fn get_used_quota(&self, account_id: u32) -> Result<i64, MethodError> {
+    pub async fn get_used_quota(&self, account_id: u32) -> trc::Result<i64> {
         self.core
             .storage
             .data
             .get_counter(DirectoryClass::UsedQuota(account_id))
             .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "get_used_quota",
-                account_id = account_id,
-                error = ?err,
-                "Failed to obtain used disk quota for account.");
-                MethodError::ServerPartialFail
-            })
+            .add_context(|err| err.caused_by(trc::location!()).account_id(account_id))
     }
 
     pub async fn has_available_quota(
@@ -396,7 +342,7 @@ impl JMAP {
         account_id: u32,
         account_quota: i64,
         item_size: i64,
-    ) -> Result<bool, MethodError> {
+    ) -> trc::Result<bool> {
         if account_quota == 0 {
             return Ok(true);
         }
@@ -433,21 +379,16 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
         filters: Vec<Filter>,
-    ) -> Result<ResultSet, MethodError> {
+    ) -> trc::Result<ResultSet> {
         self.core
             .storage
             .data
             .filter(account_id, collection, filters)
             .await
-            .map_err(|err| {
-                tracing::error!(event = "error",
-                                context = "filter",
-                                account_id = account_id,
-                                collection = ?collection,
-                                error = ?err,
-                                "Failed to execute filter.");
-
-                MethodError::ServerPartialFail
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .account_id(account_id)
+                    .collection(collection)
             })
     }
 
@@ -456,21 +397,16 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
         filters: Vec<FtsFilter<T>>,
-    ) -> Result<RoaringBitmap, MethodError> {
+    ) -> trc::Result<RoaringBitmap> {
         self.core
             .storage
             .fts
             .query(account_id, collection, filters)
             .await
-            .map_err(|err| {
-                tracing::error!(event = "error",
-                                context = "fts-filter",
-                                account_id = account_id,
-                                collection = ?collection,
-                                error = ?err,
-                                "Failed to execute filter.");
-
-                MethodError::ServerPartialFail
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .account_id(account_id)
+                    .collection(collection)
             })
     }
 
@@ -478,7 +414,7 @@ impl JMAP {
         &self,
         result_set: &ResultSet,
         request: &QueryRequest<T>,
-    ) -> Result<(QueryResponse, Option<Pagination>), MethodError> {
+    ) -> trc::Result<(QueryResponse, Option<Pagination>)> {
         let total = result_set.results.len() as usize;
         let (limit_total, limit) = if let Some(limit) = request.limit {
             if limit > 0 {
@@ -529,75 +465,39 @@ impl JMAP {
         comparators: Vec<Comparator>,
         paginate: Pagination,
         mut response: QueryResponse,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         // Sort results
         let collection = result_set.collection;
         let account_id = result_set.account_id;
         response.update_results(
-            match self
-                .core
+            self.core
                 .storage
                 .data
                 .sort(result_set, comparators, paginate)
                 .await
-            {
-                Ok(result) => result,
-                Err(err) => {
-                    tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                collection = ?collection,
-                                error = ?err,
-                                "Sort failed");
-                    return Err(MethodError::ServerPartialFail);
-                }
-            },
+                .add_context(|err| {
+                    err.caused_by(trc::location!())
+                        .account_id(account_id)
+                        .collection(collection)
+                })?,
         )?;
 
         Ok(response)
     }
 
-    pub async fn write_batch(&self, batch: BatchBuilder) -> Result<AssignedIds, MethodError> {
+    pub async fn write_batch(&self, batch: BatchBuilder) -> trc::Result<AssignedIds> {
         self.core
             .storage
             .data
             .write(batch.build())
             .await
-            .map_err(|err| {
-                match err {
-                    store::Error::InternalError(err) => {
-                        tracing::error!(
-                        event = "error",
-                        context = "write_batch",
-                        error = ?err,
-                        "Failed to write batch.");
-                        MethodError::ServerPartialFail
-                    }
-                    store::Error::AssertValueFailed => {
-                        // This should not occur, as we are not using assertions.
-                        tracing::debug!(
-                            event = "assert_failed",
-                            context = "write_batch",
-                            "Failed to assert value."
-                        );
-                        MethodError::ServerUnavailable
-                    }
-                }
-            })
+            .caused_by(trc::location!())
     }
 
-    pub async fn write_batch_expect_id(&self, batch: BatchBuilder) -> Result<u32, MethodError> {
-        self.write_batch(batch).await.and_then(|ids| {
-            ids.last_document_id().map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "write_batch_expect_id",
-                    error = ?err,
-                    "Failed to obtain last document id."
-                );
-                MethodError::ServerPartialFail
-            })
-        })
+    pub async fn write_batch_expect_id(&self, batch: BatchBuilder) -> trc::Result<u32> {
+        self.write_batch(batch)
+            .await
+            .and_then(|ids| ids.last_document_id().caused_by(trc::location!()))
     }
 }
 
@@ -625,11 +525,11 @@ impl From<JmapInstance> for JMAP {
 }
 
 trait UpdateResults: Sized {
-    fn update_results(&mut self, sorted_results: SortedResultSet) -> Result<(), MethodError>;
+    fn update_results(&mut self, sorted_results: SortedResultSet) -> trc::Result<()>;
 }
 
 impl UpdateResults for QueryResponse {
-    fn update_results(&mut self, sorted_results: SortedResultSet) -> Result<(), MethodError> {
+    fn update_results(&mut self, sorted_results: SortedResultSet) -> trc::Result<()> {
         // Prepare response
         if sorted_results.found_anchor {
             self.position = sorted_results.position;
@@ -640,7 +540,7 @@ impl UpdateResults for QueryResponse {
                 .collect::<Vec<_>>();
             Ok(())
         } else {
-            Err(MethodError::AnchorNotFound)
+            Err(MethodError::AnchorNotFound.into())
         }
     }
 }

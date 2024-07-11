@@ -113,7 +113,7 @@ impl JMAP {
         access_token: &AccessToken,
         next_call: &mut Option<Call<RequestMethod>>,
         instance: &Arc<ServerInstance>,
-    ) -> Result<ResponseMethod, MethodError> {
+    ) -> trc::Result<ResponseMethod> {
         Ok(match method {
             RequestMethod::Get(mut req) => match req.take_arguments() {
                 get::RequestArguments::Email(arguments) => {
@@ -162,7 +162,8 @@ impl JMAP {
                     } else {
                         return Err(MethodError::Forbidden(
                             "Principal lookups are disabled".to_string(),
-                        ));
+                        )
+                        .into());
                     }
                 }
                 get::RequestArguments::Quota => {
@@ -209,7 +210,8 @@ impl JMAP {
                     } else {
                         return Err(MethodError::Forbidden(
                             "Principal lookups are disabled".to_string(),
-                        ));
+                        )
+                        .into());
                     }
                 }
                 query::RequestArguments::Quota => {

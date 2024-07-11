@@ -8,17 +8,17 @@ use rusqlite::{types::FromSql, Row, Rows, ToSql};
 
 use crate::{IntoRows, QueryResult, QueryType, Value};
 
-use super::SqliteStore;
+use super::{into_error, SqliteStore};
 
 impl SqliteStore {
     pub(crate) async fn query<T: QueryResult>(
         &self,
         query: &str,
-        params_: Vec<Value<'_>>,
-    ) -> crate::Result<T> {
-        let conn = self.conn_pool.get()?;
+        params_: &[Value<'_>],
+    ) -> trc::Result<T> {
+        let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
-            let mut s = conn.prepare_cached(query)?;
+            let mut s = conn.prepare_cached(query).map_err(into_error)?;
             let params = params_
                 .iter()
                 .map(|v| v as &(dyn rusqlite::types::ToSql))
@@ -27,16 +27,18 @@ impl SqliteStore {
             match T::query_type() {
                 QueryType::Execute => s
                     .execute(params.as_slice())
-                    .map_or_else(|e| Err(e.into()), |r| Ok(T::from_exec(r))),
+                    .map_or_else(|e| Err(into_error(e)), |r| Ok(T::from_exec(r))),
                 QueryType::Exists => s
                     .exists(params.as_slice())
                     .map(T::from_exists)
-                    .map_err(Into::into),
+                    .map_err(into_error),
                 QueryType::QueryOne => s
                     .query(params.as_slice())
                     .and_then(|mut rows| Ok(T::from_query_one(rows.next()?)))
-                    .map_err(Into::into),
-                QueryType::QueryAll => Ok(T::from_query_all(s.query(params.as_slice())?)),
+                    .map_err(into_error),
+                QueryType::QueryAll => Ok(T::from_query_all(
+                    s.query(params.as_slice()).map_err(into_error)?,
+                )),
             }
         })
         .await

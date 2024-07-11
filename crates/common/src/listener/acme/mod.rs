@@ -18,10 +18,7 @@ use rustls::sign::CertifiedKey;
 
 use crate::Core;
 
-use self::{
-    directory::{Account, ChallengeType},
-    order::{CertParseError, OrderError},
-};
+use self::directory::{Account, ChallengeType};
 
 pub struct AcmeProvider {
     pub id: String,
@@ -51,17 +48,6 @@ pub struct StaticResolver {
     pub key: Option<Arc<CertifiedKey>>,
 }
 
-#[derive(Debug)]
-pub enum AcmeError {
-    CertCacheLoad(std::io::Error),
-    AccountCacheLoad(std::io::Error),
-    CertCacheStore(std::io::Error),
-    AccountCacheStore(std::io::Error),
-    CachedCertParse(CertParseError),
-    Order(OrderError),
-    NewCertParse(CertParseError),
-}
-
 impl AcmeProvider {
     pub fn new(
         id: String,
@@ -71,7 +57,7 @@ impl AcmeProvider {
         challenge: ChallengeSettings,
         renew_before: Duration,
         default: bool,
-    ) -> utils::config::Result<Self> {
+    ) -> trc::Result<Self> {
         Ok(AcmeProvider {
             id,
             directory_url,
@@ -95,7 +81,7 @@ impl AcmeProvider {
 }
 
 impl Core {
-    pub async fn init_acme(&self, provider: &AcmeProvider) -> Result<Duration, AcmeError> {
+    pub async fn init_acme(&self, provider: &AcmeProvider) -> trc::Result<Duration> {
         // Load account key from cache or generate a new one
         if let Some(account_key) = self.load_account(provider).await? {
             provider.account_key.store(Arc::new(account_key));

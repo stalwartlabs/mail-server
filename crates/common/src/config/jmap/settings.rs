@@ -442,7 +442,7 @@ impl JmapConfig {
 }
 
 impl ParseValue for SpecialUse {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         match value {
             "inbox" => Ok(SpecialUse::Inbox),
             "trash" => Ok(SpecialUse::Trash),

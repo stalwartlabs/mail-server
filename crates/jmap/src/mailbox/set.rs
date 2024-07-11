@@ -6,10 +6,7 @@
 
 use common::config::jmap::settings::SpecialUse;
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
     object::{
         index::{IndexAs, IndexProperty, ObjectIndexBuilder},
@@ -36,6 +33,7 @@ use store::{
         BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE,
     },
 };
+use trc::AddContext;
 
 use crate::{
     auth::{acl::EffectiveAcl, AccessToken},
@@ -79,7 +77,7 @@ impl JMAP {
         &self,
         mut request: SetRequest<SetArguments>,
         access_token: &AccessToken,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         // Prepare response
         let account_id = request.account_id.document_id();
         let on_destroy_remove_emails = request.arguments.on_destroy_remove_emails.unwrap_or(false);
@@ -130,7 +128,7 @@ impl JMAP {
                             ctx.mailbox_ids.insert(document_id);
                             ctx.response.created(id, document_id);
                         }
-                        Err(store::Error::AssertValueFailed) => {
+                        Err(err) if err.matches(trc::Cause::AssertValue) => {
                             ctx.response.not_created.append(
                                 id,
                                 SetError::forbidden().with_description(
@@ -140,13 +138,7 @@ impl JMAP {
                             continue 'create;
                         }
                         Err(err) => {
-                            tracing::error!(
-                                event = "error",
-                                context = "mailbox_set",
-                                account_id = account_id,
-                                error = ?err,
-                                "Failed to update mailbox(es).");
-                            return Err(MethodError::ServerPartialFail);
+                            return Err(err.caused_by(trc::location!()));
                         }
                     }
                 }
@@ -229,20 +221,14 @@ impl JMAP {
                                 Ok(_) => {
                                     changes.log_update(Collection::Mailbox, document_id);
                                 }
-                                Err(store::Error::AssertValueFailed) => {
+                                Err(err) if err.matches(trc::Cause::AssertValue) => {
                                     ctx.response.not_updated.append(id, SetError::forbidden().with_description(
                                         "Another process modified this mailbox, please try again.",
                                     ));
                                     continue 'update;
                                 }
                                 Err(err) => {
-                                    tracing::error!(
-                                        event = "error",
-                                        context = "mailbox_set",
-                                        account_id = account_id,
-                                        error = ?err,
-                                        "Failed to update mailbox(es).");
-                                    return Err(MethodError::ServerPartialFail);
+                                    return Err(err.caused_by(trc::location!()));
                                 }
                             }
                         }
@@ -306,7 +292,7 @@ impl JMAP {
         changes: &mut ChangeLogBuilder,
         access_token: &AccessToken,
         remove_emails: bool,
-    ) -> Result<Result<bool, SetError>, MethodError> {
+    ) -> trc::Result<Result<bool, SetError>> {
         // Internal folders cannot be deleted
         #[cfg(feature = "test_mode")]
         if [INBOX_ID, TRASH_ID].contains(&document_id) && !access_token.is_super_user() {
@@ -405,7 +391,7 @@ impl JMAP {
                                     Collection::Email,
                                     Id::from_parts(thread_id, message_id),
                                 ),
-                                Err(store::Error::AssertValueFailed) => {
+                                Err(err) if err.matches(trc::Cause::AssertValue) => {
                                     return Ok(Err(SetError::forbidden().with_description(
                                         concat!(
                                             "Another process modified a message in this mailbox ",
@@ -414,15 +400,7 @@ impl JMAP {
                                     )));
                                 }
                                 Err(err) => {
-                                    tracing::error!(
-                                    event = "error",
-                                    context = "mailbox_set",
-                                    account_id = account_id,
-                                    mailbox_id = document_id,
-                                    message_id = message_id,
-                                    error = ?err,
-                                    "Failed to update message while deleting mailbox.");
-                                    return Err(MethodError::ServerPartialFail);
+                                    return Err(err.caused_by(trc::location!()));
                                 }
                             }
                         } else {
@@ -491,21 +469,12 @@ impl JMAP {
                     changes.log_delete(Collection::Mailbox, document_id);
                     Ok(Ok(did_remove_emails))
                 }
-                Err(store::Error::AssertValueFailed) => Ok(Err(SetError::forbidden()
+                Err(err) if err.matches(trc::Cause::AssertValue) => Ok(Err(SetError::forbidden()
                     .with_description(concat!(
                         "Another process modified this mailbox ",
                         "while deleting it, please try again."
                     )))),
-                Err(err) => {
-                    tracing::error!(
-                        event = "error",
-                        context = "mailbox_set",
-                        account_id = account_id,
-                        document_id = document_id,
-                        error = ?err,
-                        "Failed to delete mailbox.");
-                    Err(MethodError::ServerPartialFail)
-                }
+                Err(err) => Err(err.caused_by(trc::location!())),
             }
         } else {
             Ok(Err(SetError::not_found()))
@@ -518,7 +487,7 @@ impl JMAP {
         changes_: Object<SetValue>,
         update: Option<(u32, HashedValue<Object<Value>>)>,
         ctx: &SetContext<'_>,
-    ) -> Result<Result<ObjectIndexBuilder, SetError>, MethodError> {
+    ) -> trc::Result<Result<ObjectIndexBuilder, SetError>> {
         // Parse properties
         let mut changes = Object::with_capacity(changes_.properties.len());
         for (property, value) in changes_.properties {
@@ -799,10 +768,7 @@ impl JMAP {
             .validate())
     }
 
-    pub async fn mailbox_get_or_create(
-        &self,
-        account_id: u32,
-    ) -> Result<RoaringBitmap, MethodError> {
+    pub async fn mailbox_get_or_create(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
         let mut mailbox_ids = self
             .get_document_ids(account_id, Collection::Mailbox)
             .await?
@@ -865,23 +831,15 @@ impl JMAP {
             .data
             .write(batch.build())
             .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "mailbox_get_or_create",
-                error = ?err,
-                "Failed to create mailboxes.");
-                MethodError::ServerPartialFail
-            })?;
-
-        Ok(mailbox_ids)
+            .caused_by(trc::location!())
+            .map(|_| mailbox_ids)
     }
 
     pub async fn mailbox_create_path(
         &self,
         account_id: u32,
         path: &str,
-    ) -> Result<Option<(u32, Option<u64>)>, MethodError> {
+    ) -> trc::Result<Option<(u32, Option<u64>)>> {
         let expanded_path =
             if let Some(expand_path) = self.mailbox_expand_path(account_id, path, false).await? {
                 expand_path

@@ -18,6 +18,7 @@ use store::{
     write::{now, BatchBuilder, BlobOp},
     BlobClass, Serialize,
 };
+use trc::AddContext;
 use utils::BlobHash;
 
 use crate::{auth::AccessToken, JMAP};
@@ -33,7 +34,7 @@ impl JMAP {
         &self,
         request: BlobUploadRequest,
         access_token: &AccessToken,
-    ) -> Result<BlobUploadResponse, MethodError> {
+    ) -> trc::Result<BlobUploadResponse> {
         let mut response = BlobUploadResponse {
             account_id: request.account_id,
             created: Default::default(),
@@ -42,7 +43,7 @@ impl JMAP {
         let account_id = request.account_id.document_id();
 
         if request.create.len() > self.core.jmap.set_max_objects {
-            return Err(MethodError::RequestTooLarge);
+            return Err(MethodError::RequestTooLarge.into());
         }
 
         'outer: for (create_id, upload_object) in request.create {
@@ -142,14 +143,7 @@ impl JMAP {
                 .data
                 .blob_quota(account_id)
                 .await
-                .map_err(|err| {
-                    tracing::error!(event = "error",
-                    context = "blob_store",
-                    account_id = account_id,
-                    error = ?err,
-                    "Failed to obtain blob quota");
-                    MethodError::ServerPartialFail
-                })?;
+                .caused_by(trc::location!())?;
 
             if ((self.core.jmap.upload_tmp_quota_size > 0
                 && used.bytes + data.len() > self.core.jmap.upload_tmp_quota_size)
@@ -253,7 +247,7 @@ impl JMAP {
         account_id: u32,
         data: &[u8],
         set_quota: bool,
-    ) -> Result<BlobId, MethodError> {
+    ) -> trc::Result<BlobId> {
         // First reserve the hash
         let hash = BlobHash::from(data);
         let mut batch = BatchBuilder::new();
@@ -274,14 +268,7 @@ impl JMAP {
             .data
             .blob_exists(&hash)
             .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "put_blob",
-                error = ?err,
-                "Failed to verify blob hash existence.");
-                MethodError::ServerPartialFail
-            })?
+            .caused_by(trc::location!())?
         {
             // Upload blob to store
             self.core
@@ -289,14 +276,7 @@ impl JMAP {
                 .blob
                 .put_blob(hash.as_ref(), data)
                 .await
-                .map_err(|err| {
-                    tracing::error!(
-                        event = "error",
-                        context = "put_blob",
-                        error = ?err,
-                        "Failed to store blob.");
-                    MethodError::ServerPartialFail
-                })?;
+                .caused_by(trc::location!())?;
 
             // Commit blob
             let mut batch = BatchBuilder::new();

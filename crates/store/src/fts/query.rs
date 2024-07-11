@@ -53,7 +53,7 @@ impl Store {
         account_id: u32,
         collection: impl Into<u8>,
         filters: Vec<FtsFilter<T>>,
-    ) -> crate::Result<RoaringBitmap> {
+    ) -> trc::Result<RoaringBitmap> {
         let collection = collection.into();
 
         // Tokenize text
@@ -271,7 +271,7 @@ impl Store {
         token_count: &AHashMap<BitmapHash, u32>,
         token_cache: &mut AHashMap<BitmapHash, AHashMap<u32, SerializedPostings<Vec<u8>>>>,
         is_intersect: bool,
-    ) -> crate::Result<Option<RoaringBitmap>> {
+    ) -> trc::Result<Option<RoaringBitmap>> {
         let mut result_bm = RoaringBitmap::new();
         let mut position_candidates = AHashMap::new();
         let num_tokens = tokens.len();

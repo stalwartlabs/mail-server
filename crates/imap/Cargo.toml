@@ -9,6 +9,7 @@ imap_proto = { path = "../imap-proto" }
 jmap = { path = "../jmap" }
 jmap_proto = { path = "../jmap-proto" }
 directory = { path = "../directory" }
+trc = { path = "../trc" }
 store = { path = "../store" }
 common = { path = "../common" }
 nlp = { path = "../nlp" }

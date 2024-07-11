@@ -17,7 +17,6 @@ use std::{
 };
 
 use crate::{
-    error::method::MethodError,
     method::{
         changes::ChangesRequest,
         copy::{self, CopyBlobRequest, CopyRequest},
@@ -74,7 +73,7 @@ pub enum RequestMethod {
     LookupBlob(BlobLookupRequest),
     UploadBlob(BlobUploadRequest),
     Echo(Echo),
-    Error(MethodError),
+    Error(trc::Error),
 }
 
 impl JsonObjectParser for RequestProperty {

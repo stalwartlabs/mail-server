@@ -534,7 +534,7 @@ fn parse_queue_quota_item(config: &mut Config, prefix: impl AsKey) -> Option<Que
 }
 
 impl ParseValue for RequireOptional {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         match value {
             "optional" => Ok(RequireOptional::Optional),
             "require" | "required" => Ok(RequireOptional::Require),

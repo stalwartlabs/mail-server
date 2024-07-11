@@ -6,7 +6,7 @@
 
 use base64::{engine::general_purpose, Engine};
 use jmap_proto::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
     object::Object,
     response::references::EvalObjectReferences,
@@ -33,7 +33,7 @@ impl JMAP {
         &self,
         mut request: SetRequest<RequestArguments>,
         access_token: &AccessToken,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         let account_id = access_token.primary_id();
         let mut push_ids = self
             .get_document_ids(account_id, Collection::PushSubscription)

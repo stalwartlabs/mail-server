@@ -173,7 +173,7 @@ impl SMTP {
                     );
                     match self.core.storage.data.write(batch.build()).await {
                         Ok(_) => true,
-                        Err(store::Error::AssertValueFailed) => {
+                        Err(err) if err.matches(trc::Cause::AssertValue) => {
                             tracing::debug!(
                                 context = "queue",
                                 event = "locked",

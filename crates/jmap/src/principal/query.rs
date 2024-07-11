@@ -18,7 +18,7 @@ impl JMAP {
     pub async fn principal_query(
         &self,
         mut request: QueryRequest<RequestArguments>,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let mut result_set = ResultSet {
             account_id,
@@ -35,8 +35,7 @@ impl JMAP {
                         .storage
                         .directory
                         .query(QueryBy::Name(name.as_str()), false)
-                        .await
-                        .map_err(|_| MethodError::ServerPartialFail)?
+                        .await?
                     {
                         if is_set || result_set.results.contains(principal.id) {
                             result_set.results =
@@ -54,8 +53,7 @@ impl JMAP {
                     for id in self
                         .core
                         .email_to_ids(&self.core.storage.directory, &email)
-                        .await
-                        .map_err(|_| MethodError::ServerPartialFail)?
+                        .await?
                     {
                         ids.insert(id);
                     }
@@ -67,7 +65,7 @@ impl JMAP {
                     }
                 }
                 Filter::Type(_) => {}
-                other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                other => return Err(MethodError::UnsupportedFilter(other.to_string()).into()),
             }
         }
 

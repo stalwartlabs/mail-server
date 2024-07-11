@@ -21,6 +21,7 @@ use jmap_proto::{
 };
 use mail_parser::HeaderName;
 use store::{write::Bincode, BlobClass};
+use trc::AddContext;
 
 use crate::{auth::AccessToken, email::headers::HeaderToValue, mailbox::UidMailbox, JMAP};
 
@@ -35,7 +36,7 @@ impl JMAP {
         &self,
         mut request: GetRequest<GetArguments>,
         access_token: &AccessToken,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
@@ -95,14 +96,7 @@ impl JMAP {
                 .collect::<Vec<_>>();
             self.get_cached_thread_ids(account_id, document_ids.iter().copied())
                 .await
-                .map_err(|err| {
-                    tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                error = ?err,
-                                "Failed to retrieve thread Ids");
-                    MethodError::ServerPartialFail
-                })?
+                .caused_by(trc::location!())?
                 .into_iter()
                 .filter_map(|(document_id, thread_id)| {
                     Id::from_parts(thread_id, document_id).into()
@@ -408,7 +402,8 @@ impl JMAP {
                     _ => {
                         return Err(MethodError::InvalidArguments(format!(
                             "Invalid property {property:?}"
-                        )));
+                        ))
+                        .into());
                     }
                 }
             }

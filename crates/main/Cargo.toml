@@ -25,6 +25,7 @@ pop3 = { path = "../pop3" }
 managesieve = { path = "../managesieve" }
 common = { path = "../common" }
 directory = { path = "../directory" }
+trc = { path = "../trc" }
 utils = { path = "../utils" }
 tokio = { version = "1.23", features = ["full"] }
 tracing = "0.1"

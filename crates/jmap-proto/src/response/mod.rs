@@ -10,7 +10,7 @@ pub mod serialize;
 use std::collections::HashMap;
 
 use crate::{
-    error::method::MethodError,
+    error::method::MethodErrorWrapper,
     method::{
         changes::ChangesResponse,
         copy::{CopyBlobResponse, CopyResponse},
@@ -48,7 +48,7 @@ pub enum ResponseMethod {
     LookupBlob(BlobLookupResponse),
     UploadBlob(BlobUploadResponse),
     Echo(Echo),
-    Error(MethodError),
+    Error(MethodErrorWrapper),
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -87,10 +87,10 @@ impl Response {
         });
     }
 
-    pub fn push_error(&mut self, id: String, err: MethodError) {
+    pub fn push_error(&mut self, id: String, err: impl Into<MethodErrorWrapper>) {
         self.method_responses.push(Call {
             id,
-            method: ResponseMethod::Error(err),
+            method: ResponseMethod::Error(err.into()),
             name: MethodName::error(),
         });
     }
@@ -100,9 +100,9 @@ impl Response {
     }
 }
 
-impl From<MethodError> for ResponseMethod {
-    fn from(error: MethodError) -> Self {
-        ResponseMethod::Error(error)
+impl From<trc::Error> for ResponseMethod {
+    fn from(error: trc::Error) -> Self {
+        ResponseMethod::Error(error.into())
     }
 }
 
@@ -190,8 +190,8 @@ impl From<BlobLookupResponse> for ResponseMethod {
     }
 }
 
-impl<T: Into<ResponseMethod>> From<Result<T, MethodError>> for ResponseMethod {
-    fn from(result: Result<T, MethodError>) -> Self {
+impl<T: Into<ResponseMethod>> From<trc::Result<T>> for ResponseMethod {
+    fn from(result: trc::Result<T>) -> Self {
         match result {
             Ok(value) => value.into(),
             Err(error) => error.into(),

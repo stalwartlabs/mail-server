@@ -238,7 +238,7 @@ impl SMTP {
         events: &[ReportEvent],
         rua: &mut Vec<ReportUri>,
         mut serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
-    ) -> store::Result<Option<TlsReport>> {
+    ) -> trc::Result<Option<TlsReport>> {
         let (domain_name, event_from, event_to, policy) = events
             .first()
             .map(|e| (e.domain.as_str(), e.seq_id, e.due, e.policy_hash))

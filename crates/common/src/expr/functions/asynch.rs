@@ -342,7 +342,7 @@ impl From<i64> for VariableWrapper {
 }
 
 impl Deserialize for VariableWrapper {
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         String::deserialize(bytes).map(|v| VariableWrapper(Variable::String(v.into())))
     }
 }

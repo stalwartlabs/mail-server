@@ -18,11 +18,7 @@ use crate::{
 };
 
 impl Core {
-    pub async fn email_to_ids(
-        &self,
-        directory: &Directory,
-        email: &str,
-    ) -> directory::Result<Vec<u32>> {
+    pub async fn email_to_ids(&self, directory: &Directory, email: &str) -> trc::Result<Vec<u32>> {
         let mut address = self
             .smtp
             .session
@@ -53,7 +49,7 @@ impl Core {
         Ok(vec![])
     }
 
-    pub async fn rcpt(&self, directory: &Directory, email: &str) -> directory::Result<bool> {
+    pub async fn rcpt(&self, directory: &Directory, email: &str) -> trc::Result<bool> {
         // Expand subaddress
         let mut address = self
             .smtp
@@ -83,11 +79,7 @@ impl Core {
         Ok(false)
     }
 
-    pub async fn vrfy(
-        &self,
-        directory: &Directory,
-        address: &str,
-    ) -> directory::Result<Vec<String>> {
+    pub async fn vrfy(&self, directory: &Directory, address: &str) -> trc::Result<Vec<String>> {
         directory
             .vrfy(
                 self.smtp
@@ -101,11 +93,7 @@ impl Core {
             .await
     }
 
-    pub async fn expn(
-        &self,
-        directory: &Directory,
-        address: &str,
-    ) -> directory::Result<Vec<String>> {
+    pub async fn expn(&self, directory: &Directory, address: &str) -> trc::Result<Vec<String>> {
         directory
             .expn(
                 self.smtp

@@ -6,7 +6,7 @@
 
 use directory::QueryBy;
 use jmap_proto::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     object::Object,
     types::{
         acl::Acl,
@@ -21,6 +21,7 @@ use store::{
     write::{assert::HashedValue, ValueClass},
     ValueKey,
 };
+use trc::AddContext;
 use utils::map::bitmap::{Bitmap, BitmapItem};
 
 use crate::JMAP;
@@ -96,7 +97,7 @@ impl JMAP {
         to_account_id: u32,
         to_collection: Collection,
         check_acls: impl Into<Bitmap<Acl>>,
-    ) -> Result<RoaringBitmap, MethodError> {
+    ) -> trc::Result<RoaringBitmap> {
         let check_acls = check_acls.into();
         let mut document_ids = RoaringBitmap::new();
         let to_collection = u8::from(to_collection);
@@ -114,14 +115,7 @@ impl JMAP {
                     to_collection,
                 })
                 .await
-                .map_err(|err| {
-                    tracing::error!(
-                        event = "error",
-                        context = "shared_documents",
-                        error = ?err,
-                        "Failed to iterate ACLs.");
-                    MethodError::ServerPartialFail
-                })?
+                .caused_by(trc::location!())?
             {
                 let mut acls = Bitmap::<Acl>::from(acl_item.permissions);
 
@@ -140,7 +134,7 @@ impl JMAP {
         access_token: &AccessToken,
         to_account_id: u32,
         check_acls: impl Into<Bitmap<Acl>>,
-    ) -> Result<RoaringBitmap, MethodError> {
+    ) -> trc::Result<RoaringBitmap> {
         let check_acls = check_acls.into();
         let shared_mailboxes = self
             .shared_documents(access_token, to_account_id, Collection::Mailbox, check_acls)
@@ -172,7 +166,7 @@ impl JMAP {
         account_id: u32,
         collection: Collection,
         check_acls: impl Into<Bitmap<Acl>>,
-    ) -> Result<RoaringBitmap, MethodError> {
+    ) -> trc::Result<RoaringBitmap> {
         let check_acls = check_acls.into();
         let mut document_ids = self
             .get_document_ids(account_id, collection)
@@ -191,7 +185,7 @@ impl JMAP {
         access_token: &AccessToken,
         account_id: u32,
         check_acls: impl Into<Bitmap<Acl>>,
-    ) -> Result<RoaringBitmap, MethodError> {
+    ) -> trc::Result<RoaringBitmap> {
         let check_acls = check_acls.into();
         let mut document_ids = self
             .get_document_ids(account_id, Collection::Email)
@@ -212,7 +206,7 @@ impl JMAP {
         to_collection: impl Into<u8>,
         to_document_id: u32,
         check_acls: impl Into<Bitmap<Acl>>,
-    ) -> Result<bool, MethodError> {
+    ) -> trc::Result<bool> {
         let to_collection = to_collection.into();
         let check_acls = check_acls.into();
         for &grant_account_id in [access_token.primary_id]
@@ -241,12 +235,7 @@ impl JMAP {
                 }
                 Ok(None) => (),
                 Err(err) => {
-                    tracing::error!(
-                    event = "error",
-                    context = "has_access_to_document",
-                    error = ?err,
-                    "Failed to verify ACL.");
-                    return Err(MethodError::ServerPartialFail);
+                    return Err(err.caused_by(trc::location!()));
                 }
             }
         }

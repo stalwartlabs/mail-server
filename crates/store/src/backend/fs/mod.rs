@@ -51,7 +51,7 @@ impl FsStore {
         &self,
         key: &[u8],
         range: Range<usize>,
-    ) -> crate::Result<Option<Vec<u8>>> {
+    ) -> trc::Result<Option<Vec<u8>>> {
         let blob_path = self.build_path(key);
         let blob_size = match fs::metadata(&blob_path).await {
             Ok(m) => m.len() as usize,
@@ -79,7 +79,7 @@ impl FsStore {
         }))
     }
 
-    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
+    pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
         let blob_path = self.build_path(key);
 
         if fs::metadata(&blob_path)
@@ -95,7 +95,7 @@ impl FsStore {
         Ok(())
     }
 
-    pub(crate) async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
+    pub(crate) async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
         let blob_path = self.build_path(key);
         if fs::metadata(&blob_path).await.is_ok() {
             fs::remove_file(&blob_path).await?;

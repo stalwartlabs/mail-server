@@ -24,7 +24,7 @@ use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
     email::ingest::{IngestEmail, IngestSource},
     mailbox::INBOX_ID,
-    IngestError, JMAP,
+    JMAP,
 };
 
 #[derive(serde::Deserialize)]
@@ -185,8 +185,10 @@ impl JMAP {
                                                                 batch.clear(ValueClass::Blob(BlobOp::Reserve { hash: request.hash, until: cancel_deletion as u64 }));
                                                             }
                                                         },
-                                                        Err(IngestError::Permanent { reason, .. }) => {
-                                                            results.push(UndeleteResponse::Error { reason });
+                                                        Err(mut err) if err.matches(trc::Cause::Ingest) => {
+                                                            results.push(UndeleteResponse::Error { reason: err.take_value(trc::Key::Reason)
+                                                                .and_then(|v| v.into_string())
+                                                                .unwrap().into_owned() });
                                                         }
                                                         Err(_) => {
                                                             return RequestError::internal_server_error().into_http_response();

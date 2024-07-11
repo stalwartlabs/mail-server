@@ -20,9 +20,7 @@ use config::{
     storage::Storage,
     tracers::{OtelTracer, Tracer, Tracers},
 };
-use directory::{
-    core::secret::verify_secret_hash, Directory, DirectoryError, Principal, QueryBy, Type,
-};
+use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy, Type};
 use expr::if_block::IfBlock;
 use listener::{
     blocked::{AllowedIps, BlockedIps},
@@ -92,7 +90,7 @@ pub enum AuthFailureReason {
     InvalidCredentials,
     MissingTotp,
     Banned,
-    InternalError(DirectoryError),
+    InternalError(trc::Error),
 }
 
 #[derive(Debug)]
@@ -241,7 +239,7 @@ impl Core {
         remote_ip: IpAddr,
         protocol: ServerProtocol,
         return_member_of: bool,
-    ) -> directory::Result<AuthResult<Principal<u32>>> {
+    ) -> trc::Result<AuthResult<Principal<u32>>> {
         // First try to authenticate the user against the default directory
         let result = match directory
             .query(QueryBy::Credentials(credentials), return_member_of)
@@ -266,10 +264,13 @@ impl Core {
                 return Ok(AuthResult::Success(principal));
             }
             Ok(None) => Ok(()),
-            Err(DirectoryError::MissingTotpCode) => {
-                return Ok(AuthResult::Failure(AuthFailureReason::MissingTotp))
+            Err(err) => {
+                if err.matches(trc::Cause::MissingParameter) {
+                    return Ok(AuthResult::Failure(AuthFailureReason::MissingTotp));
+                } else {
+                    Err(err)
+                }
             }
-            Err(err) => Err(err),
         };
 
         // Then check if the credentials match the fallback admin or master user
@@ -281,7 +282,7 @@ impl Core {
             (Some((fallback_admin, fallback_pass)), _, Credentials::Plain { username, secret })
                 if username == fallback_admin =>
             {
-                if verify_secret_hash(fallback_pass, secret).await {
+                if verify_secret_hash(fallback_pass, secret).await? {
                     // Send webhook event
                     if self.has_webhook_subscribers(WebhookType::AuthSuccess) {
                         ipc.send_webhook(
@@ -304,7 +305,7 @@ impl Core {
             (_, Some((master_user, master_pass)), Credentials::Plain { username, secret })
                 if username.ends_with(master_user) =>
             {
-                if verify_secret_hash(master_pass, secret).await {
+                if verify_secret_hash(master_pass, secret).await? {
                     let username = username.strip_suffix(master_user).unwrap();
                     let username = username.strip_suffix('%').unwrap_or(username);
                     return Ok(

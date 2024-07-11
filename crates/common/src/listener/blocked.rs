@@ -108,7 +108,7 @@ impl AllowedIps {
 }
 
 impl Core {
-    pub async fn is_fail2banned(&self, ip: IpAddr, login: String) -> store::Result<bool> {
+    pub async fn is_fail2banned(&self, ip: IpAddr, login: String) -> trc::Result<bool> {
         if let Some(rate) = &self.network.blocked_ips.limiter_rate {
             let is_allowed = self.is_ip_allowed(&ip)
                 || (self

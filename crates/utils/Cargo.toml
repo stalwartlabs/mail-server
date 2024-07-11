@@ -5,6 +5,7 @@ edition = "2021"
 resolver = "2"
 
 [dependencies]
+trc = { path = "../trc" }
 rustls = { version = "0.23.5", default-features = false, features = ["std", "ring", "tls12"] }
 rustls-pemfile = "2.0"
 rustls-pki-types = { version = "1" }

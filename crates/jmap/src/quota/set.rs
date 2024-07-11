@@ -16,6 +16,6 @@ impl JMAP {
         &self,
         account_id: u32,
         quota: &AccessToken,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
     }
 }

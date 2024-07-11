@@ -6,6 +6,7 @@
 
 use mail_send::Credentials;
 use store::{NamedRows, Rows, Value};
+use trc::AddContext;
 
 use crate::{backend::internal::manage::ManageDirectory, Principal, QueryBy, Type};
 
@@ -16,7 +17,7 @@ impl SqlDirectory {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> crate::Result<Option<Principal<u32>>> {
+    ) -> trc::Result<Option<Principal<u32>>> {
         let mut account_id = None;
         let account_name;
         let mut secret = None;
@@ -27,10 +28,16 @@ impl SqlDirectory {
 
                 self.store
                     .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
-                    .await?
+                    .await
+                    .caused_by(trc::location!())?
             }
             QueryBy::Id(uid) => {
-                if let Some(username) = self.data_store.get_account_name(uid).await? {
+                if let Some(username) = self
+                    .data_store
+                    .get_account_name(uid)
+                    .await
+                    .caused_by(trc::location!())?
+                {
                     account_name = username;
                 } else {
                     return Ok(None);
@@ -42,7 +49,8 @@ impl SqlDirectory {
                         &self.mappings.query_name,
                         vec![account_name.clone().into()],
                     )
-                    .await?
+                    .await
+                    .caused_by(trc::location!())?
             }
             QueryBy::Credentials(credentials) => {
                 let (username, secret_) = match credentials {
@@ -55,7 +63,8 @@ impl SqlDirectory {
 
                 self.store
                     .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
-                    .await?
+                    .await
+                    .caused_by(trc::location!())?
             }
         };
 
@@ -64,18 +73,18 @@ impl SqlDirectory {
         }
 
         // Map row to principal
-        let mut principal = self.mappings.row_to_principal(result)?;
+        let mut principal = self
+            .mappings
+            .row_to_principal(result)
+            .caused_by(trc::location!())?;
 
         // Validate password
         if let Some(secret) = secret {
-            if !principal.verify_secret(secret).await? {
-                tracing::debug!(
-                    context = "directory",
-                    event = "invalid_password",
-                    protocol = "sql",
-                    account = account_name,
-                    "Invalid password for account"
-                );
+            if !principal
+                .verify_secret(secret)
+                .await
+                .caused_by(trc::location!())?
+            {
                 return Ok(None);
             }
         }
@@ -87,7 +96,8 @@ impl SqlDirectory {
             principal.id = self
                 .data_store
                 .get_or_create_account_id(&account_name)
-                .await?;
+                .await
+                .caused_by(trc::location!())?;
         }
         principal.name = account_name;
 
@@ -99,13 +109,17 @@ impl SqlDirectory {
                     &self.mappings.query_members,
                     vec![principal.name.clone().into()],
                 )
-                .await?
+                .await
+                .caused_by(trc::location!())?
                 .rows
             {
                 if let Some(Value::Text(account_id)) = row.values.first() {
-                    principal
-                        .member_of
-                        .push(self.data_store.get_or_create_account_id(account_id).await?);
+                    principal.member_of.push(
+                        self.data_store
+                            .get_or_create_account_id(account_id)
+                            .await
+                            .caused_by(trc::location!())?,
+                    );
                 }
             }
         }
@@ -118,31 +132,38 @@ impl SqlDirectory {
                     &self.mappings.query_emails,
                     vec![principal.name.clone().into()],
                 )
-                .await?
+                .await
+                .caused_by(trc::location!())?
                 .into();
         }
 
         Ok(Some(principal))
     }
 
-    pub async fn email_to_ids(&self, address: &str) -> crate::Result<Vec<u32>> {
+    pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
         let names = self
             .store
             .query::<Rows>(&self.mappings.query_recipients, vec![address.into()])
-            .await?;
+            .await
+            .caused_by(trc::location!())?;
 
         let mut ids = Vec::with_capacity(names.rows.len());
 
         for row in names.rows {
             if let Some(Value::Text(name)) = row.values.first() {
-                ids.push(self.data_store.get_or_create_account_id(name).await?);
+                ids.push(
+                    self.data_store
+                        .get_or_create_account_id(name)
+                        .await
+                        .caused_by(trc::location!())?,
+                );
             }
         }
 
         Ok(ids)
     }
 
-    pub async fn rcpt(&self, address: &str) -> crate::Result<bool> {
+    pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
         self.store
             .query::<bool>(
                 &self.mappings.query_recipients,
@@ -152,7 +173,7 @@ impl SqlDirectory {
             .map_err(Into::into)
     }
 
-    pub async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         self.store
             .query::<Rows>(
                 &self.mappings.query_verify,
@@ -163,7 +184,7 @@ impl SqlDirectory {
             .map_err(Into::into)
     }
 
-    pub async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
+    pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         self.store
             .query::<Rows>(
                 &self.mappings.query_expand,
@@ -174,7 +195,7 @@ impl SqlDirectory {
             .map_err(Into::into)
     }
 
-    pub async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
         self.store
             .query::<bool>(&self.mappings.query_domains, vec![domain.into()])
             .await
@@ -183,7 +204,7 @@ impl SqlDirectory {
 }
 
 impl SqlMappings {
-    pub fn row_to_principal(&self, rows: NamedRows) -> crate::Result<Principal<u32>> {
+    pub fn row_to_principal(&self, rows: NamedRows) -> trc::Result<Principal<u32>> {
         let mut principal = Principal::default();
 
         if let Some(row) = rows.rows.into_iter().next() {

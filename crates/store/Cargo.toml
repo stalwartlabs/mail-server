@@ -7,6 +7,7 @@ resolver = "2"
 [dependencies]
 utils = { path = "../utils" }
 nlp = { path = "../nlp" }
+trc = { path = "../trc" }
 rocksdb = { version = "0.22", optional = true, features = ["multi-threaded-cf"] }
 foundationdb = { version = "0.9.0", features = ["embedded-fdb-include", "fdb-7_1"], optional = true }
 rusqlite = { version = "0.31.0", features = ["bundled"], optional = true }
@@ -26,7 +27,6 @@ parking_lot = "0.12.1"
 lru-cache = { version = "0.1.2", optional = true }
 num_cpus = { version = "1.15.0", optional = true }
 blake3 = "1.3.3"
-tracing = "0.1"
 lz4_flex = { version = "0.11", default-features = false }
 deadpool-postgres = { version = "0.14", optional = true }
 tokio-postgres = { version = "0.7.10", optional = true }

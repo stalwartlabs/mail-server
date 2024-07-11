@@ -7,7 +7,6 @@
 use std::sync::Arc;
 
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
@@ -27,7 +26,7 @@ impl JMAP {
     pub async fn sieve_script_get(
         &self,
         mut request: GetRequest<RequestArguments>,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties =
             request.unwrap_properties(&[Property::Id, Property::Name, Property::BlobId]);
@@ -115,7 +114,7 @@ impl JMAP {
     pub async fn sieve_script_get_active(
         &self,
         account_id: u32,
-    ) -> Result<Option<ActiveScript>, MethodError> {
+    ) -> trc::Result<Option<ActiveScript>> {
         // Find the currently active script
         if let Some(document_id) = self
             .filter(
@@ -157,7 +156,7 @@ impl JMAP {
         &self,
         account_id: u32,
         name: &str,
-    ) -> Result<Option<Sieve>, MethodError> {
+    ) -> trc::Result<Option<Sieve>> {
         // Find the script by name
         if let Some(document_id) = self
             .filter(
@@ -182,7 +181,7 @@ impl JMAP {
         &self,
         account_id: u32,
         document_id: u32,
-    ) -> Result<(Sieve, Object<Value>), MethodError> {
+    ) -> trc::Result<(Sieve, Object<Value>)> {
         // Obtain script object
         let script_object = self
             .get_property::<HashedValue<Object<Value>>>(
@@ -193,15 +192,9 @@ impl JMAP {
             )
             .await?
             .ok_or_else(|| {
-                tracing::warn!(
-                    context = "sieve_script_compile",
-                    event = "error",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to obtain sieve script object"
-                );
-
-                MethodError::ServerPartialFail
+                trc::Cause::NotFound
+                    .caused_by(trc::location!())
+                    .document_id(document_id)
             })?;
 
         // Obtain the sieve script length
@@ -212,22 +205,20 @@ impl JMAP {
             .and_then(|v| v.as_blob_id())
             .and_then(|v| (v.section.as_ref()?.size, v).into())
             .ok_or_else(|| {
-                tracing::warn!(
-                    context = "sieve_script_compile",
-                    event = "error",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to obtain sieve script blobId"
-                );
-
-                MethodError::ServerPartialFail
+                trc::Cause::NotFound
+                    .caused_by(trc::location!())
+                    .document_id(document_id)
             })?;
 
         // Obtain the sieve script blob
         let script_bytes = self
             .get_blob(&blob_id.hash, 0..usize::MAX)
             .await?
-            .ok_or(MethodError::ServerPartialFail)?;
+            .ok_or_else(|| {
+                trc::Cause::NotFound
+                    .caused_by(trc::location!())
+                    .document_id(document_id)
+            })?;
 
         // Obtain the precompiled script
         if let Some(sieve) = script_bytes
@@ -239,15 +230,9 @@ impl JMAP {
             // Deserialization failed, probably because the script compiler version changed
             match self.core.sieve.untrusted_compiler.compile(
                 script_bytes.get(0..script_offset).ok_or_else(|| {
-                    tracing::warn!(
-                        context = "sieve_script_compile",
-                        event = "error",
-                        account_id = account_id,
-                        document_id = document_id,
-                        "Invalid sieve script offset"
-                    );
-
-                    MethodError::ServerPartialFail
+                    trc::Cause::NotFound
+                        .caused_by(trc::location!())
+                        .document_id(document_id)
                 })?,
             ) {
                 Ok(sieve) => {
@@ -289,16 +274,10 @@ impl JMAP {
 
                     Ok((sieve.inner, new_script_object))
                 }
-                Err(error) => {
-                    tracing::warn!(
-                            context = "sieve_script_compile",
-                            event = "error",
-                            account_id = account_id,
-                            document_id = document_id,
-                            reason = %error,
-                            "Failed to compile sieve script");
-                    Err(MethodError::ServerPartialFail)
-                }
+                Err(error) => Err(trc::Cause::Unexpected
+                    .caused_by(trc::location!())
+                    .reason(error)
+                    .details("Failed to compile Sieve script")),
             }
         }
     }

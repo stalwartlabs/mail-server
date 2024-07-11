@@ -10,7 +10,7 @@ use utils::config::{utils::AsKey, Config};
 
 use crate::*;
 
-use super::{pool::SqliteConnectionManager, SqliteStore};
+use super::{into_error, pool::SqliteConnectionManager, SqliteStore};
 
 impl SqliteStore {
     pub fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
@@ -66,24 +66,27 @@ impl SqliteStore {
     }
 
     #[cfg(feature = "test_mode")]
-    pub fn open_memory() -> crate::Result<Self> {
+    pub fn open_memory() -> trc::Result<Self> {
+        use super::into_error;
+
         let db = Self {
             conn_pool: Pool::builder()
                 .max_size(1)
-                .build(SqliteConnectionManager::memory())?,
+                .build(SqliteConnectionManager::memory())
+                .map_err(into_error)?,
             worker_pool: rayon::ThreadPoolBuilder::new()
                 .num_threads(num_cpus::get())
                 .build()
                 .map_err(|err| {
-                    crate::Error::InternalError(format!("Failed to build worker pool: {}", err))
+                    into_error(err).ctx(trc::Key::Reason, "Failed to build worker pool")
                 })?,
         };
         db.create_tables()?;
         Ok(db)
     }
 
-    pub(super) fn create_tables(&self) -> crate::Result<()> {
-        let conn = self.conn_pool.get()?;
+    pub(super) fn create_tables(&self) -> trc::Result<()> {
+        let conn = self.conn_pool.get().map_err(into_error)?;
 
         for table in [
             SUBSPACE_ACL,
@@ -111,7 +114,8 @@ impl SqliteStore {
                     )"
                 ),
                 [],
-            )?;
+            )
+            .map_err(into_error)?;
         }
 
         for table in [
@@ -128,7 +132,8 @@ impl SqliteStore {
                     )"
                 ),
                 [],
-            )?;
+            )
+            .map_err(into_error)?;
         }
 
         for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
@@ -141,15 +146,16 @@ impl SqliteStore {
                     char::from(table)
                 ),
                 [],
-            )?;
+            )
+            .map_err(into_error)?;
         }
 
         Ok(())
     }
 
-    pub async fn spawn_worker<U, V>(&self, mut f: U) -> crate::Result<V>
+    pub async fn spawn_worker<U, V>(&self, mut f: U) -> trc::Result<V>
     where
-        U: FnMut() -> crate::Result<V> + Send,
+        U: FnMut() -> trc::Result<V> + Send,
         V: Sync + Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
@@ -162,10 +168,7 @@ impl SqliteStore {
 
         match rx.await {
             Ok(result) => result,
-            Err(err) => Err(crate::Error::InternalError(format!(
-                "Worker thread failed: {}",
-                err
-            ))),
+            Err(err) => Err(trc::Cause::Thread.reason(err)),
         }
     }
 }

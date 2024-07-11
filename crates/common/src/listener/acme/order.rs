@@ -7,7 +7,6 @@ use rcgen::{CertificateParams, DistinguishedName, PKCS_ECDSA_P256_SHA256};
 use rustls::crypto::ring::sign::any_ecdsa_type;
 use rustls::sign::CertifiedKey;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use utils::suffixlist::DomainPart;
@@ -17,29 +16,8 @@ use crate::listener::acme::directory::Identifier;
 use crate::listener::acme::ChallengeSettings;
 use crate::Core;
 
-use super::directory::{Account, Auth, AuthStatus, Directory, DirectoryError, Order, OrderStatus};
-use super::jose::JoseError;
-use super::{AcmeError, AcmeProvider};
-
-#[derive(Debug)]
-pub enum OrderError {
-    Acme(DirectoryError),
-    Rcgen(rcgen::Error),
-    BadOrder(Order),
-    BadAuth(Auth),
-    TooManyAttemptsAuth(String),
-    ProcessingTimeout(Order),
-    Store(store::Error),
-    Dns(dns_update::Error),
-}
-
-#[derive(Debug)]
-pub enum CertParseError {
-    X509(x509_parser::nom::Err<x509_parser::error::X509Error>),
-    Pem(pem::PemError),
-    TooFewPem(usize),
-    InvalidPrivateKey,
-}
+use super::directory::{Account, AuthStatus, Directory, OrderStatus};
+use super::AcmeProvider;
 
 impl Core {
     pub(crate) async fn process_cert(
@@ -47,16 +25,8 @@ impl Core {
         provider: &AcmeProvider,
         pem: Vec<u8>,
         cached: bool,
-    ) -> Result<Duration, AcmeError> {
-        let (cert, validity) = match (parse_cert(&pem), cached) {
-            (Ok(r), _) => r,
-            (Err(err), cached) => {
-                return match cached {
-                    true => Err(AcmeError::CachedCertParse(err)),
-                    false => Err(AcmeError::NewCertParse(err)),
-                }
-            }
-        };
+    ) -> trc::Result<Duration> {
+        let (cert, validity) = parse_cert(&pem)?;
 
         self.set_cert(provider, Arc::new(cert));
 
@@ -82,7 +52,7 @@ impl Core {
         Ok(renew_at)
     }
 
-    pub async fn renew(&self, provider: &AcmeProvider) -> Result<Duration, AcmeError> {
+    pub async fn renew(&self, provider: &AcmeProvider) -> trc::Result<Duration> {
         let mut backoff = 0;
         loop {
             match self.order(provider).await {
@@ -99,12 +69,12 @@ impl Core {
                     backoff = (backoff + 1).min(16);
                     tokio::time::sleep(Duration::from_secs(1 << backoff)).await;
                 }
-                Err(err) => return Err(AcmeError::Order(err)),
+                Err(err) => return Err(err.details("Failed to renew certificate")),
             }
         }
     }
 
-    async fn order(&self, provider: &AcmeProvider) -> Result<Vec<u8>, OrderError> {
+    async fn order(&self, provider: &AcmeProvider) -> trc::Result<Vec<u8>> {
         let directory = Directory::discover(&provider.directory_url).await?;
         let account = Account::create_with_keypair(
             directory,
@@ -116,7 +86,8 @@ impl Core {
         let mut params = CertificateParams::new(provider.domains.clone());
         params.distinguished_name = DistinguishedName::new();
         params.alg = &PKCS_ECDSA_P256_SHA256;
-        let cert = rcgen::Certificate::from_params(params)?;
+        let cert = rcgen::Certificate::from_params(params)
+            .map_err(|err| trc::Cause::Crypto.caused_by(trc::location!()).reason(err))?;
 
         let (order_url, mut order) = account.new_order(provider.domains.clone()).await?;
         loop {
@@ -151,7 +122,9 @@ impl Core {
                         }
                     }
                     if order.status == OrderStatus::Processing {
-                        return Err(OrderError::ProcessingTimeout(order));
+                        return Err(trc::Cause::Timeout
+                            .caused_by(trc::location!())
+                            .details("Order processing timed out"));
                     }
                 }
                 OrderStatus::Ready => {
@@ -162,7 +135,9 @@ impl Core {
                         "Sending CSR"
                     );
 
-                    let csr = cert.serialize_request_der()?;
+                    let csr = cert.serialize_request_der().map_err(|err| {
+                        trc::Cause::Crypto.caused_by(trc::location!()).reason(err)
+                    })?;
                     order = account.finalize(order.finalize, csr).await?
                 }
                 OrderStatus::Valid { certificate } => {
@@ -190,7 +165,7 @@ impl Core {
                         "Invalid order"
                     );
 
-                    return Err(OrderError::BadOrder(order));
+                    return Err(trc::Cause::Invalid.into_err().details("Invalid ACME order"));
                 }
             }
         }
@@ -201,7 +176,7 @@ impl Core {
         provider: &AcmeProvider,
         account: &Account,
         url: &String,
-    ) -> Result<(), OrderError> {
+    ) -> trc::Result<()> {
         let auth = account.auth(url).await?;
         let (domain, challenge_url) = match auth.status {
             AuthStatus::Pending => {
@@ -218,7 +193,11 @@ impl Core {
                     .challenges
                     .iter()
                     .find(|c| c.typ == challenge_type)
-                    .ok_or(DirectoryError::NoChallenge(challenge_type))?;
+                    .ok_or(
+                        trc::Cause::MissingParameter
+                            .into_err()
+                            .ctx(trc::Key::Id, challenge_type.as_str()),
+                    )?;
 
                 match &provider.challenge {
                     ChallengeSettings::TlsAlpn01 => {
@@ -290,7 +269,7 @@ impl Core {
                                 error = ?err,
                                 "Failed to create DNS record.",
                             );
-                            return Err(OrderError::Dns(err));
+                            return Err(trc::Cause::Dns.caused_by(trc::location!()).reason(err));
                         }
 
                         tracing::info!(
@@ -362,7 +341,11 @@ impl Core {
                 (domain, challenge.url.clone())
             }
             AuthStatus::Valid => return Ok(()),
-            _ => return Err(OrderError::BadAuth(auth)),
+            _ => {
+                return Err(trc::Cause::Authentication
+                    .into_err()
+                    .ctx(trc::Key::Status, auth.status.as_str()))
+            }
         };
 
         for i in 0u64..5 {
@@ -389,23 +372,34 @@ impl Core {
 
                     return Ok(());
                 }
-                _ => return Err(OrderError::BadAuth(auth)),
+                _ => {
+                    return Err(trc::Cause::Authentication
+                        .into_err()
+                        .ctx(trc::Key::Status, auth.status.as_str()))
+                }
             }
         }
-        Err(OrderError::TooManyAttemptsAuth(domain))
+        Err(trc::Cause::Authentication
+            .into_err()
+            .details("Too many attempts")
+            .ctx(trc::Key::Id, domain))
     }
 }
 
-fn parse_cert(pem: &[u8]) -> Result<(CertifiedKey, [DateTime<Utc>; 2]), CertParseError> {
-    let mut pems = pem::parse_many(pem)?;
+fn parse_cert(pem: &[u8]) -> trc::Result<(CertifiedKey, [DateTime<Utc>; 2])> {
+    let mut pems = pem::parse_many(pem)
+        .map_err(|err| trc::Cause::Crypto.reason(err).caused_by(trc::location!()))?;
     if pems.len() < 2 {
-        return Err(CertParseError::TooFewPem(pems.len()));
+        return Err(trc::Cause::Crypto
+            .caused_by(trc::location!())
+            .ctx(trc::Key::Size, pems.len())
+            .details("Too few PEMs"));
     }
     let pk = match any_ecdsa_type(&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
         pems.remove(0).contents(),
     ))) {
         Ok(pk) => pk,
-        Err(_) => return Err(CertParseError::InvalidPrivateKey),
+        Err(err) => return Err(trc::Cause::Crypto.reason(err).caused_by(trc::location!())),
     };
     let cert_chain: Vec<CertificateDer> = pems
         .into_iter()
@@ -420,50 +414,8 @@ fn parse_cert(pem: &[u8]) -> Result<(CertifiedKey, [DateTime<Utc>; 2]), CertPars
                     .unwrap_or_default()
             })
         }
-        Err(err) => return Err(CertParseError::X509(err)),
+        Err(err) => return Err(trc::Cause::Crypto.reason(err).caused_by(trc::location!())),
     };
     let cert = CertifiedKey::new(cert_chain, pk);
     Ok((cert, validity))
-}
-
-impl From<DirectoryError> for OrderError {
-    fn from(err: DirectoryError) -> Self {
-        Self::Acme(err)
-    }
-}
-
-impl From<rcgen::Error> for OrderError {
-    fn from(err: rcgen::Error) -> Self {
-        Self::Rcgen(err)
-    }
-}
-
-impl From<x509_parser::nom::Err<x509_parser::error::X509Error>> for CertParseError {
-    fn from(err: x509_parser::nom::Err<x509_parser::error::X509Error>) -> Self {
-        Self::X509(err)
-    }
-}
-
-impl From<pem::PemError> for CertParseError {
-    fn from(err: pem::PemError) -> Self {
-        Self::Pem(err)
-    }
-}
-
-impl From<JoseError> for OrderError {
-    fn from(err: JoseError) -> Self {
-        Self::Acme(DirectoryError::Jose(err))
-    }
-}
-
-impl From<JoseError> for AcmeError {
-    fn from(err: JoseError) -> Self {
-        Self::Order(OrderError::from(err))
-    }
-}
-
-impl From<store::Error> for OrderError {
-    fn from(value: store::Error) -> Self {
-        Self::Store(value)
-    }
 }

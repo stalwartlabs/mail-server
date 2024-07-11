@@ -27,7 +27,7 @@ impl JMAP {
         &self,
         mut request: QueryRequest<QueryArguments>,
         access_token: &AccessToken,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
 
@@ -118,7 +118,8 @@ impl JMAP {
                                     Some(HeaderName::Other(header_name)) => {
                                         return Err(MethodError::InvalidArguments(format!(
                                             "Querying header '{header_name}' is not supported.",
-                                        )));
+                                        ))
+                                        .into());
                                     }
                                     Some(header_name) => {
                                         if let Some(header_value) = header.next() {
@@ -153,7 +154,9 @@ impl JMAP {
                             Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                                 fts_filters.push(cond.into());
                             }
-                            other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                            other => {
+                                return Err(MethodError::UnsupportedFilter(other.to_string()).into())
+                            }
                         }
                     }
                     filters.push(query::Filter::is_in_set(
@@ -248,7 +251,9 @@ impl JMAP {
                             filters.push(cond.into());
                         }
 
-                        other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                        other => {
+                            return Err(MethodError::UnsupportedFilter(other.to_string()).into())
+                        }
                     }
                 }
             }
@@ -324,7 +329,7 @@ impl JMAP {
                         query::Comparator::field(Property::Cc, comparator.is_ascending)
                     }
 
-                    other => return Err(MethodError::UnsupportedSort(other.to_string())),
+                    other => return Err(MethodError::UnsupportedSort(other.to_string()).into()),
                 });
             }
 
@@ -353,7 +358,7 @@ impl JMAP {
         account_id: u32,
         keyword: Keyword,
         match_all: bool,
-    ) -> Result<RoaringBitmap, MethodError> {
+    ) -> trc::Result<RoaringBitmap> {
         let keyword_doc_ids = self
             .get_tag(account_id, Collection::Email, Property::Keywords, keyword)
             .await?

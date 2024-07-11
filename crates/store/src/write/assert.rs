@@ -84,7 +84,7 @@ impl AssertValue {
 }
 
 impl<T: Deserialize> Deserialize for HashedValue<T> {
-    fn deserialize(bytes: &[u8]) -> crate::Result<Self> {
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         Ok(HashedValue {
             hash: xxhash_rust::xxh3::xxh3_64(bytes),
             inner: T::deserialize(bytes)?,

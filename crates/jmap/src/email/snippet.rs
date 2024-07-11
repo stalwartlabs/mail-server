@@ -25,7 +25,7 @@ impl JMAP {
         &self,
         request: GetSearchSnippetRequest,
         access_token: &AccessToken,
-    ) -> Result<GetSearchSnippetResponse, MethodError> {
+    ) -> trc::Result<GetSearchSnippetResponse> {
         let mut filter_stack = vec![];
         let mut include_term = true;
         let mut terms = vec![];
@@ -83,7 +83,7 @@ impl JMAP {
         };
 
         if email_ids.len() > self.core.jmap.snippet_max_results {
-            return Err(MethodError::RequestTooLarge);
+            return Err(MethodError::RequestTooLarge.into());
         }
 
         for email_id in email_ids {

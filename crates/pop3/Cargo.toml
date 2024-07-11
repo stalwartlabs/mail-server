@@ -10,6 +10,7 @@ common = { path = "../common" }
 jmap = { path = "../jmap" }
 imap = { path = "../imap" }
 utils = { path = "../utils" }
+trc = { path = "../trc" }
 jmap_proto = { path = "../jmap-proto" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }

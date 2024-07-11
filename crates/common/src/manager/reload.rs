@@ -26,7 +26,7 @@ pub struct ReloadResult {
 }
 
 impl Core {
-    pub async fn reload_blocked_ips(&self) -> store::Result<ReloadResult> {
+    pub async fn reload_blocked_ips(&self) -> trc::Result<ReloadResult> {
         let mut ip_addresses = AHashSet::new();
         let mut config = self.storage.config.build_config(BLOCKED_IP_KEY).await?;
 
@@ -51,7 +51,7 @@ impl Core {
         Ok(config.into())
     }
 
-    pub async fn reload_certificates(&self) -> store::Result<ReloadResult> {
+    pub async fn reload_certificates(&self) -> trc::Result<ReloadResult> {
         let mut config = self.storage.config.build_config("certificate").await?;
         let mut certificates = self.tls.certificates.load().as_ref().clone();
 
@@ -62,7 +62,7 @@ impl Core {
         Ok(config.into())
     }
 
-    pub async fn reload_lookups(&self) -> store::Result<ReloadResult> {
+    pub async fn reload_lookups(&self) -> trc::Result<ReloadResult> {
         let mut config = self.storage.config.build_config("certificate").await?;
         let mut stores = Stores::default();
         stores.parse_memory_stores(&mut config);
@@ -78,7 +78,7 @@ impl Core {
         })
     }
 
-    pub async fn reload(&self) -> store::Result<ReloadResult> {
+    pub async fn reload(&self) -> trc::Result<ReloadResult> {
         let mut config = self.storage.config.build_config("").await?;
 
         // Parse tracers

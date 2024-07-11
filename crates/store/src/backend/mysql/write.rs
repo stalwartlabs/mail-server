@@ -20,20 +20,20 @@ use crate::{
     BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
 };
 
-use super::MysqlStore;
+use super::{into_error, MysqlStore};
 
 #[derive(Debug)]
 enum CommitError {
     Mysql(mysql_async::Error),
-    Internal(crate::Error),
+    Internal(trc::Error),
     Retry,
 }
 
 impl MysqlStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
+    pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
         let start = Instant::now();
         let mut retry_count = 0;
-        let mut conn = self.conn_pool.get_conn().await?;
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
 
         loop {
             match self.write_trx(&mut conn, &batch).await {
@@ -46,11 +46,11 @@ impl MysqlStore {
                         && start.elapsed() < MAX_COMMIT_TIME => {}
                 Err(CommitError::Retry) => {
                     if retry_count > MAX_COMMIT_ATTEMPTS || start.elapsed() > MAX_COMMIT_TIME {
-                        return Err(crate::Error::AssertValueFailed);
+                        return Err(trc::Cause::AssertValue.into());
                     }
                 }
                 Err(CommitError::Mysql(err)) => {
-                    return Err(err.into());
+                    return Err(into_error(err));
                 }
                 Err(CommitError::Internal(err)) => {
                     return Err(err);
@@ -135,7 +135,7 @@ impl MysqlStore {
                                 Ok(_) => {
                                     if exists.is_some() && trx.affected_rows() == 0 {
                                         trx.rollback().await?;
-                                        return Err(crate::Error::AssertValueFailed.into());
+                                        return Err(trc::Cause::AssertValue.into_err().into());
                                     }
                                 }
                                 Err(err) => {
@@ -308,7 +308,7 @@ impl MysqlStore {
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
                         trx.rollback().await?;
-                        return Err(crate::Error::AssertValueFailed.into());
+                        return Err(trc::Cause::AssertValue.into_err().into());
                     }
                     asserted_values.insert(key, exists);
                 }
@@ -318,35 +318,37 @@ impl MysqlStore {
         trx.commit().await.map(|_| result).map_err(Into::into)
     }
 
-    pub(crate) async fn purge_store(&self) -> crate::Result<()> {
-        let mut conn = self.conn_pool.get_conn().await?;
+    pub(crate) async fn purge_store(&self) -> trc::Result<()> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
         for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
             let s = conn
                 .prep(&format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))
-                .await?;
-            conn.exec_drop(&s, ()).await?;
+                .await
+                .map_err(into_error)?;
+            conn.exec_drop(&s, ()).await.map_err(into_error)?;
         }
 
         Ok(())
     }
 
-    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
-        let mut conn = self.conn_pool.get_conn().await?;
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
+        let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
 
         let s = conn
             .prep(&format!(
                 "DELETE FROM {} WHERE k >= ? AND k < ?",
                 char::from(from.subspace()),
             ))
-            .await?;
+            .await
+            .map_err(into_error)?;
         conn.exec_drop(&s, (&from.serialize(0), &to.serialize(0)))
             .await
-            .map_err(Into::into)
+            .map_err(into_error)
     }
 }
 
-impl From<crate::Error> for CommitError {
-    fn from(err: crate::Error) -> Self {
+impl From<trc::Error> for CommitError {
+    fn from(err: trc::Error) -> Self {
         CommitError::Internal(err)
     }
 }

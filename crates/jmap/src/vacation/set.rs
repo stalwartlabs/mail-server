@@ -39,7 +39,7 @@ impl JMAP {
     pub async fn vacation_response_set(
         &self,
         mut request: SetRequest<RequestArguments>,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
         let mut response = self
             .prepare_set_response(&request, Collection::SieveScript)
@@ -53,7 +53,8 @@ impl JMAP {
             (Some(create), Some(update)) if !create.is_empty() && !update.is_empty() => {
                 return Err(MethodError::InvalidArguments(
                     "Creating and updating on the same request is not allowed.".into(),
-                ));
+                )
+                .into());
             }
             (Some(create), _) if !create.is_empty() => {
                 for (id, obj) in create {
@@ -205,7 +206,7 @@ impl JMAP {
                             == Some(&Value::Bool(true));
                         value
                     })
-                    .ok_or(MethodError::ServerPartialFail)?
+                    .ok_or_else(|| trc::Cause::NotFound.caused_by(trc::location!()))?
                     .into()
                 } else {
                     None
@@ -249,14 +250,9 @@ impl JMAP {
 
                 if let Some(current) = obj.current() {
                     let current_blob_id = current.inner.blob_id().ok_or_else(|| {
-                        tracing::warn!(
-                            event = "error",
-                            context = "vacation_response_set",
-                            account_id = account_id,
-                            document_id = document_id,
-                            "Sieve object does not contain a blobId."
-                        );
-                        MethodError::ServerPartialFail
+                        trc::Cause::NotFound
+                            .caused_by(trc::location!())
+                            .document_id(document_id.unwrap_or(u32::MAX))
                     })?;
 
                     // Unlink previous blob
@@ -286,9 +282,7 @@ impl JMAP {
                 response.new_state = Some(change_id.into());
                 match document_id {
                     Some(document_id) => document_id,
-                    None => ids
-                        .last_document_id()
-                        .map_err(|_| MethodError::ServerPartialFail)?,
+                    None => ids.last_document_id()?,
                 }
             } else {
                 document_id.unwrap_or(u32::MAX)
@@ -335,7 +329,7 @@ impl JMAP {
         Ok(response)
     }
 
-    fn build_script(&self, obj: &mut ObjectIndexBuilder) -> Result<Vec<u8>, MethodError> {
+    fn build_script(&self, obj: &mut ObjectIndexBuilder) -> trc::Result<Vec<u8>> {
         // Build Sieve script
         let mut script = Vec::with_capacity(1024);
         script.extend_from_slice(b"require [\"vacation\", \"relational\", \"date\"];\r\n\r\n");
@@ -435,10 +429,10 @@ impl JMAP {
 
                 Ok(script)
             }
-            Err(err) => {
-                tracing::error!("Vacation Sieve Script failed to compile: {}", err);
-                Err(MethodError::ServerPartialFail)
-            }
+            Err(err) => Err(trc::Cause::Unexpected
+                .caused_by(trc::location!())
+                .reason(err)
+                .details("Vacation Sieve Script failed to compile.")),
         }
     }
 }

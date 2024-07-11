@@ -20,13 +20,13 @@ pub trait DirectoryStore: Sync + Send {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> crate::Result<Option<Principal<u32>>>;
-    async fn email_to_ids(&self, email: &str) -> crate::Result<Vec<u32>>;
+    ) -> trc::Result<Option<Principal<u32>>>;
+    async fn email_to_ids(&self, email: &str) -> trc::Result<Vec<u32>>;
 
-    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool>;
-    async fn rcpt(&self, address: &str) -> crate::Result<bool>;
-    async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>>;
-    async fn expn(&self, address: &str) -> crate::Result<Vec<String>>;
+    async fn is_local_domain(&self, domain: &str) -> trc::Result<bool>;
+    async fn rcpt(&self, address: &str) -> trc::Result<bool>;
+    async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>>;
+    async fn expn(&self, address: &str) -> trc::Result<Vec<String>>;
 }
 
 impl DirectoryStore for Store {
@@ -34,7 +34,7 @@ impl DirectoryStore for Store {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> crate::Result<Option<Principal<u32>>> {
+    ) -> trc::Result<Option<Principal<u32>>> {
         let (account_id, secret) = match by {
             QueryBy::Name(name) => (self.get_account_id(name).await?, None),
             QueryBy::Id(account_id) => (account_id.into(), None),
@@ -79,7 +79,7 @@ impl DirectoryStore for Store {
         }
     }
 
-    async fn email_to_ids(&self, email: &str) -> crate::Result<Vec<u32>> {
+    async fn email_to_ids(&self, email: &str) -> trc::Result<Vec<u32>> {
         if let Some(ptype) = self
             .get_value::<PrincipalIdType>(ValueKey::from(ValueClass::Directory(
                 DirectoryClass::EmailToId(email.as_bytes().to_vec()),
@@ -89,32 +89,30 @@ impl DirectoryStore for Store {
             if ptype.typ != Type::List {
                 Ok(vec![ptype.account_id])
             } else {
-                self.get_members(ptype.account_id).await.map_err(Into::into)
+                self.get_members(ptype.account_id).await
             }
         } else {
             Ok(Vec::new())
         }
     }
 
-    async fn is_local_domain(&self, domain: &str) -> crate::Result<bool> {
+    async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
         self.get_value::<()>(ValueKey::from(ValueClass::Directory(
             DirectoryClass::Domain(domain.as_bytes().to_vec()),
         )))
         .await
         .map(|ids| ids.is_some())
-        .map_err(Into::into)
     }
 
-    async fn rcpt(&self, address: &str) -> crate::Result<bool> {
+    async fn rcpt(&self, address: &str) -> trc::Result<bool> {
         self.get_value::<()>(ValueKey::from(ValueClass::Directory(
             DirectoryClass::EmailToId(address.as_bytes().to_vec()),
         )))
         .await
         .map(|ids| ids.is_some())
-        .map_err(Into::into)
     }
 
-    async fn vrfy(&self, address: &str) -> crate::Result<Vec<String>> {
+    async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut results = Vec::new();
         let address = address.split('@').next().unwrap_or(address);
         if address.len() > 3 {
@@ -141,7 +139,7 @@ impl DirectoryStore for Store {
         Ok(results)
     }
 
-    async fn expn(&self, address: &str) -> crate::Result<Vec<String>> {
+    async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut results = Vec::new();
         for account_id in self.email_to_ids(address).await? {
             if let Some(email) = self

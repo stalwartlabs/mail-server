@@ -6,11 +6,8 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use futures_util::TryFutureExt;
-use jmap_proto::{
-    error::method::MethodError,
-    types::{collection::Collection, property::Property},
-};
+use jmap_proto::types::{collection::Collection, property::Property};
+use trc::AddContext;
 use utils::lru_cache::LruCached;
 
 use crate::JMAP;
@@ -26,22 +23,15 @@ impl JMAP {
         &self,
         account_id: u32,
         message_ids: impl Iterator<Item = u32>,
-    ) -> Result<Vec<(u32, u32)>, MethodError> {
+    ) -> trc::Result<Vec<(u32, u32)>> {
         // Obtain current state
         let modseq = self
             .core
             .storage
             .data
             .get_last_change_id(account_id, Collection::Thread)
-            .map_err(|err| {
-                tracing::error!(event = "error",
-                                context = "store",
-                                account_id = account_id,
-                                error = ?err,
-                                "Failed to retrieve threads last change id");
-                MethodError::ServerPartialFail
-            })
-            .await?;
+            .await
+            .caused_by(trc::location!())?;
 
         // Lock the cache
         let thread_cache = if let Some(thread_cache) =

@@ -6,16 +6,13 @@
 
 use std::{borrow::Cow, ops::Range};
 
+use trc::AddContext;
 use utils::config::utils::ParseValue;
 
 use crate::{BlobBackend, BlobStore, CompressionAlgo, Store};
 
 impl BlobStore {
-    pub async fn get_blob(
-        &self,
-        key: &[u8],
-        range: Range<usize>,
-    ) -> crate::Result<Option<Vec<u8>>> {
+    pub async fn get_blob(&self, key: &[u8], range: Range<usize>) -> trc::Result<Option<Vec<u8>>> {
         let read_range = match self.compression {
             CompressionAlgo::None => range.clone(),
             CompressionAlgo::Lz4 => 0..usize::MAX,
@@ -33,7 +30,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.get_blob(key, read_range).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.get_blob(key, read_range).await,
-                Store::None => Err(crate::Error::InternalError("No store configured".into())),
+                Store::None => Err(trc::Cause::NotConfigured.into()),
             },
             BlobBackend::Fs(store) => store.get_blob(key, read_range).await,
             #[cfg(feature = "s3")]
@@ -41,7 +38,7 @@ impl BlobStore {
         };
 
         let decompressed = match self.compression {
-            CompressionAlgo::Lz4 => match result? {
+            CompressionAlgo::Lz4 => match result.caused_by(trc::location!())? {
                 Some(data)
                     if data.last().copied().unwrap_or_default()
                         == CompressionAlgo::Lz4.marker() =>
@@ -50,14 +47,14 @@ impl BlobStore {
                         data.get(..data.len() - 1).unwrap_or_default(),
                     )
                     .map_err(|err| {
-                        crate::Error::InternalError(format!(
-                            "Failed to decompress LZ4 data: {}",
-                            err
-                        ))
+                        trc::Cause::Decompress
+                            .reason(err)
+                            .ctx(trc::Key::Key, key)
+                            .ctx(trc::Key::CausedBy, trc::location!())
                     })?
                 }
                 Some(data) => {
-                    tracing::debug!("Warning: Missing LZ4 marker for key: {key:?}");
+                    trc::error!(BlobMissingMarker, Details = key);
                     data
                 }
                 None => return Ok(None),
@@ -77,7 +74,7 @@ impl BlobStore {
         }
     }
 
-    pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> crate::Result<()> {
+    pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
         let data: Cow<[u8]> = match self.compression {
             CompressionAlgo::None => data.into(),
             CompressionAlgo::Lz4 => {
@@ -99,15 +96,16 @@ impl BlobStore {
                 Store::MySQL(store) => store.put_blob(key, data.as_ref()).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.put_blob(key, data.as_ref()).await,
-                Store::None => Err(crate::Error::InternalError("No store configured".into())),
+                Store::None => Err(trc::Cause::NotConfigured.into()),
             },
             BlobBackend::Fs(store) => store.put_blob(key, data.as_ref()).await,
             #[cfg(feature = "s3")]
             BlobBackend::S3(store) => store.put_blob(key, data.as_ref()).await,
         }
+        .caused_by(trc::location!())
     }
 
-    pub async fn delete_blob(&self, key: &[u8]) -> crate::Result<bool> {
+    pub async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
         match &self.backend {
             BlobBackend::Store(store) => match store {
                 #[cfg(feature = "sqlite")]
@@ -120,12 +118,13 @@ impl BlobStore {
                 Store::MySQL(store) => store.delete_blob(key).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.delete_blob(key).await,
-                Store::None => Err(crate::Error::InternalError("No store configured".into())),
+                Store::None => Err(trc::Cause::NotConfigured.into()),
             },
             BlobBackend::Fs(store) => store.delete_blob(key).await,
             #[cfg(feature = "s3")]
             BlobBackend::S3(store) => store.delete_blob(key).await,
         }
+        .caused_by(trc::location!())
     }
 
     pub fn with_compression(self, compression: CompressionAlgo) -> Self {
@@ -149,7 +148,7 @@ impl CompressionAlgo {
 }
 
 impl ParseValue for CompressionAlgo {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         match value {
             "lz4" => Ok(CompressionAlgo::Lz4),
             //"zstd" => Ok(CompressionAlgo::Zstd),

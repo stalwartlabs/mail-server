@@ -1068,6 +1068,7 @@ dependencies = [
  "tracing-journald",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "trc",
  "unicode-security",
  "utils",
  "whatlang",
@@ -1655,7 +1656,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.0",
  "totp-rs",
- "tracing",
+ "trc",
  "utils",
 ]
 
@@ -2959,6 +2960,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.0",
  "tracing",
+ "trc",
  "utils",
 ]
 
@@ -3191,6 +3193,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite 0.23.1",
  "tracing",
+ "trc",
  "tungstenite 0.23.0",
  "utils",
  "x509-parser 0.16.0",
@@ -3230,6 +3233,7 @@ dependencies = [
  "store",
  "tokio",
  "tracing",
+ "trc",
  "utils",
 ]
 
@@ -3591,6 +3595,7 @@ dependencies = [
  "store",
  "tokio",
  "tracing",
+ "trc",
  "utils",
 ]
 
@@ -4468,6 +4473,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.0",
  "tracing",
+ "trc",
  "utils",
 ]
 
@@ -6038,6 +6044,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.0",
  "tracing",
+ "trc",
  "utils",
  "webpki-roots 0.26.3",
  "x509-parser 0.16.0",
@@ -6186,7 +6193,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-rustls 0.26.0",
- "tracing",
+ "trc",
  "utils",
  "xxhash-rust",
 ]
@@ -6860,6 +6867,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "trc"
+version = "0.8.5"
+dependencies = [
+ "base64 0.22.1",
+ "bincode",
+ "reqwest 0.12.5",
+ "serde_json",
+]
+
+[[package]]
 name = "trim-in-place"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7117,6 +7134,7 @@ dependencies = [
  "tokio-rustls 0.26.0",
  "tracing",
  "tracing-journald",
+ "trc",
  "webpki-roots 0.26.3",
  "x509-parser 0.16.0",
 ]

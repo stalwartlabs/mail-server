@@ -222,7 +222,7 @@ impl JMAP {
             .set(event.value_class(), (now() + INDEX_LOCK_EXPIRY).serialize());
         match self.core.storage.data.write(batch.build()).await {
             Ok(_) => true,
-            Err(store::Error::AssertValueFailed) => {
+            Err(err) if err.matches(trc::Cause::AssertValue) => {
                 tracing::trace!(
                     context = "queue",
                     event = "locked",
@@ -253,7 +253,7 @@ impl IndexEmail {
         })
     }
 
-    fn deserialize(key: &[u8], value: &[u8]) -> store::Result<Self> {
+    fn deserialize(key: &[u8], value: &[u8]) -> trc::Result<Self> {
         Ok(IndexEmail {
             seq: key.deserialize_be_u64(0)?,
             account_id: key.deserialize_be_u32(U64_LEN)?,
@@ -265,7 +265,7 @@ impl IndexEmail {
                         ..U64_LEN + U32_LEN + U32_LEN + BLOB_HASH_LEN + 1,
                 )
                 .and_then(|bytes| BlobHash::try_from_hash_slice(bytes).ok())
-                .ok_or_else(|| store::Error::InternalError("Invalid blob hash".to_string()))?,
+                .ok_or_else(|| trc::Error::corrupted_key(key, value.into(), trc::location!()))?,
         })
     }
 }

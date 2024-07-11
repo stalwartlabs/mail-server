@@ -157,7 +157,7 @@ impl TlsManager {
                         acme_providers.insert(acme_id.to_string(), acme_provider);
                     }
                     Err(err) => {
-                        config.new_build_error(format!("acme.{acme_id}"), err);
+                        config.new_build_error(format!("acme.{acme_id}"), err.to_string());
                     }
                 }
             }
@@ -359,10 +359,7 @@ pub(crate) fn parse_certificates(
     }
 }
 
-pub(crate) fn build_certified_key(
-    cert: Vec<u8>,
-    pk: Vec<u8>,
-) -> utils::config::Result<CertifiedKey> {
+pub(crate) fn build_certified_key(cert: Vec<u8>, pk: Vec<u8>) -> Result<CertifiedKey, String> {
     let cert = certs(&mut Cursor::new(cert))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| format!("Failed to read certificates: {err}"))?;
@@ -391,7 +388,7 @@ pub(crate) fn build_certified_key(
 
 pub(crate) fn build_self_signed_cert(
     domains: impl Into<Vec<String>>,
-) -> utils::config::Result<CertifiedKey> {
+) -> Result<CertifiedKey, String> {
     let cert = generate_simple_self_signed(domains)
         .map_err(|err| format!("Failed to generate self-signed certificate: {err}",))?;
     build_certified_key(

@@ -5,12 +5,12 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, id::Id, property::Property},
 };
 use store::query::{sort::Pagination, Comparator, ResultSet};
+use trc::AddContext;
 
 use crate::JMAP;
 
@@ -18,7 +18,7 @@ impl JMAP {
     pub async fn thread_get(
         &self,
         mut request: GetRequest<RequestArguments>,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let account_id = request.account_id.document_id();
         let ids = if let Some(ids) = request.unwrap_ids(self.core.jmap.get_max_objects)? {
             ids
@@ -60,15 +60,7 @@ impl JMAP {
                                 Pagination::new(document_ids.len() as usize, 0, None, 0),
                             )
                             .await
-                            .map_err(|err| {
-                                tracing::error!(event = "error",
-                                                context = "store",
-                                                account_id = account_id,
-                                                collection = "email",
-                                                error = ?err,
-                                                "Thread emailIds sort failed");
-                                MethodError::ServerPartialFail
-                            })?
+                            .caused_by(trc::location!())?
                             .ids
                             .into_iter()
                             .map(|id| Id::from_parts(thread_id, id as u32))

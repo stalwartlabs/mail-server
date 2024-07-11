@@ -67,7 +67,6 @@ impl Stores {
                     .property_or_default::<bool>(("store", id, "disable"), "false")
                     .unwrap_or(false)
                 {
-                    tracing::debug!("Skipping disabled store {id:?}.");
                     continue;
                 }
             }
@@ -205,7 +204,10 @@ impl Stores {
                     }
                 }
                 unknown => {
-                    tracing::debug!("Unknown directory type: {unknown:?}");
+                    config.new_parse_warning(
+                        ("store", id, "type"),
+                        format!("Unknown directory type: {unknown:?}"),
+                    );
                 }
             }
         }
@@ -302,15 +304,6 @@ impl Stores {
                     store: PurgeStore::Lookup(store.clone()),
                 });
             }
-        }
-    }
-}
-
-impl From<crate::Error> for String {
-    fn from(err: crate::Error) -> Self {
-        match err {
-            crate::Error::InternalError(err) => err,
-            crate::Error::AssertValueFailed => unimplemented!(),
         }
     }
 }

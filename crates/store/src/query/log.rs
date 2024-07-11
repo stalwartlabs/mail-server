@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use trc::AddContext;
 use utils::codec::leb128::Leb128Iterator;
 
-use crate::{write::key::DeserializeBigEndian, Error, IterateParams, LogKey, Store, U64_LEN};
+use crate::{write::key::DeserializeBigEndian, IterateParams, LogKey, Store, U64_LEN};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Change {
@@ -47,7 +48,7 @@ impl Store {
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
         query: Query,
-    ) -> crate::Result<Changes> {
+    ) -> trc::Result<Changes> {
         let collection = collection.into();
         let (is_inclusive, from_change_id, to_change_id) = match query {
             Query::All => (true, 0, u64::MAX),
@@ -80,16 +81,14 @@ impl Store {
                     }
                     changelog.to_change_id = change_id;
                     changelog.deserialize(value).ok_or_else(|| {
-                        Error::InternalError(format!(
-                            "Failed to deserialize changelog for [{}/{:?}]: [{:?}]",
-                            account_id, collection, query
-                        ))
+                        trc::Error::corrupted_key(key, value.into(), trc::location!())
                     })?;
                 }
                 Ok(true)
             },
         )
-        .await?;
+        .await
+        .caused_by(trc::location!())?;
 
         if changelog.changes.is_empty() {
             changelog.from_change_id = from_change_id;
@@ -107,7 +106,7 @@ impl Store {
         &self,
         account_id: u32,
         collection: impl Into<u8> + Sync + Send,
-    ) -> crate::Result<Option<u64>> {
+    ) -> trc::Result<Option<u64>> {
         let collection = collection.into();
 
         let from_key = LogKey {
@@ -133,7 +132,8 @@ impl Store {
                 Ok(false)
             },
         )
-        .await?;
+        .await
+        .caused_by(trc::location!())?;
 
         Ok(last_change_id)
     }

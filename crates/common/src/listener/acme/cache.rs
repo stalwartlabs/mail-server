@@ -4,49 +4,50 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::io::ErrorKind;
-
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use trc::AddContext;
 use utils::config::ConfigKey;
 
 use crate::Core;
 
-use super::{AcmeError, AcmeProvider};
+use super::AcmeProvider;
 
 impl Core {
-    pub(crate) async fn load_cert(
-        &self,
-        provider: &AcmeProvider,
-    ) -> Result<Option<Vec<u8>>, AcmeError> {
+    pub(crate) async fn load_cert(&self, provider: &AcmeProvider) -> trc::Result<Option<Vec<u8>>> {
         self.read_if_exists(provider, "cert", provider.domains.as_slice())
             .await
-            .map_err(AcmeError::CertCacheLoad)
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .details("Failed to load certificates")
+            })
     }
 
-    pub(crate) async fn store_cert(
-        &self,
-        provider: &AcmeProvider,
-        cert: &[u8],
-    ) -> Result<(), AcmeError> {
+    pub(crate) async fn store_cert(&self, provider: &AcmeProvider, cert: &[u8]) -> trc::Result<()> {
         self.write(provider, "cert", provider.domains.as_slice(), cert)
             .await
-            .map_err(AcmeError::CertCacheStore)
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .details("Failed to store certificate")
+            })
     }
 
     pub(crate) async fn load_account(
         &self,
         provider: &AcmeProvider,
-    ) -> Result<Option<Vec<u8>>, AcmeError> {
+    ) -> trc::Result<Option<Vec<u8>>> {
         self.read_if_exists(provider, "account-key", provider.contact.as_slice())
             .await
-            .map_err(AcmeError::AccountCacheLoad)
+            .add_context(|err| {
+                err.caused_by(trc::location!())
+                    .details("Failed to load account")
+            })
     }
 
     pub(crate) async fn store_account(
         &self,
         provider: &AcmeProvider,
         account: &[u8],
-    ) -> Result<(), AcmeError> {
+    ) -> trc::Result<()> {
         self.write(
             provider,
             "account-key",
@@ -54,7 +55,10 @@ impl Core {
             account,
         )
         .await
-        .map_err(AcmeError::AccountCacheStore)
+        .add_context(|err| {
+            err.caused_by(trc::location!())
+                .details("Failed to store account")
+        })
     }
 
     async fn read_if_exists(
@@ -62,19 +66,19 @@ impl Core {
         provider: &AcmeProvider,
         class: &str,
         items: &[String],
-    ) -> Result<Option<Vec<u8>>, std::io::Error> {
-        match self
+    ) -> trc::Result<Option<Vec<u8>>> {
+        if let Some(content) = self
             .storage
             .config
             .get(self.build_key(provider, class, items))
-            .await
+            .await?
         {
-            Ok(Some(content)) => match URL_SAFE_NO_PAD.decode(content.as_bytes()) {
-                Ok(contents) => Ok(Some(contents)),
-                Err(err) => Err(std::io::Error::new(ErrorKind::Other, err)),
-            },
-            Ok(None) => Ok(None),
-            Err(err) => Err(std::io::Error::new(ErrorKind::Other, err)),
+            URL_SAFE_NO_PAD
+                .decode(content.as_bytes())
+                .map_err(Into::into)
+                .map(Some)
+        } else {
+            Ok(None)
         }
     }
 
@@ -84,7 +88,7 @@ impl Core {
         class: &str,
         items: &[String],
         contents: impl AsRef<[u8]>,
-    ) -> Result<(), std::io::Error> {
+    ) -> trc::Result<()> {
         self.storage
             .config
             .set([ConfigKey {
@@ -92,7 +96,6 @@ impl Core {
                 value: URL_SAFE_NO_PAD.encode(contents.as_ref()),
             }])
             .await
-            .map_err(|err| std::io::Error::new(ErrorKind::Other, err))
     }
 
     fn build_key(&self, provider: &AcmeProvider, class: &str, _: &[String]) -> String {

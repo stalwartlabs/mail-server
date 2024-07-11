@@ -11,7 +11,7 @@ use directory::{
         lookup::DirectoryStore, manage::ManageDirectory, PrincipalAction, PrincipalField,
         PrincipalUpdate, PrincipalValue, SpecialSecrets,
     },
-    DirectoryError, DirectoryInner, ManagementError, Principal, QueryBy, Type,
+    DirectoryInner, Principal, QueryBy, Type,
 };
 
 use hyper::{header, Method, StatusCode};
@@ -116,7 +116,7 @@ impl JMAP {
                                 "data": account_id,
                             }))
                             .into_http_response(),
-                            Err(err) => err.into_http_response(),
+                            Err(err) => into_directory_response(err),
                         }
                     }
                     Err(err) => err.into_http_response(),
@@ -150,7 +150,7 @@ impl JMAP {
                         }))
                         .into_http_response()
                     }
-                    Err(err) => err.into_http_response(),
+                    Err(err) => into_directory_response(err),
                 }
             }
             (Some(name), method) => {
@@ -167,7 +167,7 @@ impl JMAP {
                         .into_http_response();
                     }
                     Err(err) => {
-                        return err.into_http_response();
+                        return into_directory_response(err);
                     }
                 };
 
@@ -227,7 +227,7 @@ impl JMAP {
                                 }))
                                 .into_http_response()
                             }
-                            Err(err) => err.into_http_response(),
+                            Err(err) => into_directory_response(err),
                         }
                     }
                     Method::DELETE => {
@@ -253,7 +253,7 @@ impl JMAP {
                                 }))
                                 .into_http_response()
                             }
-                            Err(err) => err.into_http_response(),
+                            Err(err) => into_directory_response(err),
                         }
                     }
                     Method::PATCH => {
@@ -296,7 +296,7 @@ impl JMAP {
                                         }))
                                         .into_http_response()
                                     }
-                                    Err(err) => err.into_http_response(),
+                                    Err(err) => into_directory_response(err),
                                 }
                             }
                             Err(err) => err.into_http_response(),
@@ -339,7 +339,7 @@ impl JMAP {
                 Ok(None) => {
                     return RequestError::not_found().into_http_response();
                 }
-                Err(err) => return err.into_http_response(),
+                Err(err) => return into_directory_response(err),
             }
         }
 
@@ -477,7 +477,7 @@ impl JMAP {
                 }))
                 .into_http_response()
             }
-            Err(err) => err.into_http_response(),
+            Err(err) => into_directory_response(err),
         }
     }
 
@@ -515,40 +515,47 @@ impl From<Principal<String>> for PrincipalResponse {
     }
 }
 
-impl ToHttpResponse for DirectoryError {
-    fn into_http_response(self) -> HttpResponse {
-        match self {
-            DirectoryError::Management(err) => {
-                let response = match err {
-                    ManagementError::MissingField(field) => ManagementApiError::FieldMissing {
-                        field: field.to_string().into(),
-                    },
-                    ManagementError::AlreadyExists { field, value } => {
-                        ManagementApiError::FieldAlreadyExists {
-                            field: field.to_string().into(),
-                            value: value.into(),
-                        }
-                    }
-                    ManagementError::NotFound(details) => ManagementApiError::NotFound {
-                        item: details.into(),
-                    },
-                };
-                JsonResponse::new(response).into_http_response()
-            }
-            DirectoryError::Unsupported => JsonResponse::new(ManagementApiError::Unsupported {
+fn into_directory_response(mut error: trc::Error) -> HttpResponse {
+    let response = match error.as_ref() {
+        trc::Cause::MissingParameter => ManagementApiError::FieldMissing {
+            field: error
+                .take_value(trc::Key::Key)
+                .and_then(|v| v.into_string())
+                .unwrap_or_default(),
+        },
+        trc::Cause::AlreadyExists => ManagementApiError::FieldAlreadyExists {
+            field: error
+                .take_value(trc::Key::Key)
+                .and_then(|v| v.into_string())
+                .unwrap_or_default(),
+            value: error
+                .take_value(trc::Key::Value)
+                .and_then(|v| v.into_string())
+                .unwrap_or_default(),
+        },
+        trc::Cause::NotFound => ManagementApiError::NotFound {
+            item: error
+                .take_value(trc::Key::Key)
+                .and_then(|v| v.into_string())
+                .unwrap_or_default(),
+        },
+        trc::Cause::Unsupported => {
+            return JsonResponse::new(ManagementApiError::Unsupported {
                 details: "Requested action is unsupported".into(),
             })
-            .into_http_response(),
-            err => {
-                tracing::warn!(
-                    context = "directory",
-                    event = "error",
-                    reason = ?err,
-                    "Directory error"
-                );
-
-                RequestError::internal_server_error().into_http_response()
-            }
+            .into_http_response();
         }
-    }
+        _ => {
+            tracing::warn!(
+                context = "directory",
+                event = "error",
+                reason = ?error,
+                "Directory error"
+            );
+
+            return RequestError::internal_server_error().into_http_response();
+        }
+    };
+
+    JsonResponse::new(response).into_http_response()
 }

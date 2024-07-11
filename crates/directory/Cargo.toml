@@ -7,6 +7,7 @@ resolver = "2"
 [dependencies]
 utils = { path =  "../utils" }
 store = { path =  "../store" }
+trc = { path = "../trc" }
 jmap_proto = { path =  "../jmap-proto" }
 smtp-proto = { version = "0.1" }
 mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
@@ -21,7 +22,6 @@ deadpool = { version = "0.10", features = ["managed", "rt_tokio_1"] }
 async-trait = "0.1.68"
 parking_lot = "0.12"
 ahash = { version = "0.8" }
-tracing = "0.1"
 lru-cache = "0.1.2"
 pwhash = "1"
 password-hash = "0.5.0"

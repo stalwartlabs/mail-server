@@ -456,7 +456,7 @@ impl ConstantValue for VerifyStrategy {
 }
 
 impl ParseValue for DkimCanonicalization {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         if let Some((headers, body)) = value.split_once('/') {
             Ok(DkimCanonicalization {
                 headers: Canonicalization::parse_value(headers.trim())?,

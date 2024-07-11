@@ -21,18 +21,18 @@ use crate::{
     BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
 };
 
-use super::PostgresStore;
+use super::{into_error, PostgresStore};
 
 #[derive(Debug)]
 enum CommitError {
     Postgres(tokio_postgres::Error),
-    Internal(crate::Error),
+    Internal(trc::Error),
     Retry,
 }
 
 impl PostgresStore {
-    pub(crate) async fn write(&self, batch: Batch) -> crate::Result<AssignedIds> {
-        let mut conn = self.conn_pool.get().await?;
+    pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
+        let mut conn = self.conn_pool.get().await.map_err(into_error)?;
         let start = Instant::now();
         let mut retry_count = 0;
 
@@ -50,16 +50,16 @@ impl PostgresStore {
                             ) if retry_count < MAX_COMMIT_ATTEMPTS
                                 && start.elapsed() < MAX_COMMIT_TIME => {}
                             Some(&SqlState::UNIQUE_VIOLATION) => {
-                                return Err(crate::Error::AssertValueFailed);
+                                return Err(trc::Cause::AssertValue.into());
                             }
-                            _ => return Err(err.into()),
+                            _ => return Err(into_error(err)),
                         },
                         CommitError::Internal(err) => return Err(err),
                         CommitError::Retry => {
                             if retry_count > MAX_COMMIT_ATTEMPTS
                                 || start.elapsed() > MAX_COMMIT_TIME
                             {
-                                return Err(crate::Error::AssertValueFailed);
+                                return Err(trc::Cause::AssertValue.into());
                             }
                         }
                     }
@@ -148,7 +148,7 @@ impl PostgresStore {
                                 .await?
                                 == 0
                             {
-                                return Err(crate::Error::AssertValueFailed.into());
+                                return Err(trc::Cause::AssertValue.into_err().into());
                             }
                         }
                         ValueOp::AtomicAdd(by) => {
@@ -322,7 +322,7 @@ impl PostgresStore {
                         })
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
-                        return Err(crate::Error::AssertValueFailed.into());
+                        return Err(trc::Cause::AssertValue.into_err().into());
                     }
                     asserted_values.insert(key, exists);
                 }
@@ -332,37 +332,42 @@ impl PostgresStore {
         trx.commit().await.map(|_| result).map_err(Into::into)
     }
 
-    pub(crate) async fn purge_store(&self) -> crate::Result<()> {
-        let conn = self.conn_pool.get().await?;
+    pub(crate) async fn purge_store(&self) -> trc::Result<()> {
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
 
         for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
             let s = conn
                 .prepare_cached(&format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))
-                .await?;
-            conn.execute(&s, &[]).await.map(|_| ())?
+                .await
+                .map_err(into_error)?;
+            conn.execute(&s, &[])
+                .await
+                .map(|_| ())
+                .map_err(into_error)?
         }
 
         Ok(())
     }
 
-    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> crate::Result<()> {
-        let conn = self.conn_pool.get().await?;
+    pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
+        let conn = self.conn_pool.get().await.map_err(into_error)?;
 
         let s = conn
             .prepare_cached(&format!(
                 "DELETE FROM {} WHERE k >= $1 AND k < $2",
                 char::from(from.subspace()),
             ))
-            .await?;
+            .await
+            .map_err(into_error)?;
         conn.execute(&s, &[&from.serialize(0), &to.serialize(0)])
             .await
             .map(|_| ())
-            .map_err(Into::into)
+            .map_err(into_error)
     }
 }
 
-impl From<crate::Error> for CommitError {
-    fn from(err: crate::Error) -> Self {
+impl From<trc::Error> for CommitError {
+    fn from(err: trc::Error) -> Self {
         CommitError::Internal(err)
     }
 }

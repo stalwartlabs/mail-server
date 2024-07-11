@@ -19,7 +19,7 @@ impl JMAP {
     pub async fn email_submission_query(
         &self,
         mut request: QueryRequest<RequestArguments>,
-    ) -> Result<QueryResponse, MethodError> {
+    ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let mut filters = Vec::with_capacity(request.filter.len());
 
@@ -60,7 +60,7 @@ impl JMAP {
                 Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                     filters.push(cond.into());
                 }
-                other => return Err(MethodError::UnsupportedFilter(other.to_string())),
+                other => return Err(MethodError::UnsupportedFilter(other.to_string()).into()),
             }
         }
 
@@ -88,7 +88,7 @@ impl JMAP {
                     SortProperty::SentAt => {
                         query::Comparator::field(Property::SendAt, comparator.is_ascending)
                     }
-                    other => return Err(MethodError::UnsupportedSort(other.to_string())),
+                    other => return Err(MethodError::UnsupportedSort(other.to_string()).into()),
                 });
             }
 

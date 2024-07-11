@@ -304,7 +304,7 @@ impl Servers {
 }
 
 impl ParseValue for ServerProtocol {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         if value.eq_ignore_ascii_case("smtp") {
             Ok(Self::Smtp)
         } else if value.eq_ignore_ascii_case("lmtp") {

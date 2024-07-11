@@ -50,7 +50,7 @@ impl WebAdminManager {
         }
     }
 
-    pub async fn unpack(&self, blob_store: &BlobStore) -> store::Result<()> {
+    pub async fn unpack(&self, blob_store: &BlobStore) -> trc::Result<()> {
         // Delete any existing bundles
         self.bundle_path.clean().await?;
 
@@ -58,17 +58,26 @@ impl WebAdminManager {
         let bundle = blob_store
             .get_blob(WEBADMIN_KEY, 0..usize::MAX)
             .await?
-            .ok_or_else(|| store::Error::InternalError("WebAdmin bundle not found".to_string()))?;
+            .ok_or_else(|| {
+                trc::Cause::NotFound
+                    .caused_by(trc::location!())
+                    .details("Webadmin bundle not found")
+            })?;
 
         // Uncompress
-        let mut bundle = zip::ZipArchive::new(Cursor::new(bundle))
-            .map_err(|err| store::Error::InternalError(format!("Unzip error: {err}")))?;
+        let mut bundle = zip::ZipArchive::new(Cursor::new(bundle)).map_err(|err| {
+            trc::Cause::Decompress
+                .caused_by(trc::location!())
+                .reason(err)
+        })?;
         let mut routes = AHashMap::new();
         for i in 0..bundle.len() {
             let (file_name, contents) = {
-                let mut file = bundle
-                    .by_index(i)
-                    .map_err(|err| store::Error::InternalError(format!("Unzip error: {err}")))?;
+                let mut file = bundle.by_index(i).map_err(|err| {
+                    trc::Cause::Decompress
+                        .caused_by(trc::location!())
+                        .reason(err)
+                })?;
                 if file.is_dir() {
                     continue;
                 }
@@ -113,14 +122,17 @@ impl WebAdminManager {
         Ok(())
     }
 
-    pub async fn update_and_unpack(&self, core: &Core) -> store::Result<()> {
+    pub async fn update_and_unpack(&self, core: &Core) -> trc::Result<()> {
         let bytes = core
             .storage
             .config
             .fetch_resource("webadmin")
             .await
             .map_err(|err| {
-                store::Error::InternalError(format!("Failed to download webadmin: {err}"))
+                trc::Cause::Fetch
+                    .caused_by(trc::location!())
+                    .reason(err)
+                    .details("Failed to download webadmin")
             })?;
         core.storage.blob.put_blob(WEBADMIN_KEY, &bytes).await?;
         self.unpack(&core.storage.blob).await

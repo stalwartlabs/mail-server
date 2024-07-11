@@ -6,33 +6,31 @@
 
 use std::time::Duration;
 
-use jmap_proto::{error::method::MethodError, types::collection::Collection};
+use jmap_proto::types::collection::Collection;
 use store::{
     write::{log::ChangeLogBuilder, BatchBuilder},
     LogKey,
 };
+use trc::AddContext;
 
 use crate::JMAP;
 
 impl JMAP {
-    pub async fn begin_changes(&self, account_id: u32) -> Result<ChangeLogBuilder, MethodError> {
+    pub async fn begin_changes(&self, account_id: u32) -> trc::Result<ChangeLogBuilder> {
         self.assign_change_id(account_id)
             .await
             .map(ChangeLogBuilder::with_change_id)
     }
 
-    pub async fn assign_change_id(&self, _: u32) -> Result<u64, MethodError> {
+    pub async fn assign_change_id(&self, _: u32) -> trc::Result<u64> {
         self.generate_snowflake_id()
     }
 
-    pub fn generate_snowflake_id(&self) -> Result<u64, MethodError> {
+    pub fn generate_snowflake_id(&self) -> trc::Result<u64> {
         self.inner.snowflake_id.generate().ok_or_else(|| {
-            tracing::error!(
-                event = "error",
-                context = "change_log",
-                "Failed to generate snowflake id."
-            );
-            MethodError::ServerPartialFail
+            trc::Cause::Unexpected
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Reason, "Failed to generate snowflake id.")
         })
     }
 
@@ -40,7 +38,7 @@ impl JMAP {
         &self,
         account_id: u32,
         mut changes: ChangeLogBuilder,
-    ) -> Result<u64, MethodError> {
+    ) -> trc::Result<u64> {
         if changes.change_id == u64::MAX || changes.change_id == 0 {
             changes.change_id = self.assign_change_id(account_id).await?;
         }
@@ -53,21 +51,15 @@ impl JMAP {
             .data
             .write(builder.build())
             .await
-            .map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "change_log",
-                    error = ?err,
-                    "Failed to write changes.");
-                MethodError::ServerPartialFail
-            })?;
-
-        Ok(state)
+            .caused_by(trc::location!())
+            .map(|_| state)
     }
 
-    pub async fn delete_changes(&self, account_id: u32, before: Duration) -> store::Result<()> {
+    pub async fn delete_changes(&self, account_id: u32, before: Duration) -> trc::Result<()> {
         let reference_cid = self.inner.snowflake_id.past_id(before).ok_or_else(|| {
-            store::Error::InternalError("Failed to generate reference change id.".to_string())
+            trc::Cause::Unexpected
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Reason, "Failed to generate reference change id.")
         })?;
 
         for collection in [

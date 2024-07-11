@@ -26,15 +26,9 @@ pub mod sqlite;
 pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 1) as usize;
 pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
 
-impl From<std::io::Error> for crate::Error {
-    fn from(err: std::io::Error) -> Self {
-        Self::InternalError(format!("IO error: {}", err))
-    }
-}
-
 #[allow(dead_code)]
-fn deserialize_i64_le(bytes: &[u8]) -> crate::Result<i64> {
+fn deserialize_i64_le(key: &[u8], bytes: &[u8]) -> trc::Result<i64> {
     Ok(i64::from_le_bytes(bytes[..].try_into().map_err(|_| {
-        crate::Error::InternalError("Failed to deserialize i64 value.".to_string())
+        trc::Error::corrupted_key(key, bytes.into(), trc::location!())
     })?))
 }

@@ -16,6 +16,7 @@ use store::{
     },
     IterateParams, ValueKey, U32_LEN, U64_LEN,
 };
+use trc::AddContext;
 use utils::{BlobHash, BLOB_HASH_LEN};
 
 use crate::Core;
@@ -59,7 +60,7 @@ impl Core {
     pub async fn list_deleted(
         &self,
         account_id: u32,
-    ) -> store::Result<Vec<DeletedBlob<BlobHash, u64, u8>>> {
+    ) -> trc::Result<Vec<DeletedBlob<BlobHash, u64, u8>>> {
         let from_key = ValueKey {
             account_id,
             collection: 0,
@@ -92,9 +93,7 @@ impl Core {
                         results.push(DeletedBlob {
                             hash: BlobHash::try_from_hash_slice(
                                 key.get(U32_LEN..U32_LEN + BLOB_HASH_LEN).ok_or_else(|| {
-                                    store::Error::InternalError(format!(
-                                        "Invalid key {key:?} in blob hash tables"
-                                    ))
+                                    trc::Error::corrupted_key(key, value.into(), trc::location!())
                                 })?,
                             )
                             .unwrap(),
@@ -107,7 +106,8 @@ impl Core {
                     Ok(true)
                 },
             )
-            .await?;
+            .await
+            .caused_by(trc::location!())?;
 
         Ok(results)
     }

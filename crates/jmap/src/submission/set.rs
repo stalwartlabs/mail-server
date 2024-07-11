@@ -8,10 +8,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common::listener::{stream::NullIo, ServerInstance};
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::set::{self, SetRequest, SetResponse},
     object::{
         email_submission::SetArguments,
@@ -56,7 +53,7 @@ impl JMAP {
         mut request: SetRequest<SetArguments>,
         instance: &Arc<ServerInstance>,
         next_call: &mut Option<Call<RequestMethod>>,
-    ) -> Result<SetResponse, MethodError> {
+    ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
         let mut response = SetResponse::from_request(&request, self.core.jmap.set_max_objects)?;
         let will_destroy = request.unwrap_destroy();
@@ -295,7 +292,7 @@ impl JMAP {
         response: &SetResponse,
         instance: &Arc<ServerInstance>,
         object: Object<SetValue>,
-    ) -> Result<Result<Object<Value>, SetError>, MethodError> {
+    ) -> trc::Result<Result<Object<Value>, SetError>> {
         let mut submission = Object::with_capacity(object.properties.len());
         let mut email_id = u32::MAX;
         let mut identity_id = u32::MAX;

@@ -32,6 +32,7 @@ pub enum ConfigWarning {
     AppliedDefault { default: String },
     Unread { value: String },
     Build { error: String },
+    Parse { error: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -54,7 +55,7 @@ pub struct Rate {
     pub period: Duration,
 }
 
-pub type Result<T> = std::result::Result<T, String>;
+pub(crate) type Result<T> = std::result::Result<T, String>;
 
 impl Config {
     pub async fn resolve_macros(&mut self, classes: &[&str]) {
@@ -205,6 +206,9 @@ impl Config {
                 }
                 ConfigWarning::Unread { value } => {
                     format!("WARNING: Unused setting {key:?} with value {value:?}")
+                }
+                ConfigWarning::Parse { error } => {
+                    format!("WARNING: Failed to parse {key:?}: {error}")
                 }
                 ConfigWarning::Build { error } => format!("WARNING for {key:?}: {error}"),
             };

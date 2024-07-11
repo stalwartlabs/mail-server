@@ -422,7 +422,7 @@ impl<T: SessionStream> SessionData<T> {
         &self,
         account_id: u32,
         id: u32,
-    ) -> Result<Option<(TagManager<UidMailbox>, u32)>, MethodError> {
+    ) -> trc::Result<Option<(TagManager<UidMailbox>, u32)>> {
         // Obtain mailbox tags
         if let (Some(mailboxes), Some(thread_id)) = (
             self.jmap

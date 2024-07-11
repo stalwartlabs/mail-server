@@ -400,7 +400,7 @@ impl RequestPropertyParser for RequestArguments {
 }
 
 impl<T> SetRequest<T> {
-    pub fn validate(&self, max_objects_in_set: usize) -> Result<(), MethodError> {
+    pub fn validate(&self, max_objects_in_set: usize) -> trc::Result<()> {
         if self.create.as_ref().map_or(0, |objs| objs.len())
             + self.update.as_ref().map_or(0, |objs| objs.len())
             + self.destroy.as_ref().map_or(0, |objs| {
@@ -412,7 +412,7 @@ impl<T> SetRequest<T> {
             })
             > max_objects_in_set
         {
-            Err(MethodError::RequestTooLarge)
+            Err(MethodError::RequestTooLarge.into())
         } else {
             Ok(())
         }
@@ -460,10 +460,7 @@ impl SetRequest<RequestArguments> {
 }
 
 impl SetResponse {
-    pub fn from_request<T>(
-        request: &SetRequest<T>,
-        max_objects: usize,
-    ) -> Result<Self, MethodError> {
+    pub fn from_request<T>(request: &SetRequest<T>, max_objects: usize) -> trc::Result<Self> {
         let n_create = request.create.as_ref().map_or(0, |objs| objs.len());
         let n_update = request.update.as_ref().map_or(0, |objs| objs.len());
         let n_destroy = request.destroy.as_ref().map_or(0, |objs| {
@@ -491,7 +488,7 @@ impl SetResponse {
                 state_change: None,
             })
         } else {
-            Err(MethodError::RequestTooLarge)
+            Err(MethodError::RequestTooLarge.into())
         }
     }
 

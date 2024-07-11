@@ -5,10 +5,7 @@
  */
 
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::validate::{ValidateSieveScriptRequest, ValidateSieveScriptResponse},
 };
 
@@ -19,7 +16,7 @@ impl JMAP {
         &self,
         request: ValidateSieveScriptRequest,
         access_token: &AccessToken,
-    ) -> Result<ValidateSieveScriptResponse, MethodError> {
+    ) -> trc::Result<ValidateSieveScriptResponse> {
         Ok(ValidateSieveScriptResponse {
             account_id: request.account_id,
             error: match self

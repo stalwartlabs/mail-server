@@ -6,12 +6,9 @@
 
 use std::time::Duration;
 
-use jmap_proto::{
-    error::method::MethodError,
-    types::{
-        collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
-        type_state::DataType,
-    },
+use jmap_proto::types::{
+    collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
+    type_state::DataType,
 };
 use store::{
     ahash::AHashMap,
@@ -22,6 +19,7 @@ use store::{
     },
     BitmapKey, IterateParams, ValueKey, U32_LEN,
 };
+use trc::AddContext;
 use utils::codec::leb128::Leb128Reader;
 
 use crate::{
@@ -37,7 +35,7 @@ impl JMAP {
         &self,
         account_id: u32,
         mut document_ids: RoaringBitmap,
-    ) -> Result<(ChangeLogBuilder, RoaringBitmap), MethodError> {
+    ) -> trc::Result<(ChangeLogBuilder, RoaringBitmap)> {
         // Create batch
         let mut changes = ChangeLogBuilder::with_change_id(0);
         let mut delete_properties = AHashMap::new();
@@ -107,9 +105,7 @@ impl JMAP {
                     let (thread_id, _) = key
                         .get(U32_LEN + 2..)
                         .and_then(|bytes| bytes.read_leb128::<u32>())
-                        .ok_or_else(|| {
-                            store::Error::InternalError("Failed to read threadId.".to_string())
-                        })?;
+                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?;
                     if let Some(thread_count) = thread_ids.get_mut(&thread_id) {
                         *thread_count -= 1;
                     }
@@ -118,15 +114,7 @@ impl JMAP {
                 },
             )
             .await
-            .map_err(|err| {
-                tracing::error!(
-                    event = "error",
-                    context = "email_delete",
-                    error = ?err,
-                    "Failed to iterate threadIds."
-                );
-                MethodError::ServerPartialFail
-            })?;
+            .caused_by(trc::location!())?;
 
         // Tombstone message and untag it from the mailboxes
         let mut batch = BatchBuilder::new();
@@ -189,14 +177,7 @@ impl JMAP {
                     .data
                     .write(batch.build())
                     .await
-                    .map_err(|err| {
-                        tracing::error!(
-                        event = "error",
-                        context = "email_delete",
-                        error = ?err,
-                        "Failed to commit batch.");
-                        MethodError::ServerPartialFail
-                    })?;
+                    .caused_by(trc::location!())?;
 
                 batch = BatchBuilder::new();
                 batch
@@ -221,14 +202,7 @@ impl JMAP {
                 .data
                 .write(batch.build())
                 .await
-                .map_err(|err| {
-                    tracing::error!(
-                    event = "error",
-                    context = "email_delete",
-                    error = ?err,
-                    "Failed to commit batch.");
-                    MethodError::ServerPartialFail
-                })?;
+                .caused_by(trc::location!())?;
         }
 
         Ok((changes, document_ids))
@@ -339,11 +313,7 @@ impl JMAP {
         }
     }
 
-    pub async fn emails_auto_expunge(
-        &self,
-        account_id: u32,
-        period: Duration,
-    ) -> Result<(), MethodError> {
+    pub async fn emails_auto_expunge(&self, account_id: u32, period: Duration) -> trc::Result<()> {
         let deletion_candidates = self
             .get_tag(
                 account_id,
@@ -367,13 +337,9 @@ impl JMAP {
             return Ok(());
         }
         let reference_cid = self.inner.snowflake_id.past_id(period).ok_or_else(|| {
-            tracing::error!(
-                event = "error",
-                context = "email_auto_expunge",
-                account_id = account_id,
-                "Failed to generate reference cid."
-            );
-            MethodError::ServerPartialFail
+            trc::Cause::Unexpected
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Reason, "Failed to generate reference cid.")
         })?;
 
         // Find messages to destroy
@@ -422,7 +388,7 @@ impl JMAP {
         Ok(())
     }
 
-    pub async fn emails_purge_tombstoned(&self, account_id: u32) -> store::Result<()> {
+    pub async fn emails_purge_tombstoned(&self, account_id: u32) -> trc::Result<()> {
         // Obtain tombstoned messages
         let tombstoned_ids = self
             .core

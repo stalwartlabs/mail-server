@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::fmt::Display;
+
 use mysql_async::Pool;
 
 pub mod blob;
@@ -16,14 +18,7 @@ pub struct MysqlStore {
     pub(crate) conn_pool: Pool,
 }
 
-impl From<mysql_async::Error> for crate::Error {
-    fn from(err: mysql_async::Error) -> Self {
-        Self::InternalError(format!("mySQL error: {}", err))
-    }
-}
-
-impl From<mysql_async::FromValueError> for crate::Error {
-    fn from(err: mysql_async::FromValueError) -> Self {
-        Self::InternalError(format!("mySQL value conversion error: {}", err))
-    }
+#[inline(always)]
+fn into_error(err: impl Display) -> trc::Error {
+    trc::Cause::MySQL.reason(err)
 }

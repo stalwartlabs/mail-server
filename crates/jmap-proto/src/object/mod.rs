@@ -122,9 +122,12 @@ impl Serialize for Value {
 }
 
 impl Deserialize for Value {
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
-        Self::deserialize_from(&mut bytes.iter())
-            .ok_or_else(|| store::Error::InternalError("Failed to deserialize value.".to_string()))
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
+        Self::deserialize_from(&mut bytes.iter()).ok_or_else(|| {
+            trc::Cause::DataCorruption
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Value, bytes)
+        })
     }
 }
 
@@ -143,9 +146,12 @@ impl Serialize for &Object<Value> {
 }
 
 impl Deserialize for Object<Value> {
-    fn deserialize(bytes: &[u8]) -> store::Result<Self> {
-        Object::deserialize_from(&mut bytes.iter())
-            .ok_or_else(|| store::Error::InternalError("Failed to deserialize object.".to_string()))
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
+        Object::deserialize_from(&mut bytes.iter()).ok_or_else(|| {
+            trc::Cause::DataCorruption
+                .caused_by(trc::location!())
+                .ctx(trc::Key::Value, bytes)
+        })
     }
 }
 

@@ -171,10 +171,7 @@ impl<T> GetRequest<T> {
         }
     }
 
-    pub fn unwrap_ids(
-        &mut self,
-        max_objects_in_get: usize,
-    ) -> Result<Option<Vec<Id>>, MethodError> {
+    pub fn unwrap_ids(&mut self, max_objects_in_get: usize) -> trc::Result<Option<Vec<Id>>> {
         if let Some(ids) = self.ids.take() {
             let ids = ids.unwrap();
             if ids.len() <= max_objects_in_get {
@@ -184,7 +181,7 @@ impl<T> GetRequest<T> {
                         .collect::<Vec<_>>(),
                 ))
             } else {
-                Err(MethodError::RequestTooLarge)
+                Err(MethodError::RequestTooLarge.into())
             }
         } else {
             Ok(None)
@@ -194,7 +191,7 @@ impl<T> GetRequest<T> {
     pub fn unwrap_blob_ids(
         &mut self,
         max_objects_in_get: usize,
-    ) -> Result<Option<Vec<BlobId>>, MethodError> {
+    ) -> trc::Result<Option<Vec<BlobId>>> {
         if let Some(ids) = self.ids.take() {
             let ids = ids.unwrap();
             if ids.len() <= max_objects_in_get {
@@ -204,7 +201,7 @@ impl<T> GetRequest<T> {
                         .collect::<Vec<_>>(),
                 ))
             } else {
-                Err(MethodError::RequestTooLarge)
+                Err(MethodError::RequestTooLarge.into())
             }
         } else {
             Ok(None)

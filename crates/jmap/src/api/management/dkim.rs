@@ -66,6 +66,7 @@ impl JMAP {
                 return RequestError::not_found().into_http_response();
             }
         };
+        let todo = "bubble up error and log them";
 
         let (pk, algo) = match (
             self.core
@@ -163,7 +164,7 @@ impl JMAP {
         id: impl AsRef<str>,
         domain: impl Into<String>,
         selector: impl Into<String>,
-    ) -> store::Result<()> {
+    ) -> trc::Result<()> {
         let id = id.as_ref();
         let (algorithm, pk_type) = match algo {
             Algorithm::Rsa => ("rsa-sha256", "RSA PRIVATE KEY"),
@@ -176,7 +177,7 @@ impl JMAP {
                 Algorithm::Rsa => DkimKeyPair::generate_rsa(2048),
                 Algorithm::Ed25519 => DkimKeyPair::generate_ed25519(),
             }
-            .map_err(|err| store::Error::InternalError(err.to_string()))?
+            .map_err(|err| trc::Cause::Crypto.reason(err).caused_by(trc::location!()))?
             .private_key(),
         )
         .unwrap_or_default()

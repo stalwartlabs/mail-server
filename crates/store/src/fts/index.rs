@@ -118,7 +118,7 @@ impl Store {
     pub async fn fts_index<T: Into<u8> + Display + Clone + std::fmt::Debug>(
         &self,
         document: FtsDocument<'_, T>,
-    ) -> crate::Result<()> {
+    ) -> trc::Result<()> {
         let mut detect = LanguageDetector::new();
         let mut tokens: AHashMap<BitmapHash, Postings> = AHashMap::new();
         let mut parts = Vec::new();
@@ -230,7 +230,7 @@ impl Store {
         account_id: u32,
         collection: u8,
         document_ids: &impl DocumentSet,
-    ) -> crate::Result<()> {
+    ) -> trc::Result<()> {
         // Find keys to delete
         let mut delete_keys: AHashMap<u32, Vec<ValueClass<MaybeDynamicId>>> = AHashMap::new();
         self.iterate(
@@ -269,7 +269,9 @@ impl Store {
                             (hash, len as u8)
                         }
                         invalid => {
-                            return Err(format!("Invalid text bitmap key length {invalid}").into())
+                            return Err(trc::Error::corrupted_key(key, None, trc::location!())
+                                .ctx(trc::Key::Reason, "Invalid bitmap key length")
+                                .ctx(trc::Key::Size, invalid));
                         }
                     };
 
@@ -316,7 +318,7 @@ impl Store {
         Ok(())
     }
 
-    pub async fn fts_remove_all(&self, _: u32) -> crate::Result<()> {
+    pub async fn fts_remove_all(&self, _: u32) -> trc::Result<()> {
         // No-op
         // Term indexes are stored in the same key range as the document
 

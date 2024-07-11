@@ -325,7 +325,7 @@ impl Core {
 }
 
 impl ParseValue for Mode {
-    fn parse_value(value: &str) -> utils::config::Result<Self> {
+    fn parse_value(value: &str) -> Result<Self, String> {
         match value {
             "enforce" => Ok(Self::Enforce),
             "testing" | "test" => Ok(Self::Testing),

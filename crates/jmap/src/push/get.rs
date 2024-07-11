@@ -26,7 +26,7 @@ impl JMAP {
         &self,
         mut request: GetRequest<RequestArguments>,
         access_token: &AccessToken,
-    ) -> Result<GetResponse, MethodError> {
+    ) -> trc::Result<GetResponse> {
         let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
         let properties = request.unwrap_properties(&[
             Property::Id,
@@ -86,7 +86,8 @@ impl JMAP {
                     Property::Url | Property::Keys | Property::Value => {
                         return Err(MethodError::Forbidden(
                             "The 'url' and 'keys' properties are not readable".to_string(),
-                        ));
+                        )
+                        .into());
                     }
                     property => {
                         result.append(property.clone(), push.remove(property));
@@ -99,7 +100,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn fetch_push_subscriptions(&self, account_id: u32) -> store::Result<state::Event> {
+    pub async fn fetch_push_subscriptions(&self, account_id: u32) -> trc::Result<state::Event> {
         let mut subscriptions = Vec::new();
         let document_ids = self
             .core
@@ -127,10 +128,9 @@ impl JMAP {
                 })
                 .await?
                 .ok_or_else(|| {
-                    store::Error::InternalError(format!(
-                        "Could not find push subscription {}",
-                        document_id
-                    ))
+                    trc::Cause::NotFound
+                        .caused_by(trc::location!())
+                        .document_id(document_id)
                 })?;
 
             let expires = subscription
@@ -138,10 +138,9 @@ impl JMAP {
                 .get(&Property::Expires)
                 .and_then(|p| p.as_date())
                 .ok_or_else(|| {
-                    store::Error::InternalError(format!(
-                        "Missing expires property for push subscription {}",
-                        document_id
-                    ))
+                    trc::Cause::Unexpected
+                        .caused_by(trc::location!())
+                        .document_id(document_id)
                 })?
                 .timestamp() as u64;
             if expires > current_time {
@@ -175,20 +174,18 @@ impl JMAP {
                     .remove(&Property::Value)
                     .and_then(|p| p.try_unwrap_string())
                     .ok_or_else(|| {
-                        store::Error::InternalError(format!(
-                            "Missing verificationCode property for push subscription {}",
-                            document_id
-                        ))
+                        trc::Cause::Unexpected
+                            .caused_by(trc::location!())
+                            .document_id(document_id)
                     })?;
                 let url = subscription
                     .properties
                     .remove(&Property::Url)
                     .and_then(|p| p.try_unwrap_string())
                     .ok_or_else(|| {
-                        store::Error::InternalError(format!(
-                            "Missing Url property for push subscription {}",
-                            document_id
-                        ))
+                        trc::Cause::Unexpected
+                            .caused_by(trc::location!())
+                            .document_id(document_id)
                     })?;
 
                 if subscription

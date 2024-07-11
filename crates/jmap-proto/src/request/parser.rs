@@ -178,7 +178,7 @@ impl Request {
                             Ok(method) => method,
                             Err(Error::Method(err)) => {
                                 parser.skip_token(start_depth_array, start_depth_dict)?;
-                                RequestMethod::Error(err)
+                                RequestMethod::Error(err.into())
                             }
                             Err(err) => {
                                 return Err(err.into());
