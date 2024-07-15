@@ -9,7 +9,7 @@ use common::{
     listener::{limiter::InFlight, SessionStream},
 };
 use directory::QueryBy;
-use imap_proto::{protocol::list::Attribute, StatusResponse};
+use imap_proto::protocol::list::Attribute;
 use jmap::{
     auth::{acl::EffectiveAcl, AccessToken},
     mailbox::INBOX_ID,
@@ -20,6 +20,7 @@ use jmap_proto::{
 };
 use parking_lot::Mutex;
 use store::query::log::{Change, Query};
+use trc::AddContext;
 use utils::lru_cache::LruCached;
 
 use super::{Account, AccountId, Mailbox, MailboxId, MailboxSync, Session, SessionData};
@@ -29,7 +30,7 @@ impl<T: SessionStream> SessionData<T> {
         session: &Session<T>,
         access_token: &AccessToken,
         in_flight: Option<InFlight>,
-    ) -> crate::Result<Self> {
+    ) -> trc::Result<Self> {
         let mut session = SessionData {
             stream_tx: session.stream_tx.clone(),
             jmap: session.jmap.clone(),
@@ -45,39 +46,34 @@ impl<T: SessionStream> SessionData<T> {
         let mut mailboxes = vec![session
             .fetch_account_mailboxes(session.account_id, None, access_token)
             .await
-            .map_err(|_| tracing::warn!(parent: &session.span, account_id = session.account_id, event = "error", "Failed to retrieve mailboxes."))?];
+            .caused_by(trc::location!())?];
 
         // Fetch shared mailboxes
         for &account_id in access_token.shared_accounts(Collection::Mailbox) {
-            match session
-                .fetch_account_mailboxes(
-                    account_id,
-                    format!(
-                        "{}/{}",
-                        session.jmap.core.jmap.shared_folder,
-                        session
-                            .jmap
-                            .core
-                            .storage
-                            .directory
-                            .query(QueryBy::Id(account_id), false)
-                            .await
-                            .unwrap_or_default()
-                            .map(|p| p.name)
-                            .unwrap_or_else(|| Id::from(account_id).to_string())
+            mailboxes.push(
+                session
+                    .fetch_account_mailboxes(
+                        account_id,
+                        format!(
+                            "{}/{}",
+                            session.jmap.core.jmap.shared_folder,
+                            session
+                                .jmap
+                                .core
+                                .storage
+                                .directory
+                                .query(QueryBy::Id(account_id), false)
+                                .await
+                                .unwrap_or_default()
+                                .map(|p| p.name)
+                                .unwrap_or_else(|| Id::from(account_id).to_string())
+                        )
+                        .into(),
+                        access_token,
                     )
-                    .into(),
-                    access_token,
-                )
-                .await
-            {
-                Ok(account_mailboxes) => {
-                    mailboxes.push(account_mailboxes);
-                }
-                Err(_) => {
-                    tracing::warn!(parent: &session.span, account_id = account_id, event = "error", "Failed to retrieve mailboxes.");
-                }
-            }
+                    .await
+                    .caused_by(trc::location!())?,
+            );
         }
 
         session.mailboxes = Mutex::new(mailboxes);
@@ -90,7 +86,7 @@ impl<T: SessionStream> SessionData<T> {
         account_id: u32,
         mailbox_prefix: Option<String>,
         access_token: &AccessToken,
-    ) -> crate::Result<Account> {
+    ) -> trc::Result<Account> {
         let state_mailbox = self
             .jmap
             .core
@@ -98,7 +94,7 @@ impl<T: SessionStream> SessionData<T> {
             .data
             .get_last_change_id(account_id, Collection::Mailbox)
             .await
-            .map_err(|_| {})?;
+            .caused_by(trc::location!())?;
         let state_email = self
             .jmap
             .core
@@ -106,7 +102,7 @@ impl<T: SessionStream> SessionData<T> {
             .data
             .get_last_change_id(account_id, Collection::Email)
             .await
-            .map_err(|_| {})?;
+            .caused_by(trc::location!())?;
         let cached_account_id = AccountId {
             account_id,
             primary_id: access_token.primary_id(),
@@ -134,12 +130,12 @@ impl<T: SessionStream> SessionData<T> {
             self.jmap
                 .mailbox_get_or_create(account_id)
                 .await
-                .map_err(|_| {})?
+                .caused_by(trc::location!())?
         } else {
             self.jmap
                 .shared_documents(access_token, account_id, Collection::Mailbox, Acl::Read)
                 .await
-                .map_err(|_| {})?
+                .caused_by(trc::location!())?
         };
 
         // Fetch mailboxes
@@ -154,7 +150,7 @@ impl<T: SessionStream> SessionData<T> {
                 Property::Value,
             )
             .await
-            .map_err(|_| {})?
+            .caused_by(trc::location!())?
         {
             // Map special uses
             if let Some(Value::Text(role)) = values.properties.get(&Property::Role) {
@@ -196,7 +192,7 @@ impl<T: SessionStream> SessionData<T> {
             .jmap
             .get_document_ids(account_id, Collection::Email)
             .await
-            .map_err(|_| {})?;
+            .caused_by(trc::location!())?;
 
         if let Some(mailbox_prefix) = &mailbox_prefix {
             path.push(mailbox_prefix.to_string());
@@ -258,7 +254,7 @@ impl<T: SessionStream> SessionData<T> {
                                     *mailbox_id,
                                 )
                                 .await
-                                .map_err(|_| {})?
+                                .caused_by(trc::location!())?
                                 .map(|v| v.len() as u32)
                                 .unwrap_or(0)
                                 .into(),
@@ -266,7 +262,7 @@ impl<T: SessionStream> SessionData<T> {
                                 .jmap
                                 .mailbox_unread_tags(account_id, *mailbox_id, &message_ids)
                                 .await
-                                .map_err(|_| {})?
+                                .caused_by(trc::location!())?
                                 .map(|v| v.len() as u32)
                                 .unwrap_or(0)
                                 .into(),
@@ -327,7 +323,7 @@ impl<T: SessionStream> SessionData<T> {
     pub async fn synchronize_mailboxes(
         &self,
         return_changes: bool,
-    ) -> crate::op::Result<Option<MailboxSync>> {
+    ) -> trc::Result<Option<MailboxSync>> {
         let mut changes = if return_changes {
             MailboxSync::default().into()
         } else {
@@ -339,7 +335,7 @@ impl<T: SessionStream> SessionData<T> {
             .jmap
             .get_cached_access_token(self.account_id)
             .await
-            .ok_or(StatusResponse::no("Account not found"))?;
+            .caused_by(trc::location!())?;
         let state = access_token.state();
 
         // Shared mailboxes might have changed
@@ -451,14 +447,12 @@ impl<T: SessionStream> SessionData<T> {
                     // Only child changes, no need to re-fetch mailboxes
                     let state_email = self
                         .jmap
-                        .core.storage.data
+                        .core
+                        .storage
+                        .data
                         .get_last_change_id(account_id, Collection::Email)
-                        .await.map_err(
-                            |e| {
-                                tracing::warn!(parent: &self.span, "Failed to get last change id for email collection: {}", e);
-                                StatusResponse::database_failure()
-                            },
-                        )?;
+                        .await
+                        .caused_by(trc::location!())?;
                     let state_mailbox = Some(changelog.to_change_id);
                     for account in self.mailboxes.lock().iter_mut() {
                         if account.account_id == account_id {
@@ -510,7 +504,7 @@ impl<T: SessionStream> SessionData<T> {
                                 .directory
                                 .query(QueryBy::Id(account_id), false)
                                 .await
-                                .unwrap_or_default()
+                                .caused_by(trc::location!())?
                                 .map(|p| p.name)
                                 .unwrap_or_else(|| Id::from(account_id).to_string())
                         )
@@ -630,7 +624,7 @@ impl<T: SessionStream> SessionData<T> {
         account_id: u32,
         document_id: u32,
         item: Acl,
-    ) -> crate::op::Result<bool> {
+    ) -> trc::Result<bool> {
         let access_token = self.get_access_token().await?;
         Ok(access_token.is_member(account_id)
             || self
@@ -643,6 +637,10 @@ impl<T: SessionStream> SessionData<T> {
                 )
                 .await?
                 .map(|mailbox| mailbox.effective_acl(&access_token).contains(item))
-                .ok_or_else(|| StatusResponse::no("Mailbox no longer exists."))?)
+                .ok_or_else(|| {
+                    trc::Cause::Imap
+                        .caused_by(trc::location!())
+                        .details("Mailbox no longer exists.")
+                })?)
     }
 }

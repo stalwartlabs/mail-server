@@ -14,14 +14,14 @@ use mail_parser::decoders::charsets::DecoderFnc;
 use crate::protocol::search::{self, Filter};
 use crate::protocol::search::{ModSeqEntry, ResultOption};
 use crate::protocol::{Flag, ProtocolVersion};
-use crate::receiver::{Request, Token};
+use crate::receiver::{bad, Request, Token};
 use crate::Command;
 
 use super::{parse_date, parse_number, parse_sequence_set};
 
 impl Request<Command> {
     #[allow(clippy::while_let_on_iterator)]
-    pub fn parse_search(self, version: ProtocolVersion) -> crate::Result<search::Arguments> {
+    pub fn parse_search(self, version: ProtocolVersion) -> trc::Result<search::Arguments> {
         if self.tokens.is_empty() {
             return Err(self.into_error("Missing search criteria."));
         }
@@ -36,15 +36,15 @@ impl Request<Command> {
                 Some(Token::Argument(value)) if value.eq_ignore_ascii_case(b"return") => {
                     tokens.next();
                     is_esearch = true;
-                    result_options =
-                        parse_result_options(&mut tokens).map_err(|v| (self.tag.as_str(), v))?;
+                    result_options = parse_result_options(&mut tokens)
+                        .map_err(|v| bad(self.tag.to_string(), v))?;
                 }
                 Some(Token::Argument(value)) if value.eq_ignore_ascii_case(b"charset") => {
                     tokens.next();
                     decoder = charset_decoder(
                         &tokens
                             .next()
-                            .ok_or((self.tag.as_str(), "Missing charset."))?
+                            .ok_or_else(|| bad(self.tag.to_string(), "Missing charset."))?
                             .unwrap_bytes(),
                     );
                 }
@@ -52,10 +52,11 @@ impl Request<Command> {
             }
         }
 
-        let filter = parse_filters(&mut tokens, decoder).map_err(|v| (self.tag.as_str(), v))?;
+        let filter =
+            parse_filters(&mut tokens, decoder).map_err(|v| bad(self.tag.to_string(), v))?;
 
         match filter.len() {
-            0 => Err((self.tag.as_str(), "No filters found in command.").into()),
+            0 => Err(bad(self.tag.to_string(), "No filters found in command.")),
             _ => Ok(search::Arguments {
                 tag: self.tag,
                 result_options,

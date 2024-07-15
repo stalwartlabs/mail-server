@@ -6,13 +6,13 @@
 
 use crate::{
     protocol::{delete, ProtocolVersion},
-    receiver::Request,
+    receiver::{bad, Request},
     utf7::utf7_maybe_decode,
     Command,
 };
 
 impl Request<Command> {
-    pub fn parse_delete(self, version: ProtocolVersion) -> crate::Result<delete::Arguments> {
+    pub fn parse_delete(self, version: ProtocolVersion) -> trc::Result<delete::Arguments> {
         match self.tokens.len() {
             1 => Ok(delete::Arguments {
                 mailbox_name: utf7_maybe_decode(
@@ -21,7 +21,7 @@ impl Request<Command> {
                         .next()
                         .unwrap()
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_ref(), v))?,
+                        .map_err(|v| bad(self.tag.clone(), v))?,
                     version,
                 ),
                 tag: self.tag,

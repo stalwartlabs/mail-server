@@ -60,15 +60,14 @@ impl JMAP {
                 // Authenticate request
                 let (_in_flight, access_token) =
                     match self.authenticate_headers(&req, session.remote_ip).await {
-                        Ok(Some(session)) => session,
-                        Ok(None) => {
+                        Ok(session) => session,
+                        Err(err) => {
                             return if req.method() != Method::OPTIONS {
-                                RequestError::unauthorized().into_http_response()
+                                err.into_http_response()
                             } else {
                                 StatusCode::NO_CONTENT.into_http_response()
                             }
                         }
-                        Err(err) => return err.into_http_response(),
                     };
 
                 match (path.next().unwrap_or_default(), req.method()) {
@@ -198,8 +197,7 @@ impl JMAP {
                     // Authenticate request
                     let (_in_flight, access_token) =
                         match self.authenticate_headers(&req, session.remote_ip).await {
-                            Ok(Some(session)) => session,
-                            Ok(None) => return RequestError::unauthorized().into_http_response(),
+                            Ok(session) => session,
                             Err(err) => return err.into_http_response(),
                         };
 
@@ -298,12 +296,11 @@ impl JMAP {
 
                 // Authenticate user
                 return match self.authenticate_headers(&req, session.remote_ip).await {
-                    Ok(Some((_, access_token))) => {
+                    Ok((_, access_token)) => {
                         let body = fetch_body(&mut req, 1024 * 1024).await;
                         self.handle_api_manage_request(&req, body, access_token)
                             .await
                     }
-                    Ok(None) => RequestError::unauthorized().into_http_response(),
                     Err(err) => err.into_http_response(),
                 };
             }

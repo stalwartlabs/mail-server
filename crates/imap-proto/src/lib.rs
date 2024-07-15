@@ -6,7 +6,7 @@
 
 use std::borrow::Cow;
 
-use jmap_proto::error::{method::MethodError, set::SetErrorType};
+use jmap_proto::error::set::SetErrorType;
 use protocol::capability::Capability;
 
 pub mod parser;
@@ -242,12 +242,6 @@ impl StatusResponse {
     }
 }
 
-impl From<MethodError> for StatusResponse {
-    fn from(_: MethodError) -> Self {
-        StatusResponse::database_failure()
-    }
-}
-
 impl From<SetErrorType> for ResponseCode {
     fn from(value: SetErrorType) -> Self {
         match value {
@@ -266,5 +260,3 @@ impl From<SetErrorType> for ResponseCode {
         }
     }
 }
-
-pub type Result<T> = std::result::Result<T, StatusResponse>;

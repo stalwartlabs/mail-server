@@ -60,6 +60,3 @@ impl IMAP {
 }
 
 pub struct ImapError;
-
-pub type Result<T> = std::result::Result<T, ()>;
-pub type OpResult = std::result::Result<(), ()>;

@@ -61,6 +61,10 @@ where
         )
     }
 
+    pub fn value_as_str(&self, key: Key) -> Option<&str> {
+        self.value(key).and_then(|v| v.as_str())
+    }
+
     pub fn take_value(&mut self, key: Key) -> Option<Value> {
         self.keys
             .iter_mut()
@@ -85,6 +89,16 @@ where
     }
 
     #[inline(always)]
+    pub fn code(self, error: impl Into<Value>) -> Self {
+        self.ctx(Key::Code, error)
+    }
+
+    #[inline(always)]
+    pub fn id(self, error: impl Into<Value>) -> Self {
+        self.ctx(Key::Id, error)
+    }
+
+    #[inline(always)]
     pub fn reason(self, error: impl Display) -> Self {
         self.ctx(Key::Reason, error.to_string())
     }
@@ -106,7 +120,7 @@ where
 
     #[inline(always)]
     pub fn collection(self, id: impl Into<u8>) -> Self {
-        self.ctx(Key::Code, id.into() as u64)
+        self.ctx(Key::Collection, id.into() as u64)
     }
 
     #[inline(always)]

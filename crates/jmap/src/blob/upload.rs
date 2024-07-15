@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use jmap_proto::{
-    error::{method::MethodError, request::RequestError, set::SetError},
+    error::{method::MethodError, set::SetError},
     method::upload::{
         BlobUploadRequest, BlobUploadResponse, BlobUploadResponseObject, DataSourceObject,
     },
@@ -182,9 +182,11 @@ impl JMAP {
         content_type: &str,
         data: &[u8],
         access_token: Arc<AccessToken>,
-    ) -> Result<UploadResponse, RequestError> {
+    ) -> trc::Result<UploadResponse> {
         // Limit concurrent uploads
-        let _in_flight = self.is_upload_allowed(&access_token)?;
+        let _in_flight = self
+            .is_upload_allowed(&access_token)
+            .caused_by(trc::location!())?;
 
         #[cfg(feature = "test_mode")]
         {
@@ -201,14 +203,7 @@ impl JMAP {
             .data
             .blob_quota(account_id.document_id())
             .await
-            .map_err(|err| {
-                tracing::error!(event = "error",
-                    context = "blob_store",
-                    account_id = account_id.document_id(),
-                    error = ?err,
-                    "Failed to obtain blob quota");
-                RequestError::internal_server_error()
-            })?;
+            .caused_by(trc::location!())?;
 
         if ((self.core.jmap.upload_tmp_quota_size > 0
             && used.bytes + data.len() > self.core.jmap.upload_tmp_quota_size)
@@ -216,10 +211,9 @@ impl JMAP {
                 && used.count + 1 > self.core.jmap.upload_tmp_quota_amount))
             && !access_token.is_super_user()
         {
-            let err = Err(RequestError::over_blob_quota(
-                self.core.jmap.upload_tmp_quota_amount,
-                self.core.jmap.upload_tmp_quota_size,
-            ));
+            let err = Err(trc::Cause::OverBlobQuota
+                .ctx(trc::Key::Size, self.core.jmap.upload_tmp_quota_size)
+                .ctx(trc::Key::Total, self.core.jmap.upload_tmp_quota_amount));
 
             #[cfg(feature = "test_mode")]
             if !DISABLE_UPLOAD_QUOTA.load(std::sync::atomic::Ordering::Relaxed) {
@@ -235,7 +229,7 @@ impl JMAP {
             blob_id: self
                 .put_blob(account_id.document_id(), data, true)
                 .await
-                .map_err(|_| RequestError::internal_server_error())?,
+                .caused_by(trc::location!())?,
             c_type: content_type.to_string(),
             size: data.len(),
         })

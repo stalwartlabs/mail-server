@@ -9,7 +9,7 @@ use common::listener::SessionStream;
 use imap_proto::{receiver::Request, Command, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_logout(&mut self, request: Request<Command>) -> crate::OpResult {
+    pub async fn handle_logout(&mut self, request: Request<Command>) -> trc::Result<()> {
         let mut response = StatusResponse::bye(
             concat!(
                 "Stalwart IMAP4rev2 v",
@@ -24,7 +24,6 @@ impl<T: SessionStream> Session<T> {
                 .with_tag(request.tag)
                 .into_bytes(),
         );
-        self.write_bytes(response).await?;
-        Err(())
+        self.write_bytes(response).await
     }
 }

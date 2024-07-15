@@ -7,7 +7,10 @@
 use std::sync::Arc;
 
 use common::listener::{stream::NullIo, SessionData, SessionManager, SessionStream};
-use imap_proto::{protocol::ProtocolVersion, receiver::Receiver};
+use imap_proto::{
+    protocol::{ProtocolVersion, SerializeResponse},
+    receiver::Receiver,
+};
 use jmap::JMAP;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::server::TlsStream;
@@ -177,7 +180,7 @@ impl<T: SessionStream> Session<T> {
 }
 
 impl<T: SessionStream> Session<T> {
-    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> crate::OpResult {
+    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> trc::Result<()> {
         let bytes = bytes.as_ref();
         /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
             let c = println!("{}", line);
@@ -191,17 +194,24 @@ impl<T: SessionStream> Session<T> {
 
         let mut stream = self.stream_tx.lock().await;
         if let Err(err) = stream.write_all(bytes).await {
-            tracing::trace!(parent: &self.span, "Failed to write to stream: {}", err);
-            Err(())
+            Err(trc::Cause::Network
+                .reason(err)
+                .details("Failed to write to stream"))
         } else {
             let _ = stream.flush().await;
             Ok(())
         }
     }
+
+    pub async fn write_error(&self, err: trc::Error) -> trc::Result<()> {
+        let todo = "log";
+
+        self.write_bytes(err.serialize()).await
+    }
 }
 
 impl<T: SessionStream> super::SessionData<T> {
-    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> bool {
+    pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> trc::Result<()> {
         let bytes = bytes.as_ref();
         /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
             let c = println!("{}", line);
@@ -215,11 +225,22 @@ impl<T: SessionStream> super::SessionData<T> {
 
         let mut stream = self.stream_tx.lock().await;
         if let Err(err) = stream.write_all(bytes.as_ref()).await {
-            tracing::trace!(parent: &self.span, "Failed to write to stream: {}", err);
-            false
+            Err(trc::Cause::Network
+                .reason(err)
+                .details("Failed to write to stream"))
         } else {
             let _ = stream.flush().await;
-            true
+            Ok(())
+        }
+    }
+
+    pub async fn write_error(&self, err: trc::Error) -> trc::Result<()> {
+        let todo = "log";
+
+        if !err.matches(trc::Cause::Network) {
+            self.write_bytes(err.serialize()).await
+        } else {
+            Ok(())
         }
     }
 }

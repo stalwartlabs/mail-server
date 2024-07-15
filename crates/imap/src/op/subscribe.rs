@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::core::{Session, SessionData};
+use crate::{
+    core::{Session, SessionData},
+    spawn_op,
+};
 use common::listener::SessionStream;
 use imap_proto::{receiver::Request, Command, ResponseCode, StatusResponse};
 use jmap::mailbox::set::{MailboxSubscribe, SCHEMA};
 use jmap_proto::{
-    error::method::MethodError,
     object::{index::ObjectIndexBuilder, Object},
     types::{
         collection::Collection, property::Property, state::StateChange, type_state::DataType,
@@ -18,27 +20,24 @@ use jmap_proto::{
 };
 use store::write::{assert::HashedValue, BatchBuilder};
 
+use super::ImapContext;
+
 impl<T: SessionStream> Session<T> {
     pub async fn handle_subscribe(
         &mut self,
         request: Request<Command>,
         is_subscribe: bool,
-    ) -> crate::OpResult {
-        match request.parse_subscribe(self.version) {
-            Ok(arguments) => {
-                let data = self.state.session_data();
-                tokio::spawn(async move {
-                    data.write_bytes(
-                        data.subscribe_folder(arguments.tag, arguments.mailbox_name, is_subscribe)
-                            .await
-                            .into_bytes(),
-                    )
-                    .await;
-                });
-                Ok(())
-            }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+    ) -> trc::Result<()> {
+        let arguments = request.parse_subscribe(self.version)?;
+        let data = self.state.session_data();
+
+        spawn_op!(data, {
+            let response = data
+                .subscribe_folder(arguments.tag, arguments.mailbox_name, is_subscribe)
+                .await?;
+
+            data.write_bytes(response.into_bytes()).await
+        })
     }
 }
 
@@ -48,19 +47,22 @@ impl<T: SessionStream> SessionData<T> {
         tag: String,
         mailbox_name: String,
         subscribe: bool,
-    ) -> StatusResponse {
+    ) -> trc::Result<StatusResponse> {
         // Refresh mailboxes
-        if let Err(err) = self.synchronize_mailboxes(false).await {
-            return err.with_tag(tag);
-        }
+        self.synchronize_mailboxes(false)
+            .await
+            .imap_ctx(&tag, trc::location!())?;
 
         // Validate mailbox
         let (account_id, mailbox_id) = match self.get_mailbox_by_name(&mailbox_name) {
             Some(mailbox) => (mailbox.account_id, mailbox.mailbox_id),
             None => {
-                return StatusResponse::no("Mailbox does not exist.")
-                    .with_tag(tag)
-                    .with_code(ResponseCode::NonExistent);
+                return Err(trc::Cause::Imap
+                    .into_err()
+                    .details("Mailbox does not exist.")
+                    .code(ResponseCode::NonExistent)
+                    .id(tag)
+                    .caused_by(trc::location!()));
             }
         };
 
@@ -69,12 +71,14 @@ impl<T: SessionStream> SessionData<T> {
             if account.account_id == account_id {
                 if let Some(mailbox) = account.mailbox_state.get(&mailbox_id) {
                     if mailbox.is_subscribed == subscribe {
-                        return StatusResponse::ok(if subscribe {
-                            "Already subscribed."
-                        } else {
-                            "Already unsubscribed"
-                        })
-                        .with_tag(tag);
+                        return Err(trc::Cause::Imap
+                            .into_err()
+                            .details(if subscribe {
+                                "Mailbox is already subscribed."
+                            } else {
+                                "Mailbox is already unsubscribed."
+                            })
+                            .id(tag));
                     }
                 }
                 break;
@@ -82,7 +86,7 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Obtain mailbox
-        let mailbox = if let Ok(Some(mailbox)) = self
+        let mailbox = self
             .jmap
             .get_property::<HashedValue<Object<Value>>>(
                 account_id,
@@ -91,21 +95,24 @@ impl<T: SessionStream> SessionData<T> {
                 Property::Value,
             )
             .await
-        {
-            mailbox
-        } else {
-            return StatusResponse::database_failure().with_tag(tag);
-        };
+            .imap_ctx(&tag, trc::location!())?
+            .ok_or_else(|| {
+                trc::Cause::Imap
+                    .into_err()
+                    .details("Mailbox does not exist.")
+                    .code(ResponseCode::NonExistent)
+                    .id(tag.clone())
+                    .caused_by(trc::location!())
+            })?;
 
         // Subscribe/unsubscribe to mailbox
         if let Some(value) = mailbox.inner.mailbox_subscribe(self.account_id, subscribe) {
             // Build batch
-            let mut changes = match self.jmap.begin_changes(account_id).await {
-                Ok(changes) => changes,
-                Err(_) => {
-                    return StatusResponse::database_failure().with_tag(tag);
-                }
-            };
+            let mut changes = self
+                .jmap
+                .begin_changes(account_id)
+                .await
+                .imap_ctx(&tag, trc::location!())?;
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
@@ -122,18 +129,10 @@ impl<T: SessionStream> SessionData<T> {
 
             let change_id = changes.change_id;
             batch.custom(changes);
-            match self.jmap.write_batch(batch).await {
-                Ok(_) => (),
-                Err(MethodError::ServerUnavailable) => {
-                    return StatusResponse::no(
-                        "Another process modified this mailbox, please try again.",
-                    )
-                    .with_tag(tag);
-                }
-                Err(_) => {
-                    return StatusResponse::database_failure().with_tag(tag);
-                }
-            }
+            self.jmap
+                .write_batch(batch)
+                .await
+                .imap_ctx(&tag, trc::location!())?;
 
             // Broadcast changes
             self.jmap
@@ -154,11 +153,11 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
 
-        StatusResponse::ok(if subscribe {
+        Ok(StatusResponse::ok(if subscribe {
             "Mailbox subscribed."
         } else {
             "Mailbox unsubscribed."
         })
-        .with_tag(tag)
+        .with_tag(tag))
     }
 }

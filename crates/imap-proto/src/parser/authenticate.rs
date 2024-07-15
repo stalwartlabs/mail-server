@@ -6,17 +6,17 @@
 
 use crate::{
     protocol::authenticate::{self, Mechanism},
-    receiver::Request,
+    receiver::{bad, Request},
     Command,
 };
 
 impl Request<Command> {
-    pub fn parse_authenticate(self) -> crate::Result<authenticate::Arguments> {
+    pub fn parse_authenticate(self) -> trc::Result<authenticate::Arguments> {
         if !self.tokens.is_empty() {
             let mut tokens = self.tokens.into_iter();
             Ok(authenticate::Arguments {
                 mechanism: Mechanism::parse(&tokens.next().unwrap().unwrap_bytes())
-                    .map_err(|v| (self.tag.as_str(), v))?,
+                    .map_err(|v| bad(self.tag.to_string(), v))?,
                 params: tokens
                     .filter_map(|token| token.unwrap_string().ok())
                     .collect(),

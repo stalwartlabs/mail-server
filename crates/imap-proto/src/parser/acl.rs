@@ -9,7 +9,7 @@ use crate::{
         acl::{self, ModRights, ModRightsOp, Rights},
         ProtocolVersion,
     },
-    receiver::Request,
+    receiver::{bad, Request},
     utf7::utf7_maybe_decode,
     Command,
 };
@@ -32,7 +32,7 @@ use super::PushUnique;
 */
 
 impl Request<Command> {
-    pub fn parse_acl(self, version: ProtocolVersion) -> crate::Result<acl::Arguments> {
+    pub fn parse_acl(self, version: ProtocolVersion) -> trc::Result<acl::Arguments> {
         let (has_identifier, has_mod_rights) = match self.command {
             Command::SetAcl => (true, true),
             Command::DeleteAcl | Command::ListRights => (true, false),
@@ -43,17 +43,17 @@ impl Request<Command> {
         let mailbox_name = utf7_maybe_decode(
             tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing mailbox name."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing mailbox name."))?
                 .unwrap_string()
-                .map_err(|v| (self.tag.as_str(), v))?,
+                .map_err(|v| bad(self.tag.to_string(), v))?,
             version,
         );
         let identifier = if has_identifier {
             tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing identifier."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing identifier."))?
                 .unwrap_string()
-                .map_err(|v| (self.tag.as_str(), v))?
+                .map_err(|v| bad(self.tag.to_string(), v))?
                 .into()
         } else {
             None
@@ -62,10 +62,10 @@ impl Request<Command> {
             ModRights::parse(
                 &tokens
                     .next()
-                    .ok_or((self.tag.as_str(), "Missing rights."))?
+                    .ok_or_else(|| bad(self.tag.to_string(), "Missing rights."))?
                     .unwrap_bytes(),
             )
-            .map_err(|v| (self.tag.as_str(), v))?
+            .map_err(|v| bad(self.tag.to_string(), v))?
             .into()
         } else {
             None

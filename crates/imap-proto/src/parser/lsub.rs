@@ -9,28 +9,28 @@ use crate::{
         list::{self, SelectionOption},
         ProtocolVersion,
     },
-    receiver::Request,
+    receiver::{bad, Request},
     utf7::utf7_maybe_decode,
     Command,
 };
 
 impl Request<Command> {
-    pub fn parse_lsub(self) -> crate::Result<list::Arguments> {
+    pub fn parse_lsub(self) -> trc::Result<list::Arguments> {
         if self.tokens.len() > 1 {
             let mut tokens = self.tokens.into_iter();
 
             Ok(list::Arguments::Extended {
                 reference_name: tokens
                     .next()
-                    .ok_or((self.tag.as_str(), "Missing reference name."))?
+                    .ok_or_else(|| bad(self.tag.to_string(), "Missing reference name."))?
                     .unwrap_string()
-                    .map_err(|v| (self.tag.as_str(), v))?,
+                    .map_err(|v| bad(self.tag.to_string(), v))?,
                 mailbox_name: vec![utf7_maybe_decode(
                     tokens
                         .next()
-                        .ok_or((self.tag.as_str(), "Missing mailbox name."))?
+                        .ok_or_else(|| bad(self.tag.to_string(), "Missing mailbox name."))?
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_str(), v))?,
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                     ProtocolVersion::Rev1,
                 )],
                 selection_options: vec![SelectionOption::Subscribed],

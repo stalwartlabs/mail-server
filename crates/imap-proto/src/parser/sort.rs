@@ -8,7 +8,7 @@ use mail_parser::decoders::charsets::map::charset_decoder;
 
 use crate::{
     protocol::search::{Arguments, Comparator, Sort},
-    receiver::{Request, Token},
+    receiver::{bad, Request, Token},
     Command,
 };
 
@@ -16,7 +16,7 @@ use super::search::{parse_filters, parse_result_options};
 
 impl Request<Command> {
     #[allow(clippy::while_let_on_iterator)]
-    pub fn parse_sort(self) -> crate::Result<Arguments> {
+    pub fn parse_sort(self) -> trc::Result<Arguments> {
         if self.tokens.is_empty() {
             return Err(self.into_error("Missing sort criteria."));
         }
@@ -28,7 +28,7 @@ impl Request<Command> {
             Some(Token::Argument(value)) if value.eq_ignore_ascii_case(b"return") => {
                 tokens.next();
                 (
-                    parse_result_options(&mut tokens).map_err(|v| (self.tag.as_str(), v))?,
+                    parse_result_options(&mut tokens).map_err(|v| bad(self.tag.to_string(), v))?,
                     true,
                 )
             }
@@ -39,11 +39,10 @@ impl Request<Command> {
             .next()
             .map_or(true, |token| !token.is_parenthesis_open())
         {
-            return Err((
-                self.tag.as_str(),
+            return Err(bad(
+                self.tag.to_string(),
                 "Expected sort criteria between parentheses.",
-            )
-                .into());
+            ));
         }
 
         let mut is_ascending = true;
@@ -55,30 +54,31 @@ impl Request<Command> {
                         is_ascending = false;
                     } else {
                         sort.push(Comparator {
-                            sort: Sort::parse(&value).map_err(|v| (self.tag.as_str(), v))?,
+                            sort: Sort::parse(&value).map_err(|v| bad(self.tag.to_string(), v))?,
                             ascending: is_ascending,
                         });
                         is_ascending = true;
                     }
                 }
-                _ => return Err((self.tag.as_str(), "Invalid result option argument.").into()),
+                _ => return Err(bad(self.tag.to_string(), "Invalid result option argument.")),
             }
         }
 
         if sort.is_empty() {
-            return Err((self.tag.as_str(), "Missing sort criteria.").into());
+            return Err(bad(self.tag.to_string(), "Missing sort criteria."));
         }
 
         let decoder = charset_decoder(
             &tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing charset."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing charset."))?
                 .unwrap_bytes(),
         );
 
-        let filter = parse_filters(&mut tokens, decoder).map_err(|v| (self.tag.as_str(), v))?;
+        let filter =
+            parse_filters(&mut tokens, decoder).map_err(|v| bad(self.tag.to_string(), v))?;
         match filter.len() {
-            0 => Err((self.tag.as_str(), "No filters found in command.").into()),
+            0 => Err(bad(self.tag.to_string(), "No filters found in command.")),
             _ => Ok(Arguments {
                 sort: sort.into(),
                 result_options,

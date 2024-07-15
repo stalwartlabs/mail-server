@@ -6,7 +6,7 @@
 
 use crate::{
     protocol::{copy_move, ProtocolVersion},
-    receiver::Request,
+    receiver::{bad, Request},
     utf7::utf7_maybe_decode,
     Command,
 };
@@ -14,7 +14,7 @@ use crate::{
 use super::parse_sequence_set;
 
 impl Request<Command> {
-    pub fn parse_copy_move(self, version: ProtocolVersion) -> crate::Result<copy_move::Arguments> {
+    pub fn parse_copy_move(self, version: ProtocolVersion) -> trc::Result<copy_move::Arguments> {
         if self.tokens.len() > 1 {
             let mut tokens = self.tokens.into_iter();
 
@@ -22,16 +22,16 @@ impl Request<Command> {
                 sequence_set: parse_sequence_set(
                     &tokens
                         .next()
-                        .ok_or((self.tag.as_str(), "Missing sequence set."))?
+                        .ok_or_else(|| bad(self.tag.to_string(), "Missing sequence set."))?
                         .unwrap_bytes(),
                 )
-                .map_err(|v| (self.tag.as_str(), v))?,
+                .map_err(|v| bad(self.tag.to_string(), v))?,
                 mailbox_name: utf7_maybe_decode(
                     tokens
                         .next()
-                        .ok_or((self.tag.as_str(), "Missing mailbox name."))?
+                        .ok_or_else(|| bad(self.tag.to_string(), "Missing mailbox name."))?
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_str(), v))?,
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                     version,
                 ),
                 tag: self.tag,

@@ -11,19 +11,16 @@ use common::listener::SessionStream;
 use mail_send::Credentials;
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_login(&mut self, request: Request<Command>) -> crate::OpResult {
-        match request.parse_login() {
-            Ok(args) => {
-                self.authenticate(
-                    Credentials::Plain {
-                        username: args.username,
-                        secret: args.password,
-                    },
-                    args.tag,
-                )
-                .await
-            }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+    pub async fn handle_login(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let arguments = request.parse_login()?;
+
+        self.authenticate(
+            Credentials::Plain {
+                username: arguments.username,
+                secret: arguments.password,
+            },
+            arguments.tag,
+        )
+        .await
     }
 }

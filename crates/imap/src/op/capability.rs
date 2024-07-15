@@ -16,7 +16,7 @@ use imap_proto::{
 };
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_capability(&mut self, request: Request<Command>) -> crate::OpResult {
+    pub async fn handle_capability(&mut self, request: Request<Command>) -> trc::Result<()> {
         self.write_bytes(
             StatusResponse::completed(Command::Capability)
                 .with_tag(request.tag)
@@ -33,7 +33,7 @@ impl<T: SessionStream> Session<T> {
         .await
     }
 
-    pub async fn handle_id(&mut self, request: Request<Command>) -> crate::OpResult {
+    pub async fn handle_id(&mut self, request: Request<Command>) -> trc::Result<()> {
         self.write_bytes(
             StatusResponse::completed(Command::Id)
                 .with_tag(request.tag)

@@ -25,8 +25,12 @@ use store::{
     write::now,
 };
 use tokio::sync::watch;
+use trc::AddContext;
 
-use crate::core::{ImapId, MailboxState, SavedSearch, SelectedMailbox, Session, SessionData};
+use crate::{
+    core::{ImapId, MailboxState, SavedSearch, SelectedMailbox, Session, SessionData},
+    spawn_op,
+};
 
 use super::{FromModSeq, ToModSeq};
 
@@ -36,64 +40,58 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_sort: bool,
         is_uid: bool,
-    ) -> crate::OpResult {
-        match if !is_sort {
+    ) -> trc::Result<()> {
+        let mut arguments = if !is_sort {
             request.parse_search(self.version)
         } else {
             request.parse_sort()
-        } {
-            Ok(mut arguments) => {
-                let (data, mailbox) = self.state.mailbox_state();
+        }?;
 
-                // Create channel for results
-                let (results_tx, prev_saved_search) =
-                    if arguments.result_options.contains(&ResultOption::Save) {
-                        let prev_saved_search = Some(mailbox.get_saved_search().await);
-                        let (tx, rx) = watch::channel(Arc::new(Vec::new()));
-                        *mailbox.saved_search.lock() = SavedSearch::InFlight { rx };
-                        (tx.into(), prev_saved_search)
+        let (data, mailbox) = self.state.mailbox_state();
+
+        // Create channel for results
+        let (results_tx, prev_saved_search) =
+            if arguments.result_options.contains(&ResultOption::Save) {
+                let prev_saved_search = Some(mailbox.get_saved_search().await);
+                let (tx, rx) = watch::channel(Arc::new(Vec::new()));
+                *mailbox.saved_search.lock() = SavedSearch::InFlight { rx };
+                (tx.into(), prev_saved_search)
+            } else {
+                (None, None)
+            };
+
+        spawn_op!(data, {
+            let tag = std::mem::take(&mut arguments.tag);
+            let bytes = match data
+                .search(
+                    arguments,
+                    mailbox.clone(),
+                    results_tx,
+                    prev_saved_search.clone(),
+                    is_uid,
+                )
+                .await
+            {
+                Ok(response) => {
+                    let response = response.serialize(&tag);
+                    StatusResponse::completed(if !is_sort {
+                        Command::Search(is_uid)
                     } else {
-                        (None, None)
-                    };
-
-                tokio::spawn(async move {
-                    let tag = std::mem::take(&mut arguments.tag);
-                    let bytes = match data
-                        .search(
-                            arguments,
-                            mailbox.clone(),
-                            results_tx,
-                            prev_saved_search.clone(),
-                            is_uid,
-                        )
-                        .await
-                    {
-                        Ok(response) => {
-                            let response = response.serialize(&tag);
-                            StatusResponse::completed(if !is_sort {
-                                Command::Search(is_uid)
-                            } else {
-                                Command::Sort(is_uid)
-                            })
-                            .with_tag(tag)
-                            .serialize(response)
-                        }
-                        Err(response) => {
-                            if let Some(prev_saved_search) = prev_saved_search {
-                                *mailbox.saved_search.lock() = prev_saved_search
-                                    .map_or(SavedSearch::None, |s| SavedSearch::Results {
-                                        items: s,
-                                    });
-                            }
-                            response.with_tag(tag).into_bytes()
-                        }
-                    };
-                    data.write_bytes(bytes).await;
-                });
-                Ok(())
-            }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+                        Command::Sort(is_uid)
+                    })
+                    .with_tag(tag)
+                    .serialize(response)
+                }
+                Err(err) => {
+                    if let Some(prev_saved_search) = prev_saved_search {
+                        *mailbox.saved_search.lock() = prev_saved_search
+                            .map_or(SavedSearch::None, |s| SavedSearch::Results { items: s });
+                    }
+                    return Err(err.id(tag));
+                }
+            };
+            data.write_bytes(bytes).await
+        })
     }
 }
 
@@ -105,7 +103,7 @@ impl<T: SessionStream> SessionData<T> {
         results_tx: Option<watch::Sender<Arc<Vec<ImapId>>>>,
         prev_saved_search: Option<Option<Arc<Vec<ImapId>>>>,
         is_uid: bool,
-    ) -> Result<search::Response, StatusResponse> {
+    ) -> trc::Result<search::Response> {
         // Run query
         let (result_set, include_highest_modseq) = self
             .query(arguments.filter, &mailbox, &prev_saved_search)
@@ -168,7 +166,7 @@ impl<T: SessionStream> SessionData<T> {
                         Pagination::new(results_len, 0, None, 0),
                     )
                     .await
-                    .map_err(|_| StatusResponse::database_failure())?
+                    .caused_by(trc::location!())?
                     .ids
                     .into_iter()
                     .map(|id| id as u32),
@@ -235,7 +233,7 @@ impl<T: SessionStream> SessionData<T> {
         imap_filter: Vec<Filter>,
         mailbox: &SelectedMailbox,
         prev_saved_search: &Option<Option<Arc<Vec<ImapId>>>>,
-    ) -> Result<(ResultSet, bool), StatusResponse> {
+    ) -> trc::Result<(ResultSet, bool)> {
         // Obtain message ids
         let mut filters = Vec::with_capacity(imap_filter.len() + 1);
         let message_ids = self
@@ -289,7 +287,7 @@ impl<T: SessionStream> SessionData<T> {
                             search::Filter::Header(header, value) => {
                                 match HeaderName::parse(header) {
                                     Some(HeaderName::Other(header_name)) => {
-                                        return Err(StatusResponse::no(format!(
+                                        return Err(trc::Cause::Imap.into_err().details(format!(
                                             "Querying header '{header_name}' is not supported.",
                                         )));
                                     }
@@ -412,7 +410,9 @@ impl<T: SessionStream> SessionData<T> {
                                     }
                                 }
                             } else {
-                                return Err(StatusResponse::no("No saved search found."));
+                                return Err(trc::Cause::Imap
+                                    .into_err()
+                                    .details("No saved search found."));
                             }
                         } else {
                             for id in mailbox.sequence_to_ids(&sequence, uid_filter).await?.keys() {
@@ -610,9 +610,9 @@ impl<T: SessionStream> SessionData<T> {
                                 RoaringBitmap::from_sorted_iter([id.document_id()]).unwrap(),
                             ));
                         } else {
-                            return Err(StatusResponse::no(format!(
-                                "Failed to parse email id '{id}'.",
-                            )));
+                            return Err(trc::Cause::Imap
+                                .into_err()
+                                .details(format!("Failed to parse email id '{id}'.",)));
                         }
                     }
                     search::Filter::ThreadId(id) => {
@@ -622,9 +622,9 @@ impl<T: SessionStream> SessionData<T> {
                                 id.document_id(),
                             ));
                         } else {
-                            return Err(StatusResponse::no(format!(
-                                "Failed to parse thread id '{id}'.",
-                            )));
+                            return Err(trc::Cause::Imap
+                                .into_err()
+                                .details(format!("Failed to parse thread id '{id}'.",)));
                         }
                     }
                     _ => (),
@@ -637,7 +637,7 @@ impl<T: SessionStream> SessionData<T> {
             .filter(mailbox.id.account_id, Collection::Email, filters)
             .await
             .map(|res| (res, include_highest_modseq))
-            .map_err(|err| err.into())
+            .caused_by(trc::location!())
     }
 }
 

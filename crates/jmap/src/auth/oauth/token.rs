@@ -146,6 +146,7 @@ impl JMAP {
                 }
             }
         } else if grant_type.eq_ignore_ascii_case("refresh_token") {
+            let todo = "return error";
             if let Some(refresh_token) = params.get("refresh_token") {
                 if let Ok((account_id, client_id, time_left)) = self
                     .validate_access_token("refresh_token", refresh_token)
@@ -288,10 +289,14 @@ impl JMAP {
     pub async fn validate_access_token(
         &self,
         grant_type: &str,
-        token: &str,
-    ) -> Result<(u32, String, u64), &'static str> {
+        token_: &str,
+    ) -> trc::Result<(u32, String, u64)> {
         // Base64 decode token
-        let token = base64_decode(token.as_bytes()).ok_or("Failed to decode.")?;
+        let token = base64_decode(token_.as_bytes()).ok_or_else(|| {
+            trc::Cause::Authentication
+                .ctx(trc::Key::Reason, "Failed to decode token")
+                .details(token_.to_string())
+        })?;
         let (account_id, expiry, client_id) = token
             .get((RANDOM_CODE_LEN + SymmetricEncrypt::ENCRYPT_TAG_LEN)..)
             .and_then(|bytes| {
@@ -303,7 +308,11 @@ impl JMAP {
                 )
                     .into()
             })
-            .ok_or("Failed to decode token.")?;
+            .ok_or_else(|| {
+                trc::Cause::Authentication
+                    .ctx(trc::Key::Reason, "Failed to decode token")
+                    .details(token_.to_string())
+            })?;
 
         // Validate expiration
         let now = SystemTime::now()
@@ -312,11 +321,14 @@ impl JMAP {
             .unwrap_or(0)
             .saturating_sub(946684800); // Jan 1, 2000
         if expiry <= now {
-            return Err("Token expired.");
+            return Err(trc::Cause::Authentication.ctx(trc::Key::Reason, "Token expired"));
         }
 
         // Obtain password hash
-        let password_hash = self.password_hash(account_id).await?;
+        let password_hash = self
+            .password_hash(account_id)
+            .await
+            .map_err(|err| trc::Cause::Authentication.ctx(trc::Key::Details, err))?;
 
         // Build context
         let key = self.core.jmap.oauth_key.clone();
@@ -344,7 +356,11 @@ impl JMAP {
                 &token[..RANDOM_CODE_LEN + SymmetricEncrypt::ENCRYPT_TAG_LEN],
                 &nonce,
             )
-            .map_err(|_| "Failed to decrypt token.")?;
+            .map_err(|err| {
+                trc::Cause::Authentication
+                    .ctx(trc::Key::Details, "Failed to decode token")
+                    .reason(err)
+            })?;
 
         // Success
         Ok((account_id, client_id, expiry - now))

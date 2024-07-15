@@ -5,7 +5,7 @@
  */
 
 use ::store::query::log::Query;
-use imap_proto::StatusResponse;
+use imap_proto::ResponseCode;
 
 pub mod acl;
 pub mod append;
@@ -56,4 +56,42 @@ impl ToModSeq for Option<u64> {
     }
 }
 
-pub type Result<T> = std::result::Result<T, StatusResponse>;
+#[macro_export]
+macro_rules! spawn_op {
+    ($data:expr, $($code:tt)*) => {
+        {
+
+        tokio::spawn(async move {
+            let data = &($data);
+
+            if let Err(err) = (async {
+                $($code)*
+            })
+            .await
+            {
+                let _ = data.write_error(err).await;
+            }
+        });
+
+        Ok(())}
+    };
+}
+pub trait ImapContext<T> {
+    fn imap_ctx(self, tag: &str, location: &'static str) -> trc::Result<T>;
+}
+
+impl<T> ImapContext<T> for trc::Result<T> {
+    fn imap_ctx(self, tag: &str, location: &'static str) -> trc::Result<T> {
+        match self {
+            Ok(value) => Ok(value),
+            Err(err) => Err(if !err.matches(trc::Cause::Imap) {
+                err.ctx(trc::Key::Id, tag.to_string())
+                    .ctx(trc::Key::Details, "Internal Server Error")
+                    .ctx(trc::Key::Code, ResponseCode::ContactAdmin)
+                    .ctx(trc::Key::CausedBy, location)
+            } else {
+                err.ctx(trc::Key::Id, tag.to_string())
+            }),
+        }
+    }
+}

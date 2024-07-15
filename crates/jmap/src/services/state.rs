@@ -97,8 +97,9 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                 Event::UpdateSharedAccounts { account_id } => {
                     // Obtain account membership and shared mailboxes
                     let acl = match JMAP::from(core.clone()).get_access_token(account_id).await {
-                        Some(result) => result,
-                        None => {
+                        Ok(result) => result,
+                        Err(err) => {
+                            let todo = "log me";
                             continue;
                         }
                     };
@@ -370,7 +371,7 @@ impl JMAP {
         &self,
         account_id: u32,
         types: Bitmap<DataType>,
-    ) -> Option<mpsc::Receiver<StateChange>> {
+    ) -> trc::Result<mpsc::Receiver<StateChange>> {
         let (change_tx, change_rx) = mpsc::channel::<StateChange>(IPC_CHANNEL_BUFFER);
         let state_tx = self.inner.state_tx.clone();
 
@@ -382,16 +383,13 @@ impl JMAP {
                 tx: change_tx,
             },
         ] {
-            if let Err(err) = state_tx.send(event).await {
-                tracing::error!(
-                    "Channel failure while subscribing to state manager: {}",
-                    err
-                );
-                return None;
-            }
+            state_tx
+                .send(event)
+                .await
+                .map_err(|err| trc::Cause::Thread.reason(err).caused_by(trc::location!()))?;
         }
 
-        change_rx.into()
+        Ok(change_rx)
     }
 
     pub async fn broadcast_state_change(&self, state_change: StateChange) -> bool {

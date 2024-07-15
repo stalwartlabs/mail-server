@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::core::{Session, SessionData};
+use crate::{
+    core::{Session, SessionData},
+    spawn_op,
+};
 use common::listener::SessionStream;
 use imap_proto::{
     protocol::{
@@ -17,51 +20,53 @@ use imap_proto::{
     Command, StatusResponse,
 };
 
+use super::ImapContext;
+
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_list(&mut self, request: Request<Command>) -> crate::OpResult {
+    pub async fn handle_list(&mut self, request: Request<Command>) -> trc::Result<()> {
         let command = request.command;
         let is_lsub = command == Command::Lsub;
-        match if !is_lsub {
+        let arguments = if !is_lsub {
             request.parse_list(self.version)
         } else {
             request.parse_lsub()
-        } {
-            Ok(arguments) => {
-                if !arguments.is_separator_query() {
-                    let data = self.state.session_data();
-                    let version = self.version;
-                    tokio::spawn(async move {
-                        data.list(arguments, is_lsub, version).await;
-                    });
-                    Ok(())
-                } else {
-                    self.write_bytes(
-                        StatusResponse::completed(command)
-                            .with_tag(arguments.unwrap_tag())
-                            .serialize(
-                                list::Response {
-                                    is_rev2: self.version.is_rev2(),
-                                    is_lsub,
-                                    list_items: vec![ListItem {
-                                        mailbox_name: String::new(),
-                                        attributes: vec![Attribute::NoSelect],
-                                        tags: vec![],
-                                    }],
-                                    status_items: Vec::new(),
-                                }
-                                .serialize(),
-                            ),
-                    )
-                    .await
-                }
-            }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
+        }?;
+
+        if !arguments.is_separator_query() {
+            let data = self.state.session_data();
+            let version = self.version;
+
+            spawn_op!(data, data.list(arguments, is_lsub, version).await)
+        } else {
+            self.write_bytes(
+                StatusResponse::completed(command)
+                    .with_tag(arguments.unwrap_tag())
+                    .serialize(
+                        list::Response {
+                            is_rev2: self.version.is_rev2(),
+                            is_lsub,
+                            list_items: vec![ListItem {
+                                mailbox_name: String::new(),
+                                attributes: vec![Attribute::NoSelect],
+                                tags: vec![],
+                            }],
+                            status_items: Vec::new(),
+                        }
+                        .serialize(),
+                    ),
+            )
+            .await
         }
     }
 }
 
 impl<T: SessionStream> SessionData<T> {
-    pub async fn list(&self, arguments: Arguments, is_lsub: bool, version: ProtocolVersion) {
+    pub async fn list(
+        &self,
+        arguments: Arguments,
+        is_lsub: bool,
+        version: ProtocolVersion,
+    ) -> trc::Result<()> {
         let (tag, reference_name, mut patterns, selection_options, return_options) = match arguments
         {
             Arguments::Basic {
@@ -91,10 +96,9 @@ impl<T: SessionStream> SessionData<T> {
         };
 
         // Refresh mailboxes
-        if let Err(err) = self.synchronize_mailboxes(false).await {
-            self.write_bytes(err.with_tag(tag).into_bytes()).await;
-            return;
-        }
+        self.synchronize_mailboxes(false)
+            .await
+            .imap_ctx(&tag, trc::location!())?;
 
         // Process arguments
         let mut filter_subscribed = false;
@@ -137,13 +141,10 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
         if recursive_match && !filter_subscribed {
-            self.write_bytes(
-                StatusResponse::bad("RECURSIVEMATCH cannot be the only selection option.")
-                    .with_tag(tag)
-                    .into_bytes(),
-            )
-            .await;
-            return;
+            return Err(trc::Cause::Imap
+                .into_err()
+                .details("RECURSIVEMATCH requires the SUBSCRIBED selection option.")
+                .id(tag));
         }
 
         // Append reference name
@@ -243,12 +244,13 @@ impl<T: SessionStream> SessionData<T> {
                 match self
                     .status(list_item.mailbox_name.to_string(), include_status)
                     .await
+                    .imap_ctx(&tag, trc::location!())
                 {
-                    Ok(status) => {
-                        status_items.push(status);
+                    Ok(status_item) => {
+                        status_items.push(status_item);
                     }
-                    Err(_) => {
-                        tracing::debug!(parent: &self.span, "Failed to get mailbox status.");
+                    Err(err) => {
+                        self.write_error(err).await?;
                     }
                 }
             }
@@ -272,7 +274,7 @@ impl<T: SessionStream> SessionData<T> {
                 .serialize(),
             ),
         )
-        .await;
+        .await
     }
 }
 

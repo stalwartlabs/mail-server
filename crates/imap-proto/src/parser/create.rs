@@ -6,13 +6,13 @@
 
 use crate::{
     protocol::{create, ProtocolVersion},
-    receiver::{Request, Token},
+    receiver::{bad, Request, Token},
     utf7::utf7_maybe_decode,
     Command,
 };
 
 impl Request<Command> {
-    pub fn parse_create(self, version: ProtocolVersion) -> crate::Result<create::Arguments> {
+    pub fn parse_create(self, version: ProtocolVersion) -> trc::Result<create::Arguments> {
         if !self.tokens.is_empty() {
             let mut tokens = self.tokens.into_iter();
             let mailbox_name = utf7_maybe_decode(
@@ -20,21 +20,21 @@ impl Request<Command> {
                     .next()
                     .unwrap()
                     .unwrap_string()
-                    .map_err(|v| (self.tag.as_ref(), v))?,
+                    .map_err(|v| bad(self.tag.clone(), v))?,
                 version,
             );
             let mailbox_role = if let Some(Token::ParenthesisOpen) = tokens.next() {
                 match tokens.next() {
                     Some(Token::Argument(param)) if param.eq_ignore_ascii_case(b"USE") => (),
                     _ => {
-                        return Err((self.tag, "Failed to parse, expected 'USE'.").into());
+                        return Err(bad(self.tag, "Failed to parse, expected 'USE'."));
                     }
                 }
                 if tokens
                     .next()
                     .map_or(true, |token| !token.is_parenthesis_open())
                 {
-                    return Err((self.tag, "Expected '(' after 'USE'.").into());
+                    return Err(bad(self.tag, "Expected '(' after 'USE'."));
                 }
                 match tokens.next() {
                     Some(Token::Argument(value)) => {
@@ -51,24 +51,22 @@ impl Request<Command> {
                         } else if value.eq_ignore_ascii_case(b"\\Important") {
                             "important"
                         } else if value.eq_ignore_ascii_case(b"\\All") {
-                            return Err((
+                            return Err(bad(
                                 self.tag,
                                 "A mailbox with the \"\\All\" attribute already exists.",
-                            )
-                                .into());
+                            ));
                         } else {
-                            return Err((
+                            return Err(bad(
                                 self.tag,
                                 format!(
                                     "Special use attribute {:?} is not supported.",
                                     String::from_utf8_lossy(&value)
                                 ),
-                            )
-                                .into());
+                            ));
                         })
                     }
                     _ => {
-                        return Err((self.tag, "Invalid SPECIAL-USE attribute.").into());
+                        return Err(bad(self.tag, "Invalid SPECIAL-USE attribute."));
                     }
                 }
             } else {

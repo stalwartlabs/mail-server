@@ -9,7 +9,7 @@ use common::listener::SessionStream;
 use imap_proto::{receiver::Request, Command, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_noop(&mut self, request: Request<Command>) -> crate::OpResult {
+    pub async fn handle_noop(&mut self, request: Request<Command>) -> trc::Result<()> {
         if let State::Selected { data, mailbox, .. } = &self.state {
             data.write_changes(
                 &Some(mailbox.clone()),

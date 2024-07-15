@@ -56,6 +56,7 @@ pub enum Key {
     Value,
     Size,
     Status,
+    Total,
     Protocol,
     Property,
     Path,
@@ -114,10 +115,33 @@ pub enum Cause {
     Crypto,
     Dns,
     Authentication,
+    MissingTotp,
     Jmap,
     OverQuota,
+    OverBlobQuota, //RequestError::over_blob_quota
     Ingest,
+    Network,
+    TooManyRequests, //RequestError::too_many_requests() + disconnect imap StatusResponse::bye("Too many authentication requests from this IP address.")
+    TooManyConcurrentRequests, //RequestError::limit(RequestLimitError::ConcurrentRequest) StatusResponse::bye("Too many concurrent IMAP connections.").into_bytes(),
+    TooManyConcurrentUploads,  //RequestError::limit(RequestLimitError::ConcurrentUpload)
+    TooManyAuthAttempts,       //RequestError::too_many_auth_attempts() + disconnect imap
+    Banned,
 }
+
+/*
+
+RequestError::unauthorized().into_http_response()
+
+RequestError::blank(
+                                    403,
+                                    "TOTP code required",
+                                    concat!(
+                                        "A TOTP code is required to authenticate this account. ",
+                                        "Try authenticating again using 'secret$totp_token'."
+                                    ),
+                                )
+
+*/
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {

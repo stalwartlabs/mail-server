@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{listener::SessionStream, AuthFailureReason, AuthResult};
+use common::listener::SessionStream;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
@@ -176,7 +176,7 @@ impl<T: SessionStream> Session<T> {
                 )
                 .await
             {
-                Ok(AuthResult::Success(principal)) => {
+                Ok(principal) => {
                     tracing::debug!(
                         parent: &self.span,
                         context = "auth",
@@ -195,43 +195,45 @@ impl<T: SessionStream> Session<T> {
                         .await?;
                     return Ok(false);
                 }
-                Ok(AuthResult::Failure(AuthFailureReason::InvalidCredentials)) => {
-                    tracing::debug!(
-                        parent: &self.span,
-                        context = "auth",
-                        event = "authenticate",
-                        result = "failed"
-                    );
+                Err(err) => match err.as_ref() {
+                    trc::Cause::Authentication => {
+                        tracing::debug!(
+                            parent: &self.span,
+                            context = "auth",
+                            event = "authenticate",
+                            result = "failed"
+                        );
 
-                    return self
-                        .auth_error(b"535 5.7.8 Authentication credentials invalid.\r\n")
-                        .await;
-                }
-                Ok(AuthResult::Failure(AuthFailureReason::Banned)) => {
-                    tracing::debug!(
-                        parent: &self.span,
-                        context = "auth",
-                        event = "authenticate",
-                        result = "banned"
-                    );
+                        return self
+                            .auth_error(b"535 5.7.8 Authentication credentials invalid.\r\n")
+                            .await;
+                    }
+                    trc::Cause::MissingTotp => {
+                        tracing::debug!(
+                            parent: &self.span,
+                            context = "auth",
+                            event = "authenticate",
+                            result = "missing-totp"
+                        );
 
-                    return Err(());
-                }
-                Ok(AuthResult::Failure(AuthFailureReason::MissingTotp)) => {
-                    tracing::debug!(
-                        parent: &self.span,
-                        context = "auth",
-                        event = "authenticate",
-                        result = "missing-totp"
-                    );
+                        return self
+                            .auth_error(
+                                b"334 5.7.8 Missing TOTP token, try with 'secret$totp_code'.\r\n",
+                            )
+                            .await;
+                    }
+                    trc::Cause::Banned => {
+                        tracing::debug!(
+                            parent: &self.span,
+                            context = "auth",
+                            event = "authenticate",
+                            result = "banned"
+                        );
 
-                    return self
-                        .auth_error(
-                            b"334 5.7.8 Missing TOTP token, try with 'secret$totp_code'.\r\n",
-                        )
-                        .await;
-                }
-                _ => (),
+                        return Err(());
+                    }
+                    _ => (),
+                },
             }
         } else {
             tracing::warn!(

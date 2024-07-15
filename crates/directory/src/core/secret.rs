@@ -82,7 +82,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
                 // Only let the client know if the TOTP code is missing
                 // if the password is correct
 
-                Err(trc::Cause::MissingParameter.into_err())
+                Err(trc::Cause::MissingTotp.into_err())
             } else {
                 // Return the TOTP verification status
 

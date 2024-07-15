@@ -29,7 +29,10 @@ use crate::JMAP;
 use super::AccessToken;
 
 impl JMAP {
-    pub async fn update_access_token(&self, mut access_token: AccessToken) -> Option<AccessToken> {
+    pub async fn update_access_token(
+        &self,
+        mut access_token: AccessToken,
+    ) -> trc::Result<AccessToken> {
         for &grant_account_id in [access_token.primary_id]
             .iter()
             .chain(access_token.member_of.clone().iter())
@@ -40,26 +43,17 @@ impl JMAP {
                 .data
                 .acl_query(AclQuery::HasAccess { grant_account_id })
                 .await
-                .map_err(|err| {
-                    tracing::error!(
-                    event = "error",
-                    context = "update_access_token",
-                    error = ?err,
-                    "Failed to iterate ACLs.");
-                })
-                .ok()?
+                .caused_by(trc::location!())?
             {
                 if !access_token.is_member(acl_item.to_account_id) {
                     let acl = Bitmap::<Acl>::from(acl_item.permissions);
                     let collection = Collection::from(acl_item.to_collection);
                     if !collection.is_valid() {
-                        tracing::warn!(
-                            event = "error",
-                            context = "update_access_token",
-                            error = ?acl_item,
-                            "Found corrupted collection in key"
-                        );
-                        return None;
+                        return Err(trc::Cause::DataCorruption
+                            .ctx(trc::Key::Reason, "Corrupted collection found in ACL key.")
+                            .details(format!("{acl_item:?}"))
+                            .account_id(grant_account_id)
+                            .caused_by(trc::location!()));
                     }
 
                     let mut collections: Bitmap<Collection> = Bitmap::new();
@@ -88,7 +82,8 @@ impl JMAP {
                 }
             }
         }
-        access_token.into()
+
+        Ok(access_token)
     }
 
     pub async fn shared_documents(

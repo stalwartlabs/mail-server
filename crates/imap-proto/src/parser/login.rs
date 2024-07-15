@@ -4,10 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{protocol::login, receiver::Request, Command};
+use crate::{
+    protocol::login,
+    receiver::{bad, Request},
+    Command,
+};
 
 impl Request<Command> {
-    pub fn parse_login(self) -> crate::Result<login::Arguments> {
+    pub fn parse_login(self) -> trc::Result<login::Arguments> {
         match self.tokens.len() {
             2 => {
                 let mut tokens = self.tokens.into_iter();
@@ -16,12 +20,12 @@ impl Request<Command> {
                         .next()
                         .unwrap()
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_str(), v))?,
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                     password: tokens
                         .next()
                         .unwrap()
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_str(), v))?,
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                     tag: self.tag,
                 })
             }

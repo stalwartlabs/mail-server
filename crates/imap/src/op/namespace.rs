@@ -13,7 +13,7 @@ use imap_proto::{
 };
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_namespace(&mut self, request: Request<Command>) -> crate::OpResult {
+    pub async fn handle_namespace(&mut self, request: Request<Command>) -> trc::Result<()> {
         self.write_bytes(
             StatusResponse::completed(Command::Namespace)
                 .with_tag(request.tag)

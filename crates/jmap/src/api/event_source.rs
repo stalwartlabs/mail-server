@@ -92,10 +92,11 @@ impl JMAP {
         let throttle = self.core.jmap.event_source_throttle;
 
         // Register with state manager
-        let mut change_rx = if let Some(change_rx) = self
+        let mut change_rx = if let Ok(change_rx) = self
             .subscribe_state_manager(access_token.primary_id(), types)
             .await
         {
+            let todo = "return error";
             change_rx
         } else {
             return RequestError::internal_server_error().into_http_response();

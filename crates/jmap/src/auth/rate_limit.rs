@@ -7,7 +7,7 @@
 use std::{net::IpAddr, sync::Arc};
 
 use common::listener::limiter::{ConcurrencyLimiter, InFlight};
-use jmap_proto::error::request::{RequestError, RequestLimitError};
+use trc::AddContext;
 
 use crate::JMAP;
 
@@ -40,10 +40,7 @@ impl JMAP {
             })
     }
 
-    pub async fn is_account_allowed(
-        &self,
-        access_token: &AccessToken,
-    ) -> Result<InFlight, RequestError> {
+    pub async fn is_account_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight> {
         let limiter = self.get_concurrency_limiter(access_token.primary_id());
         let is_rate_allowed = if let Some(rate) = &self.core.jmap.rate_authenticated {
             self.core
@@ -55,7 +52,7 @@ impl JMAP {
                     false,
                 )
                 .await
-                .map_err(|_| RequestError::internal_server_error())?
+                .caused_by(trc::location!())?
                 .is_none()
         } else {
             true
@@ -67,16 +64,16 @@ impl JMAP {
             } else if access_token.is_super_user() {
                 Ok(InFlight::default())
             } else {
-                Err(RequestError::limit(RequestLimitError::ConcurrentRequest))
+                Err(trc::Cause::TooManyConcurrentRequests.into())
             }
         } else if access_token.is_super_user() {
             Ok(InFlight::default())
         } else {
-            Err(RequestError::too_many_requests())
+            Err(trc::Cause::TooManyRequests.into())
         }
     }
 
-    pub async fn is_anonymous_allowed(&self, addr: &IpAddr) -> Result<(), RequestError> {
+    pub async fn is_anonymous_allowed(&self, addr: &IpAddr) -> trc::Result<()> {
         if let Some(rate) = &self.core.jmap.rate_anonymous {
             if self
                 .core
@@ -84,16 +81,16 @@ impl JMAP {
                 .lookup
                 .is_rate_allowed(format!("jreq:{}", addr).as_bytes(), rate, false)
                 .await
-                .map_err(|_| RequestError::internal_server_error())?
+                .caused_by(trc::location!())?
                 .is_some()
             {
-                return Err(RequestError::too_many_requests());
+                return Err(trc::Cause::TooManyRequests.into());
             }
         }
         Ok(())
     }
 
-    pub fn is_upload_allowed(&self, access_token: &AccessToken) -> Result<InFlight, RequestError> {
+    pub fn is_upload_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight> {
         if let Some(in_flight_request) = self
             .get_concurrency_limiter(access_token.primary_id())
             .concurrent_uploads
@@ -103,11 +100,13 @@ impl JMAP {
         } else if access_token.is_super_user() {
             Ok(InFlight::default())
         } else {
-            Err(RequestError::limit(RequestLimitError::ConcurrentUpload))
+            Err(trc::Cause::TooManyConcurrentUploads.into())
         }
     }
 
-    pub async fn is_auth_allowed_soft(&self, addr: &IpAddr) -> Result<(), RequestError> {
+    pub async fn is_auth_allowed_soft(&self, addr: &IpAddr) -> trc::Result<()> {
+        let todo = "convert into request errors";
+
         if let Some(rate) = &self.core.jmap.rate_authenticate_req {
             if self
                 .core
@@ -115,16 +114,16 @@ impl JMAP {
                 .lookup
                 .is_rate_allowed(format!("jauth:{}", addr).as_bytes(), rate, true)
                 .await
-                .map_err(|_| RequestError::internal_server_error())?
+                .caused_by(trc::location!())?
                 .is_some()
             {
-                return Err(RequestError::too_many_auth_attempts());
+                return Err(trc::Cause::TooManyAuthAttempts.into());
             }
         }
         Ok(())
     }
 
-    pub async fn is_auth_allowed_hard(&self, addr: &IpAddr) -> Result<(), RequestError> {
+    pub async fn is_auth_allowed_hard(&self, addr: &IpAddr) -> trc::Result<()> {
         if let Some(rate) = &self.core.jmap.rate_authenticate_req {
             if self
                 .core
@@ -132,10 +131,10 @@ impl JMAP {
                 .lookup
                 .is_rate_allowed(format!("jauth:{}", addr).as_bytes(), rate, false)
                 .await
-                .map_err(|_| RequestError::internal_server_error())?
+                .caused_by(trc::location!())?
                 .is_some()
             {
-                return Err(RequestError::too_many_auth_attempts());
+                return Err(trc::Cause::TooManyAuthAttempts.into());
             }
         }
         Ok(())

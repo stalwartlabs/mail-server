@@ -6,7 +6,10 @@
 
 use std::sync::Arc;
 
-use crate::core::{SelectedMailbox, Session, SessionData};
+use crate::{
+    core::{SelectedMailbox, Session, SessionData},
+    spawn_op,
+};
 use ahash::AHashMap;
 use common::listener::SessionStream;
 use imap_proto::{
@@ -17,32 +20,33 @@ use imap_proto::{
     receiver::Request,
     Command, StatusResponse,
 };
+use trc::AddContext;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_thread(
         &mut self,
         request: Request<Command>,
         is_uid: bool,
-    ) -> crate::OpResult {
+    ) -> trc::Result<()> {
         let command = request.command;
-        match request.parse_thread() {
-            Ok(mut arguments) => {
-                let (data, mailbox) = self.state.mailbox_state();
+        let mut arguments = request.parse_thread()?;
+        let (data, mailbox) = self.state.mailbox_state();
 
-                tokio::spawn(async move {
-                    let tag = std::mem::take(&mut arguments.tag);
-                    let bytes = match data.thread(arguments, mailbox, is_uid).await {
-                        Ok(response) => StatusResponse::completed(command)
+        spawn_op!(data, {
+            let tag = std::mem::take(&mut arguments.tag);
+
+            match data.thread(arguments, mailbox, is_uid).await {
+                Ok(response) => {
+                    data.write_bytes(
+                        StatusResponse::completed(command)
                             .with_tag(tag)
                             .serialize(response.serialize()),
-                        Err(response) => response.with_tag(tag).into_bytes(),
-                    };
-                    data.write_bytes(bytes).await;
-                });
-                Ok(())
+                    )
+                    .await
+                }
+                Err(err) => Err(err.id(tag)),
             }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+        })
     }
 }
 
@@ -52,13 +56,15 @@ impl<T: SessionStream> SessionData<T> {
         arguments: Arguments,
         mailbox: Arc<SelectedMailbox>,
         is_uid: bool,
-    ) -> Result<Response, StatusResponse> {
+    ) -> trc::Result<Response> {
         // Run query
         let (result_set, _) = self.query(arguments.filter, &mailbox, &None).await?;
 
         // Synchronize mailbox
         if !result_set.results.is_empty() {
-            self.synchronize_messages(&mailbox).await?;
+            self.synchronize_messages(&mailbox)
+                .await
+                .caused_by(trc::location!())?;
         } else {
             return Ok(Response {
                 is_uid,
@@ -71,14 +77,7 @@ impl<T: SessionStream> SessionData<T> {
             .jmap
             .get_cached_thread_ids(mailbox.id.account_id, result_set.results.iter())
             .await
-            .map_err(|err| {
-                tracing::error!(
-                event = "error",
-                context = "thread_query",
-                error = ?err,
-                "Failed to obtain threadId.");
-                StatusResponse::database_failure()
-            })?;
+            .caused_by(trc::location!())?;
 
         // Group messages by thread
         let mut threads: AHashMap<u32, Vec<u32>> = AHashMap::new();

@@ -6,12 +6,12 @@
 
 use crate::protocol::status::Status;
 use crate::protocol::{status, ProtocolVersion};
-use crate::receiver::{Request, Token};
+use crate::receiver::{bad, Request, Token};
 use crate::utf7::utf7_maybe_decode;
 use crate::Command;
 
 impl Request<Command> {
-    pub fn parse_status(self, version: ProtocolVersion) -> crate::Result<status::Arguments> {
+    pub fn parse_status(self, version: ProtocolVersion) -> trc::Result<status::Arguments> {
         match self.tokens.len() {
             0..=3 => Err(self.into_error("Missing arguments.")),
             len => {
@@ -21,7 +21,7 @@ impl Request<Command> {
                         .next()
                         .unwrap()
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_ref(), v))?,
+                        .map_err(|v| bad(self.tag.clone(), v))?,
                     version,
                 );
                 let mut items = Vec::with_capacity(len - 2);
@@ -30,11 +30,10 @@ impl Request<Command> {
                     .next()
                     .map_or(true, |token| !token.is_parenthesis_open())
                 {
-                    return Err((
-                        self.tag.as_str(),
+                    return Err(bad(
+                        self.tag.to_string(),
                         "Expected parenthesis after mailbox name.",
-                    )
-                        .into());
+                    ));
                 }
 
                 #[allow(clippy::while_let_on_iterator)]
@@ -42,14 +41,15 @@ impl Request<Command> {
                     match token {
                         Token::ParenthesisClose => break,
                         Token::Argument(value) => {
-                            items.push(Status::parse(&value).map_err(|v| (self.tag.as_str(), v))?);
+                            items.push(
+                                Status::parse(&value).map_err(|v| bad(self.tag.to_string(), v))?,
+                            );
                         }
                         _ => {
-                            return Err((
-                                self.tag.as_str(),
+                            return Err(bad(
+                                self.tag.to_string(),
                                 "Invalid status return option argument.",
-                            )
-                                .into())
+                            ))
                         }
                     }
                 }
@@ -61,7 +61,7 @@ impl Request<Command> {
                         items,
                     })
                 } else {
-                    Err((self.tag, "At least one status item is required.").into())
+                    Err(bad(self.tag, "At least one status item is required."))
                 }
             }
         }

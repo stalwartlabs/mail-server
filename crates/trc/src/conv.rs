@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::fmt::Debug;
+use std::{borrow::Cow, fmt::Debug};
 
 use crate::*;
 
@@ -110,6 +110,15 @@ impl From<Vec<u8>> for Value {
 impl From<&[u8]> for Value {
     fn from(value: &[u8]) -> Self {
         Self::Bytes(value.to_vec())
+    }
+}
+
+impl From<Cow<'static, str>> for Value {
+    fn from(value: Cow<'static, str>) -> Self {
+        match value {
+            Cow::Borrowed(value) => Self::Static(value),
+            Cow::Owned(value) => Self::String(value),
+        }
     }
 }
 

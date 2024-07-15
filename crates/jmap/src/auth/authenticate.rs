@@ -6,12 +6,9 @@
 
 use std::{net::IpAddr, sync::Arc, time::Instant};
 
-use common::{
-    config::server::ServerProtocol, listener::limiter::InFlight, AuthFailureReason, AuthResult,
-};
+use common::{config::server::ServerProtocol, listener::limiter::InFlight};
 use directory::{Principal, QueryBy};
 use hyper::header;
-use jmap_proto::error::request::RequestError;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use utils::map::ttl_dashmap::TtlMap;
@@ -25,17 +22,17 @@ impl JMAP {
         &self,
         req: &hyper::Request<hyper::body::Incoming>,
         remote_ip: IpAddr,
-    ) -> Result<Option<(InFlight, Arc<AccessToken>)>, RequestError> {
+    ) -> trc::Result<(InFlight, Arc<AccessToken>)> {
         if let Some((mechanism, token)) = req
             .headers()
             .get(header::AUTHORIZATION)
             .and_then(|h| h.to_str().ok())
             .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim().to_string())))
         {
-            let session = if let Some(account_id) = self.inner.sessions.get_with_ttl(&token) {
-                self.get_cached_access_token(account_id).await
+            let access_token = if let Some(account_id) = self.inner.sessions.get_with_ttl(&token) {
+                self.get_cached_access_token(account_id).await?
             } else {
-                if mechanism.eq_ignore_ascii_case("basic") {
+                let access_token = if mechanism.eq_ignore_ascii_case("basic") {
                     // Enforce rate limit for authentication requests
                     self.is_auth_allowed_soft(&remote_ip).await?;
 
@@ -48,70 +45,52 @@ impl JMAP {
                             })
                         })
                     {
-                        match self
-                            .authenticate_plain(&account, &secret, remote_ip, ServerProtocol::Http)
-                            .await
-                        {
-                            AuthResult::Success(access_token) => Some(access_token),
-                            AuthResult::Failure(AuthFailureReason::MissingTotp) => {
-                                return Err(RequestError::blank(
-                                    403,
-                                    "TOTP code required",
-                                    concat!(
-                                        "A TOTP code is required to authenticate this account. ",
-                                        "Try authenticating again using 'secret$totp_token'."
-                                    ),
-                                ));
-                            }
-                            _ => None,
-                        }
+                        self.authenticate_plain(&account, &secret, remote_ip, ServerProtocol::Http)
+                            .await?
                     } else {
-                        tracing::debug!(
-                            context = "authenticate_headers",
-                            token = token,
-                            "Failed to decode Basic auth request.",
-                        );
-                        None
+                        return Err(trc::Cause::Authentication
+                            .into_err()
+                            .details("Failed to decode Basic auth request.")
+                            .id(token)
+                            .caused_by(trc::location!()));
                     }
                 } else if mechanism.eq_ignore_ascii_case("bearer") {
                     // Enforce anonymous rate limit for bearer auth requests
                     self.is_anonymous_allowed(&remote_ip).await?;
 
-                    match self.validate_access_token("access_token", &token).await {
-                        Ok((account_id, _, _)) => self.get_access_token(account_id).await,
-                        Err(err) => {
-                            tracing::debug!(
-                                context = "authenticate_headers",
-                                err = err,
-                                "Failed to validate access token."
-                            );
-                            None
-                        }
-                    }
+                    let (account_id, _, _) =
+                        self.validate_access_token("access_token", &token).await?;
+
+                    self.get_access_token(account_id).await?
                 } else {
                     // Enforce anonymous rate limit
                     self.is_anonymous_allowed(&remote_ip).await?;
-                    None
-                }
-                .map(|access_token| {
-                    let access_token = Arc::new(access_token);
-                    self.cache_session(token, &access_token);
-                    self.cache_access_token(access_token.clone());
-                    access_token
-                })
+                    return Err(trc::Cause::Authentication
+                        .into_err()
+                        .reason("Unsupported authentication mechanism.")
+                        .details(token)
+                        .caused_by(trc::location!()));
+                };
+
+                // Cache session
+                let access_token = Arc::new(access_token);
+                self.cache_session(token, &access_token);
+                self.cache_access_token(access_token.clone());
+                access_token
             };
 
-            if let Some(session) = session {
-                // Enforce authenticated rate limit
-                Ok(Some((self.is_account_allowed(&session).await?, session)))
-            } else {
-                Ok(None)
-            }
+            // Enforce authenticated rate limit
+            self.is_account_allowed(&access_token)
+                .await
+                .map(|in_flight| (in_flight, access_token))
         } else {
             // Enforce anonymous rate limit
             self.is_anonymous_allowed(&remote_ip).await?;
 
-            Ok(None)
+            Err(trc::Cause::Authentication
+                .into_err()
+                .details("Missing Authorization header.")
+                .caused_by(trc::location!()))
         }
     }
 
@@ -131,9 +110,9 @@ impl JMAP {
         );
     }
 
-    pub async fn get_cached_access_token(&self, primary_id: u32) -> Option<Arc<AccessToken>> {
+    pub async fn get_cached_access_token(&self, primary_id: u32) -> trc::Result<Arc<AccessToken>> {
         if let Some(access_token) = self.inner.access_tokens.get_with_ttl(&primary_id) {
-            access_token.into()
+            Ok(access_token)
         } else {
             // Refresh ACL token
             self.get_access_token(primary_id).await.map(|access_token| {
@@ -150,7 +129,7 @@ impl JMAP {
         secret: &str,
         remote_ip: IpAddr,
         protocol: ServerProtocol,
-    ) -> AuthResult<AccessToken> {
+    ) -> trc::Result<AccessToken> {
         match self
             .core
             .authenticate(
@@ -166,18 +145,17 @@ impl JMAP {
             )
             .await
         {
-            Ok(AuthResult::Success(principal)) => AuthResult::Success(AccessToken::new(principal)),
-            Ok(AuthResult::Failure(reason)) => {
-                if !matches!(reason, AuthFailureReason::MissingTotp) {
+            Ok(principal) => Ok(AccessToken::new(principal)),
+            Err(err) => {
+                if !err.matches(trc::Cause::MissingTotp) {
                     let _ = self.is_auth_allowed_hard(&remote_ip).await;
                 }
-                AuthResult::Failure(reason)
+                Err(err)
             }
-            Err(err) => AuthResult::Failure(AuthFailureReason::InternalError(err)),
         }
     }
 
-    pub async fn get_access_token(&self, account_id: u32) -> Option<AccessToken> {
+    pub async fn get_access_token(&self, account_id: u32) -> trc::Result<AccessToken> {
         match self
             .core
             .storage
@@ -186,12 +164,16 @@ impl JMAP {
             .await
         {
             Ok(Some(principal)) => self.update_access_token(AccessToken::new(principal)).await,
-            _ => match &self.core.jmap.fallback_admin {
+            Ok(None) => Err(trc::Cause::Authentication
+                .into_err()
+                .details("Account not found.")
+                .caused_by(trc::location!())),
+            Err(err) => match &self.core.jmap.fallback_admin {
                 Some((_, secret)) if account_id == u32::MAX => {
                     self.update_access_token(AccessToken::new(Principal::fallback_admin(secret)))
                         .await
                 }
-                _ => None,
+                _ => Err(err),
             },
         }
     }

@@ -6,19 +6,19 @@
 
 use crate::{
     protocol::{capability::Capability, enable},
-    receiver::Request,
+    receiver::{bad, Request},
     Command,
 };
 
 impl Request<Command> {
-    pub fn parse_enable(self) -> crate::Result<enable::Arguments> {
+    pub fn parse_enable(self) -> trc::Result<enable::Arguments> {
         let len = self.tokens.len();
         if len > 0 {
             let mut capabilities = Vec::with_capacity(len);
             for capability in self.tokens {
                 capabilities.push(
                     Capability::parse(&capability.unwrap_bytes())
-                        .map_err(|v| (self.tag.as_str(), v))?,
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                 );
             }
             Ok(enable::Arguments {

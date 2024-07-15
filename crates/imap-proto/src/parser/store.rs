@@ -4,31 +4,29 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
-
 use crate::{
     protocol::{
         store::{self, Operation},
         Flag,
     },
-    receiver::{Request, Token},
+    receiver::{bad, Request, Token},
     Command,
 };
 
 use super::{parse_number, parse_sequence_set};
 
 impl Request<Command> {
-    pub fn parse_store(self) -> crate::Result<store::Arguments> {
+    pub fn parse_store(self) -> trc::Result<store::Arguments> {
         let mut tokens = self.tokens.into_iter().peekable();
 
         // Sequence set
         let sequence_set = parse_sequence_set(
             &tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing sequence set."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing sequence set."))?
                 .unwrap_bytes(),
         )
-        .map_err(|v| (self.tag.as_str(), v))?;
+        .map_err(|v| bad(self.tag.to_string(), v))?;
         let mut unchanged_since = None;
 
         // CONDSTORE parameters
@@ -40,21 +38,22 @@ impl Request<Command> {
                         unchanged_since = parse_number::<u64>(
                             &tokens
                                 .next()
-                                .ok_or((self.tag.as_str(), "Missing UNCHANGEDSINCE parameter."))?
+                                .ok_or_else(|| {
+                                    bad(self.tag.to_string(), "Missing UNCHANGEDSINCE parameter.")
+                                })?
                                 .unwrap_bytes(),
                         )
-                        .map_err(|v| (self.tag.as_str(), v))?
+                        .map_err(|v| bad(self.tag.to_string(), v))?
                         .into();
                     }
                     Token::ParenthesisClose => {
                         break;
                     }
                     _ => {
-                        return Err((
-                            self.tag.as_str(),
-                            Cow::from(format!("Unsupported parameter '{}'.", token)),
-                        )
-                            .into());
+                        return Err(bad(
+                            self.tag.to_string(),
+                            format!("Unsupported parameter '{}'.", token),
+                        ));
                     }
                 }
             }
@@ -63,7 +62,7 @@ impl Request<Command> {
         // Operation
         let operation = tokens
             .next()
-            .ok_or((self.tag.as_str(), "Missing message data item name."))?
+            .ok_or_else(|| bad(self.tag.to_string(), "Missing message data item name."))?
             .unwrap_bytes();
         let (is_silent, operation) = if operation.eq_ignore_ascii_case(b"FLAGS") {
             (false, Operation::Set)
@@ -78,43 +77,43 @@ impl Request<Command> {
         } else if operation.eq_ignore_ascii_case(b"-FLAGS.SILENT") {
             (true, Operation::Clear)
         } else {
-            return Err((
+            return Err(bad(
                 self.tag,
                 format!(
                     "Unsupported message data item name: {:?}",
                     String::from_utf8_lossy(&operation)
                 ),
-            )
-                .into());
+            ));
         };
 
         // Flags
         let mut keywords = Vec::new();
         match tokens
             .next()
-            .ok_or((self.tag.as_str(), "Missing flags to set."))?
+            .ok_or_else(|| bad(self.tag.to_string(), "Missing flags to set."))?
         {
             Token::ParenthesisOpen => {
                 for token in tokens {
                     match token {
                         Token::Argument(flag) => {
-                            keywords
-                                .push(Flag::parse_imap(flag).map_err(|v| (self.tag.as_str(), v))?);
+                            keywords.push(
+                                Flag::parse_imap(flag).map_err(|v| bad(self.tag.to_string(), v))?,
+                            );
                         }
                         Token::ParenthesisClose => {
                             break;
                         }
                         _ => {
-                            return Err((self.tag.as_str(), "Unsupported flag.").into());
+                            return Err(bad(self.tag.to_string(), "Unsupported flag."));
                         }
                     }
                 }
             }
             Token::Argument(flag) => {
-                keywords.push(Flag::parse_imap(flag).map_err(|v| (self.tag.as_str(), v))?);
+                keywords.push(Flag::parse_imap(flag).map_err(|v| bad(self.tag.to_string(), v))?);
             }
             _ => {
-                return Err((self.tag, "Invalid flags parameter.").into());
+                return Err(bad(self.tag, "Invalid flags parameter."));
             }
         }
 
@@ -128,7 +127,7 @@ impl Request<Command> {
                 unchanged_since,
             })
         } else {
-            Err((self.tag.as_str(), "Missing flags to set.").into())
+            Err(bad(self.tag.to_string(), "Missing flags to set."))
         }
     }
 }

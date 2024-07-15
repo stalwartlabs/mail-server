@@ -16,7 +16,7 @@ use dashmap::DashMap;
 use imap_proto::{
     protocol::{list::Attribute, ProtocolVersion},
     receiver::Receiver,
-    Command, ResponseCode, StatusResponse,
+    Command,
 };
 use jmap::{
     auth::{rate_limit::ConcurrencyLimiters, AccessToken},
@@ -26,6 +26,7 @@ use tokio::{
     io::{ReadHalf, WriteHalf},
     sync::watch,
 };
+use trc::AddContext;
 use utils::lru_cache::LruCache;
 
 pub mod client;
@@ -218,14 +219,11 @@ impl<T: SessionStream> State<T> {
 }
 
 impl<T: SessionStream> SessionData<T> {
-    pub async fn get_access_token(&self) -> crate::op::Result<Arc<AccessToken>> {
+    pub async fn get_access_token(&self) -> trc::Result<Arc<AccessToken>> {
         self.jmap
             .get_cached_access_token(self.account_id)
             .await
-            .ok_or_else(|| {
-                StatusResponse::no("Failed to obtain access token")
-                    .with_code(ResponseCode::ContactAdmin)
-            })
+            .caused_by(trc::location!())
     }
 
     pub fn replace_stream_tx<U: SessionStream>(

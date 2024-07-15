@@ -4,9 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{
-    config::server::ServerProtocol, listener::SessionStream, AuthFailureReason, AuthResult,
-};
+use common::{config::server::ServerProtocol, listener::SessionStream};
 use imap_proto::{
     protocol::{authenticate::Mechanism, capability::Capability},
     receiver::{self, Request},
@@ -19,62 +17,49 @@ use std::sync::Arc;
 use crate::core::{Session, SessionData, State};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_authenticate(&mut self, request: Request<Command>) -> crate::OpResult {
-        match request.parse_authenticate() {
-            Ok(mut args) => match args.mechanism {
-                Mechanism::Plain | Mechanism::OAuthBearer => {
-                    if !args.params.is_empty() {
-                        match base64_decode(args.params.pop().unwrap().as_bytes()) {
-                            Some(challenge) => {
-                                let result = if args.mechanism == Mechanism::Plain {
-                                    decode_challenge_plain(&challenge)
-                                } else {
-                                    decode_challenge_oauth(&challenge)
-                                };
+    pub async fn handle_authenticate(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let mut args = request.parse_authenticate()?;
 
-                                match result {
-                                    Ok(credentials) => {
-                                        self.authenticate(credentials, args.tag).await
-                                    }
-                                    Err(err) => {
-                                        self.write_bytes(
-                                            StatusResponse::no(err).with_tag(args.tag).into_bytes(),
-                                        )
-                                        .await
-                                    }
-                                }
-                            }
-                            None => {
-                                self.write_bytes(
-                                    StatusResponse::no("Failed to decode challenge.")
-                                        .with_tag(args.tag)
-                                        .with_code(ResponseCode::Parse)
-                                        .into_bytes(),
-                                )
-                                .await
-                            }
-                        }
+        match args.mechanism {
+            Mechanism::Plain | Mechanism::OAuthBearer => {
+                if !args.params.is_empty() {
+                    let challenge = base64_decode(args.params.pop().unwrap().as_bytes())
+                        .ok_or_else(|| {
+                            trc::Cause::Authentication
+                                .into_err()
+                                .details("Failed to decode challenge.")
+                                .id(args.tag.clone())
+                                .code(ResponseCode::Parse)
+                        })?;
+
+                    let credentials = if args.mechanism == Mechanism::Plain {
+                        decode_challenge_plain(&challenge)
                     } else {
-                        self.receiver.request = receiver::Request {
-                            tag: args.tag,
-                            command: Command::Authenticate,
-                            tokens: vec![receiver::Token::Argument(args.mechanism.into_bytes())],
-                        };
-                        self.receiver.state = receiver::State::Argument { last_ch: b' ' };
-                        self.write_bytes(b"+ \"\"\r\n".to_vec()).await
+                        decode_challenge_oauth(&challenge)
                     }
+                    .map_err(|err| {
+                        trc::Cause::Authentication
+                            .into_err()
+                            .details(err)
+                            .id(args.tag.clone())
+                    })?;
+
+                    self.authenticate(credentials, args.tag).await
+                } else {
+                    self.receiver.request = receiver::Request {
+                        tag: args.tag,
+                        command: Command::Authenticate,
+                        tokens: vec![receiver::Token::Argument(args.mechanism.into_bytes())],
+                    };
+                    self.receiver.state = receiver::State::Argument { last_ch: b' ' };
+                    self.write_bytes(b"+ \"\"\r\n".to_vec()).await
                 }
-                _ => {
-                    self.write_bytes(
-                        StatusResponse::no("Authentication mechanism not supported.")
-                            .with_tag(args.tag)
-                            .with_code(ResponseCode::Cannot)
-                            .into_bytes(),
-                    )
-                    .await
-                }
-            },
-            Err(response) => self.write_bytes(response.into_bytes()).await,
+            }
+            _ => Err(trc::Cause::Authentication
+                .into_err()
+                .details("Authentication mechanism not supported.")
+                .id(args.tag)
+                .code(ResponseCode::Cannot)),
         }
     }
 
@@ -82,105 +67,60 @@ impl<T: SessionStream> Session<T> {
         &mut self,
         credentials: Credentials<String>,
         tag: String,
-    ) -> crate::Result<()> {
+    ) -> trc::Result<()> {
         // Throttle authentication requests
-        if self
-            .jmap
-            .is_auth_allowed_soft(&self.remote_addr)
-            .await
-            .is_err()
-        {
-            self.write_bytes(
-                StatusResponse::bye("Too many authentication requests from this IP address.")
-                    .into_bytes(),
-            )
-            .await?;
-            tracing::debug!(parent: &self.span,
-                event = "disconnect",
-                "Too many authentication attempts, disconnecting.",
-            );
-            return Err(());
-        }
+        self.jmap.is_auth_allowed_soft(&self.remote_addr).await?;
 
         // Authenticate
-        let mut is_totp_error = false;
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
-                match self
-                    .jmap
+                self.jmap
                     .authenticate_plain(&username, &secret, self.remote_addr, ServerProtocol::Imap)
-                    .await
-                {
-                    AuthResult::Success(token) => Some(token),
-                    AuthResult::Failure(
-                        AuthFailureReason::InvalidCredentials | AuthFailureReason::InternalError(_),
-                    ) => None,
-                    AuthResult::Failure(AuthFailureReason::MissingTotp) => {
-                        is_totp_error = true;
-                        None
-                    }
-                    AuthResult::Failure(AuthFailureReason::Banned) => return Err(()),
-                }
+                    .await?
             }
             Credentials::OAuthBearer { token } => {
-                match self
+                let (account_id, _, _) = self
                     .jmap
                     .validate_access_token("access_token", &token)
-                    .await
-                {
-                    Ok((account_id, _, _)) => self.jmap.get_access_token(account_id).await,
-                    Err(err) => {
-                        tracing::debug!(
-                            parent: &self.span,
-                            context = "authenticate",
-                            err = err,
-                            "Failed to validate access token."
-                        );
-                        None
-                    }
-                }
+                    .await?;
+
+                self.jmap.get_access_token(account_id).await?
             }
         };
 
-        if let Some(access_token) = access_token {
-            // Enforce concurrency limits
-            let in_flight = match self
-                .get_concurrency_limiter(access_token.primary_id())
-                .map(|limiter| limiter.concurrent_requests.is_allowed())
-            {
-                Some(Some(limiter)) => Some(limiter),
-                None => None,
-                Some(None) => {
-                    self.write_bytes(
-                        StatusResponse::bye("Too many concurrent IMAP connections.").into_bytes(),
-                    )
-                    .await?;
-                    tracing::debug!(parent: &self.span,
-                        event = "disconnect",
-                        "Too many concurrent connections, disconnecting.",
-                    );
-                    return Err(());
-                }
-            };
+        // Enforce concurrency limits
+        let in_flight = match self
+            .get_concurrency_limiter(access_token.primary_id())
+            .map(|limiter| limiter.concurrent_requests.is_allowed())
+        {
+            Some(Some(limiter)) => Some(limiter),
+            None => None,
+            Some(None) => {
+                return Err(trc::Cause::TooManyConcurrentRequests.into());
+            }
+        };
 
-            // Cache access token
-            let access_token = Arc::new(access_token);
-            self.jmap.cache_access_token(access_token.clone());
+        // Cache access token
+        let access_token = Arc::new(access_token);
+        self.jmap.cache_access_token(access_token.clone());
 
-            // Create session
-            self.state = State::Authenticated {
-                data: Arc::new(SessionData::new(self, &access_token, in_flight).await?),
-            };
-            self.write_bytes(
-                StatusResponse::ok("Authentication successful")
-                    .with_code(ResponseCode::Capability {
-                        capabilities: Capability::all_capabilities(true, self.is_tls),
-                    })
-                    .with_tag(tag)
-                    .into_bytes(),
-            )
-            .await?;
-            Ok(())
+        // Create session
+        let todo = "handle auth errors";
+        self.state = State::Authenticated {
+            data: Arc::new(SessionData::new(self, &access_token, in_flight).await?),
+        };
+        self.write_bytes(
+            StatusResponse::ok("Authentication successful")
+                .with_code(ResponseCode::Capability {
+                    capabilities: Capability::all_capabilities(true, self.is_tls),
+                })
+                .with_tag(tag)
+                .into_bytes(),
+        )
+        .await
+
+        /*if let Some(access_token) = access_token {
+
         } else {
             self.write_bytes(
                 StatusResponse::no(if is_totp_error {
@@ -212,10 +152,10 @@ impl<T: SessionStream> Session<T> {
                 );
                 Err(())
             }
-        }
+        }*/
     }
 
-    pub async fn handle_unauthenticate(&mut self, request: Request<Command>) -> crate::OpResult {
+    pub async fn handle_unauthenticate(&mut self, request: Request<Command>) -> trc::Result<()> {
         self.state = State::NotAuthenticated { auth_failures: 0 };
 
         self.write_bytes(

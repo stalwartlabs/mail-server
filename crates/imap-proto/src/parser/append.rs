@@ -9,7 +9,7 @@ use crate::{
         append::{self, Message},
         Flag, ProtocolVersion,
     },
-    receiver::{Request, Token},
+    receiver::{bad, Request, Token},
     utf7::utf7_maybe_decode,
     Command,
 };
@@ -24,7 +24,7 @@ enum State {
 }
 
 impl Request<Command> {
-    pub fn parse_append(self, version: ProtocolVersion) -> crate::Result<append::Arguments> {
+    pub fn parse_append(self, version: ProtocolVersion) -> trc::Result<append::Arguments> {
         match self.tokens.len() {
             0 | 1 => Err(self.into_error("Missing arguments.")),
             _ => {
@@ -35,7 +35,7 @@ impl Request<Command> {
                         .next()
                         .unwrap()
                         .unwrap_string()
-                        .map_err(|v| (self.tag.as_str(), v))?,
+                        .map_err(|v| bad(self.tag.to_string(), v))?,
                     version,
                 );
                 let mut messages = Vec::new();
@@ -60,21 +60,19 @@ impl Request<Command> {
                                     }
                                     State::UTF8 => State::UTF8Data,
                                     _ => {
-                                        return Err((
-                                            self.tag.as_str(),
+                                        return Err(bad(
+                                            self.tag.to_string(),
                                             "Invalid opening parenthesis found.",
-                                        )
-                                            .into())
+                                        ))
                                     }
                                 };
                             }
                             Token::ParenthesisClose => match state {
                                 State::None | State::UTF8 => {
-                                    return Err((
-                                        self.tag.as_str(),
+                                    return Err(bad(
+                                        self.tag.to_string(),
                                         "Invalid closing parenthesis found.",
-                                    )
-                                        .into())
+                                    ))
                                 }
                                 State::Flags => {
                                     state = State::None;
@@ -94,11 +92,10 @@ impl Request<Command> {
                                         if let Ok(date_time) = parse_datetime(&value) {
                                             message.received_at = Some(date_time);
                                         } else {
-                                            return Err((
-                                                self.tag.as_str(),
+                                            return Err(bad(
+                                                self.tag.to_string(),
                                                 "Failed to parse received time.",
-                                            )
-                                                .into());
+                                            ));
                                         }
                                     } else {
                                         message.message = value;
@@ -108,29 +105,27 @@ impl Request<Command> {
                                 State::Flags => {
                                     message.flags.push(
                                         Flag::parse_imap(value)
-                                            .map_err(|v| (self.tag.as_str(), v))?,
+                                            .map_err(|v| bad(self.tag.to_string(), v))?,
                                     );
                                 }
                                 State::UTF8 => {
-                                    return Err((
-                                        self.tag.as_str(),
+                                    return Err(bad(
+                                        self.tag.to_string(),
                                         "Expected parenthesis after UTF8.",
-                                    )
-                                        .into());
+                                    ));
                                 }
                                 State::UTF8Data => {
                                     if message.message.is_empty() {
                                         message.message = value;
                                     } else {
-                                        return Err((
-                                            self.tag.as_str(),
+                                        return Err(bad(
+                                            self.tag.to_string(),
                                             "Invalid parameter after message literal.",
-                                        )
-                                            .into());
+                                        ));
                                     }
                                 }
                             },
-                            _ => return Err((self.tag.as_str(), "Invalid arguments.").into()),
+                            _ => return Err(bad(self.tag.to_string(), "Invalid arguments.")),
                         }
                     }
 

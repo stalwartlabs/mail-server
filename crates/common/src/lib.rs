@@ -81,18 +81,6 @@ pub struct Network {
     pub url: IfBlock,
 }
 
-pub enum AuthResult<T> {
-    Success(T),
-    Failure(AuthFailureReason),
-}
-
-pub enum AuthFailureReason {
-    InvalidCredentials,
-    MissingTotp,
-    Banned,
-    InternalError(trc::Error),
-}
-
 #[derive(Debug)]
 pub enum DeliveryEvent {
     Ingest {
@@ -239,7 +227,9 @@ impl Core {
         remote_ip: IpAddr,
         protocol: ServerProtocol,
         return_member_of: bool,
-    ) -> trc::Result<AuthResult<Principal<u32>>> {
+    ) -> trc::Result<Principal<u32>> {
+        let c = "use trc::Error and implement OAUTH";
+
         // First try to authenticate the user against the default directory
         let result = match directory
             .query(QueryBy::Credentials(credentials), return_member_of)
@@ -261,12 +251,12 @@ impl Core {
                     .await;
                 }
 
-                return Ok(AuthResult::Success(principal));
+                return Ok(principal);
             }
             Ok(None) => Ok(()),
             Err(err) => {
-                if err.matches(trc::Cause::MissingParameter) {
-                    return Ok(AuthResult::Failure(AuthFailureReason::MissingTotp));
+                if err.matches(trc::Cause::MissingTotp) {
+                    return Err(err);
                 } else {
                     Err(err)
                 }
@@ -297,9 +287,7 @@ impl Core {
                         )
                         .await;
                     }
-                    return Ok(AuthResult::Success(Principal::fallback_admin(
-                        fallback_pass,
-                    )));
+                    return Ok(Principal::fallback_admin(fallback_pass));
                 }
             }
             (_, Some((master_user, master_pass)), Credentials::Plain { username, secret })
@@ -308,45 +296,43 @@ impl Core {
                 if verify_secret_hash(master_pass, secret).await? {
                     let username = username.strip_suffix(master_user).unwrap();
                     let username = username.strip_suffix('%').unwrap_or(username);
-                    return Ok(
-                        if let Some(principal) = directory
-                            .query(QueryBy::Name(username), return_member_of)
-                            .await?
-                        {
-                            // Send webhook event
-                            if self.has_webhook_subscribers(WebhookType::AuthSuccess) {
-                                ipc.send_webhook(
-                                    WebhookType::AuthSuccess,
-                                    WebhookPayload::Authentication {
-                                        login: username.to_string(),
-                                        protocol,
-                                        remote_ip,
-                                        typ: principal.typ.into(),
-                                        as_master: true.into(),
-                                    },
-                                )
-                                .await;
-                            }
-                            AuthResult::Success(principal)
-                        } else {
-                            // Send webhook event
-                            if self.has_webhook_subscribers(WebhookType::AuthFailure) {
-                                ipc.send_webhook(
-                                    WebhookType::AuthFailure,
-                                    WebhookPayload::Authentication {
-                                        login: username.to_string(),
-                                        protocol,
-                                        remote_ip,
-                                        typ: None,
-                                        as_master: true.into(),
-                                    },
-                                )
-                                .await;
-                            }
+                    return if let Some(principal) = directory
+                        .query(QueryBy::Name(username), return_member_of)
+                        .await?
+                    {
+                        // Send webhook event
+                        if self.has_webhook_subscribers(WebhookType::AuthSuccess) {
+                            ipc.send_webhook(
+                                WebhookType::AuthSuccess,
+                                WebhookPayload::Authentication {
+                                    login: username.to_string(),
+                                    protocol,
+                                    remote_ip,
+                                    typ: principal.typ.into(),
+                                    as_master: true.into(),
+                                },
+                            )
+                            .await;
+                        }
+                        Ok(principal)
+                    } else {
+                        // Send webhook event
+                        if self.has_webhook_subscribers(WebhookType::AuthFailure) {
+                            ipc.send_webhook(
+                                WebhookType::AuthFailure,
+                                WebhookPayload::Authentication {
+                                    login: username.to_string(),
+                                    protocol,
+                                    remote_ip,
+                                    typ: None,
+                                    as_master: true.into(),
+                                },
+                            )
+                            .await;
+                        }
 
-                            AuthResult::Failure(AuthFailureReason::InvalidCredentials)
-                        },
-                    );
+                        Err(trc::Cause::Authentication.into())
+                    };
                 }
             }
             _ => {}
@@ -391,7 +377,7 @@ impl Core {
                     .await;
                 }
 
-                Ok(AuthResult::Failure(AuthFailureReason::Banned))
+                Err(trc::Cause::Banned.into())
             } else {
                 // Send webhook event
                 if self.has_webhook_subscribers(WebhookType::AuthFailure) {
@@ -408,7 +394,7 @@ impl Core {
                     .await;
                 }
 
-                Ok(AuthResult::Failure(AuthFailureReason::InvalidCredentials))
+                Err(trc::Cause::Authentication.into())
             }
         } else {
             // Send webhook event
@@ -425,7 +411,7 @@ impl Core {
                 )
                 .await;
             }
-            Ok(AuthResult::Failure(AuthFailureReason::InvalidCredentials))
+            Err(trc::Cause::Authentication.into())
         }
     }
 }

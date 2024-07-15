@@ -8,7 +8,7 @@ use mail_parser::decoders::charsets::map::charset_decoder;
 
 use crate::{
     protocol::thread::{self, Algorithm},
-    receiver::Request,
+    receiver::{bad, Request},
     Command,
 };
 
@@ -16,7 +16,7 @@ use super::search::parse_filters;
 
 impl Request<Command> {
     #[allow(clippy::while_let_on_iterator)]
-    pub fn parse_thread(self) -> crate::Result<thread::Arguments> {
+    pub fn parse_thread(self) -> trc::Result<thread::Arguments> {
         if self.tokens.is_empty() {
             return Err(self.into_error("Missing thread criteria."));
         }
@@ -25,21 +25,22 @@ impl Request<Command> {
         let algorithm = Algorithm::parse(
             &tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing threading algorithm."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing threading algorithm."))?
                 .unwrap_bytes(),
         )
-        .map_err(|v| (self.tag.as_str(), v))?;
+        .map_err(|v| bad(self.tag.to_string(), v))?;
 
         let decoder = charset_decoder(
             &tokens
                 .next()
-                .ok_or((self.tag.as_str(), "Missing charset."))?
+                .ok_or_else(|| bad(self.tag.to_string(), "Missing charset."))?
                 .unwrap_bytes(),
         );
 
-        let filter = parse_filters(&mut tokens, decoder).map_err(|v| (self.tag.as_str(), v))?;
+        let filter =
+            parse_filters(&mut tokens, decoder).map_err(|v| bad(self.tag.to_string(), v))?;
         match filter.len() {
-            0 => Err((self.tag.as_str(), "No filters found in command.").into()),
+            0 => Err(bad(self.tag.to_string(), "No filters found in command.")),
             _ => Ok(thread::Arguments {
                 algorithm,
                 filter,

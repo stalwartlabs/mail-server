@@ -16,7 +16,7 @@ use jmap::auth::rate_limit::ConcurrencyLimiters;
 use super::{SelectedMailbox, Session, SessionData, State};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn ingest(&mut self, bytes: &[u8]) -> crate::Result<bool> {
+    pub async fn ingest(&mut self, bytes: &[u8]) -> trc::Result<bool> {
         /*for line in String::from_utf8_lossy(bytes).split("\r\n") {
             let c = println!("{}", line);
         }*/
@@ -152,6 +152,8 @@ impl<T: SessionStream> Session<T> {
                 }
                 Command::Logout => {
                     self.handle_logout(request).await?;
+                    let todo = "disconnect";
+                    //return Err(());
                 }
                 Command::SetAcl => {
                     self.handle_set_acl(request).await?;
@@ -382,6 +384,23 @@ impl<T: SessionStream> State<T> {
             State::Selected { data, mailbox } => (data.clone(), mailbox.clone()),
             _ => unreachable!(),
         }
+    }
+
+    pub fn spawn_task<F, R, P>(&self, params: P, fnc: F) -> trc::Result<()>
+    where
+        F: FnOnce(P, &super::SessionData<T>) -> R + Send + 'static,
+        P: Send + Sync + 'static,
+        R: std::future::Future<Output = trc::Result<()>> + Send + 'static,
+    {
+        let data = self.session_data();
+
+        tokio::spawn(async move {
+            if let Err(err) = fnc(params, &data).await {
+                let _ = data.write_error(err).await;
+            }
+        });
+
+        Ok(())
     }
 
     pub fn is_authenticated(&self) -> bool {

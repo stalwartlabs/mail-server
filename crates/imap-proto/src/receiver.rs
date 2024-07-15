@@ -488,78 +488,26 @@ impl<T: CommandParser> Default for Receiver<T> {
 }
 
 impl<T: CommandParser> Request<T> {
-    pub fn into_error(self, message: impl Into<Cow<'static, str>>) -> StatusResponse {
-        StatusResponse {
-            tag: self.tag.into(),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::No,
-        }
+    pub fn into_error(self, message: impl Into<trc::Value>) -> trc::Error {
+        trc::Cause::Imap
+            .ctx(trc::Key::Details, message)
+            .ctx(trc::Key::Id, self.tag)
     }
 
-    pub fn into_parse_error(self, message: impl Into<Cow<'static, str>>) -> StatusResponse {
-        StatusResponse {
-            tag: self.tag.into(),
-            code: ResponseCode::Parse.into(),
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
+    pub fn into_parse_error(self, message: impl Into<trc::Value>) -> trc::Error {
+        trc::Cause::Imap
+            .ctx(trc::Key::Details, message)
+            .ctx(trc::Key::Id, self.tag)
+            .ctx(trc::Key::Code, ResponseCode::Parse)
+            .ctx(trc::Key::Type, ResponseType::Bad)
     }
 }
 
-impl From<(String, &'static str)> for StatusResponse {
-    fn from((tag, message): (String, &'static str)) -> Self {
-        StatusResponse {
-            tag: Some(tag),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(&str, &'static str)> for StatusResponse {
-    fn from((tag, message): (&str, &'static str)) -> Self {
-        StatusResponse {
-            tag: Some(tag.to_string()),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(String, String)> for StatusResponse {
-    fn from((tag, message): (String, String)) -> Self {
-        StatusResponse {
-            tag: Some(tag),
-            code: None,
-            message: message.into(),
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(String, Cow<'static, str>)> for StatusResponse {
-    fn from((tag, message): (String, Cow<'static, str>)) -> Self {
-        StatusResponse {
-            tag: Some(tag),
-            code: None,
-            message,
-            rtype: ResponseType::Bad,
-        }
-    }
-}
-
-impl From<(&str, Cow<'static, str>)> for StatusResponse {
-    fn from((tag, message): (&str, Cow<'static, str>)) -> Self {
-        StatusResponse {
-            tag: Some(tag.to_string()),
-            code: None,
-            message,
-            rtype: ResponseType::Bad,
-        }
-    }
+pub(crate) fn bad(tag: impl Into<trc::Value>, message: impl Into<trc::Value>) -> trc::Error {
+    trc::Cause::Imap
+        .ctx(trc::Key::Details, message)
+        .ctx(trc::Key::Id, tag)
+        .ctx(trc::Key::Type, ResponseType::Bad)
 }
 
 /*

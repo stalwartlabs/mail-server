@@ -6,7 +6,10 @@
 
 use std::sync::Arc;
 
-use crate::core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData};
+use crate::{
+    core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData},
+    spawn_op,
+};
 use ahash::AHashSet;
 use common::listener::SessionStream;
 use imap_proto::{
@@ -19,42 +22,33 @@ use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
 };
 use jmap::{email::set::TagManager, mailbox::UidMailbox};
-use jmap_proto::{
-    error::method::MethodError,
-    types::{
-        acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
-        state::StateChange, type_state::DataType,
-    },
+use jmap_proto::types::{
+    acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
+    state::StateChange, type_state::DataType,
 };
 use store::{
     query::log::{Change, Query},
     write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE},
 };
 
-use super::FromModSeq;
+use super::{FromModSeq, ImapContext};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_store(
         &mut self,
         request: Request<Command>,
         is_uid: bool,
-    ) -> crate::OpResult {
-        match request.parse_store() {
-            Ok(arguments) => {
-                let (data, mailbox) = self.state.select_data();
-                let is_condstore = self.is_condstore || mailbox.is_condstore;
+    ) -> trc::Result<()> {
+        let arguments = request.parse_store()?;
 
-                tokio::spawn(async move {
-                    let bytes = match data.store(arguments, mailbox, is_uid, is_condstore).await {
-                        Ok(response) => response,
-                        Err(response) => response.into_bytes(),
-                    };
-                    data.write_bytes(bytes).await;
-                });
-                Ok(())
-            }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+        let (data, mailbox) = self.state.select_data();
+        let is_condstore = self.is_condstore || mailbox.is_condstore;
+
+        spawn_op!(data, {
+            let response = data.store(arguments, mailbox, is_uid, is_condstore).await?;
+
+            data.write_bytes(response).await
+        })
     }
 }
 
@@ -65,30 +59,23 @@ impl<T: SessionStream> SessionData<T> {
         mailbox: Arc<SelectedMailbox>,
         is_uid: bool,
         is_condstore: bool,
-    ) -> Result<Vec<u8>, StatusResponse> {
+    ) -> trc::Result<Vec<u8>> {
         // Resync messages if needed
         let account_id = mailbox.id.account_id;
         self.synchronize_messages(&mailbox)
             .await
-            .map_err(|r| r.with_tag(&arguments.tag))?;
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Convert IMAP ids to JMAP ids.
-        let mut ids = match mailbox
+        let mut ids = mailbox
             .sequence_to_ids(&arguments.sequence_set, is_uid)
             .await
-        {
-            Ok(ids) => {
-                if ids.is_empty() {
-                    return Err(
-                        StatusResponse::completed(Command::Store(is_uid)).with_tag(arguments.tag)
-                    );
-                }
-                ids
-            }
-            Err(response) => {
-                return Err(response.with_tag(arguments.tag));
-            }
-        };
+            .imap_ctx(&arguments.tag, trc::location!())?;
+        if ids.is_empty() {
+            return Ok(StatusResponse::completed(Command::Store(is_uid))
+                .with_tag(arguments.tag)
+                .into_bytes());
+        }
 
         // Verify that the user can modify messages in this mailbox.
         if !self
@@ -98,13 +85,16 @@ impl<T: SessionStream> SessionData<T> {
                 Acl::ModifyItems,
             )
             .await
-            .map_err(|_| StatusResponse::database_failure().with_tag(&arguments.tag))?
+            .imap_ctx(&arguments.tag, trc::location!())?
         {
-            return Err(StatusResponse::no(
-                "You do not have the required permissions to modify messages in this mailbox.",
-            )
-            .with_tag(arguments.tag)
-            .with_code(ResponseCode::NoPerm));
+            return Err(trc::Cause::Imap
+                .into_err()
+                .details(
+                    "You do not have the required permissions to modify messages in this mailbox.",
+                )
+                .id(arguments.tag)
+                .code(ResponseCode::NoPerm)
+                .caused_by(trc::location!()));
         }
 
         // Filter out unchanged since ids
@@ -112,7 +102,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut unchanged_failed = false;
         if let Some(unchanged_since) = arguments.unchanged_since {
             // Obtain changes since the modseq.
-            let changelog = match self
+            let changelog = self
                 .jmap
                 .changes_(
                     account_id,
@@ -120,10 +110,7 @@ impl<T: SessionStream> SessionData<T> {
                     Query::from_modseq(unchanged_since),
                 )
                 .await
-            {
-                Ok(changelog) => changelog,
-                Err(_) => return Err(StatusResponse::database_failure().with_tag(arguments.tag)),
-            };
+                .imap_ctx(&arguments.tag, trc::location!())?;
 
             let mut modified = mailbox
                 .sequence_expand_missing(&arguments.sequence_set, is_uid)
@@ -165,7 +152,7 @@ impl<T: SessionStream> SessionData<T> {
             response = response.with_code(response_code)
         }
         if ids.is_empty() {
-            return Err(response);
+            return Ok(response.into_bytes());
         }
         let mut items = Response {
             items: Vec::with_capacity(ids.len()),
@@ -192,17 +179,11 @@ impl<T: SessionStream> SessionData<T> {
                             Property::Keywords,
                         )
                         .await
-                        .map_err(|_| {
-                            StatusResponse::database_failure()
-                                .with_tag(response.tag.as_ref().unwrap())
-                        })?,
+                        .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
                     self.jmap
                         .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
                         .await
-                        .map_err(|_| {
-                            StatusResponse::database_failure()
-                                .with_tag(response.tag.as_ref().unwrap())
-                        })?,
+                        .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
                 ) {
                     (TagManager::new(keywords), thread_id)
                 } else {
@@ -250,11 +231,11 @@ impl<T: SessionStream> SessionData<T> {
                         .update_document(id);
                     keywords.update_batch(&mut batch, Property::Keywords);
                     if changelog.change_id == u64::MAX {
-                        changelog.change_id =
-                            self.jmap.assign_change_id(account_id).await.map_err(|_| {
-                                StatusResponse::database_failure()
-                                    .with_tag(response.tag.as_ref().unwrap())
-                            })?
+                        changelog.change_id = self
+                            .jmap
+                            .assign_change_id(account_id)
+                            .await
+                            .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                     }
                     batch.value(Property::Cid, changelog.change_id, F_VALUE);
                     match self.jmap.write_batch(batch).await {
@@ -270,10 +251,7 @@ impl<T: SessionStream> SessionData<T> {
                                         Property::MailboxIds,
                                     )
                                     .await
-                                    .map_err(|_| {
-                                        StatusResponse::database_failure()
-                                            .with_tag(response.tag.as_ref().unwrap())
-                                    })?
+                                    .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                                 {
                                     for mailbox_id in mailboxes {
                                         changed_mailboxes.insert(mailbox_id.mailbox_id);
@@ -310,7 +288,7 @@ impl<T: SessionStream> SessionData<T> {
                                 });
                             }
                         }
-                        Err(MethodError::ServerUnavailable) => {
+                        Err(err) if err.matches(trc::Cause::AssertValue) => {
                             if try_count < MAX_RETRIES {
                                 try_count += 1;
                                 continue;
@@ -319,9 +297,8 @@ impl<T: SessionStream> SessionData<T> {
                                 response.message = "Some messages could not be updated.".into();
                             }
                         }
-                        Err(_) => {
-                            return Err(StatusResponse::database_failure()
-                                .with_tag(response.tag.as_ref().unwrap()));
+                        Err(err) => {
+                            return Err(err.id(response.tag.unwrap()));
                         }
                     }
                 }
@@ -340,9 +317,7 @@ impl<T: SessionStream> SessionData<T> {
                 .jmap
                 .commit_changes(account_id, changelog)
                 .await
-                .map_err(|_| {
-                    StatusResponse::database_failure().with_tag(response.tag.as_ref().unwrap())
-                })?;
+                .imap_ctx(&response.tag.as_ref().unwrap(), trc::location!())?;
             self.jmap
                 .broadcast_state_change(if !changed_mailboxes.is_empty() {
                     StateChange::new(account_id)

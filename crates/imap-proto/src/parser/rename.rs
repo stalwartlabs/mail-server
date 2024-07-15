@@ -6,13 +6,13 @@
 
 use crate::{
     protocol::{rename, ProtocolVersion},
-    receiver::Request,
+    receiver::{bad, Request},
     utf7::utf7_maybe_decode,
     Command,
 };
 
 impl Request<Command> {
-    pub fn parse_rename(self, version: ProtocolVersion) -> crate::Result<rename::Arguments> {
+    pub fn parse_rename(self, version: ProtocolVersion) -> trc::Result<rename::Arguments> {
         match self.tokens.len() {
             2 => {
                 let mut tokens = self.tokens.into_iter();
@@ -22,7 +22,7 @@ impl Request<Command> {
                             .next()
                             .unwrap()
                             .unwrap_string()
-                            .map_err(|v| (self.tag.as_ref(), v))?,
+                            .map_err(|v| bad(self.tag.clone(), v))?,
                         version,
                     ),
                     new_mailbox_name: utf7_maybe_decode(
@@ -30,7 +30,7 @@ impl Request<Command> {
                             .next()
                             .unwrap()
                             .unwrap_string()
-                            .map_err(|v| (self.tag.as_ref(), v))?,
+                            .map_err(|v| bad(self.tag.clone(), v))?,
                         version,
                     ),
                     tag: self.tag,

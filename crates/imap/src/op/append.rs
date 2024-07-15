@@ -12,60 +12,47 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
-use crate::core::{ImapUidToId, MailboxId, SelectedMailbox, Session, SessionData};
+use crate::{
+    core::{ImapUidToId, MailboxId, SelectedMailbox, Session, SessionData},
+    spawn_op,
+};
 use common::listener::SessionStream;
 use jmap::email::ingest::{IngestEmail, IngestSource};
 use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 
-use super::ToModSeq;
+use super::{ImapContext, ToModSeq};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_append(&mut self, request: Request<Command>) -> crate::OpResult {
-        match request.parse_append(self.version) {
-            Ok(arguments) => {
-                let (data, selected_mailbox) = self.state.session_mailbox_state();
+    pub async fn handle_append(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let arguments = request.parse_append(self.version)?;
+        let (data, selected_mailbox) = self.state.session_mailbox_state();
 
-                // Refresh mailboxes
-                if let Err(err) = data.synchronize_mailboxes(false).await {
-                    return self
-                        .write_bytes(err.with_tag(arguments.tag).into_bytes())
-                        .await;
-                }
+        // Refresh mailboxes
+        data.synchronize_mailboxes(false)
+            .await
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
-                // Obtain mailbox
-                let mailbox =
-                    if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
-                        mailbox
-                    } else {
-                        return self
-                            .write_bytes(
-                                StatusResponse::no("Mailbox does not exist.")
-                                    .with_tag(arguments.tag)
-                                    .with_code(ResponseCode::TryCreate)
-                                    .into_bytes(),
-                            )
-                            .await;
-                    };
-                let is_qresync = self.is_qresync;
+        // Obtain mailbox
+        let mailbox = if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
+            mailbox
+        } else {
+            return Err(trc::Cause::Imap
+                .into_err()
+                .details("Mailbox does not exist.")
+                .code(ResponseCode::TryCreate)
+                .id(arguments.tag));
+        };
+        let is_qresync = self.is_qresync;
 
-                tokio::spawn(async move {
-                    data.write_bytes(
-                        match data
-                            .append_messages(arguments, selected_mailbox, mailbox, is_qresync)
-                            .await
-                        {
-                            Ok(response) => response,
-                            Err(response) => response,
-                        }
-                        .into_bytes(),
-                    )
-                    .await;
-                });
-                Ok(())
-            }
-            Err(response) => self.write_bytes(response.into_bytes()).await,
-        }
+        spawn_op!(data, {
+            let response = data
+                .append_messages(arguments, selected_mailbox, mailbox, is_qresync)
+                .await?
+                .into_bytes();
+
+            data.write_bytes(response).await
+        })
     }
 }
 
@@ -76,27 +63,29 @@ impl<T: SessionStream> SessionData<T> {
         selected_mailbox: Option<Arc<SelectedMailbox>>,
         mailbox: MailboxId,
         is_qresync: bool,
-    ) -> crate::op::Result<StatusResponse> {
+    ) -> trc::Result<StatusResponse> {
         // Verify ACLs
         let account_id = mailbox.account_id;
         let mailbox_id = mailbox.mailbox_id;
         if !self
             .check_mailbox_acl(account_id, mailbox_id, Acl::AddItems)
             .await
-            .map_err(|r| r.with_tag(&arguments.tag))?
+            .imap_ctx(&arguments.tag, trc::location!())?
         {
-            return Ok(StatusResponse::no(
-                "You do not have the required permissions to append messages to this mailbox.",
-            )
-            .with_tag(arguments.tag)
-            .with_code(ResponseCode::NoPerm));
+            return Err(trc::Cause::Imap
+                .into_err()
+                .details(
+                    "You do not have the required permissions to append messages to this mailbox.",
+                )
+                .code(ResponseCode::NoPerm)
+                .id(arguments.tag));
         }
 
         // Obtain quota
         let account_quota = self
             .get_access_token()
             .await
-            .map_err(|r| r.with_tag(&arguments.tag))?
+            .imap_ctx(&arguments.tag, trc::location!())?
             .quota as i64;
 
         // Append messages
@@ -127,19 +116,13 @@ impl<T: SessionStream> SessionData<T> {
                     last_change_id = Some(email.change_id);
                 }
                 Err(err) => {
-                    match err {
-                        jmap::IngestError::Temporary => {
-                            response = StatusResponse::database_failure();
-                        }
-                        jmap::IngestError::OverQuota => {
-                            response = StatusResponse::no("Disk quota exceeded.")
-                                .with_code(ResponseCode::OverQuota);
-                        }
-                        jmap::IngestError::Permanent { reason, .. } => {
-                            response = StatusResponse::no(reason);
-                        }
+                    return Err(if err.matches(trc::Cause::OverQuota) {
+                        err.details("Disk quota exceeded.")
+                            .code(ResponseCode::OverQuota)
+                    } else {
+                        err
                     }
-                    break;
+                    .id(arguments.tag));
                 }
             }
         }
@@ -165,7 +148,7 @@ impl<T: SessionStream> SessionData<T> {
                         self.write_bytes(
                             HighestModSeq::new(last_change_id.to_modseq()).into_bytes(),
                         )
-                        .await;
+                        .await?;
                     }
 
                     selected_mailbox.append_messages(created_ids, last_change_id)
@@ -173,7 +156,7 @@ impl<T: SessionStream> SessionData<T> {
                 _ => self
                     .get_uid_validity(&mailbox)
                     .await
-                    .map_err(|r| r.with_tag(&arguments.tag))?,
+                    .imap_ctx(&arguments.tag, trc::location!())?,
             };
 
             response = response.with_code(ResponseCode::AppendUid { uid_validity, uids });
