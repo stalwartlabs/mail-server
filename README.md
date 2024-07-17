@@ -116,6 +116,9 @@ Install Stalwart Mail Server on your server by following the instructions for yo
 
 All documentation is available at [stalw.art/docs/get-started](https://stalw.art/docs/get-started).
 
+### One click deploys
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/bjfDQy?referralCode=Z1IILa)
+
 ## Support
 
 If you are having problems running Stalwart Mail Server, you found a bug or just have a question,
