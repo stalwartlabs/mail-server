@@ -5,8 +5,7 @@
  */
 
 use crate::{
-    error::method::MethodError,
-    parser::{json::Parser, Error, Ignore, JsonObjectParser, Token},
+    parser::{json::Parser, Ignore, JsonObjectParser, Token},
     request::{method::MethodObject, RequestProperty},
     types::{id::Id, property::Property, state::State},
 };
@@ -55,7 +54,7 @@ pub enum RequestArguments {
 }
 
 impl JsonObjectParser for ChangesRequest {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -68,10 +67,9 @@ impl JsonObjectParser for ChangesRequest {
                 MethodObject::EmailSubmission => RequestArguments::EmailSubmission,
                 MethodObject::Quota => RequestArguments::Quota,
                 _ => {
-                    return Err(Error::Method(MethodError::UnknownMethod(format!(
-                        "{}/changes",
-                        parser.ctx
-                    ))))
+                    return Err(trc::JmapCause::UnknownMethod
+                        .into_err()
+                        .details(format!("{}/changes", parser.ctx)))
                 }
             },
             account_id: Id::default(),

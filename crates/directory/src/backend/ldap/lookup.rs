@@ -79,7 +79,7 @@ impl LdapDirectory {
                     {
                         Ok(Some(principal)) => principal,
                         Err(err)
-                            if err.matches(trc::Cause::Ldap)
+                            if err.matches(trc::Cause::Store(trc::StoreCause::Ldap))
                                 && err
                                     .value(trc::Key::Code)
                                     .and_then(|v| v.to_uint())

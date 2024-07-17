@@ -128,7 +128,7 @@ impl JMAP {
                             ctx.mailbox_ids.insert(document_id);
                             ctx.response.created(id, document_id);
                         }
-                        Err(err) if err.matches(trc::Cause::AssertValue) => {
+                        Err(err) if err.is_assertion_failure() => {
                             ctx.response.not_created.append(
                                 id,
                                 SetError::forbidden().with_description(
@@ -221,7 +221,7 @@ impl JMAP {
                                 Ok(_) => {
                                     changes.log_update(Collection::Mailbox, document_id);
                                 }
-                                Err(err) if err.matches(trc::Cause::AssertValue) => {
+                                Err(err) if err.is_assertion_failure() => {
                                     ctx.response.not_updated.append(id, SetError::forbidden().with_description(
                                         "Another process modified this mailbox, please try again.",
                                     ));
@@ -391,7 +391,7 @@ impl JMAP {
                                     Collection::Email,
                                     Id::from_parts(thread_id, message_id),
                                 ),
-                                Err(err) if err.matches(trc::Cause::AssertValue) => {
+                                Err(err) if err.is_assertion_failure() => {
                                     return Ok(Err(SetError::forbidden().with_description(
                                         concat!(
                                             "Another process modified a message in this mailbox ",
@@ -469,7 +469,7 @@ impl JMAP {
                     changes.log_delete(Collection::Mailbox, document_id);
                     Ok(Ok(did_remove_emails))
                 }
-                Err(err) if err.matches(trc::Cause::AssertValue) => Ok(Err(SetError::forbidden()
+                Err(err) if err.is_assertion_failure() => Ok(Err(SetError::forbidden()
                     .with_description(concat!(
                         "Another process modified this mailbox ",
                         "while deleting it, please try again."

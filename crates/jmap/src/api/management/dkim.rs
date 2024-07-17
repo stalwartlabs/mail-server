@@ -7,8 +7,8 @@
 use std::str::FromStr;
 
 use common::config::smtp::auth::simple_pem_parse;
+use directory::backend::internal::manage;
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
 use mail_auth::{
     common::crypto::{Ed25519Key, RsaKey, Sha256},
     dkim::generate::DkimKeyPair,
@@ -22,10 +22,7 @@ use serde_json::json;
 use store::write::now;
 
 use crate::{
-    api::{
-        http::ToHttpResponse, management::ManagementApiError, HttpRequest, HttpResponse,
-        JsonResponse,
-    },
+    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
     JMAP,
 };
 
@@ -51,22 +48,21 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
-    ) -> HttpResponse {
+    ) -> trc::Result<HttpResponse> {
         match *req.method() {
             Method::GET => self.handle_get_public_key(path).await,
             Method::POST => self.handle_create_signature(body).await,
-            _ => RequestError::not_found().into_http_response(),
+            _ => Err(trc::ResourceCause::NotFound.into_err()),
         }
     }
 
-    async fn handle_get_public_key(&self, path: Vec<&str>) -> HttpResponse {
+    async fn handle_get_public_key(&self, path: Vec<&str>) -> trc::Result<HttpResponse> {
         let signature_id = match path.get(1) {
             Some(signature_id) => decode_path_element(signature_id),
             None => {
-                return RequestError::not_found().into_http_response();
+                return Err(trc::ResourceCause::NotFound.into_err());
             }
         };
-        let todo = "bubble up error and log them";
 
         let (pk, algo) = match (
             self.core
@@ -82,27 +78,26 @@ impl JMAP {
                 .map(|algo| algo.and_then(|algo| algo.parse::<Algorithm>().ok())),
         ) {
             (Ok(Some(pk)), Ok(Some(algorithm))) => (pk, algorithm),
-            (Err(err), _) | (_, Err(err)) => return err.into_http_response(),
-            _ => return RequestError::not_found().into_http_response(),
+            (Err(err), _) | (_, Err(err)) => return Err(err.caused_by(trc::location!())),
+            _ => return Err(trc::ResourceCause::NotFound.into_err()),
         };
 
         match obtain_dkim_public_key(algo, &pk) {
-            Ok(data) => JsonResponse::new(json!({
+            Ok(data) => Ok(JsonResponse::new(json!({
                 "data": data,
             }))
-            .into_http_response(),
-            Err(err) => ManagementApiError::Other {
-                details: err.into(),
-            }
-            .into_http_response(),
+            .into_http_response()),
+            Err(details) => Err(manage::error(details, None::<u32>)),
         }
     }
 
-    async fn handle_create_signature(&self, body: Option<Vec<u8>>) -> HttpResponse {
+    async fn handle_create_signature(&self, body: Option<Vec<u8>>) -> trc::Result<HttpResponse> {
         let request =
             match serde_json::from_slice::<DkimSignature>(body.as_deref().unwrap_or_default()) {
                 Ok(request) => request,
-                Err(err) => return err.into_http_response(),
+                Err(err) => {
+                    return Err(trc::Cause::Resource(trc::ResourceCause::BadParameters).reason(err))
+                }
             };
 
         let algo_str = match request.algorithm {
@@ -127,35 +122,27 @@ impl JMAP {
         });
 
         // Make sure the signature does not exist already
-        match self
+        if let Some(value) = self
             .core
             .storage
             .config
             .get(&format!("signature.{id}.private-key"))
-            .await
+            .await?
         {
-            Ok(None) => (),
-            Ok(Some(value)) => {
-                return ManagementApiError::FieldAlreadyExists {
-                    field: format!("signature.{id}.private-key").into(),
-                    value: value.into(),
-                }
-                .into_http_response();
-            }
-            Err(err) => return err.into_http_response(),
+            return Err(manage::err_exists(
+                format!("signature.{id}.private-key"),
+                value,
+            ));
         }
 
         // Create signature
-        match self
-            .create_dkim_key(request.algorithm, id, request.domain, selector)
-            .await
-        {
-            Ok(_) => JsonResponse::new(json!({
-                "data": (),
-            }))
-            .into_http_response(),
-            Err(err) => err.into_http_response(),
-        }
+        self.create_dkim_key(request.algorithm, id, request.domain, selector)
+            .await?;
+
+        Ok(JsonResponse::new(json!({
+            "data": (),
+        }))
+        .into_http_response())
     }
 
     async fn create_dkim_key(
@@ -177,7 +164,10 @@ impl JMAP {
                 Algorithm::Rsa => DkimKeyPair::generate_rsa(2048),
                 Algorithm::Ed25519 => DkimKeyPair::generate_ed25519(),
             }
-            .map_err(|err| trc::Cause::Crypto.reason(err).caused_by(trc::location!()))?
+            .map_err(|err| {
+                manage::error("Failed to generate key", err.to_string().into())
+                    .caused_by(trc::location!())
+            })?
             .private_key(),
         )
         .unwrap_or_default()

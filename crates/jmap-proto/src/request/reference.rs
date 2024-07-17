@@ -7,8 +7,7 @@
 use std::fmt::Display;
 
 use crate::{
-    error::method::MethodError,
-    parser::{json::Parser, Error, JsonObjectParser, Token},
+    parser::{json::Parser, JsonObjectParser, Token},
     types::{id::Id, pointer::JSONPointer},
 };
 
@@ -45,7 +44,7 @@ impl<V, R> MaybeReference<V, R> {
 }
 
 impl JsonObjectParser for ResultReference {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -81,15 +80,15 @@ impl JsonObjectParser for ResultReference {
                 path,
             })
         } else {
-            Err(Error::Method(MethodError::InvalidResultReference(
-                "Missing required fields".into(),
-            )))
+            Err(trc::JmapCause::InvalidResultReference
+                .into_err()
+                .details("Missing required fields"))
         }
     }
 }
 
 impl<T: JsonObjectParser> JsonObjectParser for MaybeReference<T, String> {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

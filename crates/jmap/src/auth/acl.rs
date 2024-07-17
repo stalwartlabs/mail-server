@@ -49,7 +49,7 @@ impl JMAP {
                     let acl = Bitmap::<Acl>::from(acl_item.permissions);
                     let collection = Collection::from(acl_item.to_collection);
                     if !collection.is_valid() {
-                        return Err(trc::Cause::DataCorruption
+                        return Err(trc::StoreCause::DataCorruption
                             .ctx(trc::Key::Reason, "Corrupted collection found in ACL key.")
                             .details(format!("{acl_item:?}"))
                             .account_id(grant_account_id)

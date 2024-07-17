@@ -7,15 +7,13 @@
 use std::{borrow::Cow, collections::BTreeSet, fmt::Display, io::Cursor, sync::Arc};
 
 use crate::{
-    api::{http::ToHttpResponse, management::ManagementApiError, HttpResponse, JsonResponse},
+    api::{http::ToHttpResponse, HttpResponse, JsonResponse},
     auth::AccessToken,
     JMAP,
 };
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
-use jmap_proto::{
-    error::request::RequestError,
-    types::{collection::Collection, property::Property},
-};
+use directory::backend::internal::manage;
+use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::{encoders::base64::base64_encode_mime, mime::make_boundary};
 use mail_parser::{decoders::base64::base64_decode, Message, MessageParser, MimeHeaders};
 use openpgp::{
@@ -608,12 +606,16 @@ impl Deserialize for EncryptionParams {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         let version = *bytes
             .first()
-            .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))?;
+            .ok_or_else(|| trc::StoreCause::DataCorruption.caused_by(trc::location!()))?;
         match version {
-            1 if bytes.len() > 1 => bincode::deserialize(&bytes[1..])
-                .map_err(|err| trc::Error::from(err).caused_by(trc::location!())),
+            1 if bytes.len() > 1 => bincode::deserialize(&bytes[1..]).map_err(|err| {
+                trc::Cause::Store(trc::StoreCause::Deserialize)
+                    .from_bincode_error(err)
+                    .caused_by(trc::location!())
+            }),
 
-            _ => Err(trc::Cause::Deserialize
+            _ => Err(trc::StoreCause::Deserialize
+                .into_err()
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Value, version as u64)),
         }
@@ -627,66 +629,48 @@ impl ToBitmaps for &EncryptionParams {
 }
 
 impl JMAP {
-    pub async fn handle_crypto_get(&self, access_token: Arc<AccessToken>) -> HttpResponse {
-        match self
+    pub async fn handle_crypto_get(
+        &self,
+        access_token: Arc<AccessToken>,
+    ) -> trc::Result<HttpResponse> {
+        let params = self
             .get_property::<EncryptionParams>(
                 access_token.primary_id(),
                 Collection::Principal,
                 0,
                 Property::Parameters,
             )
-            .await
-        {
-            Ok(params) => {
-                let ec = params
-                    .map(|params| {
-                        let method = params.method;
-                        let algo = params.algo;
-                        let mut certs = Vec::new();
-                        certs.extend_from_slice(b"-----STALWART CERTIFICATE-----\r\n");
-                        let _ = base64_encode_mime(
-                            &Bincode::new(params).serialize(),
-                            &mut certs,
-                            false,
-                        );
-                        certs.extend_from_slice(b"\r\n");
-                        let certs = String::from_utf8(certs).unwrap_or_default();
+            .await?;
+        let ec = params
+            .map(|params| {
+                let method = params.method;
+                let algo = params.algo;
+                let mut certs = Vec::new();
+                certs.extend_from_slice(b"-----STALWART CERTIFICATE-----\r\n");
+                let _ = base64_encode_mime(&Bincode::new(params).serialize(), &mut certs, false);
+                certs.extend_from_slice(b"\r\n");
+                let certs = String::from_utf8(certs).unwrap_or_default();
 
-                        match method {
-                            EncryptionMethod::PGP => EncryptionType::PGP { algo, certs },
-                            EncryptionMethod::SMIME => EncryptionType::SMIME { algo, certs },
-                        }
-                    })
-                    .unwrap_or(EncryptionType::Disabled);
+                match method {
+                    EncryptionMethod::PGP => EncryptionType::PGP { algo, certs },
+                    EncryptionMethod::SMIME => EncryptionType::SMIME { algo, certs },
+                }
+            })
+            .unwrap_or(EncryptionType::Disabled);
 
-                JsonResponse::new(json!({
-                    "data": ec,
-                }))
-                .into_http_response()
-            }
-            Err(err) => {
-                tracing::warn!(
-                    context = "store",
-                    event = "error",
-                    reason = ?err,
-                    "Database error while fetching encryption parameters"
-                );
-
-                RequestError::internal_server_error().into_http_response()
-            }
-        }
+        Ok(JsonResponse::new(json!({
+            "data": ec,
+        }))
+        .into_http_response())
     }
 
     pub async fn handle_crypto_post(
         &self,
         access_token: Arc<AccessToken>,
         body: Option<Vec<u8>>,
-    ) -> HttpResponse {
-        let request =
-            match serde_json::from_slice::<EncryptionType>(body.as_deref().unwrap_or_default()) {
-                Ok(request) => request,
-                Err(err) => return err.into_http_response(),
-            };
+    ) -> trc::Result<HttpResponse> {
+        let request = serde_json::from_slice::<EncryptionType>(body.as_deref().unwrap_or_default())
+            .map_err(|err| trc::ResourceCause::BadParameters.into_err().reason(err))?;
 
         let (method, algo, certs) = match request {
             EncryptionType::PGP { algo, certs } => (EncryptionMethod::PGP, algo, certs),
@@ -699,32 +683,27 @@ impl JMAP {
                     .with_collection(Collection::Principal)
                     .update_document(0)
                     .value(Property::Parameters, (), F_VALUE | F_CLEAR);
-                return match self.core.storage.data.write(batch.build()).await {
-                    Ok(_) => JsonResponse::new(json!({
-                        "data": (),
-                    }))
-                    .into_http_response(),
-                    Err(err) => err.into_http_response(),
-                };
+                self.core.storage.data.write(batch.build()).await?;
+                return Ok(JsonResponse::new(json!({
+                    "data": (),
+                }))
+                .into_http_response());
             }
         };
 
         // Make sure Encryption is enabled
         if !self.core.jmap.encrypt {
-            return ManagementApiError::Unsupported {
-                details: "Encryption-at-rest has been disabled by the system administrator".into(),
-            }
-            .into_http_response();
+            return Err(manage::unsupported(
+                "Encryption-at-rest has been disabled by the system administrator",
+            ));
         }
 
         // Parse certificates
-        let params = match try_parse_certs(method, certs.into_bytes()) {
-            Ok(certs) => EncryptionParams {
-                method,
-                algo,
-                certs,
-            },
-            Err(err) => return ManagementApiError::from(err).into_http_response(),
+        let params = EncryptionParams {
+            method,
+            algo,
+            certs: try_parse_certs(method, certs.into_bytes())
+                .map_err(|err| manage::error(err, None::<u32>))?,
         };
 
         // Try a test encryption
@@ -734,7 +713,7 @@ impl JMAP {
             .encrypt(&params)
             .await
         {
-            return ManagementApiError::from(message).into_http_response();
+            return Err(manage::error(message, None::<u32>));
         }
 
         // Save encryption params
@@ -745,13 +724,12 @@ impl JMAP {
             .with_collection(Collection::Principal)
             .update_document(0)
             .value(Property::Parameters, &params, F_VALUE);
-        match self.core.storage.data.write(batch.build()).await {
-            Ok(_) => JsonResponse::new(json!({
-                "data": num_certs,
-            }))
-            .into_http_response(),
-            Err(err) => err.into_http_response(),
-        }
+        self.core.storage.data.write(batch.build()).await?;
+
+        Ok(JsonResponse::new(json!({
+            "data": num_certs,
+        }))
+        .into_http_response())
     }
 }
 

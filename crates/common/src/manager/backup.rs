@@ -1117,19 +1117,19 @@ pub(super) trait DeserializeBytes {
 impl DeserializeBytes for &[u8] {
     fn range(&self, range: Range<usize>) -> trc::Result<&[u8]> {
         self.get(range.start..std::cmp::min(range.end, self.len()))
-            .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))
+            .ok_or_else(|| trc::StoreCause::DataCorruption.caused_by(trc::location!()))
     }
 
     fn deserialize_u8(&self, offset: usize) -> trc::Result<u8> {
         self.get(offset)
             .copied()
-            .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))
+            .ok_or_else(|| trc::StoreCause::DataCorruption.caused_by(trc::location!()))
     }
 
     fn deserialize_leb128<U: Leb128_>(&self) -> trc::Result<U> {
         self.read_leb128::<U>()
             .map(|(v, _)| v)
-            .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))
+            .ok_or_else(|| trc::StoreCause::DataCorruption.caused_by(trc::location!()))
     }
 }
 

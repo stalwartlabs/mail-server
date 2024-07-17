@@ -8,7 +8,6 @@ use std::str::FromStr;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
 use mail_auth::{
     dmarc::URI,
     mta_sts::ReportUri,
@@ -104,7 +103,11 @@ pub enum Report {
 }
 
 impl JMAP {
-    pub async fn handle_manage_queue(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
+    pub async fn handle_manage_queue(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+    ) -> trc::Result<HttpResponse> {
         let params = UrlParams::new(req.uri().query());
 
         match (
@@ -138,8 +141,7 @@ impl JMAP {
                 let mut offset = page.saturating_sub(1) * limit;
                 let mut total = 0;
                 let mut total_returned = 0;
-                let _ = self
-                    .core
+                self.core
                     .storage
                     .data
                     .iterate(
@@ -193,9 +195,9 @@ impl JMAP {
                             Ok(max_total == 0 || total < max_total)
                         },
                     )
-                    .await;
+                    .await?;
 
-                if values {
+                Ok(if values {
                     JsonResponse::new(json!({
                             "data":{
                                 "items": result_values,
@@ -210,7 +212,7 @@ impl JMAP {
                             },
                     }))
                 }
-                .into_http_response()
+                .into_http_response())
             }
             ("messages", Some(queue_id), &Method::GET) => {
                 if let Some(message) = self
@@ -218,12 +220,12 @@ impl JMAP {
                     .read_message(queue_id.parse().unwrap_or_default())
                     .await
                 {
-                    JsonResponse::new(json!({
+                    Ok(JsonResponse::new(json!({
                             "data": Message::from(&message),
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceCause::NotFound.into_err())
                 }
             }
             ("messages", Some(queue_id), &Method::PATCH) => {
@@ -265,12 +267,12 @@ impl JMAP {
                         let _ = self.smtp.inner.queue_tx.send(queue::Event::Reload).await;
                     }
 
-                    JsonResponse::new(json!({
+                    Ok(JsonResponse::new(json!({
                             "data": found,
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceCause::NotFound.into_err())
                 }
             }
             ("messages", Some(queue_id), &Method::DELETE) => {
@@ -345,12 +347,12 @@ impl JMAP {
                         found = true;
                     }
 
-                    JsonResponse::new(json!({
+                    Ok(JsonResponse::new(json!({
                             "data": found,
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceCause::NotFound.into_err())
                 }
             }
             ("reports", None, &Method::GET) => {
@@ -387,8 +389,7 @@ impl JMAP {
                 let mut offset = page.saturating_sub(1) * limit;
                 let mut total = 0;
                 let mut total_returned = 0;
-                let _ = self
-                    .core
+                self.core
                     .storage
                     .data
                     .iterate(
@@ -422,15 +423,15 @@ impl JMAP {
                             Ok(max_total == 0 || total < max_total)
                         },
                     )
-                    .await;
+                    .await?;
 
-                JsonResponse::new(json!({
+                Ok(JsonResponse::new(json!({
                         "data": {
                             "items": result,
                             "total": total,
                         },
                 }))
-                .into_http_response()
+                .into_http_response())
             }
             ("reports", Some(report_id), &Method::GET) => {
                 let mut result = None;
@@ -438,20 +439,20 @@ impl JMAP {
                     match report_id {
                         QueueClass::DmarcReportHeader(event) => {
                             let mut rua = Vec::new();
-                            if let Ok(Some(report)) = self
+                            if let Some(report) = self
                                 .smtp
                                 .generate_dmarc_aggregate_report(&event, &mut rua, None)
-                                .await
+                                .await?
                             {
                                 result = Report::dmarc(event, report, rua).into();
                             }
                         }
                         QueueClass::TlsReportHeader(event) => {
                             let mut rua = Vec::new();
-                            if let Ok(Some(report)) = self
+                            if let Some(report) = self
                                 .smtp
                                 .generate_tls_aggregate_report(&[event.clone()], &mut rua, None)
-                                .await
+                                .await?
                             {
                                 result = Report::tls(event, report, rua).into();
                             }
@@ -461,12 +462,12 @@ impl JMAP {
                 }
 
                 if let Some(result) = result {
-                    JsonResponse::new(json!({
+                    Ok(JsonResponse::new(json!({
                             "data": result,
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceCause::NotFound.into_err())
                 }
             }
             ("reports", Some(report_id), &Method::DELETE) => {
@@ -481,15 +482,15 @@ impl JMAP {
                         _ => (),
                     }
 
-                    JsonResponse::new(json!({
+                    Ok(JsonResponse::new(json!({
                             "data": true,
                     }))
-                    .into_http_response()
+                    .into_http_response())
                 } else {
-                    RequestError::not_found().into_http_response()
+                    Err(trc::ResourceCause::NotFound.into_err())
                 }
             }
-            _ => RequestError::not_found().into_http_response(),
+            _ => Err(trc::ResourceCause::NotFound.into_err()),
         }
     }
 }

@@ -122,7 +122,7 @@ impl ManageDirectory for Store {
                     return Ok(account_id);
                 }
                 Err(err) => {
-                    if err.matches(trc::Cause::AssertValue) && try_count < 3 {
+                    if err.is_assertion_failure() && try_count < 3 {
                         try_count += 1;
                         continue;
                     } else {
@@ -422,7 +422,7 @@ impl ManageDirectory for Store {
                             continue;
                         }
                     }
-                    return Err(trc::Cause::Unsupported.caused_by(trc::location!()));
+                    return Err(trc::ManageCause::NotSupported.caused_by(trc::location!()));
                 }
                 (
                     PrincipalAction::Set,
@@ -762,7 +762,7 @@ impl ManageDirectory for Store {
                 }
 
                 _ => {
-                    return Err(trc::Cause::Unsupported.caused_by(trc::location!()));
+                    return Err(trc::StoreCause::NotSupported.caused_by(trc::location!()));
                 }
             }
         }
@@ -1055,18 +1055,28 @@ impl From<Principal<String>> for Principal<u32> {
     }
 }
 
-fn err_missing(field: impl Into<trc::Value>) -> trc::Error {
-    trc::Cause::MissingParameter.ctx(trc::Key::Key, field)
+pub fn err_missing(field: impl Into<trc::Value>) -> trc::Error {
+    trc::ManageCause::MissingParameter.ctx(trc::Key::Key, field)
 }
 
-fn err_exists(field: impl Into<trc::Value>, value: impl Into<trc::Value>) -> trc::Error {
-    trc::Cause::AlreadyExists
+pub fn err_exists(field: impl Into<trc::Value>, value: impl Into<trc::Value>) -> trc::Error {
+    trc::ManageCause::AlreadyExists
         .ctx(trc::Key::Key, field)
         .ctx(trc::Key::Value, value)
 }
 
-fn not_found(value: impl Into<trc::Value>) -> trc::Error {
-    trc::Cause::NotFound.ctx(trc::Key::Key, value)
+pub fn not_found(value: impl Into<trc::Value>) -> trc::Error {
+    trc::ManageCause::NotFound.ctx(trc::Key::Key, value)
+}
+
+pub fn unsupported(details: impl Into<trc::Value>) -> trc::Error {
+    trc::ManageCause::NotSupported.ctx(trc::Key::Details, details)
+}
+
+pub fn error(details: impl Into<trc::Value>, reason: Option<impl Into<trc::Value>>) -> trc::Error {
+    trc::ManageCause::Error
+        .ctx(trc::Key::Details, details)
+        .ctx_opt(trc::Key::Reason, reason)
 }
 
 impl From<PrincipalField> for trc::Value {

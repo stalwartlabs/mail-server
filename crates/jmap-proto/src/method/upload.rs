@@ -64,7 +64,7 @@ pub struct BlobUploadResponseObject {
 }
 
 impl JsonObjectParser for BlobUploadRequest {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -96,7 +96,7 @@ impl JsonObjectParser for BlobUploadRequest {
 }
 
 impl JsonObjectParser for UploadObject {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -140,7 +140,7 @@ impl JsonObjectParser for UploadObject {
 }
 
 impl JsonObjectParser for DataSourceObject {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

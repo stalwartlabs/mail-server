@@ -11,17 +11,22 @@ use jmap_proto::{
     types::{collection::Collection, property::Property, value::Value},
 };
 use tokio::io::{AsyncRead, AsyncWrite};
+use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
-    pub async fn handle_getscript(&mut self, request: Request<Command>) -> super::OpResult {
+    pub async fn handle_getscript(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
         let name = request
             .tokens
             .into_iter()
             .next()
             .and_then(|s| s.unwrap_string().ok())
-            .ok_or_else(|| StatusResponse::no("Expected script name as a parameter."))?;
+            .ok_or_else(|| {
+                trc::Cause::ManageSieve
+                    .into_err()
+                    .details("Expected script name as a parameter.")
+            })?;
         let account_id = self.state.access_token().primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
         let (blob_section, blob_hash) = self
@@ -32,21 +37,32 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 document_id,
                 Property::Value,
             )
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .ok_or_else(|| {
-                StatusResponse::no("Script not found").with_code(ResponseCode::NonExistent)
+                trc::Cause::ManageSieve
+                    .into_err()
+                    .details("Script not found")
+                    .code(ResponseCode::NonExistent)
             })?
             .blob_id()
             .and_then(|id| (id.section.as_ref()?.clone(), id.hash.clone()).into())
             .ok_or_else(|| {
-                StatusResponse::no("Failed to retrieve blobId").with_code(ResponseCode::TryLater)
+                trc::Cause::ManageSieve
+                    .into_err()
+                    .details("Failed to retrieve blobId")
+                    .code(ResponseCode::TryLater)
             })?;
         let script = self
             .jmap
             .get_blob_section(&blob_hash, &blob_section)
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .ok_or_else(|| {
-                StatusResponse::no("Script blob not found").with_code(ResponseCode::NonExistent)
+                trc::Cause::ManageSieve
+                    .into_err()
+                    .details("Script blob not found")
+                    .code(ResponseCode::NonExistent)
             })?;
         debug_assert_eq!(script.len(), blob_section.size);
 

@@ -75,7 +75,7 @@ impl Store {
             },
         )
         .await
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
         .map(|_| results)
     }
 
@@ -108,7 +108,7 @@ impl Store {
             },
         )
         .await
-        .caused_by( trc::location!())?;
+        .caused_by(trc::location!())?;
 
         // Remove permissions
         let mut batch = BatchBuilder::new();
@@ -118,7 +118,7 @@ impl Store {
             if batch.ops.len() >= 1000 {
                 self.write(batch.build())
                     .await
-                    .caused_by( trc::location!())?;
+                    .caused_by(trc::location!())?;
                 batch = BatchBuilder::new();
                 batch.with_account_id(account_id);
                 last_collection = u8::MAX;
@@ -136,7 +136,7 @@ impl Store {
         if !batch.is_empty() {
             self.write(batch.build())
                 .await
-                .caused_by( trc::location!())?;
+                .caused_by(trc::location!())?;
         }
 
         Ok(())
@@ -149,7 +149,7 @@ impl Deserialize for AclItem {
             to_account_id: bytes.deserialize_be_u32(U32_LEN)?,
             to_collection: *bytes
                 .get(U32_LEN * 2)
-                .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))?,
+                .ok_or_else(|| trc::StoreCause::DataCorruption.caused_by(trc::location!()))?,
             to_document_id: bytes.deserialize_be_u32((U32_LEN * 2) + 1)?,
             permissions: 0,
         })

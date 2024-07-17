@@ -308,7 +308,7 @@ impl<'x> RocksDBTransaction<'x> {
 
                     if !matches {
                         txn.rollback()?;
-                        return Err(CommitError::Internal(trc::Cause::AssertValue.into()));
+                        return Err(CommitError::Internal(trc::StoreCause::AssertValue.into()));
                     }
                 }
             }

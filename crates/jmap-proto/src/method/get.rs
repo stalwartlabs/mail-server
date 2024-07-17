@@ -7,7 +7,7 @@
 use crate::{
     error::method::MethodError,
     object::{blob, email, Object},
-    parser::{json::Parser, Error, JsonObjectParser, Token},
+    parser::{json::Parser, JsonObjectParser, Token},
     request::{
         method::MethodObject,
         reference::{MaybeReference, ResultReference},
@@ -55,7 +55,7 @@ pub struct GetResponse {
 }
 
 impl JsonObjectParser for GetRequest<RequestArguments> {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -73,10 +73,9 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
                 MethodObject::Blob => RequestArguments::Blob(Default::default()),
                 MethodObject::Quota => RequestArguments::Quota,
                 _ => {
-                    return Err(Error::Method(MethodError::UnknownMethod(format!(
-                        "{}/get",
-                        parser.ctx
-                    ))))
+                    return Err(trc::JmapCause::UnknownMethod
+                        .into_err()
+                        .details(format!("{}/get", parser.ctx)))
                 }
             },
             account_id: Id::default(),
@@ -130,11 +129,7 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
 }
 
 impl RequestPropertyParser for RequestArguments {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> crate::parser::Result<bool> {
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         match self {
             RequestArguments::Email(arguments) => arguments.parse(parser, property),
             RequestArguments::Blob(arguments) => arguments.parse(parser, property),

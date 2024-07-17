@@ -9,13 +9,16 @@ use common::listener::SessionStream;
 use crate::{protocol::response::Response, Session};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_list(&mut self, msg: Option<u32>) -> Result<(), ()> {
+    pub async fn handle_list(&mut self, msg: Option<u32>) -> trc::Result<()> {
         let mailbox = self.state.mailbox();
         if let Some(msg) = msg {
             if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
                 self.write_ok(format!("{} {}", msg, message.size)).await
             } else {
-                self.write_err("No such message").await
+                Err(trc::Cause::Pop3
+                    .into_err()
+                    .details("No such message.")
+                    .caused_by(trc::location!()))
             }
         } else {
             self.write_bytes(
@@ -26,14 +29,17 @@ impl<T: SessionStream> Session<T> {
         }
     }
 
-    pub async fn handle_uidl(&mut self, msg: Option<u32>) -> Result<(), ()> {
+    pub async fn handle_uidl(&mut self, msg: Option<u32>) -> trc::Result<()> {
         let mailbox = self.state.mailbox();
         if let Some(msg) = msg {
             if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
                 self.write_ok(format!("{} {}{}", msg, mailbox.uid_validity, message.uid))
                     .await
             } else {
-                self.write_err("No such message").await
+                Err(trc::Cause::Pop3
+                    .into_err()
+                    .details("No such message.")
+                    .caused_by(trc::location!()))
             }
         } else {
             self.write_bytes(
@@ -50,7 +56,7 @@ impl<T: SessionStream> Session<T> {
         }
     }
 
-    pub async fn handle_stat(&mut self) -> Result<(), ()> {
+    pub async fn handle_stat(&mut self) -> trc::Result<()> {
         let mailbox = self.state.mailbox();
         self.write_ok(format!("{} {}", mailbox.total, mailbox.size))
             .await

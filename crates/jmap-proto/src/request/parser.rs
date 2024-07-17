@@ -7,10 +7,6 @@
 use std::collections::HashMap;
 
 use crate::{
-    error::{
-        method::MethodError,
-        request::{RequestError, RequestLimitError},
-    },
     method::{
         changes::ChangesRequest,
         copy::{CopyBlobRequest, CopyRequest},
@@ -25,7 +21,7 @@ use crate::{
         upload::BlobUploadRequest,
         validate::ValidateSieveScriptRequest,
     },
-    parser::{json::Parser, Error, Ignore, JsonObjectParser, Token},
+    parser::{json::Parser, Ignore, JsonObjectParser, Token},
     types::any_id::AnyId,
 };
 
@@ -37,7 +33,7 @@ use super::{
 };
 
 impl Request {
-    pub fn parse(json: &[u8], max_calls: usize, max_size: usize) -> Result<Self, RequestError> {
+    pub fn parse(json: &[u8], max_calls: usize, max_size: usize) -> trc::Result<Self> {
         if json.len() <= max_size {
             let mut request = Request {
                 using: 0,
@@ -54,10 +50,12 @@ impl Request {
             if found_valid_keys {
                 Ok(request)
             } else {
-                Err(RequestError::not_request("Invalid JMAP request"))
+                Err(trc::JmapCause::NotRequest
+                    .into_err()
+                    .details("Invalid JMAP request"))
             }
         } else {
-            Err(RequestError::limit(RequestLimitError::SizeRequest))
+            Err(trc::LimitCause::SizeRequest.into_err())
         }
     }
 
@@ -66,7 +64,7 @@ impl Request {
         parser: &mut Parser,
         max_calls: usize,
         key: u128,
-    ) -> Result<bool, RequestError> {
+    ) -> trc::Result<bool> {
         match key {
             0x0067_6e69_7375 => {
                 parser.next_token::<Ignore>()?.assert(Token::ArrayStart)?;
@@ -77,7 +75,7 @@ impl Request {
                         }
                         Token::Comma => (),
                         Token::ArrayEnd => break,
-                        token => return Err(token.error("capability", &token.to_string()).into()),
+                        token => return Err(token.error("capability", &token.to_string())),
                     }
                 }
                 Ok(true)
@@ -92,20 +90,28 @@ impl Request {
                         Token::Comma => continue,
                         Token::ArrayEnd => break,
                         _ => {
-                            return Err(RequestError::not_request("Invalid JMAP request"));
+                            return Err(trc::JmapCause::NotRequest
+                                .into_err()
+                                .details("Invalid JMAP request"));
                         }
                     };
                     if self.method_calls.len() < max_calls {
                         let method_name = match parser.next_token::<MethodName>() {
                             Ok(Token::String(method)) => method,
                             Ok(_) => {
-                                return Err(RequestError::not_request("Invalid JMAP request"));
+                                return Err(trc::JmapCause::NotRequest
+                                    .into_err()
+                                    .details("Invalid JMAP request"));
                             }
-                            Err(Error::Method(MethodError::InvalidArguments(_))) => {
+                            Err(err)
+                                if err.matches(trc::Cause::Jmap(
+                                    trc::JmapCause::InvalidArguments,
+                                )) =>
+                            {
                                 MethodName::error()
                             }
                             Err(err) => {
-                                return Err(err.into());
+                                return Err(err);
                             }
                         };
                         parser.next_token::<Ignore>()?.assert_jmap(Token::Comma)?;
@@ -169,19 +175,19 @@ impl Request {
                             (MethodFunction::Echo, MethodObject::Core) => {
                                 Echo::parse(parser).map(RequestMethod::Echo)
                             }
-                            _ => Err(Error::Method(MethodError::UnknownMethod(
-                                method_name.to_string(),
-                            ))),
+                            _ => Err(trc::JmapCause::UnknownMethod
+                                .into_err()
+                                .details(method_name.to_string())),
                         };
 
                         let method = match method {
                             Ok(method) => method,
-                            Err(Error::Method(err)) => {
+                            Err(err) if !err.is_jmap_method_error() => {
                                 parser.skip_token(start_depth_array, start_depth_dict)?;
-                                RequestMethod::Error(err.into())
+                                RequestMethod::Error(err)
                             }
                             Err(err) => {
-                                return Err(err.into());
+                                return Err(err);
                             }
                         };
 
@@ -196,7 +202,7 @@ impl Request {
                             name: method_name,
                         });
                     } else {
-                        return Err(RequestError::limit(RequestLimitError::CallsIn));
+                        return Err(trc::LimitCause::CallsIn.into_err());
                     }
                 }
                 Ok(true)
@@ -217,15 +223,6 @@ impl Request {
                 parser.skip_token(parser.depth_array, parser.depth_dict)?;
                 Ok(false)
             }
-        }
-    }
-}
-
-impl From<Error> for RequestError {
-    fn from(value: Error) -> Self {
-        match value {
-            Error::Request(err) => err,
-            Error::Method(err) => RequestError::not_request(err.to_string()),
         }
     }
 }

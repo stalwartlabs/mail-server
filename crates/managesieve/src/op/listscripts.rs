@@ -9,16 +9,18 @@ use jmap_proto::{
     types::{collection::Collection, property::Property, value::Value},
 };
 use tokio::io::{AsyncRead, AsyncWrite};
+use trc::AddContext;
 
 use crate::core::{Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
-    pub async fn handle_listscripts(&mut self) -> super::OpResult {
+    pub async fn handle_listscripts(&mut self) -> trc::Result<Vec<u8>> {
         let account_id = self.state.access_token().primary_id();
         let document_ids = self
             .jmap
             .get_document_ids(account_id, Collection::SieveScript)
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .unwrap_or_default();
 
         if document_ids.is_empty() {
@@ -36,7 +38,8 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                     document_id,
                     Property::Value,
                 )
-                .await?
+                .await
+                .caused_by(trc::location!())?
             {
                 response.push(b'\"');
                 if let Some(name) = script.get(&Property::Name).as_string() {

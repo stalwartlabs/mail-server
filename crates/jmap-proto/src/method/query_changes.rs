@@ -5,8 +5,7 @@
  */
 
 use crate::{
-    error::method::MethodError,
-    parser::{json::Parser, Error, Ignore, JsonObjectParser, Token},
+    parser::{json::Parser, Ignore, JsonObjectParser, Token},
     request::{method::MethodObject, RequestProperty, RequestPropertyParser},
     types::{id::Id, state::State},
 };
@@ -60,7 +59,7 @@ impl AddedItem {
 }
 
 impl JsonObjectParser for QueryChangesRequest {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -71,10 +70,9 @@ impl JsonObjectParser for QueryChangesRequest {
                 MethodObject::EmailSubmission => RequestArguments::EmailSubmission,
                 MethodObject::Quota => RequestArguments::Quota,
                 _ => {
-                    return Err(Error::Method(MethodError::UnknownMethod(format!(
-                        "{}/queryChanges",
-                        parser.ctx
-                    ))))
+                    return Err(trc::JmapCause::UnknownMethod
+                        .into_err()
+                        .details(format!("{}/queryChanges", parser.ctx)))
                 }
             },
             filter: vec![],

@@ -726,7 +726,7 @@ impl JMAP {
                 Ok(message) => {
                     response.created.insert(id, message.into());
                 }
-                Err(err) if err.matches(trc::Cause::OverQuota) => {
+                Err(err) if err.matches(trc::Cause::Limit(trc::LimitCause::Quota)) => {
                     response.not_created.append(
                         id,
                         SetError::new(SetErrorType::OverQuota)
@@ -962,7 +962,7 @@ impl JMAP {
                         // Add to updated list
                         response.updated.append(id, None);
                     }
-                    Err(err) if err.matches(trc::Cause::AssertValue) => {
+                    Err(err) if err.is_assertion_failure() => {
                         response.not_updated.append(
                             id,
                             SetError::forbidden().with_description(

@@ -30,7 +30,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.get_blob(key, read_range).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.get_blob(key, read_range).await,
-                Store::None => Err(trc::Cause::NotConfigured.into()),
+                Store::None => Err(trc::StoreCause::NotConfigured.into()),
             },
             BlobBackend::Fs(store) => store.get_blob(key, read_range).await,
             #[cfg(feature = "s3")]
@@ -47,14 +47,14 @@ impl BlobStore {
                         data.get(..data.len() - 1).unwrap_or_default(),
                     )
                     .map_err(|err| {
-                        trc::Cause::Decompress
+                        trc::StoreCause::Decompress
                             .reason(err)
                             .ctx(trc::Key::Key, key)
                             .ctx(trc::Key::CausedBy, trc::location!())
                     })?
                 }
                 Some(data) => {
-                    trc::error!(BlobMissingMarker, Details = key);
+                    let todo = "log";
                     data
                 }
                 None => return Ok(None),
@@ -96,7 +96,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.put_blob(key, data.as_ref()).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.put_blob(key, data.as_ref()).await,
-                Store::None => Err(trc::Cause::NotConfigured.into()),
+                Store::None => Err(trc::StoreCause::NotConfigured.into()),
             },
             BlobBackend::Fs(store) => store.put_blob(key, data.as_ref()).await,
             #[cfg(feature = "s3")]
@@ -118,7 +118,7 @@ impl BlobStore {
                 Store::MySQL(store) => store.delete_blob(key).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.delete_blob(key).await,
-                Store::None => Err(trc::Cause::NotConfigured.into()),
+                Store::None => Err(trc::StoreCause::NotConfigured.into()),
             },
             BlobBackend::Fs(store) => store.delete_blob(key).await,
             #[cfg(feature = "s3")]

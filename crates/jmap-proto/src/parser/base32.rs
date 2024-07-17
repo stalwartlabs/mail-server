@@ -6,7 +6,7 @@
 
 use utils::codec::{base32_custom::BASE32_INVERSE, leb128::Leb128Iterator};
 
-use super::{json::Parser, Error};
+use super::json::Parser;
 
 #[derive(Debug)]
 pub struct JsonBase32Reader<'x, 'y> {
@@ -38,7 +38,7 @@ impl<'x, 'y> JsonBase32Reader<'x, 'y> {
         }
     }
 
-    pub fn error(&mut self) -> Error {
+    pub fn error(&mut self) -> trc::Error {
         self.bytes.error_value()
     }
 }

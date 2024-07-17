@@ -8,14 +8,13 @@ use std::sync::Arc;
 
 use common::listener::ServerInstance;
 use http_body_util::{BodyExt, Full};
-use hyper::{body::Bytes, Response, StatusCode};
+use hyper::{body::Bytes, Response};
 use hyper_util::rt::TokioIo;
-use jmap_proto::error::request::RequestError;
 use tokio_tungstenite::WebSocketStream;
 use tungstenite::{handshake::derive_accept_key, protocol::Role};
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse},
+    api::{HttpRequest, HttpResponse},
     auth::AccessToken,
     JMAP,
 };
@@ -26,7 +25,7 @@ impl JMAP {
         req: HttpRequest,
         access_token: Arc<AccessToken>,
         instance: Arc<ServerInstance>,
-    ) -> HttpResponse {
+    ) -> trc::Result<HttpResponse> {
         let headers = req.headers();
         if headers
             .get(hyper::header::CONNECTION)
@@ -37,12 +36,13 @@ impl JMAP {
                 .and_then(|h| h.to_str().ok())
                 != Some("websocket")
         {
-            return RequestError::blank(
-                StatusCode::BAD_REQUEST.as_u16(),
-                "WebSocket upgrade failed",
-                "Missing or Invalid Connection or Upgrade headers.",
-            )
-            .into_http_response();
+            return Err(trc::ResourceCause::BadParameters
+                .into_err()
+                .details("WebSocket upgrade failed")
+                .ctx(
+                    trc::Key::Reason,
+                    "Missing or Invalid Connection or Upgrade headers.",
+                ));
         }
         let derived_key = match (
             headers
@@ -54,12 +54,13 @@ impl JMAP {
         ) {
             (Some(key), Some("13")) => derive_accept_key(key.as_bytes()),
             _ => {
-                return RequestError::blank(
-                    StatusCode::BAD_REQUEST.as_u16(),
-                    "WebSocket upgrade failed",
-                    "Missing or Invalid Sec-WebSocket-Key headers.",
-                )
-                .into_http_response();
+                return Err(trc::ResourceCause::BadParameters
+                    .into_err()
+                    .details("WebSocket upgrade failed")
+                    .ctx(
+                        trc::Key::Reason,
+                        "Missing or Invalid Sec-WebSocket-Key headers.",
+                    ));
             }
         };
 
@@ -87,7 +88,7 @@ impl JMAP {
             }
         });
 
-        Response::builder()
+        Ok(Response::builder()
             .status(hyper::StatusCode::SWITCHING_PROTOCOLS)
             .header(hyper::header::CONNECTION, "upgrade")
             .header(hyper::header::UPGRADE, "websocket")
@@ -98,6 +99,6 @@ impl JMAP {
                     .map_err(|never| match never {})
                     .boxed(),
             )
-            .unwrap()
+            .unwrap())
     }
 }

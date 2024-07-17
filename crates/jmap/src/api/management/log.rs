@@ -5,6 +5,7 @@ use std::{
 };
 
 use chrono::DateTime;
+use directory::backend::internal::manage;
 use rev_lines::RevLines;
 use serde::Serialize;
 use serde_json::json;
@@ -16,8 +17,6 @@ use crate::{
     JMAP,
 };
 
-use super::ManagementApiError;
-
 #[derive(Serialize)]
 struct LogEntry {
     timestamp: String,
@@ -26,18 +25,15 @@ struct LogEntry {
 }
 
 impl JMAP {
-    pub async fn handle_view_logs(&self, req: &HttpRequest) -> HttpResponse {
+    pub async fn handle_view_logs(&self, req: &HttpRequest) -> trc::Result<HttpResponse> {
         // Obtain log file path
-        let path = match self.core.storage.config.get("tracer.log.path").await {
-            Ok(Some(path)) => path,
-            Ok(None) => {
-                return ManagementApiError::Unsupported {
-                    details: "Tracer log path not configured".into(),
-                }
-                .into_http_response()
-            }
-            Err(err) => return err.into_http_response(),
-        };
+        let path = self
+            .core
+            .storage
+            .config
+            .get("tracer.log.path")
+            .await?
+            .ok_or_else(|| manage::unsupported("Tracer log path not configured"))?;
 
         let params = UrlParams::new(req.uri().query());
         let filter = params.get("filter").unwrap_or_default().to_string();
@@ -51,25 +47,23 @@ impl JMAP {
             let _ = tx.send(read_log_files(path, &filter, offset, limit));
         });
 
-        match rx.await {
-            Ok(result) => match result {
-                Ok((total, items)) => JsonResponse::new(json!({
-                    "data": {
-                        "items": items,
-                        "total": total,
-                    },
-                }))
-                .into_http_response(),
-                Err(err) => err.into_http_response(),
+        let (total, items) = rx
+            .await
+            .map_err(|err| trc::Cause::Thread.reason(err).caused_by(trc::location!()))?
+            .map_err(|err| {
+                trc::ManageCause::Error
+                    .reason(err)
+                    .details("Failed to read log files")
+                    .caused_by(trc::location!())
+            })?;
+
+        Ok(JsonResponse::new(json!({
+            "data": {
+                "items": items,
+                "total": total,
             },
-            Err(_) => {
-                tracing::warn!(context = "view_logs", event = "error", "Thread join error");
-                ManagementApiError::Other {
-                    details: "Thread join error".into(),
-                }
-                .into_http_response()
-            }
-        }
+        }))
+        .into_http_response())
     }
 }
 

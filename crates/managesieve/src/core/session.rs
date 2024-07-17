@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::listener::{SessionData, SessionManager, SessionStream};
+use common::listener::{SessionData, SessionManager, SessionResult, SessionStream};
 use imap_proto::receiver::{self, Receiver};
 use jmap::JMAP;
 use tokio_rustls::server::TlsStream;
@@ -76,11 +76,11 @@ impl<T: SessionStream> Session<T> {
                             Ok(Ok(bytes_read)) => {
                                 if bytes_read > 0 {
                                     match self.ingest(&buf[..bytes_read]).await {
-                                        Ok(true) => (),
-                                        Ok(false) => {
+                                        SessionResult::Continue => (),
+                                        SessionResult::UpgradeTls => {
                                             return true;
                                         }
-                                        Err(_) => {
+                                        SessionResult::Close => {
                                             break;
                                         }
                                     }

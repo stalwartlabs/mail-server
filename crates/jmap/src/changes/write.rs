@@ -28,7 +28,8 @@ impl JMAP {
 
     pub fn generate_snowflake_id(&self) -> trc::Result<u64> {
         self.inner.snowflake_id.generate().ok_or_else(|| {
-            trc::Cause::Unexpected
+            trc::StoreCause::Unexpected
+                .into_err()
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Reason, "Failed to generate snowflake id.")
         })
@@ -57,7 +58,7 @@ impl JMAP {
 
     pub async fn delete_changes(&self, account_id: u32, before: Duration) -> trc::Result<()> {
         let reference_cid = self.inner.snowflake_id.past_id(before).ok_or_else(|| {
-            trc::Cause::Unexpected
+            trc::StoreCause::Unexpected
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Reason, "Failed to generate reference change id.")
         })?;

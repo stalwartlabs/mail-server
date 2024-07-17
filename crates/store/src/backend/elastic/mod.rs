@@ -111,7 +111,7 @@ impl ElasticSearchStore {
             .exists(IndicesExistsParts::Index(&[INDEX_NAMES[0]]))
             .send()
             .await
-            .map_err(|err| trc::Cause::ElasticSearch.reason(err))?;
+            .map_err(|err| trc::StoreCause::ElasticSearch.reason(err))?;
 
         if exists.status_code() == StatusCode::NOT_FOUND {
             let response = self
@@ -183,11 +183,11 @@ pub(crate) async fn assert_success(response: Result<Response, Error>) -> trc::Re
             if status.is_success() {
                 Ok(response)
             } else {
-                Err(trc::Cause::ElasticSearch
+                Err(trc::StoreCause::ElasticSearch
                     .reason(response.text().await.unwrap_or_default())
                     .ctx(trc::Key::Code, status.as_u16()))
             }
         }
-        Err(err) => Err(trc::Cause::ElasticSearch.reason(err)),
+        Err(err) => Err(trc::StoreCause::ElasticSearch.reason(err)),
     }
 }

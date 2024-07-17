@@ -8,7 +8,6 @@ use std::time::SystemTime;
 
 use common::{scripts::ScriptModification, IntoString};
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
 use serde_json::json;
 use sieve::{runtime::Variable, Envelope};
 use smtp::scripts::{ScriptParameters, ScriptResult};
@@ -42,7 +41,7 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
-    ) -> HttpResponse {
+    ) -> trc::Result<HttpResponse> {
         let script = match (
             path.get(1)
                 .and_then(|name| self.core.sieve.scripts.get(*name))
@@ -51,7 +50,7 @@ impl JMAP {
         ) {
             (Some(script), &Method::POST) => script,
             _ => {
-                return RequestError::not_found().into_http_response();
+                return Err(trc::ResourceCause::NotFound.into_err());
             }
         };
 
@@ -112,9 +111,9 @@ impl JMAP {
             ScriptResult::Discard => Response::Discard,
         };
 
-        JsonResponse::new(json!({
+        Ok(JsonResponse::new(json!({
             "data": result,
         }))
-        .into_http_response()
+        .into_http_response())
     }
 }

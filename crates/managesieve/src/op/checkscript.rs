@@ -10,9 +10,11 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::core::{Command, Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
-    pub async fn handle_checkscript(&mut self, request: Request<Command>) -> super::OpResult {
+    pub async fn handle_checkscript(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
         if request.tokens.is_empty() {
-            return Err(StatusResponse::no("Expected script as a parameter."));
+            return Err(trc::Cause::ManageSieve
+                .into_err()
+                .details("Expected script as a parameter."));
         }
 
         self.jmap
@@ -21,6 +23,6 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .untrusted_compiler
             .compile(&request.tokens.into_iter().next().unwrap().unwrap_bytes())
             .map(|_| StatusResponse::ok("Script is valid.").into_bytes())
-            .map_err(|err| StatusResponse::no(err.to_string()))
+            .map_err(|err| trc::Cause::ManageSieve.into_err().details(err.to_string()))
     }
 }

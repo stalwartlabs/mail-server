@@ -77,6 +77,13 @@ pub trait SessionStream: AsyncRead + AsyncWrite + Unpin + 'static + Sync + Send 
     fn tls_version_and_cipher(&self) -> (Cow<'static, str>, Cow<'static, str>);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionResult {
+    Continue,
+    Close,
+    UpgradeTls,
+}
+
 pub trait SessionManager: Sync + Send + 'static + Clone {
     fn spawn<T: SessionStream>(
         &self,

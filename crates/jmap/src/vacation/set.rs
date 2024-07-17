@@ -206,7 +206,11 @@ impl JMAP {
                             == Some(&Value::Bool(true));
                         value
                     })
-                    .ok_or_else(|| trc::Cause::NotFound.caused_by(trc::location!()))?
+                    .ok_or_else(|| {
+                        trc::StoreCause::NotFound
+                            .into_err()
+                            .caused_by(trc::location!())
+                    })?
                     .into()
                 } else {
                     None
@@ -250,7 +254,8 @@ impl JMAP {
 
                 if let Some(current) = obj.current() {
                     let current_blob_id = current.inner.blob_id().ok_or_else(|| {
-                        trc::Cause::NotFound
+                        trc::StoreCause::NotFound
+                            .into_err()
                             .caused_by(trc::location!())
                             .document_id(document_id.unwrap_or(u32::MAX))
                     })?;
@@ -429,7 +434,7 @@ impl JMAP {
 
                 Ok(script)
             }
-            Err(err) => Err(trc::Cause::Unexpected
+            Err(err) => Err(trc::StoreCause::Unexpected
                 .caused_by(trc::location!())
                 .reason(err)
                 .details("Vacation Sieve Script failed to compile.")),

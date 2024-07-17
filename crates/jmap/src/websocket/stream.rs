@@ -75,23 +75,16 @@ impl JMAP {
                                         self.core.jmap.request_max_size,
                                     ) {
                                         Ok(WebSocketMessage::Request(request)) => {
-                                            match self
+                                            let response = self
                                                 .handle_request(
                                                     request.request,
                                                     access_token.clone(),
                                                     &instance,
                                                 )
-                                                .await
-                                            {
-                                                Ok(response) => {
-                                                    WebSocketResponse::from_response(response, request.id)
-                                                        .to_json()
-                                                }
-                                                Err(err) => {
-                                                    WebSocketRequestError::from_error(err, request.id)
-                                                        .to_json()
-                                                }
-                                            }
+                                                .await;
+
+                                            WebSocketResponse::from_response(response, request.id)
+                                            .to_json()
                                         }
                                         Ok(WebSocketMessage::PushEnable(push_enable)) => {
                                             change_types = if !push_enable.data_types.is_empty() {
@@ -105,7 +98,11 @@ impl JMAP {
                                             change_types = Bitmap::new();
                                             continue;
                                         }
-                                        Err(err) => err.to_json(),
+                                        Err(err) => {
+                                            let todo = "fix";
+                                            //err.to_json()
+                                            todo!()
+                                        },
                                     };
                                     if let Err(err) = stream.send(Message::Text(response)).await {
                                         tracing::debug!(parent: &span, error = ?err, "Failed to send text message");

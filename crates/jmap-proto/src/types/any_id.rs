@@ -96,7 +96,7 @@ impl From<&AnyId> for Value {
 }
 
 impl JsonObjectParser for AnyId {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

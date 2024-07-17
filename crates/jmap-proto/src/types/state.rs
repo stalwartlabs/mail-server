@@ -72,7 +72,7 @@ impl From<Option<ChangeId>> for State {
 }
 
 impl JsonObjectParser for State {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

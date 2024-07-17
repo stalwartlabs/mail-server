@@ -255,7 +255,7 @@ impl Core {
             }
             Ok(None) => Ok(()),
             Err(err) => {
-                if err.matches(trc::Cause::MissingTotp) {
+                if err.matches(trc::Cause::Auth(trc::AuthCause::MissingTotp)) {
                     return Err(err);
                 } else {
                     Err(err)
@@ -331,7 +331,7 @@ impl Core {
                             .await;
                         }
 
-                        Err(trc::Cause::Authentication.into())
+                        Err(trc::AuthCause::Failed.into())
                     };
                 }
             }
@@ -377,7 +377,7 @@ impl Core {
                     .await;
                 }
 
-                Err(trc::Cause::Banned.into())
+                Err(trc::AuthCause::Banned.into())
             } else {
                 // Send webhook event
                 if self.has_webhook_subscribers(WebhookType::AuthFailure) {
@@ -394,7 +394,7 @@ impl Core {
                     .await;
                 }
 
-                Err(trc::Cause::Authentication.into())
+                Err(trc::AuthCause::Failed.into())
             }
         } else {
             // Send webhook event
@@ -411,7 +411,7 @@ impl Core {
                 )
                 .await;
             }
-            Err(trc::Cause::Authentication.into())
+            Err(trc::AuthCause::Failed.into())
         }
     }
 }

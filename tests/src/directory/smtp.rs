@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use common::listener::limiter::{ConcurrencyLimiter, InFlight};
-use directory::{DirectoryError, QueryBy};
+use directory::QueryBy;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use tokio::{
@@ -87,13 +87,23 @@ async fn lmtp_directory() {
                 .into(),
             Item::Verify(v) => match core.vrfy(&handle, v).await {
                 Ok(v) => v.into(),
-                Err(DirectoryError::Unsupported) => LookupResult::False,
-                Err(e) => panic!("Unexpected error: {e:?}"),
+                Err(e) => {
+                    if e.matches(trc::StoreCause::NotSupported) {
+                        LookupResult::False
+                    } else {
+                        panic!("Unexpected error: {e:?}")
+                    }
+                }
             },
             Item::Expand(v) => match core.expn(&handle, v).await {
                 Ok(v) => v.into(),
-                Err(DirectoryError::Unsupported) => LookupResult::False,
-                Err(e) => panic!("Unexpected error: {e:?}"),
+                Err(e) => {
+                    if e.matches(trc::StoreCause::NotSupported) {
+                        LookupResult::False
+                    } else {
+                        panic!("Unexpected error: {e:?}")
+                    }
+                }
             },
         };
 
@@ -121,13 +131,23 @@ async fn lmtp_directory() {
                         .into(),
                     Item::Verify(v) => match core.vrfy(&handle, v).await {
                         Ok(v) => v.into(),
-                        Err(DirectoryError::Unsupported) => LookupResult::False,
-                        Err(e) => panic!("Unexpected error: {e:?}"),
+                        Err(e) => {
+                            if e.matches(trc::StoreCause::NotSupported) {
+                                LookupResult::False
+                            } else {
+                                panic!("Unexpected error: {e:?}")
+                            }
+                        }
                     },
                     Item::Expand(v) => match core.expn(&handle, v).await {
                         Ok(v) => v.into(),
-                        Err(DirectoryError::Unsupported) => LookupResult::False,
-                        Err(e) => panic!("Unexpected error: {e:?}"),
+                        Err(e) => {
+                            if e.matches(trc::StoreCause::NotSupported) {
+                                LookupResult::False
+                            } else {
+                                panic!("Unexpected error: {e:?}")
+                            }
+                        }
                     },
                 };
 

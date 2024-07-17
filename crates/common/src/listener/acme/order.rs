@@ -87,7 +87,7 @@ impl Core {
         params.distinguished_name = DistinguishedName::new();
         params.alg = &PKCS_ECDSA_P256_SHA256;
         let cert = rcgen::Certificate::from_params(params)
-            .map_err(|err| trc::Cause::Crypto.caused_by(trc::location!()).reason(err))?;
+            .map_err(|err| trc::Cause::Acme.caused_by(trc::location!()).reason(err))?;
 
         let (order_url, mut order) = account.new_order(provider.domains.clone()).await?;
         loop {
@@ -122,7 +122,7 @@ impl Core {
                         }
                     }
                     if order.status == OrderStatus::Processing {
-                        return Err(trc::Cause::Timeout
+                        return Err(trc::Cause::Acme
                             .caused_by(trc::location!())
                             .details("Order processing timed out"));
                     }
@@ -135,9 +135,9 @@ impl Core {
                         "Sending CSR"
                     );
 
-                    let csr = cert.serialize_request_der().map_err(|err| {
-                        trc::Cause::Crypto.caused_by(trc::location!()).reason(err)
-                    })?;
+                    let csr = cert
+                        .serialize_request_der()
+                        .map_err(|err| trc::Cause::Acme.caused_by(trc::location!()).reason(err))?;
                     order = account.finalize(order.finalize, csr).await?
                 }
                 OrderStatus::Valid { certificate } => {
@@ -165,7 +165,7 @@ impl Core {
                         "Invalid order"
                     );
 
-                    return Err(trc::Cause::Invalid.into_err().details("Invalid ACME order"));
+                    return Err(trc::Cause::Acme.into_err().details("Invalid ACME order"));
                 }
             }
         }
@@ -194,8 +194,9 @@ impl Core {
                     .iter()
                     .find(|c| c.typ == challenge_type)
                     .ok_or(
-                        trc::Cause::MissingParameter
+                        trc::Cause::Acme
                             .into_err()
+                            .details("Missing Parameter")
                             .ctx(trc::Key::Id, challenge_type.as_str()),
                     )?;
 
@@ -342,8 +343,9 @@ impl Core {
             }
             AuthStatus::Valid => return Ok(()),
             _ => {
-                return Err(trc::Cause::Authentication
+                return Err(trc::Cause::Acme
                     .into_err()
+                    .details("Authentication error")
                     .ctx(trc::Key::Status, auth.status.as_str()))
             }
         };
@@ -373,24 +375,25 @@ impl Core {
                     return Ok(());
                 }
                 _ => {
-                    return Err(trc::Cause::Authentication
+                    return Err(trc::Cause::Acme
                         .into_err()
+                        .details("Authentication error")
                         .ctx(trc::Key::Status, auth.status.as_str()))
                 }
             }
         }
-        Err(trc::Cause::Authentication
+        Err(trc::Cause::Acme
             .into_err()
-            .details("Too many attempts")
+            .details("Too many authentication attempts")
             .ctx(trc::Key::Id, domain))
     }
 }
 
 fn parse_cert(pem: &[u8]) -> trc::Result<(CertifiedKey, [DateTime<Utc>; 2])> {
     let mut pems = pem::parse_many(pem)
-        .map_err(|err| trc::Cause::Crypto.reason(err).caused_by(trc::location!()))?;
+        .map_err(|err| trc::Cause::Acme.reason(err).caused_by(trc::location!()))?;
     if pems.len() < 2 {
-        return Err(trc::Cause::Crypto
+        return Err(trc::Cause::Acme
             .caused_by(trc::location!())
             .ctx(trc::Key::Size, pems.len())
             .details("Too few PEMs"));
@@ -399,7 +402,7 @@ fn parse_cert(pem: &[u8]) -> trc::Result<(CertifiedKey, [DateTime<Utc>; 2])> {
         pems.remove(0).contents(),
     ))) {
         Ok(pk) => pk,
-        Err(err) => return Err(trc::Cause::Crypto.reason(err).caused_by(trc::location!())),
+        Err(err) => return Err(trc::Cause::Acme.reason(err).caused_by(trc::location!())),
     };
     let cert_chain: Vec<CertificateDer> = pems
         .into_iter()
@@ -414,7 +417,7 @@ fn parse_cert(pem: &[u8]) -> trc::Result<(CertifiedKey, [DateTime<Utc>; 2])> {
                     .unwrap_or_default()
             })
         }
-        Err(err) => return Err(trc::Cause::Crypto.reason(err).caused_by(trc::location!())),
+        Err(err) => return Err(trc::Cause::Acme.reason(err).caused_by(trc::location!())),
     };
     let cert = CertifiedKey::new(cert_chain, pk);
     Ok((cert, validity))

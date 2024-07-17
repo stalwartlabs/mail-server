@@ -8,7 +8,7 @@ use std::{borrow::Cow, collections::HashMap};
 
 use crate::{
     error::request::{RequestError, RequestErrorType, RequestLimitError},
-    parser::{json::Parser, Error, JsonObjectParser, Token},
+    parser::{json::Parser, JsonObjectParser, Token},
     request::Call,
     response::{serialize::serialize_hex, Response, ResponseMethod},
     types::{any_id::AnyId, id::Id, state::State, type_state::DataType},
@@ -108,11 +108,7 @@ enum MessageType {
 }
 
 impl WebSocketMessage {
-    pub fn parse(
-        json: &[u8],
-        max_calls: usize,
-        max_size: usize,
-    ) -> Result<Self, WebSocketRequestError> {
+    pub fn parse(json: &[u8], max_calls: usize, max_size: usize) -> trc::Result<Self> {
         if json.len() <= max_size {
             let mut message_type = MessageType::None;
             let mut request = WebSocketRequest {
@@ -174,10 +170,12 @@ impl WebSocketMessage {
                 MessageType::PushDisable if !found_request_keys && !found_push_keys => {
                     Ok(WebSocketMessage::PushDisable)
                 }
-                _ => Err(RequestError::not_request("Invalid WebSocket JMAP request").into()),
+                _ => Err(trc::JmapCause::NotRequest
+                    .into_err()
+                    .details("Invalid WebSocket JMAP request")),
             }
         } else {
-            Err(RequestError::limit(RequestLimitError::SizeRequest).into())
+            Err(trc::LimitCause::SizeRequest.into_err())
         }
     }
 }
@@ -202,12 +200,6 @@ impl WebSocketRequestError {
 impl From<RequestError> for WebSocketRequestError {
     fn from(value: RequestError) -> Self {
         Self::from_error(value, None)
-    }
-}
-
-impl From<Error> for WebSocketRequestError {
-    fn from(value: Error) -> Self {
-        RequestError::from(value).into()
     }
 }
 

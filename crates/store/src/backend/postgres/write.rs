@@ -50,7 +50,7 @@ impl PostgresStore {
                             ) if retry_count < MAX_COMMIT_ATTEMPTS
                                 && start.elapsed() < MAX_COMMIT_TIME => {}
                             Some(&SqlState::UNIQUE_VIOLATION) => {
-                                return Err(trc::Cause::AssertValue.into());
+                                return Err(trc::StoreCause::AssertValue.into());
                             }
                             _ => return Err(into_error(err)),
                         },
@@ -59,7 +59,7 @@ impl PostgresStore {
                             if retry_count > MAX_COMMIT_ATTEMPTS
                                 || start.elapsed() > MAX_COMMIT_TIME
                             {
-                                return Err(trc::Cause::AssertValue.into());
+                                return Err(trc::StoreCause::AssertValue.into());
                             }
                         }
                     }
@@ -148,7 +148,7 @@ impl PostgresStore {
                                 .await?
                                 == 0
                             {
-                                return Err(trc::Cause::AssertValue.into_err().into());
+                                return Err(trc::StoreCause::AssertValue.into_err().into());
                             }
                         }
                         ValueOp::AtomicAdd(by) => {
@@ -322,7 +322,7 @@ impl PostgresStore {
                         })
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
-                        return Err(trc::Cause::AssertValue.into_err().into());
+                        return Err(trc::StoreCause::AssertValue.into_err().into());
                     }
                     asserted_values.insert(key, exists);
                 }

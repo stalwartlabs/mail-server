@@ -7,7 +7,6 @@
 use common::{
     config::server::ServerProtocol,
     listener::{limiter::ConcurrencyLimiter, SessionStream},
-    AuthFailureReason, AuthResult,
 };
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use imap_proto::{
@@ -22,14 +21,16 @@ use std::sync::Arc;
 use crate::core::{Command, Session, State, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_authenticate(&mut self, request: Request<Command>) -> crate::op::OpResult {
+    pub async fn handle_authenticate(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
         if request.tokens.is_empty() {
-            return Err(StatusResponse::no("Authentication mechanism missing."));
+            return Err(trc::AuthCause::Error
+                .into_err()
+                .details("Authentication mechanism missing."));
         }
 
         let mut tokens = request.tokens.into_iter();
-        let mechanism =
-            Mechanism::parse(&tokens.next().unwrap().unwrap_bytes()).map_err(StatusResponse::no)?;
+        let mechanism = Mechanism::parse(&tokens.next().unwrap().unwrap_bytes())
+            .map_err(|err| trc::AuthCause::Error.into_err().details(err))?;
         let mut params: Vec<String> = tokens
             .filter_map(|token| token.unwrap_string().ok())
             .collect();
@@ -37,14 +38,18 @@ impl<T: SessionStream> Session<T> {
         let credentials = match mechanism {
             Mechanism::Plain | Mechanism::OAuthBearer => {
                 if !params.is_empty() {
-                    let challenge = base64_decode(params.pop().unwrap().as_bytes())
-                        .ok_or_else(|| StatusResponse::no("Failed to decode challenge."))?;
+                    let challenge =
+                        base64_decode(params.pop().unwrap().as_bytes()).ok_or_else(|| {
+                            trc::AuthCause::Error
+                                .into_err()
+                                .details("Failed to decode challenge.")
+                        })?;
                     (if mechanism == Mechanism::Plain {
                         decode_challenge_plain(&challenge)
                     } else {
                         decode_challenge_oauth(&challenge)
                     }
-                    .map_err(StatusResponse::no))?
+                    .map_err(|err| trc::AuthCause::Error.into_err().details(err)))?
                 } else {
                     self.receiver.request = receiver::Request {
                         tag: String::new(),
@@ -56,106 +61,63 @@ impl<T: SessionStream> Session<T> {
                 }
             }
             _ => {
-                return Err(StatusResponse::no(
-                    "Authentication mechanism not supported.",
-                ))
+                return Err(trc::AuthCause::Error
+                    .into_err()
+                    .details("Authentication mechanism not supported."))
             }
         };
 
         // Throttle authentication requests
-        if self
-            .jmap
-            .is_auth_allowed_soft(&self.remote_addr)
-            .await
-            .is_err()
-        {
-            tracing::debug!(parent: &self.span,
-                event = "disconnect",
-                "Too many authentication attempts, disconnecting.",
-            );
-            return Err(StatusResponse::bye(
-                "Too many authentication requests from this IP address.",
-            ));
-        }
+        self.jmap.is_auth_allowed_soft(&self.remote_addr).await?;
 
         // Authenticate
         let mut is_totp_error = false;
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
-                match self
-                    .jmap
+                self.jmap
                     .authenticate_plain(
                         &username,
                         &secret,
                         self.remote_addr,
                         ServerProtocol::ManageSieve,
                     )
-                    .await
-                {
-                    AuthResult::Success(token) => Some(token),
-                    AuthResult::Failure(
-                        AuthFailureReason::InvalidCredentials | AuthFailureReason::InternalError(_),
-                    ) => None,
-                    AuthResult::Failure(AuthFailureReason::MissingTotp) => {
-                        is_totp_error = true;
-                        None
-                    }
-                    AuthResult::Failure(AuthFailureReason::Banned) => {
-                        return Err(StatusResponse::bye(
-                            "Too many authentication requests from this IP address.",
-                        ))
-                    }
-                }
+                    .await?
             }
             Credentials::OAuthBearer { token } => {
-                match self
+                let (account_id, _, _) = self
                     .jmap
                     .validate_access_token("access_token", &token)
-                    .await
-                {
-                    Ok((account_id, _, _)) => self.jmap.get_access_token(account_id).await,
-                    Err(err) => {
-                        tracing::debug!(
-                            parent: &self.span,
-                            context = "authenticate",
-                            err = err,
-                            "Failed to validate access token."
-                        );
-                        None
-                    }
-                }
+                    .await?;
+                self.jmap.get_access_token(account_id).await?
             }
         };
 
-        if let Some(access_token) = access_token {
-            // Enforce concurrency limits
-            let in_flight = match self
-                .get_concurrency_limiter(access_token.primary_id())
-                .map(|limiter| limiter.concurrent_requests.is_allowed())
-            {
-                Some(Some(limiter)) => Some(limiter),
-                None => None,
-                Some(None) => {
-                    tracing::debug!(parent: &self.span,
-                        event = "disconnect",
-                        "Too many concurrent connection.",
-                    );
-                    return Err(StatusResponse::bye("Too many concurrent connections."));
-                }
-            };
+        // Enforce concurrency limits
+        let in_flight = match self
+            .get_concurrency_limiter(access_token.primary_id())
+            .map(|limiter| limiter.concurrent_requests.is_allowed())
+        {
+            Some(Some(limiter)) => Some(limiter),
+            None => None,
+            Some(None) => {
+                return Err(trc::LimitCause::ConcurrentRequest.into_err());
+            }
+        };
 
-            // Cache access token
-            let access_token = Arc::new(access_token);
-            self.jmap.cache_access_token(access_token.clone());
+        // Cache access token
+        let access_token = Arc::new(access_token);
+        self.jmap.cache_access_token(access_token.clone());
 
-            // Create session
-            self.state = State::Authenticated {
-                access_token,
-                in_flight,
-            };
+        // Create session
+        self.state = State::Authenticated {
+            access_token,
+            in_flight,
+        };
 
-            Ok(StatusResponse::ok("Authentication successful").into_bytes())
-        } else {
+        let todo = "implement this";
+
+        Ok(StatusResponse::ok("Authentication successful").into_bytes())
+        /*} else {
             match &self.state {
                 State::NotAuthenticated { auth_failures }
                     if *auth_failures < self.jmap.core.imap.max_auth_failures =>
@@ -163,12 +125,13 @@ impl<T: SessionStream> Session<T> {
                     self.state = State::NotAuthenticated {
                         auth_failures: auth_failures + 1,
                     };
-                    Ok(StatusResponse::no(if is_totp_error {
-                        "Missing TOTP code, try with 'secret$totp_code'."
-                    } else {
-                        "Authentication failed."
-                    })
-                    .into_bytes())
+                    Err(trc::Cause::Authentication
+                        .into_err()
+                        .details(if is_totp_error {
+                            "Missing TOTP code, try with 'secret$totp_code'."
+                        } else {
+                            "Authentication failed."
+                        }))
                 }
                 _ => {
                     tracing::debug!(
@@ -179,10 +142,10 @@ impl<T: SessionStream> Session<T> {
                     Err(StatusResponse::bye("Too many authentication failures"))
                 }
             }
-        }
+        }*/
     }
 
-    pub async fn handle_unauthenticate(&mut self) -> super::OpResult {
+    pub async fn handle_unauthenticate(&mut self) -> trc::Result<Vec<u8>> {
         self.state = State::NotAuthenticated { auth_failures: 0 };
 
         Ok(StatusResponse::ok("Unauthenticate successful.").into_bytes())

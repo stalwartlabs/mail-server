@@ -6,12 +6,15 @@
 
 use std::borrow::Cow;
 
-use common::listener::{SessionData, SessionManager, SessionStream};
+use common::listener::{SessionData, SessionManager, SessionResult, SessionStream};
 use jmap::JMAP;
 use tokio_rustls::server::TlsStream;
 
 use crate::{
-    protocol::{request::Parser, response::Response},
+    protocol::{
+        request::Parser,
+        response::{Response, SerializeResponse},
+    },
     Pop3SessionManager, Session, State, SERVER_GREETING,
 };
 
@@ -77,11 +80,11 @@ impl<T: SessionStream> Session<T> {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
                                 match self.ingest(&buf[..bytes_read]).await {
-                                    Ok(true) => (),
-                                    Ok(false) => {
+                                    SessionResult::Continue => (),
+                                    SessionResult::UpgradeTls => {
                                         return true;
                                     }
-                                    Err(_) => {
+                                    SessionResult::Close => {
                                         tracing::debug!(parent: &self.span, event = "disconnect", "Disconnecting client.");
                                         break;
                                     }
@@ -129,7 +132,7 @@ impl<T: SessionStream> Session<T> {
 }
 
 impl<T: SessionStream> Session<T> {
-    pub async fn write_bytes(&mut self, bytes: impl AsRef<[u8]>) -> Result<(), ()> {
+    pub async fn write_bytes(&mut self, bytes: impl AsRef<[u8]>) -> trc::Result<()> {
         let bytes = bytes.as_ref();
         /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
             let c = println!("{}", line);
@@ -141,22 +144,23 @@ impl<T: SessionStream> Session<T> {
             size = bytes.len()
         );
 
-        if let Err(err) = self.stream.write_all(bytes.as_ref()).await {
-            tracing::trace!(parent: &self.span, "Failed to write to stream: {}", err);
-            Err(())
-        } else {
-            let _ = self.stream.flush().await;
-            Ok(())
-        }
+        self.stream
+            .write_all(bytes.as_ref())
+            .await
+            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))?;
+        self.stream
+            .flush()
+            .await
+            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))
     }
 
-    pub async fn write_ok(&mut self, message: impl Into<Cow<'static, str>>) -> Result<(), ()> {
+    pub async fn write_ok(&mut self, message: impl Into<Cow<'static, str>>) -> trc::Result<()> {
         self.write_bytes(Response::Ok::<u32>(message.into()).serialize())
             .await
     }
 
-    pub async fn write_err(&mut self, message: impl Into<Cow<'static, str>>) -> Result<(), ()> {
-        self.write_bytes(Response::Err::<u32>(message.into()).serialize())
-            .await
+    pub async fn write_err(&mut self, err: trc::Error) -> trc::Result<()> {
+        tracing::error!(parent: &self.span, "POP3 error: {}", err);
+        self.write_bytes(err.serialize()).await
     }
 }

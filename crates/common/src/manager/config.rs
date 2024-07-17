@@ -316,7 +316,8 @@ impl ConfigManager {
             .await
             .map_err(|err| {
                 trc::Cause::Configuration
-                    .caused_by(trc::Error::from(err))
+                    .reason(err)
+                    .details("Failed to write local configuration")
                     .ctx(trc::Key::Path, self.cfg_local_path.display().to_string())
             })
     }

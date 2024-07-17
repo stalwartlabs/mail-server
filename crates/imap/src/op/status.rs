@@ -239,7 +239,7 @@ impl<T: SessionStream> SessionData<T> {
                         .await?
                         .and_then(|obj| obj.get(&Property::Cid).as_uint())
                         .ok_or_else(|| {
-                            trc::Cause::Unexpected
+                            trc::StoreCause::Unexpected
                                 .into_err()
                                 .details("Mailbox unavailable")
                                 .ctx(trc::Key::Reason, "Failed to obtain uid validity")

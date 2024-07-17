@@ -29,7 +29,7 @@ impl RequestPropertyParser for GetArguments {
         &mut self,
         parser: &mut Parser,
         property: RequestProperty,
-    ) -> crate::parser::Result<bool> {
+    ) -> trc::Result<bool> {
         match (&property.hash[0], &property.hash[1]) {
             (0x7365_6974_7265_706f_7250_7964_6f62, _) => {
                 self.body_properties = <Option<Vec<Property>>>::parse(parser)?;
@@ -66,7 +66,7 @@ impl RequestPropertyParser for QueryArguments {
         &mut self,
         parser: &mut Parser,
         property: RequestProperty,
-    ) -> crate::parser::Result<bool> {
+    ) -> trc::Result<bool> {
         if property.hash[0] == 0x0073_6461_6572_6854_6573_7061_6c6c_6f63 {
             self.collapse_threads = parser
                 .next_token::<Ignore>()?

@@ -129,7 +129,7 @@ impl JMAP {
                     response.created.append(id, email.into());
                 }
                 Err(mut err) => match err.as_ref() {
-                    trc::Cause::OverQuota => {
+                    trc::Cause::Limit(trc::LimitCause::Quota) => {
                         response.not_created.append(
                             id,
                             SetError::new(SetErrorType::OverQuota)

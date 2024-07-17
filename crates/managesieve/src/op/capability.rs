@@ -10,7 +10,7 @@ use jmap_proto::request::capability::Capabilities;
 use crate::core::{Session, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_capability(&self, message: &'static str) -> super::OpResult {
+    pub async fn handle_capability(&self, message: &'static str) -> trc::Result<Vec<u8>> {
         let mut response = Vec::with_capacity(128);
         response.extend_from_slice(b"\"IMPLEMENTATION\" \"Stalwart ManageSieve\"\r\n");
         response.extend_from_slice(b"\"VERSION\" \"1.0\"\r\n");

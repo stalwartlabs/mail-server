@@ -26,7 +26,7 @@ enum TokenType {
 }
 
 impl JsonObjectParser for JSONPointer {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

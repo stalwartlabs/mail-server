@@ -10,7 +10,7 @@ use directory::{
         lookup::DirectoryStore, manage::ManageDirectory, PrincipalField, PrincipalUpdate,
         PrincipalValue,
     },
-    DirectoryError, ManagementError, Principal, QueryBy, Type,
+    Principal, QueryBy, Type,
 };
 use jmap_proto::types::collection::Collection;
 use mail_send::Credentials;

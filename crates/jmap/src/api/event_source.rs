@@ -14,12 +14,12 @@ use hyper::{
     body::{Bytes, Frame},
     header, StatusCode,
 };
-use jmap_proto::{error::request::RequestError, types::type_state::DataType};
+use jmap_proto::types::type_state::DataType;
 use utils::map::bitmap::Bitmap;
 
 use crate::{auth::AccessToken, JMAP, LONG_SLUMBER};
 
-use super::{http::ToHttpResponse, HttpRequest, HttpResponse, StateChangeResponse};
+use super::{HttpRequest, HttpResponse, StateChangeResponse};
 
 struct Ping {
     interval: Duration,
@@ -32,7 +32,7 @@ impl JMAP {
         &self,
         req: HttpRequest,
         access_token: Arc<AccessToken>,
-    ) -> HttpResponse {
+    ) -> trc::Result<HttpResponse> {
         // Parse query
         let mut ping = 0;
         let mut types = Bitmap::default();
@@ -49,7 +49,7 @@ impl JMAP {
                         } else if let Ok(type_state) = DataType::try_from(type_state) {
                             types.insert(type_state);
                         } else {
-                            return RequestError::invalid_parameters().into_http_response();
+                            return Err(trc::ResourceCause::BadParameters.into_err());
                         }
                     }
                 }
@@ -58,13 +58,13 @@ impl JMAP {
                         close_after_state = true;
                     }
                     "no" => {}
-                    _ => return RequestError::invalid_parameters().into_http_response(),
+                    _ => return Err(trc::ResourceCause::BadParameters.into_err()),
                 },
                 "ping" => match value.parse::<u32>() {
                     Ok(value) => {
                         ping = value;
                     }
-                    Err(_) => return RequestError::invalid_parameters().into_http_response(),
+                    Err(_) => return Err(trc::ResourceCause::BadParameters.into_err()),
                 },
                 _ => {}
             }
@@ -92,17 +92,11 @@ impl JMAP {
         let throttle = self.core.jmap.event_source_throttle;
 
         // Register with state manager
-        let mut change_rx = if let Ok(change_rx) = self
+        let mut change_rx = self
             .subscribe_state_manager(access_token.primary_id(), types)
-            .await
-        {
-            let todo = "return error";
-            change_rx
-        } else {
-            return RequestError::internal_server_error().into_http_response();
-        };
+            .await?;
 
-        hyper::Response::builder()
+        Ok(hyper::Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "text/event-stream")
             .header(header::CACHE_CONTROL, "no-store")
@@ -160,6 +154,6 @@ impl JMAP {
                     };
                 }
             })))
-            .unwrap()
+            .unwrap())
     }
 }

@@ -66,7 +66,7 @@ pub struct ImportEmailResponse {
 }
 
 impl JsonObjectParser for ImportEmailRequest {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -104,7 +104,7 @@ impl JsonObjectParser for ImportEmailRequest {
 }
 
 impl JsonObjectParser for ImportEmail {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

@@ -61,7 +61,7 @@ pub enum Keyword {
 }
 
 impl JsonObjectParser for Keyword {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

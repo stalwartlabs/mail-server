@@ -8,10 +8,7 @@ pub mod conv;
 pub mod imple;
 pub mod macros;
 
-use std::{
-    io::ErrorKind,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
-};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Context<Cause, ERROR_CONTEXT_SIZE>;
@@ -33,7 +30,6 @@ pub enum Value {
     Ipv6(Box<Ipv6Addr>),
     Protocol(Protocol),
     Error(Box<Error>),
-    ErrorKind(ErrorKind),
     Array(Vec<Value>),
     #[default]
     None,
@@ -79,53 +75,124 @@ pub enum Event {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cause {
+    Store(StoreCause),
+    Jmap(JmapCause),
+    Imap,
+    ManageSieve,
+    Pop3,
+    Smtp,
+    Thread,
+    Fetch,
+    Acme,
+    Dns,
+    Ingest,
+    Network,
+    Limit(LimitCause),
+    Manage(ManageCause),
+    Auth(AuthCause),
+    Purge,
+    Configuration,
+    Resource(ResourceCause),
+}
+
+/*
+
+    Http,
+    Crypto,
+    Timeout,
+    Configuration,
+    Unknown,
+
+*/
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreCause {
+    AssertValue,
+    BlobMissingMarker,
     FoundationDB,
     MySQL,
     PostgreSQL,
     RocksDB,
     SQLite,
+    Ldap,
     ElasticSearch,
     Redis,
     S3,
-    Io,
-    Imap,
-    Smtp,
-    Ldap,
-    BlobMissingMarker,
-    Unknown,
-    Purge,
-    AssertValue,
-    Timeout,
-    Thread,
+    Filesystem,
     Pool,
     DataCorruption,
     Decompress,
     Deserialize,
+    NotFound,
     NotConfigured,
-    Unsupported,
+    NotSupported,
     Unexpected,
+    Crypto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JmapCause {
+    // Method errors
+    InvalidArguments,
+    RequestTooLarge,
+    StateMismatch,
+    AnchorNotFound,
+    UnsupportedFilter,
+    UnsupportedSort,
+    UnknownMethod,
+    InvalidResultReference,
+    Forbidden,
+    AccountNotFound,
+    AccountNotSupportedByMethod,
+    AccountReadOnly,
+    NotFound,
+    CannotCalculateChanges,
+    UnknownDataType,
+
+    // Request errors
+    UnknownCapability,
+    NotJSON,
+    NotRequest,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitCause {
+    SizeRequest,
+    SizeUpload,
+    CallsIn,
+    ConcurrentRequest, //RequestError::limit(RequestLimitError::ConcurrentRequest) StatusResponse::bye("Too many concurrent IMAP connections.").into_bytes(),
+    ConcurrentUpload,  //RequestError::limit(RequestLimitError::ConcurrentUpload)
+    Quota,
+    BlobQuota,       //RequestError::over_blob_quota
+    TooManyRequests, //RequestError::too_many_requests() + disconnect imap StatusResponse::bye("Too many authentication requests from this IP address.")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManageCause {
     MissingParameter,
     Invalid,
     AlreadyExists,
+    AssertFailed,
     NotFound,
-    Configuration,
-    Fetch,
-    Acme,
-    Http,
-    Crypto,
-    Dns,
-    Authentication,
+    NotSupported,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthCause {
+    Failed,
     MissingTotp,
-    Jmap,
-    OverQuota,
-    OverBlobQuota, //RequestError::over_blob_quota
-    Ingest,
-    Network,
-    TooManyRequests, //RequestError::too_many_requests() + disconnect imap StatusResponse::bye("Too many authentication requests from this IP address.")
-    TooManyConcurrentRequests, //RequestError::limit(RequestLimitError::ConcurrentRequest) StatusResponse::bye("Too many concurrent IMAP connections.").into_bytes(),
-    TooManyConcurrentUploads,  //RequestError::limit(RequestLimitError::ConcurrentUpload)
-    TooManyAuthAttempts,       //RequestError::too_many_auth_attempts() + disconnect imap
+    TooManyAttempts, //RequestError::too_many_auth_attempts() + disconnect imap
     Banned,
+    Invalid,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceCause {
+    NotFound,
+    BadParameters,
+    Error,
 }
 
 /*

@@ -140,7 +140,7 @@ impl JMAP {
                     }
                 }
                 Err(mut err) => match err.as_ref() {
-                    trc::Cause::OverQuota => {
+                    trc::Cause::Limit(trc::LimitCause::Quota) => {
                         *status = DeliveryResult::TemporaryFailure {
                             reason: "Mailbox over quota.".into(),
                         }

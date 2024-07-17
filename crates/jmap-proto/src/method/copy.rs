@@ -8,9 +8,9 @@ use serde::Serialize;
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     object::Object,
-    parser::{json::Parser, Error, JsonObjectParser, Token},
+    parser::{json::Parser, JsonObjectParser, Token},
     request::{method::MethodObject, reference::MaybeReference, RequestProperty},
     types::{
         blob::BlobId,
@@ -88,7 +88,7 @@ pub enum RequestArguments {
 }
 
 impl JsonObjectParser for CopyRequest<RequestArguments> {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -96,10 +96,9 @@ impl JsonObjectParser for CopyRequest<RequestArguments> {
             arguments: match &parser.ctx {
                 MethodObject::Email => RequestArguments::Email,
                 _ => {
-                    return Err(Error::Method(MethodError::UnknownMethod(format!(
-                        "{}/copy",
-                        parser.ctx
-                    ))))
+                    return Err(trc::JmapCause::UnknownMethod
+                        .into_err()
+                        .details(format!("{}/copy", parser.ctx)))
                 }
             },
             account_id: Id::default(),
@@ -159,7 +158,7 @@ impl JsonObjectParser for CopyRequest<RequestArguments> {
 }
 
 impl JsonObjectParser for CopyBlobRequest {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser) -> trc::Result<Self>
     where
         Self: Sized,
     {

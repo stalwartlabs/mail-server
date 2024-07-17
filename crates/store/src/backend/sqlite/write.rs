@@ -245,7 +245,7 @@ impl SqliteStore {
                             .unwrap_or_else(|| assert_value.is_none());
                         if !matches {
                             trx.rollback().map_err(into_error)?;
-                            return Err(trc::Cause::AssertValue.into());
+                            return Err(trc::StoreCause::AssertValue.into());
                         }
                     }
                 }

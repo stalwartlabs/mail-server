@@ -83,15 +83,21 @@ impl From<Error> for Value {
     }
 }
 
-impl From<ErrorKind> for Value {
-    fn from(value: ErrorKind) -> Self {
-        Self::ErrorKind(value)
-    }
-}
-
 impl From<Cause> for Error {
     fn from(value: Cause) -> Self {
         Error::new(value)
+    }
+}
+
+impl From<StoreCause> for Error {
+    fn from(value: StoreCause) -> Self {
+        Error::new(Cause::Store(value))
+    }
+}
+
+impl From<AuthCause> for Error {
+    fn from(value: AuthCause) -> Self {
+        Error::new(Cause::Auth(value))
     }
 }
 
@@ -152,52 +158,32 @@ where
     }
 }
 
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Cause::Io
-            .ctx(Key::Reason, err.kind())
-            .ctx(Key::Details, err.to_string())
+impl Cause {
+    pub fn from_io_error(self, err: std::io::Error) -> Error {
+        self.reason(err).details("I/O error")
     }
-}
 
-impl From<serde_json::Error> for Error {
-    fn from(err: serde_json::Error) -> Self {
-        Cause::Deserialize
-            .reason(err)
-            .details("JSON deserialization failed")
+    pub fn from_json_error(self, err: serde_json::Error) -> Error {
+        self.reason(err).details("JSON deserialization failed")
     }
-}
 
-impl From<base64::DecodeError> for Error {
-    fn from(err: base64::DecodeError) -> Self {
-        Cause::DataCorruption
-            .reason(err)
-            .details("Base64 decoding failed")
+    pub fn from_base64_error(self, err: base64::DecodeError) -> Error {
+        self.reason(err).details("Base64 decoding failed")
     }
-}
 
-impl From<reqwest::Error> for Error {
-    fn from(err: reqwest::Error) -> Self {
-        Cause::Http
-            .into_err()
+    pub fn from_http_error(self, err: reqwest::Error) -> Error {
+        self.into_err()
             .ctx_opt(Key::Url, err.url().map(|url| url.as_ref().to_string()))
             .ctx_opt(Key::Code, err.status().map(|status| status.as_u16()))
             .reason(err)
     }
-}
 
-impl From<bincode::Error> for Error {
-    fn from(value: bincode::Error) -> Self {
-        Cause::Deserialize
-            .reason(value)
-            .details("Bincode deserialization failed")
+    pub fn from_bincode_error(self, err: bincode::Error) -> Error {
+        self.reason(err).details("Bincode deserialization failed")
     }
-}
 
-impl From<reqwest::header::ToStrError> for Error {
-    fn from(value: reqwest::header::ToStrError) -> Self {
-        Cause::Http
-            .reason(value)
+    pub fn from_http_str_error(self, err: reqwest::header::ToStrError) -> Error {
+        self.reason(err)
             .details("Failed to convert header to string")
     }
 }
@@ -206,17 +192,21 @@ pub trait AssertSuccess
 where
     Self: Sized,
 {
-    fn assert_success(self) -> impl std::future::Future<Output = crate::Result<Self>> + Send;
+    fn assert_success(
+        self,
+        cause: Cause,
+    ) -> impl std::future::Future<Output = crate::Result<Self>> + Send;
 }
 
 impl AssertSuccess for reqwest::Response {
-    async fn assert_success(self) -> crate::Result<Self> {
+    async fn assert_success(self, cause: Cause) -> crate::Result<Self> {
         let status = self.status();
         if status.is_success() {
             Ok(self)
         } else {
-            Err(Cause::Http
+            Err(cause
                 .ctx(Key::Code, status.as_u16())
+                .details("HTTP request failed")
                 .ctx_opt(Key::Reason, self.text().await.ok()))
         }
     }

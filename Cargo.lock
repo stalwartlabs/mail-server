@@ -3623,6 +3623,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.0",
  "tracing",
+ "trc",
  "utils",
 ]
 
@@ -5572,9 +5573,9 @@ checksum = "ece8e78b2f38ec51c51f5d475df0a7187ba5111b2a28bdc761ee05b075d40a71"
 
 [[package]]
 name = "scc"
-version = "2.1.1"
+version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76ad2bbb0ae5100a07b7a6f2ed7ab5fd0045551a4c507989b7a620046ea3efdc"
+checksum = "a4465c22496331e20eb047ff46e7366455bc01c0c02015c4a376de0b2cd3a1af"
 dependencies = [
  "sdd",
 ]
@@ -5627,9 +5628,9 @@ dependencies = [
 
 [[package]]
 name = "sdd"
-version = "0.2.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b84345e4c9bd703274a082fb80caaa99b7612be48dfaa1dd9266577ec412309d"
+checksum = "1e806d6633ef141556fef75e345275e35652e9c045bbbc21e6ecfce3e9aa2638"
 
 [[package]]
 name = "seahash"
@@ -6416,6 +6417,7 @@ dependencies = [
  "tokio-rustls 0.26.0",
  "tracing",
  "tracing-subscriber",
+ "trc",
  "utils",
 ]
 

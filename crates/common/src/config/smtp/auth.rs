@@ -142,7 +142,7 @@ impl Default for MailAuthConfig {
             },
             iprev: IpRevAuthConfig {
                 verify: IfBlock::new::<VerifyStrategy>(
-                    "auth.ipref.verify",
+                    "auth.iprev.verify",
                     [("local_port == 25", "relaxed")],
                     #[cfg(not(feature = "test_mode"))]
                     "disable",

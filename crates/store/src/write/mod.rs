@@ -346,7 +346,7 @@ impl Deserialize for String {
 impl Deserialize for u64 {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         Ok(u64::from_be_bytes(bytes.try_into().map_err(|_| {
-            trc::Cause::DataCorruption.caused_by(trc::location!())
+            trc::StoreCause::DataCorruption.caused_by(trc::location!())
         })?))
     }
 }
@@ -354,7 +354,7 @@ impl Deserialize for u64 {
 impl Deserialize for i64 {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         Ok(i64::from_be_bytes(bytes.try_into().map_err(|_| {
-            trc::Cause::DataCorruption.caused_by(trc::location!())
+            trc::StoreCause::DataCorruption.caused_by(trc::location!())
         })?))
     }
 }
@@ -362,7 +362,7 @@ impl Deserialize for i64 {
 impl Deserialize for u32 {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         Ok(u32::from_be_bytes(bytes.try_into().map_err(|_| {
-            trc::Cause::DataCorruption.caused_by(trc::location!())
+            trc::StoreCause::DataCorruption.caused_by(trc::location!())
         })?))
     }
 }
@@ -456,12 +456,12 @@ impl<T: DeserializeFrom + Sync + Send> Deserialize for Vec<T> {
         let mut bytes = bytes.iter();
         let len: usize = bytes
             .next_leb128()
-            .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))?;
+            .ok_or_else(|| trc::StoreCause::DataCorruption.caused_by(trc::location!()))?;
         let mut list = Vec::with_capacity(len);
         for _ in 0..len {
             list.push(
                 T::deserialize_from(&mut bytes)
-                    .ok_or_else(|| trc::Cause::DataCorruption.caused_by(trc::location!()))?,
+                    .ok_or_else(|| trc::StoreCause::DataCorruption.caused_by(trc::location!()))?,
             );
         }
         Ok(list)
@@ -686,13 +686,13 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> De
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         lz4_flex::decompress_size_prepended(bytes)
             .map_err(|err| {
-                trc::Cause::Decompress
+                trc::StoreCause::Decompress
                     .caused_by(trc::location!())
                     .reason(err)
             })
             .and_then(|result| {
                 bincode::deserialize(&result).map_err(|err| {
-                    trc::Cause::DataCorruption
+                    trc::StoreCause::DataCorruption
                         .caused_by(trc::location!())
                         .reason(err)
                 })
@@ -724,7 +724,7 @@ impl AssignedIds {
 
     pub fn get_document_id(&self, idx: usize) -> trc::Result<u32> {
         self.document_ids.get(idx).copied().ok_or_else(|| {
-            trc::Cause::Unexpected
+            trc::StoreCause::Unexpected
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Reason, "No document ids were created")
         })
@@ -736,7 +736,7 @@ impl AssignedIds {
 
     pub fn last_document_id(&self) -> trc::Result<u32> {
         self.document_ids.last().copied().ok_or_else(|| {
-            trc::Cause::Unexpected
+            trc::StoreCause::Unexpected
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Reason, "No document ids were created")
         })
@@ -744,7 +744,7 @@ impl AssignedIds {
 
     pub fn last_counter_id(&self) -> trc::Result<i64> {
         self.counter_ids.last().copied().ok_or_else(|| {
-            trc::Cause::Unexpected
+            trc::StoreCause::Unexpected
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Reason, "No document ids were created")
         })

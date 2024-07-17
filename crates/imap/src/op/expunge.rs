@@ -239,7 +239,7 @@ impl<T: SessionStream> SessionData<T> {
                             changelog.log_child_update(Collection::Mailbox, mailbox_id.mailbox_id);
                         }
                         Err(err) => {
-                            if !err.matches(trc::Cause::AssertValue) {
+                            if !err.is_assertion_failure() {
                                 return Err(err.caused_by(trc::location!()));
                             }
                         }

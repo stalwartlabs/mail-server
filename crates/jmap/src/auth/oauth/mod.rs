@@ -6,13 +6,10 @@
 
 use std::collections::HashMap;
 
-use hyper::{header::CONTENT_TYPE, StatusCode};
+use hyper::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 
-use crate::api::{
-    http::{fetch_body, ToHttpResponse},
-    HtmlResponse, HttpRequest, HttpResponse,
-};
+use crate::api::{http::fetch_body, HttpRequest};
 
 pub mod auth;
 pub mod token;
@@ -205,7 +202,7 @@ pub struct FormData {
 }
 
 impl FormData {
-    pub async fn from_request(req: &mut HttpRequest, max_len: usize) -> Result<Self, HttpResponse> {
+    pub async fn from_request(req: &mut HttpRequest, max_len: usize) -> trc::Result<Self> {
         match (
             req.headers()
                 .get(CONTENT_TYPE)
@@ -229,11 +226,9 @@ impl FormData {
                 }
                 Ok(FormData { fields })
             }
-            _ => Err(HtmlResponse::with_status(
-                StatusCode::BAD_REQUEST,
-                "Invalid post request".to_string(),
-            )
-            .into_http_response()),
+            _ => Err(trc::ResourceCause::BadParameters
+                .into_err()
+                .details("Invalid post request")),
         }
     }
 

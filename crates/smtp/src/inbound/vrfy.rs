@@ -57,7 +57,7 @@ impl<T: SessionStream> Session<T> {
                             event = "temp-fail",
                             address = &address);
 
-                        if !err.matches(trc::Cause::Unsupported) {
+                        if !err.matches(trc::Cause::Store(trc::StoreCause::NotSupported)) {
                             self.write(b"252 2.4.3 Unable to verify address at this time.\r\n")
                                 .await
                         } else {
@@ -122,7 +122,7 @@ impl<T: SessionStream> Session<T> {
                             event = "temp-fail",
                             address = &address);
 
-                        if !err.matches(trc::Cause::Unsupported) {
+                        if !err.matches(trc::Cause::Store(trc::StoreCause::NotSupported)) {
                             self.write(b"252 2.4.3 Unable to expand mailing list at this time.\r\n")
                                 .await
                         } else {

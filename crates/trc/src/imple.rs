@@ -129,7 +129,7 @@ where
     }
 
     pub fn corrupted_key(key: &[u8], value: Option<&[u8]>, caused_by: &'static str) -> Error {
-        Cause::DataCorruption
+        Cause::Store(StoreCause::DataCorruption)
             .ctx(Key::Key, key)
             .ctx_opt(Key::Value, value)
             .ctx(Key::CausedBy, caused_by)
@@ -139,17 +139,17 @@ where
 impl Cause {
     #[inline(always)]
     pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
-        Error::new(self).ctx(key, value)
+        self.into_err().ctx(key, value)
     }
 
     #[inline(always)]
     pub fn caused_by(self, error: impl Into<Value>) -> Error {
-        Error::new(self).caused_by(error)
+        self.into_err().caused_by(error)
     }
 
     #[inline(always)]
     pub fn reason(self, error: impl Display) -> Error {
-        Error::new(self).reason(error)
+        self.into_err().reason(error)
     }
 
     #[inline(always)]
@@ -158,10 +158,154 @@ impl Cause {
     }
 }
 
+impl StoreCause {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn caused_by(self, error: impl Into<Value>) -> Error {
+        self.into_err().caused_by(error)
+    }
+
+    #[inline(always)]
+    pub fn reason(self, error: impl Display) -> Error {
+        self.into_err().reason(error)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(Cause::Store(self))
+    }
+}
+
+impl AuthCause {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn caused_by(self, error: impl Into<Value>) -> Error {
+        self.into_err().caused_by(error)
+    }
+
+    #[inline(always)]
+    pub fn reason(self, error: impl Display) -> Error {
+        self.into_err().reason(error)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(Cause::Auth(self))
+    }
+}
+
+impl ManageCause {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn caused_by(self, error: impl Into<Value>) -> Error {
+        self.into_err().caused_by(error)
+    }
+
+    #[inline(always)]
+    pub fn reason(self, error: impl Display) -> Error {
+        self.into_err().reason(error)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(Cause::Manage(self))
+    }
+}
+
+impl JmapCause {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn caused_by(self, error: impl Into<Value>) -> Error {
+        self.into_err().caused_by(error)
+    }
+
+    #[inline(always)]
+    pub fn reason(self, error: impl Display) -> Error {
+        self.into_err().reason(error)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(Cause::Jmap(self))
+    }
+}
+
+impl LimitCause {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn caused_by(self, error: impl Into<Value>) -> Error {
+        self.into_err().caused_by(error)
+    }
+
+    #[inline(always)]
+    pub fn reason(self, error: impl Display) -> Error {
+        self.into_err().reason(error)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(Cause::Limit(self))
+    }
+}
+
+impl ResourceCause {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn caused_by(self, error: impl Into<Value>) -> Error {
+        self.into_err().caused_by(error)
+    }
+
+    #[inline(always)]
+    pub fn reason(self, error: impl Display) -> Error {
+        self.into_err().reason(error)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(Cause::Resource(self))
+    }
+}
+
 impl Error {
     #[inline(always)]
     pub fn wrap(self, cause: Cause) -> Self {
         Error::new(cause).caused_by(self)
+    }
+
+    #[inline(always)]
+    pub fn is_assertion_failure(&self) -> bool {
+        self.inner == Cause::Store(StoreCause::AssertValue)
+    }
+
+    pub fn is_jmap_method_error(&self) -> bool {
+        !matches!(
+            self.inner,
+            Cause::Jmap(JmapCause::UnknownCapability | JmapCause::NotJSON | JmapCause::NotRequest)
+        )
     }
 }
 

@@ -90,7 +90,7 @@ impl S3Store {
         match response.status_code() {
             200..=299 => Ok(Some(response.to_vec())),
             404 => Ok(None),
-            code => Err(trc::Cause::S3
+            code => Err(trc::StoreCause::S3
                 .reason(String::from_utf8_lossy(response.as_slice()))
                 .ctx(trc::Key::Code, code)),
         }
@@ -105,7 +105,7 @@ impl S3Store {
 
         match response.status_code() {
             200..=299 => Ok(()),
-            code => Err(trc::Cause::S3
+            code => Err(trc::StoreCause::S3
                 .reason(String::from_utf8_lossy(response.as_slice()))
                 .ctx(trc::Key::Code, code)),
         }
@@ -121,7 +121,7 @@ impl S3Store {
         match response.status_code() {
             200..=299 => Ok(true),
             404 => Ok(false),
-            code => Err(trc::Cause::S3
+            code => Err(trc::StoreCause::S3
                 .reason(String::from_utf8_lossy(response.as_slice()))
                 .ctx(trc::Key::Code, code)),
         }
@@ -142,5 +142,5 @@ impl S3Store {
 
 #[inline(always)]
 fn into_error(err: impl Display) -> trc::Error {
-    trc::Cause::S3.reason(err)
+    trc::StoreCause::S3.reason(err)
 }

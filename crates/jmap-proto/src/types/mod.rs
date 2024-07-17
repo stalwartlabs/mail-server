@@ -29,7 +29,7 @@ pub enum MaybeUnparsable<V> {
 }
 
 impl<V: JsonObjectParser> JsonObjectParser for MaybeUnparsable<V> {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self> {
+    fn parse(parser: &mut Parser) -> trc::Result<Self> {
         match V::parse(parser) {
             Ok(value) => Ok(MaybeUnparsable::Value(value)),
             Err(_) if parser.is_eof || parser.skip_string() => Ok(MaybeUnparsable::ParseError(

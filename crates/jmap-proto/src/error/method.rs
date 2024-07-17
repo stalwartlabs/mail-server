@@ -136,7 +136,9 @@ impl From<MethodError> for trc::Error {
             ),
         };
 
-        trc::Cause::Jmap
+        let todo = "fix";
+
+        trc::JmapCause::RequestTooLarge
             .ctx(trc::Key::Type, typ)
             .ctx(trc::Key::Details, description)
     }
@@ -184,7 +186,11 @@ impl Serialize for MethodErrorWrapper {
     {
         let mut map = serializer.serialize_map(2.into())?;
 
-        let (error_type, description) = if self.0.matches(trc::Cause::Jmap) {
+        let todo = "fix";
+        let (error_type, description) = if self
+            .0
+            .matches(trc::Cause::Jmap(trc::JmapCause::RequestTooLarge))
+        {
             (
                 self.0
                     .value(trc::Key::Type)

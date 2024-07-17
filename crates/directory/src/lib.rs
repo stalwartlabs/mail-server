@@ -158,10 +158,10 @@ impl IntoError for PoolError<LdapError> {
     fn into_error(self) -> trc::Error {
         match self {
             PoolError::Backend(error) => error.into_error(),
-            PoolError::Timeout(_) => {
-                trc::Cause::Timeout.ctx(trc::Key::Protocol, trc::Protocol::Ldap)
-            }
-            err => trc::Cause::Pool
+            PoolError::Timeout(_) => trc::StoreCause::Pool
+                .ctx(trc::Key::Protocol, trc::Protocol::Ldap)
+                .details("Connection timed out"),
+            err => trc::StoreCause::Pool
                 .ctx(trc::Key::Protocol, trc::Protocol::Ldap)
                 .reason(err),
         }
@@ -172,10 +172,10 @@ impl IntoError for PoolError<ImapError> {
     fn into_error(self) -> trc::Error {
         match self {
             PoolError::Backend(error) => error.into_error(),
-            PoolError::Timeout(_) => {
-                trc::Cause::Timeout.ctx(trc::Key::Protocol, trc::Protocol::Imap)
-            }
-            err => trc::Cause::Pool
+            PoolError::Timeout(_) => trc::StoreCause::Pool
+                .ctx(trc::Key::Protocol, trc::Protocol::Imap)
+                .details("Connection timed out"),
+            err => trc::StoreCause::Pool
                 .ctx(trc::Key::Protocol, trc::Protocol::Imap)
                 .reason(err),
         }
@@ -186,10 +186,10 @@ impl IntoError for PoolError<mail_send::Error> {
     fn into_error(self) -> trc::Error {
         match self {
             PoolError::Backend(error) => error.into_error(),
-            PoolError::Timeout(_) => {
-                trc::Cause::Timeout.ctx(trc::Key::Protocol, trc::Protocol::Smtp)
-            }
-            err => trc::Cause::Pool
+            PoolError::Timeout(_) => trc::StoreCause::Pool
+                .ctx(trc::Key::Protocol, trc::Protocol::Smtp)
+                .details("Connection timed out"),
+            err => trc::StoreCause::Pool
                 .ctx(trc::Key::Protocol, trc::Protocol::Smtp)
                 .reason(err),
         }
@@ -211,9 +211,11 @@ impl IntoError for mail_send::Error {
 impl IntoError for LdapError {
     fn into_error(self) -> trc::Error {
         if let LdapError::LdapResult { result } = &self {
-            trc::Cause::Ldap.ctx(trc::Key::Code, result.rc).reason(self)
+            trc::StoreCause::Ldap
+                .ctx(trc::Key::Code, result.rc)
+                .reason(self)
         } else {
-            trc::Cause::Ldap.reason(self)
+            trc::StoreCause::Ldap.reason(self)
         }
     }
 }

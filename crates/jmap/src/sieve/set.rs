@@ -159,7 +159,8 @@ impl JMAP {
                     .inner
                     .blob_id()
                     .ok_or_else(|| {
-                        trc::Cause::NotFound
+                        trc::StoreCause::NotFound
+                            .into_err()
                             .caused_by(trc::location!())
                             .document_id(document_id)
                     })?
@@ -225,7 +226,7 @@ impl JMAP {
                             changes.log_update(Collection::SieveScript, document_id);
                             match self.core.storage.data.write(batch.build()).await {
                                 Ok(_) => (),
-                                Err(err) if err.matches(trc::Cause::AssertValue) => {
+                                Err(err) if err.is_assertion_failure() => {
                                     ctx.response.not_updated.append(id, SetError::forbidden().with_description(
                                         "Another process modified this sieve, please try again.",
                                     ));
@@ -336,7 +337,8 @@ impl JMAP {
             )
             .await?
             .ok_or_else(|| {
-                trc::Cause::NotFound
+                trc::StoreCause::NotFound
+                    .into_err()
                     .caused_by(trc::location!())
                     .document_id(document_id)
             })?;
@@ -354,7 +356,8 @@ impl JMAP {
         // Delete record
         let mut batch = BatchBuilder::new();
         let blob_id = obj.inner.blob_id().ok_or_else(|| {
-            trc::Cause::NotFound
+            trc::StoreCause::NotFound
+                .into_err()
                 .caused_by(trc::location!())
                 .document_id(document_id)
         })?;
@@ -616,7 +619,7 @@ impl JMAP {
         if !changed_ids.is_empty() {
             match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => (),
-                Err(err) if err.matches(trc::Cause::AssertValue) => {
+                Err(err) if err.is_assertion_failure() => {
                     return Ok(vec![]);
                 }
                 Err(err) => {

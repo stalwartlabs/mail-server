@@ -4,16 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::listener::SessionStream;
+use common::listener::{SessionResult, SessionStream};
 use imap_proto::receiver::{self, Request};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::query::Filter;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use trc::AddContext;
 
-use super::{Command, ResponseCode, ResponseType, Session, State, StatusResponse};
+use super::{Command, ResponseCode, SerializeResponse, Session, State, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn ingest(&mut self, bytes: &[u8]) -> Result<bool, ()> {
+    pub async fn ingest(&mut self, bytes: &[u8]) -> SessionResult {
         /*let tmp = "dd";
         for line in String::from_utf8_lossy(bytes).split("\r\n") {
             println!("<- {:?}", &line[..std::cmp::min(line.len(), 100)]);
@@ -29,8 +30,11 @@ impl<T: SessionStream> Session<T> {
                     Ok(request) => {
                         requests.push(request);
                     }
-                    Err(response) => {
-                        self.write(&response.into_bytes()).await?;
+                    Err(err) => {
+                        if let Err(err) = self.write_error(err).await {
+                            tracing::error!(parent: &self.span, event = "error", error = ?err);
+                            return SessionResult::Close;
+                        }
                     }
                 },
                 Err(receiver::Error::NeedsMoreData) => {
@@ -41,15 +45,21 @@ impl<T: SessionStream> Session<T> {
                     break;
                 }
                 Err(receiver::Error::Error { response }) => {
-                    self.write(&StatusResponse::no(response.message).into_bytes())
-                        .await?;
+                    if let Err(err) = self
+                        .write(&StatusResponse::no(response.message).into_bytes())
+                        .await
+                    {
+                        tracing::error!(parent: &self.span, event = "error", error = ?err);
+                        return SessionResult::Close;
+                    }
                     break;
                 }
             }
         }
 
         for request in requests {
-            match match request.command {
+            let command = request.command;
+            match match command {
                 Command::ListScripts => self.handle_listscripts().await,
                 Command::PutScript => self.handle_putscript(request).await,
                 Command::SetActive => self.handle_setactive(request).await,
@@ -60,39 +70,46 @@ impl<T: SessionStream> Session<T> {
                 Command::HaveSpace => self.handle_havespace(request).await,
                 Command::Capability => self.handle_capability("").await,
                 Command::Authenticate => self.handle_authenticate(request).await,
-                Command::StartTls => {
-                    self.write(b"OK Begin TLS negotiation now\r\n").await?;
-                    return Ok(false);
-                }
+                Command::StartTls => self.handle_start_tls().await,
                 Command::Logout => self.handle_logout().await,
                 Command::Noop => self.handle_noop(request).await,
                 Command::Unauthenticate => self.handle_unauthenticate().await,
             } {
                 Ok(response) => {
-                    self.write(&response).await?;
+                    if let Err(err) = self.write(&response).await {
+                        tracing::error!(parent: &self.span, event = "error", error = ?err);
+                        return SessionResult::Close;
+                    }
+
+                    match command {
+                        Command::Logout => return SessionResult::Close,
+                        Command::StartTls => return SessionResult::UpgradeTls,
+                        _ => (),
+                    }
                 }
                 Err(err) => {
-                    let disconnect = matches!(err.rtype, ResponseType::Bye | ResponseType::Ok);
-                    self.write(&err.into_bytes()).await?;
-                    if disconnect {
-                        return Err(());
+                    if let Err(err) = self.write_error(err).await {
+                        tracing::error!(parent: &self.span, event = "error", error = ?err);
+                        return SessionResult::Close;
                     }
                 }
             }
         }
 
         if let Some(needs_literal) = needs_literal {
-            self.write(format!("OK Ready for {} bytes.\r\n", needs_literal).as_bytes())
-                .await?;
+            if let Err(err) = self
+                .write(format!("OK Ready for {} bytes.\r\n", needs_literal).as_bytes())
+                .await
+            {
+                tracing::error!(parent: &self.span, event = "error", error = ?err);
+                return SessionResult::Close;
+            }
         }
 
-        Ok(true)
+        SessionResult::Continue
     }
 
-    async fn validate_request(
-        &self,
-        command: Request<Command>,
-    ) -> Result<Request<Command>, StatusResponse> {
+    async fn validate_request(&self, command: Request<Command>) -> trc::Result<Request<Command>> {
         match &command.command {
             Command::Capability | Command::Logout | Command::Noop => Ok(command),
             Command::Authenticate => {
@@ -100,18 +117,24 @@ impl<T: SessionStream> Session<T> {
                     if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
                         Ok(command)
                     } else {
-                        Err(StatusResponse::no("Cannot authenticate over plain-text.")
-                            .with_code(ResponseCode::EncryptNeeded))
+                        Err(trc::Cause::ManageSieve
+                            .into_err()
+                            .code(ResponseCode::EncryptNeeded)
+                            .details("Cannot authenticate over plain-text."))
                     }
                 } else {
-                    Err(StatusResponse::no("Already authenticated."))
+                    Err(trc::Cause::ManageSieve
+                        .into_err()
+                        .details("Already authenticated."))
                 }
             }
             Command::StartTls => {
                 if !self.stream.is_tls() {
                     Ok(command)
                 } else {
-                    Err(StatusResponse::no("Already in TLS mode."))
+                    Err(trc::Cause::ManageSieve
+                        .into_err()
+                        .details("Already in TLS mode."))
                 }
             }
             Command::HaveSpace
@@ -125,7 +148,7 @@ impl<T: SessionStream> Session<T> {
             | Command::Unauthenticate => {
                 if let State::Authenticated { access_token, .. } = &self.state {
                     if let Some(rate) = &self.jmap.core.imap.rate_requests {
-                        match self
+                        if self
                             .jmap
                             .core
                             .storage
@@ -136,18 +159,22 @@ impl<T: SessionStream> Session<T> {
                                 true,
                             )
                             .await
+                            .caused_by(trc::location!())?
+                            .is_none()
                         {
-                            Ok(None) => Ok(command),
-                            Ok(Some(_)) => Err(StatusResponse::no("Too many requests")
-                                .with_code(ResponseCode::TryLater)),
-                            Err(_) => Err(StatusResponse::no("Internal server error")
-                                .with_code(ResponseCode::TryLater)),
+                            Ok(command)
+                        } else {
+                            Err(trc::LimitCause::TooManyRequests
+                                .into_err()
+                                .code(ResponseCode::TryLater))
                         }
                     } else {
                         Ok(command)
                     }
                 } else {
-                    Err(StatusResponse::no("Not authenticated."))
+                    Err(trc::Cause::ManageSieve
+                        .into_err()
+                        .details("Not authenticated."))
                 }
             }
         }
@@ -156,54 +183,51 @@ impl<T: SessionStream> Session<T> {
 
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     #[inline(always)]
-    pub async fn write(&mut self, bytes: &[u8]) -> Result<(), ()> {
-        let err = match self.stream.write_all(bytes).await {
-            Ok(_) => match self.stream.flush().await {
-                Ok(_) => {
-                    tracing::trace!(parent: &self.span,
-                            event = "write",
-                            data = std::str::from_utf8(bytes).unwrap_or_default() ,
-                            size = bytes.len());
-                    return Ok(());
-                }
-                Err(err) => err,
-            },
-            Err(err) => err,
-        };
+    pub async fn write(&mut self, bytes: &[u8]) -> trc::Result<()> {
+        self.stream
+            .write_all(bytes)
+            .await
+            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))?;
+        self.stream
+            .flush()
+            .await
+            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))?;
 
-        tracing::debug!(parent: &self.span,
-            event = "error",
-            "Failed to write to stream: {:?}", err);
-        Err(())
+        tracing::trace!(parent: &self.span,
+            event = "write",
+            data = std::str::from_utf8(bytes).unwrap_or_default() ,
+            size = bytes.len());
+
+        Ok(())
+    }
+
+    pub async fn write_error(&mut self, error: trc::Error) -> trc::Result<()> {
+        tracing::error!(parent: &self.span, event = "error", error = ?error);
+        self.write(&error.serialize()).await
     }
 
     #[inline(always)]
-    pub async fn read(&mut self, bytes: &mut [u8]) -> Result<usize, ()> {
-        match self.stream.read(bytes).await {
-            Ok(len) => {
-                tracing::trace!(parent: &self.span,
-                                event = "read",
-                                data =  bytes
-                                    .get(0..len)
-                                    .and_then(|bytes| std::str::from_utf8(bytes).ok())
-                                    .unwrap_or("[invalid UTF8]"),
-                                size = len);
-                Ok(len)
-            }
-            Err(err) => {
-                tracing::trace!(
-                    parent: &self.span,
-                    event = "error",
-                    "Failed to read from stream: {:?}", err
-                );
-                Err(())
-            }
-        }
+    pub async fn read(&mut self, bytes: &mut [u8]) -> trc::Result<usize> {
+        let len = self
+            .stream
+            .read(bytes)
+            .await
+            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))?;
+
+        tracing::trace!(parent: &self.span,
+            event = "read",
+            data =  bytes
+                .get(0..len)
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                .unwrap_or("[invalid UTF8]"),
+            size = len);
+
+        Ok(len)
     }
 }
 
 impl<T: AsyncWrite + AsyncRead> Session<T> {
-    pub async fn get_script_id(&self, account_id: u32, name: &str) -> Result<u32, StatusResponse> {
+    pub async fn get_script_id(&self, account_id: u32, name: &str) -> trc::Result<u32> {
         self.jmap
             .core
             .storage
@@ -214,11 +238,13 @@ impl<T: AsyncWrite + AsyncRead> Session<T> {
                 vec![Filter::eq(Property::Name, name)],
             )
             .await
-            .map_err(|_| StatusResponse::database_failure())
+            .caused_by(trc::location!())
             .and_then(|results| {
                 results.results.min().ok_or_else(|| {
-                    StatusResponse::no("There is no script by that name")
-                        .with_code(ResponseCode::NonExistent)
+                    trc::Cause::ManageSieve
+                        .into_err()
+                        .code(ResponseCode::NonExistent)
+                        .reason("There is no script by that name")
                 })
             })
     }

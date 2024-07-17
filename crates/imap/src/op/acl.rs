@@ -250,7 +250,7 @@ impl<T: SessionStream> Session<T> {
                     }) {
                 acl
             } else {
-                return Err(trc::Cause::DataCorruption
+                return Err(trc::StoreCause::DataCorruption
                     .into_err()
                     .id(arguments.tag)
                     .ctx(trc::Key::Reason, "Invalid mailbox ACL")

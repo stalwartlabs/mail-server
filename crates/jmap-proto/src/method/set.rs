@@ -13,7 +13,7 @@ use crate::{
         set::{InvalidProperty, SetError},
     },
     object::{email_submission, mailbox, sieve, Object},
-    parser::{json::Parser, Error, JsonObjectParser, Token},
+    parser::{json::Parser, JsonObjectParser, Token},
     request::{
         method::MethodObject,
         reference::{MaybeReference, ResultReference},
@@ -99,7 +99,7 @@ pub struct SetResponse {
 }
 
 impl JsonObjectParser for SetRequest<RequestArguments> {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -115,10 +115,9 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
                 MethodObject::VacationResponse => RequestArguments::VacationResponse,
                 MethodObject::SieveScript => RequestArguments::SieveScript(Default::default()),
                 _ => {
-                    return Err(Error::Method(MethodError::UnknownMethod(format!(
-                        "{}/set",
-                        parser.ctx
-                    ))))
+                    return Err(trc::JmapCause::UnknownMethod
+                        .into_err()
+                        .details(format!("{}/set", parser.ctx)))
                 }
             },
             account_id: Id::default(),
@@ -168,7 +167,7 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
 }
 
 impl JsonObjectParser for Object<SetValue> {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -385,11 +384,7 @@ impl<T: Into<AnyId>> From<Vec<MaybeReference<T, String>>> for SetValue {
 }
 
 impl RequestPropertyParser for RequestArguments {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> crate::parser::Result<bool> {
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         match self {
             RequestArguments::Mailbox(args) => args.parse(parser, property),
             RequestArguments::EmailSubmission(args) => args.parse(parser, property),

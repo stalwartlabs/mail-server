@@ -27,7 +27,7 @@ pub enum Acl {
 }
 
 impl JsonObjectParser for Acl {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

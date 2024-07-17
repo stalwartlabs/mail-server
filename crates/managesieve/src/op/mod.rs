@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap_proto::error::method::MethodError;
+use common::listener::SessionStream;
 
-use crate::core::StatusResponse;
+use crate::core::{Session, StatusResponse};
 
 pub mod authenticate;
 pub mod capability;
@@ -21,10 +21,8 @@ pub mod putscript;
 pub mod renamescript;
 pub mod setactive;
 
-impl From<MethodError> for StatusResponse {
-    fn from(_: MethodError) -> Self {
-        StatusResponse::database_failure()
+impl<T: SessionStream> Session<T> {
+    pub async fn handle_start_tls(&self) -> trc::Result<Vec<u8>> {
+        Ok(StatusResponse::ok("Begin TLS negotiation now").into_bytes())
     }
 }
-
-pub type OpResult = std::result::Result<Vec<u8>, StatusResponse>;

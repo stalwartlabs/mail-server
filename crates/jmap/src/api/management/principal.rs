@@ -8,14 +8,14 @@ use std::sync::Arc;
 
 use directory::{
     backend::internal::{
-        lookup::DirectoryStore, manage::ManageDirectory, PrincipalAction, PrincipalField,
-        PrincipalUpdate, PrincipalValue, SpecialSecrets,
+        lookup::DirectoryStore,
+        manage::{self, ManageDirectory},
+        PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue, SpecialSecrets,
     },
     DirectoryInner, Principal, QueryBy, Type,
 };
 
-use hyper::{header, Method, StatusCode};
-use jmap_proto::error::request::RequestError;
+use hyper::{header, Method};
 use serde_json::json;
 use utils::url_params::UrlParams;
 
@@ -25,7 +25,7 @@ use crate::{
     JMAP,
 };
 
-use super::{decode_path_element, ManagementApiError};
+use super::decode_path_element;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct PrincipalResponse {
@@ -80,47 +80,41 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
-    ) -> HttpResponse {
+    ) -> trc::Result<HttpResponse> {
         match (path.get(1), req.method()) {
             (None, &Method::POST) => {
                 // Make sure the current directory supports updates
-                if let Some(response) = self.assert_supported_directory() {
-                    return response;
-                }
+                self.assert_supported_directory()?;
 
                 // Create principal
-                match serde_json::from_slice::<PrincipalResponse>(
+                let principal = serde_json::from_slice::<PrincipalResponse>(
                     body.as_deref().unwrap_or_default(),
-                ) {
-                    Ok(principal) => {
-                        match self
-                            .core
-                            .storage
-                            .data
-                            .create_account(
-                                Principal {
-                                    id: principal.id,
-                                    typ: principal.typ,
-                                    quota: principal.quota,
-                                    name: principal.name,
-                                    secrets: principal.secrets,
-                                    emails: principal.emails,
-                                    member_of: principal.member_of,
-                                    description: principal.description,
-                                },
-                                principal.members,
-                            )
-                            .await
-                        {
-                            Ok(account_id) => JsonResponse::new(json!({
-                                "data": account_id,
-                            }))
-                            .into_http_response(),
-                            Err(err) => into_directory_response(err),
-                        }
-                    }
-                    Err(err) => err.into_http_response(),
-                }
+                )
+                .map_err(|err| {
+                    trc::Cause::Resource(trc::ResourceCause::BadParameters).from_json_error(err)
+                })?;
+
+                Ok(JsonResponse::new(json!({
+                    "data": self
+                    .core
+                    .storage
+                    .data
+                    .create_account(
+                        Principal {
+                            id: principal.id,
+                            typ: principal.typ,
+                            quota: principal.quota,
+                            name: principal.name,
+                            secrets: principal.secrets,
+                            emails: principal.emails,
+                            member_of: principal.member_of,
+                            description: principal.description,
+                        },
+                        principal.members,
+                    )
+                    .await?,
+                }))
+                .into_http_response())
             }
             (None, &Method::GET) => {
                 // List principal ids
@@ -130,187 +124,137 @@ impl JMAP {
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
 
-                match self.core.storage.data.list_accounts(filter, typ).await {
-                    Ok(accounts) => {
-                        let (total, accounts) = if limit > 0 {
-                            let offset = page.saturating_sub(1) * limit;
-                            (
-                                accounts.len(),
-                                accounts.into_iter().skip(offset).take(limit).collect(),
-                            )
-                        } else {
-                            (accounts.len(), accounts)
-                        };
+                let accounts = self.core.storage.data.list_accounts(filter, typ).await?;
+                let (total, accounts) = if limit > 0 {
+                    let offset = page.saturating_sub(1) * limit;
+                    (
+                        accounts.len(),
+                        accounts.into_iter().skip(offset).take(limit).collect(),
+                    )
+                } else {
+                    (accounts.len(), accounts)
+                };
 
-                        JsonResponse::new(json!({
-                                "data": {
-                                    "items": accounts,
-                                    "total": total,
-                                },
-                        }))
-                        .into_http_response()
-                    }
-                    Err(err) => into_directory_response(err),
-                }
+                Ok(JsonResponse::new(json!({
+                        "data": {
+                            "items": accounts,
+                            "total": total,
+                        },
+                }))
+                .into_http_response())
             }
             (Some(name), method) => {
                 // Fetch, update or delete principal
                 let name = decode_path_element(name);
-                let account_id = match self.core.storage.data.get_account_id(name.as_ref()).await {
-                    Ok(Some(account_id)) => account_id,
-                    Ok(None) => {
-                        return RequestError::blank(
-                            StatusCode::NOT_FOUND.as_u16(),
-                            "Not found",
-                            "Account not found.",
-                        )
-                        .into_http_response();
-                    }
-                    Err(err) => {
-                        return into_directory_response(err);
-                    }
-                };
+                let account_id = self
+                    .core
+                    .storage
+                    .data
+                    .get_account_id(name.as_ref())
+                    .await?
+                    .ok_or_else(|| trc::ManageCause::NotFound.into_err())?;
 
                 match *method {
                     Method::GET => {
-                        let result = match self
+                        let principal = self
                             .core
                             .storage
                             .data
                             .query(QueryBy::Id(account_id), true)
-                            .await
-                        {
-                            Ok(Some(principal)) => {
-                                self.core.storage.data.map_group_ids(principal).await
-                            }
-                            Ok(None) => {
-                                return RequestError::blank(
-                                    StatusCode::NOT_FOUND.as_u16(),
-                                    "Not found",
-                                    "Account not found.",
-                                )
-                                .into_http_response()
-                            }
-                            Err(err) => Err(err),
-                        };
+                            .await?
+                            .ok_or_else(|| trc::ManageCause::NotFound.into_err())?;
+                        let principal = self.core.storage.data.map_group_ids(principal).await?;
 
-                        match result {
-                            Ok(principal) => {
-                                // Obtain quota usage
-                                let mut principal = PrincipalResponse::from(principal);
-                                principal.used_quota =
-                                    self.get_used_quota(account_id).await.unwrap_or_default()
-                                        as u64;
+                        // Obtain quota usage
+                        let mut principal = PrincipalResponse::from(principal);
+                        principal.used_quota = self.get_used_quota(account_id).await? as u64;
 
-                                // Obtain member names
-                                for member_id in self
-                                    .core
-                                    .storage
-                                    .data
-                                    .get_members(account_id)
-                                    .await
-                                    .unwrap_or_default()
-                                {
-                                    if let Ok(Some(member_principal)) = self
-                                        .core
-                                        .storage
-                                        .data
-                                        .query(QueryBy::Id(member_id), false)
-                                        .await
-                                    {
-                                        principal.members.push(member_principal.name);
-                                    }
-                                }
-
-                                JsonResponse::new(json!({
-                                        "data": principal,
-                                }))
-                                .into_http_response()
+                        // Obtain member names
+                        for member_id in self.core.storage.data.get_members(account_id).await? {
+                            if let Some(member_principal) = self
+                                .core
+                                .storage
+                                .data
+                                .query(QueryBy::Id(member_id), false)
+                                .await?
+                            {
+                                principal.members.push(member_principal.name);
                             }
-                            Err(err) => into_directory_response(err),
                         }
+
+                        Ok(JsonResponse::new(json!({
+                                "data": principal,
+                        }))
+                        .into_http_response())
                     }
                     Method::DELETE => {
                         // Remove FTS index
-                        if let Err(err) = self.core.storage.fts.remove_all(account_id).await {
-                            return err.into_http_response();
-                        }
+                        self.core.storage.fts.remove_all(account_id).await;
 
                         // Delete account
-                        match self
-                            .core
+                        self.core
                             .storage
                             .data
                             .delete_account(QueryBy::Id(account_id))
-                            .await
-                        {
-                            Ok(_) => {
-                                // Remove entries from cache
-                                self.inner.sessions.retain(|_, id| id.item != account_id);
+                            .await?;
+                        // Remove entries from cache
+                        self.inner.sessions.retain(|_, id| id.item != account_id);
 
-                                JsonResponse::new(json!({
-                                    "data": (),
-                                }))
-                                .into_http_response()
-                            }
-                            Err(err) => into_directory_response(err),
-                        }
+                        Ok(JsonResponse::new(json!({
+                            "data": (),
+                        }))
+                        .into_http_response())
                     }
                     Method::PATCH => {
-                        match serde_json::from_slice::<Vec<PrincipalUpdate>>(
+                        let changes = serde_json::from_slice::<Vec<PrincipalUpdate>>(
                             body.as_deref().unwrap_or_default(),
-                        ) {
-                            Ok(changes) => {
-                                // Make sure the current directory supports updates
-                                if let Some(response) = self.assert_supported_directory() {
-                                    if changes.iter().any(|change| {
-                                        !matches!(
-                                            change.field,
-                                            PrincipalField::Quota | PrincipalField::Description
-                                        )
-                                    }) {
-                                        return response;
-                                    }
-                                }
-                                let is_password_change = changes
-                                    .iter()
-                                    .any(|change| matches!(change.field, PrincipalField::Secrets));
+                        )
+                        .map_err(|err| {
+                            trc::Cause::Resource(trc::ResourceCause::BadParameters)
+                                .from_json_error(err)
+                        })?;
 
-                                match self
-                                    .core
-                                    .storage
-                                    .data
-                                    .update_account(QueryBy::Id(account_id), changes)
-                                    .await
-                                {
-                                    Ok(_) => {
-                                        if is_password_change {
-                                            // Remove entries from cache
-                                            self.inner
-                                                .sessions
-                                                .retain(|_, id| id.item != account_id);
-                                        }
-
-                                        JsonResponse::new(json!({
-                                            "data": (),
-                                        }))
-                                        .into_http_response()
-                                    }
-                                    Err(err) => into_directory_response(err),
-                                }
-                            }
-                            Err(err) => err.into_http_response(),
+                        // Make sure the current directory supports updates
+                        if changes.iter().any(|change| {
+                            !matches!(
+                                change.field,
+                                PrincipalField::Quota | PrincipalField::Description
+                            )
+                        }) {
+                            self.assert_supported_directory()?;
                         }
+
+                        let is_password_change = changes
+                            .iter()
+                            .any(|change| matches!(change.field, PrincipalField::Secrets));
+
+                        self.core
+                            .storage
+                            .data
+                            .update_account(QueryBy::Id(account_id), changes)
+                            .await?;
+                        if is_password_change {
+                            // Remove entries from cache
+                            self.inner.sessions.retain(|_, id| id.item != account_id);
+                        }
+
+                        Ok(JsonResponse::new(json!({
+                            "data": (),
+                        }))
+                        .into_http_response())
                     }
-                    _ => RequestError::not_found().into_http_response(),
+                    _ => Err(trc::ResourceCause::NotFound.into_err()),
                 }
             }
 
-            _ => RequestError::not_found().into_http_response(),
+            _ => Err(trc::ResourceCause::NotFound.into_err()),
         }
     }
 
-    pub async fn handle_account_auth_get(&self, access_token: Arc<AccessToken>) -> HttpResponse {
+    pub async fn handle_account_auth_get(
+        &self,
+        access_token: Arc<AccessToken>,
+    ) -> trc::Result<HttpResponse> {
         let mut response = AccountAuthResponse {
             otp_auth: false,
             is_admin: access_token.is_super_user(),
@@ -318,35 +262,29 @@ impl JMAP {
         };
 
         if access_token.primary_id() != u32::MAX {
-            match self
+            let principal = self
                 .core
                 .storage
                 .directory
                 .query(QueryBy::Id(access_token.primary_id()), false)
-                .await
-            {
-                Ok(Some(principal)) => {
-                    for secret in principal.secrets {
-                        if secret.is_otp_auth() {
-                            response.otp_auth = true;
-                        } else if let Some((app_name, _)) =
-                            secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
-                        {
-                            response.app_passwords.push(app_name.to_string());
-                        }
-                    }
+                .await?
+                .ok_or_else(|| trc::ManageCause::NotFound.into_err())?;
+
+            for secret in principal.secrets {
+                if secret.is_otp_auth() {
+                    response.otp_auth = true;
+                } else if let Some((app_name, _)) =
+                    secret.strip_prefix("$app$").and_then(|s| s.split_once('$'))
+                {
+                    response.app_passwords.push(app_name.to_string());
                 }
-                Ok(None) => {
-                    return RequestError::not_found().into_http_response();
-                }
-                Err(err) => return into_directory_response(err),
             }
         }
 
-        JsonResponse::new(json!({
+        Ok(JsonResponse::new(json!({
             "data": response,
         }))
-        .into_http_response()
+        .into_http_response())
     }
 
     pub async fn handle_account_auth_post(
@@ -354,16 +292,18 @@ impl JMAP {
         req: &HttpRequest,
         access_token: Arc<AccessToken>,
         body: Option<Vec<u8>>,
-    ) -> HttpResponse {
+    ) -> trc::Result<HttpResponse> {
         // Parse request
-        let requests = match serde_json::from_slice::<Vec<AccountAuthRequest>>(
-            body.as_deref().unwrap_or_default(),
-        ) {
-            Ok(request) => request,
-            Err(err) => return err.into_http_response(),
-        };
+        let requests =
+            serde_json::from_slice::<Vec<AccountAuthRequest>>(body.as_deref().unwrap_or_default())
+                .map_err(|err| {
+                    trc::Cause::Resource(trc::ResourceCause::BadParameters).from_json_error(err)
+                })?;
+
         if requests.is_empty() {
-            return RequestError::invalid_parameters().into_http_response();
+            return Err(trc::Cause::Resource(trc::ResourceCause::BadParameters)
+                .into_err()
+                .details("Empty request"));
         }
 
         // Make sure the user authenticated using Basic auth
@@ -380,50 +320,41 @@ impl JMAP {
             .and_then(|h| h.to_str().ok())
             .map_or(true, |header| !header.to_lowercase().starts_with("basic "))
         {
-            return ManagementApiError::Other {
-                details: "Password changes only allowed using Basic auth".into(),
-            }
-            .into_http_response();
+            return Err(manage::error(
+                "Password changes only allowed using Basic auth",
+                None::<u32>,
+            ));
         }
 
         // Handle Fallback admin password changes
         if access_token.is_super_user() && access_token.primary_id() == u32::MAX {
             match requests.into_iter().next().unwrap() {
                 AccountAuthRequest::SetPassword { password } => {
-                    return match self
-                        .core
+                    self.core
                         .storage
                         .config
                         .set([("authentication.fallback-admin.secret", password)])
-                        .await
-                    {
-                        Ok(_) => {
-                            // Remove entries from cache
-                            self.inner.sessions.retain(|_, id| id.item != u32::MAX);
+                        .await?;
 
-                            JsonResponse::new(json!({
-                                "data": (),
-                            }))
-                            .into_http_response()
-                        }
-                        Err(err) => err.into_http_response(),
-                    };
+                    // Remove entries from cache
+                    self.inner.sessions.retain(|_, id| id.item != u32::MAX);
+
+                    return Ok(JsonResponse::new(json!({
+                        "data": (),
+                    }))
+                    .into_http_response());
                 }
                 _ => {
-                    return ManagementApiError::Other {
-                        details:
-                            "Fallback administrator accounts do not support 2FA or AppPasswords"
-                                .into(),
-                    }
-                    .into_http_response()
+                    return Err(manage::error(
+                        "Fallback administrator accounts do not support 2FA or AppPasswords",
+                        None::<u32>,
+                    ));
                 }
             }
         }
 
         // Make sure the current directory supports updates
-        if let Some(response) = self.assert_supported_directory() {
-            return response;
-        }
+        self.assert_supported_directory()?;
 
         // Build actions
         let mut actions = Vec::with_capacity(requests.len());
@@ -459,42 +390,38 @@ impl JMAP {
         }
 
         // Update password
-        match self
-            .core
+        self.core
             .storage
             .data
             .update_account(QueryBy::Id(access_token.primary_id()), actions)
-            .await
-        {
-            Ok(_) => {
-                // Remove entries from cache
-                self.inner
-                    .sessions
-                    .retain(|_, id| id.item != access_token.primary_id());
+            .await?;
 
-                JsonResponse::new(json!({
-                    "data": (),
-                }))
-                .into_http_response()
-            }
-            Err(err) => into_directory_response(err),
-        }
+        // Remove entries from cache
+        self.inner
+            .sessions
+            .retain(|_, id| id.item != access_token.primary_id());
+
+        Ok(JsonResponse::new(json!({
+            "data": (),
+        }))
+        .into_http_response())
     }
 
-    pub fn assert_supported_directory(&self) -> Option<HttpResponse> {
-        ManagementApiError::UnsupportedDirectoryOperation {
-            class: match &self.core.storage.directory.store {
-                DirectoryInner::Internal(_) => return None,
-                DirectoryInner::Ldap(_) => "LDAP",
-                DirectoryInner::Sql(_) => "SQL",
-                DirectoryInner::Imap(_) => "IMAP",
-                DirectoryInner::Smtp(_) => "SMTP",
-                DirectoryInner::Memory(_) => "In-Memory",
-            }
-            .into(),
-        }
-        .into_http_response()
-        .into()
+    pub fn assert_supported_directory(&self) -> trc::Result<()> {
+        let todo = "update webadmin";
+
+        let class = match &self.core.storage.directory.store {
+            DirectoryInner::Internal(_) => return Ok(()),
+            DirectoryInner::Ldap(_) => "LDAP",
+            DirectoryInner::Sql(_) => "SQL",
+            DirectoryInner::Imap(_) => "IMAP",
+            DirectoryInner::Smtp(_) => "SMTP",
+            DirectoryInner::Memory(_) => "In-Memory",
+        };
+
+        Err(manage::unsupported(format!(
+            "Requested action is unsupported for {class} directories.",
+        )))
     }
 }
 
@@ -515,7 +442,8 @@ impl From<Principal<String>> for PrincipalResponse {
     }
 }
 
-fn into_directory_response(mut error: trc::Error) -> HttpResponse {
+/*
+fn into_directory_response(mut error: trc::Error) -> trc::Result<HttpResponse> {
     let response = match error.as_ref() {
         trc::Cause::MissingParameter => ManagementApiError::FieldMissing {
             field: error
@@ -533,7 +461,7 @@ fn into_directory_response(mut error: trc::Error) -> HttpResponse {
                 .and_then(|v| v.into_string())
                 .unwrap_or_default(),
         },
-        trc::Cause::NotFound => ManagementApiError::NotFound {
+        trc::StoreCause::NotFound.into_err() => ManagementApiError::NotFound {
             item: error
                 .take_value(trc::Key::Key)
                 .and_then(|v| v.into_string())
@@ -559,3 +487,4 @@ fn into_directory_response(mut error: trc::Error) -> HttpResponse {
 
     JsonResponse::new(response).into_http_response()
 }
+*/

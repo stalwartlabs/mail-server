@@ -7,7 +7,6 @@
 use directory::backend::internal::manage::ManageDirectory;
 
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha1::Digest;
@@ -35,7 +34,11 @@ struct DnsRecord {
 }
 
 impl JMAP {
-    pub async fn handle_manage_domain(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
+    pub async fn handle_manage_domain(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+    ) -> trc::Result<HttpResponse> {
         match (path.get(1), req.method()) {
             (None, &Method::GET) => {
                 // List domains
@@ -44,82 +47,78 @@ impl JMAP {
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
 
-                match self.core.storage.data.list_domains(filter).await {
-                    Ok(domains) => {
-                        let (total, domains) = if limit > 0 {
-                            let offset = page.saturating_sub(1) * limit;
-                            (
-                                domains.len(),
-                                domains.into_iter().skip(offset).take(limit).collect(),
-                            )
-                        } else {
-                            (domains.len(), domains)
-                        };
+                let domains = self.core.storage.data.list_domains(filter).await?;
+                let (total, domains) = if limit > 0 {
+                    let offset = page.saturating_sub(1) * limit;
+                    (
+                        domains.len(),
+                        domains.into_iter().skip(offset).take(limit).collect(),
+                    )
+                } else {
+                    (domains.len(), domains)
+                };
 
-                        JsonResponse::new(json!({
-                                "data": {
-                                    "items": domains,
-                                    "total": total,
-                                },
-                        }))
-                        .into_http_response()
-                    }
-                    Err(err) => err.into_http_response(),
-                }
+                Ok(JsonResponse::new(json!({
+                        "data": {
+                            "items": domains,
+                            "total": total,
+                        },
+                }))
+                .into_http_response())
             }
             (Some(domain), &Method::GET) => {
                 // Obtain DNS records
                 let domain = decode_path_element(domain);
-                match self.build_dns_records(domain.as_ref()).await {
-                    Ok(records) => JsonResponse::new(json!({
-                        "data": records,
-                    }))
-                    .into_http_response(),
-                    Err(err) => err.into_http_response(),
-                }
+                Ok(JsonResponse::new(json!({
+                    "data": self.build_dns_records(domain.as_ref()).await?,
+                }))
+                .into_http_response())
             }
             (Some(domain), &Method::POST) => {
                 // Create domain
                 let domain = decode_path_element(domain);
-                match self.core.storage.data.create_domain(domain.as_ref()).await {
-                    Ok(_) => {
-                        // Set default domain name if missing
-                        if matches!(
-                            self.core.storage.config.get("lookup.default.domain").await,
-                            Ok(None)
-                        ) {
-                            if let Err(err) = self
-                                .core
-                                .storage
-                                .config
-                                .set([("lookup.default.domain", domain.as_ref())])
-                                .await
-                            {
-                                tracing::error!("Failed to set default domain name: {}", err);
-                            }
-                        }
-
-                        JsonResponse::new(json!({
-                            "data": (),
-                        }))
-                        .into_http_response()
-                    }
-                    Err(err) => err.into_http_response(),
+                self.core
+                    .storage
+                    .data
+                    .create_domain(domain.as_ref())
+                    .await?;
+                // Set default domain name if missing
+                if self
+                    .core
+                    .storage
+                    .config
+                    .get("lookup.default.domain")
+                    .await?
+                    .is_none()
+                {
+                    self.core
+                        .storage
+                        .config
+                        .set([("lookup.default.domain", domain.as_ref())])
+                        .await?;
                 }
+
+                Ok(JsonResponse::new(json!({
+                    "data": (),
+                }))
+                .into_http_response())
             }
             (Some(domain), &Method::DELETE) => {
                 // Delete domain
                 let domain = decode_path_element(domain);
-                match self.core.storage.data.delete_domain(domain.as_ref()).await {
-                    Ok(_) => JsonResponse::new(json!({
-                        "data": (),
-                    }))
-                    .into_http_response(),
-                    Err(err) => err.into_http_response(),
-                }
+                self.core
+                    .storage
+                    .data
+                    .delete_domain(domain.as_ref())
+                    .await?;
+
+                Ok(JsonResponse::new(json!({
+                    "data": (),
+                }))
+                .into_http_response())
             }
 
-            _ => RequestError::not_found().into_http_response(),
+            _ => Err(trc::ResourceCause::NotFound.into_err()),
         }
     }
 

@@ -19,11 +19,11 @@ pub mod stores;
 
 use std::{borrow::Cow, sync::Arc};
 
+use directory::backend::internal::manage;
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
 use serde::Serialize;
 
-use super::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
+use super::{HttpRequest, HttpResponse};
 use crate::{auth::AccessToken, JMAP};
 
 #[derive(Serialize)]
@@ -57,7 +57,7 @@ impl JMAP {
         req: &HttpRequest,
         body: Option<Vec<u8>>,
         access_token: Arc<AccessToken>,
-    ) -> HttpResponse {
+    ) -> trc::Result<HttpResponse> {
         let path = req.uri().path().split('/').skip(2).collect::<Vec<_>>();
         let is_superuser = access_token.is_super_user();
 
@@ -76,10 +76,7 @@ impl JMAP {
             }
             "sieve" if is_superuser => self.handle_run_sieve(req, path, body).await,
             "restart" if is_superuser && req.method() == Method::GET => {
-                ManagementApiError::Unsupported {
-                    details: "Restart is not yet supported".into(),
-                }
-                .into_http_response()
+                Err(manage::unsupported("Restart is not yet supported"))
             }
             "oauth" => self.handle_oauth_api_request(access_token, body).await,
             "account" => match (path.get(1).copied().unwrap_or_default(), req.method()) {
@@ -89,7 +86,7 @@ impl JMAP {
                 ("auth", &Method::POST) => {
                     self.handle_account_auth_post(req, access_token, body).await
                 }
-                _ => RequestError::not_found().into_http_response(),
+                _ => Err(trc::ResourceCause::NotFound.into_err()),
             },
 
             // SPDX-SnippetBegin
@@ -109,34 +106,13 @@ impl JMAP {
                 if self.core.is_enterprise_edition() {
                     self.handle_enterprise_api_request(req, path, body).await
                 } else {
-                    ManagementApiError::Unsupported {
-                        details: "This feature is only available in the Enterprise version".into(),
-                    }
-                    .into_http_response()
+                    Err(manage::unsupported(
+                        "This feature is only available in the Enterprise version",
+                    ))
                 }
             }
             // SPDX-SnippetEnd
-            _ => RequestError::not_found().into_http_response(),
-        }
-    }
-}
-
-impl ToHttpResponse for ManagementApiError {
-    fn into_http_response(self) -> super::HttpResponse {
-        JsonResponse::new(self).into_http_response()
-    }
-}
-
-impl From<Cow<'static, str>> for ManagementApiError {
-    fn from(details: Cow<'static, str>) -> Self {
-        ManagementApiError::Other { details }
-    }
-}
-
-impl From<String> for ManagementApiError {
-    fn from(details: String) -> Self {
-        ManagementApiError::Other {
-            details: details.into(),
+            _ => Err(trc::ResourceCause::NotFound.into_err()),
         }
     }
 }

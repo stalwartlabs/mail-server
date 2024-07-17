@@ -196,7 +196,7 @@ impl<T: SessionStream> Session<T> {
                     return Ok(false);
                 }
                 Err(err) => match err.as_ref() {
-                    trc::Cause::Authentication => {
+                    trc::Cause::Auth(trc::AuthCause::Failed) => {
                         tracing::debug!(
                             parent: &self.span,
                             context = "auth",
@@ -208,7 +208,7 @@ impl<T: SessionStream> Session<T> {
                             .auth_error(b"535 5.7.8 Authentication credentials invalid.\r\n")
                             .await;
                     }
-                    trc::Cause::MissingTotp => {
+                    trc::Cause::Auth(trc::AuthCause::MissingTotp) => {
                         tracing::debug!(
                             parent: &self.span,
                             context = "auth",
@@ -222,7 +222,7 @@ impl<T: SessionStream> Session<T> {
                             )
                             .await;
                     }
-                    trc::Cause::Banned => {
+                    trc::Cause::Auth(trc::AuthCause::Banned) => {
                         tracing::debug!(
                             parent: &self.span,
                             context = "auth",

@@ -116,7 +116,7 @@ impl<T: SessionStream> SessionData<T> {
                     last_change_id = Some(email.change_id);
                 }
                 Err(err) => {
-                    return Err(if err.matches(trc::Cause::OverQuota) {
+                    return Err(if err.matches(trc::Cause::Limit(trc::LimitCause::Quota)) {
                         err.details("Disk quota exceeded.")
                             .code(ResponseCode::OverQuota)
                     } else {

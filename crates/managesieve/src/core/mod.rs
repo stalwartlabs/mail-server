@@ -159,15 +159,38 @@ impl ResponseCode {
             ResponseCode::Warnings => b"WARNINGS",
         });
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ResponseCode::AuthTooWeak => "AUTH-TOO-WEAK",
+            ResponseCode::EncryptNeeded => "ENCRYPT-NEEDED",
+            ResponseCode::Quota => "QUOTA",
+            ResponseCode::QuotaMaxScripts => "QUOTA/MAXSCRIPTS",
+            ResponseCode::QuotaMaxSize => "QUOTA/MAXSIZE",
+            ResponseCode::Referral => "REFERRAL",
+            ResponseCode::Sasl => "SASL",
+            ResponseCode::TransitionNeeded => "TRANSITION-NEEDED",
+            ResponseCode::TryLater => "TRYLATER",
+            ResponseCode::Active => "ACTIVE",
+            ResponseCode::NonExistent => "NONEXISTENT",
+            ResponseCode::AlreadyExists => "ALREADYEXISTS",
+            ResponseCode::Tag(_) => "TAG",
+            ResponseCode::Warnings => "WARNINGS",
+        }
+    }
 }
 
 impl ResponseType {
     pub fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(match self {
-            ResponseType::Ok => b"OK",
-            ResponseType::No => b"NO",
-            ResponseType::Bye => b"BYE",
-        });
+        buf.extend_from_slice(self.as_str().as_bytes());
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ResponseType::Ok => "OK",
+            ResponseType::No => "NO",
+            ResponseType::Bye => "BYE",
+        }
     }
 }
 
@@ -232,5 +255,49 @@ impl StatusResponse {
             message: Cow::Borrowed("Database failure"),
             rtype: ResponseType::No,
         }
+    }
+}
+
+pub trait SerializeResponse {
+    fn serialize(&self) -> Vec<u8>;
+}
+
+impl SerializeResponse for trc::Error {
+    fn serialize(&self) -> Vec<u8> {
+        let todo = "serialize messages properly in all protocols";
+        let mut buf = Vec::with_capacity(64);
+        buf.extend_from_slice(self.value_as_str(trc::Key::Type).unwrap_or("NO").as_bytes());
+        if let Some(code) = self.value_as_str(trc::Key::Code) {
+            buf.extend_from_slice(b" (");
+            buf.extend_from_slice(code.as_bytes());
+            buf.push(b')');
+        }
+        if let Some(message) = self
+            .value_as_str(trc::Key::Details)
+            .or_else(|| self.value_as_str(trc::Key::Reason))
+        {
+            buf.extend_from_slice(b" \"");
+            for ch in message.as_bytes() {
+                if [b'\"', b'\\'].contains(ch) {
+                    buf.push(b'\\');
+                }
+                buf.push(*ch);
+            }
+            buf.push(b'\"');
+        }
+        buf.extend_from_slice(b"\r\n");
+        buf
+    }
+}
+
+impl From<ResponseCode> for trc::Value {
+    fn from(value: ResponseCode) -> Self {
+        trc::Value::Static(value.as_str())
+    }
+}
+
+impl From<ResponseType> for trc::Value {
+    fn from(value: ResponseType) -> Self {
+        trc::Value::Static(value.as_str())
     }
 }

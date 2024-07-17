@@ -14,7 +14,7 @@ use utils::map::{
 use super::{json::Parser, Ignore, JsonObjectParser, Token};
 
 impl JsonObjectParser for u64 {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -36,7 +36,7 @@ impl JsonObjectParser for u64 {
 }
 
 impl JsonObjectParser for u128 {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -58,7 +58,7 @@ impl JsonObjectParser for u128 {
 }
 
 impl JsonObjectParser for String {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -177,7 +177,7 @@ impl JsonObjectParser for String {
 }
 
 impl<T: JsonObjectParser + Eq> JsonObjectParser for Vec<T> {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -197,7 +197,7 @@ impl<T: JsonObjectParser + Eq> JsonObjectParser for Vec<T> {
 }
 
 impl<T: JsonObjectParser + Eq> JsonObjectParser for Option<Vec<T>> {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -221,7 +221,7 @@ impl<T: JsonObjectParser + Eq> JsonObjectParser for Option<Vec<T>> {
 }
 
 impl<T: JsonObjectParser + Eq + BitmapItem> JsonObjectParser for Bitmap<T> {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -245,7 +245,7 @@ impl<T: JsonObjectParser + Eq + BitmapItem> JsonObjectParser for Bitmap<T> {
 }
 
 impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser for VecMap<K, V> {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -263,7 +263,7 @@ impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser f
 impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser
     for Option<VecMap<K, V>>
 {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -284,7 +284,7 @@ impl<K: JsonObjectParser + Eq + Display, V: JsonObjectParser> JsonObjectParser
 }
 
 impl JsonObjectParser for bool {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -297,7 +297,7 @@ impl JsonObjectParser for bool {
 }
 
 impl JsonObjectParser for Ignore {
-    fn parse(parser: &mut Parser<'_>) -> super::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

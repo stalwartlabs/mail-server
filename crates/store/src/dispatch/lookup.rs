@@ -32,7 +32,7 @@ impl LookupStore {
             LookupStore::Store(Store::PostgreSQL(store)) => store.query(query, &params).await,
             #[cfg(feature = "mysql")]
             LookupStore::Store(Store::MySQL(store)) => store.query(query, &params).await,
-            _ => Err(trc::Cause::Unsupported.into_err()),
+            _ => Err(trc::StoreCause::NotSupported.into_err()),
         };
 
         trc::trace!(
@@ -42,7 +42,7 @@ impl LookupStore {
             Result = &result,
         );
 
-        result.caused_by( trc::location!())
+        result.caused_by(trc::location!())
     }
 
     pub async fn key_set(
@@ -76,9 +76,9 @@ impl LookupStore {
                 )
                 .await
                 .map(|_| ()),
-            LookupStore::Memory(_) => Err(trc::Cause::Unsupported.into_err()),
+            LookupStore::Memory(_) => Err(trc::StoreCause::NotSupported.into_err()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn counter_incr(
@@ -125,10 +125,10 @@ impl LookupStore {
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_incr(key, value, expires).await,
             LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::Cause::Unsupported.into_err())
+                Err(trc::StoreCause::NotSupported.into_err())
             }
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn key_delete(&self, key: Vec<u8>) -> trc::Result<()> {
@@ -144,10 +144,10 @@ impl LookupStore {
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_delete(key).await,
             LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::Cause::Unsupported.into_err())
+                Err(trc::StoreCause::NotSupported.into_err())
             }
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn counter_delete(&self, key: Vec<u8>) -> trc::Result<()> {
@@ -163,10 +163,10 @@ impl LookupStore {
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_delete(key).await,
             LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::Cause::Unsupported.into_err())
+                Err(trc::StoreCause::NotSupported.into_err())
             }
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn key_get<T: Deserialize + From<Value<'static>> + std::fmt::Debug + 'static>(
@@ -197,7 +197,7 @@ impl LookupStore {
                 .get(std::str::from_utf8(&key).unwrap_or_default())
                 .map(|value| T::from(value.clone()))),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn counter_get(&self, key: Vec<u8>) -> trc::Result<i64> {
@@ -212,10 +212,10 @@ impl LookupStore {
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.counter_get(key).await,
             LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::Cause::Unsupported.into_err())
+                Err(trc::StoreCause::NotSupported.into_err())
             }
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn key_exists(&self, key: Vec<u8>) -> trc::Result<bool> {
@@ -240,7 +240,7 @@ impl LookupStore {
                 .get(std::str::from_utf8(&key).unwrap_or_default())
                 .is_some()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn is_rate_allowed(
@@ -261,12 +261,9 @@ impl LookupStore {
         let requests = if !soft_check {
             self.counter_incr(bucket, 1, expires_in.into(), true)
                 .await
-                .caused_by( trc::location!())?
+                .caused_by(trc::location!())?
         } else {
-            self.counter_get(bucket)
-                .await
-                .caused_by( trc::location!())?
-                + 1
+            self.counter_get(bucket).await.caused_by(trc::location!())? + 1
         };
 
         if requests <= rate.requests as i64 {
@@ -289,11 +286,11 @@ impl LookupStore {
                 let mut expired_counters = Vec::new();
                 store
                     .iterate(IterateParams::new(from_key, to_key), |key, value| {
-                        let expiry = value.deserialize_be_u64(0).caused_by( trc::location!())?;
+                        let expiry = value.deserialize_be_u64(0).caused_by(trc::location!())?;
                         if expiry == 0 {
                             if value
                                 .deserialize_be_u64(U64_LEN)
-                                .caused_by( trc::location!())?
+                                .caused_by(trc::location!())?
                                 <= current_time
                             {
                                 expired_counters.push(key.to_vec());
@@ -304,7 +301,7 @@ impl LookupStore {
                         Ok(true)
                     })
                     .await
-                    .caused_by( trc::location!())?;
+                    .caused_by(trc::location!())?;
 
                 if !expired_keys.is_empty() {
                     let mut batch = BatchBuilder::new();
@@ -317,7 +314,7 @@ impl LookupStore {
                             store
                                 .write(batch.build())
                                 .await
-                                .caused_by( trc::location!())?;
+                                .caused_by(trc::location!())?;
                             batch = BatchBuilder::new();
                         }
                     }
@@ -325,7 +322,7 @@ impl LookupStore {
                         store
                             .write(batch.build())
                             .await
-                            .caused_by( trc::location!())?;
+                            .caused_by(trc::location!())?;
                     }
                 }
 
@@ -344,7 +341,7 @@ impl LookupStore {
                             store
                                 .write(batch.build())
                                 .await
-                                .caused_by( trc::location!())?;
+                                .caused_by(trc::location!())?;
                             batch = BatchBuilder::new();
                         }
                     }
@@ -352,7 +349,7 @@ impl LookupStore {
                         store
                             .write(batch.build())
                             .await
-                            .caused_by( trc::location!())?;
+                            .caused_by(trc::location!())?;
                     }
                 }
             }
@@ -383,7 +380,7 @@ impl<T: Deserialize> Deserialize for LookupValue<T> {
             Ok(if expires > now() {
                 LookupValue::Value(
                     T::deserialize(bytes.get(U64_LEN..).unwrap_or_default())
-                        .caused_by( trc::location!())?,
+                        .caused_by(trc::location!())?,
                 )
             } else {
                 LookupValue::None

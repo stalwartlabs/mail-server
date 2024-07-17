@@ -30,12 +30,9 @@ use super::{
 
 impl JMAP {
     // Token endpoint
-    pub async fn handle_token_request(&self, req: &mut HttpRequest) -> HttpResponse {
+    pub async fn handle_token_request(&self, req: &mut HttpRequest) -> trc::Result<HttpResponse> {
         // Parse form
-        let params = match FormData::from_request(req, MAX_POST_LEN).await {
-            Ok(params) => params,
-            Err(err) => return err,
-        };
+        let params = FormData::from_request(req, MAX_POST_LEN).await?;
         let grant_type = params.get("grant_type").unwrap_or_default();
 
         let mut response = TokenResponse::error(ErrorType::InvalidGrant);
@@ -52,38 +49,35 @@ impl JMAP {
                     .storage
                     .lookup
                     .key_get::<Bincode<OAuthCode>>(format!("oauth:{code}").into_bytes())
-                    .await
+                    .await?
                 {
-                    Ok(Some(auth_code)) => {
+                    Some(auth_code) => {
                         let oauth = auth_code.inner;
                         if client_id != oauth.client_id || redirect_uri != oauth.params {
                             TokenResponse::error(ErrorType::InvalidClient)
                         } else if oauth.status == OAuthStatus::Authorized {
                             // Mark this token as issued
-                            if let Err(err) = self
-                                .core
+                            self.core
                                 .storage
                                 .lookup
                                 .key_delete(format!("oauth:{code}").into_bytes())
-                                .await
-                            {
-                                return err.into_http_response();
-                            }
+                                .await?;
 
                             // Issue token
                             self.issue_token(oauth.account_id, &oauth.client_id, true)
                                 .await
                                 .map(TokenResponse::Granted)
-                                .unwrap_or_else(|err| {
-                                    tracing::error!("Failed to generate OAuth token: {}", err);
-                                    TokenResponse::error(ErrorType::InvalidRequest)
-                                })
+                                .map_err(|err| {
+                                    trc::AuthCause::Error
+                                        .into_err()
+                                        .details(err)
+                                        .caused_by(trc::location!())
+                                })?
                         } else {
                             TokenResponse::error(ErrorType::InvalidGrant)
                         }
                     }
-                    Ok(None) => TokenResponse::error(ErrorType::AccessDenied),
-                    Err(err) => return err.into_http_response(),
+                    None => TokenResponse::error(ErrorType::AccessDenied),
                 }
             } else {
                 TokenResponse::error(ErrorType::InvalidClient)
@@ -100,9 +94,9 @@ impl JMAP {
                     .storage
                     .lookup
                     .key_get::<Bincode<OAuthCode>>(format!("oauth:{device_code}").into_bytes())
-                    .await
+                    .await?
                 {
-                    Ok(Some(auth_code)) => {
+                    Some(auth_code) => {
                         let oauth = auth_code.inner;
                         response = if oauth.client_id != client_id {
                             TokenResponse::error(ErrorType::InvalidClient)
@@ -110,27 +104,22 @@ impl JMAP {
                             match oauth.status {
                                 OAuthStatus::Authorized => {
                                     // Mark this token as issued
-                                    if let Err(err) = self
-                                        .core
+                                    self.core
                                         .storage
                                         .lookup
                                         .key_delete(format!("oauth:{device_code}").into_bytes())
-                                        .await
-                                    {
-                                        return err.into_http_response();
-                                    }
+                                        .await?;
 
                                     // Issue token
                                     self.issue_token(oauth.account_id, &oauth.client_id, true)
                                         .await
                                         .map(TokenResponse::Granted)
-                                        .unwrap_or_else(|err| {
-                                            tracing::error!(
-                                                "Failed to generate OAuth token: {}",
-                                                err
-                                            );
-                                            TokenResponse::error(ErrorType::InvalidRequest)
-                                        })
+                                        .map_err(|err| {
+                                            trc::AuthCause::Error
+                                                .into_err()
+                                                .details(err)
+                                                .caused_by(trc::location!())
+                                        })?
                                 }
                                 OAuthStatus::Pending => {
                                     TokenResponse::error(ErrorType::AuthorizationPending)
@@ -141,37 +130,36 @@ impl JMAP {
                             }
                         };
                     }
-                    Ok(None) => (),
-                    Err(err) => return err.into_http_response(),
+                    None => (),
                 }
             }
         } else if grant_type.eq_ignore_ascii_case("refresh_token") {
-            let todo = "return error";
             if let Some(refresh_token) = params.get("refresh_token") {
-                if let Ok((account_id, client_id, time_left)) = self
+                let (account_id, client_id, time_left) = self
                     .validate_access_token("refresh_token", refresh_token)
+                    .await?;
+
+                // TODO: implement revoking client ids
+                response = self
+                    .issue_token(
+                        account_id,
+                        &client_id,
+                        time_left <= self.core.jmap.oauth_expiry_refresh_token_renew,
+                    )
                     .await
-                {
-                    // TODO: implement revoking client ids
-                    response = self
-                        .issue_token(
-                            account_id,
-                            &client_id,
-                            time_left <= self.core.jmap.oauth_expiry_refresh_token_renew,
-                        )
-                        .await
-                        .map(TokenResponse::Granted)
-                        .unwrap_or_else(|err| {
-                            tracing::debug!("Failed to refresh OAuth token: {}", err);
-                            TokenResponse::error(ErrorType::InvalidGrant)
-                        });
-                }
+                    .map(TokenResponse::Granted)
+                    .map_err(|err| {
+                        trc::AuthCause::Error
+                            .into_err()
+                            .details(err)
+                            .caused_by(trc::location!())
+                    })?;
             } else {
                 response = TokenResponse::error(ErrorType::InvalidRequest);
             }
         }
 
-        JsonResponse::with_status(
+        Ok(JsonResponse::with_status(
             if response.is_error() {
                 StatusCode::BAD_REQUEST
             } else {
@@ -179,7 +167,7 @@ impl JMAP {
             },
             response,
         )
-        .into_http_response()
+        .into_http_response())
     }
 
     async fn password_hash(&self, account_id: u32) -> Result<String, &'static str> {
@@ -293,7 +281,8 @@ impl JMAP {
     ) -> trc::Result<(u32, String, u64)> {
         // Base64 decode token
         let token = base64_decode(token_.as_bytes()).ok_or_else(|| {
-            trc::Cause::Authentication
+            trc::AuthCause::Error
+                .into_err()
                 .ctx(trc::Key::Reason, "Failed to decode token")
                 .details(token_.to_string())
         })?;
@@ -309,7 +298,8 @@ impl JMAP {
                     .into()
             })
             .ok_or_else(|| {
-                trc::Cause::Authentication
+                trc::AuthCause::Error
+                    .into_err()
                     .ctx(trc::Key::Reason, "Failed to decode token")
                     .details(token_.to_string())
             })?;
@@ -321,14 +311,16 @@ impl JMAP {
             .unwrap_or(0)
             .saturating_sub(946684800); // Jan 1, 2000
         if expiry <= now {
-            return Err(trc::Cause::Authentication.ctx(trc::Key::Reason, "Token expired"));
+            return Err(trc::AuthCause::Error
+                .into_err()
+                .ctx(trc::Key::Reason, "Token expired"));
         }
 
         // Obtain password hash
         let password_hash = self
             .password_hash(account_id)
             .await
-            .map_err(|err| trc::Cause::Authentication.ctx(trc::Key::Details, err))?;
+            .map_err(|err| trc::AuthCause::Error.into_err().ctx(trc::Key::Details, err))?;
 
         // Build context
         let key = self.core.jmap.oauth_key.clone();
@@ -357,7 +349,8 @@ impl JMAP {
                 &nonce,
             )
             .map_err(|err| {
-                trc::Cause::Authentication
+                trc::AuthCause::Error
+                    .into_err()
                     .ctx(trc::Key::Details, "Failed to decode token")
                     .reason(err)
             })?;

@@ -75,7 +75,12 @@ impl Core {
         {
             URL_SAFE_NO_PAD
                 .decode(content.as_bytes())
-                .map_err(Into::into)
+                .map_err(|err| {
+                    trc::Cause::Acme
+                        .caused_by(trc::location!())
+                        .reason(err)
+                        .details("failed to decode certificate")
+                })
                 .map(Some)
         } else {
             Ok(None)

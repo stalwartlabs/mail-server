@@ -184,5 +184,5 @@ fn build_pool<M: Manager>(
 
 #[inline(always)]
 fn into_error(err: impl Display) -> trc::Error {
-    trc::Cause::Redis.reason(err)
+    trc::StoreCause::Redis.reason(err)
 }

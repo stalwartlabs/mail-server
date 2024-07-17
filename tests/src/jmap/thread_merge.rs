@@ -10,10 +10,7 @@ use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
     store::deflate_test_resource,
 };
-use jmap::{
-    email::ingest::{IngestEmail, IngestSource},
-    IngestError,
-};
+use jmap::email::ingest::{IngestEmail, IngestSource};
 use jmap_client::{email, mailbox::Role};
 use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{mailbox::mbox::MessageIterator, MessageParser};
@@ -256,21 +253,16 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                     .await
                 {
                     Ok(_) => break,
-                    Err(IngestError::Temporary) if retry_count < 10 => {
-                        //println!("Retrying ingest for {}...", message.from());
-                        let backoff = rand::thread_rng().gen_range(50..=300);
-                        tokio::time::sleep(Duration::from_millis(backoff)).await;
-                        retry_count += 1;
-                        continue;
+                    Err(err) => {
+                        if err.is_assertion_failure() && retry_count < 10 {
+                            //println!("Retrying ingest for {}...", message.from());
+                            let backoff = rand::thread_rng().gen_range(50..=300);
+                            tokio::time::sleep(Duration::from_millis(backoff)).await;
+                            retry_count += 1;
+                            continue;
+                        }
+                        panic!("Failed to ingest message: {:?}", err);
                     }
-                    Err(IngestError::Permanent { .. }) => {
-                        panic!(
-                            "Failed to ingest message: {:?} {}",
-                            message.from(),
-                            String::from_utf8_lossy(message.contents())
-                        );
-                    }
-                    Err(err) => panic!("Failed to ingest message: {:?}", err),
                 }
             }
         }));

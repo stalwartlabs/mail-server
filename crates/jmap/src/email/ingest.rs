@@ -84,7 +84,7 @@ impl JMAP {
             .await
             .caused_by(trc::location!())?
         {
-            return Err(trc::Cause::OverQuota.into_err());
+            return Err(trc::LimitCause::Quota.into_err());
         }
 
         // Parse message
@@ -224,7 +224,10 @@ impl JMAP {
                         }
                     }
                     Err(EncryptMessageError::Error(err)) => {
-                        trc::bail!(trc::Cause::Crypto.caused_by(trc::location!()).reason(err));
+                        trc::bail!(trc::StoreCause::Crypto
+                            .into_err()
+                            .caused_by(trc::location!())
+                            .reason(err));
                     }
                     _ => unreachable!(),
                 }
@@ -494,7 +497,7 @@ impl JMAP {
 
             match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => return Ok(Some(thread_id)),
-                Err(err) if err.matches(trc::Cause::AssertValue) && try_count < MAX_RETRIES => {
+                Err(err) if err.is_assertion_failure() && try_count < MAX_RETRIES => {
                     let backoff = rand::thread_rng().gen_range(50..=300);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
                     try_count += 1;

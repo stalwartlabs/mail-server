@@ -27,7 +27,7 @@ pub struct ValidateSieveScriptResponse {
 }
 
 impl JsonObjectParser for ValidateSieveScriptRequest {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

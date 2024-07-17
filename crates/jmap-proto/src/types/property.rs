@@ -10,7 +10,7 @@ use mail_parser::HeaderName;
 use serde::Serialize;
 use store::write::{DeserializeFrom, SerializeInto};
 
-use crate::parser::{json::Parser, Error, JsonObjectParser};
+use crate::parser::{json::Parser, JsonObjectParser};
 
 use super::{acl::Acl, id::Id, keyword::Keyword, value::Value};
 
@@ -153,7 +153,7 @@ pub trait IntoProperty: Eq + Display {
 }
 
 impl JsonObjectParser for Property {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self> {
+    fn parse(parser: &mut Parser) -> trc::Result<Self> {
         let mut first_char = 0;
         let mut hash = 0;
         let mut shift = 0;
@@ -190,7 +190,7 @@ impl JsonObjectParser for Property {
 }
 
 impl JsonObjectParser for SetProperty {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self> {
+    fn parse(parser: &mut Parser) -> trc::Result<Self> {
         let mut first_char = 0;
         let mut hash = 0;
         let mut shift = 0;
@@ -251,7 +251,7 @@ impl JsonObjectParser for SetProperty {
                     Ok(id) => {
                         patch.push(Value::Id(id));
                     }
-                    Err(Error::Method(_)) => {
+                    Err(err) if err.is_jmap_method_error() => {
                         property = parser.invalid_property()?;
                     }
                     Err(err) => {
@@ -262,7 +262,7 @@ impl JsonObjectParser for SetProperty {
                     Ok(keyword) => {
                         patch.push(Value::Keyword(keyword));
                     }
-                    Err(Error::Method(_)) => {
+                    Err(err) if err.is_jmap_method_error() => {
                         property = parser.invalid_property()?;
                     }
                     Err(err) => {
@@ -290,7 +290,7 @@ impl JsonObjectParser for SetProperty {
                                     Ok(acl) => {
                                         patch.push(Value::UnsignedInt(acl as u64));
                                     }
-                                    Err(Error::Method(_)) => {
+                                    Err(err) if err.is_jmap_method_error() => {
                                         property = parser.invalid_property()?;
                                     }
                                     Err(err) => {
@@ -469,7 +469,7 @@ fn parse_property(first_char: u8, hash: u128) -> Option<Property> {
     })
 }
 
-fn parse_header_property(parser: &mut Parser) -> crate::parser::Result<Property> {
+fn parse_header_property(parser: &mut Parser) -> trc::Result<Property> {
     let hdr_start_pos = parser.pos;
     let mut has_next = false;
 
@@ -553,7 +553,7 @@ fn parse_sub_property(
     parser: &mut Parser,
     first_char: u8,
     parent_hash: u128,
-) -> crate::parser::Result<Property> {
+) -> trc::Result<Property> {
     let mut hash = 0;
     let mut shift = 0;
 
@@ -585,7 +585,7 @@ fn parse_sub_property(
 }
 
 impl JsonObjectParser for ObjectProperty {
-    fn parse(parser: &mut Parser) -> crate::parser::Result<Self> {
+    fn parse(parser: &mut Parser) -> trc::Result<Self> {
         let mut first_char = 0;
         let mut hash = 0;
         let mut shift = 0;
@@ -707,7 +707,7 @@ impl JsonObjectParser for ObjectProperty {
 }
 
 impl<'x> Parser<'x> {
-    fn invalid_property(&mut self) -> crate::parser::Result<Property> {
+    fn invalid_property(&mut self) -> trc::Result<Property> {
         if self.is_eof || self.skip_string() {
             Ok(Property::_T(
                 String::from_utf8_lossy(self.bytes[self.pos_marker..self.pos - 1].as_ref())

@@ -9,13 +9,13 @@ use std::collections::BTreeMap;
 use common::listener::SessionStream;
 use jmap::mailbox::{UidMailbox, INBOX_ID};
 use jmap_proto::{
-    error::method::MethodError,
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
 use store::{
     ahash::AHashMap, write::key::DeserializeBigEndian, IndexKey, IterateParams, Serialize, U32_LEN,
 };
+use trc::AddContext;
 
 use crate::Session;
 
@@ -46,7 +46,8 @@ impl<T: SessionStream> Session<T> {
                 Property::MailboxIds,
                 INBOX_ID,
             )
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .unwrap_or_default();
 
         if message_ids.is_empty() {
@@ -57,7 +58,10 @@ impl<T: SessionStream> Session<T> {
         let mut message_sizes = AHashMap::new();
 
         // Obtain UID validity
-        self.jmap.mailbox_get_or_create(account_id).await?;
+        self.jmap
+            .mailbox_get_or_create(account_id)
+            .await
+            .caused_by(trc::location!())?;
         let uid_validity = self
             .jmap
             .get_property::<Object<Value>>(
@@ -66,16 +70,15 @@ impl<T: SessionStream> Session<T> {
                 INBOX_ID,
                 &Property::Value,
             )
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .and_then(|obj| obj.get(&Property::Cid).as_uint())
             .ok_or_else(|| {
-                tracing::debug!(event = "error",
-                context = "store",
-                account_id = account_id,
-                collection = ?Collection::Mailbox,
-                mailbox_id = INBOX_ID,
-                "Failed to obtain uid validity");
-                MethodError::ServerPartialFail
+                trc::StoreCause::Unexpected
+                    .caused_by(trc::location!())
+                    .details("Failed to obtain UID validity")
+                    .account_id(account_id)
+                    .document_id(INBOX_ID)
             })
             .map(|v| v as u32)?;
 
@@ -115,13 +118,7 @@ impl<T: SessionStream> Session<T> {
                 },
             )
             .await
-            .map_err(|err| {
-                tracing::error!(context = "fetch_mailbox", 
-                reason = ?err,
-                 "Failed to iterate message sizes");
-
-                MethodError::ServerPartialFail
-            })?;
+            .caused_by(trc::location!())?;
 
         // Sort by UID
         for (message_id, uid_mailbox) in self
@@ -132,7 +129,8 @@ impl<T: SessionStream> Session<T> {
                 &message_ids,
                 Property::MailboxIds,
             )
-            .await?
+            .await
+            .caused_by(trc::location!())?
             .into_iter()
         {
             // Make sure the message is still in Inbox

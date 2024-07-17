@@ -58,7 +58,7 @@ impl Serialize for &Principal<u32> {
 impl Deserialize for Principal<u32> {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         deserialize(bytes).ok_or_else(|| {
-            trc::Cause::DataCorruption
+            trc::StoreCause::DataCorruption
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Value, bytes)
         })
@@ -79,12 +79,12 @@ impl Deserialize for PrincipalIdType {
         let mut bytes = bytes_.iter();
         Ok(PrincipalIdType {
             account_id: bytes.next_leb128().ok_or_else(|| {
-                trc::Cause::DataCorruption
+                trc::StoreCause::DataCorruption
                     .caused_by(trc::location!())
                     .ctx(trc::Key::Value, bytes_)
             })?,
             typ: Type::from_u8(*bytes.next().ok_or_else(|| {
-                trc::Cause::DataCorruption
+                trc::StoreCause::DataCorruption
                     .caused_by(trc::location!())
                     .ctx(trc::Key::Value, bytes_)
             })?),

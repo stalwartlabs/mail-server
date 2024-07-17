@@ -7,7 +7,6 @@
 use common::{
     config::server::ServerProtocol,
     listener::{limiter::ConcurrencyLimiter, SessionStream},
-    AuthFailureReason, AuthResult,
 };
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use jmap::auth::rate_limit::ConcurrencyLimiters;
@@ -25,11 +24,11 @@ impl<T: SessionStream> Session<T> {
         &mut self,
         mechanism: Mechanism,
         mut params: Vec<String>,
-    ) -> Result<(), ()> {
+    ) -> trc::Result<()> {
         match mechanism {
             Mechanism::Plain | Mechanism::OAuthBearer => {
                 if !params.is_empty() {
-                    let result = base64_decode(params.pop().unwrap().as_bytes())
+                    let credentials = base64_decode(params.pop().unwrap().as_bytes())
                         .ok_or("Failed to decode challenge.")
                         .and_then(|challenge| {
                             if mechanism == Mechanism::Plain {
@@ -37,12 +36,10 @@ impl<T: SessionStream> Session<T> {
                             } else {
                                 decode_challenge_oauth(&challenge)
                             }
-                        });
+                        })
+                        .map_err(|err| trc::AuthCause::Error.into_err().details(err))?;
 
-                    match result {
-                        Ok(credentials) => self.handle_auth(credentials).await,
-                        Err(err) => self.write_err(err).await,
-                    }
+                    self.handle_auth(credentials).await
                 } else {
                     // TODO: This hack is temporary until the SASL library is developed
                     self.receiver.state = request::State::Argument {
@@ -57,111 +54,58 @@ impl<T: SessionStream> Session<T> {
                     self.write_bytes("+\r\n").await
                 }
             }
-            _ => {
-                self.write_err("Authentication mechanism not supported.")
-                    .await
-            }
+            _ => Err(trc::AuthCause::Error
+                .into_err()
+                .details("Authentication mechanism not supported.")),
         }
     }
 
-    pub async fn handle_auth(&mut self, credentials: Credentials<String>) -> Result<(), ()> {
+    pub async fn handle_auth(&mut self, credentials: Credentials<String>) -> trc::Result<()> {
         // Throttle authentication requests
-        if self
-            .jmap
-            .is_auth_allowed_soft(&self.remote_addr)
-            .await
-            .is_err()
-        {
-            tracing::debug!(parent: &self.span,
-                event = "disconnect",
-                "Too many authentication attempts, disconnecting.",
-            );
-
-            self.write_err("Too many authentication requests from this IP address.")
-                .await?;
-            return Err(());
-        }
+        let todo = "disconnect in all protocols when this error is returned";
+        self.jmap.is_auth_allowed_soft(&self.remote_addr).await?;
 
         // Authenticate
         let mut is_totp_error = false;
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
-                match self
-                    .jmap
+                self.jmap
                     .authenticate_plain(&username, &secret, self.remote_addr, ServerProtocol::Pop3)
-                    .await
-                {
-                    AuthResult::Success(token) => Some(token),
-                    AuthResult::Failure(
-                        AuthFailureReason::InvalidCredentials | AuthFailureReason::InternalError(_),
-                    ) => None,
-                    AuthResult::Failure(AuthFailureReason::MissingTotp) => {
-                        is_totp_error = true;
-                        None
-                    }
-                    AuthResult::Failure(AuthFailureReason::Banned) => {
-                        self.write_err("Too many authentication requests from this IP address.")
-                            .await?;
-                        return Err(());
-                    }
-                }
+                    .await?
             }
             Credentials::OAuthBearer { token } => {
-                match self
+                let (account_id, _, _) = self
                     .jmap
                     .validate_access_token("access_token", &token)
-                    .await
-                {
-                    Ok((account_id, _, _)) => self.jmap.get_access_token(account_id).await,
-                    Err(err) => {
-                        tracing::debug!(
-                            parent: &self.span,
-                            context = "authenticate",
-                            err = err,
-                            "Failed to validate access token."
-                        );
-                        None
-                    }
-                }
+                    .await?;
+                self.jmap.get_access_token(account_id).await?
             }
         };
 
-        if let Some(access_token) = access_token {
-            // Enforce concurrency limits
-            let in_flight = match self
-                .get_concurrency_limiter(access_token.primary_id())
-                .map(|limiter| limiter.concurrent_requests.is_allowed())
-            {
-                Some(Some(limiter)) => Some(limiter),
-                None => None,
-                Some(None) => {
-                    tracing::debug!(parent: &self.span,
-                        event = "disconnect",
-                        "Too many concurrent connection.",
-                    );
-                    self.write_err("Too many concurrent connections.").await?;
-                    return Err(());
-                }
-            };
-
-            // Cache access token
-            let access_token = Arc::new(access_token);
-            self.jmap.cache_access_token(access_token.clone());
-
-            // Fetch mailbox
-            match self.fetch_mailbox(access_token.primary_id()).await {
-                Ok(mailbox) => {
-                    // Create session
-                    self.state = State::Authenticated { in_flight, mailbox };
-
-                    self.write_ok("Authentication successful").await
-                }
-                Err(_) => {
-                    self.write_err("Temporary server failure").await?;
-                    Err(())
-                }
+        // Enforce concurrency limits
+        let in_flight = match self
+            .get_concurrency_limiter(access_token.primary_id())
+            .map(|limiter| limiter.concurrent_requests.is_allowed())
+        {
+            Some(Some(limiter)) => Some(limiter),
+            None => None,
+            Some(None) => {
+                return Err(trc::LimitCause::ConcurrentRequest.into_err());
             }
-        } else {
+        };
+
+        // Cache access token
+        let access_token = Arc::new(access_token);
+        self.jmap.cache_access_token(access_token.clone());
+
+        // Fetch mailbox
+        let mailbox = self.fetch_mailbox(access_token.primary_id()).await?;
+
+        // Create session
+        let todo = "fix below";
+        self.state = State::Authenticated { in_flight, mailbox };
+        self.write_ok("Authentication successful").await
+        /*} else {
             match &self.state {
                 State::NotAuthenticated {
                     auth_failures,
@@ -188,7 +132,7 @@ impl<T: SessionStream> Session<T> {
                     Err(())
                 }
             }
-        }
+        }*/
     }
 
     pub fn get_concurrency_limiter(&self, account_id: u32) -> Option<Arc<ConcurrencyLimiters>> {

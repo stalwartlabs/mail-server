@@ -36,7 +36,7 @@ impl WebAdminManager {
         }
     }
 
-    pub async fn get(&self, path: &str) -> io::Result<Resource<Vec<u8>>> {
+    pub async fn get(&self, path: &str) -> trc::Result<Resource<Vec<u8>>> {
         let routes = self.routes.load();
         if let Some(resource) = routes.get(path).or_else(|| routes.get("index.html")) {
             tokio::fs::read(&resource.contents)
@@ -45,6 +45,12 @@ impl WebAdminManager {
                     content_type: resource.content_type,
                     contents,
                 })
+                .map_err(|err| {
+                    trc::ResourceCause::Error
+                        .reason(err)
+                        .ctx(trc::Key::Path, path.to_string())
+                        .caused_by(trc::location!())
+                })
         } else {
             Ok(Resource::default())
         }
@@ -52,42 +58,46 @@ impl WebAdminManager {
 
     pub async fn unpack(&self, blob_store: &BlobStore) -> trc::Result<()> {
         // Delete any existing bundles
-        self.bundle_path.clean().await?;
+        self.bundle_path.clean().await.map_err(unpack_error)?;
 
         // Obtain webadmin bundle
         let bundle = blob_store
             .get_blob(WEBADMIN_KEY, 0..usize::MAX)
             .await?
             .ok_or_else(|| {
-                trc::Cause::NotFound
+                trc::ResourceCause::NotFound
                     .caused_by(trc::location!())
                     .details("Webadmin bundle not found")
             })?;
 
         // Uncompress
         let mut bundle = zip::ZipArchive::new(Cursor::new(bundle)).map_err(|err| {
-            trc::Cause::Decompress
+            trc::ResourceCause::Error
                 .caused_by(trc::location!())
                 .reason(err)
+                .details("Failed to decompress webadmin bundle")
         })?;
         let mut routes = AHashMap::new();
         for i in 0..bundle.len() {
             let (file_name, contents) = {
                 let mut file = bundle.by_index(i).map_err(|err| {
-                    trc::Cause::Decompress
+                    trc::ResourceCause::Error
                         .caused_by(trc::location!())
                         .reason(err)
+                        .details("Failed to read file from webadmin bundle")
                 })?;
                 if file.is_dir() {
                     continue;
                 }
 
                 let mut contents = Vec::new();
-                file.read_to_end(&mut contents)?;
+                file.read_to_end(&mut contents).map_err(unpack_error)?;
                 (file.name().to_string(), contents)
             };
             let path = self.bundle_path.path.join(format!("{i:02}"));
-            tokio::fs::write(&path, contents).await?;
+            tokio::fs::write(&path, contents)
+                .await
+                .map_err(unpack_error)?;
 
             let resource = Resource {
                 content_type: match file_name
@@ -162,6 +172,12 @@ impl TempDir {
         }
         tokio::fs::create_dir(&self.path).await
     }
+}
+
+fn unpack_error(err: std::io::Error) -> trc::Error {
+    trc::ResourceCause::Error
+        .reason(err)
+        .details("Failed to unpack webadmin bundle")
 }
 
 impl Default for WebAdminManager {

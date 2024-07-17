@@ -7,8 +7,7 @@
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    error::request::RequestError,
-    parser::{json::Parser, Error, JsonObjectParser},
+    parser::{json::Parser, JsonObjectParser},
     response::serialize::serialize_hex,
     types::{id::Id, type_state::DataType},
 };
@@ -315,7 +314,7 @@ impl WebSocketCapabilities {
 }
 
 impl JsonObjectParser for Capability {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -343,18 +342,19 @@ impl JsonObjectParser for Capability {
                 0x0061_746f_7571 => Ok(Capability::Quota),
                 _ => Err(parser.error_capability()),
             },
-            Err(Error::Method(_)) => Err(parser.error_capability()),
-            Err(err @ Error::Request(_)) => Err(err),
+            Err(err) if err.is_jmap_method_error() => Err(parser.error_capability()),
+            Err(err) => Err(err),
         }
     }
 }
 
 impl<'x> Parser<'x> {
-    fn error_capability(&mut self) -> Error {
+    fn error_capability(&mut self) -> trc::Error {
         if self.is_eof || self.skip_string() {
-            Error::Request(RequestError::unknown_capability(&String::from_utf8_lossy(
-                self.bytes[self.pos_marker..self.pos - 1].as_ref(),
-            )))
+            trc::JmapCause::UnknownCapability.into_err().details(
+                String::from_utf8_lossy(self.bytes[self.pos_marker..self.pos - 1].as_ref())
+                    .into_owned(),
+            )
         } else {
             self.error_unterminated()
         }

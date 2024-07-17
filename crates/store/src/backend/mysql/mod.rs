@@ -20,5 +20,5 @@ pub struct MysqlStore {
 
 #[inline(always)]
 fn into_error(err: impl Display) -> trc::Error {
-    trc::Cause::MySQL.reason(err)
+    trc::StoreCause::MySQL.reason(err)
 }

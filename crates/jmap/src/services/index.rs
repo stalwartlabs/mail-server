@@ -222,7 +222,7 @@ impl JMAP {
             .set(event.value_class(), (now() + INDEX_LOCK_EXPIRY).serialize());
         match self.core.storage.data.write(batch.build()).await {
             Ok(_) => true,
-            Err(err) if err.matches(trc::Cause::AssertValue) => {
+            Err(err) if err.is_assertion_failure() => {
                 tracing::trace!(
                     context = "queue",
                     event = "locked",

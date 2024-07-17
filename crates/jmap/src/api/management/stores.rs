@@ -8,7 +8,6 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use common::manager::webadmin::Resource;
 use directory::backend::internal::manage::ManageDirectory;
 use hyper::Method;
-use jmap_proto::error::request::RequestError;
 use serde_json::json;
 use utils::url_params::UrlParams;
 
@@ -21,7 +20,11 @@ use crate::{
 use super::decode_path_element;
 
 impl JMAP {
-    pub async fn handle_manage_store(&self, req: &HttpRequest, path: Vec<&str>) -> HttpResponse {
+    pub async fn handle_manage_store(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+    ) -> trc::Result<HttpResponse> {
         match (
             path.get(1).copied(),
             path.get(2).copied(),
@@ -29,41 +32,36 @@ impl JMAP {
             req.method(),
         ) {
             (Some("blobs"), Some(blob_hash), _, &Method::GET) => {
-                match URL_SAFE_NO_PAD.decode(decode_path_element(blob_hash).as_bytes()) {
-                    Ok(blob_hash) => {
-                        match self
-                            .core
-                            .storage
-                            .blob
-                            .get_blob(&blob_hash, 0..usize::MAX)
-                            .await
-                        {
-                            Ok(Some(contents)) => {
-                                let params = UrlParams::new(req.uri().query());
-                                let offset = params.parse("offset").unwrap_or(0);
-                                let limit = params.parse("limit").unwrap_or(usize::MAX);
+                let blob_hash = URL_SAFE_NO_PAD
+                    .decode(decode_path_element(blob_hash).as_bytes())
+                    .map_err(|err| {
+                        trc::Cause::Resource(trc::ResourceCause::BadParameters)
+                            .from_base64_error(err)
+                    })?;
+                let contents = self
+                    .core
+                    .storage
+                    .blob
+                    .get_blob(&blob_hash, 0..usize::MAX)
+                    .await?
+                    .ok_or_else(|| trc::ManageCause::NotFound.into_err())?;
+                let params = UrlParams::new(req.uri().query());
+                let offset = params.parse("offset").unwrap_or(0);
+                let limit = params.parse("limit").unwrap_or(usize::MAX);
+                let contents = if offset == 0 && limit == usize::MAX {
+                    contents
+                } else {
+                    contents
+                        .get(offset..std::cmp::min(offset + limit, contents.len()))
+                        .unwrap_or_default()
+                        .to_vec()
+                };
 
-                                let contents = if offset == 0 && limit == usize::MAX {
-                                    contents
-                                } else {
-                                    contents
-                                        .get(offset..std::cmp::min(offset + limit, contents.len()))
-                                        .unwrap_or_default()
-                                        .to_vec()
-                                };
-
-                                Resource {
-                                    content_type: "application/octet-stream",
-                                    contents,
-                                }
-                                .into_http_response()
-                            }
-                            Ok(None) => RequestError::not_found().into_http_response(),
-                            Err(err) => err.into_http_response(),
-                        }
-                    }
-                    Err(_) => RequestError::invalid_parameters().into_http_response(),
+                Ok(Resource {
+                    content_type: "application/octet-stream",
+                    contents,
                 }
+                .into_http_response())
             }
             (Some("purge"), Some("blob"), _, &Method::GET) => {
                 self.housekeeper_request(Event::Purge(PurgeType::Blobs {
@@ -77,7 +75,7 @@ impl JMAP {
                     if let Some(store) = self.core.storage.stores.get(id) {
                         store.clone()
                     } else {
-                        return RequestError::not_found().into_http_response();
+                        return Err(trc::ResourceCause::NotFound.into_err());
                     }
                 } else {
                     self.core.storage.data.clone()
@@ -91,7 +89,7 @@ impl JMAP {
                     if let Some(store) = self.core.storage.lookups.get(id) {
                         store.clone()
                     } else {
-                        return RequestError::not_found().into_http_response();
+                        return Err(trc::ResourceCause::NotFound.into_err());
                     }
                 } else {
                     self.core.storage.lookup.clone()
@@ -102,17 +100,13 @@ impl JMAP {
             }
             (Some("purge"), Some("account"), id, &Method::GET) => {
                 let account_id = if let Some(id) = id {
-                    match self
-                        .core
+                    self.core
                         .storage
                         .data
                         .get_account_id(decode_path_element(id).as_ref())
-                        .await
-                    {
-                        Ok(Some(id)) => id.into(),
-                        Ok(None) => return RequestError::not_found().into_http_response(),
-                        Err(err) => return err.into_http_response(),
-                    }
+                        .await?
+                        .ok_or_else(|| trc::ManageCause::NotFound.into_err())?
+                        .into()
                 } else {
                     None
                 };
@@ -120,20 +114,20 @@ impl JMAP {
                 self.housekeeper_request(Event::Purge(PurgeType::Account(account_id)))
                     .await
             }
-            _ => RequestError::not_found().into_http_response(),
+            _ => Err(trc::ResourceCause::NotFound.into_err()),
         }
     }
 
-    async fn housekeeper_request(&self, event: Event) -> HttpResponse {
-        match self.inner.housekeeper_tx.send(event).await {
-            Ok(_) => JsonResponse::new(json!({
-                "data": (),
-            }))
-            .into_http_response(),
-            Err(_) => {
-                tracing::error!("Failed to send housekeeper event");
-                RequestError::internal_server_error().into_http_response()
-            }
-        }
+    async fn housekeeper_request(&self, event: Event) -> trc::Result<HttpResponse> {
+        self.inner.housekeeper_tx.send(event).await.map_err(|err| {
+            trc::Cause::Thread
+                .reason(err)
+                .details("Failed to send housekeeper event")
+        })?;
+
+        Ok(JsonResponse::new(json!({
+            "data": (),
+        }))
+        .into_http_response())
     }
 }

@@ -337,7 +337,8 @@ impl JMAP {
             return Ok(());
         }
         let reference_cid = self.inner.snowflake_id.past_id(period).ok_or_else(|| {
-            trc::Cause::Unexpected
+            trc::StoreCause::Unexpected
+                .into_err()
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Reason, "Failed to generate reference cid.")
         })?;

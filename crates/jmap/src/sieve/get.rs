@@ -192,7 +192,8 @@ impl JMAP {
             )
             .await?
             .ok_or_else(|| {
-                trc::Cause::NotFound
+                trc::StoreCause::NotFound
+                    .into_err()
                     .caused_by(trc::location!())
                     .document_id(document_id)
             })?;
@@ -205,7 +206,8 @@ impl JMAP {
             .and_then(|v| v.as_blob_id())
             .and_then(|v| (v.section.as_ref()?.size, v).into())
             .ok_or_else(|| {
-                trc::Cause::NotFound
+                trc::StoreCause::NotFound
+                    .into_err()
                     .caused_by(trc::location!())
                     .document_id(document_id)
             })?;
@@ -215,7 +217,8 @@ impl JMAP {
             .get_blob(&blob_id.hash, 0..usize::MAX)
             .await?
             .ok_or_else(|| {
-                trc::Cause::NotFound
+                trc::StoreCause::NotFound
+                    .into_err()
                     .caused_by(trc::location!())
                     .document_id(document_id)
             })?;
@@ -230,7 +233,8 @@ impl JMAP {
             // Deserialization failed, probably because the script compiler version changed
             match self.core.sieve.untrusted_compiler.compile(
                 script_bytes.get(0..script_offset).ok_or_else(|| {
-                    trc::Cause::NotFound
+                    trc::StoreCause::NotFound
+                        .into_err()
                         .caused_by(trc::location!())
                         .document_id(document_id)
                 })?,
@@ -274,7 +278,7 @@ impl JMAP {
 
                     Ok((sieve.inner, new_script_object))
                 }
-                Err(error) => Err(trc::Cause::Unexpected
+                Err(error) => Err(trc::StoreCause::Unexpected
                     .caused_by(trc::location!())
                     .reason(error)
                     .details("Failed to compile Sieve script")),

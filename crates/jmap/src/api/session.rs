@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use directory::QueryBy;
 use jmap_proto::{
-    error::request::RequestError,
     request::capability::{Capability, Session},
     types::{acl::Acl, collection::Collection, id::Id},
 };
+use trc::AddContext;
 
 use crate::{auth::AccessToken, JMAP};
 
@@ -20,7 +20,7 @@ impl JMAP {
         &self,
         base_url: String,
         access_token: Arc<AccessToken>,
-    ) -> Result<Session, RequestError> {
+    ) -> trc::Result<Session> {
         let mut session = Session::new(base_url, &self.core.jmap.capabilities);
         session.set_state(access_token.state());
         session.set_primary_account(
@@ -41,7 +41,8 @@ impl JMAP {
                 && self
                     .shared_documents(&access_token, *id, Collection::Mailbox, Acl::AddItems)
                     .await
-                    .map_or(true, |ids| ids.is_empty());
+                    .caused_by(trc::location!())?
+                    .is_empty();
 
             session.add_account(
                 (*id).into(),
@@ -50,7 +51,7 @@ impl JMAP {
                     .directory
                     .query(QueryBy::Id(*id), false)
                     .await
-                    .unwrap_or_default()
+                    .caused_by(trc::location!())?
                     .map(|p| p.name)
                     .unwrap_or_else(|| Id::from(*id).to_string()),
                 is_personal,

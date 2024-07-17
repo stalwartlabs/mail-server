@@ -288,7 +288,7 @@ impl<T: SessionStream> SessionData<T> {
                                 });
                             }
                         }
-                        Err(err) if err.matches(trc::Cause::AssertValue) => {
+                        Err(err) if err.is_assertion_failure() => {
                             if try_count < MAX_RETRIES {
                                 try_count += 1;
                                 continue;

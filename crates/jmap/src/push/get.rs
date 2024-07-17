@@ -128,7 +128,8 @@ impl JMAP {
                 })
                 .await?
                 .ok_or_else(|| {
-                    trc::Cause::NotFound
+                    trc::StoreCause::NotFound
+                        .into_err()
                         .caused_by(trc::location!())
                         .document_id(document_id)
                 })?;
@@ -138,7 +139,7 @@ impl JMAP {
                 .get(&Property::Expires)
                 .and_then(|p| p.as_date())
                 .ok_or_else(|| {
-                    trc::Cause::Unexpected
+                    trc::StoreCause::Unexpected
                         .caused_by(trc::location!())
                         .document_id(document_id)
                 })?
@@ -174,7 +175,7 @@ impl JMAP {
                     .remove(&Property::Value)
                     .and_then(|p| p.try_unwrap_string())
                     .ok_or_else(|| {
-                        trc::Cause::Unexpected
+                        trc::StoreCause::Unexpected
                             .caused_by(trc::location!())
                             .document_id(document_id)
                     })?;
@@ -183,7 +184,7 @@ impl JMAP {
                     .remove(&Property::Url)
                     .and_then(|p| p.try_unwrap_string())
                     .ok_or_else(|| {
-                        trc::Cause::Unexpected
+                        trc::StoreCause::Unexpected
                             .caused_by(trc::location!())
                             .document_id(document_id)
                     })?;

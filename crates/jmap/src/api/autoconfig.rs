@@ -8,7 +8,6 @@ use std::fmt::Write;
 
 use common::manager::webadmin::Resource;
 use directory::QueryBy;
-use jmap_proto::error::request::RequestError;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use utils::url_params::UrlParams;
@@ -18,22 +17,15 @@ use crate::{api::http::ToHttpResponse, JMAP};
 use super::{HttpRequest, HttpResponse};
 
 impl JMAP {
-    pub async fn handle_autoconfig_request(&self, req: &HttpRequest) -> HttpResponse {
+    pub async fn handle_autoconfig_request(&self, req: &HttpRequest) -> trc::Result<HttpResponse> {
         // Obtain parameters
         let params = UrlParams::new(req.uri().query());
         let emailaddress = params
             .get("emailaddress")
             .unwrap_or_default()
             .to_lowercase();
-        let (account_name, server_name, domain) =
-            match self.autoconfig_parameters(&emailaddress).await {
-                Ok(result) => result,
-                Err(err) => return err.into_http_response(),
-            };
-        let services = match self.core.storage.config.get_services().await {
-            Ok(services) => services,
-            Err(err) => return err.into_http_response(),
-        };
+        let (account_name, server_name, domain) = self.autoconfig_parameters(&emailaddress).await?;
+        let services = self.core.storage.config.get_services().await?;
 
         // Build XML response
         let mut config = String::with_capacity(1024);
@@ -75,30 +67,27 @@ impl JMAP {
         );
         config.push_str("</clientConfig>\n");
 
-        Resource {
+        Ok(Resource {
             content_type: "application/xml; charset=utf-8",
             contents: config.into_bytes(),
         }
-        .into_http_response()
+        .into_http_response())
     }
 
-    pub async fn handle_autodiscover_request(&self, body: Option<Vec<u8>>) -> HttpResponse {
+    pub async fn handle_autodiscover_request(
+        &self,
+        body: Option<Vec<u8>>,
+    ) -> trc::Result<HttpResponse> {
         // Obtain parameters
-        let emailaddress = match parse_autodiscover_request(body.as_deref().unwrap_or_default()) {
-            Ok(emailaddress) => emailaddress,
-            Err(err) => {
-                return RequestError::blank(400, "Failed to parse autodiscover request", err)
-                    .into_http_response()
-            }
-        };
-        let (account_name, server_name, _) = match self.autoconfig_parameters(&emailaddress).await {
-            Ok(result) => result,
-            Err(err) => return err.into_http_response(),
-        };
-        let services = match self.core.storage.config.get_services().await {
-            Ok(services) => services,
-            Err(err) => return err.into_http_response(),
-        };
+        let emailaddress = parse_autodiscover_request(body.as_deref().unwrap_or_default())
+            .map_err(|err| {
+                trc::ResourceCause::BadParameters
+                    .into_err()
+                    .details("Failed to parse autodiscover request")
+                    .ctx(trc::Key::Reason, err)
+            })?;
+        let (account_name, server_name, _) = self.autoconfig_parameters(&emailaddress).await?;
+        let services = self.core.storage.config.get_services().await?;
 
         // Build XML response
         let mut config = String::with_capacity(1024);
@@ -158,36 +147,35 @@ impl JMAP {
         let _ = writeln!(&mut config, "\t</Response>");
         let _ = writeln!(&mut config, "</Autodiscover>");
 
-        Resource {
+        Ok(Resource {
             content_type: "application/xml; charset=utf-8",
             contents: config.into_bytes(),
         }
-        .into_http_response()
+        .into_http_response())
     }
 
     async fn autoconfig_parameters<'x>(
         &self,
         emailaddress: &'x str,
-    ) -> Result<(String, String, &'x str), RequestError> {
-        let domain = if let Some((_, domain)) = emailaddress.rsplit_once('@') {
-            domain
-        } else {
-            return Err(RequestError::invalid_parameters());
-        };
+    ) -> trc::Result<(String, String, &'x str)> {
+        let (_, domain) = emailaddress.rsplit_once('@').ok_or_else(|| {
+            trc::ResourceCause::BadParameters
+                .into_err()
+                .details("Missing domain in email address")
+        })?;
 
         // Obtain server name
-        let server_name = if let Ok(Some(server_name)) = self
+        let server_name = self
             .core
             .storage
             .config
             .get("lookup.default.hostname")
-            .await
-        {
-            server_name
-        } else {
-            tracing::error!("Autoconfig request failed: Server name not configured");
-            return Err(RequestError::internal_server_error());
-        };
+            .await?
+            .ok_or_else(|| {
+                trc::Cause::Configuration
+                    .into_err()
+                    .details("Server name not configured")
+            })?;
 
         // Find the account name by e-mail address
         let mut account_name = emailaddress.to_string();

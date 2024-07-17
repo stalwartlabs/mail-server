@@ -516,7 +516,7 @@ impl<T: SessionStream> SessionData<T> {
                         changelog.log_update(Collection::Email, id);
                     }
                     Err(err) => {
-                        if !err.matches(trc::Cause::AssertValue) {
+                        if !err.is_assertion_failure() {
                             return Err(err.id(arguments.tag));
                         }
                     }

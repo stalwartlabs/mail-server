@@ -43,9 +43,9 @@ impl Store {
             Self::MySQL(store) => store.get_value(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_value(key).await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn get_bitmap(
@@ -63,9 +63,9 @@ impl Store {
             Self::MySQL(store) => store.get_bitmap(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_bitmap(key).await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn get_bitmaps_intersection(
@@ -74,7 +74,7 @@ impl Store {
     ) -> trc::Result<Option<RoaringBitmap>> {
         let mut result: Option<RoaringBitmap> = None;
         for key in keys {
-            if let Some(bitmap) = self.get_bitmap(key).await.caused_by( trc::location!())? {
+            if let Some(bitmap) = self.get_bitmap(key).await.caused_by(trc::location!())? {
                 if let Some(result) = &mut result {
                     result.bitand_assign(&bitmap);
                     if result.is_empty() {
@@ -106,9 +106,9 @@ impl Store {
             Self::MySQL(store) => store.iterate(params, cb).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.iterate(params, cb).await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn get_counter(
@@ -126,9 +126,9 @@ impl Store {
             Self::MySQL(store) => store.get_counter(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_counter(key).await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
@@ -189,9 +189,9 @@ impl Store {
                 Self::MySQL(store) => store.write(batch).await,
                 #[cfg(feature = "rocks")]
                 Self::RocksDb(store) => store.write(batch).await,
-                Self::None => Err(trc::Cause::NotConfigured.into()),
+                Self::None => Err(trc::StoreCause::NotConfigured.into()),
             }
-            .caused_by( trc::location!())?;
+            .caused_by(trc::location!())?;
 
             for (key, class, document_id, set) in bitmaps {
                 let mut bitmaps = BITMAPS.lock();
@@ -231,7 +231,7 @@ impl Store {
             Self::MySQL(store) => store.write(batch).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.write(batch).await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
     }
 
@@ -246,7 +246,7 @@ impl Store {
             })),
         )
         .await
-        .caused_by( trc::location!())?;
+        .caused_by(trc::location!())?;
         self.delete_range(
             ValueKey::from(ValueClass::Report(ReportClass::Tls { id: 0, expires: 0 })),
             ValueKey::from(ValueClass::Report(ReportClass::Tls {
@@ -255,7 +255,7 @@ impl Store {
             })),
         )
         .await
-        .caused_by( trc::location!())?;
+        .caused_by(trc::location!())?;
         self.delete_range(
             ValueKey::from(ValueClass::Report(ReportClass::Arf { id: 0, expires: 0 })),
             ValueKey::from(ValueClass::Report(ReportClass::Arf {
@@ -264,7 +264,7 @@ impl Store {
             })),
         )
         .await
-        .caused_by( trc::location!())?;
+        .caused_by(trc::location!())?;
 
         match self {
             #[cfg(feature = "sqlite")]
@@ -277,9 +277,9 @@ impl Store {
             Self::MySQL(store) => store.purge_store().await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.purge_store().await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
@@ -294,9 +294,9 @@ impl Store {
             Self::MySQL(store) => store.delete_range(from, to).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_range(from, to).await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn delete_documents(
@@ -352,7 +352,7 @@ impl Store {
             },
         )
         .await
-        .caused_by( trc::location!())?;
+        .caused_by(trc::location!())?;
 
         // Remove keys
         let mut batch = BatchBuilder::new();
@@ -361,7 +361,7 @@ impl Store {
             if batch.ops.len() >= 1000 {
                 self.write(std::mem::take(&mut batch).build())
                     .await
-                    .caused_by( trc::location!())?;
+                    .caused_by(trc::location!())?;
             }
             batch.ops.push(Operation::Value {
                 class: ValueClass::Any(AnyClass { subspace, key }),
@@ -372,7 +372,7 @@ impl Store {
         if !batch.is_empty() {
             self.write(batch.build())
                 .await
-                .caused_by( trc::location!())?;
+                .caused_by(trc::location!())?;
         }
 
         Ok(())
@@ -397,7 +397,7 @@ impl Store {
                 },
             )
             .await
-            .caused_by( trc::location!())?;
+            .caused_by(trc::location!())?;
         }
 
         for (from_class, to_class) in [
@@ -429,7 +429,7 @@ impl Store {
                 },
             )
             .await
-            .caused_by( trc::location!())?;
+            .caused_by(trc::location!())?;
         }
 
         Ok(())
@@ -447,9 +447,9 @@ impl Store {
             Self::MySQL(store) => store.get_blob(key, range).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_blob(key, range).await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
@@ -464,9 +464,9 @@ impl Store {
             Self::MySQL(store) => store.put_blob(key, data).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.put_blob(key, data).await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
@@ -481,9 +481,9 @@ impl Store {
             Self::MySQL(store) => store.delete_blob(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_blob(key).await,
-            Self::None => Err(trc::Cause::NotConfigured.into()),
+            Self::None => Err(trc::StoreCause::NotConfigured.into()),
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     #[cfg(feature = "test_mode")]
@@ -568,7 +568,7 @@ impl Store {
         self.iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
-                let account_id = key.deserialize_be_u32(0).caused_by( trc::location!())?;
+                let account_id = key.deserialize_be_u32(0).caused_by(trc::location!())?;
                 if account_id != last_account_id {
                     last_account_id = account_id;
                     batch.with_account_id(account_id);
@@ -582,7 +582,7 @@ impl Store {
                         .unwrap(),
                         until: key
                             .deserialize_be_u64(key.len() - U64_LEN)
-                            .caused_by( trc::location!())?,
+                            .caused_by(trc::location!())?,
                     }),
                     op: ValueOp::Clear,
                 });
@@ -607,7 +607,7 @@ impl Store {
         let mut expired_counters = Vec::new();
 
         self.iterate(IterateParams::new(from_key, to_key), |key, value| {
-            let expiry = value.deserialize_be_u64(0).caused_by( trc::location!())?;
+            let expiry = value.deserialize_be_u64(0).caused_by(trc::location!())?;
             if expiry == 0 {
                 expired_counters.push(key.to_vec());
             } else if expiry != u64::MAX {

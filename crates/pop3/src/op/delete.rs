@@ -7,11 +7,12 @@
 use common::listener::SessionStream;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::roaring::RoaringBitmap;
+use trc::AddContext;
 
-use crate::{Session, State};
+use crate::{protocol::response::Response, Session, State};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_dele(&mut self, msgs: Vec<u32>) -> Result<(), ()> {
+    pub async fn handle_dele(&mut self, msgs: Vec<u32>) -> trc::Result<()> {
         let mailbox = self.state.mailbox_mut();
         let mut response = Vec::new();
 
@@ -33,7 +34,7 @@ impl<T: SessionStream> Session<T> {
         self.write_bytes(response).await
     }
 
-    pub async fn handle_rset(&mut self) -> Result<(), ()> {
+    pub async fn handle_rset(&mut self) -> trc::Result<()> {
         let mut count = 0;
         let mailbox = self.state.mailbox_mut();
         for message in &mut mailbox.messages {
@@ -45,7 +46,7 @@ impl<T: SessionStream> Session<T> {
         self.write_ok(format!("{count} messages undeleted")).await
     }
 
-    pub async fn handle_quit(&mut self) -> Result<(), ()> {
+    pub async fn handle_quit(&mut self) -> trc::Result<()> {
         if let State::Authenticated { mailbox, .. } = &self.state {
             let mut deleted = RoaringBitmap::new();
             for message in &mailbox.messages {
@@ -56,38 +57,37 @@ impl<T: SessionStream> Session<T> {
 
             if !deleted.is_empty() {
                 let num_deleted = deleted.len();
-                match self
+                let (changes, not_deleted) = self
                     .jmap
                     .emails_tombstone(mailbox.account_id, deleted)
                     .await
-                {
-                    Ok((changes, not_deleted)) => {
-                        if !changes.is_empty() {
-                            if let Ok(change_id) =
-                                self.jmap.commit_changes(mailbox.account_id, changes).await
-                            {
-                                self.jmap
-                                    .broadcast_state_change(
-                                        StateChange::new(mailbox.account_id)
-                                            .with_change(DataType::Email, change_id)
-                                            .with_change(DataType::Mailbox, change_id)
-                                            .with_change(DataType::Thread, change_id),
-                                    )
-                                    .await;
-                            }
-                        }
-                        if not_deleted.is_empty() {
-                            self.write_ok(format!(
-                                "Stalwart POP3 bids you farewell ({num_deleted} messages deleted)."
-                            ))
-                            .await?;
-                        } else {
-                            self.write_err("Some messages could not be deleted").await?;
-                        }
+                    .caused_by(trc::location!())?;
+
+                if !changes.is_empty() {
+                    if let Ok(change_id) =
+                        self.jmap.commit_changes(mailbox.account_id, changes).await
+                    {
+                        self.jmap
+                            .broadcast_state_change(
+                                StateChange::new(mailbox.account_id)
+                                    .with_change(DataType::Email, change_id)
+                                    .with_change(DataType::Mailbox, change_id)
+                                    .with_change(DataType::Thread, change_id),
+                            )
+                            .await;
                     }
-                    Err(_) => {
-                        self.write_err("Failed to delete messages").await?;
-                    }
+                }
+                if not_deleted.is_empty() {
+                    self.write_ok(format!(
+                        "Stalwart POP3 bids you farewell ({num_deleted} messages deleted)."
+                    ))
+                    .await?;
+                } else {
+                    self.write_bytes(
+                        Response::Err::<u32>("Some messages could not be deleted".into())
+                            .serialize(),
+                    )
+                    .await?;
                 }
             } else {
                 self.write_ok("Stalwart POP3 bids you farewell (no messages deleted).")
@@ -97,6 +97,6 @@ impl<T: SessionStream> Session<T> {
             self.write_ok("Stalwart POP3 bids you farewell.").await?;
         }
 
-        Err(())
+        Ok(())
     }
 }

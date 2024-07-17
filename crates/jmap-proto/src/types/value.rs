@@ -78,7 +78,7 @@ impl Value {
     pub fn parse<K: JsonObjectParser + IntoProperty, V: JsonObjectParser + IntoValue>(
         token: Token<V>,
         parser: &mut Parser<'_>,
-    ) -> crate::parser::Result<Self> {
+    ) -> trc::Result<Self> {
         Ok(match token {
             Token::String(v) => v.into_value(),
             Token::DictStart => {
@@ -114,7 +114,7 @@ impl Value {
     pub fn from_property(
         parser: &mut Parser<'_>,
         property: &Property,
-    ) -> crate::parser::Result<Self> {
+    ) -> trc::Result<Self> {
         match &property {
             Property::BlobId => Ok(parser
                 .next_token::<BlobId>()?
@@ -327,7 +327,7 @@ impl Value {
 }
 
 impl<T: JsonObjectParser + Display + Eq> JsonObjectParser for SetValueMap<T> {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {

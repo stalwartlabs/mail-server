@@ -20,7 +20,7 @@ impl RequestPropertyParser for GetArguments {
         &mut self,
         parser: &mut Parser,
         property: RequestProperty,
-    ) -> crate::parser::Result<bool> {
+    ) -> trc::Result<bool> {
         match &property.hash[0] {
             0x7465_7366_666f => {
                 self.offset = parser

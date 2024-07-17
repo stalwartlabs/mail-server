@@ -211,7 +211,8 @@ impl JMAP {
                 && used.count + 1 > self.core.jmap.upload_tmp_quota_amount))
             && !access_token.is_super_user()
         {
-            let err = Err(trc::Cause::OverBlobQuota
+            let err = Err(trc::LimitCause::BlobQuota
+                .into_err()
                 .ctx(trc::Key::Size, self.core.jmap.upload_tmp_quota_size)
                 .ctx(trc::Key::Total, self.core.jmap.upload_tmp_quota_amount));
 

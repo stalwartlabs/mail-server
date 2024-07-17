@@ -77,7 +77,7 @@ pub enum RequestMethod {
 }
 
 impl JsonObjectParser for RequestProperty {
-    fn parse(parser: &mut Parser<'_>) -> crate::parser::Result<Self>
+    fn parse(parser: &mut Parser<'_>) -> trc::Result<Self>
     where
         Self: Sized,
     {
@@ -116,5 +116,5 @@ pub trait RequestPropertyParser {
         &mut self,
         parser: &mut Parser,
         property: RequestProperty,
-    ) -> crate::parser::Result<bool>;
+    ) -> trc::Result<bool>;
 }

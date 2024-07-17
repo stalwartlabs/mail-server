@@ -21,7 +21,7 @@ impl managed::Manager for RedisConnectionManager {
             .await
         {
             Ok(conn) => conn.map_err(into_error),
-            Err(_) => Err(trc::Cause::Timeout.into()),
+            Err(_) => Err(trc::StoreCause::Redis.ctx(trc::Key::Details, "Connection Timeout")),
         }
     }
 
@@ -44,7 +44,7 @@ impl managed::Manager for RedisClusterConnectionManager {
     async fn create(&self) -> Result<ClusterConnection, trc::Error> {
         match tokio::time::timeout(self.timeout, self.client.get_async_connection()).await {
             Ok(conn) => conn.map_err(into_error),
-            Err(_) => Err(trc::Cause::Timeout.into()),
+            Err(_) => Err(trc::StoreCause::Redis.ctx(trc::Key::Details, "Connection Timeout")),
         }
     }
 

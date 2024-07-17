@@ -25,7 +25,7 @@ impl<T: SessionStream> Session<T> {
                 if !args.params.is_empty() {
                     let challenge = base64_decode(args.params.pop().unwrap().as_bytes())
                         .ok_or_else(|| {
-                            trc::Cause::Authentication
+                            trc::AuthCause::Error
                                 .into_err()
                                 .details("Failed to decode challenge.")
                                 .id(args.tag.clone())
@@ -38,7 +38,7 @@ impl<T: SessionStream> Session<T> {
                         decode_challenge_oauth(&challenge)
                     }
                     .map_err(|err| {
-                        trc::Cause::Authentication
+                        trc::AuthCause::Error
                             .into_err()
                             .details(err)
                             .id(args.tag.clone())
@@ -55,7 +55,7 @@ impl<T: SessionStream> Session<T> {
                     self.write_bytes(b"+ \"\"\r\n".to_vec()).await
                 }
             }
-            _ => Err(trc::Cause::Authentication
+            _ => Err(trc::AuthCause::Error
                 .into_err()
                 .details("Authentication mechanism not supported.")
                 .id(args.tag)
@@ -96,7 +96,7 @@ impl<T: SessionStream> Session<T> {
             Some(Some(limiter)) => Some(limiter),
             None => None,
             Some(None) => {
-                return Err(trc::Cause::TooManyConcurrentRequests.into());
+                return Err(trc::LimitCause::ConcurrentRequest.into_err());
             }
         };
 

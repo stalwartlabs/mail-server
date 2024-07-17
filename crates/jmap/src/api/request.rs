@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use common::listener::ServerInstance;
 use jmap_proto::{
-    error::{method::MethodError, request::RequestError},
+    error::method::MethodError,
     method::{
         get, query,
         set::{self},
@@ -26,7 +26,7 @@ impl JMAP {
         request: Request,
         access_token: Arc<AccessToken>,
         instance: &Arc<ServerInstance>,
-    ) -> Result<Response, RequestError> {
+    ) -> Response {
         let mut response = Response::new(
             access_token.state(),
             request.created_ids.unwrap_or_default(),
@@ -104,7 +104,7 @@ impl JMAP {
             response.created_ids.clear();
         }
 
-        Ok(response)
+        response
     }
 
     async fn handle_method_call(
