@@ -363,7 +363,7 @@ impl<T: SessionStream> SessionData<T> {
                     })
                     .into_bytes(),
             )
-            .await;
+            .await?;
 
             if did_move {
                 // Resynchronize source mailbox on a successful move

@@ -21,7 +21,6 @@ use dashmap::DashMap;
 use directory::QueryBy;
 use email::cache::Threads;
 use jmap_proto::{
-    error::method::MethodError,
     method::{
         query::{QueryRequest, QueryResponse},
         set::{SetRequest, SetResponse},
@@ -540,7 +539,7 @@ impl UpdateResults for QueryResponse {
                 .collect::<Vec<_>>();
             Ok(())
         } else {
-            Err(MethodError::AnchorNotFound.into())
+            Err(trc::JmapCause::AnchorNotFound.into_err())
         }
     }
 }

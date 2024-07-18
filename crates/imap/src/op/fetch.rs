@@ -163,7 +163,7 @@ impl<T: SessionStream> SessionData<T> {
                         ids: vanished,
                     }
                     .serialize(&mut buf);
-                    self.write_bytes(buf).await;
+                    self.write_bytes(buf).await?;
                 }
             }
 
@@ -176,7 +176,7 @@ impl<T: SessionStream> SessionData<T> {
                             .with_code(ResponseCode::highest_modseq(modseq))
                             .into_bytes(),
                     )
-                    .await;
+                    .await?;
                 }
                 return Ok(
                     StatusResponse::completed(Command::Fetch(is_uid)).with_tag(arguments.tag)
@@ -545,7 +545,7 @@ impl<T: SessionStream> SessionData<T> {
                     .with_code(ResponseCode::highest_modseq(modseq))
                     .into_bytes(),
             )
-            .await;
+            .await?;
         }
 
         Ok(StatusResponse::completed(Command::Fetch(is_uid)).with_tag(arguments.tag))

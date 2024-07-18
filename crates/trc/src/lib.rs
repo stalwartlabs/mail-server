@@ -95,16 +95,6 @@ pub enum Cause {
     Resource(ResourceCause),
 }
 
-/*
-
-    Http,
-    Crypto,
-    Timeout,
-    Configuration,
-    Unknown,
-
-*/
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoreCause {
     AssertValue,
@@ -160,17 +150,16 @@ pub enum LimitCause {
     SizeRequest,
     SizeUpload,
     CallsIn,
-    ConcurrentRequest, //RequestError::limit(RequestLimitError::ConcurrentRequest) StatusResponse::bye("Too many concurrent IMAP connections.").into_bytes(),
-    ConcurrentUpload,  //RequestError::limit(RequestLimitError::ConcurrentUpload)
+    ConcurrentRequest,
+    ConcurrentUpload,
     Quota,
-    BlobQuota,       //RequestError::over_blob_quota
-    TooManyRequests, //RequestError::too_many_requests() + disconnect imap StatusResponse::bye("Too many authentication requests from this IP address.")
+    BlobQuota,
+    TooManyRequests,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManageCause {
     MissingParameter,
-    Invalid,
     AlreadyExists,
     AssertFailed,
     NotFound,
@@ -182,9 +171,8 @@ pub enum ManageCause {
 pub enum AuthCause {
     Failed,
     MissingTotp,
-    TooManyAttempts, //RequestError::too_many_auth_attempts() + disconnect imap
+    TooManyAttempts,
     Banned,
-    Invalid,
     Error,
 }
 
@@ -194,21 +182,6 @@ pub enum ResourceCause {
     BadParameters,
     Error,
 }
-
-/*
-
-RequestError::unauthorized().into_http_response()
-
-RequestError::blank(
-                                    403,
-                                    "TOTP code required",
-                                    concat!(
-                                        "A TOTP code is required to authenticate this account. ",
-                                        "Try authenticating again using 'secret$totp_token'."
-                                    ),
-                                )
-
-*/
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {

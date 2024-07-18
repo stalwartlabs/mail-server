@@ -140,7 +140,7 @@ pub fn spawn_mock_webhook_endpoint() -> Arc<MockWebhookEndpoint> {
                                             //let c = print!("rejected webhook: {}", serde_json::to_string_pretty(&request).unwrap());
 
                                             Ok::<_, hyper::Error>(
-                                                Err(trc::ResourceCause::NotFound.into_err())
+                                                RequestError::not_found().into_http_response()
                                             )
                                         }
 

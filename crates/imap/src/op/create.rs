@@ -28,27 +28,21 @@ use trc::AddContext;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_create(&mut self, requests: Vec<Request<Command>>) -> trc::Result<()> {
-        let mut arguments = Vec::with_capacity(requests.len());
-
-        for request in requests {
-            match request.parse_create(self.version) {
-                Ok(argument) => {
-                    arguments.push(argument);
-                }
-                Err(err) => self.write_error(err).await?,
-            }
-        }
-
         let data = self.state.session_data();
+        let version = self.version;
+
         spawn_op!(data, {
-            for argument in arguments {
-                match data.create_folder(argument).await {
-                    Ok(response) => {
-                        data.write_bytes(response.into_bytes()).await;
-                    }
-                    Err(error) => {
-                        data.write_error(error).await;
-                    }
+            for request in requests {
+                match request.parse_create(version) {
+                    Ok(argument) => match data.create_folder(argument).await {
+                        Ok(response) => {
+                            data.write_bytes(response.into_bytes()).await?;
+                        }
+                        Err(error) => {
+                            data.write_error(error).await?;
+                        }
+                    },
+                    Err(err) => data.write_error(err).await?,
                 }
             }
 
@@ -129,8 +123,10 @@ impl<T: SessionStream> SessionData<T> {
             .await;
 
         // Add created mailboxes to session
-        self.add_created_mailboxes(&mut params, change_id, create_ids)
-            .imap_ctx(&arguments.tag, trc::location!())?;
+        std::mem::drop(
+            self.add_created_mailboxes(&mut params, change_id, create_ids)
+                .imap_ctx(&arguments.tag, trc::location!())?,
+        );
 
         // Build response
         Ok(StatusResponse::ok("Mailbox created.")

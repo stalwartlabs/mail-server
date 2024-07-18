@@ -264,27 +264,35 @@ pub trait SerializeResponse {
 
 impl SerializeResponse for trc::Error {
     fn serialize(&self) -> Vec<u8> {
-        let todo = "serialize messages properly in all protocols";
         let mut buf = Vec::with_capacity(64);
         buf.extend_from_slice(self.value_as_str(trc::Key::Type).unwrap_or("NO").as_bytes());
-        if let Some(code) = self.value_as_str(trc::Key::Code) {
+        if let Some(code) = self
+            .value_as_str(trc::Key::Code)
+            .or_else(|| match self.as_ref() {
+                trc::Cause::Store(trc::StoreCause::NotFound) => {
+                    Some(ResponseCode::NonExistent.as_str())
+                }
+                trc::Cause::Store(_) => Some(ResponseCode::TryLater.as_str()),
+                trc::Cause::Limit(trc::LimitCause::Quota) => Some(ResponseCode::Quota.as_str()),
+                trc::Cause::Limit(_) => Some(ResponseCode::TryLater.as_str()),
+                _ => None,
+            })
+        {
             buf.extend_from_slice(b" (");
             buf.extend_from_slice(code.as_bytes());
             buf.push(b')');
         }
-        if let Some(message) = self
+        let message = self
             .value_as_str(trc::Key::Details)
-            .or_else(|| self.value_as_str(trc::Key::Reason))
-        {
-            buf.extend_from_slice(b" \"");
-            for ch in message.as_bytes() {
-                if [b'\"', b'\\'].contains(ch) {
-                    buf.push(b'\\');
-                }
-                buf.push(*ch);
+            .unwrap_or_else(|| self.as_ref().message());
+        buf.extend_from_slice(b" \"");
+        for ch in message.as_bytes() {
+            if [b'\"', b'\\'].contains(ch) {
+                buf.push(b'\\');
             }
-            buf.push(b'\"');
+            buf.push(*ch);
         }
+        buf.push(b'\"');
         buf.extend_from_slice(b"\r\n");
         buf
     }

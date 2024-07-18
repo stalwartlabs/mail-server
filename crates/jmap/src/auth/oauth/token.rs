@@ -89,48 +89,45 @@ impl JMAP {
                 (params.get("device_code"), params.get("client_id"))
             {
                 // Obtain code
-                match self
+                if let Some(auth_code) = self
                     .core
                     .storage
                     .lookup
                     .key_get::<Bincode<OAuthCode>>(format!("oauth:{device_code}").into_bytes())
                     .await?
                 {
-                    Some(auth_code) => {
-                        let oauth = auth_code.inner;
-                        response = if oauth.client_id != client_id {
-                            TokenResponse::error(ErrorType::InvalidClient)
-                        } else {
-                            match oauth.status {
-                                OAuthStatus::Authorized => {
-                                    // Mark this token as issued
-                                    self.core
-                                        .storage
-                                        .lookup
-                                        .key_delete(format!("oauth:{device_code}").into_bytes())
-                                        .await?;
+                    let oauth = auth_code.inner;
+                    response = if oauth.client_id != client_id {
+                        TokenResponse::error(ErrorType::InvalidClient)
+                    } else {
+                        match oauth.status {
+                            OAuthStatus::Authorized => {
+                                // Mark this token as issued
+                                self.core
+                                    .storage
+                                    .lookup
+                                    .key_delete(format!("oauth:{device_code}").into_bytes())
+                                    .await?;
 
-                                    // Issue token
-                                    self.issue_token(oauth.account_id, &oauth.client_id, true)
-                                        .await
-                                        .map(TokenResponse::Granted)
-                                        .map_err(|err| {
-                                            trc::AuthCause::Error
-                                                .into_err()
-                                                .details(err)
-                                                .caused_by(trc::location!())
-                                        })?
-                                }
-                                OAuthStatus::Pending => {
-                                    TokenResponse::error(ErrorType::AuthorizationPending)
-                                }
-                                OAuthStatus::TokenIssued => {
-                                    TokenResponse::error(ErrorType::ExpiredToken)
-                                }
+                                // Issue token
+                                self.issue_token(oauth.account_id, &oauth.client_id, true)
+                                    .await
+                                    .map(TokenResponse::Granted)
+                                    .map_err(|err| {
+                                        trc::AuthCause::Error
+                                            .into_err()
+                                            .details(err)
+                                            .caused_by(trc::location!())
+                                    })?
                             }
-                        };
-                    }
-                    None => (),
+                            OAuthStatus::Pending => {
+                                TokenResponse::error(ErrorType::AuthorizationPending)
+                            }
+                            OAuthStatus::TokenIssued => {
+                                TokenResponse::error(ErrorType::ExpiredToken)
+                            }
+                        }
+                    };
                 }
             }
         } else if grant_type.eq_ignore_ascii_case("refresh_token") {

@@ -111,10 +111,7 @@ impl Value {
         })
     }
 
-    pub fn from_property(
-        parser: &mut Parser<'_>,
-        property: &Property,
-    ) -> trc::Result<Self> {
+    pub fn from_property(parser: &mut Parser<'_>, property: &Property) -> trc::Result<Self> {
         match &property {
             Property::BlobId => Ok(parser
                 .next_token::<BlobId>()?

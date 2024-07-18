@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,
     types::{acl::Acl, collection::Collection, keyword::Keyword, property::Property},
@@ -109,17 +108,18 @@ impl JMAP {
                             Filter::Header(header) => {
                                 let mut header = header.into_iter();
                                 let header_name = header.next().ok_or_else(|| {
-                                    MethodError::InvalidArguments(
-                                        "Header name is missing.".to_string(),
-                                    )
+                                    trc::JmapCause::InvalidArguments
+                                        .into_err()
+                                        .details("Header name is missing.".to_string())
                                 })?;
 
                                 match HeaderName::parse(header_name) {
                                     Some(HeaderName::Other(header_name)) => {
-                                        return Err(MethodError::InvalidArguments(format!(
-                                            "Querying header '{header_name}' is not supported.",
-                                        ))
-                                        .into());
+                                        return Err(trc::JmapCause::InvalidArguments
+                                            .into_err()
+                                            .details(format!(
+                                                "Querying header '{header_name}' is not supported.",
+                                            )));
                                     }
                                     Some(header_name) => {
                                         if let Some(header_value) = header.next() {
@@ -155,7 +155,9 @@ impl JMAP {
                                 fts_filters.push(cond.into());
                             }
                             other => {
-                                return Err(MethodError::UnsupportedFilter(other.to_string()).into())
+                                return Err(trc::JmapCause::UnsupportedFilter
+                                    .into_err()
+                                    .details(other.to_string()))
                             }
                         }
                     }
@@ -252,7 +254,9 @@ impl JMAP {
                         }
 
                         other => {
-                            return Err(MethodError::UnsupportedFilter(other.to_string()).into())
+                            return Err(trc::JmapCause::UnsupportedFilter
+                                .into_err()
+                                .details(other.to_string()))
                         }
                     }
                 }
@@ -329,7 +333,11 @@ impl JMAP {
                         query::Comparator::field(Property::Cc, comparator.is_ascending)
                     }
 
-                    other => return Err(MethodError::UnsupportedSort(other.to_string()).into()),
+                    other => {
+                        return Err(trc::JmapCause::UnsupportedSort
+                            .into_err()
+                            .details(other.to_string()))
+                    }
                 });
             }
 

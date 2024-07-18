@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use jmap_proto::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     method::upload::{
         BlobUploadRequest, BlobUploadResponse, BlobUploadResponseObject, DataSourceObject,
     },
@@ -43,7 +43,7 @@ impl JMAP {
         let account_id = request.account_id.document_id();
 
         if request.create.len() > self.core.jmap.set_max_objects {
-            return Err(MethodError::RequestTooLarge.into());
+            return Err(trc::JmapCause::RequestTooLarge.into_err());
         }
 
         'outer: for (create_id, upload_object) in request.create {

@@ -5,7 +5,7 @@
  */
 
 use jmap_proto::{
-    error::{method::MethodError, set::SetError},
+    error::set::SetError,
     method::{
         copy::{CopyRequest, CopyResponse, RequestArguments},
         set::{self, SetRequest},
@@ -60,10 +60,9 @@ impl JMAP {
         let from_account_id = request.from_account_id.document_id();
 
         if account_id == from_account_id {
-            return Err(MethodError::InvalidArguments(
-                "From accountId is equal to fromAccountId".to_string(),
-            )
-            .into());
+            return Err(trc::JmapCause::InvalidArguments
+                .into_err()
+                .details("From accountId is equal to fromAccountId"));
         }
         let old_state = self
             .assert_state(account_id, Collection::Email, &request.if_in_state)

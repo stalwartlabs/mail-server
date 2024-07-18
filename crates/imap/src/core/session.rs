@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use common::listener::{stream::NullIo, SessionData, SessionManager, SessionStream};
+use common::listener::{stream::NullIo, SessionData, SessionManager, SessionResult, SessionStream};
 use imap_proto::{
     protocol::{ProtocolVersion, SerializeResponse},
     receiver::Receiver,
@@ -58,12 +58,11 @@ impl<T: SessionStream> Session<T> {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
                                 match self.ingest(&buf[..bytes_read]).await {
-                                    Ok(false) => (),
-                                    Ok(true) => {
+                                    SessionResult::Continue => (),
+                                    SessionResult::UpgradeTls => {
                                         return true;
                                     }
-                                    Err(_) => {
-                                        tracing::debug!(parent: &self.span, event = "disconnect", "Disconnecting client.");
+                                    SessionResult::Close => {
                                         break;
                                     }
                                 }
@@ -203,10 +202,21 @@ impl<T: SessionStream> Session<T> {
         }
     }
 
-    pub async fn write_error(&self, err: trc::Error) -> trc::Result<()> {
-        let todo = "log";
+    pub async fn write_error(&self, err: trc::Error) -> bool {
+        tracing::warn!(parent: &self.span, event = "error", reason = %err, "IMAP error.");
 
-        self.write_bytes(err.serialize()).await
+        if !err.matches(trc::Cause::Network) {
+            let disconnect = err.must_disconnect();
+
+            if let Err(err) = self.write_bytes(err.serialize()).await {
+                tracing::debug!(parent: &self.span, event = "error", reason = %err, "Failed to write error.");
+                false
+            } else {
+                !disconnect
+            }
+        } else {
+            false
+        }
     }
 }
 
@@ -235,7 +245,7 @@ impl<T: SessionStream> super::SessionData<T> {
     }
 
     pub async fn write_error(&self, err: trc::Error) -> trc::Result<()> {
-        let todo = "log";
+        tracing::warn!(parent: &self.span, event = "error", reason = %err, "IMAP error.");
 
         if !err.matches(trc::Cause::Network) {
             self.write_bytes(err.serialize()).await

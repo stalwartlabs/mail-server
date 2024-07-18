@@ -112,9 +112,5 @@ impl Display for RequestProperty {
 }
 
 pub trait RequestPropertyParser {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> trc::Result<bool>;
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool>;
 }

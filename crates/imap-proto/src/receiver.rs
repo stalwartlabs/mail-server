@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Display};
+use std::fmt::Display;
 
-use super::{ResponseCode, ResponseType, StatusResponse};
+use super::{ResponseCode, ResponseType};
 
 #[derive(Debug, Clone)]
 pub enum Error {
     NeedsMoreData,
     NeedsLiteral { size: u32 },
-    Error { response: StatusResponse },
+    Error { response: trc::Error },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,7 +92,7 @@ impl<T: CommandParser> Receiver<T> {
         }
     }
 
-    pub fn error_reset(&mut self, message: impl Into<Cow<'static, str>>) -> Error {
+    pub fn error_reset(&mut self, message: impl Into<trc::Value>) -> Error {
         let request = std::mem::take(&mut self.request);
         let err = Error::err(
             if !request.tag.is_empty() {
@@ -462,14 +462,13 @@ impl Display for Token {
 }
 
 impl Error {
-    pub fn err(tag: Option<String>, message: impl Into<Cow<'static, str>>) -> Self {
+    pub fn err(tag: Option<String>, message: impl Into<trc::Value>) -> Self {
         Error::Error {
-            response: StatusResponse {
-                tag,
-                code: ResponseCode::Parse.into(),
-                message: message.into(),
-                rtype: ResponseType::Bad,
-            },
+            response: trc::Cause::Imap
+                .ctx(trc::Key::Details, message)
+                .ctx_opt(trc::Key::Id, tag)
+                .ctx(trc::Key::Type, ResponseType::Bad)
+                .code(ResponseCode::Parse),
         }
     }
 }

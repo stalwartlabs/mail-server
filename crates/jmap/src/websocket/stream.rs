@@ -21,7 +21,7 @@ use tokio_tungstenite::WebSocketStream;
 use tungstenite::Message;
 use utils::map::bitmap::Bitmap;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::{api::http::ToRequestError, auth::AccessToken, JMAP};
 
 impl JMAP {
     pub async fn handle_websocket_stream(
@@ -99,9 +99,8 @@ impl JMAP {
                                             continue;
                                         }
                                         Err(err) => {
-                                            let todo = "fix";
-                                            //err.to_json()
-                                            todo!()
+                                            tracing::debug!(parent: &span, error = ?err, "Failed to parse WebSocket message");
+                                            WebSocketRequestError::from(err.to_request_error()).to_json()
                                         },
                                     };
                                     if let Err(err) = stream.send(Message::Text(response)).await {

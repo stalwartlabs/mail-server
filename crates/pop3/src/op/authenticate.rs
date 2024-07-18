@@ -62,25 +62,46 @@ impl<T: SessionStream> Session<T> {
 
     pub async fn handle_auth(&mut self, credentials: Credentials<String>) -> trc::Result<()> {
         // Throttle authentication requests
-        let todo = "disconnect in all protocols when this error is returned";
         self.jmap.is_auth_allowed_soft(&self.remote_addr).await?;
 
         // Authenticate
-        let mut is_totp_error = false;
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
                 self.jmap
                     .authenticate_plain(&username, &secret, self.remote_addr, ServerProtocol::Pop3)
-                    .await?
+                    .await
             }
             Credentials::OAuthBearer { token } => {
-                let (account_id, _, _) = self
+                match self
                     .jmap
                     .validate_access_token("access_token", &token)
-                    .await?;
-                self.jmap.get_access_token(account_id).await?
+                    .await
+                {
+                    Ok((account_id, _, _)) => self.jmap.get_access_token(account_id).await,
+                    Err(err) => Err(err),
+                }
             }
-        };
+        }
+        .map_err(|err| {
+            if err.matches(trc::Cause::Auth(trc::AuthCause::Failed)) {
+                match &self.state {
+                    State::NotAuthenticated {
+                        auth_failures,
+                        username,
+                    } if *auth_failures < self.jmap.core.imap.max_auth_failures => {
+                        self.state = State::NotAuthenticated {
+                            auth_failures: auth_failures + 1,
+                            username: username.clone(),
+                        };
+                    }
+                    _ => {
+                        return trc::AuthCause::TooManyAttempts.into_err().caused_by(err);
+                    }
+                }
+            }
+
+            err
+        })?;
 
         // Enforce concurrency limits
         let in_flight = match self
@@ -102,37 +123,8 @@ impl<T: SessionStream> Session<T> {
         let mailbox = self.fetch_mailbox(access_token.primary_id()).await?;
 
         // Create session
-        let todo = "fix below";
         self.state = State::Authenticated { in_flight, mailbox };
         self.write_ok("Authentication successful").await
-        /*} else {
-            match &self.state {
-                State::NotAuthenticated {
-                    auth_failures,
-                    username,
-                } if *auth_failures < self.jmap.core.imap.max_auth_failures => {
-                    self.state = State::NotAuthenticated {
-                        auth_failures: auth_failures + 1,
-                        username: username.clone(),
-                    };
-                    self.write_err(if is_totp_error {
-                        "Missing TOTP code, try with 'secret$totp_code'."
-                    } else {
-                        "Authentication failed."
-                    })
-                    .await
-                }
-                _ => {
-                    tracing::debug!(
-                        parent: &self.span,
-                        event = "disconnect",
-                        "Too many authentication failures, disconnecting.",
-                    );
-                    self.write_err("Too many authentication failures").await?;
-                    Err(())
-                }
-            }
-        }*/
     }
 
     pub fn get_concurrency_limiter(&self, account_id: u32) -> Option<Arc<ConcurrencyLimiters>> {

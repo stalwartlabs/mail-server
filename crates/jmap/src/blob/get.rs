@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::{
         get::{GetRequest, GetResponse},
         lookup::{BlobInfo, BlobLookupRequest, BlobLookupResponse},
@@ -148,10 +147,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn blob_lookup(
-        &self,
-        request: BlobLookupRequest,
-    ) -> trc::Result<BlobLookupResponse> {
+    pub async fn blob_lookup(&self, request: BlobLookupRequest) -> trc::Result<BlobLookupResponse> {
         let mut include_email = false;
         let mut include_mailbox = false;
         let mut include_thread = false;
@@ -176,7 +172,7 @@ impl JMAP {
 
                     Ok(value)
                 }
-                MaybeUnparsable::ParseError(_) => Err(MethodError::UnknownDataType),
+                MaybeUnparsable::ParseError(_) => Err(trc::JmapCause::UnknownDataType.into_err()),
             })
             .collect::<Result<Vec<_>, _>>()?;
         let req_account_id = request.account_id.document_id();

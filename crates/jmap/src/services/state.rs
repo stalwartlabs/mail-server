@@ -99,7 +99,11 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                     let acl = match JMAP::from(core.clone()).get_access_token(account_id).await {
                         Ok(result) => result,
                         Err(err) => {
-                            let todo = "log me";
+                            tracing::error!(
+                                context = "ingest",
+                                error = ?err,
+                                "Failed to obtain access token"
+                            );
                             continue;
                         }
                     };

@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap_proto::{
-    error::method::MethodError,
-    types::{collection::Collection, state::State},
-};
+use jmap_proto::types::{collection::Collection, state::State};
 use trc::AddContext;
 
 use crate::JMAP;
@@ -37,7 +34,7 @@ impl JMAP {
         let old_state: State = self.get_state(account_id, collection).await?;
         if let Some(if_in_state) = if_in_state {
             if &old_state != if_in_state {
-                return Err(MethodError::StateMismatch.into());
+                return Err(trc::JmapCause::StateMismatch.into_err());
             }
         }
 

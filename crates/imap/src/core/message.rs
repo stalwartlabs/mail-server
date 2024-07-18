@@ -197,7 +197,7 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
         if !buf.is_empty() {
-            self.write_bytes(buf).await;
+            self.write_bytes(buf).await?;
         }
 
         Ok(modseq)

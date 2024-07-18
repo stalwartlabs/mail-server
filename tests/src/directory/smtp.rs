@@ -88,7 +88,7 @@ async fn lmtp_directory() {
             Item::Verify(v) => match core.vrfy(&handle, v).await {
                 Ok(v) => v.into(),
                 Err(e) => {
-                    if e.matches(trc::StoreCause::NotSupported) {
+                    if e.matches(trc::Cause::Store(trc::StoreCause::NotSupported)) {
                         LookupResult::False
                     } else {
                         panic!("Unexpected error: {e:?}")
@@ -98,7 +98,7 @@ async fn lmtp_directory() {
             Item::Expand(v) => match core.expn(&handle, v).await {
                 Ok(v) => v.into(),
                 Err(e) => {
-                    if e.matches(trc::StoreCause::NotSupported) {
+                    if e.matches(trc::Cause::Store(trc::StoreCause::NotSupported)) {
                         LookupResult::False
                     } else {
                         panic!("Unexpected error: {e:?}")
@@ -132,7 +132,7 @@ async fn lmtp_directory() {
                     Item::Verify(v) => match core.vrfy(&handle, v).await {
                         Ok(v) => v.into(),
                         Err(e) => {
-                            if e.matches(trc::StoreCause::NotSupported) {
+                            if e.matches(trc::Cause::Store(trc::StoreCause::NotSupported)) {
                                 LookupResult::False
                             } else {
                                 panic!("Unexpected error: {e:?}")
@@ -142,7 +142,7 @@ async fn lmtp_directory() {
                     Item::Expand(v) => match core.expn(&handle, v).await {
                         Ok(v) => v.into(),
                         Err(e) => {
-                            if e.matches(trc::StoreCause::NotSupported) {
+                            if e.matches(trc::Cause::Store(trc::StoreCause::NotSupported)) {
                                 LookupResult::False
                             } else {
                                 panic!("Unexpected error: {e:?}")

@@ -69,24 +69,43 @@ impl<T: SessionStream> Session<T> {
         tag: String,
     ) -> trc::Result<()> {
         // Throttle authentication requests
-        self.jmap.is_auth_allowed_soft(&self.remote_addr).await?;
+        self.jmap
+            .is_auth_allowed_soft(&self.remote_addr)
+            .await
+            .map_err(|err| err.id(tag.clone()))?;
 
         // Authenticate
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
                 self.jmap
                     .authenticate_plain(&username, &secret, self.remote_addr, ServerProtocol::Imap)
-                    .await?
+                    .await
             }
             Credentials::OAuthBearer { token } => {
-                let (account_id, _, _) = self
+                match self
                     .jmap
                     .validate_access_token("access_token", &token)
-                    .await?;
-
-                self.jmap.get_access_token(account_id).await?
+                    .await
+                {
+                    Ok((account_id, _, _)) => self.jmap.get_access_token(account_id).await,
+                    Err(err) => Err(err),
+                }
             }
-        };
+        }
+        .map_err(|err| {
+            if err.matches(trc::Cause::Auth(trc::AuthCause::Failed)) {
+                let auth_failures = self.state.auth_failures();
+                if auth_failures < self.jmap.core.imap.max_auth_failures {
+                    self.state = State::NotAuthenticated {
+                        auth_failures: auth_failures + 1,
+                    };
+                } else {
+                    return trc::AuthCause::TooManyAttempts.into_err().caused_by(err);
+                }
+            }
+
+            err.id(tag.clone())
+        })?;
 
         // Enforce concurrency limits
         let in_flight = match self
@@ -96,7 +115,9 @@ impl<T: SessionStream> Session<T> {
             Some(Some(limiter)) => Some(limiter),
             None => None,
             Some(None) => {
-                return Err(trc::LimitCause::ConcurrentRequest.into_err());
+                return Err(trc::LimitCause::ConcurrentRequest
+                    .into_err()
+                    .id(tag.clone()));
             }
         };
 
@@ -105,9 +126,12 @@ impl<T: SessionStream> Session<T> {
         self.jmap.cache_access_token(access_token.clone());
 
         // Create session
-        let todo = "handle auth errors";
         self.state = State::Authenticated {
-            data: Arc::new(SessionData::new(self, &access_token, in_flight).await?),
+            data: Arc::new(
+                SessionData::new(self, &access_token, in_flight)
+                    .await
+                    .map_err(|err| err.id(tag.clone()))?,
+            ),
         };
         self.write_bytes(
             StatusResponse::ok("Authentication successful")
@@ -118,41 +142,6 @@ impl<T: SessionStream> Session<T> {
                 .into_bytes(),
         )
         .await
-
-        /*if let Some(access_token) = access_token {
-
-        } else {
-            self.write_bytes(
-                StatusResponse::no(if is_totp_error {
-                    "Missing TOTP code, try with 'secret$totp_code'."
-                } else {
-                    "Authentication failed."
-                })
-                .with_tag(tag)
-                .with_code(ResponseCode::AuthenticationFailed)
-                .into_bytes(),
-            )
-            .await?;
-
-            let auth_failures = self.state.auth_failures();
-            if auth_failures < self.jmap.core.imap.max_auth_failures {
-                self.state = State::NotAuthenticated {
-                    auth_failures: auth_failures + 1,
-                };
-                Ok(())
-            } else {
-                self.write_bytes(
-                    StatusResponse::bye("Too many authentication failures").into_bytes(),
-                )
-                .await?;
-                tracing::debug!(
-                    parent: &self.span,
-                    event = "disconnect",
-                    "Too many authentication failures, disconnecting.",
-                );
-                Err(())
-            }
-        }*/
     }
 
     pub async fn handle_unauthenticate(&mut self, request: Request<Command>) -> trc::Result<()> {

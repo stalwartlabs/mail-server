@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use common::listener::ServerInstance;
 use jmap_proto::{
-    error::method::MethodError,
     method::{
         get, query,
         set::{self},
@@ -37,6 +36,8 @@ impl JMAP {
         for mut call in request.method_calls {
             // Resolve result and id references
             if let Err(method_error) = response.resolve_references(&mut call.method) {
+                tracing::error!(error = ?method_error, "Error handling method call");
+
                 response.push_response(call.id, MethodName::error(), method_error);
                 continue;
             }
@@ -85,6 +86,8 @@ impl JMAP {
                         response.push_response(call.id, call.name, method_response);
                     }
                     Err(err) => {
+                        tracing::error!(error = ?err, "Error handling method call");
+
                         response.push_error(call.id, err);
                     }
                 }
@@ -160,10 +163,9 @@ impl JMAP {
                     if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
                         self.principal_get(req).await?.into()
                     } else {
-                        return Err(MethodError::Forbidden(
-                            "Principal lookups are disabled".to_string(),
-                        )
-                        .into());
+                        return Err(trc::JmapCause::Forbidden
+                            .into_err()
+                            .details("Principal lookups are disabled".to_string()));
                     }
                 }
                 get::RequestArguments::Quota => {
@@ -208,10 +210,9 @@ impl JMAP {
                     if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
                         self.principal_query(req).await?.into()
                     } else {
-                        return Err(MethodError::Forbidden(
-                            "Principal lookups are disabled".to_string(),
-                        )
-                        .into());
+                        return Err(trc::JmapCause::Forbidden
+                            .into_err()
+                            .details("Principal lookups are disabled".to_string()));
                     }
                 }
                 query::RequestArguments::Quota => {

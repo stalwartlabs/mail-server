@@ -16,11 +16,7 @@ pub struct GetArguments {
 }
 
 impl RequestPropertyParser for GetArguments {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> trc::Result<bool> {
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         match &property.hash[0] {
             0x7465_7366_666f => {
                 self.offset = parser

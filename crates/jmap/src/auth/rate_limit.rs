@@ -105,8 +105,6 @@ impl JMAP {
     }
 
     pub async fn is_auth_allowed_soft(&self, addr: &IpAddr) -> trc::Result<()> {
-        let todo = "convert into request errors";
-
         if let Some(rate) = &self.core.jmap.rate_authenticate_req {
             if self
                 .core

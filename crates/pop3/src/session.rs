@@ -159,8 +159,17 @@ impl<T: SessionStream> Session<T> {
             .await
     }
 
-    pub async fn write_err(&mut self, err: trc::Error) -> trc::Result<()> {
+    pub async fn write_err(&mut self, err: trc::Error) -> bool {
         tracing::error!(parent: &self.span, "POP3 error: {}", err);
-        self.write_bytes(err.serialize()).await
+        let disconnect = err.must_disconnect();
+
+        if !err.matches(trc::Cause::Network) {
+            if let Err(err) = self.write_bytes(err.serialize()).await {
+                tracing::debug!(parent: &self.span, "Failed to write error: {}", err);
+                return false;
+            }
+        }
+
+        !disconnect
     }
 }

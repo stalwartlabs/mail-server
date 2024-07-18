@@ -7,10 +7,7 @@
 use std::borrow::Cow;
 
 use jmap_proto::{
-    error::{
-        method::MethodError,
-        set::{SetError, SetErrorType},
-    },
+    error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
     object::{index::ObjectIndexBuilder, Object},
     response::references::EvalObjectReferences,
@@ -51,10 +48,9 @@ impl JMAP {
         let mut changes = None;
         match (request.create, request.update) {
             (Some(create), Some(update)) if !create.is_empty() && !update.is_empty() => {
-                return Err(MethodError::InvalidArguments(
-                    "Creating and updating on the same request is not allowed.".into(),
-                )
-                .into());
+                return Err(trc::JmapCause::InvalidArguments
+                    .into_err()
+                    .details("Creating and updating on the same request is not allowed."));
             }
             (Some(create), _) if !create.is_empty() => {
                 for (id, obj) in create {

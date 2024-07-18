@@ -152,11 +152,9 @@ pub trait SerializeResponse {
 
 impl SerializeResponse for trc::Error {
     fn serialize(&self) -> Vec<u8> {
-        let todo = "serialize messages properly in all protocols";
         let message = self
             .value_as_str(trc::Key::Details)
-            .or_else(|| self.value_as_str(trc::Key::Reason))
-            .unwrap_or("Internal Server Error");
+            .unwrap_or_else(|| self.as_ref().message());
         let mut buf = Vec::with_capacity(message.len() + 6);
         buf.extend_from_slice(b"-ERR ");
         buf.extend_from_slice(message.as_bytes());

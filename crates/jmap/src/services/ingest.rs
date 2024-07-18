@@ -18,8 +18,6 @@ use crate::{
 
 impl JMAP {
     pub async fn deliver_message(&self, message: IngestMessage) -> Vec<DeliveryResult> {
-        let todo = "trace all errors";
-
         // Read message
         let raw_message = match self
             .core
@@ -117,7 +115,14 @@ impl JMAP {
                     })
                     .await
                 }
-                Err(_) => {
+                Err(err) => {
+                    tracing::error!(
+                        context = "ingest",
+                        error = ?err,
+                        rcpt = rcpt,
+                        "Failed to ingest message"
+                    );
+
                     *status = DeliveryResult::TemporaryFailure {
                         reason: "Transient server failure.".into(),
                     };
@@ -139,31 +144,42 @@ impl JMAP {
                         .await;
                     }
                 }
-                Err(mut err) => match err.as_ref() {
-                    trc::Cause::Limit(trc::LimitCause::Quota) => {
-                        *status = DeliveryResult::TemporaryFailure {
-                            reason: "Mailbox over quota.".into(),
+                Err(mut err) => {
+                    tracing::error!(
+                        context = "ingest",
+                        error = ?err,
+                        rcpt = rcpt,
+                        "Failed to ingest message"
+                    );
+
+                    match err.as_ref() {
+                        trc::Cause::Limit(trc::LimitCause::Quota) => {
+                            *status = DeliveryResult::TemporaryFailure {
+                                reason: "Mailbox over quota.".into(),
+                            }
+                        }
+                        trc::Cause::Ingest => {
+                            *status = DeliveryResult::PermanentFailure {
+                                code: err
+                                    .value(trc::Key::Reason)
+                                    .and_then(|v| v.to_uint())
+                                    .map(|n| {
+                                        [(n / 100) as u8, ((n % 100) / 10) as u8, (n % 10) as u8]
+                                    })
+                                    .unwrap(),
+                                reason: err
+                                    .take_value(trc::Key::Reason)
+                                    .and_then(|v| v.into_string())
+                                    .unwrap(),
+                            }
+                        }
+                        _ => {
+                            *status = DeliveryResult::TemporaryFailure {
+                                reason: "Transient server failure.".into(),
+                            }
                         }
                     }
-                    trc::Cause::Ingest => {
-                        *status = DeliveryResult::PermanentFailure {
-                            code: err
-                                .value(trc::Key::Reason)
-                                .and_then(|v| v.to_uint())
-                                .map(|n| [(n / 100) as u8, ((n % 100) / 10) as u8, (n % 10) as u8])
-                                .unwrap(),
-                            reason: err
-                                .take_value(trc::Key::Reason)
-                                .and_then(|v| v.into_string())
-                                .unwrap(),
-                        }
-                    }
-                    _ => {
-                        *status = DeliveryResult::TemporaryFailure {
-                            reason: "Transient server failure.".into(),
-                        }
-                    }
-                },
+                }
             }
         }
 

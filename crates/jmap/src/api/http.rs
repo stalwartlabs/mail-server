@@ -22,7 +22,7 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 use jmap_proto::{
-    error::request::RequestError,
+    error::request::{RequestError, RequestLimitError},
     request::{capability::Session, Request},
     response::Response,
     types::{blob::BlobId, id::Id},
@@ -35,7 +35,10 @@ use crate::{
     JmapInstance, JMAP,
 };
 
-use super::{HtmlResponse, HttpRequest, HttpResponse, JmapSessionManager, JsonResponse};
+use super::{
+    management::ManagementApiError, HtmlResponse, HttpRequest, HttpResponse, JmapSessionManager,
+    JsonResponse,
+};
 
 pub struct HttpSessionData {
     pub instance: Arc<ServerInstance>,
@@ -513,30 +516,103 @@ impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
 
 impl ToHttpResponse for trc::Error {
     fn into_http_response(self) -> HttpResponse {
-        tracing::error!(context = "store", error = %self, "Database error");
+        match self.as_ref() {
+            trc::Cause::Manage(cause) => {
+                let details_or_reason = self
+                    .value(trc::Key::Details)
+                    .or_else(|| self.value(trc::Key::Reason))
+                    .and_then(|v| v.as_str());
 
-        RequestError::internal_server_error().into_http_response()
+                match cause {
+                    trc::ManageCause::MissingParameter => ManagementApiError::FieldMissing {
+                        field: self.value_as_str(trc::Key::Key).unwrap_or_default(),
+                    },
+                    trc::ManageCause::AlreadyExists => ManagementApiError::FieldAlreadyExists {
+                        field: self.value_as_str(trc::Key::Key).unwrap_or_default(),
+                        value: self.value_as_str(trc::Key::Value).unwrap_or_default(),
+                    },
+                    trc::ManageCause::NotFound => ManagementApiError::NotFound {
+                        item: self.value_as_str(trc::Key::Key).unwrap_or_default(),
+                    },
+                    trc::ManageCause::NotSupported => ManagementApiError::Unsupported {
+                        details: details_or_reason.unwrap_or("Requested action is unsupported"),
+                    },
+                    trc::ManageCause::AssertFailed => ManagementApiError::AssertFailed,
+                    trc::ManageCause::Error => ManagementApiError::Other {
+                        details: details_or_reason.unwrap_or("An error occurred."),
+                    },
+                }
+            }
+            .into_http_response(),
+
+            _ => self.to_request_error().into_http_response(),
+        }
     }
 }
 
-/*impl ToHttpResponse for std::io::Error {
-    fn into_http_response(self) -> HttpResponse {
-        tracing::error!(context = "i/o", error = %self, "I/O error");
-
-        RequestError::internal_server_error().into_http_response()
-    }
+pub trait ToRequestError {
+    fn to_request_error(&self) -> RequestError<'_>;
 }
 
-impl ToHttpResponse for serde_json::Error {
-    fn into_http_response(self) -> HttpResponse {
-        RequestError::blank(
-            StatusCode::BAD_REQUEST.as_u16(),
-            "Invalid parameters",
-            format!("Failed to deserialize JSON: {self}"),
-        )
-        .into_http_response()
+impl ToRequestError for trc::Error {
+    fn to_request_error(&self) -> RequestError<'_> {
+        let details_or_reason = self
+            .value(trc::Key::Details)
+            .or_else(|| self.value(trc::Key::Reason))
+            .and_then(|v| v.as_str());
+        let details = details_or_reason.unwrap_or_else(|| self.as_ref().message());
+
+        match self.as_ref() {
+            trc::Cause::Jmap(cause) => match cause {
+                trc::JmapCause::UnknownCapability => RequestError::unknown_capability(details),
+                trc::JmapCause::NotJSON => RequestError::not_json(details),
+                trc::JmapCause::NotRequest => RequestError::not_request(details),
+                _ => RequestError::invalid_parameters(),
+            },
+            trc::Cause::Limit(cause) => match cause {
+                trc::LimitCause::SizeRequest => RequestError::limit(RequestLimitError::SizeRequest),
+                trc::LimitCause::SizeUpload => RequestError::limit(RequestLimitError::SizeUpload),
+                trc::LimitCause::CallsIn => RequestError::limit(RequestLimitError::CallsIn),
+                trc::LimitCause::ConcurrentRequest => {
+                    RequestError::limit(RequestLimitError::ConcurrentRequest)
+                }
+                trc::LimitCause::ConcurrentUpload => {
+                    RequestError::limit(RequestLimitError::ConcurrentUpload)
+                }
+                trc::LimitCause::Quota => RequestError::over_quota(),
+                trc::LimitCause::BlobQuota => RequestError::over_blob_quota(
+                    self.value(trc::Key::Total)
+                        .and_then(|v| v.to_uint())
+                        .unwrap_or_default() as usize,
+                    self.value(trc::Key::Size)
+                        .and_then(|v| v.to_uint())
+                        .unwrap_or_default() as usize,
+                ),
+                trc::LimitCause::TooManyRequests => RequestError::too_many_requests(),
+            },
+            trc::Cause::Auth(cause) => match cause {
+                trc::AuthCause::Failed => RequestError::unauthorized(),
+                trc::AuthCause::MissingTotp => {
+                    RequestError::blank(403, "TOTP code required", cause.message())
+                }
+                trc::AuthCause::TooManyAttempts | trc::AuthCause::Banned => {
+                    RequestError::too_many_auth_attempts()
+                }
+                trc::AuthCause::Error => RequestError::internal_server_error(),
+            },
+            trc::Cause::Resource(cause) => match cause {
+                trc::ResourceCause::NotFound => RequestError::not_found(),
+                trc::ResourceCause::BadParameters => RequestError::blank(
+                    StatusCode::BAD_REQUEST.as_u16(),
+                    "Invalid parameters",
+                    details_or_reason.unwrap_or("One or multiple parameters could not be parsed."),
+                ),
+                trc::ResourceCause::Error => RequestError::internal_server_error(),
+            },
+            _ => RequestError::internal_server_error(),
+        }
     }
-}*/
+}
 
 impl<T: serde::Serialize> JsonResponse<T> {
     pub fn new(inner: T) -> Self {
@@ -574,6 +650,12 @@ impl ToHttpResponse for Response {
 impl ToHttpResponse for Session {
     fn into_http_response(self) -> HttpResponse {
         //let c = println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
+        JsonResponse::new(self).into_http_response()
+    }
+}
+
+impl ToHttpResponse for ManagementApiError<'_> {
+    fn into_http_response(self) -> super::HttpResponse {
         JsonResponse::new(self).into_http_response()
     }
 }
@@ -623,7 +705,7 @@ impl ToHttpResponse for UploadResponse {
     }
 }
 
-impl ToHttpResponse for RequestError {
+impl ToHttpResponse for RequestError<'_> {
     fn into_http_response(self) -> HttpResponse {
         hyper::Response::builder()
             .status(StatusCode::from_u16(self.status).unwrap())

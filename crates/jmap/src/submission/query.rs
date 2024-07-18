@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::query::{
         Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
     },
@@ -60,7 +59,11 @@ impl JMAP {
                 Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                     filters.push(cond.into());
                 }
-                other => return Err(MethodError::UnsupportedFilter(other.to_string()).into()),
+                other => {
+                    return Err(trc::JmapCause::UnsupportedFilter
+                        .into_err()
+                        .details(other.to_string()))
+                }
             }
         }
 
@@ -88,7 +91,11 @@ impl JMAP {
                     SortProperty::SentAt => {
                         query::Comparator::field(Property::SendAt, comparator.is_ascending)
                     }
-                    other => return Err(MethodError::UnsupportedSort(other.to_string()).into()),
+                    other => {
+                        return Err(trc::JmapCause::UnsupportedSort
+                            .into_err()
+                            .details(other.to_string()))
+                    }
                 });
             }
 

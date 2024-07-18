@@ -317,7 +317,7 @@ impl<T: SessionStream> SessionData<T> {
                 .jmap
                 .commit_changes(account_id, changelog)
                 .await
-                .imap_ctx(&response.tag.as_ref().unwrap(), trc::location!())?;
+                .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
             self.jmap
                 .broadcast_state_change(if !changed_mailboxes.is_empty() {
                     StateChange::new(account_id)

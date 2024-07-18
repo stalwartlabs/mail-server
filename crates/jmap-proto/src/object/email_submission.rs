@@ -21,11 +21,7 @@ pub struct SetArguments {
 }
 
 impl RequestPropertyParser for SetArguments {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> trc::Result<bool> {
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         if property.hash[0] == 0x4565_7461_6470_5573_7365_6363_7553_6e6f
             && property.hash[1] == 0x6c69_616d
         {

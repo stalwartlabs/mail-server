@@ -15,10 +15,7 @@ use aes_gcm_siv::{
 };
 
 use directory::{Principal, Type};
-use jmap_proto::{
-    error::method::MethodError,
-    types::{collection::Collection, id::Id},
-};
+use jmap_proto::types::{collection::Collection, id::Id};
 use store::blake3;
 use utils::map::bitmap::Bitmap;
 
@@ -118,11 +115,10 @@ impl AccessToken {
         if self.has_access(to_account_id.document_id(), to_collection) {
             Ok(self)
         } else {
-            Err(MethodError::Forbidden(format!(
+            Err(trc::JmapCause::Forbidden.into_err().details(format!(
                 "You do not have access to account {}",
                 to_account_id
-            ))
-            .into())
+            )))
         }
     }
 
@@ -130,10 +126,9 @@ impl AccessToken {
         if self.is_member(account_id.document_id()) {
             Ok(self)
         } else {
-            Err(
-                MethodError::Forbidden(format!("You are not an owner of account {}", account_id))
-                    .into(),
-            )
+            Err(trc::JmapCause::Forbidden
+                .into_err()
+                .details(format!("You are not an owner of account {}", account_id)))
         }
     }
 }

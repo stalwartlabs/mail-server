@@ -8,10 +8,7 @@ use ahash::AHashMap;
 use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 use crate::{
-    error::{
-        method::MethodError,
-        set::{InvalidProperty, SetError},
-    },
+    error::set::{InvalidProperty, SetError},
     object::{email_submission, mailbox, sieve, Object},
     parser::{json::Parser, JsonObjectParser, Token},
     request::{
@@ -407,7 +404,7 @@ impl<T> SetRequest<T> {
             })
             > max_objects_in_set
         {
-            Err(MethodError::RequestTooLarge.into())
+            Err(trc::JmapCause::RequestTooLarge.into_err())
         } else {
             Ok(())
         }
@@ -483,7 +480,7 @@ impl SetResponse {
                 state_change: None,
             })
         } else {
-            Err(MethodError::RequestTooLarge.into())
+            Err(trc::JmapCause::RequestTooLarge.into_err())
         }
     }
 

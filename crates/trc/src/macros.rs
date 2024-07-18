@@ -13,7 +13,7 @@ macro_rules! trace {
                  .ctx($crate::Key::$key, $crate::Value::from($value))
              )* ;
 
-             eprintln!("{}", event);
+             //eprintln!("{}", event);
          }
      };
  }
@@ -27,7 +27,7 @@ macro_rules! error {
             .ctx($crate::Key::$key, $crate::Value::from($value))
         )* ;
 
-        eprintln!("{}", event);
+        //eprintln!("{}", event);
     }};
 }
 

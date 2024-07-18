@@ -5,7 +5,6 @@
  */
 
 use crate::{
-    error::method::MethodError,
     object::{blob, email, Object},
     parser::{json::Parser, JsonObjectParser, Token},
     request::{
@@ -176,7 +175,7 @@ impl<T> GetRequest<T> {
                         .collect::<Vec<_>>(),
                 ))
             } else {
-                Err(MethodError::RequestTooLarge.into())
+                Err(trc::JmapCause::RequestTooLarge.into_err())
             }
         } else {
             Ok(None)
@@ -196,7 +195,7 @@ impl<T> GetRequest<T> {
                         .collect::<Vec<_>>(),
                 ))
             } else {
-                Err(MethodError::RequestTooLarge.into())
+                Err(trc::JmapCause::RequestTooLarge.into_err())
             }
         } else {
             Ok(None)

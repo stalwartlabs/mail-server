@@ -6,7 +6,6 @@
 
 use directory::QueryBy;
 use jmap_proto::{
-    error::method::MethodError,
     method::query::{Filter, QueryRequest, QueryResponse, RequestArguments},
     types::collection::Collection,
 };
@@ -65,7 +64,11 @@ impl JMAP {
                     }
                 }
                 Filter::Type(_) => {}
-                other => return Err(MethodError::UnsupportedFilter(other.to_string()).into()),
+                other => {
+                    return Err(trc::JmapCause::UnsupportedFilter
+                        .into_err()
+                        .details(other.to_string()))
+                }
             }
         }
 

@@ -189,7 +189,7 @@ impl JMAP {
                     }
                     Method::DELETE => {
                         // Remove FTS index
-                        self.core.storage.fts.remove_all(account_id).await;
+                        self.core.storage.fts.remove_all(account_id).await?;
 
                         // Delete account
                         self.core
@@ -408,8 +408,6 @@ impl JMAP {
     }
 
     pub fn assert_supported_directory(&self) -> trc::Result<()> {
-        let todo = "update webadmin";
-
         let class = match &self.core.storage.directory.store {
             DirectoryInner::Internal(_) => return Ok(()),
             DirectoryInner::Ldap(_) => "LDAP",
@@ -441,50 +439,3 @@ impl From<Principal<String>> for PrincipalResponse {
         }
     }
 }
-
-/*
-fn into_directory_response(mut error: trc::Error) -> trc::Result<HttpResponse> {
-    let response = match error.as_ref() {
-        trc::Cause::MissingParameter => ManagementApiError::FieldMissing {
-            field: error
-                .take_value(trc::Key::Key)
-                .and_then(|v| v.into_string())
-                .unwrap_or_default(),
-        },
-        trc::Cause::AlreadyExists => ManagementApiError::FieldAlreadyExists {
-            field: error
-                .take_value(trc::Key::Key)
-                .and_then(|v| v.into_string())
-                .unwrap_or_default(),
-            value: error
-                .take_value(trc::Key::Value)
-                .and_then(|v| v.into_string())
-                .unwrap_or_default(),
-        },
-        trc::StoreCause::NotFound.into_err() => ManagementApiError::NotFound {
-            item: error
-                .take_value(trc::Key::Key)
-                .and_then(|v| v.into_string())
-                .unwrap_or_default(),
-        },
-        trc::Cause::Unsupported => {
-            return JsonResponse::new(ManagementApiError::Unsupported {
-                details: "Requested action is unsupported".into(),
-            })
-            .into_http_response();
-        }
-        _ => {
-            tracing::warn!(
-                context = "directory",
-                event = "error",
-                reason = ?error,
-                "Directory error"
-            );
-
-            return RequestError::internal_server_error().into_http_response();
-        }
-    };
-
-    JsonResponse::new(response).into_http_response()
-}
-*/

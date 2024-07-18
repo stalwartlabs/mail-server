@@ -494,15 +494,26 @@ impl SerializeResponse for trc::Error {
         buf.push(b' ');
         buf.extend_from_slice(self.value_as_str(trc::Key::Type).unwrap_or("NO").as_bytes());
         buf.push(b' ');
-        if let Some(code) = self.value_as_str(trc::Key::Code) {
+        if let Some(code) = self
+            .value_as_str(trc::Key::Code)
+            .or_else(|| match self.as_ref() {
+                trc::Cause::Store(trc::StoreCause::NotFound) => {
+                    Some(ResponseCode::NonExistent.as_str())
+                }
+                trc::Cause::Store(_) => Some(ResponseCode::ContactAdmin.as_str()),
+                trc::Cause::Limit(trc::LimitCause::Quota) => Some(ResponseCode::OverQuota.as_str()),
+                trc::Cause::Limit(_) => Some(ResponseCode::Limit.as_str()),
+                trc::Cause::Auth(_) => Some(ResponseCode::AuthenticationFailed.as_str()),
+                _ => None,
+            })
+        {
             buf.push(b'[');
             buf.extend_from_slice(code.as_bytes());
             buf.extend_from_slice(b"] ");
         }
         buf.extend_from_slice(
             self.value_as_str(trc::Key::Details)
-                .or_else(|| self.value_as_str(trc::Key::Reason))
-                .unwrap_or("Internal server error")
+                .unwrap_or_else(|| self.as_ref().message())
                 .as_bytes(),
         );
         buf.extend_from_slice(b"\r\n");

@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::changes::{ChangesRequest, ChangesResponse, RequestArguments},
     types::{collection::Collection, property::Property, state::State},
 };
@@ -49,7 +48,7 @@ impl JMAP {
             RequestArguments::Quota => {
                 access_token.assert_is_member(request.account_id)?;
 
-                return Err(MethodError::CannotCalculateChanges.into());
+                return Err(trc::JmapCause::CannotCalculateChanges.into_err());
             }
         };
 

@@ -6,7 +6,6 @@
 
 use base64::{engine::general_purpose, Engine};
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, property::Property, type_state::DataType, value::Value},
@@ -84,10 +83,9 @@ impl JMAP {
                         result.append(Property::Id, Value::Id(id));
                     }
                     Property::Url | Property::Keys | Property::Value => {
-                        return Err(MethodError::Forbidden(
+                        return Err(trc::JmapCause::Forbidden.into_err().details(
                             "The 'url' and 'keys' properties are not readable".to_string(),
-                        )
-                        .into());
+                        ));
                     }
                     property => {
                         result.append(property.clone(), push.remove(property));

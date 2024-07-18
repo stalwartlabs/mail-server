@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::{
         query::Filter,
         search_snippet::{GetSearchSnippetRequest, GetSearchSnippetResponse, SearchSnippet},
@@ -83,7 +82,7 @@ impl JMAP {
         };
 
         if email_ids.len() > self.core.jmap.snippet_max_results {
-            return Err(MethodError::RequestTooLarge.into());
+            return Err(trc::JmapCause::RequestTooLarge.into_err());
         }
 
         for email_id in email_ids {

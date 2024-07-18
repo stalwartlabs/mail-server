@@ -53,15 +53,16 @@ impl<T: SessionStream> Session<T> {
         }
 
         for request in requests {
-            let mut result = None;
-            let maybe_err = match request {
+            let result = match request {
                 Ok(command) => match self.validate_request(command).await {
                     Ok(command) => match command {
                         Command::User { name } => {
                             if let State::NotAuthenticated { username, .. } = &mut self.state {
                                 let response = format!("{name} is a valid mailbox");
                                 *username = Some(name);
-                                self.write_ok(response).await
+                                self.write_ok(response)
+                                    .await
+                                    .map(|_| SessionResult::Continue)
                             } else {
                                 unreachable!();
                             }
@@ -78,20 +79,36 @@ impl<T: SessionStream> Session<T> {
                                 secret: string,
                             })
                             .await
+                            .map(|_| SessionResult::Continue)
                         }
-                        Command::Quit => {
-                            result = SessionResult::Close.into();
-                            self.handle_quit().await
+                        Command::Quit => self.handle_quit().await.map(|_| SessionResult::Close),
+                        Command::Stat => self.handle_stat().await.map(|_| SessionResult::Continue),
+                        Command::List { msg } => {
+                            self.handle_list(msg).await.map(|_| SessionResult::Continue)
                         }
-                        Command::Stat => self.handle_stat().await,
-                        Command::List { msg } => self.handle_list(msg).await,
-                        Command::Retr { msg } => self.handle_fetch(msg, None).await,
-                        Command::Dele { msg } => self.handle_dele(vec![msg]).await,
-                        Command::DeleMany { msgs } => self.handle_dele(msgs).await,
-                        Command::Top { msg, n } => self.handle_fetch(msg, n.into()).await,
-                        Command::Uidl { msg } => self.handle_uidl(msg).await,
-                        Command::Noop => self.write_ok("NOOP").await,
-                        Command::Rset => self.handle_rset().await,
+                        Command::Retr { msg } => self
+                            .handle_fetch(msg, None)
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::Dele { msg } => self
+                            .handle_dele(vec![msg])
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::DeleMany { msgs } => self
+                            .handle_dele(msgs)
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::Top { msg, n } => self
+                            .handle_fetch(msg, n.into())
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::Uidl { msg } => {
+                            self.handle_uidl(msg).await.map(|_| SessionResult::Continue)
+                        }
+                        Command::Noop => {
+                            self.write_ok("NOOP").await.map(|_| SessionResult::Continue)
+                        }
+                        Command::Rset => self.handle_rset().await.map(|_| SessionResult::Continue),
                         Command::Capa => {
                             let mechanisms =
                                 if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
@@ -108,37 +125,37 @@ impl<T: SessionStream> Session<T> {
                                 .serialize(),
                             )
                             .await
+                            .map(|_| SessionResult::Continue)
                         }
-                        Command::Stls => {
-                            result = SessionResult::UpgradeTls.into();
-                            self.write_ok("Begin TLS negotiation now").await
-                        }
-                        Command::Utf8 => self.write_ok("UTF8 enabled").await,
-                        Command::Auth { mechanism, params } => {
-                            self.handle_sasl(mechanism, params).await
-                        }
-                        Command::Apop { .. } => {
-                            self.write_err(
-                                trc::Cause::Pop3.into_err().details("APOP not supported."),
-                            )
+                        Command::Stls => self
+                            .write_ok("Begin TLS negotiation now")
                             .await
+                            .map(|_| SessionResult::UpgradeTls),
+                        Command::Utf8 => self
+                            .write_ok("UTF8 enabled")
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::Auth { mechanism, params } => self
+                            .handle_sasl(mechanism, params)
+                            .await
+                            .map(|_| SessionResult::Continue),
+                        Command::Apop { .. } => {
+                            Err(trc::Cause::Pop3.into_err().details("APOP not supported."))
                         }
                     },
-                    Err(err) => self.write_err(err).await,
+                    Err(err) => Err(err),
                 },
-                Err(err) => self.write_err(err).await,
+                Err(err) => Err(err),
             };
 
-            if let Err(err) = maybe_err {
-                tracing::error!(parent: &self.span, "Error: {:?}", err);
-                if err.matches(trc::Cause::Network) {
-                    return SessionResult::Close;
-                } else if let Err(err) = self.write_err(err).await {
-                    tracing::error!(parent: &self.span, "Error: {:?}", err);
-                    return SessionResult::Close;
+            match result {
+                Ok(SessionResult::Continue) => (),
+                Ok(result) => return result,
+                Err(err) => {
+                    if !self.write_err(err).await {
+                        return SessionResult::Close;
+                    }
                 }
-            } else if let Some(result) = result {
-                return result;
             }
         }
 

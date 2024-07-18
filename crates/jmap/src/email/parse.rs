@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::parse::{ParseEmailRequest, ParseEmailResponse},
     object::Object,
     types::{property::Property, value::Value},
@@ -30,7 +29,7 @@ impl JMAP {
         access_token: &AccessToken,
     ) -> trc::Result<ParseEmailResponse> {
         if request.blob_ids.len() > self.core.jmap.mail_parse_max_items {
-            return Err(MethodError::RequestTooLarge.into());
+            return Err(trc::JmapCause::RequestTooLarge.into_err());
         }
         let properties = request.properties.unwrap_or_else(|| {
             vec![
@@ -235,10 +234,9 @@ impl JMAP {
                     }
 
                     _ => {
-                        return Err(MethodError::InvalidArguments(format!(
-                            "Invalid property {property:?}"
-                        ))
-                        .into());
+                        return Err(trc::JmapCause::InvalidArguments
+                            .into_err()
+                            .details(format!("Invalid property {property:?}")));
                     }
                 }
             }

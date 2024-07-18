@@ -689,7 +689,7 @@ pub async fn test_account_login(login: &str, secret: &str) -> Client {
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum Response<T> {
-    RequestError(RequestError),
+    RequestError(RequestError<'static>),
     Error { error: String, details: String },
     Data { data: T },
 }

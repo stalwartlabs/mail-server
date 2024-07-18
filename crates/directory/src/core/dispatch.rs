@@ -24,7 +24,7 @@ impl Directory {
             DirectoryInner::Smtp(store) => store.query(by).await,
             DirectoryInner::Memory(store) => store.query(by).await,
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn email_to_ids(&self, email: &str) -> trc::Result<Vec<u32>> {
@@ -36,7 +36,7 @@ impl Directory {
             DirectoryInner::Smtp(store) => store.email_to_ids(email).await,
             DirectoryInner::Memory(store) => store.email_to_ids(email).await,
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
@@ -55,7 +55,7 @@ impl Directory {
             DirectoryInner::Smtp(store) => store.is_local_domain(domain).await,
             DirectoryInner::Memory(store) => store.is_local_domain(domain).await,
         }
-        .caused_by( trc::location!())?;
+        .caused_by(trc::location!())?;
 
         // Update cache
         if let Some(cache) = &self.cache {
@@ -81,7 +81,7 @@ impl Directory {
             DirectoryInner::Smtp(store) => store.rcpt(email).await,
             DirectoryInner::Memory(store) => store.rcpt(email).await,
         }
-        .caused_by( trc::location!())?;
+        .caused_by(trc::location!())?;
 
         // Update cache
         if let Some(cache) = &self.cache {
@@ -100,7 +100,7 @@ impl Directory {
             DirectoryInner::Smtp(store) => store.vrfy(address).await,
             DirectoryInner::Memory(store) => store.vrfy(address).await,
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
@@ -112,6 +112,6 @@ impl Directory {
             DirectoryInner::Smtp(store) => store.expn(address).await,
             DirectoryInner::Memory(store) => store.expn(address).await,
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 }

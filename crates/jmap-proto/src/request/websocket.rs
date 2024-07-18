@@ -78,7 +78,7 @@ pub struct WebSocketStateChange {
 }
 
 #[derive(Debug, serde::Serialize)]
-pub struct WebSocketRequestError {
+pub struct WebSocketRequestError<'x> {
     #[serde(rename = "@type")]
     pub type_: WebSocketRequestErrorType,
 
@@ -88,7 +88,7 @@ pub struct WebSocketRequestError {
     #[serde(skip_serializing_if = "Option::is_none")]
     limit: Option<RequestLimitError>,
     status: u16,
-    detail: Cow<'static, str>,
+    detail: Cow<'x, str>,
 
     #[serde(rename = "requestId")]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -180,8 +180,8 @@ impl WebSocketMessage {
     }
 }
 
-impl WebSocketRequestError {
-    pub fn from_error(error: RequestError, request_id: Option<String>) -> Self {
+impl<'x> WebSocketRequestError<'x> {
+    pub fn from_error(error: RequestError<'x>, request_id: Option<String>) -> Self {
         Self {
             type_: WebSocketRequestErrorType::RequestError,
             p_type: error.p_type,
@@ -197,8 +197,8 @@ impl WebSocketRequestError {
     }
 }
 
-impl From<RequestError> for WebSocketRequestError {
-    fn from(value: RequestError) -> Self {
+impl<'x> From<RequestError<'x>> for WebSocketRequestError<'x> {
+    fn from(value: RequestError<'x>) -> Self {
         Self::from_error(value, None)
     }
 }

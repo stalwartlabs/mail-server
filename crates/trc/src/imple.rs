@@ -156,6 +156,29 @@ impl Cause {
     pub fn into_err(self) -> Error {
         Error::new(self)
     }
+
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::Store(cause) => cause.message(),
+            Self::Jmap(cause) => cause.message(),
+            Self::Imap => "IMAP error",
+            Self::ManageSieve => "ManageSieve error",
+            Self::Pop3 => "POP3 error",
+            Self::Smtp => "SMTP error",
+            Self::Thread => "Thread error",
+            Self::Fetch => "Fetch error",
+            Self::Acme => "ACME error",
+            Self::Dns => "DNS error",
+            Self::Ingest => "Message Ingest error",
+            Self::Network => "Network error",
+            Self::Limit(cause) => cause.message(),
+            Self::Manage(cause) => cause.message(),
+            Self::Auth(cause) => cause.message(),
+            Self::Purge => "Purge error",
+            Self::Configuration => "Configuration error",
+            Self::Resource(cause) => cause.message(),
+        }
+    }
 }
 
 impl StoreCause {
@@ -177,6 +200,32 @@ impl StoreCause {
     #[inline(always)]
     pub fn into_err(self) -> Error {
         Error::new(Cause::Store(self))
+    }
+
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::AssertValue => "Another process has modified the value",
+            Self::BlobMissingMarker => "Blob is missing marker",
+            Self::FoundationDB => "FoundationDB error",
+            Self::MySQL => "MySQL error",
+            Self::PostgreSQL => "PostgreSQL error",
+            Self::RocksDB => "RocksDB error",
+            Self::SQLite => "SQLite error",
+            Self::Ldap => "LDAP error",
+            Self::ElasticSearch => "ElasticSearch error",
+            Self::Redis => "Redis error",
+            Self::S3 => "S3 error",
+            Self::Filesystem => "Filesystem error",
+            Self::Pool => "Connection pool error",
+            Self::DataCorruption => "Data corruption",
+            Self::Decompress => "Decompression error",
+            Self::Deserialize => "Deserialization error",
+            Self::NotFound => "Not found",
+            Self::NotConfigured => "Not configured",
+            Self::NotSupported => "Operation not supported",
+            Self::Unexpected => "Unexpected error",
+            Self::Crypto => "Crypto error",
+        }
     }
 }
 
@@ -200,6 +249,19 @@ impl AuthCause {
     pub fn into_err(self) -> Error {
         Error::new(Cause::Auth(self))
     }
+
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::Failed => "Authentication failed",
+            Self::MissingTotp => concat!(
+                "A TOTP code is required to authenticate this account. ",
+                "Try authenticating again using 'secret$totp_token'."
+            ),
+            Self::TooManyAttempts => "Too many authentication attempts",
+            Self::Banned => "Banned",
+            Self::Error => "Authentication error",
+        }
+    }
 }
 
 impl ManageCause {
@@ -221,6 +283,17 @@ impl ManageCause {
     #[inline(always)]
     pub fn into_err(self) -> Error {
         Error::new(Cause::Manage(self))
+    }
+
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::MissingParameter => "Missing parameter",
+            Self::AlreadyExists => "Already exists",
+            Self::AssertFailed => "Assertion failed",
+            Self::NotFound => "Not found",
+            Self::NotSupported => "Operation not supported",
+            Self::Error => "Management API Error",
+        }
     }
 }
 
@@ -244,6 +317,29 @@ impl JmapCause {
     pub fn into_err(self) -> Error {
         Error::new(Cause::Jmap(self))
     }
+
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::InvalidArguments => "Invalid arguments",
+            Self::RequestTooLarge => "Request too large",
+            Self::StateMismatch => "State mismatch",
+            Self::AnchorNotFound => "Anchor not found",
+            Self::UnsupportedFilter => "Unsupported filter",
+            Self::UnsupportedSort => "Unsupported sort",
+            Self::UnknownMethod => "Unknown method",
+            Self::InvalidResultReference => "Invalid result reference",
+            Self::Forbidden => "Forbidden",
+            Self::AccountNotFound => "Account not found",
+            Self::AccountNotSupportedByMethod => "Account not supported by method",
+            Self::AccountReadOnly => "Account read-only",
+            Self::NotFound => "Not found",
+            Self::CannotCalculateChanges => "Cannot calculate changes",
+            Self::UnknownDataType => "Unknown data type",
+            Self::UnknownCapability => "Unknown capability",
+            Self::NotJSON => "Not JSON",
+            Self::NotRequest => "Not a request",
+        }
+    }
 }
 
 impl LimitCause {
@@ -265,6 +361,19 @@ impl LimitCause {
     #[inline(always)]
     pub fn into_err(self) -> Error {
         Error::new(Cause::Limit(self))
+    }
+
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::SizeRequest => "Request too large",
+            Self::SizeUpload => "Upload too large",
+            Self::CallsIn => "Too many calls in",
+            Self::ConcurrentRequest => "Too many concurrent requests",
+            Self::ConcurrentUpload => "Too many concurrent uploads",
+            Self::Quota => "Quota exceeded",
+            Self::BlobQuota => "Blob quota exceeded",
+            Self::TooManyRequests => "Too many requests",
+        }
     }
 }
 
@@ -288,6 +397,14 @@ impl ResourceCause {
     pub fn into_err(self) -> Error {
         Error::new(Cause::Resource(self))
     }
+
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::NotFound => "Not found",
+            Self::BadParameters => "Bad parameters",
+            Self::Error => "Resource error",
+        }
+    }
 }
 
 impl Error {
@@ -301,10 +418,21 @@ impl Error {
         self.inner == Cause::Store(StoreCause::AssertValue)
     }
 
+    #[inline(always)]
     pub fn is_jmap_method_error(&self) -> bool {
         !matches!(
             self.inner,
             Cause::Jmap(JmapCause::UnknownCapability | JmapCause::NotJSON | JmapCause::NotRequest)
+        )
+    }
+
+    #[inline(always)]
+    pub fn must_disconnect(&self) -> bool {
+        matches!(
+            self.inner,
+            Cause::Network
+                | Cause::Auth(AuthCause::TooManyAttempts | AuthCause::Banned)
+                | Cause::Limit(LimitCause::ConcurrentRequest | LimitCause::TooManyRequests)
         )
     }
 }

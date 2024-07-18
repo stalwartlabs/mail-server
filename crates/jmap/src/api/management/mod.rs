@@ -28,27 +28,14 @@ use crate::{auth::AccessToken, JMAP};
 
 #[derive(Serialize)]
 #[serde(tag = "error")]
-pub enum ManagementApiError {
-    FieldAlreadyExists {
-        field: Cow<'static, str>,
-        value: Cow<'static, str>,
-    },
-    FieldMissing {
-        field: Cow<'static, str>,
-    },
-    NotFound {
-        item: Cow<'static, str>,
-    },
-    Unsupported {
-        details: Cow<'static, str>,
-    },
+#[serde(rename_all = "camelCase")]
+pub enum ManagementApiError<'x> {
+    FieldAlreadyExists { field: &'x str, value: &'x str },
+    FieldMissing { field: &'x str },
+    NotFound { item: &'x str },
+    Unsupported { details: &'x str },
     AssertFailed,
-    Other {
-        details: Cow<'static, str>,
-    },
-    UnsupportedDirectoryOperation {
-        class: Cow<'static, str>,
-    },
+    Other { details: &'x str },
 }
 
 impl JMAP {

@@ -21,11 +21,7 @@ pub struct QueryArguments {
 }
 
 impl RequestPropertyParser for SetArguments {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> trc::Result<bool> {
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         if property.hash[0] == 0x4565_766f_6d65_5279_6f72_7473_6544_6e6f
             && property.hash[1] == 0x0073_6c69_616d
         {
@@ -40,11 +36,7 @@ impl RequestPropertyParser for SetArguments {
 }
 
 impl RequestPropertyParser for QueryArguments {
-    fn parse(
-        &mut self,
-        parser: &mut Parser,
-        property: RequestProperty,
-    ) -> trc::Result<bool> {
+    fn parse(&mut self, parser: &mut Parser, property: RequestProperty) -> trc::Result<bool> {
         match &property.hash[0] {
             0x6565_7254_7341_7472_6f73 => {
                 self.sort_as_tree = parser

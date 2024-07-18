@@ -11,7 +11,7 @@ use store::query::Filter;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use trc::AddContext;
 
-use super::{Command, ResponseCode, SerializeResponse, Session, State, StatusResponse};
+use super::{Command, ResponseCode, SerializeResponse, Session, State};
 
 impl<T: SessionStream> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> SessionResult {
@@ -31,8 +31,14 @@ impl<T: SessionStream> Session<T> {
                         requests.push(request);
                     }
                     Err(err) => {
+                        let mut disconnect = err.must_disconnect();
+
                         if let Err(err) = self.write_error(err).await {
                             tracing::error!(parent: &self.span, event = "error", error = ?err);
+                            disconnect = true;
+                        }
+
+                        if disconnect {
                             return SessionResult::Close;
                         }
                     }
@@ -45,10 +51,7 @@ impl<T: SessionStream> Session<T> {
                     break;
                 }
                 Err(receiver::Error::Error { response }) => {
-                    if let Err(err) = self
-                        .write(&StatusResponse::no(response.message).into_bytes())
-                        .await
-                    {
+                    if let Err(err) = self.write_error(response).await {
                         tracing::error!(parent: &self.span, event = "error", error = ?err);
                         return SessionResult::Close;
                     }
@@ -88,8 +91,14 @@ impl<T: SessionStream> Session<T> {
                     }
                 }
                 Err(err) => {
+                    let mut disconnect = err.must_disconnect();
+
                     if let Err(err) = self.write_error(err).await {
                         tracing::error!(parent: &self.span, event = "error", error = ?err);
+                        disconnect = true;
+                    }
+
+                    if disconnect {
                         return SessionResult::Close;
                     }
                 }

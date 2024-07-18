@@ -26,7 +26,7 @@ impl FtsStore {
             #[cfg(feature = "elastic")]
             FtsStore::ElasticSearch(store) => store.fts_index(document).await,
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn query<T: Into<u8> + Display + Clone + std::fmt::Debug>(
@@ -42,7 +42,7 @@ impl FtsStore {
                 store.fts_query(account_id, collection, filters).await
             }
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn remove(
@@ -58,7 +58,7 @@ impl FtsStore {
                 store.fts_remove(account_id, collection, document_ids).await
             }
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 
     pub async fn remove_all(&self, account_id: u32) -> trc::Result<()> {
@@ -67,6 +67,6 @@ impl FtsStore {
             #[cfg(feature = "elastic")]
             FtsStore::ElasticSearch(store) => store.fts_remove_all(account_id).await,
         }
-        .caused_by( trc::location!())
+        .caused_by(trc::location!())
     }
 }

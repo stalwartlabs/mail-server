@@ -228,8 +228,6 @@ impl Core {
         protocol: ServerProtocol,
         return_member_of: bool,
     ) -> trc::Result<Principal<u32>> {
-        let c = "use trc::Error and implement OAUTH";
-
         // First try to authenticate the user against the default directory
         let result = match directory
             .query(QueryBy::Credentials(credentials), return_member_of)

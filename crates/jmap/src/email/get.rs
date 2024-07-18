@@ -5,7 +5,6 @@
  */
 
 use jmap_proto::{
-    error::method::MethodError,
     method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
     types::{
@@ -400,10 +399,9 @@ impl JMAP {
                     }
 
                     _ => {
-                        return Err(MethodError::InvalidArguments(format!(
-                            "Invalid property {property:?}"
-                        ))
-                        .into());
+                        return Err(trc::JmapCause::InvalidArguments
+                            .into_err()
+                            .details(format!("Invalid property {property:?}")));
                     }
                 }
             }

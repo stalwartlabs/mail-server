@@ -18,7 +18,7 @@ impl<T: SessionStream> Session<T> {
                 self.is_qresync,
                 self.version.is_rev2(),
             )
-            .await;
+            .await?;
         }
 
         self.write_bytes(

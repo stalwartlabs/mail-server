@@ -4,13 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap_proto::{
-    error::method::MethodError,
-    method::{
-        changes::{self, ChangesRequest},
-        query::{self, QueryRequest},
-        query_changes::{AddedItem, QueryChangesRequest, QueryChangesResponse},
-    },
+use jmap_proto::method::{
+    changes::{self, ChangesRequest},
+    query::{self, QueryRequest},
+    query_changes::{AddedItem, QueryChangesRequest, QueryChangesResponse},
 };
 
 use crate::{auth::AccessToken, JMAP};
@@ -36,9 +33,9 @@ impl JMAP {
                         }
                         query::RequestArguments::Quota => changes::RequestArguments::Quota,
                         _ => {
-                            return Err(
-                                MethodError::UnknownMethod("Unknown method".to_string()).into()
-                            )
+                            return Err(trc::JmapCause::UnknownMethod
+                                .into_err()
+                                .details("Unknown method"))
                         }
                     },
                 },

@@ -59,7 +59,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
                     // Token needs to validate with at least one of the TOTP secrets
                     is_totp_verified = TOTP::from_url(secret)
                         .map_err(|err| {
-                            trc::AuthCause::Invalid
+                            trc::AuthCause::Error
                                 .reason(err)
                                 .details(secret.to_string())
                         })?
@@ -128,7 +128,7 @@ async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> trc::Result<bo
                     .ok();
             }
             Err(err) => {
-                tx.send(Err(trc::AuthCause::Invalid
+                tx.send(Err(trc::AuthCause::Error
                     .reason(err)
                     .details(hashed_secret)))
                     .ok();
@@ -155,7 +155,7 @@ async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> trc::Result<bo
         // MD5 based hash
         Ok(md5_crypt::verify(secret, hashed_secret))
     } else {
-        Err(trc::AuthCause::Invalid
+        Err(trc::AuthCause::Error
             .into_err()
             .details(hashed_secret.to_string()))
     }
@@ -256,12 +256,12 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> trc::Resul
                     }
                 }
                 "PLAIN" | "plain" | "CLEAR" | "clear" => Ok(hashed_secret == secret),
-                _ => Err(trc::AuthCause::Invalid
+                _ => Err(trc::AuthCause::Error
                     .ctx(trc::Key::Reason, "Unsupported algorithm")
                     .details(hashed_secret.to_string())),
             }
         } else {
-            Err(trc::AuthCause::Invalid
+            Err(trc::AuthCause::Error
                 .into_err()
                 .details(hashed_secret.to_string()))
         }
