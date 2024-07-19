@@ -7,8 +7,9 @@
 use ahash::AHashSet;
 use directory::{
     backend::internal::{
-        lookup::DirectoryStore, manage::ManageDirectory, PrincipalField, PrincipalUpdate,
-        PrincipalValue,
+        lookup::DirectoryStore,
+        manage::{self, ManageDirectory},
+        PrincipalField, PrincipalUpdate, PrincipalValue,
     },
     Principal, QueryBy, Type,
 };
@@ -33,9 +34,7 @@ async fn internal_directory() {
         // A principal without name should fail
         assert_eq!(
             store.create_account(Principal::default(), vec![]).await,
-            Err(DirectoryError::Management(ManagementError::MissingField(
-                PrincipalField::Name
-            )))
+            Err(manage::err_missing(PrincipalField::Name))
         );
 
         // Basic account creation
@@ -63,10 +62,7 @@ async fn internal_directory() {
                     vec![]
                 )
                 .await,
-            Err(DirectoryError::Management(ManagementError::AlreadyExists {
-                field: PrincipalField::Name,
-                value: "john".to_string()
-            }))
+            Err(manage::err_exists(PrincipalField::Name, "john".to_string()))
         );
 
         // An account using a non-existent domain should fail
@@ -81,9 +77,7 @@ async fn internal_directory() {
                     vec![]
                 )
                 .await,
-            Err(DirectoryError::Management(ManagementError::NotFound(
-                "example.org".to_string()
-            )))
+            Err(manage::not_found("example.org".to_string()))
         );
 
         // Create a domain name
@@ -121,9 +115,7 @@ async fn internal_directory() {
                     )],
                 )
                 .await,
-            Err(DirectoryError::Management(ManagementError::NotFound(
-                "otherdomain.org".to_string()
-            )))
+            Err(manage::not_found("otherdomain.org".to_string()))
         );
 
         // Create an account with an email address
@@ -197,10 +189,10 @@ async fn internal_directory() {
                     vec![]
                 )
                 .await,
-            Err(DirectoryError::Management(ManagementError::AlreadyExists {
-                field: PrincipalField::Emails,
-                value: "jane@example.org".to_string()
-            }))
+            Err(manage::err_exists(
+                PrincipalField::Emails,
+                "jane@example.org".to_string()
+            ))
         );
 
         // Create a mailing list
@@ -348,9 +340,7 @@ async fn internal_directory() {
                     )],
                 )
                 .await,
-            Err(DirectoryError::Management(ManagementError::NotFound(
-                "accounting".to_string()
-            )))
+            Err(manage::not_found("accounting".to_string()))
         );
 
         // Remove a member from a group
@@ -502,10 +492,7 @@ async fn internal_directory() {
                     ),],
                 )
                 .await,
-            Err(DirectoryError::Management(ManagementError::AlreadyExists {
-                field: PrincipalField::Name,
-                value: "jane".to_string()
-            }))
+            Err(manage::err_exists(PrincipalField::Name, "jane".to_string()))
         );
         assert_eq!(
             store
@@ -517,10 +504,10 @@ async fn internal_directory() {
                     ),],
                 )
                 .await,
-            Err(DirectoryError::Management(ManagementError::AlreadyExists {
-                field: PrincipalField::Emails,
-                value: "jane@example.org".to_string()
-            }))
+            Err(manage::err_exists(
+                PrincipalField::Emails,
+                "jane@example.org".to_string()
+            ))
         );
 
         // List accounts

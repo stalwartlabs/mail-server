@@ -140,7 +140,7 @@ impl ManageDirectory for Store {
     ) -> trc::Result<u32> {
         // Make sure the principal has a name
         if principal.name.is_empty() {
-            return Err(not_found(PrincipalField::Name));
+            return Err(err_missing(PrincipalField::Name));
         }
 
         // Map group names

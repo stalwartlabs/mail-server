@@ -253,6 +253,9 @@ email = "address"
 quota = "quota"
 class = "type"
 
+[imap.auth]
+allow-plain-text = true
+
 [oauth]
 key = "parerga_und_paralipomena"
 

@@ -5,7 +5,7 @@
  */
 
 pub mod imap;
-//pub mod internal;
+pub mod internal;
 pub mod ldap;
 pub mod smtp;
 pub mod sql;
@@ -391,8 +391,6 @@ pub fn dummy_tls_acceptor() -> Arc<TlsAcceptor> {
     // load TLS key/cert files
     let cert_file = &mut BufReader::new(CERT.as_bytes());
     let key_file = &mut BufReader::new(PK.as_bytes());
-
-    let todo = "fix interkal";
 
     // convert files to key/cert objects
     let cert_chain = certs(cert_file).map(|r| r.unwrap()).collect();

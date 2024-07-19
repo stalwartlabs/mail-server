@@ -598,7 +598,7 @@ impl ToRequestError for trc::Error {
                 trc::AuthCause::TooManyAttempts | trc::AuthCause::Banned => {
                     RequestError::too_many_auth_attempts()
                 }
-                trc::AuthCause::Error => RequestError::internal_server_error(),
+                trc::AuthCause::Error => RequestError::unauthorized(),
             },
             trc::Cause::Resource(cause) => match cause {
                 trc::ResourceCause::NotFound => RequestError::not_found(),

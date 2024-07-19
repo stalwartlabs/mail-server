@@ -32,7 +32,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Connect to IMAP
     params
         .directory
-        .create_test_user_with_email("jdoe@example.com", "secret", "John Doe")
+        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
         .await;
     let account_id = server
         .core
@@ -43,8 +43,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap();
     let mut imap = ImapConnection::connect(b"_x ").await;
     imap.assert_read(Type::Untagged, ResponseType::Ok).await;
-    imap.send("AUTHENTICATE PLAIN {32+}\r\nAGpkb2VAZXhhbXBsZS5jb20Ac2VjcmV0")
-        .await;
+    imap.send("LOGIN \"jdoe@example.com\" \"12345\"").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     imap.send("STATUS INBOX (UIDNEXT MESSAGES UNSEEN)").await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)

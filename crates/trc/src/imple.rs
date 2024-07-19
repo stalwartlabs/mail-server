@@ -435,6 +435,11 @@ impl Error {
                 | Cause::Limit(LimitCause::ConcurrentRequest | LimitCause::TooManyRequests)
         )
     }
+
+    #[inline(always)]
+    pub fn should_write_err(&self) -> bool {
+        !matches!(self.inner, Cause::Network | Cause::Auth(AuthCause::Banned))
+    }
 }
 
 impl Value {
@@ -495,3 +500,48 @@ impl<T: std::fmt::Debug, const N: usize> Display for Context<T, N> {
 }
 
 impl std::error::Error for Error {}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Static(l0), Self::Static(r0)) => l0 == r0,
+            (Self::String(l0), Self::String(r0)) => l0 == r0,
+            (Self::String(l0), Self::Static(r0)) => l0 == r0,
+            (Self::Static(l0), Self::String(r0)) => l0 == r0,
+            (Self::UInt(l0), Self::UInt(r0)) => l0 == r0,
+            (Self::Int(l0), Self::Int(r0)) => l0 == r0,
+            (Self::Float(l0), Self::Float(r0)) => l0 == r0,
+            (Self::Bytes(l0), Self::Bytes(r0)) => l0 == r0,
+            (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
+            (Self::Ipv4(l0), Self::Ipv4(r0)) => l0 == r0,
+            (Self::Ipv6(l0), Self::Ipv6(r0)) => l0 == r0,
+            (Self::Protocol(l0), Self::Protocol(r0)) => l0 == r0,
+            (Self::Error(l0), Self::Error(r0)) => l0 == r0,
+            (Self::Array(l0), Self::Array(r0)) => l0 == r0,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Value {}
+
+impl<T, const N: usize> PartialEq for Context<T, N>
+where
+    T: Eq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        if self.inner == other.inner && self.keys_size == other.keys_size {
+            for kv in self.keys.iter().take(self.keys_size) {
+                if !other.keys.iter().take(other.keys_size).any(|okv| kv == okv) {
+                    return false;
+                }
+            }
+
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl<T, const N: usize> Eq for Context<T, N> where T: Eq {}

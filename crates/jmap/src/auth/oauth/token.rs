@@ -132,25 +132,29 @@ impl JMAP {
             }
         } else if grant_type.eq_ignore_ascii_case("refresh_token") {
             if let Some(refresh_token) = params.get("refresh_token") {
-                let (account_id, client_id, time_left) = self
+                response = match self
                     .validate_access_token("refresh_token", refresh_token)
-                    .await?;
-
-                // TODO: implement revoking client ids
-                response = self
-                    .issue_token(
-                        account_id,
-                        &client_id,
-                        time_left <= self.core.jmap.oauth_expiry_refresh_token_renew,
-                    )
                     .await
-                    .map(TokenResponse::Granted)
-                    .map_err(|err| {
-                        trc::AuthCause::Error
-                            .into_err()
-                            .details(err)
-                            .caused_by(trc::location!())
-                    })?;
+                {
+                    Ok((account_id, client_id, time_left)) => self
+                        .issue_token(
+                            account_id,
+                            &client_id,
+                            time_left <= self.core.jmap.oauth_expiry_refresh_token_renew,
+                        )
+                        .await
+                        .map(TokenResponse::Granted)
+                        .map_err(|err| {
+                            trc::AuthCause::Error
+                                .into_err()
+                                .details(err)
+                                .caused_by(trc::location!())
+                        })?,
+                    Err(err) => {
+                        tracing::warn!("Failed to validate refresh token: {:?}", err);
+                        TokenResponse::error(ErrorType::InvalidGrant)
+                    }
+                };
             } else {
                 response = TokenResponse::error(ErrorType::InvalidRequest);
             }
@@ -281,6 +285,7 @@ impl JMAP {
             trc::AuthCause::Error
                 .into_err()
                 .ctx(trc::Key::Reason, "Failed to decode token")
+                .caused_by(trc::location!())
                 .details(token_.to_string())
         })?;
         let (account_id, expiry, client_id) = token
@@ -298,6 +303,7 @@ impl JMAP {
                 trc::AuthCause::Error
                     .into_err()
                     .ctx(trc::Key::Reason, "Failed to decode token")
+                    .caused_by(trc::location!())
                     .details(token_.to_string())
             })?;
 
@@ -349,6 +355,7 @@ impl JMAP {
                 trc::AuthCause::Error
                     .into_err()
                     .ctx(trc::Key::Details, "Failed to decode token")
+                    .caused_by(trc::location!())
                     .reason(err)
             })?;
 

@@ -161,12 +161,12 @@ impl JMAP {
                         trc::Cause::Ingest => {
                             *status = DeliveryResult::PermanentFailure {
                                 code: err
-                                    .value(trc::Key::Reason)
+                                    .value(trc::Key::Code)
                                     .and_then(|v| v.to_uint())
                                     .map(|n| {
                                         [(n / 100) as u8, ((n % 100) / 10) as u8, (n % 10) as u8]
                                     })
-                                    .unwrap(),
+                                    .unwrap_or([5, 5, 0]),
                                 reason: err
                                     .take_value(trc::Key::Reason)
                                     .and_then(|v| v.into_string())

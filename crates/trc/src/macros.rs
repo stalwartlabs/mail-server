@@ -34,7 +34,7 @@ macro_rules! error {
 #[macro_export]
 macro_rules! location {
     () => {{
-        concat!(file!(), ":", line!(), " (", module_path!(), ")")
+        concat!(file!(), ":", line!())
     }};
 }
 

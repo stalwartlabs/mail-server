@@ -163,7 +163,7 @@ impl<T: SessionStream> Session<T> {
         tracing::error!(parent: &self.span, "POP3 error: {}", err);
         let disconnect = err.must_disconnect();
 
-        if !err.matches(trc::Cause::Network) {
+        if err.should_write_err() {
             if let Err(err) = self.write_bytes(err.serialize()).await {
                 tracing::debug!(parent: &self.span, "Failed to write error: {}", err);
                 return false;

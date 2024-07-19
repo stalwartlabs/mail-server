@@ -205,7 +205,7 @@ impl<T: SessionStream> Session<T> {
     pub async fn write_error(&self, err: trc::Error) -> bool {
         tracing::warn!(parent: &self.span, event = "error", reason = %err, "IMAP error.");
 
-        if !err.matches(trc::Cause::Network) {
+        if err.should_write_err() {
             let disconnect = err.must_disconnect();
 
             if let Err(err) = self.write_bytes(err.serialize()).await {
@@ -247,7 +247,7 @@ impl<T: SessionStream> super::SessionData<T> {
     pub async fn write_error(&self, err: trc::Error) -> trc::Result<()> {
         tracing::warn!(parent: &self.span, event = "error", reason = %err, "IMAP error.");
 
-        if !err.matches(trc::Cause::Network) {
+        if err.should_write_err() {
             self.write_bytes(err.serialize()).await
         } else {
             Ok(())
