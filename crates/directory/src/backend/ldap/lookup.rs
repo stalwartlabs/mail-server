@@ -68,7 +68,7 @@ impl LdapDirectory {
 
                     ldap3::drive!(conn);
 
-                    ldap.simple_bind(&auth_bind.build(username), secret).await?;
+                    ldap.simple_bind(&auth_bind.build(username), secret).await?.success()?;
 
                     match self
                         .find_principal(&mut ldap, &self.mappings.filter_name.build(username))
