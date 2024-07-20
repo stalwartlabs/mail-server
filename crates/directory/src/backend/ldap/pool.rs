@@ -22,7 +22,7 @@ impl managed::Manager for LdapConnectionManager {
         ldap3::drive!(conn);
 
         if let Some(bind) = &self.bind_dn {
-            ldap.simple_bind(&bind.dn, &bind.password).await?;
+            ldap.simple_bind(&bind.dn, &bind.password).await?.success()?;
         }
 
         Ok(ldap)
