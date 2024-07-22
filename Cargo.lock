@@ -5285,6 +5285,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtrb"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3f94e84c073f3b85d4012b44722fa8842b9986d741590d4f2636ad0a5b14143"
+
+[[package]]
 name = "rusqlite"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6873,10 +6879,15 @@ dependencies = [
 name = "trc"
 version = "0.8.5"
 dependencies = [
+ "ahash 0.8.11",
+ "arc-swap",
  "base64 0.22.1",
  "bincode",
+ "parking_lot",
  "reqwest 0.12.5",
+ "rtrb",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

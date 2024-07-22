@@ -139,7 +139,7 @@ impl WebAdminManager {
             .fetch_resource("webadmin")
             .await
             .map_err(|err| {
-                trc::Cause::Fetch
+                trc::ResourceCause::Error
                     .caused_by(trc::location!())
                     .reason(err)
                     .details("Failed to download webadmin")

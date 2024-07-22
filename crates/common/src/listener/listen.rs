@@ -97,7 +97,7 @@ impl Server {
                         stream = listener.accept() => {
                             match stream {
                                 Ok((stream, remote_addr)) => {
-                                    let core = core.as_ref().load();
+                                    let core = core.as_ref().load_full();
                                     let enable_acme = (is_https && core.has_acme_tls_providers()).then_some(core.clone());
 
                                     if has_proxies && instance.proxy_networks.iter().any(|network| network.matches(&remote_addr.ip())) {

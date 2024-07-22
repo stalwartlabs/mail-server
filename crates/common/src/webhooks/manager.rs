@@ -58,7 +58,7 @@ pub fn spawn_webhook_manager(core: SharedCore) -> mpsc::Sender<WebhookEvent> {
             let event_or_timeout = tokio::time::timeout(wakeup_time, webhook_rx.recv()).await;
 
             // Load settings
-            let core = core.load();
+            let core = core.load_full();
 
             match event_or_timeout {
                 Ok(Some(event)) => match event {

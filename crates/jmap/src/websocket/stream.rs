@@ -45,20 +45,24 @@ impl JMAP {
         let mut next_event = heartbeat;
 
         // Register with state manager
-        let mut change_rx = if let Ok(change_rx) = self
+        let mut change_rx = match self
             .subscribe_state_manager(access_token.primary_id(), Bitmap::all())
             .await
         {
-            change_rx
-        } else {
-            let todo = "log error";
-            let _ = stream
-                .send(Message::Text(
-                    WebSocketRequestError::from(RequestError::internal_server_error()).to_json(),
-                ))
-                .await;
-            return;
+            Ok(change_rx) => change_rx,
+            Err(err) => {
+                tracing::debug!(parent: &span, error = ?err, "Failed to subscribe to state manager");
+
+                let _ = stream
+                    .send(Message::Text(
+                        WebSocketRequestError::from(RequestError::internal_server_error())
+                            .to_json(),
+                    ))
+                    .await;
+                return;
+            }
         };
+
         let mut changes = WebSocketStateChange::new(None);
         let mut change_types: Bitmap<DataType> = Bitmap::new();
 

@@ -256,7 +256,7 @@ impl PartialOrd for SessionAddress {
 impl From<SmtpInstance> for SMTP {
     fn from(value: SmtpInstance) -> Self {
         SMTP {
-            core: value.core.load().clone(),
+            core: value.core.load_full(),
             inner: value.inner,
         }
     }

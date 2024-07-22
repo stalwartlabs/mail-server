@@ -36,7 +36,7 @@ pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
             let event_or_timeout = tokio::time::timeout(retry_timeout, push_rx.recv()).await;
 
             // Load settings
-            let core_ = core.core.load();
+            let core_ = core.core.load_full();
             let push_attempt_interval = core_.jmap.push_attempt_interval;
             let push_attempts_max = core_.jmap.push_attempts_max;
             let push_retry_interval = core_.jmap.push_retry_interval;

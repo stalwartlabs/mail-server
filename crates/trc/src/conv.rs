@@ -8,8 +8,8 @@ use std::{borrow::Cow, fmt::Debug};
 
 use crate::*;
 
-impl<T, const N: usize> AsRef<T> for Context<T, N> {
-    fn as_ref(&self) -> &T {
+impl AsRef<Cause> for Error {
+    fn as_ref(&self) -> &Cause {
         &self.inner
     }
 }

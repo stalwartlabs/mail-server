@@ -4,36 +4,44 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Display};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 
 use crate::*;
 
-impl<T, const N: usize> Context<T, N>
-where
-    [(Key, Value); N]: Default,
-    T: Eq,
-{
-    pub fn new(inner: T) -> Self {
+impl Event {
+    pub fn new(inner: EventType, level: Level, capacity: usize) -> Self {
         Self {
             inner,
-            keys: Default::default(),
-            keys_size: 0,
+            level,
+            keys: Vec::with_capacity(capacity),
         }
     }
 
     #[inline(always)]
     pub fn ctx(mut self, key: Key, value: impl Into<Value>) -> Self {
-        if self.keys_size < N {
-            self.keys[self.keys_size] = (key, value.into());
-            self.keys_size += 1;
-        } else {
-            #[cfg(debug_assertions)]
-            panic!(
-                "Context is full while inserting {:?}: {:?}",
-                key,
-                value.into()
-            );
+        self.keys.push((key, value.into()));
+        self
+    }
+
+    pub fn ctx_opt(self, key: Key, value: Option<impl Into<Value>>) -> Self {
+        match value {
+            Some(value) => self.ctx(key, value),
+            None => self,
         }
+    }
+}
+
+impl Error {
+    pub fn new(inner: Cause) -> Self {
+        Self {
+            inner,
+            keys: Vec::with_capacity(5),
+        }
+    }
+
+    #[inline(always)]
+    pub fn ctx(mut self, key: Key, value: impl Into<Value>) -> Self {
+        self.keys.push((key, value.into()));
         self
     }
 
@@ -45,20 +53,14 @@ where
     }
 
     #[inline(always)]
-    pub fn matches(&self, inner: T) -> bool {
+    pub fn matches(&self, inner: Cause) -> bool {
         self.inner == inner
     }
 
     pub fn value(&self, key: Key) -> Option<&Value> {
-        self.keys.iter().take(self.keys_size).find_map(
-            |(k, v)| {
-                if *k == key {
-                    Some(v)
-                } else {
-                    None
-                }
-            },
-        )
+        self.keys
+            .iter()
+            .find_map(|(k, v)| if *k == key { Some(v) } else { None })
     }
 
     pub fn value_as_str(&self, key: Key) -> Option<&str> {
@@ -66,16 +68,13 @@ where
     }
 
     pub fn take_value(&mut self, key: Key) -> Option<Value> {
-        self.keys
-            .iter_mut()
-            .take(self.keys_size)
-            .find_map(|(k, v)| {
-                if *k == key {
-                    Some(std::mem::take(v))
-                } else {
-                    None
-                }
-            })
+        self.keys.iter_mut().find_map(|(k, v)| {
+            if *k == key {
+                Some(std::mem::take(v))
+            } else {
+                None
+            }
+        })
     }
 
     #[inline(always)]
@@ -166,7 +165,6 @@ impl Cause {
             Self::Pop3 => "POP3 error",
             Self::Smtp => "SMTP error",
             Self::Thread => "Thread error",
-            Self::Fetch => "Fetch error",
             Self::Acme => "ACME error",
             Self::Dns => "DNS error",
             Self::Ingest => "Message Ingest error",
@@ -174,7 +172,6 @@ impl Cause {
             Self::Limit(cause) => cause.message(),
             Self::Manage(cause) => cause.message(),
             Self::Auth(cause) => cause.message(),
-            Self::Purge => "Purge error",
             Self::Configuration => "Configuration error",
             Self::Resource(cause) => cause.message(),
         }
@@ -489,10 +486,10 @@ impl<T> AddContext<T> for Result<T> {
     }
 }
 
-impl<T: std::fmt::Debug, const N: usize> Display for Context<T, N> {
+impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.inner)?;
-        for (key, value) in self.keys.iter().take(self.keys_size) {
+        for (key, value) in self.keys.iter() {
             write!(f, "\n  {:?} = {:?}", key, value)?;
         }
         Ok(())
@@ -500,6 +497,40 @@ impl<T: std::fmt::Debug, const N: usize> Display for Context<T, N> {
 }
 
 impl std::error::Error for Error {}
+
+impl PartialOrd for Level {
+    #[inline(always)]
+    fn partial_cmp(&self, other: &Level) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+
+    #[inline(always)]
+    fn lt(&self, other: &Level) -> bool {
+        (*other as usize) < (*self as usize)
+    }
+
+    #[inline(always)]
+    fn le(&self, other: &Level) -> bool {
+        (*other as usize) <= (*self as usize)
+    }
+
+    #[inline(always)]
+    fn gt(&self, other: &Level) -> bool {
+        (*other as usize) > (*self as usize)
+    }
+
+    #[inline(always)]
+    fn ge(&self, other: &Level) -> bool {
+        (*other as usize) >= (*self as usize)
+    }
+}
+
+impl Ord for Level {
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        (*other as usize).cmp(&(*self as usize))
+    }
+}
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
@@ -525,14 +556,11 @@ impl PartialEq for Value {
 
 impl Eq for Value {}
 
-impl<T, const N: usize> PartialEq for Context<T, N>
-where
-    T: Eq,
-{
+impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
-        if self.inner == other.inner && self.keys_size == other.keys_size {
-            for kv in self.keys.iter().take(self.keys_size) {
-                if !other.keys.iter().take(other.keys_size).any(|okv| kv == okv) {
+        if self.inner == other.inner && self.keys.len() == other.keys.len() {
+            for kv in self.keys.iter() {
+                if !other.keys.iter().any(|okv| kv == okv) {
                     return false;
                 }
             }
@@ -544,4 +572,57 @@ where
     }
 }
 
-impl<T, const N: usize> Eq for Context<T, N> where T: Eq {}
+impl Eq for Error {}
+
+impl EventType {
+    pub fn level(&self) -> Level {
+        match self {
+            EventType::Error(error) => match error {
+                Cause::Store(_) => Level::Error,
+                Cause::Jmap(_) => Level::Debug,
+                Cause::Imap => Level::Debug,
+                Cause::ManageSieve => Level::Debug,
+                Cause::Pop3 => Level::Debug,
+                Cause::Smtp => Level::Debug,
+                Cause::Thread => Level::Error,
+                Cause::Acme => Level::Error,
+                Cause::Dns => Level::Error,
+                Cause::Ingest => Level::Error,
+                Cause::Network => Level::Debug,
+                Cause::Limit(cause) => match cause {
+                    LimitCause::SizeRequest => Level::Debug,
+                    LimitCause::SizeUpload => Level::Debug,
+                    LimitCause::CallsIn => Level::Debug,
+                    LimitCause::ConcurrentRequest => Level::Debug,
+                    LimitCause::ConcurrentUpload => Level::Debug,
+                    LimitCause::Quota => Level::Debug,
+                    LimitCause::BlobQuota => Level::Debug,
+                    LimitCause::TooManyRequests => Level::Warn,
+                },
+                Cause::Manage(_) => Level::Debug,
+                Cause::Auth(cause) => match cause {
+                    AuthCause::Failed => Level::Debug,
+                    AuthCause::MissingTotp => Level::Trace,
+                    AuthCause::TooManyAttempts => Level::Warn,
+                    AuthCause::Banned => Level::Warn,
+                    AuthCause::Error => Level::Error,
+                },
+                Cause::Configuration => Level::Error,
+                Cause::Resource(cause) => match cause {
+                    ResourceCause::NotFound => Level::Debug,
+                    ResourceCause::BadParameters => Level::Error,
+                    ResourceCause::Error => Level::Error,
+                },
+            },
+            EventType::NewConnection => Level::Info,
+            EventType::SqlQuery => Level::Trace,
+            EventType::LdapQuery => Level::Trace,
+            EventType::Purge(event) => match event {
+                PurgeEvent::Started => Level::Debug,
+                PurgeEvent::Finished => Level::Debug,
+                PurgeEvent::Running => Level::Info,
+                PurgeEvent::Error => Level::Error,
+            },
+        }
+    }
+}

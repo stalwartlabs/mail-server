@@ -35,7 +35,7 @@ impl LookupStore {
             _ => Err(trc::StoreCause::NotSupported.into_err()),
         };
 
-        trc::trace!(
+        trc::event!(
             SqlQuery,
             Query = query.to_string(),
             Parameters = params.as_slice(),

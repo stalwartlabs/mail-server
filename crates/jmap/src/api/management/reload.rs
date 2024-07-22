@@ -59,9 +59,16 @@ impl JMAP {
                     }
 
                     // Reload ACME
-                    if let Err(err) = self.inner.housekeeper_tx.send(Event::AcmeReload).await {
-                        tracing::warn!("Failed to send ACME reload event to housekeeper: {}", err);
-                    }
+                    self.inner
+                        .housekeeper_tx
+                        .send(Event::AcmeReload)
+                        .await
+                        .map_err(|err| {
+                            trc::Cause::Thread
+                                .reason(err)
+                                .details("Failed to send ACME reload event to housekeeper")
+                                .caused_by(trc::location!())
+                        })?;
                 }
 
                 Ok(JsonResponse::new(json!({

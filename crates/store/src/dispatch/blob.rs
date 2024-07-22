@@ -6,7 +6,7 @@
 
 use std::{borrow::Cow, ops::Range};
 
-use trc::AddContext;
+use trc::{AddContext, Cause, StoreCause};
 use utils::config::utils::ParseValue;
 
 use crate::{BlobBackend, BlobStore, CompressionAlgo, Store};
@@ -54,7 +54,10 @@ impl BlobStore {
                     })?
                 }
                 Some(data) => {
-                    let todo = "log";
+                    trc::event!(
+                        Error(Cause::Store(StoreCause::BlobMissingMarker)),
+                        Key = key,
+                    );
                     data
                 }
                 None => return Ok(None),

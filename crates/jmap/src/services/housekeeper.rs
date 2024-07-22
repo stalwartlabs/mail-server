@@ -74,7 +74,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         // Add all events to queue
         let mut queue = Queue::default();
         {
-            let core_ = core.core.load();
+            let core_ = core.core.load_full();
             queue.schedule(
                 Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
                 ActionClass::Session,
@@ -128,7 +128,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
             match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
                 Ok(Some(event)) => match event {
                     Event::AcmeReload => {
-                        let core_ = core.core.load().clone();
+                        let core_ = core.core.load_full();
                         let inner = core.jmap_inner.clone();
 
                         tokio::spawn(async move {
@@ -233,7 +233,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                     return;
                 }
                 Err(_) => {
-                    let core_ = core.core.load();
+                    let core_ = core.core.load_full();
                     while let Some(event) = queue.pop() {
                         match event.event {
                             ActionClass::Acme(provider_id) => {

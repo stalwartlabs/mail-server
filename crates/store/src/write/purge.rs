@@ -7,6 +7,7 @@
 use std::fmt::Display;
 
 use tokio::sync::watch;
+use trc::PurgeEvent;
 use utils::config::cron::SimpleCron;
 
 use crate::{BlobStore, LookupStore, Store};
@@ -27,8 +28,8 @@ pub struct PurgeSchedule {
 
 impl PurgeSchedule {
     pub fn spawn(self, mut shutdown_rx: watch::Receiver<bool>) {
-        trc::trace!(
-            PurgeTaskStarted,
+        trc::event!(
+            Purge(PurgeEvent::Started),
             Type = self.store.as_str(),
             Id = self.store_id.to_string()
         );
@@ -39,16 +40,16 @@ impl PurgeSchedule {
                     .await
                     .is_ok()
                 {
-                    trc::trace!(
-                        PurgeTaskFinished,
+                    trc::event!(
+                        Purge(PurgeEvent::Finished),
                         Type = self.store.as_str(),
                         Id = self.store_id.to_string()
                     );
                     return;
                 }
 
-                trc::trace!(
-                    PurgeTaskRunning,
+                trc::event!(
+                    Purge(PurgeEvent::Running),
                     Type = self.store.as_str(),
                     Id = self.store_id.to_string()
                 );
@@ -62,8 +63,8 @@ impl PurgeSchedule {
                 };
 
                 if let Err(err) = result {
-                    trc::error!(
-                        Purge,
+                    trc::event!(
+                        Purge(PurgeEvent::Error),
                         Type = self.store.as_str(),
                         Id = self.store_id.to_string(),
                         CausedBy = err

@@ -31,7 +31,7 @@ impl SpawnReport for mpsc::Receiver<Event> {
             loop {
                 // Read events
                 let now = now();
-                let events = next_report_event(&core.core.load()).await;
+                let events = next_report_event(&core.core.load_full()).await;
                 next_wake_up = events
                     .last()
                     .and_then(|e| match e {

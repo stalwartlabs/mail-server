@@ -332,7 +332,7 @@ impl LdapMappings {
     fn entry_to_principal(&self, entry: SearchEntry) -> Principal<String> {
         let mut principal = Principal::default();
 
-        trc::trace!(LdapQuery, Value = format!("{entry:?}"));
+        trc::event!(LdapQuery, Value = format!("{entry:?}"));
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {

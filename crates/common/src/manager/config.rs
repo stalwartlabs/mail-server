@@ -327,7 +327,7 @@ impl ConfigManager {
             .fetch_config_resource(resource_id)
             .await
             .map_err(|reason| {
-                trc::Cause::Fetch
+                trc::Cause::Configuration
                     .caused_by(trc::location!())
                     .ctx(trc::Key::Reason, reason)
             })?;
@@ -492,7 +492,8 @@ impl Patterns {
                 Pattern::Include(MatchType::StartsWith(
                     "authentication.fallback-admin.".to_string(),
                 )),
-                Pattern::Include(MatchType::Equal("cluster.node-id".to_string())),
+                Pattern::Exclude(MatchType::Equal("cluster.key".to_string())),
+                Pattern::Include(MatchType::StartsWith("cluster.".to_string())),
                 Pattern::Include(MatchType::Equal("storage.data".to_string())),
                 Pattern::Include(MatchType::Equal("storage.blob".to_string())),
                 Pattern::Include(MatchType::Equal("storage.lookup".to_string())),

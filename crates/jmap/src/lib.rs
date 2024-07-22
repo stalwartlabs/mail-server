@@ -510,7 +510,7 @@ impl Inner {
 impl From<JmapInstance> for JMAP {
     fn from(value: JmapInstance) -> Self {
         let shared_core = value.core.clone();
-        let core = value.core.load().clone();
+        let core = value.core.load_full();
         JMAP {
             smtp: SMTP {
                 core: core.clone(),
