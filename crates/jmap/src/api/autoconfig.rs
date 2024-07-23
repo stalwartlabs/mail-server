@@ -81,7 +81,7 @@ impl JMAP {
         // Obtain parameters
         let emailaddress = parse_autodiscover_request(body.as_deref().unwrap_or_default())
             .map_err(|err| {
-                trc::ResourceCause::BadParameters
+                trc::ResourceEvent::BadParameters
                     .into_err()
                     .details("Failed to parse autodiscover request")
                     .ctx(trc::Key::Reason, err)
@@ -159,7 +159,7 @@ impl JMAP {
         emailaddress: &'x str,
     ) -> trc::Result<(String, String, &'x str)> {
         let (_, domain) = emailaddress.rsplit_once('@').ok_or_else(|| {
-            trc::ResourceCause::BadParameters
+            trc::ResourceEvent::BadParameters
                 .into_err()
                 .details("Missing domain in email address")
         })?;
@@ -172,8 +172,8 @@ impl JMAP {
             .get("lookup.default.hostname")
             .await?
             .ok_or_else(|| {
-                trc::Cause::Configuration
-                    .into_err()
+                trc::EventType::Config(trc::ConfigEvent::BuildError)
+                    .caused_by(trc::location!())
                     .details("Server name not configured")
             })?;
 

@@ -17,7 +17,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .next()
             .and_then(|s| s.unwrap_string().ok())
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Expected script name as a parameter.")
             })?;
@@ -25,13 +25,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .next()
             .and_then(|s| s.unwrap_string().ok())
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Expected script size as a parameter.")
             })?
             .parse::<usize>()
             .map_err(|_| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Invalid size parameter.")
             })?;
@@ -53,7 +53,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         {
             Ok(StatusResponse::ok("").into_bytes())
         } else {
-            Err(trc::Cause::ManageSieve
+            Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details("Quota exceeded.")
                 .code(ResponseCode::QuotaMaxSize))

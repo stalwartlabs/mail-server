@@ -99,7 +99,7 @@ impl<T: SessionStream> SessionData<T> {
                         .collect(),
                 })
             } else {
-                Err(trc::Cause::Imap
+                Err(trc::ImapEvent::Error
                     .into_err()
                     .details("Mailbox does not exist.")
                     .code(ResponseCode::NonExistent))
@@ -239,7 +239,7 @@ impl<T: SessionStream> SessionData<T> {
                         .await?
                         .and_then(|obj| obj.get(&Property::Cid).as_uint())
                         .ok_or_else(|| {
-                            trc::StoreCause::Unexpected
+                            trc::StoreEvent::UnexpectedError
                                 .into_err()
                                 .details("Mailbox unavailable")
                                 .ctx(trc::Key::Reason, "Failed to obtain uid validity")

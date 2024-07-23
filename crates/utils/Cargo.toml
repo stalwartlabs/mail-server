@@ -12,7 +12,6 @@ rustls-pki-types = { version = "1" }
 tokio = { version = "1.23", features = ["net", "macros"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 serde = { version = "1.0", features = ["derive"]}
-tracing = "0.1"
 mail-auth = { version = "0.4" }
 smtp-proto = { version = "0.1" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }

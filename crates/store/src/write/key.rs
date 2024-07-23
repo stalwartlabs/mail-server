@@ -102,13 +102,13 @@ impl DeserializeBigEndian for &[u8] {
     fn deserialize_be_u32(&self, index: usize) -> trc::Result<u32> {
         self.get(index..index + U32_LEN)
             .ok_or_else(|| {
-                trc::StoreCause::DataCorruption
+                trc::StoreEvent::DataCorruption
                     .caused_by(trc::location!())
                     .ctx(trc::Key::Value, *self)
             })
             .and_then(|bytes| {
                 bytes.try_into().map_err(|_| {
-                    trc::StoreCause::DataCorruption
+                    trc::StoreEvent::DataCorruption
                         .caused_by(trc::location!())
                         .ctx(trc::Key::Value, *self)
                 })
@@ -119,13 +119,13 @@ impl DeserializeBigEndian for &[u8] {
     fn deserialize_be_u64(&self, index: usize) -> trc::Result<u64> {
         self.get(index..index + U64_LEN)
             .ok_or_else(|| {
-                trc::StoreCause::DataCorruption
+                trc::StoreEvent::DataCorruption
                     .caused_by(trc::location!())
                     .ctx(trc::Key::Value, *self)
             })
             .and_then(|bytes| {
                 bytes.try_into().map_err(|_| {
-                    trc::StoreCause::DataCorruption
+                    trc::StoreEvent::DataCorruption
                         .caused_by(trc::location!())
                         .ctx(trc::Key::Value, *self)
                 })
@@ -644,7 +644,7 @@ impl Deserialize for ReportEvent {
                 .and_then(|domain| std::str::from_utf8(domain).ok())
                 .map(|s| s.to_string())
                 .ok_or_else(|| {
-                    trc::StoreCause::DataCorruption
+                    trc::StoreEvent::DataCorruption
                         .caused_by(trc::location!())
                         .ctx(trc::Key::Key, key)
                 })?,

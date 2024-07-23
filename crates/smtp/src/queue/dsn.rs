@@ -26,13 +26,13 @@ use super::{
 };
 
 impl SMTP {
-    pub async fn send_dsn(&self, message: &mut Message, span: &tracing::Span) {
+    pub async fn send_dsn(&self, message: &mut Message) {
         // Send webhook event
         self.send_dsn_webhook(message).await;
 
         if !message.return_path.is_empty() {
             // Build DSN
-            if let Some(dsn) = message.build_dsn(self, span).await {
+            if let Some(dsn) = message.build_dsn(self).await {
                 let mut dsn_message = self.new_message("", "", "");
                 dsn_message
                     .add_recipient_parts(
@@ -45,17 +45,15 @@ impl SMTP {
 
                 // Sign message
                 let signature = self
-                    .sign_message(message, &self.core.smtp.queue.dsn.sign, &dsn, span)
+                    .sign_message(message, &self.core.smtp.queue.dsn.sign, &dsn)
                     .await;
 
                 // Queue DSN
-                dsn_message
-                    .queue(signature.as_deref(), &dsn, self, span)
-                    .await;
+                dsn_message.queue(signature.as_deref(), &dsn, self).await;
             }
         } else {
             // Handle double bounce
-            message.handle_double_bounce(span);
+            message.handle_double_bounce();
         }
     }
 
@@ -177,7 +175,7 @@ impl SMTP {
 }
 
 impl Message {
-    pub async fn build_dsn(&mut self, core: &SMTP, span: &tracing::Span) -> Option<Vec<u8>> {
+    pub async fn build_dsn(&mut self, core: &SMTP) -> Option<Vec<u8>> {
         let config = &core.core.smtp.queue;
         let now = now();
 
@@ -341,7 +339,7 @@ impl Message {
 
                     if let Some(next_notify) = core
                         .core
-                        .eval_if::<Vec<Duration>, _>(&config.notify, &envelope)
+                        .eval_if::<Vec<Duration>, _>(&config.notify, &envelope, self.id)
                         .await
                         .and_then(|notify| {
                             notify.into_iter().nth((domain.notify.inner + 1) as usize)
@@ -364,17 +362,17 @@ impl Message {
         // Obtain hostname and sender addresses
         let from_name = core
             .core
-            .eval_if(&config.dsn.name, self)
+            .eval_if(&config.dsn.name, self, self.id)
             .await
             .unwrap_or_else(|| String::from("Mail Delivery Subsystem"));
         let from_addr = core
             .core
-            .eval_if(&config.dsn.address, self)
+            .eval_if(&config.dsn.address, self, self.id)
             .await
             .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
         let reporting_mta = core
             .core
-            .eval_if(&core.core.smtp.report.submitter, self)
+            .eval_if(&core.core.smtp.report.submitter, self, self.id)
             .await
             .unwrap_or_else(|| String::from("localhost"));
 
@@ -418,7 +416,6 @@ impl Message {
             }
             Ok(None) => {
                 tracing::error!(
-                    parent: span,
                     context = "queue",
                     event = "error",
                     "Failed to open blob {:?}: not found",
@@ -428,7 +425,6 @@ impl Message {
             }
             Err(err) => {
                 tracing::error!(
-                    parent: span,
                     context = "queue",
                     event = "error",
                     "Failed to open blob {:?}: {}",
@@ -465,7 +461,7 @@ impl Message {
             .into()
     }
 
-    fn handle_double_bounce(&mut self, span: &tracing::Span) {
+    fn handle_double_bounce(&mut self) {
         let mut is_double_bounce = Vec::with_capacity(0);
 
         for rcpt in &mut self.recipients {
@@ -500,7 +496,7 @@ impl Message {
 
         if !is_double_bounce.is_empty() {
             tracing::info!(
-                parent: span,
+
                 context = "queue",
                 event = "double-bounce",
                 id = self.id,

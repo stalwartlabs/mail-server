@@ -80,7 +80,7 @@ impl JMAP {
                 }
 
                 other => {
-                    return Err(trc::JmapCause::UnsupportedFilter
+                    return Err(trc::JmapEvent::UnsupportedFilter
                         .into_err()
                         .details(other.to_string()))
                 }
@@ -186,7 +186,7 @@ impl JMAP {
                     }
 
                     other => {
-                        return Err(trc::JmapCause::UnsupportedSort
+                        return Err(trc::JmapEvent::UnsupportedSort
                             .into_err()
                             .details(other.to_string()))
                     }

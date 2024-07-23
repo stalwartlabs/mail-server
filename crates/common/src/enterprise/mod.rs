@@ -15,6 +15,7 @@ pub mod undelete;
 use std::time::Duration;
 
 use license::LicenseKey;
+use mail_parser::DateTime;
 
 use crate::Core;
 
@@ -46,12 +47,14 @@ impl Core {
 
     pub fn log_license_details(&self) {
         if let Some(enterprise) = &self.enterprise {
-            tracing::info!(
-                licensed_to = enterprise.license.hostname,
-                valid_from = enterprise.license.valid_from,
-                valid_to = enterprise.license.valid_to,
-                accounts = enterprise.license.accounts,
-                "Stalwart Enterprise Edition license key is valid",
+            trc::event!(
+                Server(trc::ServerEvent::Licensing),
+                Details = "Stalwart Enterprise Edition license key is valid",
+                Hostname = enterprise.license.hostname.clone(),
+                Total = enterprise.license.accounts,
+                ValidFrom =
+                    DateTime::from_timestamp(enterprise.license.valid_from as i64).to_rfc3339(),
+                ValidTo = DateTime::from_timestamp(enterprise.license.valid_to as i64).to_rfc3339(),
             );
         }
     }

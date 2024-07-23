@@ -46,7 +46,7 @@ impl WebAdminManager {
                     contents,
                 })
                 .map_err(|err| {
-                    trc::ResourceCause::Error
+                    trc::ResourceEvent::Error
                         .reason(err)
                         .ctx(trc::Key::Path, path.to_string())
                         .caused_by(trc::location!())
@@ -65,14 +65,14 @@ impl WebAdminManager {
             .get_blob(WEBADMIN_KEY, 0..usize::MAX)
             .await?
             .ok_or_else(|| {
-                trc::ResourceCause::NotFound
+                trc::ResourceEvent::NotFound
                     .caused_by(trc::location!())
                     .details("Webadmin bundle not found")
             })?;
 
         // Uncompress
         let mut bundle = zip::ZipArchive::new(Cursor::new(bundle)).map_err(|err| {
-            trc::ResourceCause::Error
+            trc::ResourceEvent::Error
                 .caused_by(trc::location!())
                 .reason(err)
                 .details("Failed to decompress webadmin bundle")
@@ -81,7 +81,7 @@ impl WebAdminManager {
         for i in 0..bundle.len() {
             let (file_name, contents) = {
                 let mut file = bundle.by_index(i).map_err(|err| {
-                    trc::ResourceCause::Error
+                    trc::ResourceEvent::Error
                         .caused_by(trc::location!())
                         .reason(err)
                         .details("Failed to read file from webadmin bundle")
@@ -139,7 +139,7 @@ impl WebAdminManager {
             .fetch_resource("webadmin")
             .await
             .map_err(|err| {
-                trc::ResourceCause::Error
+                trc::ResourceEvent::Error
                     .caused_by(trc::location!())
                     .reason(err)
                     .details("Failed to download webadmin")
@@ -175,7 +175,7 @@ impl TempDir {
 }
 
 fn unpack_error(err: std::io::Error) -> trc::Error {
-    trc::ResourceCause::Error
+    trc::ResourceEvent::Error
         .reason(err)
         .details("Failed to unpack webadmin bundle")
 }

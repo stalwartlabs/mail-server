@@ -35,7 +35,7 @@ impl JMAP {
                 let blob_hash = URL_SAFE_NO_PAD
                     .decode(decode_path_element(blob_hash).as_bytes())
                     .map_err(|err| {
-                        trc::Cause::Resource(trc::ResourceCause::BadParameters)
+                        trc::EventType::Resource(trc::ResourceEvent::BadParameters)
                             .from_base64_error(err)
                     })?;
                 let contents = self
@@ -44,7 +44,7 @@ impl JMAP {
                     .blob
                     .get_blob(&blob_hash, 0..usize::MAX)
                     .await?
-                    .ok_or_else(|| trc::ManageCause::NotFound.into_err())?;
+                    .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
                 let params = UrlParams::new(req.uri().query());
                 let offset = params.parse("offset").unwrap_or(0);
                 let limit = params.parse("limit").unwrap_or(usize::MAX);
@@ -75,7 +75,7 @@ impl JMAP {
                     if let Some(store) = self.core.storage.stores.get(id) {
                         store.clone()
                     } else {
-                        return Err(trc::ResourceCause::NotFound.into_err());
+                        return Err(trc::ResourceEvent::NotFound.into_err());
                     }
                 } else {
                     self.core.storage.data.clone()
@@ -89,7 +89,7 @@ impl JMAP {
                     if let Some(store) = self.core.storage.lookups.get(id) {
                         store.clone()
                     } else {
-                        return Err(trc::ResourceCause::NotFound.into_err());
+                        return Err(trc::ResourceEvent::NotFound.into_err());
                     }
                 } else {
                     self.core.storage.lookup.clone()
@@ -105,7 +105,7 @@ impl JMAP {
                         .data
                         .get_account_id(decode_path_element(id).as_ref())
                         .await?
-                        .ok_or_else(|| trc::ManageCause::NotFound.into_err())?
+                        .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?
                         .into()
                 } else {
                     None
@@ -114,13 +114,13 @@ impl JMAP {
                 self.housekeeper_request(Event::Purge(PurgeType::Account(account_id)))
                     .await
             }
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 
     async fn housekeeper_request(&self, event: Event) -> trc::Result<HttpResponse> {
         self.inner.housekeeper_tx.send(event).await.map_err(|err| {
-            trc::Cause::Thread
+            trc::EventType::Server(trc::ServerEvent::ThreadError)
                 .reason(err)
                 .details("Failed to send housekeeper event")
         })?;

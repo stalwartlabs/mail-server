@@ -15,7 +15,6 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
 }
 
 pub async fn exec(ctx: PluginContext<'_>) -> Variable {
-    let span = ctx.span.clone();
     let mut arguments = ctx.arguments.into_iter();
 
     tokio::task::spawn_blocking(move || {
@@ -36,7 +35,6 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
             Ok(result) => result.status.success(),
             Err(err) => {
                 tracing::warn!(
-                    parent: span,
                     context = "sieve",
                     event = "execute-failed",
                     reason = %err,

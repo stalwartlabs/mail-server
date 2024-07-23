@@ -42,7 +42,7 @@ impl<T: SessionStream> Session<T> {
                 || !self
                     .core
                     .core
-                    .eval_if(&mta_hook.enable, self)
+                    .eval_if(&mta_hook.enable, self, self.data.session_id)
                     .await
                     .unwrap_or(false)
             {
@@ -136,7 +136,7 @@ impl<T: SessionStream> Session<T> {
                 }
                 Err(err) => {
                     tracing::warn!(
-                        parent: &self.span,
+                        
                         mta_hook.url = &mta_hook.url,
                         context = "mta_hook",
                         event = "error",

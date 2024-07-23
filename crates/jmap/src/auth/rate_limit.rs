@@ -64,12 +64,12 @@ impl JMAP {
             } else if access_token.is_super_user() {
                 Ok(InFlight::default())
             } else {
-                Err(trc::LimitCause::ConcurrentRequest.into_err())
+                Err(trc::LimitEvent::ConcurrentRequest.into_err())
             }
         } else if access_token.is_super_user() {
             Ok(InFlight::default())
         } else {
-            Err(trc::LimitCause::TooManyRequests.into_err())
+            Err(trc::LimitEvent::TooManyRequests.into_err())
         }
     }
 
@@ -84,7 +84,7 @@ impl JMAP {
                 .caused_by(trc::location!())?
                 .is_some()
             {
-                return Err(trc::LimitCause::TooManyRequests.into_err());
+                return Err(trc::LimitEvent::TooManyRequests.into_err());
             }
         }
         Ok(())
@@ -100,7 +100,7 @@ impl JMAP {
         } else if access_token.is_super_user() {
             Ok(InFlight::default())
         } else {
-            Err(trc::LimitCause::ConcurrentUpload.into_err())
+            Err(trc::LimitEvent::ConcurrentUpload.into_err())
         }
     }
 
@@ -115,7 +115,7 @@ impl JMAP {
                 .caused_by(trc::location!())?
                 .is_some()
             {
-                return Err(trc::AuthCause::TooManyAttempts.into_err());
+                return Err(trc::AuthEvent::TooManyAttempts.into_err());
             }
         }
         Ok(())
@@ -132,7 +132,7 @@ impl JMAP {
                 .caused_by(trc::location!())?
                 .is_some()
             {
-                return Err(trc::AuthCause::TooManyAttempts.into_err());
+                return Err(trc::AuthEvent::TooManyAttempts.into_err());
             }
         }
         Ok(())

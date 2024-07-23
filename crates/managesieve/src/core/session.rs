@@ -29,7 +29,7 @@ impl SessionManager for ManageSieveSessionManager {
                 imap: self.imap.imap_inner,
                 instance: session.instance,
                 state: State::NotAuthenticated { auth_failures: 0 },
-                span: session.span,
+                session_id: session.session_id,
                 stream: session.stream,
                 in_flight: session.in_flight,
                 remote_addr: session.remote_ip,
@@ -86,7 +86,7 @@ impl<T: SessionStream> Session<T> {
                                     }
                                 } else {
                                     tracing::debug!(
-                                        parent: &self.span,
+
                                         event = "disconnect",
                                         reason = "peer",
                                         "Connection closed by peer."
@@ -99,7 +99,7 @@ impl<T: SessionStream> Session<T> {
                             }
                             Err(_) => {
                                 tracing::debug!(
-                                    parent: &self.span,
+
                                     event = "disconnect",
                                     reason = "timeout",
                                     "Connection timed out."
@@ -114,7 +114,7 @@ impl<T: SessionStream> Session<T> {
                 },
                 _ = shutdown_rx.changed() => {
                     tracing::debug!(
-                        parent: &self.span,
+
                         event = "disconnect",
                         reason = "shutdown",
                         "Server shutting down."
@@ -129,13 +129,15 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn into_tls(self) -> Result<Session<TlsStream<T>>, ()> {
-        let span = self.span;
         Ok(Session {
-            stream: self.instance.tls_accept(self.stream, &span).await?,
+            stream: self
+                .instance
+                .tls_accept(self.stream, self.session_id)
+                .await?,
             state: self.state,
             instance: self.instance,
             in_flight: self.in_flight,
-            span,
+            session_id: self.session_id,
             jmap: self.jmap,
             imap: self.imap,
             receiver: self.receiver,

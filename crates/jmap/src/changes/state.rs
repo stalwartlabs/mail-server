@@ -34,7 +34,7 @@ impl JMAP {
         let old_state: State = self.get_state(account_id, collection).await?;
         if let Some(if_in_state) = if_in_state {
             if &old_state != if_in_state {
-                return Err(trc::JmapCause::StateMismatch.into_err());
+                return Err(trc::JmapEvent::StateMismatch.into_err());
             }
         }
 

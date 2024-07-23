@@ -21,7 +21,7 @@ use super::{
 const MILTER_CHUNK_SIZE: usize = 65535;
 
 impl MilterClient<TcpStream> {
-    pub async fn connect(config: &Milter, span: tracing::Span) -> Result<Self> {
+    pub async fn connect(config: &Milter, session_id: u64) -> Result<Self> {
         tokio::time::timeout(config.timeout_command, async {
             let mut last_err = Error::Disconnected;
             for addr in &config.addrs {
@@ -36,7 +36,7 @@ impl MilterClient<TcpStream> {
                             receiver: Receiver::with_max_frame_len(config.max_frame_len),
                             options: 0,
                             version: config.protocol_version,
-                            span,
+                            session_id,
                             flags_actions: config.flags_actions.unwrap_or(
                                 SMFIF_ADDHDRS
                                     | SMFIF_CHGBODY
@@ -83,7 +83,7 @@ impl MilterClient<TcpStream> {
                 bytes_read: self.bytes_read,
                 options: self.options,
                 version: self.version,
-                span: self.span,
+                session_id: self.session_id,
                 flags_actions: self.flags_actions,
                 flags_protocol: self.flags_protocol,
             })
@@ -307,7 +307,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
 
     async fn write(&mut self, action: Command<'_>) -> super::Result<()> {
         //let p = println!("Action: {}", action);
-        tracing::trace!(parent: &self.span, context = "milter", event = "write", "action" = action.to_string());
+        tracing::trace!(
+            context = "milter",
+            event = "write",
+            "action" = action.to_string()
+        );
 
         tokio::time::timeout(self.timeout_cmd, async {
             self.stream.write_all(action.serialize().as_ref()).await?;
@@ -322,7 +326,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
             match self.receiver.read_frame(&self.buf[..self.bytes_read]) {
                 FrameResult::Frame(frame) => {
                     if let Some(response) = Response::deserialize(&frame) {
-                        tracing::trace!(parent: &self.span, context = "milter", event = "read", "action" = response.to_string());
+                        tracing::trace!(
+                            context = "milter",
+                            event = "read",
+                            "action" = response.to_string()
+                        );
                         //let p = println!("Response: {}", response);
                         return Ok(response);
                     } else {

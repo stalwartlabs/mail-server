@@ -225,7 +225,7 @@ impl JMAP {
                     }))
                     .into_http_response())
                 } else {
-                    Err(trc::ResourceCause::NotFound.into_err())
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
             ("messages", Some(queue_id), &Method::PATCH) => {
@@ -272,7 +272,7 @@ impl JMAP {
                     }))
                     .into_http_response())
                 } else {
-                    Err(trc::ResourceCause::NotFound.into_err())
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
             ("messages", Some(queue_id), &Method::DELETE) => {
@@ -352,7 +352,7 @@ impl JMAP {
                     }))
                     .into_http_response())
                 } else {
-                    Err(trc::ResourceCause::NotFound.into_err())
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
             ("reports", None, &Method::GET) => {
@@ -441,7 +441,7 @@ impl JMAP {
                             let mut rua = Vec::new();
                             if let Some(report) = self
                                 .smtp
-                                .generate_dmarc_aggregate_report(&event, &mut rua, None)
+                                .generate_dmarc_aggregate_report(&event, &mut rua, None, 0)
                                 .await?
                             {
                                 result = Report::dmarc(event, report, rua).into();
@@ -451,7 +451,7 @@ impl JMAP {
                             let mut rua = Vec::new();
                             if let Some(report) = self
                                 .smtp
-                                .generate_tls_aggregate_report(&[event.clone()], &mut rua, None)
+                                .generate_tls_aggregate_report(&[event.clone()], &mut rua, None, 0)
                                 .await?
                             {
                                 result = Report::tls(event, report, rua).into();
@@ -467,7 +467,7 @@ impl JMAP {
                     }))
                     .into_http_response())
                 } else {
-                    Err(trc::ResourceCause::NotFound.into_err())
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
             ("reports", Some(report_id), &Method::DELETE) => {
@@ -487,10 +487,10 @@ impl JMAP {
                     }))
                     .into_http_response())
                 } else {
-                    Err(trc::ResourceCause::NotFound.into_err())
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 }

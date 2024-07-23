@@ -38,7 +38,7 @@ impl ImapDirectory {
                     AUTH_XOAUTH2
                 }
                 _ => {
-                    trc::bail!(trc::StoreCause::NotSupported
+                    trc::bail!(trc::StoreEvent::NotSupported
                         .ctx(
                             trc::Key::Reason,
                             "IMAP server does not offer any supported auth mechanisms."
@@ -58,32 +58,32 @@ impl ImapDirectory {
                 },
             }
         } else {
-            Err(trc::StoreCause::NotSupported
+            Err(trc::StoreEvent::NotSupported
                 .caused_by(trc::location!())
                 .protocol(trc::Protocol::Imap))
         }
     }
 
     pub async fn email_to_ids(&self, _address: &str) -> trc::Result<Vec<u32>> {
-        Err(trc::StoreCause::NotSupported
+        Err(trc::StoreEvent::NotSupported
             .caused_by(trc::location!())
             .protocol(trc::Protocol::Imap))
     }
 
     pub async fn rcpt(&self, _address: &str) -> trc::Result<bool> {
-        Err(trc::StoreCause::NotSupported
+        Err(trc::StoreEvent::NotSupported
             .caused_by(trc::location!())
             .protocol(trc::Protocol::Imap))
     }
 
     pub async fn vrfy(&self, _address: &str) -> trc::Result<Vec<String>> {
-        Err(trc::StoreCause::NotSupported
+        Err(trc::StoreEvent::NotSupported
             .caused_by(trc::location!())
             .protocol(trc::Protocol::Imap))
     }
 
     pub async fn expn(&self, _address: &str) -> trc::Result<Vec<String>> {
-        Err(trc::StoreCause::NotSupported
+        Err(trc::StoreEvent::NotSupported
             .caused_by(trc::location!())
             .protocol(trc::Protocol::Imap))
     }

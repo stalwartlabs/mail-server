@@ -39,7 +39,7 @@ impl SessionManager for Pop3SessionManager {
                 stream: session.stream,
                 in_flight: session.in_flight,
                 remote_addr: session.remote_ip,
-                span: session.span,
+                session_id: session.session_id,
             };
 
             if session
@@ -85,29 +85,29 @@ impl<T: SessionStream> Session<T> {
                                         return true;
                                     }
                                     SessionResult::Close => {
-                                        tracing::debug!(parent: &self.span, event = "disconnect", "Disconnecting client.");
+                                        tracing::debug!( event = "disconnect", "Disconnecting client.");
                                         break;
                                     }
                                 }
                             } else {
-                                tracing::debug!(parent: &self.span, event = "close", "POP3 connection closed by client.");
+                                tracing::debug!( event = "close", "POP3 connection closed by client.");
                                 break;
                             }
                         },
                         Ok(Err(err)) => {
-                            tracing::debug!(parent: &self.span, event = "error", reason = %err, "POP3 connection error.");
+                            tracing::debug!( event = "error", reason = %err, "POP3 connection error.");
                             break;
                         },
                         Err(_) => {
                             self.write_bytes(&b"-ERR Connection timed out.\r\n"[..]).await.ok();
-                            tracing::debug!(parent: &self.span, "POP3 connection timed out.");
+                            tracing::debug!( "POP3 connection timed out.");
                             break;
                         }
                     }
                 },
                 _ = shutdown_rx.changed() => {
                     self.write_bytes(&b"* BYE Server shutting down.\r\n"[..]).await.ok();
-                    tracing::debug!(parent: &self.span, event = "shutdown", "POP3 server shutting down.");
+                    tracing::debug!( event = "shutdown", "POP3 server shutting down.");
                     break;
                 }
             };
@@ -118,13 +118,16 @@ impl<T: SessionStream> Session<T> {
 
     pub async fn into_tls(self) -> Result<Session<TlsStream<T>>, ()> {
         Ok(Session {
-            stream: self.instance.tls_accept(self.stream, &self.span).await?,
+            stream: self
+                .instance
+                .tls_accept(self.stream, self.session_id)
+                .await?,
             jmap: self.jmap,
             imap: self.imap,
             instance: self.instance,
             receiver: self.receiver,
             state: self.state,
-            span: self.span,
+            session_id: self.session_id,
             in_flight: self.in_flight,
             remote_addr: self.remote_addr,
         })
@@ -138,20 +141,23 @@ impl<T: SessionStream> Session<T> {
             let c = println!("{}", line);
         }*/
         tracing::trace!(
-            parent: &self.span,
             event = "write",
             data = std::str::from_utf8(bytes).unwrap_or_default(),
             size = bytes.len()
         );
 
-        self.stream
-            .write_all(bytes.as_ref())
-            .await
-            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))?;
-        self.stream
-            .flush()
-            .await
-            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))
+        self.stream.write_all(bytes.as_ref()).await.map_err(|err| {
+            trc::NetworkEvent::WriteError
+                .into_err()
+                .reason(err)
+                .caused_by(trc::location!())
+        })?;
+        self.stream.flush().await.map_err(|err| {
+            trc::NetworkEvent::WriteError
+                .into_err()
+                .reason(err)
+                .caused_by(trc::location!())
+        })
     }
 
     pub async fn write_ok(&mut self, message: impl Into<Cow<'static, str>>) -> trc::Result<()> {
@@ -160,12 +166,12 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn write_err(&mut self, err: trc::Error) -> bool {
-        tracing::error!(parent: &self.span, "POP3 error: {}", err);
+        tracing::error!("POP3 error: {}", err);
         let disconnect = err.must_disconnect();
 
         if err.should_write_err() {
             if let Err(err) = self.write_bytes(err.serialize()).await {
-                tracing::debug!(parent: &self.span, "Failed to write error: {}", err);
+                tracing::debug!("Failed to write error: {}", err);
                 return false;
             }
         }

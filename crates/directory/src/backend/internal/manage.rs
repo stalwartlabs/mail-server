@@ -422,7 +422,7 @@ impl ManageDirectory for Store {
                             continue;
                         }
                     }
-                    return Err(trc::ManageCause::NotSupported.caused_by(trc::location!()));
+                    return Err(trc::ManageEvent::NotSupported.caused_by(trc::location!()));
                 }
                 (
                     PrincipalAction::Set,
@@ -762,7 +762,7 @@ impl ManageDirectory for Store {
                 }
 
                 _ => {
-                    return Err(trc::StoreCause::NotSupported.caused_by(trc::location!()));
+                    return Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()));
                 }
             }
         }
@@ -1056,25 +1056,25 @@ impl From<Principal<String>> for Principal<u32> {
 }
 
 pub fn err_missing(field: impl Into<trc::Value>) -> trc::Error {
-    trc::ManageCause::MissingParameter.ctx(trc::Key::Key, field)
+    trc::ManageEvent::MissingParameter.ctx(trc::Key::Key, field)
 }
 
 pub fn err_exists(field: impl Into<trc::Value>, value: impl Into<trc::Value>) -> trc::Error {
-    trc::ManageCause::AlreadyExists
+    trc::ManageEvent::AlreadyExists
         .ctx(trc::Key::Key, field)
         .ctx(trc::Key::Value, value)
 }
 
 pub fn not_found(value: impl Into<trc::Value>) -> trc::Error {
-    trc::ManageCause::NotFound.ctx(trc::Key::Key, value)
+    trc::ManageEvent::NotFound.ctx(trc::Key::Key, value)
 }
 
 pub fn unsupported(details: impl Into<trc::Value>) -> trc::Error {
-    trc::ManageCause::NotSupported.ctx(trc::Key::Details, details)
+    trc::ManageEvent::NotSupported.ctx(trc::Key::Details, details)
 }
 
 pub fn error(details: impl Into<trc::Value>, reason: Option<impl Into<trc::Value>>) -> trc::Error {
-    trc::ManageCause::Error
+    trc::ManageEvent::Error
         .ctx(trc::Key::Details, details)
         .ctx_opt(trc::Key::Reason, reason)
 }

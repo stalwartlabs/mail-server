@@ -118,7 +118,7 @@ impl JMAP {
                 .into_http_response())
             }
 
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 

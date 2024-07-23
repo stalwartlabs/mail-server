@@ -108,14 +108,14 @@ impl JMAP {
                             Filter::Header(header) => {
                                 let mut header = header.into_iter();
                                 let header_name = header.next().ok_or_else(|| {
-                                    trc::JmapCause::InvalidArguments
+                                    trc::JmapEvent::InvalidArguments
                                         .into_err()
                                         .details("Header name is missing.".to_string())
                                 })?;
 
                                 match HeaderName::parse(header_name) {
                                     Some(HeaderName::Other(header_name)) => {
-                                        return Err(trc::JmapCause::InvalidArguments
+                                        return Err(trc::JmapEvent::InvalidArguments
                                             .into_err()
                                             .details(format!(
                                                 "Querying header '{header_name}' is not supported.",
@@ -155,7 +155,7 @@ impl JMAP {
                                 fts_filters.push(cond.into());
                             }
                             other => {
-                                return Err(trc::JmapCause::UnsupportedFilter
+                                return Err(trc::JmapEvent::UnsupportedFilter
                                     .into_err()
                                     .details(other.to_string()))
                             }
@@ -254,7 +254,7 @@ impl JMAP {
                         }
 
                         other => {
-                            return Err(trc::JmapCause::UnsupportedFilter
+                            return Err(trc::JmapEvent::UnsupportedFilter
                                 .into_err()
                                 .details(other.to_string()))
                         }
@@ -334,7 +334,7 @@ impl JMAP {
                     }
 
                     other => {
-                        return Err(trc::JmapCause::UnsupportedSort
+                        return Err(trc::JmapEvent::UnsupportedSort
                             .into_err()
                             .details(other.to_string()))
                     }

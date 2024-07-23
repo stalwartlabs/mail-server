@@ -46,7 +46,7 @@ impl<T: SessionStream> Session<T> {
             .await
             .imap_ctx(&request.tag, trc::location!())?
         {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details(concat!(
                     "You do not have the required permissions ",
@@ -60,7 +60,7 @@ impl<T: SessionStream> Session<T> {
         let sequence = match request.tokens.into_iter().next() {
             Some(Token::Argument(value)) if is_uid => {
                 let sequence = parse_sequence_set(&value).map_err(|err| {
-                    trc::Cause::Imap
+                    trc::ImapEvent::Error
                         .into_err()
                         .details(err)
                         .ctx(trc::Key::Type, ResponseType::Bad)

@@ -33,7 +33,7 @@ impl JMAP {
                         }
                         query::RequestArguments::Quota => changes::RequestArguments::Quota,
                         _ => {
-                            return Err(trc::JmapCause::UnknownMethod
+                            return Err(trc::JmapEvent::UnknownMethod
                                 .into_err()
                                 .details("Unknown method"))
                         }

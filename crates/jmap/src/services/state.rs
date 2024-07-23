@@ -387,10 +387,11 @@ impl JMAP {
                 tx: change_tx,
             },
         ] {
-            state_tx
-                .send(event)
-                .await
-                .map_err(|err| trc::Cause::Thread.reason(err).caused_by(trc::location!()))?;
+            state_tx.send(event).await.map_err(|err| {
+                trc::EventType::Server(trc::ServerEvent::ThreadError)
+                    .reason(err)
+                    .caused_by(trc::location!())
+            })?;
         }
 
         Ok(change_rx)

@@ -23,7 +23,7 @@ pub struct Session<T: AsyncRead + AsyncWrite> {
     pub state: State,
     pub remote_addr: IpAddr,
     pub stream: T,
-    pub span: tracing::Span,
+    pub session_id: u64,
     pub in_flight: InFlight,
 }
 
@@ -269,12 +269,12 @@ impl SerializeResponse for trc::Error {
         if let Some(code) = self
             .value_as_str(trc::Key::Code)
             .or_else(|| match self.as_ref() {
-                trc::Cause::Store(trc::StoreCause::NotFound) => {
+                trc::EventType::Store(trc::StoreEvent::NotFound) => {
                     Some(ResponseCode::NonExistent.as_str())
                 }
-                trc::Cause::Store(_) => Some(ResponseCode::TryLater.as_str()),
-                trc::Cause::Limit(trc::LimitCause::Quota) => Some(ResponseCode::Quota.as_str()),
-                trc::Cause::Limit(_) => Some(ResponseCode::TryLater.as_str()),
+                trc::EventType::Store(_) => Some(ResponseCode::TryLater.as_str()),
+                trc::EventType::Limit(trc::LimitEvent::Quota) => Some(ResponseCode::Quota.as_str()),
+                trc::EventType::Limit(_) => Some(ResponseCode::TryLater.as_str()),
                 _ => None,
             })
         {

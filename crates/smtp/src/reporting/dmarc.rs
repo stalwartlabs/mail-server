@@ -7,7 +7,10 @@
 use std::collections::hash_map::Entry;
 
 use ahash::AHashMap;
-use common::{config::smtp::report::AggregateFrequency, listener::SessionStream};
+use common::{
+    config::smtp::{report::AggregateFrequency, session},
+    listener::SessionStream,
+};
 use mail_auth::{
     common::verify::VerifySignature,
     dmarc::{self, URI},
@@ -51,7 +54,10 @@ impl<T: SessionStream> Session<T> {
 
         // Send failure report
         if let (Some(failure_rate), Some(report_options)) = (
-            self.core.core.eval_if::<Rate, _>(&config.send, self).await,
+            self.core
+                .core
+                .eval_if::<Rate, _>(&config.send, self, self.data.session_id)
+                .await,
             dmarc_output.failure_report(),
         ) {
             // Verify that any external reporting addresses are authorized
@@ -78,7 +84,7 @@ impl<T: SessionStream> Session<T> {
                     } else {
                         if !dmarc_record.ruf().is_empty() {
                             tracing::debug!(
-                                parent: &self.span,
+
                                 context = "report",
                                 report = "dkim",
                                 event = "unauthorized-ruf",
@@ -91,7 +97,7 @@ impl<T: SessionStream> Session<T> {
                 }
                 None => {
                     tracing::debug!(
-                        parent: &self.span,
+
                         context = "report",
                         report = "dmarc",
                         event = "dns-failure",
@@ -108,7 +114,7 @@ impl<T: SessionStream> Session<T> {
                 let from_addr = self
                     .core
                     .core
-                    .eval_if(&config.address, self)
+                    .eval_if(&config.address, self, self.data.session_id)
                     .await
                     .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
                 let mut auth_failure = self
@@ -192,7 +198,7 @@ impl<T: SessionStream> Session<T> {
                         (
                             self.core
                                 .core
-                                .eval_if(&config.name, self)
+                                .eval_if(&config.name, self, self.data.session_id)
                                 .await
                                 .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                                 .as_str(),
@@ -202,7 +208,7 @@ impl<T: SessionStream> Session<T> {
                         &self
                             .core
                             .core
-                            .eval_if(&config.subject, self)
+                            .eval_if(&config.subject, self, self.data.session_id)
                             .await
                             .unwrap_or_else(|| "DMARC Report".to_string()),
                         &mut report,
@@ -210,7 +216,7 @@ impl<T: SessionStream> Session<T> {
                     .ok();
 
                 tracing::info!(
-                    parent: &self.span,
+
                     context = "report",
                     report = "dmarc",
                     event = "queue",
@@ -220,18 +226,11 @@ impl<T: SessionStream> Session<T> {
 
                 // Send report
                 self.core
-                    .send_report(
-                        &from_addr,
-                        rcpts.into_iter(),
-                        report,
-                        &config.sign,
-                        &self.span,
-                        true,
-                    )
+                    .send_report(&from_addr, rcpts.into_iter(), report, &config.sign, true)
                     .await;
             } else {
                 tracing::debug!(
-                    parent: &self.span,
+
                     context = "report",
                     report = "dmarc",
                     event = "throttle",
@@ -244,7 +243,11 @@ impl<T: SessionStream> Session<T> {
         let interval = self
             .core
             .core
-            .eval_if(&self.core.core.smtp.report.dmarc_aggregate.send, self)
+            .eval_if(
+                &self.core.core.smtp.report.dmarc_aggregate.send,
+                self,
+                self.data.session_id,
+            )
             .await
             .unwrap_or(AggregateFrequency::Never);
 
@@ -297,36 +300,38 @@ impl SMTP {
         );
 
         // Generate report
+        let todo = "generate session id";
+        let session_id = 0;
         let mut serialized_size = serde_json::Serializer::new(SerializedSize::new(
             self.core
                 .eval_if(
                     &self.core.smtp.report.dmarc_aggregate.max_size,
                     &RecipientDomain::new(event.domain.as_str()),
+                    session_id,
                 )
                 .await
                 .unwrap_or(25 * 1024 * 1024),
         ));
         let mut rua = Vec::new();
         let report = match self
-            .generate_dmarc_aggregate_report(&event, &mut rua, Some(&mut serialized_size))
+            .generate_dmarc_aggregate_report(
+                &event,
+                &mut rua,
+                Some(&mut serialized_size),
+                session_id,
+            )
             .await
         {
             Ok(Some(report)) => report,
             Ok(None) => {
                 tracing::warn!(
-                    parent: &span,
                     event = "missing",
                     "Failed to read DMARC report: Report not found"
                 );
                 return;
             }
             Err(err) => {
-                tracing::warn!(
-                    parent: &span,
-                    event = "error",
-                    "Failed to read DMARC records: {}",
-                    err
-                );
+                tracing::warn!(event = "error", "Failed to read DMARC records: {}", err);
                 return;
             }
         };
@@ -348,7 +353,7 @@ impl SMTP {
                         .collect::<Vec<_>>()
                 } else {
                     tracing::info!(
-                        parent: &span,
+
                         event = "failed",
                         reason = "unauthorized-rua",
                         rua = ?rua,
@@ -360,7 +365,7 @@ impl SMTP {
             }
             None => {
                 tracing::info!(
-                    parent: &span,
+
                     event = "failed",
                     reason = "dns-failure",
                     rua = ?rua,
@@ -378,6 +383,7 @@ impl SMTP {
             .eval_if(
                 &config.address,
                 &RecipientDomain::new(event.domain.as_str()),
+                session_id,
             )
             .await
             .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
@@ -388,12 +394,17 @@ impl SMTP {
                 .eval_if(
                     &self.core.smtp.report.submitter,
                     &RecipientDomain::new(event.domain.as_str()),
+                    session_id,
                 )
                 .await
                 .unwrap_or_else(|| "localhost".to_string()),
             (
                 self.core
-                    .eval_if(&config.name, &RecipientDomain::new(event.domain.as_str()))
+                    .eval_if(
+                        &config.name,
+                        &RecipientDomain::new(event.domain.as_str()),
+                        session_id,
+                    )
                     .await
                     .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                     .as_str(),
@@ -404,7 +415,7 @@ impl SMTP {
         );
 
         // Send report
-        self.send_report(&from_addr, rua.iter(), message, &config.sign, &span, false)
+        self.send_report(&from_addr, rua.iter(), message, &config.sign, false)
             .await;
 
         self.delete_dmarc_report(event).await;
@@ -415,6 +426,7 @@ impl SMTP {
         event: &ReportEvent,
         rua: &mut Vec<URI>,
         mut serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
+        session_id: u64,
     ) -> trc::Result<Option<Report>> {
         // Deserialize report
         let dmarc = match self
@@ -445,6 +457,7 @@ impl SMTP {
                     .eval_if(
                         &config.address,
                         &RecipientDomain::new(event.domain.as_str()),
+                        session_id,
                     )
                     .await
                     .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string()),
@@ -454,6 +467,7 @@ impl SMTP {
             .eval_if::<String, _>(
                 &config.org_name,
                 &RecipientDomain::new(event.domain.as_str()),
+                session_id,
             )
             .await
         {
@@ -464,6 +478,7 @@ impl SMTP {
             .eval_if::<String, _>(
                 &config.contact_info,
                 &RecipientDomain::new(event.domain.as_str()),
+                session_id,
             )
             .await
         {

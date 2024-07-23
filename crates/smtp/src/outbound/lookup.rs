@@ -87,12 +87,13 @@ impl SMTP {
         remote_host: &NextHop<'_>,
         envelope: &impl ResolveVariable,
         max_multihomed: usize,
+        session_id: u64,
     ) -> Result<IpLookupResult, Status<(), Error>> {
         let remote_ips = self
             .ip_lookup(
                 remote_host.fqdn_hostname().as_ref(),
                 self.core
-                    .eval_if(&self.core.smtp.queue.ip_strategy, envelope)
+                    .eval_if(&self.core.smtp.queue.ip_strategy, envelope, session_id)
                     .await
                     .unwrap_or(IpLookupStrategy::Ipv4thenIpv6),
                 max_multihomed,
@@ -122,7 +123,11 @@ impl SMTP {
             // Obtain source IPv4 address
             let source_ips = self
                 .core
-                .eval_if::<Vec<Ipv4Addr>, _>(&self.core.smtp.queue.source_ip.ipv4, envelope)
+                .eval_if::<Vec<Ipv4Addr>, _>(
+                    &self.core.smtp.queue.source_ip.ipv4,
+                    envelope,
+                    session_id,
+                )
                 .await
                 .unwrap_or_default();
             match source_ips.len().cmp(&1) {
@@ -140,7 +145,11 @@ impl SMTP {
             // Obtain source IPv6 address
             let source_ips = self
                 .core
-                .eval_if::<Vec<Ipv6Addr>, _>(&self.core.smtp.queue.source_ip.ipv6, envelope)
+                .eval_if::<Vec<Ipv6Addr>, _>(
+                    &self.core.smtp.queue.source_ip.ipv6,
+                    envelope,
+                    session_id,
+                )
                 .await
                 .unwrap_or_default();
             match source_ips.len().cmp(&1) {

@@ -28,7 +28,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .next()
             .and_then(|s| s.unwrap_string().ok())
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Expected script name as a parameter.")
             })?
@@ -37,7 +37,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         let mut script_bytes = tokens
             .next()
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Expected script as a parameter.")
             })?
@@ -57,7 +57,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .await
             .caused_by(trc::location!())?
         {
-            return Err(trc::Cause::ManageSieve
+            return Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details("Quota exceeded.")
                 .code(ResponseCode::Quota));
@@ -72,7 +72,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .unwrap_or(0)
             > self.jmap.core.jmap.sieve_max_scripts
         {
-            return Err(trc::Cause::ManageSieve
+            return Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details("Too many scripts.")
                 .code(ResponseCode::QuotaMaxScripts));
@@ -91,12 +91,12 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             }
             Err(err) => {
                 return Err(if let ErrorType::ScriptTooLong = &err.error_type() {
-                    trc::Cause::ManageSieve
+                    trc::ManageSieveEvent::Error
                         .into_err()
                         .details(err.to_string())
                         .code(ResponseCode::QuotaMaxSize)
                 } else {
-                    trc::Cause::ManageSieve.into_err().details(err.to_string())
+                    trc::ManageSieveEvent::Error.into_err().details(err.to_string())
                 });
             }
         }
@@ -115,13 +115,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .await
                 .caused_by(trc::location!())?
                 .ok_or_else(|| {
-                    trc::Cause::ManageSieve
+                    trc::ManageSieveEvent::Error
                         .into_err()
                         .details("Script not found")
                         .code(ResponseCode::NonExistent)
                 })?;
             let prev_blob_id = script.inner.blob_id().ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Internal error while obtaining blobId")
                     .code(ResponseCode::TryLater)
@@ -229,15 +229,15 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
 
     pub async fn validate_name(&self, account_id: u32, name: &str) -> trc::Result<Option<u32>> {
         if name.is_empty() {
-            Err(trc::Cause::ManageSieve
+            Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details("Script name cannot be empty."))
         } else if name.len() > self.jmap.core.jmap.sieve_max_script_name {
-            Err(trc::Cause::ManageSieve
+            Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details("Script name is too long."))
         } else if name.eq_ignore_ascii_case("vacation") {
-            Err(trc::Cause::ManageSieve
+            Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details("The 'vacation' name is reserved, please use a different name."))
         } else {

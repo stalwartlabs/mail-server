@@ -52,7 +52,7 @@ impl JMAP {
         match *req.method() {
             Method::GET => self.handle_get_public_key(path).await,
             Method::POST => self.handle_create_signature(body).await,
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 
@@ -60,7 +60,7 @@ impl JMAP {
         let signature_id = match path.get(1) {
             Some(signature_id) => decode_path_element(signature_id),
             None => {
-                return Err(trc::ResourceCause::NotFound.into_err());
+                return Err(trc::ResourceEvent::NotFound.into_err());
             }
         };
 
@@ -79,7 +79,7 @@ impl JMAP {
         ) {
             (Ok(Some(pk)), Ok(Some(algorithm))) => (pk, algorithm),
             (Err(err), _) | (_, Err(err)) => return Err(err.caused_by(trc::location!())),
-            _ => return Err(trc::ResourceCause::NotFound.into_err()),
+            _ => return Err(trc::ResourceEvent::NotFound.into_err()),
         };
 
         match obtain_dkim_public_key(algo, &pk) {
@@ -96,7 +96,9 @@ impl JMAP {
             match serde_json::from_slice::<DkimSignature>(body.as_deref().unwrap_or_default()) {
                 Ok(request) => request,
                 Err(err) => {
-                    return Err(trc::Cause::Resource(trc::ResourceCause::BadParameters).reason(err))
+                    return Err(
+                        trc::EventType::Resource(trc::ResourceEvent::BadParameters).reason(err)
+                    )
                 }
             };
 

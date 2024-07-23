@@ -53,7 +53,7 @@ impl<T: SessionStream> Session<T> {
                 if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
                     mailbox
                 } else {
-                    return Err(trc::Cause::Imap
+                    return Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Destination mailbox does not exist.")
                         .code(ResponseCode::TryCreate)
@@ -64,7 +64,7 @@ impl<T: SessionStream> Session<T> {
             if src_mailbox.id.account_id == dest_mailbox.account_id
                 && src_mailbox.id.mailbox_id == dest_mailbox.mailbox_id
             {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details("Source and destination mailboxes are the same.")
                     .code(ResponseCode::Cannot)
@@ -101,7 +101,7 @@ impl<T: SessionStream> SessionData<T> {
             .imap_ctx(&arguments.tag, trc::location!())?;
 
         if ids.is_empty() {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details("No messages were found.")
                 .id(arguments.tag));
@@ -118,7 +118,7 @@ impl<T: SessionStream> SessionData<T> {
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?
         {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details(concat!(
                     "You do not have the required permissions to ",
@@ -135,7 +135,7 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .imap_ctx(&arguments.tag, trc::location!())?
         {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details(concat!(
                     "You do not have the required permissions to ",
@@ -325,12 +325,12 @@ impl<T: SessionStream> SessionData<T> {
         // Map copied JMAP Ids to IMAP UIDs in the destination folder.
         if copied_ids.is_empty() {
             return Err(if response.rtype != ResponseType::Ok {
-                trc::Cause::Imap
+                trc::ImapEvent::Error
                     .into_err()
                     .details(response.message)
                     .ctx_opt(trc::Key::Code, response.code)
             } else {
-                trc::Cause::Imap.into_err().details(if is_move {
+                trc::ImapEvent::Error.into_err().details(if is_move {
                     "No messages were moved."
                 } else {
                     "No messages were copied."

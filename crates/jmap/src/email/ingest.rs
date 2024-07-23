@@ -84,13 +84,13 @@ impl JMAP {
             .await
             .caused_by(trc::location!())?
         {
-            return Err(trc::LimitCause::Quota.into_err());
+            return Err(trc::LimitEvent::Quota.into_err());
         }
 
         // Parse message
         let mut raw_message = Cow::from(params.raw_message);
         let mut message = params.message.ok_or_else(|| {
-            trc::Cause::Ingest
+            trc::EventType::Store(trc::StoreEvent::IngestError)
                 .ctx(trc::Key::Code, 550)
                 .ctx(trc::Key::Reason, "Failed to parse e-mail message.")
         })?;
@@ -201,10 +201,12 @@ impl JMAP {
                         message = MessageParser::default()
                             .parse(raw_message.as_ref())
                             .ok_or_else(|| {
-                                trc::Cause::Ingest.ctx(trc::Key::Code, 550).ctx(
-                                    trc::Key::Reason,
-                                    "Failed to parse encrypted e-mail message.",
-                                )
+                                trc::EventType::Store(trc::StoreEvent::IngestError)
+                                    .ctx(trc::Key::Code, 550)
+                                    .ctx(
+                                        trc::Key::Reason,
+                                        "Failed to parse encrypted e-mail message.",
+                                    )
                             })?;
 
                         // Remove contents from parsed message
@@ -224,7 +226,7 @@ impl JMAP {
                         }
                     }
                     Err(EncryptMessageError::Error(err)) => {
-                        trc::bail!(trc::StoreCause::Crypto
+                        trc::bail!(trc::StoreEvent::CryptoError
                             .into_err()
                             .caused_by(trc::location!())
                             .reason(err));

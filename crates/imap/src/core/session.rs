@@ -67,24 +67,24 @@ impl<T: SessionStream> Session<T> {
                                     }
                                 }
                             } else {
-                                tracing::debug!(parent: &self.span, event = "close", "IMAP connection closed by client.");
+                                tracing::debug!( event = "close", "IMAP connection closed by client.");
                                 break;
                             }
                         },
                         Ok(Err(err)) => {
-                            tracing::debug!(parent: &self.span, event = "error", reason = %err, "IMAP connection error.");
+                            tracing::debug!( event = "error", reason = %err, "IMAP connection error.");
                             break;
                         },
                         Err(_) => {
                             self.write_bytes(&b"* BYE Connection timed out.\r\n"[..]).await.ok();
-                            tracing::debug!(parent: &self.span, "IMAP connection timed out.");
+                            tracing::debug!( "IMAP connection timed out.");
                             break;
                         }
                     }
                 },
                 _ = shutdown_rx.changed() => {
                     self.write_bytes(&b"* BYE Server shutting down.\r\n"[..]).await.ok();
-                    tracing::debug!(parent: &self.span, event = "shutdown", "IMAP server shutting down.");
+                    tracing::debug!( event = "shutdown", "IMAP server shutting down.");
                     break;
                 }
             };
@@ -104,7 +104,7 @@ impl<T: SessionStream> Session<T> {
             (false, &manager.imap.imap_inner.greeting_plain)
         };
         if let Err(err) = session.stream.write_all(greeting).await {
-            tracing::debug!(parent: &session.span, event = "error", reason = %err, "Failed to write greeting.");
+            tracing::debug!( event = "error", reason = %err, "Failed to write greeting.");
             return Err(());
         }
         let _ = session.stream.flush().await;
@@ -123,7 +123,7 @@ impl<T: SessionStream> Session<T> {
             jmap,
             imap: manager.imap.imap_inner,
             instance: session.instance,
-            span: session.span,
+            session_id: session.session_id,
             in_flight: session.in_flight,
             remote_addr: session.remote_ip,
             stream_rx,
@@ -156,7 +156,7 @@ impl<T: SessionStream> Session<T> {
 
         // Upgrade to TLS
         let (stream_rx, stream_tx) =
-            tokio::io::split(self.instance.tls_accept(stream, &self.span).await?);
+            tokio::io::split(self.instance.tls_accept(stream, self.session_id).await?);
         let stream_tx = Arc::new(tokio::sync::Mutex::new(stream_tx));
 
         Ok(Session {
@@ -169,7 +169,7 @@ impl<T: SessionStream> Session<T> {
             is_tls: true,
             is_condstore: self.is_condstore,
             is_qresync: self.is_qresync,
-            span: self.span,
+            session_id: self.session_id,
             in_flight: self.in_flight,
             remote_addr: self.remote_addr,
             stream_rx,
@@ -185,7 +185,6 @@ impl<T: SessionStream> Session<T> {
             let c = println!("{}", line);
         }*/
         tracing::trace!(
-            parent: &self.span,
             event = "write",
             data = std::str::from_utf8(bytes).unwrap_or_default(),
             size = bytes.len()
@@ -193,7 +192,8 @@ impl<T: SessionStream> Session<T> {
 
         let mut stream = self.stream_tx.lock().await;
         if let Err(err) = stream.write_all(bytes).await {
-            Err(trc::Cause::Network
+            Err(trc::NetworkEvent::WriteError
+                .into_err()
                 .reason(err)
                 .details("Failed to write to stream"))
         } else {
@@ -203,13 +203,13 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn write_error(&self, err: trc::Error) -> bool {
-        tracing::warn!(parent: &self.span, event = "error", reason = %err, "IMAP error.");
+        tracing::warn!( event = "error", reason = %err, "IMAP error.");
 
         if err.should_write_err() {
             let disconnect = err.must_disconnect();
 
             if let Err(err) = self.write_bytes(err.serialize()).await {
-                tracing::debug!(parent: &self.span, event = "error", reason = %err, "Failed to write error.");
+                tracing::debug!( event = "error", reason = %err, "Failed to write error.");
                 false
             } else {
                 !disconnect
@@ -227,7 +227,6 @@ impl<T: SessionStream> super::SessionData<T> {
             let c = println!("{}", line);
         }*/
         tracing::trace!(
-            parent: &self.span,
             event = "write",
             data = std::str::from_utf8(bytes).unwrap_or_default(),
             size = bytes.len()
@@ -235,7 +234,8 @@ impl<T: SessionStream> super::SessionData<T> {
 
         let mut stream = self.stream_tx.lock().await;
         if let Err(err) = stream.write_all(bytes.as_ref()).await {
-            Err(trc::Cause::Network
+            Err(trc::NetworkEvent::WriteError
+                .into_err()
                 .reason(err)
                 .details("Failed to write to stream"))
         } else {
@@ -245,7 +245,7 @@ impl<T: SessionStream> super::SessionData<T> {
     }
 
     pub async fn write_error(&self, err: trc::Error) -> trc::Result<()> {
-        tracing::warn!(parent: &self.span, event = "error", reason = %err, "IMAP error.");
+        tracing::warn!( event = "error", reason = %err, "IMAP error.");
 
         if err.should_write_err() {
             self.write_bytes(err.serialize()).await

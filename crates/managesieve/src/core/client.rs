@@ -34,7 +34,7 @@ impl<T: SessionStream> Session<T> {
                         let mut disconnect = err.must_disconnect();
 
                         if let Err(err) = self.write_error(err).await {
-                            tracing::error!(parent: &self.span, event = "error", error = ?err);
+                            tracing::error!( event = "error", error = ?err);
                             disconnect = true;
                         }
 
@@ -52,7 +52,7 @@ impl<T: SessionStream> Session<T> {
                 }
                 Err(receiver::Error::Error { response }) => {
                     if let Err(err) = self.write_error(response).await {
-                        tracing::error!(parent: &self.span, event = "error", error = ?err);
+                        tracing::error!( event = "error", error = ?err);
                         return SessionResult::Close;
                     }
                     break;
@@ -80,7 +80,7 @@ impl<T: SessionStream> Session<T> {
             } {
                 Ok(response) => {
                     if let Err(err) = self.write(&response).await {
-                        tracing::error!(parent: &self.span, event = "error", error = ?err);
+                        tracing::error!( event = "error", error = ?err);
                         return SessionResult::Close;
                     }
 
@@ -94,7 +94,7 @@ impl<T: SessionStream> Session<T> {
                     let mut disconnect = err.must_disconnect();
 
                     if let Err(err) = self.write_error(err).await {
-                        tracing::error!(parent: &self.span, event = "error", error = ?err);
+                        tracing::error!( event = "error", error = ?err);
                         disconnect = true;
                     }
 
@@ -110,7 +110,7 @@ impl<T: SessionStream> Session<T> {
                 .write(format!("OK Ready for {} bytes.\r\n", needs_literal).as_bytes())
                 .await
             {
-                tracing::error!(parent: &self.span, event = "error", error = ?err);
+                tracing::error!( event = "error", error = ?err);
                 return SessionResult::Close;
             }
         }
@@ -126,13 +126,13 @@ impl<T: SessionStream> Session<T> {
                     if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
                         Ok(command)
                     } else {
-                        Err(trc::Cause::ManageSieve
+                        Err(trc::ManageSieveEvent::Error
                             .into_err()
                             .code(ResponseCode::EncryptNeeded)
                             .details("Cannot authenticate over plain-text."))
                     }
                 } else {
-                    Err(trc::Cause::ManageSieve
+                    Err(trc::ManageSieveEvent::Error
                         .into_err()
                         .details("Already authenticated."))
                 }
@@ -141,7 +141,7 @@ impl<T: SessionStream> Session<T> {
                 if !self.stream.is_tls() {
                     Ok(command)
                 } else {
-                    Err(trc::Cause::ManageSieve
+                    Err(trc::ManageSieveEvent::Error
                         .into_err()
                         .details("Already in TLS mode."))
                 }
@@ -173,7 +173,7 @@ impl<T: SessionStream> Session<T> {
                         {
                             Ok(command)
                         } else {
-                            Err(trc::LimitCause::TooManyRequests
+                            Err(trc::LimitEvent::TooManyRequests
                                 .into_err()
                                 .code(ResponseCode::TryLater))
                         }
@@ -181,7 +181,7 @@ impl<T: SessionStream> Session<T> {
                         Ok(command)
                     }
                 } else {
-                    Err(trc::Cause::ManageSieve
+                    Err(trc::ManageSieveEvent::Error
                         .into_err()
                         .details("Not authenticated."))
                 }
@@ -193,43 +193,50 @@ impl<T: SessionStream> Session<T> {
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     #[inline(always)]
     pub async fn write(&mut self, bytes: &[u8]) -> trc::Result<()> {
-        self.stream
-            .write_all(bytes)
-            .await
-            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))?;
-        self.stream
-            .flush()
-            .await
-            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))?;
+        self.stream.write_all(bytes).await.map_err(|err| {
+            trc::NetworkEvent::WriteError
+                .into_err()
+                .reason(err)
+                .caused_by(trc::location!())
+        })?;
+        self.stream.flush().await.map_err(|err| {
+            trc::NetworkEvent::FlushError
+                .into_err()
+                .reason(err)
+                .caused_by(trc::location!())
+        })?;
 
-        tracing::trace!(parent: &self.span,
+        tracing::trace!(
             event = "write",
-            data = std::str::from_utf8(bytes).unwrap_or_default() ,
-            size = bytes.len());
+            data = std::str::from_utf8(bytes).unwrap_or_default(),
+            size = bytes.len()
+        );
 
         Ok(())
     }
 
     pub async fn write_error(&mut self, error: trc::Error) -> trc::Result<()> {
-        tracing::error!(parent: &self.span, event = "error", error = ?error);
+        tracing::error!( event = "error", error = ?error);
         self.write(&error.serialize()).await
     }
 
     #[inline(always)]
     pub async fn read(&mut self, bytes: &mut [u8]) -> trc::Result<usize> {
-        let len = self
-            .stream
-            .read(bytes)
-            .await
-            .map_err(|err| trc::Cause::Network.reason(err).caused_by(trc::location!()))?;
+        let len = self.stream.read(bytes).await.map_err(|err| {
+            trc::NetworkEvent::ReadError
+                .into_err()
+                .reason(err)
+                .caused_by(trc::location!())
+        })?;
 
-        tracing::trace!(parent: &self.span,
+        tracing::trace!(
             event = "read",
-            data =  bytes
+            data = bytes
                 .get(0..len)
                 .and_then(|bytes| std::str::from_utf8(bytes).ok())
                 .unwrap_or("[invalid UTF8]"),
-            size = len);
+            size = len
+        );
 
         Ok(len)
     }
@@ -250,7 +257,7 @@ impl<T: AsyncWrite + AsyncRead> Session<T> {
             .caused_by(trc::location!())
             .and_then(|results| {
                 results.results.min().ok_or_else(|| {
-                    trc::Cause::ManageSieve
+                    trc::ManageSieveEvent::Error
                         .into_err()
                         .code(ResponseCode::NonExistent)
                         .reason("There is no script by that name")

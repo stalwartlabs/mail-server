@@ -56,7 +56,7 @@ impl<T: SessionStream> Session<T> {
         // Send continuation response
         self.write_bytes(b"+ Idling, send 'DONE' to stop.\r\n".to_vec())
             .await?;
-        tracing::debug!(parent: &self.span, event = "start", context = "idle", "Starting IDLE.");
+        tracing::debug!(event = "start", context = "idle", "Starting IDLE.");
         let mut buf = vec![0; 1024];
         loop {
             tokio::select! {
@@ -65,22 +65,22 @@ impl<T: SessionStream> Session<T> {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
                                 if (buf[..bytes_read]).windows(4).any(|w| w == b"DONE") {
-                                    tracing::debug!(parent: &self.span, event = "stop", context = "idle", "Stopping IDLE.");
+                                    tracing::debug!( event = "stop", context = "idle", "Stopping IDLE.");
                                     return self.write_bytes(StatusResponse::completed(Command::Idle)
                                                                     .with_tag(request.tag)
                                                                     .into_bytes()).await;
                                 }
                             } else {
-                                tracing::debug!(parent: &self.span, event = "close", );
-                                return Err(trc::Cause::Network.into_err().details("IMAP connection closed by client.").id(request.tag));
+                                tracing::debug!( event = "close", );
+                                return Err(trc::NetworkEvent::Closed.into_err().details("IMAP connection closed by client.").id(request.tag));
                             }
                         },
                         Ok(Err(err)) => {
-                            return Err(trc::Cause::Network.reason(err).details("IMAP connection error.").id(request.tag));
+                            return Err(trc::NetworkEvent::ReadError.into_err().reason(err).details("IMAP connection error.").id(request.tag));
                         },
                         Err(_) => {
                             self.write_bytes(&b"* BYE IDLE timed out.\r\n"[..]).await.ok();
-                            return Err(trc::Cause::Network.into_err().details("IMAP IDLE timed out.").id(request.tag));
+                            return Err(trc::NetworkEvent::Timeout.into_err().details("IMAP IDLE timed out.").id(request.tag));
                         }
                     }
                 }
@@ -106,7 +106,7 @@ impl<T: SessionStream> Session<T> {
                         }
                     } else {
                         self.write_bytes(&b"* BYE Server shutting down.\r\n"[..]).await.ok();
-                        return Err(trc::Cause::Network.into_err().details("IDLE channel closed.").id(request.tag));
+                        return Err(trc::NetworkEvent::Closed.into_err().details("IDLE channel closed.").id(request.tag));
                     }
                 }
             }

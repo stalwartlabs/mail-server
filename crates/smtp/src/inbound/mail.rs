@@ -45,7 +45,7 @@ impl<T: SessionStream> Session<T> {
                 .verify_iprev(self.data.remote_ip)
                 .await;
 
-            tracing::debug!(parent: &self.span,
+            tracing::debug!(
                     context = "iprev",
                     event = "lookup",
                     result = %iprev.result,
@@ -115,7 +115,11 @@ impl<T: SessionStream> Session<T> {
         if let Some(script) = self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.mail.script, self)
+            .eval_if::<String, _>(
+                &self.core.core.smtp.session.mail.script,
+                self,
+                self.data.session_id,
+            )
             .await
             .and_then(|name| self.core.core.get_sieve_script(&name))
         {
@@ -125,7 +129,7 @@ impl<T: SessionStream> Session<T> {
             {
                 ScriptResult::Accept { modifications } => {
                     if !modifications.is_empty() {
-                        tracing::debug!(parent: &self.span,
+                        tracing::debug!(
                             context = "sieve",
                             event = "modify",
                             address = &self.data.mail_from.as_ref().unwrap().address,
@@ -138,7 +142,7 @@ impl<T: SessionStream> Session<T> {
                     }
                 }
                 ScriptResult::Reject(message) => {
-                    tracing::info!(parent: &self.span,
+                    tracing::info!(
                         context = "sieve",
                         event = "reject",
                         address = &self.data.mail_from.as_ref().unwrap().address,
@@ -152,7 +156,7 @@ impl<T: SessionStream> Session<T> {
 
         // Milter filtering
         if let Err(message) = self.run_milters(Stage::Mail, None).await {
-            tracing::info!(parent: &self.span,
+            tracing::info!(
                 context = "milter",
                 event = "reject",
                 address = &self.data.mail_from.as_ref().unwrap().address,
@@ -164,7 +168,7 @@ impl<T: SessionStream> Session<T> {
 
         // MTAHook filtering
         if let Err(message) = self.run_mta_hooks(Stage::Mail, None).await {
-            tracing::info!(parent: &self.span,
+            tracing::info!(
                             context = "mta_hook",
                             event = "reject",
                             address = &self.data.mail_from.as_ref().unwrap().address,
@@ -178,7 +182,11 @@ impl<T: SessionStream> Session<T> {
         if let Some(new_address) = self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.mail.rewrite, self)
+            .eval_if::<String, _>(
+                &self.core.core.smtp.session.mail.rewrite,
+                self,
+                self.data.session_id,
+            )
             .await
         {
             let mail_from = self.data.mail_from.as_mut().unwrap();
@@ -200,7 +208,7 @@ impl<T: SessionStream> Session<T> {
             && !self
                 .core
                 .core
-                .eval_if(&config.requiretls, self)
+                .eval_if(&config.requiretls, self, self.data.session_id)
                 .await
                 .unwrap_or(false)
         {
@@ -213,7 +221,7 @@ impl<T: SessionStream> Session<T> {
             if let Some(duration) = self
                 .core
                 .core
-                .eval_if::<Duration, _>(&config.deliver_by, self)
+                .eval_if::<Duration, _>(&config.deliver_by, self, self.data.session_id)
                 .await
             {
                 if from.by.checked_abs().unwrap_or(0) as u64 <= duration.as_secs()
@@ -243,7 +251,7 @@ impl<T: SessionStream> Session<T> {
             if self
                 .core
                 .core
-                .eval_if::<MtPriority, _>(&config.mt_priority, self)
+                .eval_if::<MtPriority, _>(&config.mt_priority, self, self.data.session_id)
                 .await
                 .is_some()
             {
@@ -265,7 +273,7 @@ impl<T: SessionStream> Session<T> {
                 > self
                     .core
                     .core
-                    .eval_if(&config_data.max_message_size, self)
+                    .eval_if(&config_data.max_message_size, self, self.data.session_id)
                     .await
                     .unwrap_or(25 * 1024 * 1024)
         {
@@ -278,7 +286,7 @@ impl<T: SessionStream> Session<T> {
             if let Some(max_hold) = self
                 .core
                 .core
-                .eval_if::<Duration, _>(&config.future_release, self)
+                .eval_if::<Duration, _>(&config.future_release, self, self.data.session_id)
                 .await
             {
                 let max_hold = max_hold.as_secs();
@@ -318,7 +326,7 @@ impl<T: SessionStream> Session<T> {
             && !self
                 .core
                 .core
-                .eval_if(&config.dsn, self)
+                .eval_if(&config.dsn, self, self.data.session_id)
                 .await
                 .unwrap_or(false)
         {
@@ -362,7 +370,7 @@ impl<T: SessionStream> Session<T> {
                         .await
                 };
 
-                tracing::debug!(parent: &self.span,
+                tracing::debug!(
                         context = "spf",
                         event = "lookup",
                         identity = "mail-from",
@@ -382,7 +390,7 @@ impl<T: SessionStream> Session<T> {
                 }
             }
 
-            tracing::debug!(parent: &self.span,
+            tracing::debug!(
                 context = "mail-from",
                 event = "success",
                 address = &self.data.mail_from.as_ref().unwrap().address);
@@ -423,7 +431,11 @@ impl<T: SessionStream> Session<T> {
             spf_output.report_address(),
             self.core
                 .core
-                .eval_if::<Rate, _>(&self.core.core.smtp.report.spf.send, self)
+                .eval_if::<Rate, _>(
+                    &self.core.core.smtp.report.spf.send,
+                    self,
+                    self.data.session_id,
+                )
                 .await,
         ) {
             self.send_spf_report(recipient, &rate, !result, spf_output)

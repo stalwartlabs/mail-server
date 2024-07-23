@@ -41,7 +41,6 @@ pub async fn exec_untrain(ctx: PluginContext<'_>) -> Variable {
 }
 
 async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
-    let span: &tracing::Span = ctx.span;
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
@@ -51,7 +50,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
         store
     } else {
         tracing::warn!(
-            parent: span,
+           
             context = "sieve:bayes_train",
             event = "failed",
             reason = "Unknown store id",
@@ -63,7 +62,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     let is_spam = ctx.arguments[2].to_bool();
     if text.is_empty() {
         tracing::debug!(
-            parent: span,
+           
             context = "sieve:bayes_train",
             event = "failed",
             reason = "Empty message",
@@ -82,7 +81,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     );
     if model.weights.is_empty() {
         tracing::debug!(
-            parent: span,
+           
             context = "sieve:bayes_train",
             event = "failed",
             reason = "No weights found",
@@ -91,7 +90,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
     }
 
     tracing::debug!(
-        parent: span,
+       
         context = "sieve:bayes_train",
         event = "train",
         is_spam = is_spam,
@@ -152,7 +151,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> Variable {
 }
 
 pub async fn exec_classify(ctx: PluginContext<'_>) -> Variable {
-    let span = ctx.span;
+    
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
@@ -161,7 +160,7 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> Variable {
         store
     } else {
         tracing::warn!(
-            parent: span,
+           
             context = "sieve:bayes_classify",
             event = "failed",
             reason = "Unknown store id",
@@ -198,7 +197,7 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> Variable {
             (weights.spam, weights.ham)
         } else {
             tracing::warn!(
-                parent: span,
+               
                 context = "sieve:classify",
                 event = "failed",
                 reason = "Failed to obtain training counts",
@@ -209,7 +208,7 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> Variable {
     // Make sure we have enough training data
     if spam_learns < classifier.min_learns || ham_learns < classifier.min_learns {
         tracing::debug!(
-            parent: span,
+           
             context = "sieve:bayes_classify",
             event = "skip-classify",
             reason = "Not enough training data",
@@ -249,7 +248,7 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
         return true.into();
     }
 
-    let span = ctx.span;
+    
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
@@ -258,7 +257,7 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
         store
     } else {
         tracing::warn!(
-            parent: span,
+           
             context = "sieve:bayes_is_balanced",
             event = "failed",
             reason = "Unknown store id",
@@ -275,7 +274,7 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
             (weights.spam as f64, weights.ham as f64)
         } else {
             tracing::warn!(
-                parent: span,
+               
                 context = "sieve:bayes_is_balanced",
                 event = "failed",
                 reason = "Failed to obtain training counts",
@@ -294,7 +293,7 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> Variable {
     };
 
     tracing::debug!(
-        parent: span,
+       
         context = "sieve:bayes_is_balanced",
         event = "result",
         is_balanced = %result,

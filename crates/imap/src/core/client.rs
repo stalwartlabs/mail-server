@@ -21,10 +21,11 @@ impl<T: SessionStream> Session<T> {
             let c = println!("{}", line);
         }*/
 
-        tracing::trace!(parent: &self.span,
+        tracing::trace!(
             event = "read",
-            data =  std::str::from_utf8(bytes).unwrap_or("[invalid UTF8]"),
-            size = bytes.len());
+            data = std::str::from_utf8(bytes).unwrap_or("[invalid UTF8]"),
+            size = bytes.len()
+        );
 
         let mut bytes = bytes.iter();
         let mut requests = Vec::with_capacity(2);
@@ -267,7 +268,7 @@ impl<T: SessionStream> Session<T> {
                     .await?
                     .is_some()
                 {
-                    return Err(trc::LimitCause::TooManyRequests.into_err());
+                    return Err(trc::LimitEvent::TooManyRequests.into_err());
                 }
             }
         }
@@ -279,13 +280,13 @@ impl<T: SessionStream> Session<T> {
                     if self.instance.acceptor.is_tls() {
                         Ok(request)
                     } else {
-                        Err(trc::Cause::Imap
+                        Err(trc::ImapEvent::Error
                             .into_err()
                             .details("TLS is not available.")
                             .id(request.tag))
                     }
                 } else {
-                    Err(trc::Cause::Imap
+                    Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Already in TLS mode.")
                         .id(request.tag))
@@ -295,7 +296,7 @@ impl<T: SessionStream> Session<T> {
                 if let State::NotAuthenticated { .. } = state {
                     Ok(request)
                 } else {
-                    Err(trc::Cause::Imap
+                    Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Already authenticated.")
                         .id(request.tag))
@@ -306,13 +307,13 @@ impl<T: SessionStream> Session<T> {
                     if self.is_tls || self.jmap.core.imap.allow_plain_auth {
                         Ok(request)
                     } else {
-                        Err(trc::Cause::Imap
+                        Err(trc::ImapEvent::Error
                             .into_err()
                             .details("LOGIN is disabled on the clear-text port.")
                             .id(request.tag))
                     }
                 } else {
-                    Err(trc::Cause::Imap
+                    Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Already authenticated.")
                         .id(request.tag))
@@ -341,7 +342,7 @@ impl<T: SessionStream> Session<T> {
                 if let State::Authenticated { .. } | State::Selected { .. } = state {
                     Ok(request)
                 } else {
-                    Err(trc::Cause::Imap
+                    Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Not authenticated.")
                         .id(request.tag))
@@ -367,18 +368,18 @@ impl<T: SessionStream> Session<T> {
                     {
                         Ok(request)
                     } else {
-                        Err(trc::Cause::Imap
+                        Err(trc::ImapEvent::Error
                             .into_err()
                             .details("Not permitted in EXAMINE state.")
                             .id(request.tag))
                     }
                 }
-                State::Authenticated { .. } => Err(trc::Cause::Imap
+                State::Authenticated { .. } => Err(trc::ImapEvent::Error
                     .into_err()
                     .details("No mailbox is selected.")
                     .ctx(trc::Key::Type, ResponseType::Bad)
                     .id(request.tag)),
-                State::NotAuthenticated { .. } => Err(trc::Cause::Imap
+                State::NotAuthenticated { .. } => Err(trc::ImapEvent::Error
                     .into_err()
                     .details("Not authenticated.")
                     .id(request.tag)),

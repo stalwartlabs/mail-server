@@ -351,7 +351,7 @@ impl JsonObjectParser for Capability {
 impl<'x> Parser<'x> {
     fn error_capability(&mut self) -> trc::Error {
         if self.is_eof || self.skip_string() {
-            trc::JmapCause::UnknownCapability.into_err().details(
+            trc::JmapEvent::UnknownCapability.into_err().details(
                 String::from_utf8_lossy(self.bytes[self.pos_marker..self.pos - 1].as_ref())
                     .into_owned(),
             )

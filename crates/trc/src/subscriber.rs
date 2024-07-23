@@ -10,7 +10,7 @@ use ahash::AHashSet;
 use parking_lot::Mutex;
 use tokio::sync::mpsc::{self, error::TrySendError};
 
-use crate::{channel::ChannelError, Event, EventType, Level};
+use crate::{channel::ChannelError, Event, EventType, Level, ServerEvent};
 
 const MAX_BATCH_SIZE: usize = 32768;
 
@@ -93,7 +93,7 @@ impl SubscriberBuilder {
         });
 
         // Notify collector
-        Event::new(EventType::Error(crate::Cause::Thread), Level::Info, 0).send();
+        Event::new(EventType::Server(ServerEvent::Startup), Level::Info, 0).send();
 
         rx
     }

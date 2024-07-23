@@ -163,7 +163,7 @@ impl JsonObjectParser for QueryRequest<RequestArguments> {
                 MethodObject::Principal => RequestArguments::Principal,
                 MethodObject::Quota => RequestArguments::Quota,
                 _ => {
-                    return Err(trc::JmapCause::UnknownMethod
+                    return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
                         .details(format!("{}/query", parser.ctx)))
                 }
@@ -451,7 +451,7 @@ pub fn parse_filter(parser: &mut Parser) -> trc::Result<Vec<Filter>> {
                         break;
                     }
                 } else {
-                    return Err(trc::JmapCause::InvalidArguments
+                    return Err(trc::JmapEvent::InvalidArguments
                         .into_err()
                         .details("Malformed filter"));
                 }

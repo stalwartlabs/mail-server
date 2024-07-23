@@ -84,14 +84,16 @@ impl<T> ImapContext<T> for trc::Result<T> {
     fn imap_ctx(self, tag: &str, location: &'static str) -> trc::Result<T> {
         match self {
             Ok(value) => Ok(value),
-            Err(err) => Err(if !err.matches(trc::Cause::Imap) {
-                err.ctx(trc::Key::Id, tag.to_string())
-                    .ctx(trc::Key::Details, "Internal Server Error")
-                    .ctx(trc::Key::Code, ResponseCode::ContactAdmin)
-                    .ctx(trc::Key::CausedBy, location)
-            } else {
-                err.ctx(trc::Key::Id, tag.to_string())
-            }),
+            Err(err) => Err(
+                if !err.matches(trc::EventType::Imap(trc::ImapEvent::Error)) {
+                    err.ctx(trc::Key::Id, tag.to_string())
+                        .ctx(trc::Key::Details, "Internal Server Error")
+                        .ctx(trc::Key::Code, ResponseCode::ContactAdmin)
+                        .ctx(trc::Key::CausedBy, location)
+                } else {
+                    err.ctx(trc::Key::Id, tag.to_string())
+                },
+            ),
         }
     }
 }

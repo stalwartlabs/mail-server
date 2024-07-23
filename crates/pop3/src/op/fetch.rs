@@ -42,19 +42,19 @@ impl<T: SessionStream> Session<T> {
                     )
                     .await
                 } else {
-                    Err(trc::Cause::Pop3
+                    Err(trc::Pop3Event::Error
                         .into_err()
                         .details("Failed to fetch message. Perhaps another session deleted it?")
                         .caused_by(trc::location!()))
                 }
             } else {
-                Err(trc::Cause::Pop3
+                Err(trc::Pop3Event::Error
                     .into_err()
                     .details("Failed to fetch message. Perhaps another session deleted it?")
                     .caused_by(trc::location!()))
             }
         } else {
-            Err(trc::Cause::Pop3
+            Err(trc::Pop3Event::Error
                 .into_err()
                 .details("No such message.")
                 .caused_by(trc::location!()))

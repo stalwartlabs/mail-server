@@ -16,38 +16,50 @@ impl<T: SessionStream> Session<T> {
         self.data.bytes_left = self
             .core
             .core
-            .eval_if(&c.transfer_limit, self)
+            .eval_if(&c.transfer_limit, self, self.data.session_id)
             .await
             .unwrap_or(250 * 1024 * 1024);
         self.data.valid_until += self
             .core
             .core
-            .eval_if(&c.duration, self)
+            .eval_if(&c.duration, self, self.data.session_id)
             .await
             .unwrap_or_else(|| Duration::from_secs(15 * 60));
 
         self.params.timeout = self
             .core
             .core
-            .eval_if(&c.timeout, self)
+            .eval_if(&c.timeout, self, self.data.session_id)
             .await
             .unwrap_or_else(|| Duration::from_secs(5 * 60));
         self.params.spf_ehlo = self
             .core
             .core
-            .eval_if(&self.core.core.smtp.mail_auth.spf.verify_ehlo, self)
+            .eval_if(
+                &self.core.core.smtp.mail_auth.spf.verify_ehlo,
+                self,
+                self.data.session_id,
+            )
             .await
             .unwrap_or(VerifyStrategy::Relaxed);
         self.params.spf_mail_from = self
             .core
             .core
-            .eval_if(&self.core.core.smtp.mail_auth.spf.verify_mail_from, self)
+            .eval_if(
+                &self.core.core.smtp.mail_auth.spf.verify_mail_from,
+                self,
+                self.data.session_id,
+            )
             .await
             .unwrap_or(VerifyStrategy::Relaxed);
         self.params.iprev = self
             .core
             .core
-            .eval_if(&self.core.core.smtp.mail_auth.iprev.verify, self)
+            .eval_if(
+                &self.core.core.smtp.mail_auth.iprev.verify,
+                self,
+                self.data.session_id,
+            )
             .await
             .unwrap_or(VerifyStrategy::Relaxed);
 
@@ -56,13 +68,13 @@ impl<T: SessionStream> Session<T> {
         self.params.ehlo_require = self
             .core
             .core
-            .eval_if(&ec.require, self)
+            .eval_if(&ec.require, self, self.data.session_id)
             .await
             .unwrap_or(true);
         self.params.ehlo_reject_non_fqdn = self
             .core
             .core
-            .eval_if(&ec.reject_non_fqdn, self)
+            .eval_if(&ec.reject_non_fqdn, self, self.data.session_id)
             .await
             .unwrap_or(true);
 
@@ -71,32 +83,32 @@ impl<T: SessionStream> Session<T> {
         self.params.auth_directory = self
             .core
             .core
-            .eval_if::<String, _>(&ac.directory, self)
+            .eval_if::<String, _>(&ac.directory, self, self.data.session_id)
             .await
             .and_then(|name| self.core.core.get_directory(&name))
             .cloned();
         self.params.auth_require = self
             .core
             .core
-            .eval_if(&ac.require, self)
+            .eval_if(&ac.require, self, self.data.session_id)
             .await
             .unwrap_or(false);
         self.params.auth_errors_max = self
             .core
             .core
-            .eval_if(&ac.errors_max, self)
+            .eval_if(&ac.errors_max, self, self.data.session_id)
             .await
             .unwrap_or(3);
         self.params.auth_errors_wait = self
             .core
             .core
-            .eval_if(&ac.errors_wait, self)
+            .eval_if(&ac.errors_wait, self, self.data.session_id)
             .await
             .unwrap_or_else(|| Duration::from_secs(30));
         self.params.auth_match_sender = self
             .core
             .core
-            .eval_if(&ac.must_match_sender, self)
+            .eval_if(&ac.must_match_sender, self, self.data.session_id)
             .await
             .unwrap_or(true);
 
@@ -105,13 +117,13 @@ impl<T: SessionStream> Session<T> {
         self.params.can_expn = self
             .core
             .core
-            .eval_if(&ec.expn, self)
+            .eval_if(&ec.expn, self, self.data.session_id)
             .await
             .unwrap_or(false);
         self.params.can_vrfy = self
             .core
             .core
-            .eval_if(&ec.vrfy, self)
+            .eval_if(&ec.vrfy, self, self.data.session_id)
             .await
             .unwrap_or(false);
     }
@@ -122,19 +134,23 @@ impl<T: SessionStream> Session<T> {
         self.params.can_expn = self
             .core
             .core
-            .eval_if(&ec.expn, self)
+            .eval_if(&ec.expn, self, self.data.session_id)
             .await
             .unwrap_or(false);
         self.params.can_vrfy = self
             .core
             .core
-            .eval_if(&ec.vrfy, self)
+            .eval_if(&ec.vrfy, self, self.data.session_id)
             .await
             .unwrap_or(false);
         self.params.auth_match_sender = self
             .core
             .core
-            .eval_if(&self.core.core.smtp.session.auth.must_match_sender, self)
+            .eval_if(
+                &self.core.core.smtp.session.auth.must_match_sender,
+                self,
+                self.data.session_id,
+            )
             .await
             .unwrap_or(true);
     }
@@ -144,32 +160,40 @@ impl<T: SessionStream> Session<T> {
         self.params.rcpt_errors_max = self
             .core
             .core
-            .eval_if(&rc.errors_max, self)
+            .eval_if(&rc.errors_max, self, self.data.session_id)
             .await
             .unwrap_or(10);
         self.params.rcpt_errors_wait = self
             .core
             .core
-            .eval_if(&rc.errors_wait, self)
+            .eval_if(&rc.errors_wait, self, self.data.session_id)
             .await
             .unwrap_or_else(|| Duration::from_secs(30));
         self.params.rcpt_max = self
             .core
             .core
-            .eval_if(&rc.max_recipients, self)
+            .eval_if(&rc.max_recipients, self, self.data.session_id)
             .await
             .unwrap_or(100);
         self.params.rcpt_dsn = self
             .core
             .core
-            .eval_if(&self.core.core.smtp.session.extensions.dsn, self)
+            .eval_if(
+                &self.core.core.smtp.session.extensions.dsn,
+                self,
+                self.data.session_id,
+            )
             .await
             .unwrap_or(true);
 
         self.params.max_message_size = self
             .core
             .core
-            .eval_if(&self.core.core.smtp.session.data.max_message_size, self)
+            .eval_if(
+                &self.core.core.smtp.session.data.max_message_size,
+                self,
+                self.data.session_id,
+            )
             .await
             .unwrap_or(25 * 1024 * 1024);
     }

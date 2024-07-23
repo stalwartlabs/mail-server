@@ -112,7 +112,7 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
                 MethodObject::VacationResponse => RequestArguments::VacationResponse,
                 MethodObject::SieveScript => RequestArguments::SieveScript(Default::default()),
                 _ => {
-                    return Err(trc::JmapCause::UnknownMethod
+                    return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
                         .details(format!("{}/set", parser.ctx)))
                 }
@@ -404,7 +404,7 @@ impl<T> SetRequest<T> {
             })
             > max_objects_in_set
         {
-            Err(trc::JmapCause::RequestTooLarge.into_err())
+            Err(trc::JmapEvent::RequestTooLarge.into_err())
         } else {
             Ok(())
         }
@@ -480,7 +480,7 @@ impl SetResponse {
                 state_change: None,
             })
         } else {
-            Err(trc::JmapCause::RequestTooLarge.into_err())
+            Err(trc::JmapEvent::RequestTooLarge.into_err())
         }
     }
 

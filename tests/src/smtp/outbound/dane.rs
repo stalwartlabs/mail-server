@@ -349,15 +349,12 @@ async fn dane_test() {
             .unwrap()
             .unwrap();
 
-        assert_eq!(
-            tlsa.verify(&tracing::info_span!("test_span"), &host, Some(&certs)),
-            Ok(())
-        );
+        assert_eq!(tlsa.verify(0, &host, Some(&certs)), Ok(()));
 
         // Failed DANE verification
         certs.remove(0);
         assert_eq!(
-            tlsa.verify(&tracing::info_span!("test_span"), &host, Some(&certs)),
+            tlsa.verify(0, &host, Some(&certs)),
             Err(Status::PermanentFailure(Error::DaneError(ErrorDetails {
                 entity: host.to_string(),
                 details: "No matching certificates found in TLSA records".to_string()

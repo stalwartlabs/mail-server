@@ -29,7 +29,7 @@ pub struct MilterClient<T: AsyncRead + AsyncWrite> {
     options: u32,
     flags_actions: u32,
     flags_protocol: u32,
-    span: tracing::Span,
+    session_id: u64,
 }
 
 #[derive(Debug)]

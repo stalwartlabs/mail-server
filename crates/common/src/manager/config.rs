@@ -315,7 +315,7 @@ impl ConfigManager {
         tokio::fs::write(&self.cfg_local_path, cfg_text)
             .await
             .map_err(|err| {
-                trc::Cause::Configuration
+                trc::EventType::Config(trc::ConfigEvent::WriteError)
                     .reason(err)
                     .details("Failed to write local configuration")
                     .ctx(trc::Key::Path, self.cfg_local_path.display().to_string())
@@ -327,8 +327,9 @@ impl ConfigManager {
             .fetch_config_resource(resource_id)
             .await
             .map_err(|reason| {
-                trc::Cause::Configuration
+                trc::EventType::Config(trc::ConfigEvent::FetchError)
                     .caused_by(trc::location!())
+                    .details("Failed to fetch external configuration")
                     .ctx(trc::Key::Reason, reason)
             })?;
 

@@ -117,14 +117,14 @@ impl<T: Eq> Token<T> {
         if self == token {
             Ok(())
         } else {
-            Err(trc::JmapCause::NotRequest.into_err().details(format!(
+            Err(trc::JmapEvent::NotRequest.into_err().details(format!(
                 "Invalid JMAP request: expected '{token}', got '{self}'."
             )))
         }
     }
 
     pub fn error(&self, property: &str, expected: &str) -> trc::Error {
-        trc::JmapCause::InvalidArguments.into_err().details(if !property.is_empty() {
+        trc::JmapEvent::InvalidArguments.into_err().details(if !property.is_empty() {
             format!("Invalid argument for '{property:?}': expected '{expected}', got '{self}'.",)
         } else {
             format!("Invalid argument: expected '{expected}', got '{self}'.")

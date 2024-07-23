@@ -141,7 +141,7 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
         if recursive_match && !filter_subscribed {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details("RECURSIVEMATCH requires the SUBSCRIBED selection option.")
                 .id(tag));

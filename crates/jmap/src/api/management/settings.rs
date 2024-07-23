@@ -246,7 +246,7 @@ impl JMAP {
                     body.as_deref().unwrap_or_default(),
                 )
                 .map_err(|err| {
-                    trc::Cause::Resource(trc::ResourceCause::BadParameters).from_json_error(err)
+                    trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
                 })?;
 
                 for change in changes {
@@ -274,11 +274,11 @@ impl JMAP {
                                         .await?
                                         .is_empty()
                                     {
-                                        return Err(trc::ManageCause::AssertFailed.into_err());
+                                        return Err(trc::ManageEvent::AssertFailed.into_err());
                                     }
                                 } else if let Some((key, _)) = values.first() {
                                     if self.core.storage.config.get(key).await?.is_some() {
-                                        return Err(trc::ManageCause::AssertFailed.into_err());
+                                        return Err(trc::ManageEvent::AssertFailed.into_err());
                                     }
                                 }
                             }
@@ -304,7 +304,7 @@ impl JMAP {
                 }))
                 .into_http_response())
             }
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 }

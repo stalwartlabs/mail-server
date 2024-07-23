@@ -59,8 +59,12 @@ impl Account {
         S: AsRef<str> + 'a,
         I: IntoIterator<Item = &'a S>,
     {
-        let key_pair = EcdsaKeyPair::from_pkcs8(ALG, key_pair, &SystemRandom::new())
-            .map_err(|err| trc::Cause::Acme.reason(err).caused_by(trc::location!()))?;
+        let key_pair =
+            EcdsaKeyPair::from_pkcs8(ALG, key_pair, &SystemRandom::new()).map_err(|err| {
+                trc::EventType::Acme(trc::AcmeEvent::Error)
+                    .reason(err)
+                    .caused_by(trc::location!())
+            })?;
         let contact: Vec<&'a str> = contact.into_iter().map(AsRef::<str>::as_ref).collect();
         let payload = json!({
             "termsOfServiceAgreed": true,
@@ -100,7 +104,7 @@ impl Account {
         let body = response
             .text()
             .await
-            .map_err(|err| trc::Cause::Acme.from_http_error(err))?;
+            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_http_error(err))?;
         Ok((location, body))
     }
 
@@ -108,23 +112,25 @@ impl Account {
         let domains: Vec<Identifier> = domains.into_iter().map(Identifier::Dns).collect();
         let payload = format!(
             "{{\"identifiers\":{}}}",
-            serde_json::to_string(&domains).map_err(|err| trc::Cause::Acme.from_json_error(err))?
+            serde_json::to_string(&domains)
+                .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))?
         );
         let response = self.request(&self.directory.new_order, &payload).await?;
         let url = response.0.ok_or(
-            trc::Cause::Acme
+            trc::EventType::Acme(trc::AcmeEvent::Error)
                 .caused_by(trc::location!())
                 .details("Missing header")
                 .ctx(trc::Key::Id, "Location"),
         )?;
         let order = serde_json::from_str(&response.1)
-            .map_err(|err| trc::Cause::Acme.from_json_error(err))?;
+            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))?;
         Ok((url, order))
     }
 
     pub async fn auth(&self, url: impl AsRef<str>) -> trc::Result<Auth> {
         let response = self.request(url, "").await?;
-        serde_json::from_str(&response.1).map_err(|err| trc::Cause::Acme.from_json_error(err))
+        serde_json::from_str(&response.1)
+            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
     }
 
     pub async fn challenge(&self, url: impl AsRef<str>) -> trc::Result<()> {
@@ -133,13 +139,15 @@ impl Account {
 
     pub async fn order(&self, url: impl AsRef<str>) -> trc::Result<Order> {
         let response = self.request(&url, "").await?;
-        serde_json::from_str(&response.1).map_err(|err| trc::Cause::Acme.from_json_error(err))
+        serde_json::from_str(&response.1)
+            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
     }
 
     pub async fn finalize(&self, url: impl AsRef<str>, csr: Vec<u8>) -> trc::Result<Order> {
         let payload = format!("{{\"csr\":\"{}\"}}", URL_SAFE_NO_PAD.encode(csr));
         let response = self.request(&url, &payload).await?;
-        serde_json::from_str(&response.1).map_err(|err| trc::Cause::Acme.from_json_error(err))
+        serde_json::from_str(&response.1)
+            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
     }
 
     pub async fn certificate(&self, url: impl AsRef<str>) -> trc::Result<String> {
@@ -161,13 +169,18 @@ impl Account {
         let key_auth = key_authorization_sha256(&self.key_pair, &challenge.token)?;
         params.alg = &PKCS_ECDSA_P256_SHA256;
         params.custom_extensions = vec![CustomExtension::new_acme_identifier(key_auth.as_ref())];
-        let cert = Certificate::from_params(params)
-            .map_err(|err| trc::Cause::Acme.caused_by(trc::location!()).reason(err))?;
+        let cert = Certificate::from_params(params).map_err(|err| {
+            trc::EventType::Acme(trc::AcmeEvent::Error)
+                .caused_by(trc::location!())
+                .reason(err)
+        })?;
 
         Ok(Bincode::new(SerializedCert {
-            certificate: cert
-                .serialize_der()
-                .map_err(|err| trc::Cause::Acme.caused_by(trc::location!()).reason(err))?,
+            certificate: cert.serialize_der().map_err(|err| {
+                trc::EventType::Acme(trc::AcmeEvent::Error)
+                    .caused_by(trc::location!())
+                    .reason(err)
+            })?,
             private_key: cert.serialize_private_key_der(),
         })
         .serialize())
@@ -195,9 +208,9 @@ impl Directory {
                 .await?
                 .text()
                 .await
-                .map_err(|err| trc::Cause::Acme.from_http_error(err))?,
+                .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_http_error(err))?,
         )
-        .map_err(|err| trc::Cause::Acme.from_json_error(err))
+        .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
     }
     pub async fn nonce(&self) -> trc::Result<String> {
         get_header(
@@ -300,7 +313,7 @@ async fn https(
 
     let mut request = builder
         .build()
-        .map_err(|err| trc::Cause::Acme.from_http_error(err))?
+        .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_http_error(err))?
         .request(method, url);
 
     if let Some(body) = body {
@@ -312,8 +325,8 @@ async fn https(
     request
         .send()
         .await
-        .map_err(|err| trc::Cause::Acme.from_http_error(err))?
-        .assert_success(trc::Cause::Acme)
+        .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_http_error(err))?
+        .assert_success(trc::EventType::Acme(trc::AcmeEvent::Error))
         .await
 }
 
@@ -321,9 +334,9 @@ fn get_header(response: &Response, header: &'static str) -> trc::Result<String> 
     match response.headers().get_all(header).iter().last() {
         Some(value) => Ok(value
             .to_str()
-            .map_err(|err| trc::Cause::Acme.from_http_str_error(err))?
+            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_http_str_error(err))?
             .to_string()),
-        None => Err(trc::Cause::Acme
+        None => Err(trc::EventType::Acme(trc::AcmeEvent::Error)
             .caused_by(trc::location!())
             .details("Missing header")
             .ctx(trc::Key::Id, header)),

@@ -218,7 +218,7 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?
                 .ok_or_else(|| {
-                    trc::Cause::Imap
+                    trc::ImapEvent::Error
                         .into_err()
                         .details("Account does not exist")
                         .id(arguments.tag.to_string())
@@ -250,7 +250,7 @@ impl<T: SessionStream> Session<T> {
                     }) {
                 acl
             } else {
-                return Err(trc::StoreCause::DataCorruption
+                return Err(trc::StoreEvent::DataCorruption
                     .into_err()
                     .id(arguments.tag)
                     .ctx(trc::Key::Reason, "Invalid mailbox ACL")
@@ -393,18 +393,18 @@ impl<T: SessionStream> SessionData<T> {
                 {
                     Ok((mailbox, values, access_token))
                 } else {
-                    Err(trc::Cause::Imap
+                    Err(trc::ImapEvent::Error
                         .into_err()
                         .details("You do not have enough permissions to perform this operation.")
                         .code(ResponseCode::NoPerm))
                 }
             } else {
-                Err(trc::Cause::Imap
+                Err(trc::ImapEvent::Error
                     .caused_by(trc::location!())
                     .details("Mailbox does not exist."))
             }
         } else {
-            Err(trc::Cause::Imap
+            Err(trc::ImapEvent::Error
                 .into_err()
                 .details("Mailbox does not exist."))
         }

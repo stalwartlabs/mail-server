@@ -226,7 +226,7 @@ impl FormData {
                 }
                 Ok(FormData { fields })
             }
-            _ => Err(trc::ResourceCause::BadParameters
+            _ => Err(trc::ResourceEvent::BadParameters
                 .into_err()
                 .details("Invalid post request")),
         }

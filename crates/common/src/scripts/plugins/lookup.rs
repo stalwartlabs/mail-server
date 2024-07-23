@@ -67,7 +67,6 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
         }
     } else {
         tracing::debug!(
-            parent: ctx.span,
             context = "sieve:lookup",
             event = "failed",
             reason = "Unknown lookup id",
@@ -93,7 +92,6 @@ pub async fn exec_get(ctx: PluginContext<'_>) -> Variable {
             .unwrap_or_default()
     } else {
         tracing::debug!(
-            parent: ctx.span,
             context = "sieve:key_get",
             event = "failed",
             reason = "Unknown store or lookup id",
@@ -131,7 +129,6 @@ pub async fn exec_set(ctx: PluginContext<'_>) -> Variable {
             .into()
     } else {
         tracing::warn!(
-            parent: ctx.span,
             context = "sieve:key_set",
             event = "failed",
             reason = "Unknown store id",
@@ -293,7 +290,7 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
                             }
                             Err(err) => {
                                 tracing::warn!(
-                                    parent: ctx.span,
+
                                     context = "sieve:key_exists_http",
                                     event = "failed",
                                     resource = resource.as_ref(),
@@ -309,7 +306,6 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
                     }
 
                     tracing::debug!(
-                        parent: ctx.span,
                         context = "sieve:key_exists_http",
                         event = "fetch",
                         resource = resource.as_ref(),
@@ -322,7 +318,7 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
                 }
                 Err(err) => {
                     tracing::warn!(
-                        parent: ctx.span,
+
                         context = "sieve:key_exists_http",
                         event = "failed",
                         resource = resource.as_ref(),
@@ -333,7 +329,7 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
         }
         Ok(response) => {
             tracing::warn!(
-                parent: ctx.span,
+
                 context = "sieve:key_exists_http",
                 event = "failed",
                 resource = resource.as_ref(),
@@ -342,7 +338,7 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
         }
         Err(err) => {
             tracing::warn!(
-                parent: ctx.span,
+
                 context = "sieve:key_exists_http",
                 event = "failed",
                 resource = resource.as_ref(),
@@ -384,7 +380,6 @@ pub async fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
                 .into();
         } else {
             tracing::warn!(
-                parent: ctx.span,
                 context = "sieve:is_local_domain",
                 event = "failed",
                 reason = "Unknown directory",

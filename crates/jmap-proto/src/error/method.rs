@@ -79,64 +79,64 @@ impl Serialize for MethodErrorWrapper {
         let description = self.0.value(trc::Key::Details).and_then(|v| v.as_str());
 
         let (error_type, description) = match self.0.as_ref() {
-            trc::Cause::Jmap(cause) => match cause {
-                trc::JmapCause::InvalidArguments => {
+            trc::EventType::Jmap(cause) => match cause {
+                trc::JmapEvent::InvalidArguments => {
                     ("invalidArguments", description.unwrap_or_default())
                 }
-                trc::JmapCause::RequestTooLarge => (
+                trc::JmapEvent::RequestTooLarge => (
                     "requestTooLarge",
                     concat!(
                         "The number of ids requested by the client exceeds the maximum number ",
                         "the server is willing to process in a single method call."
                     ),
                 ),
-                trc::JmapCause::StateMismatch => (
+                trc::JmapEvent::StateMismatch => (
                     "stateMismatch",
                     concat!(
                         "An \"ifInState\" argument was supplied, but ",
                         "it does not match the current state."
                     ),
                 ),
-                trc::JmapCause::AnchorNotFound => (
+                trc::JmapEvent::AnchorNotFound => (
                     "anchorNotFound",
                     concat!(
                         "An anchor argument was supplied, but it ",
                         "cannot be found in the results of the query."
                     ),
                 ),
-                trc::JmapCause::UnsupportedFilter => {
+                trc::JmapEvent::UnsupportedFilter => {
                     ("unsupportedFilter", description.unwrap_or_default())
                 }
-                trc::JmapCause::UnsupportedSort => {
+                trc::JmapEvent::UnsupportedSort => {
                     ("unsupportedSort", description.unwrap_or_default())
                 }
-                trc::JmapCause::NotFound => ("serverPartialFail", {
+                trc::JmapEvent::NotFound => ("serverPartialFail", {
                     concat!(
                         "One or more items are no longer available on the ",
                         "server, please try again."
                     )
                 }),
-                trc::JmapCause::UnknownMethod => ("unknownMethod", description.unwrap_or_default()),
-                trc::JmapCause::InvalidResultReference => {
+                trc::JmapEvent::UnknownMethod => ("unknownMethod", description.unwrap_or_default()),
+                trc::JmapEvent::InvalidResultReference => {
                     ("invalidResultReference", description.unwrap_or_default())
                 }
-                trc::JmapCause::Forbidden => ("forbidden", description.unwrap_or_default()),
-                trc::JmapCause::AccountNotFound => (
+                trc::JmapEvent::Forbidden => ("forbidden", description.unwrap_or_default()),
+                trc::JmapEvent::AccountNotFound => (
                     "accountNotFound",
                     "The accountId does not correspond to a valid account",
                 ),
-                trc::JmapCause::AccountNotSupportedByMethod => (
+                trc::JmapEvent::AccountNotSupportedByMethod => (
                     "accountNotSupportedByMethod",
                     concat!(
                         "The accountId given corresponds to a valid account, ",
                         "but the account does not support this method or data type."
                     ),
                 ),
-                trc::JmapCause::AccountReadOnly => (
+                trc::JmapEvent::AccountReadOnly => (
                     "accountReadOnly",
                     "This method modifies state, but the account is read-only.",
                 ),
-                trc::JmapCause::UnknownDataType => (
+                trc::JmapEvent::UnknownDataType => (
                     "unknownDataType",
                     concat!(
                         "The server does not recognise this data type, ",
@@ -144,16 +144,16 @@ impl Serialize for MethodErrorWrapper {
                         "in the current Request Object."
                     ),
                 ),
-                trc::JmapCause::CannotCalculateChanges => (
+                trc::JmapEvent::CannotCalculateChanges => (
                     "cannotCalculateChanges",
                     concat!(
                         "The server cannot calculate the changes ",
                         "between the old and new states."
                     ),
                 ),
-                trc::JmapCause::UnknownCapability
-                | trc::JmapCause::NotJSON
-                | trc::JmapCause::NotRequest => (
+                trc::JmapEvent::UnknownCapability
+                | trc::JmapEvent::NotJSON
+                | trc::JmapEvent::NotRequest => (
                     "serverUnavailable",
                     concat!(
                         "This server is temporarily unavailable. ",

@@ -48,7 +48,7 @@ impl JMAP {
         let mut changes = None;
         match (request.create, request.update) {
             (Some(create), Some(update)) if !create.is_empty() && !update.is_empty() => {
-                return Err(trc::JmapCause::InvalidArguments
+                return Err(trc::JmapEvent::InvalidArguments
                     .into_err()
                     .details("Creating and updating on the same request is not allowed."));
             }
@@ -203,7 +203,7 @@ impl JMAP {
                         value
                     })
                     .ok_or_else(|| {
-                        trc::StoreCause::NotFound
+                        trc::StoreEvent::NotFound
                             .into_err()
                             .caused_by(trc::location!())
                     })?
@@ -250,7 +250,7 @@ impl JMAP {
 
                 if let Some(current) = obj.current() {
                     let current_blob_id = current.inner.blob_id().ok_or_else(|| {
-                        trc::StoreCause::NotFound
+                        trc::StoreEvent::NotFound
                             .into_err()
                             .caused_by(trc::location!())
                             .document_id(document_id.unwrap_or(u32::MAX))
@@ -430,7 +430,7 @@ impl JMAP {
 
                 Ok(script)
             }
-            Err(err) => Err(trc::StoreCause::Unexpected
+            Err(err) => Err(trc::StoreEvent::UnexpectedError
                 .caused_by(trc::location!())
                 .reason(err)
                 .details("Vacation Sieve Script failed to compile.")),

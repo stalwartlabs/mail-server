@@ -32,11 +32,11 @@ impl LookupStore {
             LookupStore::Store(Store::PostgreSQL(store)) => store.query(query, &params).await,
             #[cfg(feature = "mysql")]
             LookupStore::Store(Store::MySQL(store)) => store.query(query, &params).await,
-            _ => Err(trc::StoreCause::NotSupported.into_err()),
+            _ => Err(trc::StoreEvent::NotSupported.into_err()),
         };
 
         trc::event!(
-            SqlQuery,
+            Store(trc::StoreEvent::SqlQuery),
             Query = query.to_string(),
             Parameters = params.as_slice(),
             Result = &result,
@@ -76,7 +76,7 @@ impl LookupStore {
                 )
                 .await
                 .map(|_| ()),
-            LookupStore::Memory(_) => Err(trc::StoreCause::NotSupported.into_err()),
+            LookupStore::Memory(_) => Err(trc::StoreEvent::NotSupported.into_err()),
         }
         .caused_by(trc::location!())
     }
@@ -125,7 +125,7 @@ impl LookupStore {
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_incr(key, value, expires).await,
             LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::StoreCause::NotSupported.into_err())
+                Err(trc::StoreEvent::NotSupported.into_err())
             }
         }
         .caused_by(trc::location!())
@@ -144,7 +144,7 @@ impl LookupStore {
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_delete(key).await,
             LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::StoreCause::NotSupported.into_err())
+                Err(trc::StoreEvent::NotSupported.into_err())
             }
         }
         .caused_by(trc::location!())
@@ -163,7 +163,7 @@ impl LookupStore {
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.key_delete(key).await,
             LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::StoreCause::NotSupported.into_err())
+                Err(trc::StoreEvent::NotSupported.into_err())
             }
         }
         .caused_by(trc::location!())
@@ -212,7 +212,7 @@ impl LookupStore {
             #[cfg(feature = "redis")]
             LookupStore::Redis(store) => store.counter_get(key).await,
             LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::StoreCause::NotSupported.into_err())
+                Err(trc::StoreEvent::NotSupported.into_err())
             }
         }
         .caused_by(trc::location!())

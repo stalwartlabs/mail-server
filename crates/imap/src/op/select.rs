@@ -93,7 +93,7 @@ impl<T: SessionStream> Session<T> {
             // Validate QRESYNC arguments
             if let Some(qresync) = arguments.qresync {
                 if !self.is_qresync {
-                    return Err(trc::Cause::Imap
+                    return Err(trc::ImapEvent::Error
                         .into_err()
                         .details("QRESYNC is not enabled.")
                         .id(arguments.tag));
@@ -155,7 +155,7 @@ impl<T: SessionStream> Session<T> {
             )
             .await
         } else {
-            Err(trc::Cause::Imap
+            Err(trc::ImapEvent::Error
                 .into_err()
                 .details("Mailbox does not exist.")
                 .code(ResponseCode::NonExistent)

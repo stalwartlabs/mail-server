@@ -172,7 +172,7 @@ impl JMAP {
 
                     Ok(value)
                 }
-                MaybeUnparsable::ParseError(_) => Err(trc::JmapCause::UnknownDataType.into_err()),
+                MaybeUnparsable::ParseError(_) => Err(trc::JmapEvent::UnknownDataType.into_err()),
             })
             .collect::<Result<Vec<_>, _>>()?;
         let req_account_id = request.account_id.document_id();

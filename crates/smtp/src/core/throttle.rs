@@ -210,7 +210,7 @@ impl<T: SessionStream> Session<T> {
                 || self
                     .core
                     .core
-                    .eval_expr(&t.expr, self, "throttle")
+                    .eval_expr(&t.expr, self, "throttle", self.data.session_id)
                     .await
                     .unwrap_or(false)
             {
@@ -239,7 +239,7 @@ impl<T: SessionStream> Session<T> {
                                 self.in_flight.push(inflight);
                             } else {
                                 tracing::debug!(
-                                    parent: &self.span,
+                                    
                                     context = "throttle",
                                     event = "too-many-requests",
                                     max_concurrent = limiter.max_concurrent,
@@ -271,7 +271,7 @@ impl<T: SessionStream> Session<T> {
                         .is_some()
                     {
                         tracing::debug!(
-                            parent: &self.span,
+                            
                             context = "throttle",
                             event = "rate-limit-exceeded",
                             max_requests = rate.requests,

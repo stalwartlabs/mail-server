@@ -190,7 +190,7 @@ async fn lookup_sql() {
         let e =
             Expression::try_parse(&mut config, ("test", test_name, "expr"), &token_map).unwrap();
         assert_eq!(
-            core.eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text")
+            core.eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text", 0)
                 .await
                 .unwrap(),
             config.value(("test", test_name, "expect")).unwrap(),

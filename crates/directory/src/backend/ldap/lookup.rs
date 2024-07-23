@@ -79,7 +79,7 @@ impl LdapDirectory {
                     {
                         Ok(Some(principal)) => principal,
                         Err(err)
-                            if err.matches(trc::Cause::Store(trc::StoreCause::Ldap))
+                            if err.matches(trc::EventType::Store(trc::StoreEvent::LdapError))
                                 && err
                                     .value(trc::Key::Code)
                                     .and_then(|v| v.to_uint())
@@ -332,7 +332,10 @@ impl LdapMappings {
     fn entry_to_principal(&self, entry: SearchEntry) -> Principal<String> {
         let mut principal = Principal::default();
 
-        trc::event!(LdapQuery, Value = format!("{entry:?}"));
+        trc::event!(
+            Store(trc::StoreEvent::LdapQuery),
+            Value = format!("{entry:?}")
+        );
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {

@@ -64,7 +64,7 @@ impl JMAP {
                         .send(Event::AcmeReload)
                         .await
                         .map_err(|err| {
-                            trc::Cause::Thread
+                            trc::EventType::Server(trc::ServerEvent::ThreadError)
                                 .reason(err)
                                 .details("Failed to send ACME reload event to housekeeper")
                                 .caused_by(trc::location!())
@@ -76,7 +76,7 @@ impl JMAP {
                 }))
                 .into_http_response())
             }
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 
@@ -103,7 +103,7 @@ impl JMAP {
                 }))
                 .into_http_response())
             }
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 }

@@ -49,9 +49,13 @@ impl JMAP {
 
         let (total, items) = rx
             .await
-            .map_err(|err| trc::Cause::Thread.reason(err).caused_by(trc::location!()))?
             .map_err(|err| {
-                trc::ManageCause::Error
+                trc::EventType::Server(trc::ServerEvent::ThreadError)
+                    .reason(err)
+                    .caused_by(trc::location!())
+            })?
+            .map_err(|err| {
+                trc::ManageEvent::Error
                     .reason(err)
                     .details("Failed to read log files")
                     .caused_by(trc::location!())

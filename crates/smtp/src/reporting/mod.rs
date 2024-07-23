@@ -119,7 +119,6 @@ impl SMTP {
         rcpts: impl Iterator<Item = impl AsRef<str>>,
         report: Vec<u8>,
         sign_config: &IfBlock,
-        span: &tracing::Span,
         deliver_now: bool,
     ) {
         // Build message
@@ -131,9 +130,7 @@ impl SMTP {
         }
 
         // Sign message
-        let signature = self
-            .sign_message(&mut message, sign_config, &report, span)
-            .await;
+        let signature = self.sign_message(&mut message, sign_config, &report).await;
 
         // Schedule delivery at a random time between now and the next 3 hours
         if !deliver_now {
@@ -189,9 +186,7 @@ impl SMTP {
         }
 
         // Queue message
-        message
-            .queue(signature.as_deref(), &report, self, span)
-            .await;
+        message.queue(signature.as_deref(), &report, self).await;
     }
 
     pub async fn schedule_report(&self, report: impl Into<Event>) {
@@ -205,11 +200,10 @@ impl SMTP {
         message: &mut Message,
         config: &IfBlock,
         bytes: &[u8],
-        span: &tracing::Span,
     ) -> Option<Vec<u8>> {
         let signers = self
             .core
-            .eval_if::<Vec<String>, _>(config, message)
+            .eval_if::<Vec<String>, _>(config, message, message.id)
             .await
             .unwrap_or_default();
         if !signers.is_empty() {
@@ -221,7 +215,7 @@ impl SMTP {
                             signature.write_header(&mut headers);
                         }
                         Err(err) => {
-                            tracing::warn!(parent: span,
+                            tracing::warn!(
                         context = "dkim",
                         event = "sign-failed",
                         reason = %err);

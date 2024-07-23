@@ -428,8 +428,9 @@ async fn eval_if() {
                 }],
                 default: Expression::from(false),
             }
-            .eval(&envelope, &core, &key)
+            .eval(&envelope, &core)
             .await
+            .unwrap()
             .to_bool(),
             expected_result.parse::<bool>().unwrap(),
             "failed for {key:?}"
@@ -478,7 +479,7 @@ async fn eval_dynvalue() {
             .unwrap_or_else(|| panic!("Missing expect for test {test_name:?}"));
 
         assert_eq!(
-            String::try_from(if_block.eval(&envelope, &core, test_name.as_str()).await).ok(),
+            String::try_from(if_block.eval(&envelope, &core).await.unwrap()).ok(),
             expected,
             "failed for test {test_name:?}"
         );

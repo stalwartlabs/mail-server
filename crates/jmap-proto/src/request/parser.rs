@@ -50,12 +50,12 @@ impl Request {
             if found_valid_keys {
                 Ok(request)
             } else {
-                Err(trc::JmapCause::NotRequest
+                Err(trc::JmapEvent::NotRequest
                     .into_err()
                     .details("Invalid JMAP request"))
             }
         } else {
-            Err(trc::LimitCause::SizeRequest.into_err())
+            Err(trc::LimitEvent::SizeRequest.into_err())
         }
     }
 
@@ -90,7 +90,7 @@ impl Request {
                         Token::Comma => continue,
                         Token::ArrayEnd => break,
                         _ => {
-                            return Err(trc::JmapCause::NotRequest
+                            return Err(trc::JmapEvent::NotRequest
                                 .into_err()
                                 .details("Invalid JMAP request"));
                         }
@@ -99,13 +99,13 @@ impl Request {
                         let method_name = match parser.next_token::<MethodName>() {
                             Ok(Token::String(method)) => method,
                             Ok(_) => {
-                                return Err(trc::JmapCause::NotRequest
+                                return Err(trc::JmapEvent::NotRequest
                                     .into_err()
                                     .details("Invalid JMAP request"));
                             }
                             Err(err)
-                                if err.matches(trc::Cause::Jmap(
-                                    trc::JmapCause::InvalidArguments,
+                                if err.matches(trc::EventType::Jmap(
+                                    trc::JmapEvent::InvalidArguments,
                                 )) =>
                             {
                                 MethodName::error()
@@ -175,7 +175,7 @@ impl Request {
                             (MethodFunction::Echo, MethodObject::Core) => {
                                 Echo::parse(parser).map(RequestMethod::Echo)
                             }
-                            _ => Err(trc::JmapCause::UnknownMethod
+                            _ => Err(trc::JmapEvent::UnknownMethod
                                 .into_err()
                                 .details(method_name.to_string())),
                         };
@@ -202,7 +202,7 @@ impl Request {
                             name: method_name,
                         });
                     } else {
-                        return Err(trc::LimitCause::CallsIn.into_err());
+                        return Err(trc::LimitEvent::CallsIn.into_err());
                     }
                 }
                 Ok(true)

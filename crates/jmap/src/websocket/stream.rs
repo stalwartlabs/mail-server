@@ -51,7 +51,7 @@ impl JMAP {
         {
             Ok(change_rx) => change_rx,
             Err(err) => {
-                tracing::debug!(parent: &span, error = ?err, "Failed to subscribe to state manager");
+                tracing::debug!( error = ?err, "Failed to subscribe to state manager");
 
                 let _ = stream
                     .send(Message::Text(
@@ -103,17 +103,17 @@ impl JMAP {
                                             continue;
                                         }
                                         Err(err) => {
-                                            tracing::debug!(parent: &span, error = ?err, "Failed to parse WebSocket message");
+                                            tracing::debug!( error = ?err, "Failed to parse WebSocket message");
                                             WebSocketRequestError::from(err.to_request_error()).to_json()
                                         },
                                     };
                                     if let Err(err) = stream.send(Message::Text(response)).await {
-                                        tracing::debug!(parent: &span, error = ?err, "Failed to send text message");
+                                        tracing::debug!( error = ?err, "Failed to send text message");
                                     }
                                 }
                                 Message::Ping(bytes) => {
                                     if let Err(err) = stream.send(Message::Pong(bytes)).await {
-                                        tracing::debug!(parent: &span, error = ?err, "Failed to send pong message");
+                                        tracing::debug!( error = ?err, "Failed to send pong message");
                                     }
                                 }
                                 Message::Close(frame) => {
@@ -127,7 +127,7 @@ impl JMAP {
                             last_heartbeat = Instant::now();
                         }
                         Ok(Some(Err(err))) => {
-                            tracing::debug!(parent: &span, error = ?err, "Websocket error");
+                            tracing::debug!( error = ?err, "Websocket error");
                             break;
                         }
                         Ok(None) => break,
@@ -135,7 +135,7 @@ impl JMAP {
                             // Verify timeout
                             if last_request.elapsed() > timeout {
                                 tracing::debug!(
-                                    parent: &span,
+                                    
                                     event = "disconnect",
                                     "Disconnecting idle client"
                                 );
@@ -160,7 +160,7 @@ impl JMAP {
                             }
                     } else {
                         tracing::debug!(
-                            parent: &span,
+                            
                             event = "channel-closed",
                             "Disconnecting client, channel closed"
                         );
@@ -174,7 +174,7 @@ impl JMAP {
                 let elapsed = last_changes_sent.elapsed();
                 if elapsed >= throttle {
                     if let Err(err) = stream.send(Message::Text(changes.to_json())).await {
-                        tracing::debug!(parent: &span, error = ?err, "Failed to send state change message");
+                        tracing::debug!( error = ?err, "Failed to send state change message");
                     }
                     changes.changed.clear();
                     last_changes_sent = Instant::now();
@@ -185,7 +185,7 @@ impl JMAP {
                 }
             } else if last_heartbeat.elapsed() > heartbeat {
                 if let Err(err) = stream.send(Message::Ping(vec![])).await {
-                    tracing::debug!(parent: &span, error = ?err, "Failed to send ping message");
+                    tracing::debug!( error = ?err, "Failed to send ping message");
                     break;
                 }
                 last_heartbeat = Instant::now();

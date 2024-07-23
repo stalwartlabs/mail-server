@@ -21,5 +21,5 @@ pub struct PostgresStore {
 
 #[inline(always)]
 fn into_error(err: impl Display) -> trc::Error {
-    trc::StoreCause::PostgreSQL.reason(err)
+    trc::StoreEvent::PostgreSQLError.reason(err)
 }

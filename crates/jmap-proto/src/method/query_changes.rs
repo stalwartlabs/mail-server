@@ -70,7 +70,7 @@ impl JsonObjectParser for QueryChangesRequest {
                 MethodObject::EmailSubmission => RequestArguments::EmailSubmission,
                 MethodObject::Quota => RequestArguments::Quota,
                 _ => {
-                    return Err(trc::JmapCause::UnknownMethod
+                    return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
                         .details(format!("{}/queryChanges", parser.ctx)))
                 }

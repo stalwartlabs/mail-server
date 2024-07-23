@@ -62,7 +62,7 @@ impl JMAP {
                 Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                     filters.push(cond.into());
                 }
-                other => return Err(trc::JmapCause::UnsupportedFilter.into_err().details(other.to_string())),
+                other => return Err(trc::JmapEvent::UnsupportedFilter.into_err().details(other.to_string())),
             }
         }
 
@@ -87,7 +87,7 @@ impl JMAP {
                     SortProperty::Used => {
                         query::Comparator::field(Property::Used, comparator.is_ascending)
                     }
-                    other => return Err(trc::JmapCause::UnsupportedSort.into_err().details(other.to_string())),
+                    other => return Err(trc::JmapEvent::UnsupportedSort.into_err().details(other.to_string())),
                 });
             }
 

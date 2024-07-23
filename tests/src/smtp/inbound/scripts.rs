@@ -153,7 +153,6 @@ async fn sieve_scripts() {
     assert!(!session.init_conn().await);
 
     // Run tests
-    let span = tracing::info_span!("sieve_scripts");
     for (name, script) in &core.core.sieve.scripts {
         if name.starts_with("stage_") || name.ends_with("_include") {
             continue;
@@ -162,11 +161,10 @@ async fn sieve_scripts() {
         let params = session
             .build_script_parameters("data")
             .set_variable("from", "john.doe@example.org")
-            .with_envelope(&core.core, &session)
+            .with_envelope(&core.core, &session, 0)
             .await;
-        let span = span.clone();
         let core_ = core.clone();
-        match core_.run_script(script, params, span).await {
+        match core_.run_script(script, params, 0).await {
             ScriptResult::Accept { .. } => (),
             ScriptResult::Reject(message) => panic!("{}", message),
             err => {

@@ -45,7 +45,7 @@ impl<T: SessionStream> Session<T> {
                 || !self
                     .core
                     .core
-                    .eval_if(&milter.enable, self)
+                    .eval_if(&milter.enable, self, self.data.session_id)
                     .await
                     .unwrap_or(false)
             {
@@ -71,7 +71,7 @@ impl<T: SessionStream> Session<T> {
                 }
                 Err(Rejection::Action(action)) => {
                     tracing::info!(
-                        parent: &self.span,
+                        
                         milter.host = &milter.hostname,
                         milter.port = &milter.port,
                         context = "milter",
@@ -103,7 +103,7 @@ impl<T: SessionStream> Session<T> {
                 }
                 Err(Rejection::Error(err)) => {
                     tracing::warn!(
-                        parent: &self.span,
+                        
                         milter.host = &milter.hostname,
                         milter.port = &milter.port,
                         context = "milter",
@@ -126,7 +126,7 @@ impl<T: SessionStream> Session<T> {
         message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, Rejection> {
         // Build client
-        let client = MilterClient::connect(milter, self.span.clone()).await?;
+        let client = MilterClient::connect(milter, self.data.session_id).await?;
         if !milter.tls {
             self.run(client, message).await
         } else {

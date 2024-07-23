@@ -32,7 +32,7 @@ impl JMAP {
                     filters.push(cond.into());
                 }
                 other => {
-                    return Err(trc::JmapCause::UnsupportedFilter
+                    return Err(trc::JmapEvent::UnsupportedFilter
                         .into_err()
                         .details(other.to_string()))
                 }
@@ -61,7 +61,7 @@ impl JMAP {
                         query::Comparator::field(Property::IsActive, comparator.is_ascending)
                     }
                     other => {
-                        return Err(trc::JmapCause::UnsupportedSort
+                        return Err(trc::JmapEvent::UnsupportedSort
                             .into_err()
                             .details(other.to_string()))
                     }

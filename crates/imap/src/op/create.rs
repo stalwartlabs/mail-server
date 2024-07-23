@@ -150,7 +150,7 @@ impl<T: SessionStream> SessionData<T> {
         {
             account
         } else {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details("Account no longer available.")
                 .caused_by(trc::location!()));
@@ -236,7 +236,7 @@ impl<T: SessionStream> SessionData<T> {
             name = prefix.trim();
         }
         if name.is_empty() {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details(format!("Invalid folder name '{mailbox_name}'.",)));
         }
@@ -248,11 +248,11 @@ impl<T: SessionStream> SessionData<T> {
             for path_item in name.split('/') {
                 let path_item = path_item.trim();
                 if path_item.is_empty() {
-                    return Err(trc::Cause::Imap
+                    return Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Invalid empty path item."));
                 } else if path_item.len() > self.jmap.core.jmap.mailbox_name_max_len {
-                    return Err(trc::Cause::Imap
+                    return Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Mailbox name is too long."));
                 }
@@ -260,7 +260,7 @@ impl<T: SessionStream> SessionData<T> {
             }
 
             if path.len() > self.jmap.core.jmap.mailbox_max_depth {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details("Mailbox path is too deep."));
             }
@@ -278,7 +278,7 @@ impl<T: SessionStream> SessionData<T> {
             let account = if first_path_item == &self.jmap.core.jmap.shared_folder {
                 // Shared Folders/<username>/<folder>
                 if path.len() < 3 {
-                    return Err(trc::Cause::Imap
+                    return Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Mailboxes under root shared folders are not allowed.")
                         .code(ResponseCode::Cannot));
@@ -294,7 +294,7 @@ impl<T: SessionStream> SessionData<T> {
                     account
                 } else {
                     #[allow(clippy::unnecessary_literal_unwrap)]
-                    return Err(trc::Cause::Imap.into_err().details(format!(
+                    return Err(trc::ImapEvent::Error.into_err().details(format!(
                         "Shared account '{}' not found.",
                         prefix.unwrap_or_default()
                     )));
@@ -302,7 +302,7 @@ impl<T: SessionStream> SessionData<T> {
             } else if let Some(account) = mailboxes.first() {
                 account
             } else {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details("Internal server error.")
                     .caused_by(trc::location!())
@@ -311,7 +311,7 @@ impl<T: SessionStream> SessionData<T> {
 
             // Locate parent mailbox
             if account.mailbox_names.contains_key(&full_path) {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details(format!("Mailbox '{}' already exists.", full_path)));
             }
@@ -344,7 +344,7 @@ impl<T: SessionStream> SessionData<T> {
                 .check_mailbox_acl(account_id, parent_mailbox_id, Acl::CreateChild)
                 .await?
             {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details("You are not allowed to create sub mailboxes under this mailbox.")
                     .code(ResponseCode::NoPerm));
@@ -356,7 +356,7 @@ impl<T: SessionStream> SessionData<T> {
                 .caused_by(trc::location!())?
                 .is_member(account_id)
         {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details("You are not allowed to create root folders under shared folders.")
                 .code(ResponseCode::Cannot));
@@ -382,7 +382,7 @@ impl<T: SessionStream> SessionData<T> {
                     .results
                     .is_empty()
                 {
-                    return Err(trc::Cause::Imap
+                    return Err(trc::ImapEvent::Error
                         .into_err()
                         .details(format!(
                             "A mailbox with role '{mailbox_role}' already exists.",

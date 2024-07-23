@@ -63,7 +63,11 @@ impl<T: SessionStream> Session<T> {
         let rcpt_script = self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.script, self)
+            .eval_if::<String, _>(
+                &self.core.core.smtp.session.rcpt.script,
+                self,
+                self.data.session_id,
+            )
             .await
             .and_then(|name| self.core.core.get_sieve_script(&name))
             .cloned();
@@ -87,7 +91,7 @@ impl<T: SessionStream> Session<T> {
                 {
                     ScriptResult::Accept { modifications } => {
                         if !modifications.is_empty() {
-                            tracing::debug!(parent: &self.span,
+                            tracing::debug!(
                             context = "sieve",
                             event = "modify",
                             address = self.data.rcpt_to.last().unwrap().address,
@@ -102,7 +106,7 @@ impl<T: SessionStream> Session<T> {
                         }
                     }
                     ScriptResult::Reject(message) => {
-                        tracing::info!(parent: &self.span,
+                        tracing::info!(
                         context = "sieve",
                         event = "reject",
                         address = self.data.rcpt_to.last().unwrap().address,
@@ -116,7 +120,7 @@ impl<T: SessionStream> Session<T> {
 
             // Milter filtering
             if let Err(message) = self.run_milters(Stage::Rcpt, None).await {
-                tracing::info!(parent: &self.span,
+                tracing::info!(
                     context = "milter",
                     event = "reject",
                     address = self.data.rcpt_to.last().unwrap().address,
@@ -128,7 +132,7 @@ impl<T: SessionStream> Session<T> {
 
             // MTAHook filtering
             if let Err(message) = self.run_mta_hooks(Stage::Rcpt, None).await {
-                tracing::info!(parent: &self.span,
+                tracing::info!(
                     context = "mta_hook",
                     event = "reject",
                     address = self.data.rcpt_to.last().unwrap().address,
@@ -142,7 +146,11 @@ impl<T: SessionStream> Session<T> {
             if let Some(new_address) = self
                 .core
                 .core
-                .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.rewrite, self)
+                .eval_if::<String, _>(
+                    &self.core.core.smtp.session.rcpt.rewrite,
+                    self,
+                    self.data.session_id,
+                )
                 .await
             {
                 let rcpt = self.data.rcpt_to.last_mut().unwrap();
@@ -166,7 +174,11 @@ impl<T: SessionStream> Session<T> {
         if let Some(directory) = self
             .core
             .core
-            .eval_if::<String, _>(&self.core.core.smtp.session.rcpt.directory, self)
+            .eval_if::<String, _>(
+                &self.core.core.smtp.session.rcpt.directory,
+                self,
+                self.data.session_id,
+            )
             .await
             .and_then(|name| self.core.core.get_directory(&name))
         {
@@ -176,7 +188,7 @@ impl<T: SessionStream> Session<T> {
                         self.core.core.rcpt(directory, &rcpt.address_lcase).await
                     {
                         if !is_local_address {
-                            tracing::debug!(parent: &self.span,
+                            tracing::debug!(
                                             context = "rcpt", 
                                             event = "error",
                                             address = &rcpt.address_lcase,
@@ -188,7 +200,7 @@ impl<T: SessionStream> Session<T> {
                                 .await;
                         }
                     } else {
-                        tracing::debug!(parent: &self.span,
+                        tracing::debug!(
                             context = "rcpt", 
                             event = "error",
                             address = &rcpt.address_lcase,
@@ -202,11 +214,15 @@ impl<T: SessionStream> Session<T> {
                 } else if !self
                     .core
                     .core
-                    .eval_if(&self.core.core.smtp.session.rcpt.relay, self)
+                    .eval_if(
+                        &self.core.core.smtp.session.rcpt.relay,
+                        self,
+                        self.data.session_id,
+                    )
                     .await
                     .unwrap_or(false)
                 {
-                    tracing::debug!(parent: &self.span,
+                    tracing::debug!(
                         context = "rcpt", 
                         event = "error",
                         address = &rcpt.address_lcase,
@@ -216,7 +232,7 @@ impl<T: SessionStream> Session<T> {
                     return self.rcpt_error(b"550 5.1.2 Relay not allowed.\r\n").await;
                 }
             } else {
-                tracing::debug!(parent: &self.span,
+                tracing::debug!(
                     context = "rcpt", 
                     event = "error",
                     address = &rcpt.address_lcase,
@@ -230,11 +246,15 @@ impl<T: SessionStream> Session<T> {
         } else if !self
             .core
             .core
-            .eval_if(&self.core.core.smtp.session.rcpt.relay, self)
+            .eval_if(
+                &self.core.core.smtp.session.rcpt.relay,
+                self,
+                self.data.session_id,
+            )
             .await
             .unwrap_or(false)
         {
-            tracing::debug!(parent: &self.span,
+            tracing::debug!(
                 context = "rcpt", 
                 event = "error",
                 address = &rcpt.address_lcase,
@@ -245,7 +265,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         if self.is_allowed().await {
-            tracing::debug!(parent: &self.span,
+            tracing::debug!(
                     context = "rcpt",
                     event = "success",
                     address = &self.data.rcpt_to.last().unwrap().address);
@@ -269,7 +289,7 @@ impl<T: SessionStream> Session<T> {
             self.write(b"421 4.3.0 Too many errors, disconnecting.\r\n")
                 .await?;
             tracing::debug!(
-                parent: &self.span,
+                
                 context = "rcpt",
                 event = "disconnect",
                 reason = "too-many-errors",

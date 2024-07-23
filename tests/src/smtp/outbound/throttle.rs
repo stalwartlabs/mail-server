@@ -90,7 +90,6 @@ async fn throttle_outbound() {
     assert_eq!(local.qr.last_queued_due().await as i64 - now() as i64, 0);
 
     // Throttle sender
-    let span = tracing::info_span!("test");
     let mut in_flight = vec![];
     let throttle = &core.core.smtp.queue.throttle;
     for t in &throttle.sender {
@@ -98,7 +97,7 @@ async fn throttle_outbound() {
             t,
             &QueueEnvelope::test(&test_message, 0, ""),
             &mut in_flight,
-            &span,
+            0,
         )
         .await
         .unwrap();
@@ -123,7 +122,7 @@ async fn throttle_outbound() {
             t,
             &QueueEnvelope::test(&test_message, 0, ""),
             &mut in_flight,
-            &span,
+            0,
         )
         .await
         .unwrap();
@@ -157,7 +156,7 @@ async fn throttle_outbound() {
             t,
             &QueueEnvelope::test(&test_message, 0, ""),
             &mut in_flight,
-            &span,
+            0,
         )
         .await
         .unwrap();
@@ -194,7 +193,7 @@ async fn throttle_outbound() {
             t,
             &QueueEnvelope::test(&test_message, 1, ""),
             &mut in_flight,
-            &span,
+            0,
         )
         .await
         .unwrap();
@@ -245,7 +244,7 @@ async fn throttle_outbound() {
             t,
             &QueueEnvelope::test(&test_message, 2, "mx.test.org"),
             &mut in_flight,
-            &span,
+            0,
         )
         .await
         .unwrap();
@@ -282,7 +281,7 @@ async fn throttle_outbound() {
             t,
             &QueueEnvelope::test(&test_message, 1, "mx.test.net"),
             &mut in_flight,
-            &span,
+            0,
         )
         .await
         .unwrap();

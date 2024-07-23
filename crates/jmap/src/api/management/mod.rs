@@ -73,7 +73,7 @@ impl JMAP {
                 ("auth", &Method::POST) => {
                     self.handle_account_auth_post(req, access_token, body).await
                 }
-                _ => Err(trc::ResourceCause::NotFound.into_err()),
+                _ => Err(trc::ResourceEvent::NotFound.into_err()),
             },
 
             // SPDX-SnippetBegin
@@ -99,7 +99,7 @@ impl JMAP {
                 }
             }
             // SPDX-SnippetEnd
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 }

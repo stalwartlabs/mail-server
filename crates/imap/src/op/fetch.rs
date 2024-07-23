@@ -88,13 +88,13 @@ impl<T: SessionStream> SessionData<T> {
         // Validate VANISHED parameter
         if arguments.include_vanished {
             if !is_qresync {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details("Enable QRESYNC first to use the VANISHED parameter.")
                     .ctx(trc::Key::Type, ResponseType::Bad)
                     .id(arguments.tag));
             } else if !is_uid {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details("VANISHED parameter is only available for UID FETCH.")
                     .ctx(trc::Key::Type, ResponseType::Bad)
@@ -423,7 +423,7 @@ impl<T: SessionStream> SessionData<T> {
                         }
                         Err(_) => {
                             self.write_error(
-                                trc::Cause::Imap
+                                trc::ImapEvent::Error
                                     .into_err()
                                     .details(format!(
                                         "Failed to decode part {} of message {}.",

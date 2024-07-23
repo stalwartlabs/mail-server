@@ -17,8 +17,6 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
 }
 
 pub async fn exec(ctx: PluginContext<'_>) -> Variable {
-    let span = ctx.span;
-
     // Obtain store name
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
@@ -29,7 +27,6 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
         store
     } else {
         tracing::warn!(
-            parent: span,
             context = "sieve:query",
             event = "failed",
             reason = "Unknown store",
@@ -42,7 +39,6 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
     let query = ctx.arguments[1].to_string();
     if query.is_empty() {
         tracing::warn!(
-            parent: span,
             context = "sieve:query",
             event = "invalid",
             reason = "Empty query string",

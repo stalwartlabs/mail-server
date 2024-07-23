@@ -74,7 +74,7 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?
             .and_then(|obj| obj.get(&Property::Cid).as_uint())
             .ok_or_else(|| {
-                trc::StoreCause::Unexpected
+                trc::StoreEvent::UnexpectedError
                     .caused_by(trc::location!())
                     .details("Failed to obtain UID validity")
                     .account_id(account_id)

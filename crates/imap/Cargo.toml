@@ -21,11 +21,11 @@ rustls-pemfile = "2.0"
 tokio = { version = "1.23", features = ["full"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 parking_lot = "0.12"
-tracing = "0.1"
 ahash = { version = "0.8" }
 md5 = "0.7.0"
 dashmap = "6.0"
 rand = "0.8.5"
+tracing = "0.1"
 
 [features]
 test_mode = []

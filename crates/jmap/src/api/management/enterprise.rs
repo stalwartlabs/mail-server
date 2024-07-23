@@ -57,7 +57,7 @@ impl JMAP {
     ) -> trc::Result<HttpResponse> {
         match path.get(1).copied().unwrap_or_default() {
             "undelete" => self.handle_undelete_api_request(req, path, body).await,
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 
@@ -75,7 +75,7 @@ impl JMAP {
                     .data
                     .get_account_id(account_name)
                     .await?
-                    .ok_or_else(|| trc::ResourceCause::NotFound.into_err())?;
+                    .ok_or_else(|| trc::ResourceEvent::NotFound.into_err())?;
                 let mut deleted = self.core.list_deleted(account_id).await?;
 
                 let params = UrlParams::new(req.uri().query());
@@ -125,7 +125,7 @@ impl JMAP {
                     .data
                     .get_account_id(account_name)
                     .await?
-                    .ok_or_else(|| trc::ResourceCause::NotFound.into_err())?;
+                    .ok_or_else(|| trc::ResourceEvent::NotFound.into_err())?;
 
                 let requests =
                     serde_json::from_slice::<Vec<UndeleteRequest<String, String, String>>>(
@@ -162,7 +162,7 @@ impl JMAP {
                             })
                             .collect::<Option<Vec<_>>>()
                     })
-                    .ok_or_else(|| trc::ResourceCause::BadParameters.into_err())?;
+                    .ok_or_else(|| trc::ResourceEvent::BadParameters.into_err())?;
 
                 let mut results = Vec::with_capacity(requests.len());
                 let mut batch = BatchBuilder::new();
@@ -195,7 +195,11 @@ impl JMAP {
                                                 }));
                                             }
                                         }
-                                        Err(mut err) if err.matches(trc::Cause::Ingest) => {
+                                        Err(mut err)
+                                            if err.matches(trc::EventType::Store(
+                                                trc::StoreEvent::IngestError,
+                                            )) =>
+                                        {
                                             results.push(UndeleteResponse::Error {
                                                 reason: err
                                                     .take_value(trc::Key::Reason)
@@ -237,7 +241,7 @@ impl JMAP {
                 }))
                 .into_http_response())
             }
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 }

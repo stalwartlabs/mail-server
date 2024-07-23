@@ -18,12 +18,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 #[repr(usize)]
 pub enum Level {
-    Disable = 0,
-    Trace = 1,
-    Debug = 2,
-    Info = 3,
-    Warn = 4,
-    Error = 5,
+    Disable,
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -33,6 +33,7 @@ pub enum Value {
     UInt(u64),
     Int(i64),
     Float(f64),
+    Timestamp(u64),
     Bytes(Vec<u8>),
     Bool(bool),
     Ipv4(Ipv4Addr),
@@ -66,18 +67,104 @@ pub enum Key {
     Property,
     Path,
     Url,
+    Name,
     DocumentId,
     Collection,
     AccountId,
+    SessionId,
+    Hostname,
+    ValidFrom,
+    ValidTo,
+    Origin,
+    Expected,
+    Renewal,
+    Attempt,
+    NextRetry,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventType {
-    NewConnection,
-    Error(Cause),
-    SqlQuery,
-    LdapQuery,
+    Server(ServerEvent),
     Purge(PurgeEvent),
+    Eval(EvalEvent),
+    Acme(AcmeEvent),
+    Store(StoreEvent),
+    Jmap(JmapEvent),
+    Imap(ImapEvent),
+    ManageSieve(ManageSieveEvent),
+    Pop3(Pop3Event),
+    Smtp(SmtpEvent),
+    Network(NetworkEvent),
+    Limit(LimitEvent),
+    Manage(ManageEvent),
+    Auth(AuthEvent),
+    Config(ConfigEvent),
+    Resource(ResourceEvent),
+    Arc(ArcEvent),
+    Dkim(DkimEvent),
+    MailAuth(MailAuthEvent),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ImapEvent {
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Pop3Event {
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ManageSieveEvent {
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SmtpEvent {
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NetworkEvent {
+    ReadError,
+    WriteError,
+    FlushError,
+    Timeout,
+    Closed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ServerEvent {
+    Startup,
+    Shutdown,
+    StartupError,
+    ThreadError,
+    Licensing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AcmeEvent {
+    AuthStart,
+    AuthPending,
+    AuthValid,
+    AuthCompleted,
+    AuthError,
+    AuthTooManyAttempts,
+    ProcessCert,
+    OrderProcessing,
+    OrderReady,
+    OrderValid,
+    OrderInvalid,
+    RenewBackoff,
+    DnsRecordCreated,
+    DnsRecordCreationFailed,
+    DnsRecordDeletionFailed,
+    DnsRecordNotPropagated,
+    DnsRecordLookupFailed,
+    DnsRecordPropagated,
+    DnsRecordPropagationTimeout,
+    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -89,111 +176,157 @@ pub enum PurgeEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Cause {
-    Store(StoreCause),
-    Jmap(JmapCause),
-    Imap,
-    ManageSieve,
-    Pop3,
-    Smtp,
-    Thread,
-    Acme,
-    Dns,
-    Ingest,
-    Network,
-    Limit(LimitCause),
-    Manage(ManageCause),
-    Auth(AuthCause),
-    Configuration,
-    Resource(ResourceCause),
+pub enum EvalEvent {
+    Result,
+    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum StoreCause {
-    AssertValue = 0,
-    BlobMissingMarker = 1,
-    FoundationDB = 2,
-    MySQL = 3,
-    PostgreSQL = 4,
-    RocksDB = 5,
-    SQLite = 6,
-    Ldap = 7,
-    ElasticSearch = 8,
-    Redis = 9,
-    S3 = 10,
-    Filesystem = 11,
-    Pool = 12,
-    DataCorruption = 13,
-    Decompress = 14,
-    Deserialize = 15,
-    NotFound = 16,
-    NotConfigured = 17,
-    NotSupported = 18,
-    Unexpected = 19,
-    Crypto = 20,
+pub enum ConfigEvent {
+    ParseError,
+    BuildError,
+    MacroError,
+    WriteError,
+    FetchError,
+    DefaultApplied,
+    MissingSetting,
+    UnusedSetting,
+    ParseWarning,
+    BuildWarning,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum JmapCause {
+pub enum ArcEvent {
+    ChainTooLong,
+    InvalidInstance,
+    InvalidCV,
+    HasHeaderTag,
+    BrokenChain,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DkimEvent {
+    UnsupportedVersion,
+    UnsupportedAlgorithm,
+    UnsupportedCanonicalization,
+    UnsupportedKeyType,
+    FailedBodyHashMatch,
+    FailedVerification,
+    FailedAuidMatch,
+    RevokedPublicKey,
+    IncompatibleAlgorithms,
+    SignatureExpired,
+    SignatureLength,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MailAuthEvent {
+    ParseError,
+    MissingParameters,
+    NoHeadersFound,
+    Crypto,
+    Io,
+    Base64,
+    DnsError,
+    DnsRecordNotFound,
+    DnsInvalidRecordType,
+    PolicyNotAligned,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StoreEvent {
+    // Errors
+    IngestError,
+    AssertValueFailed,
+    FoundationDBError,
+    MySQLError,
+    PostgreSQLError,
+    RocksDBError,
+    SQLiteError,
+    LdapError,
+    ElasticSearchError,
+    RedisError,
+    S3Error,
+    FilesystemError,
+    PoolError,
+    DataCorruption,
+    DecompressError,
+    DeserializeError,
+    NotFound,
+    NotConfigured,
+    NotSupported,
+    UnexpectedError,
+    CryptoError,
+
+    // Warnings
+    BlobMissingMarker,
+
+    // Traces
+    SqlQuery,
+    LdapQuery,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum JmapEvent {
     // Method errors
-    InvalidArguments = 0,
-    RequestTooLarge = 1,
-    StateMismatch = 2,
-    AnchorNotFound = 3,
-    UnsupportedFilter = 4,
-    UnsupportedSort = 5,
-    UnknownMethod = 6,
-    InvalidResultReference = 7,
-    Forbidden = 8,
-    AccountNotFound = 9,
-    AccountNotSupportedByMethod = 10,
-    AccountReadOnly = 11,
-    NotFound = 12,
-    CannotCalculateChanges = 13,
-    UnknownDataType = 14,
+    InvalidArguments,
+    RequestTooLarge,
+    StateMismatch,
+    AnchorNotFound,
+    UnsupportedFilter,
+    UnsupportedSort,
+    UnknownMethod,
+    InvalidResultReference,
+    Forbidden,
+    AccountNotFound,
+    AccountNotSupportedByMethod,
+    AccountReadOnly,
+    NotFound,
+    CannotCalculateChanges,
+    UnknownDataType,
 
     // Request errors
-    UnknownCapability = 15,
-    NotJSON = 16,
-    NotRequest = 17,
+    UnknownCapability,
+    NotJSON,
+    NotRequest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LimitCause {
-    SizeRequest = 0,
-    SizeUpload = 1,
-    CallsIn = 2,
-    ConcurrentRequest = 3,
-    ConcurrentUpload = 4,
-    Quota = 5,
-    BlobQuota = 6,
-    TooManyRequests = 7,
+pub enum LimitEvent {
+    SizeRequest,
+    SizeUpload,
+    CallsIn,
+    ConcurrentRequest,
+    ConcurrentUpload,
+    Quota,
+    BlobQuota,
+    TooManyRequests,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ManageCause {
-    MissingParameter = 0,
-    AlreadyExists = 1,
-    AssertFailed = 2,
-    NotFound = 3,
-    NotSupported = 4,
-    Error = 5,
+pub enum ManageEvent {
+    MissingParameter,
+    AlreadyExists,
+    AssertFailed,
+    NotFound,
+    NotSupported,
+    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AuthCause {
-    Failed = 0,
-    MissingTotp = 1,
-    TooManyAttempts = 2,
-    Banned = 3,
-    Error = 4,
+pub enum AuthEvent {
+    Failed,
+    MissingTotp,
+    TooManyAttempts,
+    Banned,
+    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ResourceCause {
-    NotFound = 0,
-    BadParameters = 1,
-    Error = 2,
+pub enum ResourceEvent {
+    NotFound,
+    BadParameters,
+    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -208,7 +341,7 @@ pub enum Protocol {
 
 #[derive(Debug, Clone)]
 pub struct Error {
-    inner: Cause,
+    inner: EventType,
     keys: Vec<(Key, Value)>,
 }
 

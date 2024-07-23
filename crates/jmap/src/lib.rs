@@ -539,7 +539,7 @@ impl UpdateResults for QueryResponse {
                 .collect::<Vec<_>>();
             Ok(())
         } else {
-            Err(trc::JmapCause::AnchorNotFound.into_err())
+            Err(trc::JmapEvent::AnchorNotFound.into_err())
         }
     }
 }

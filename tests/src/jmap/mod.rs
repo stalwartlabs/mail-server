@@ -286,7 +286,9 @@ throttle = "100ms"
 #[tokio::test(flavor = "multi_thread")]
 pub async fn jmap_tests() {
     if let Ok(level) = std::env::var("LOG") {
-        tracing::subscriber::set_global_default(
+        let todo = "implement";
+
+        /*tracing::subscriber::set_global_default(
             tracing_subscriber::FmtSubscriber::builder()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::builder()
@@ -297,7 +299,7 @@ pub async fn jmap_tests() {
                 )
                 .finish(),
         )
-        .unwrap();
+        .unwrap();*/
     }
 
     let delete = true;
@@ -344,7 +346,9 @@ pub async fn jmap_tests() {
 #[ignore]
 pub async fn jmap_stress_tests() {
     if let Ok(level) = std::env::var("LOG") {
-        tracing::subscriber::set_global_default(
+        let todo = "implement";
+
+        /*tracing::subscriber::set_global_default(
             tracing_subscriber::FmtSubscriber::builder()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::builder()
@@ -355,7 +359,7 @@ pub async fn jmap_stress_tests() {
                 )
                 .finish(),
         )
-        .unwrap();
+        .unwrap();*/
     }
 
     let params = init_jmap_tests(

@@ -50,7 +50,7 @@ impl<T: SessionStream> Session<T> {
         ) {
             auth_message
         } else {
-            tracing::info!(parent: &self.span,
+            tracing::info!(
                     context = "data",
                     event = "parse-failed",
                     size = raw_message.len());
@@ -69,11 +69,11 @@ impl<T: SessionStream> Session<T> {
             > self
                 .core
                 .core
-                .eval_if(&dc.max_received_headers, self)
+                .eval_if(&dc.max_received_headers, self, self.data.session_id)
                 .await
                 .unwrap_or(50)
         {
-            tracing::info!(parent: &self.span,
+            tracing::info!(
                 context = "data",
                 event = "loop-detected",
                 return_path = self.data.mail_from.as_ref().unwrap().address,
@@ -91,13 +91,13 @@ impl<T: SessionStream> Session<T> {
         let dkim = self
             .core
             .core
-            .eval_if(&ac.dkim.verify, self)
+            .eval_if(&ac.dkim.verify, self, self.data.session_id)
             .await
             .unwrap_or(VerifyStrategy::Relaxed);
         let dmarc = self
             .core
             .core
-            .eval_if(&ac.dmarc.verify, self)
+            .eval_if(&ac.dmarc.verify, self, self.data.session_id)
             .await
             .unwrap_or(VerifyStrategy::Relaxed);
         let dkim_output = if dkim.verify() || dmarc.verify() {
@@ -115,7 +115,12 @@ impl<T: SessionStream> Session<T> {
                     .any(|d| matches!(d.result(), DkimResult::Pass));
 
             // Send reports for failed signatures
-            if let Some(rate) = self.core.core.eval_if::<Rate, _>(&rc.dkim.send, self).await {
+            if let Some(rate) = self
+                .core
+                .core
+                .eval_if::<Rate, _>(&rc.dkim.send, self, self.data.session_id)
+                .await
+            {
                 for output in &dkim_output {
                     if let Some(rcpt) = output.failure_report_addr() {
                         self.send_dkim_report(rcpt, &auth_message, &rate, rejected, output)
@@ -125,7 +130,7 @@ impl<T: SessionStream> Session<T> {
             }
 
             if rejected {
-                tracing::info!(parent: &self.span,
+                tracing::info!(
                     context = "dkim",
                     event = "failed",
                     return_path = self.data.mail_from.as_ref().unwrap().address,
@@ -146,7 +151,7 @@ impl<T: SessionStream> Session<T> {
                     (&b"550 5.7.20 No passing DKIM signatures found.\r\n"[..]).into()
                 };
             } else {
-                tracing::debug!(parent: &self.span,
+                tracing::debug!(
                     context = "dkim",
                     event = "verify",
                     return_path = self.data.mail_from.as_ref().unwrap().address,
@@ -162,13 +167,13 @@ impl<T: SessionStream> Session<T> {
         let arc = self
             .core
             .core
-            .eval_if(&ac.arc.verify, self)
+            .eval_if(&ac.arc.verify, self, self.data.session_id)
             .await
             .unwrap_or(VerifyStrategy::Relaxed);
         let arc_sealer = self
             .core
             .core
-            .eval_if::<String, _>(&ac.arc.seal, self)
+            .eval_if::<String, _>(&ac.arc.seal, self, self.data.session_id)
             .await
             .and_then(|name| self.core.core.get_arc_sealer(&name));
         let arc_output = if arc.verify() || arc_sealer.is_some() {
@@ -184,7 +189,7 @@ impl<T: SessionStream> Session<T> {
             if arc.is_strict()
                 && !matches!(arc_output.result(), DkimResult::Pass | DkimResult::None)
             {
-                tracing::info!(parent: &self.span,
+                tracing::info!(
                     context = "arc",
                     event = "auth-failed",
                     return_path = self.data.mail_from.as_ref().unwrap().address,
@@ -201,7 +206,7 @@ impl<T: SessionStream> Session<T> {
                     (&b"550 5.7.29 ARC validation failed.\r\n"[..]).into()
                 };
             } else {
-                tracing::debug!(parent: &self.span,
+                tracing::debug!(
                     context = "arc",
                     event = "verify",
                     return_path = self.data.mail_from.as_ref().unwrap().address,
@@ -284,7 +289,7 @@ impl<T: SessionStream> Session<T> {
                 let dmarc_policy = dmarc_output.policy();
 
                 if !rejected {
-                    tracing::debug!(parent: &self.span,
+                    tracing::debug!(
                     context = "dmarc",
                     event = "verify",
                     return_path = mail_from.address,
@@ -292,7 +297,7 @@ impl<T: SessionStream> Session<T> {
                     dkim_result = %dmarc_output.dkim_result(),
                     spf_result = %dmarc_output.spf_result());
                 } else {
-                    tracing::info!(parent: &self.span,
+                    tracing::info!(
                     context = "dmarc",
                     event = "auth-failed",
                     return_path = mail_from.address,
@@ -345,7 +350,7 @@ impl<T: SessionStream> Session<T> {
         if self
             .core
             .core
-            .eval_if(&dc.add_received, self)
+            .eval_if(&dc.add_received, self, self.data.session_id)
             .await
             .unwrap_or(true)
         {
@@ -356,7 +361,7 @@ impl<T: SessionStream> Session<T> {
         if self
             .core
             .core
-            .eval_if(&dc.add_auth_results, self)
+            .eval_if(&dc.add_auth_results, self, self.data.session_id)
             .await
             .unwrap_or(true)
         {
@@ -368,7 +373,7 @@ impl<T: SessionStream> Session<T> {
             if self
                 .core
                 .core
-                .eval_if(&dc.add_received_spf, self)
+                .eval_if(&dc.add_received_spf, self, self.data.session_id)
                 .await
                 .unwrap_or(true)
             {
@@ -391,7 +396,7 @@ impl<T: SessionStream> Session<T> {
                         set.write_header(&mut headers);
                     }
                     Err(err) => {
-                        tracing::info!(parent: &self.span,
+                        tracing::info!(
                             context = "arc",
                             event = "seal-failed",
                             return_path = mail_from.address_lcase,
@@ -408,7 +413,7 @@ impl<T: SessionStream> Session<T> {
             Ok(modifications_) => {
                 if !modifications_.is_empty() {
                     tracing::debug!(
-                    parent: &self.span,
+                    
                     context = "milter",
                     event = "accept",
                     modifications = modifications.iter().fold(String::new(), |mut s, m| {
@@ -439,7 +444,7 @@ impl<T: SessionStream> Session<T> {
             Ok(modifications_) => {
                 if !modifications_.is_empty() {
                     tracing::debug!(
-                            parent: &self.span,
+                            
                             context = "mta_hook",
                             event = "accept",
                             "MTAHook filter(s) accepted message.");
@@ -469,14 +474,14 @@ impl<T: SessionStream> Session<T> {
             if let Some(command_) = self
                 .core
                 .core
-                .eval_if::<String, _>(&pipe.command, self)
+                .eval_if::<String, _>(&pipe.command, self, self.data.session_id)
                 .await
             {
                 let piped_message = edited_message.as_ref().unwrap_or(&raw_message).clone();
                 let timeout = self
                     .core
                     .core
-                    .eval_if(&pipe.timeout, self)
+                    .eval_if(&pipe.timeout, self, self.data.session_id)
                     .await
                     .unwrap_or_else(|| Duration::from_secs(30));
 
@@ -484,7 +489,7 @@ impl<T: SessionStream> Session<T> {
                 for argument in self
                     .core
                     .core
-                    .eval_if::<Vec<String>, _>(&pipe.arguments, self)
+                    .eval_if::<Vec<String>, _>(&pipe.arguments, self, self.data.session_id)
                     .await
                     .unwrap_or_default()
                 {
@@ -514,21 +519,21 @@ impl<T: SessionStream> Session<T> {
                                                 edited_message = output.stdout.into();
                                             }
 
-                                            tracing::debug!(parent: &self.span,
+                                            tracing::debug!(
                                                 context = "pipe",
                                                 event = "success",
                                                 command = command_,
                                                 status = output.status.to_string());
                                         }
                                         Ok(Err(err)) => {
-                                            tracing::warn!(parent: &self.span,
+                                            tracing::warn!(
                                                 context = "pipe",
                                                 event = "exec-error",
                                                 command = command_,
                                                 reason = %err);
                                         }
                                         Err(_) => {
-                                            tracing::warn!(parent: &self.span,
+                                            tracing::warn!(
                                                 context = "pipe",
                                                 event = "timeout",
                                                 command = command_);
@@ -536,28 +541,28 @@ impl<T: SessionStream> Session<T> {
                                     }
                                 }
                                 Ok(Err(err)) => {
-                                    tracing::warn!(parent: &self.span,
+                                    tracing::warn!(
                                         context = "pipe",
                                         event = "write-error",
                                         command = command_,
                                         reason = %err);
                                 }
                                 Err(_) => {
-                                    tracing::warn!(parent: &self.span,
+                                    tracing::warn!(
                                         context = "pipe",
                                         event = "stdin-timeout",
                                         command = command_);
                                 }
                             }
                         } else {
-                            tracing::warn!(parent: &self.span,
+                            tracing::warn!(
                                 context = "pipe",
                                 event = "stdin-failed",
                                 command = command_);
                         }
                     }
                     Err(err) => {
-                        tracing::warn!(parent: &self.span,
+                        tracing::warn!(
                                 context = "pipe",
                                 event = "spawn-error",
                                 command = command_,
@@ -571,7 +576,7 @@ impl<T: SessionStream> Session<T> {
         if let Some(script) = self
             .core
             .core
-            .eval_if::<String, _>(&dc.script, self)
+            .eval_if::<String, _>(&dc.script, self, self.data.session_id)
             .await
             .and_then(|name| self.core.core.get_sieve_script(&name))
         {
@@ -634,7 +639,7 @@ impl<T: SessionStream> Session<T> {
                     modifications
                 }
                 ScriptResult::Reject(message) => {
-                    tracing::info!(parent: &self.span,
+                    tracing::info!(
                         context = "sieve",
                         event = "reject",
                         reason = message);
@@ -679,7 +684,7 @@ impl<T: SessionStream> Session<T> {
         if self
             .core
             .core
-            .eval_if(&dc.add_return_path, self)
+            .eval_if(&dc.add_return_path, self, self.data.session_id)
             .await
             .unwrap_or(true)
         {
@@ -693,7 +698,7 @@ impl<T: SessionStream> Session<T> {
             && self
                 .core
                 .core
-                .eval_if(&dc.add_date, self)
+                .eval_if(&dc.add_date, self, self.data.session_id)
                 .await
                 .unwrap_or(true)
         {
@@ -705,7 +710,7 @@ impl<T: SessionStream> Session<T> {
             && self
                 .core
                 .core
-                .eval_if(&dc.add_message_id, self)
+                .eval_if(&dc.add_message_id, self, self.data.session_id)
                 .await
                 .unwrap_or(true)
         {
@@ -721,7 +726,7 @@ impl<T: SessionStream> Session<T> {
         for signer in self
             .core
             .core
-            .eval_if::<Vec<String>, _>(&ac.dkim.sign, self)
+            .eval_if::<Vec<String>, _>(&ac.dkim.sign, self, self.data.session_id)
             .await
             .unwrap_or_default()
         {
@@ -731,7 +736,7 @@ impl<T: SessionStream> Session<T> {
                         signature.write_header(&mut headers);
                     }
                     Err(err) => {
-                        tracing::info!(parent: &self.span,
+                        tracing::info!(
                         context = "dkim",
                         event = "sign-failed",
                         return_path = message.return_path,
@@ -780,10 +785,7 @@ impl<T: SessionStream> Session<T> {
                 });
 
             // Queue message
-            if message
-                .queue(Some(&headers), raw_message, &self.core, &self.span)
-                .await
-            {
+            if message.queue(Some(&headers), raw_message, &self.core).await {
                 // Send webhook event
                 if let Some(event) = webhook_event {
                     self.core
@@ -804,7 +806,7 @@ impl<T: SessionStream> Session<T> {
             }
         } else {
             tracing::warn!(
-                parent: &self.span,
+                
                 context = "queue",
                 event = "quota-exceeded",
                 from = message.return_path,
@@ -876,7 +878,7 @@ impl<T: SessionStream> Session<T> {
                 let (num_intervals, next_notify) = self
                     .core
                     .core
-                    .eval_if::<Vec<Duration>, _>(&config.notify, &envelope)
+                    .eval_if::<Vec<Duration>, _>(&config.notify, &envelope, self.data.session_id)
                     .await
                     .and_then(|v| (v.len(), v.into_iter().next()?).into())
                     .unwrap_or_else(|| (1, Duration::from_secs(86400)));
@@ -888,7 +890,7 @@ impl<T: SessionStream> Session<T> {
                             + self
                                 .core
                                 .core
-                                .eval_if(&config.expire, &envelope)
+                                .eval_if(&config.expire, &envelope, self.data.session_id)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(5 * 86400))
                                 .as_secs(),
@@ -902,7 +904,7 @@ impl<T: SessionStream> Session<T> {
                     let expire = self
                         .core
                         .core
-                        .eval_if(&config.expire, &envelope)
+                        .eval_if(&config.expire, &envelope, self.data.session_id)
                         .await
                         .unwrap_or_else(|| Duration::from_secs(5 * 86400));
                     let expire_secs = expire.as_secs();
@@ -962,14 +964,18 @@ impl<T: SessionStream> Session<T> {
                 < self
                     .core
                     .core
-                    .eval_if(&self.core.core.smtp.session.data.max_messages, self)
+                    .eval_if(
+                        &self.core.core.smtp.session.data.max_messages,
+                        self,
+                        self.data.session_id,
+                    )
                     .await
                     .unwrap_or(10)
             {
                 Ok(true)
             } else {
                 tracing::debug!(
-                    parent: &self.span,
+                    
                     context = "data",
                     event = "too-many-messages",
                     "Maximum number of messages per session exceeded."

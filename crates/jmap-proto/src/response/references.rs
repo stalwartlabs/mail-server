@@ -50,7 +50,7 @@ impl Response {
                                 if let Some(resolved_id) = self.created_ids.get(reference) {
                                     *id = MaybeReference::Value(resolved_id.clone());
                                 } else {
-                                    return Err(trc::JmapCause::InvalidResultReference
+                                    return Err(trc::JmapEvent::InvalidResultReference
                                         .into_err()
                                         .details(format!(
                                             "Id reference {reference:?} does not exist."
@@ -151,7 +151,7 @@ impl Response {
                                         *id = MaybeReference::Value(blob_id.clone());
                                     }
                                     Some(_) => {
-                                        return Err(trc::JmapCause::InvalidResultReference
+                                        return Err(trc::JmapEvent::InvalidResultReference
                                             .into_err()
                                             .details(format!(
                                             "Id reference {parent_id:?} points to invalid type."
@@ -254,7 +254,7 @@ impl Response {
         if let Some(AnyId::Id(id)) = self.created_ids.get(ir) {
             Ok(*id)
         } else {
-            Err(trc::JmapCause::InvalidResultReference
+            Err(trc::JmapEvent::InvalidResultReference
                 .into_err()
                 .details(format!("Id reference {ir:?} not found.")))
         }
@@ -276,7 +276,7 @@ impl Response {
                             .or_insert_with(Vec::new)
                             .push(parent_id.to_string());
                     } else {
-                        return Err(trc::JmapCause::InvalidResultReference
+                        return Err(trc::JmapEvent::InvalidResultReference
                             .into_err()
                             .details(format!("Id reference {parent_id:?} not found.")));
                     }
@@ -292,7 +292,7 @@ impl Response {
                                     .or_insert_with(Vec::new)
                                     .push(parent_id.to_string());
                             } else {
-                                return Err(trc::JmapCause::InvalidResultReference
+                                return Err(trc::JmapEvent::InvalidResultReference
                                     .into_err()
                                     .details(format!("Id reference {parent_id:?} not found.")));
                             }
@@ -319,7 +319,7 @@ fn topological_sort<T>(
     for (from_id, to_ids) in graph.iter() {
         for to_id in to_ids {
             if !create.contains_key(to_id) {
-                return Err(trc::JmapCause::InvalidResultReference
+                return Err(trc::JmapEvent::InvalidResultReference
                     .into_err()
                     .details(format!(
                         "Invalid reference to non-existing object {to_id:?} from {from_id:?}"
@@ -338,7 +338,7 @@ fn topological_sort<T>(
             if let Some(to_ids) = graph.get(from_id) {
                 it_stack.push((it, from_id));
                 if it_stack.len() > 1000 {
-                    return Err(trc::JmapCause::InvalidArguments
+                    return Err(trc::JmapEvent::InvalidArguments
                         .into_err()
                         .details("Cyclical references are not allowed.".to_string()));
                 }
@@ -454,7 +454,7 @@ impl EvalResult {
                             match value {
                                 Value::Id(id) => ids.push(id),
                                 _ => {
-                                    return Err(trc::JmapCause::InvalidResultReference
+                                    return Err(trc::JmapEvent::InvalidResultReference
                                         .into_err()
                                         .details(format!(
                                             "Failed to evaluate {rr} result reference."
@@ -464,7 +464,7 @@ impl EvalResult {
                         }
                     }
                     _ => {
-                        return Err(trc::JmapCause::InvalidResultReference
+                        return Err(trc::JmapEvent::InvalidResultReference
                             .into_err()
                             .details(format!("Failed to evaluate {rr} result reference.")))
                     }
@@ -472,7 +472,7 @@ impl EvalResult {
             }
             Ok(ids)
         } else {
-            Err(trc::JmapCause::InvalidResultReference
+            Err(trc::JmapEvent::InvalidResultReference
                 .into_err()
                 .details(format!("Failed to evaluate {rr} result reference.")))
         }
@@ -496,7 +496,7 @@ impl EvalResult {
                                     ids.push(MaybeReference::Value(blob_id.into()))
                                 }
                                 _ => {
-                                    return Err(trc::JmapCause::InvalidResultReference
+                                    return Err(trc::JmapEvent::InvalidResultReference
                                         .into_err()
                                         .details(format!(
                                             "Failed to evaluate {rr} result reference."
@@ -506,7 +506,7 @@ impl EvalResult {
                         }
                     }
                     _ => {
-                        return Err(trc::JmapCause::InvalidResultReference
+                        return Err(trc::JmapEvent::InvalidResultReference
                             .into_err()
                             .details(format!("Failed to evaluate {rr} result reference.")))
                     }
@@ -514,7 +514,7 @@ impl EvalResult {
             }
             Ok(ids)
         } else {
-            Err(trc::JmapCause::InvalidResultReference
+            Err(trc::JmapEvent::InvalidResultReference
                 .into_err()
                 .details(format!("Failed to evaluate {rr} result reference.")))
         }
@@ -524,7 +524,7 @@ impl EvalResult {
         if let EvalResult::Properties(properties) = self {
             Ok(properties)
         } else {
-            Err(trc::JmapCause::InvalidResultReference
+            Err(trc::JmapEvent::InvalidResultReference
                 .into_err()
                 .details(format!("Failed to evaluate {rr} result reference.")))
         }

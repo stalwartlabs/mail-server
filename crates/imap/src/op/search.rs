@@ -287,9 +287,11 @@ impl<T: SessionStream> SessionData<T> {
                             search::Filter::Header(header, value) => {
                                 match HeaderName::parse(header) {
                                     Some(HeaderName::Other(header_name)) => {
-                                        return Err(trc::Cause::Imap.into_err().details(format!(
-                                            "Querying header '{header_name}' is not supported.",
-                                        )));
+                                        return Err(trc::ImapEvent::Error.into_err().details(
+                                            format!(
+                                                "Querying header '{header_name}' is not supported.",
+                                            ),
+                                        ));
                                     }
                                     Some(header_name) => {
                                         if !value.is_empty() {
@@ -410,7 +412,7 @@ impl<T: SessionStream> SessionData<T> {
                                     }
                                 }
                             } else {
-                                return Err(trc::Cause::Imap
+                                return Err(trc::ImapEvent::Error
                                     .into_err()
                                     .details("No saved search found."));
                             }
@@ -610,7 +612,7 @@ impl<T: SessionStream> SessionData<T> {
                                 RoaringBitmap::from_sorted_iter([id.document_id()]).unwrap(),
                             ));
                         } else {
-                            return Err(trc::Cause::Imap
+                            return Err(trc::ImapEvent::Error
                                 .into_err()
                                 .details(format!("Failed to parse email id '{id}'.",)));
                         }
@@ -622,7 +624,7 @@ impl<T: SessionStream> SessionData<T> {
                                 id.document_id(),
                             ));
                         } else {
-                            return Err(trc::Cause::Imap
+                            return Err(trc::ImapEvent::Error
                                 .into_err()
                                 .details(format!("Failed to parse thread id '{id}'.",)));
                         }

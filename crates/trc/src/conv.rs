@@ -8,8 +8,8 @@ use std::{borrow::Cow, fmt::Debug};
 
 use crate::*;
 
-impl AsRef<Cause> for Error {
-    fn as_ref(&self) -> &Cause {
+impl AsRef<EventType> for Error {
+    fn as_ref(&self) -> &EventType {
         &self.inner
     }
 }
@@ -83,21 +83,21 @@ impl From<Error> for Value {
     }
 }
 
-impl From<Cause> for Error {
-    fn from(value: Cause) -> Self {
+impl From<EventType> for Error {
+    fn from(value: EventType) -> Self {
         Error::new(value)
     }
 }
 
-impl From<StoreCause> for Error {
-    fn from(value: StoreCause) -> Self {
-        Error::new(Cause::Store(value))
+impl From<StoreEvent> for Error {
+    fn from(value: StoreEvent) -> Self {
+        Error::new(EventType::Store(value))
     }
 }
 
-impl From<AuthCause> for Error {
-    fn from(value: AuthCause) -> Self {
-        Error::new(Cause::Auth(value))
+impl From<AuthEvent> for Error {
+    fn from(value: AuthEvent) -> Self {
+        Error::new(EventType::Auth(value))
     }
 }
 
@@ -158,7 +158,7 @@ where
     }
 }
 
-impl Cause {
+impl EventType {
     pub fn from_io_error(self, err: std::io::Error) -> Error {
         self.reason(err).details("I/O error")
     }
@@ -188,18 +188,95 @@ impl Cause {
     }
 }
 
+impl From<mail_auth::Error> for Error {
+    fn from(err: mail_auth::Error) -> Self {
+        match err {
+            mail_auth::Error::ParseError => {
+                EventType::MailAuth(MailAuthEvent::ParseError).into_err()
+            }
+            mail_auth::Error::MissingParameters => {
+                EventType::MailAuth(MailAuthEvent::MissingParameters).into_err()
+            }
+            mail_auth::Error::NoHeadersFound => {
+                EventType::MailAuth(MailAuthEvent::NoHeadersFound).into_err()
+            }
+            mail_auth::Error::CryptoError(details) => EventType::MailAuth(MailAuthEvent::Crypto)
+                .into_err()
+                .details(details),
+            mail_auth::Error::Io(details) => EventType::MailAuth(MailAuthEvent::Io)
+                .into_err()
+                .details(details),
+            mail_auth::Error::Base64 => EventType::MailAuth(MailAuthEvent::Base64).into_err(),
+            mail_auth::Error::UnsupportedVersion => {
+                EventType::Dkim(DkimEvent::UnsupportedVersion).into_err()
+            }
+            mail_auth::Error::UnsupportedAlgorithm => {
+                EventType::Dkim(DkimEvent::UnsupportedAlgorithm).into_err()
+            }
+            mail_auth::Error::UnsupportedCanonicalization => {
+                EventType::Dkim(DkimEvent::UnsupportedCanonicalization).into_err()
+            }
+            mail_auth::Error::UnsupportedKeyType => {
+                EventType::Dkim(DkimEvent::UnsupportedKeyType).into_err()
+            }
+            mail_auth::Error::FailedBodyHashMatch => {
+                EventType::Dkim(DkimEvent::FailedBodyHashMatch).into_err()
+            }
+            mail_auth::Error::FailedVerification => {
+                EventType::Dkim(DkimEvent::FailedVerification).into_err()
+            }
+            mail_auth::Error::FailedAuidMatch => {
+                EventType::Dkim(DkimEvent::FailedAuidMatch).into_err()
+            }
+            mail_auth::Error::RevokedPublicKey => {
+                EventType::Dkim(DkimEvent::RevokedPublicKey).into_err()
+            }
+            mail_auth::Error::IncompatibleAlgorithms => {
+                EventType::Dkim(DkimEvent::IncompatibleAlgorithms).into_err()
+            }
+            mail_auth::Error::SignatureExpired => {
+                EventType::Dkim(DkimEvent::SignatureExpired).into_err()
+            }
+            mail_auth::Error::SignatureLength => {
+                EventType::Dkim(DkimEvent::SignatureLength).into_err()
+            }
+            mail_auth::Error::DnsError(details) => EventType::MailAuth(MailAuthEvent::DnsError)
+                .into_err()
+                .details(details),
+            mail_auth::Error::DnsRecordNotFound(code) => {
+                EventType::MailAuth(MailAuthEvent::DnsRecordNotFound)
+                    .into_err()
+                    .code(code.to_str())
+            }
+            mail_auth::Error::ArcChainTooLong => EventType::Arc(ArcEvent::ChainTooLong).into_err(),
+            mail_auth::Error::ArcInvalidInstance(instance) => {
+                EventType::Arc(ArcEvent::InvalidInstance).ctx(Key::Id, instance)
+            }
+            mail_auth::Error::ArcInvalidCV => EventType::Arc(ArcEvent::InvalidCV).into_err(),
+            mail_auth::Error::ArcHasHeaderTag => EventType::Arc(ArcEvent::HasHeaderTag).into_err(),
+            mail_auth::Error::ArcBrokenChain => EventType::Arc(ArcEvent::BrokenChain).into_err(),
+            mail_auth::Error::NotAligned => {
+                EventType::MailAuth(MailAuthEvent::PolicyNotAligned).into_err()
+            }
+            mail_auth::Error::InvalidRecordType => {
+                EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType).into_err()
+            }
+        }
+    }
+}
+
 pub trait AssertSuccess
 where
     Self: Sized,
 {
     fn assert_success(
         self,
-        cause: Cause,
+        cause: EventType,
     ) -> impl std::future::Future<Output = crate::Result<Self>> + Send;
 }
 
 impl AssertSuccess for reqwest::Response {
-    async fn assert_success(self, cause: Cause) -> crate::Result<Self> {
+    async fn assert_success(self, cause: EventType) -> crate::Result<Self> {
         let status = self.status();
         if status.is_success() {
             Ok(self)

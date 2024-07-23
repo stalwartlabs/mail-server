@@ -11,6 +11,7 @@ use common::{
     config::smtp::{
         report::AggregateFrequency,
         resolver::{Mode, MxPattern},
+        session,
     },
     USER_AGENT,
 };
@@ -64,6 +65,9 @@ impl SMTP {
             range_to = event_to,
         );
 
+        let todo = "generate session id";
+        let session_id = 0;
+
         // Generate report
         let mut rua = Vec::new();
         let mut serialized_size = serde_json::Serializer::new(SerializedSize::new(
@@ -71,32 +75,29 @@ impl SMTP {
                 .eval_if(
                     &self.core.smtp.report.tls.max_size,
                     &RecipientDomain::new(domain_name),
+                    session_id,
                 )
                 .await
                 .unwrap_or(25 * 1024 * 1024),
         ));
         let report = match self
-            .generate_tls_aggregate_report(&events, &mut rua, Some(&mut serialized_size))
+            .generate_tls_aggregate_report(
+                &events,
+                &mut rua,
+                Some(&mut serialized_size),
+                session_id,
+            )
             .await
         {
             Ok(Some(report)) => report,
             Ok(None) => {
                 // This should not happen
-                tracing::warn!(
-                    parent: &span,
-                    event = "empty-report",
-                    "No policies found in report"
-                );
+                tracing::warn!(event = "empty-report", "No policies found in report");
                 self.delete_tls_report(events).await;
                 return;
             }
             Err(err) => {
-                tracing::warn!(
-                    parent: &span,
-                    event = "error",
-                    "Failed to read TLS report: {}",
-                    err
-                );
+                tracing::warn!(event = "error", "Failed to read TLS report: {}", err);
                 return;
             }
         };
@@ -108,12 +109,7 @@ impl SMTP {
         {
             Ok(report) => report,
             Err(err) => {
-                tracing::error!(
-                    parent: &span,
-                    event = "error",
-                    "Failed to compress report: {}",
-                    err
-                );
+                tracing::error!(event = "error", "Failed to compress report: {}", err);
                 self.delete_tls_report(events).await;
                 return;
             }
@@ -145,17 +141,12 @@ impl SMTP {
                         {
                             Ok(response) => {
                                 if response.status().is_success() {
-                                    tracing::info!(
-                                        parent: &span,
-                                        context = "http",
-                                        event = "success",
-                                        url = uri,
-                                    );
+                                    tracing::info!(context = "http", event = "success", url = uri,);
                                     self.delete_tls_report(events).await;
                                     return;
                                 } else {
                                     tracing::debug!(
-                                        parent: &span,
+
                                         context = "http",
                                         event = "invalid-response",
                                         url = uri,
@@ -165,7 +156,7 @@ impl SMTP {
                             }
                             Err(err) => {
                                 tracing::debug!(
-                                    parent: &span,
+
                                     context = "http",
                                     event = "error",
                                     url = uri,
@@ -186,7 +177,11 @@ impl SMTP {
             let config = &self.core.smtp.report.tls;
             let from_addr = self
                 .core
-                .eval_if(&config.address, &RecipientDomain::new(domain_name))
+                .eval_if(
+                    &config.address,
+                    &RecipientDomain::new(domain_name),
+                    session_id,
+                )
                 .await
                 .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
             let mut message = Vec::with_capacity(2048);
@@ -197,12 +192,13 @@ impl SMTP {
                     .eval_if(
                         &self.core.smtp.report.submitter,
                         &RecipientDomain::new(domain_name),
+                        session_id,
                     )
                     .await
                     .unwrap_or_else(|| "localhost".to_string()),
                 (
                     self.core
-                        .eval_if(&config.name, &RecipientDomain::new(domain_name))
+                        .eval_if(&config.name, &RecipientDomain::new(domain_name), session_id)
                         .await
                         .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                         .as_str(),
@@ -214,18 +210,10 @@ impl SMTP {
             );
 
             // Send report
-            self.send_report(
-                &from_addr,
-                rcpts.iter(),
-                message,
-                &config.sign,
-                &span,
-                false,
-            )
-            .await;
+            self.send_report(&from_addr, rcpts.iter(), message, &config.sign, false)
+                .await;
         } else {
             tracing::info!(
-                parent: &span,
                 event = "delivery-failed",
                 "No valid recipients found to deliver report to."
             );
@@ -238,6 +226,7 @@ impl SMTP {
         events: &[ReportEvent],
         rua: &mut Vec<ReportUri>,
         mut serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
+        session_id: u64,
     ) -> trc::Result<Option<TlsReport>> {
         let (domain_name, event_from, event_to, policy) = events
             .first()
@@ -247,7 +236,11 @@ impl SMTP {
         let mut report = TlsReport {
             organization_name: self
                 .core
-                .eval_if(&config.org_name, &RecipientDomain::new(domain_name))
+                .eval_if(
+                    &config.org_name,
+                    &RecipientDomain::new(domain_name),
+                    session_id,
+                )
                 .await
                 .clone(),
             date_range: DateRange {
@@ -256,7 +249,11 @@ impl SMTP {
             },
             contact_info: self
                 .core
-                .eval_if(&config.contact_info, &RecipientDomain::new(domain_name))
+                .eval_if(
+                    &config.contact_info,
+                    &RecipientDomain::new(domain_name),
+                    session_id,
+                )
                 .await
                 .clone(),
             report_id: format!("{}_{}", event_from, policy),

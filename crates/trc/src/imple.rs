@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, cmp::Ordering, fmt::Display};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display, str::FromStr};
 
 use crate::*;
 
@@ -32,7 +32,7 @@ impl Event {
 }
 
 impl Error {
-    pub fn new(inner: Cause) -> Self {
+    pub fn new(inner: EventType) -> Self {
         Self {
             inner,
             keys: Vec::with_capacity(5),
@@ -45,6 +45,14 @@ impl Error {
         self
     }
 
+    #[inline(always)]
+    pub fn ctx_unique(mut self, key: Key, value: impl Into<Value>) -> Self {
+        if self.keys.iter().all(|(k, _)| *k != key) {
+            self.keys.push((key, value.into()));
+        }
+        self
+    }
+
     pub fn ctx_opt(self, key: Key, value: Option<impl Into<Value>>) -> Self {
         match value {
             Some(value) => self.ctx(key, value),
@@ -53,7 +61,7 @@ impl Error {
     }
 
     #[inline(always)]
-    pub fn matches(&self, inner: Cause) -> bool {
+    pub fn matches(&self, inner: EventType) -> bool {
         self.inner == inner
     }
 
@@ -128,14 +136,14 @@ impl Error {
     }
 
     pub fn corrupted_key(key: &[u8], value: Option<&[u8]>, caused_by: &'static str) -> Error {
-        Cause::Store(StoreCause::DataCorruption)
+        EventType::Store(StoreEvent::DataCorruption)
             .ctx(Key::Key, key)
             .ctx_opt(Key::Value, value)
             .ctx(Key::CausedBy, caused_by)
     }
 }
 
-impl Cause {
+impl EventType {
     #[inline(always)]
     pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
         self.into_err().ctx(key, value)
@@ -158,27 +166,24 @@ impl Cause {
 
     pub fn message(&self) -> &'static str {
         match self {
-            Self::Store(cause) => cause.message(),
-            Self::Jmap(cause) => cause.message(),
-            Self::Imap => "IMAP error",
-            Self::ManageSieve => "ManageSieve error",
-            Self::Pop3 => "POP3 error",
-            Self::Smtp => "SMTP error",
-            Self::Thread => "Thread error",
-            Self::Acme => "ACME error",
-            Self::Dns => "DNS error",
-            Self::Ingest => "Message Ingest error",
-            Self::Network => "Network error",
-            Self::Limit(cause) => cause.message(),
-            Self::Manage(cause) => cause.message(),
-            Self::Auth(cause) => cause.message(),
-            Self::Configuration => "Configuration error",
-            Self::Resource(cause) => cause.message(),
+            EventType::Store(cause) => cause.message(),
+            EventType::Jmap(cause) => cause.message(),
+            EventType::Imap(_) => "IMAP error",
+            EventType::ManageSieve(_) => "ManageSieve error",
+            EventType::Pop3(_) => "POP3 error",
+            EventType::Smtp(_) => "SMTP error",
+            EventType::Network(_) => "Network error",
+            EventType::Limit(cause) => cause.message(),
+            EventType::Manage(cause) => cause.message(),
+            EventType::Auth(cause) => cause.message(),
+            EventType::Config(_) => "Configuration error",
+            EventType::Resource(cause) => cause.message(),
+            _ => "Internal server error",
         }
     }
 }
 
-impl StoreCause {
+impl StoreEvent {
     #[inline(always)]
     pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
         self.into_err().ctx(key, value)
@@ -196,37 +201,39 @@ impl StoreCause {
 
     #[inline(always)]
     pub fn into_err(self) -> Error {
-        Error::new(Cause::Store(self))
+        Error::new(EventType::Store(self))
     }
 
     pub fn message(&self) -> &'static str {
         match self {
-            Self::AssertValue => "Another process has modified the value",
+            Self::AssertValueFailed => "Another process has modified the value",
             Self::BlobMissingMarker => "Blob is missing marker",
-            Self::FoundationDB => "FoundationDB error",
-            Self::MySQL => "MySQL error",
-            Self::PostgreSQL => "PostgreSQL error",
-            Self::RocksDB => "RocksDB error",
-            Self::SQLite => "SQLite error",
-            Self::Ldap => "LDAP error",
-            Self::ElasticSearch => "ElasticSearch error",
-            Self::Redis => "Redis error",
-            Self::S3 => "S3 error",
-            Self::Filesystem => "Filesystem error",
-            Self::Pool => "Connection pool error",
+            Self::FoundationDBError => "FoundationDB error",
+            Self::MySQLError => "MySQL error",
+            Self::PostgreSQLError => "PostgreSQL error",
+            Self::RocksDBError => "RocksDB error",
+            Self::SQLiteError => "SQLite error",
+            Self::LdapError => "LDAP error",
+            Self::ElasticSearchError => "ElasticSearch error",
+            Self::RedisError => "Redis error",
+            Self::S3Error => "S3 error",
+            Self::FilesystemError => "Filesystem error",
+            Self::PoolError => "Connection pool error",
             Self::DataCorruption => "Data corruption",
-            Self::Decompress => "Decompression error",
-            Self::Deserialize => "Deserialization error",
+            Self::DecompressError => "Decompression error",
+            Self::DeserializeError => "Deserialization error",
             Self::NotFound => "Not found",
             Self::NotConfigured => "Not configured",
             Self::NotSupported => "Operation not supported",
-            Self::Unexpected => "Unexpected error",
-            Self::Crypto => "Crypto error",
+            Self::UnexpectedError => "Unexpected error",
+            Self::CryptoError => "Crypto error",
+            Self::IngestError => "Message Ingest error",
+            _ => "Store error",
         }
     }
 }
 
-impl AuthCause {
+impl AuthEvent {
     #[inline(always)]
     pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
         self.into_err().ctx(key, value)
@@ -244,7 +251,7 @@ impl AuthCause {
 
     #[inline(always)]
     pub fn into_err(self) -> Error {
-        Error::new(Cause::Auth(self))
+        Error::new(EventType::Auth(self))
     }
 
     pub fn message(&self) -> &'static str {
@@ -261,7 +268,7 @@ impl AuthCause {
     }
 }
 
-impl ManageCause {
+impl ManageEvent {
     #[inline(always)]
     pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
         self.into_err().ctx(key, value)
@@ -279,7 +286,7 @@ impl ManageCause {
 
     #[inline(always)]
     pub fn into_err(self) -> Error {
-        Error::new(Cause::Manage(self))
+        Error::new(EventType::Manage(self))
     }
 
     pub fn message(&self) -> &'static str {
@@ -294,7 +301,7 @@ impl ManageCause {
     }
 }
 
-impl JmapCause {
+impl JmapEvent {
     #[inline(always)]
     pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
         self.into_err().ctx(key, value)
@@ -312,7 +319,7 @@ impl JmapCause {
 
     #[inline(always)]
     pub fn into_err(self) -> Error {
-        Error::new(Cause::Jmap(self))
+        Error::new(EventType::Jmap(self))
     }
 
     pub fn message(&self) -> &'static str {
@@ -339,7 +346,7 @@ impl JmapCause {
     }
 }
 
-impl LimitCause {
+impl LimitEvent {
     #[inline(always)]
     pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
         self.into_err().ctx(key, value)
@@ -357,7 +364,7 @@ impl LimitCause {
 
     #[inline(always)]
     pub fn into_err(self) -> Error {
-        Error::new(Cause::Limit(self))
+        Error::new(EventType::Limit(self))
     }
 
     pub fn message(&self) -> &'static str {
@@ -374,7 +381,7 @@ impl LimitCause {
     }
 }
 
-impl ResourceCause {
+impl ResourceEvent {
     #[inline(always)]
     pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
         self.into_err().ctx(key, value)
@@ -392,7 +399,7 @@ impl ResourceCause {
 
     #[inline(always)]
     pub fn into_err(self) -> Error {
-        Error::new(Cause::Resource(self))
+        Error::new(EventType::Resource(self))
     }
 
     pub fn message(&self) -> &'static str {
@@ -404,22 +411,94 @@ impl ResourceCause {
     }
 }
 
+impl SmtpEvent {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(EventType::Smtp(self))
+    }
+}
+
+impl ImapEvent {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(EventType::Imap(self))
+    }
+
+    #[inline(always)]
+    pub fn caused_by(self, error: impl Into<Value>) -> Error {
+        self.into_err().caused_by(error)
+    }
+
+    #[inline(always)]
+    pub fn reason(self, error: impl Display) -> Error {
+        self.into_err().reason(error)
+    }
+}
+
+impl Pop3Event {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(EventType::Pop3(self))
+    }
+}
+
+impl ManageSieveEvent {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(EventType::ManageSieve(self))
+    }
+}
+
+impl NetworkEvent {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(EventType::Network(self))
+    }
+}
+
 impl Error {
     #[inline(always)]
-    pub fn wrap(self, cause: Cause) -> Self {
+    pub fn wrap(self, cause: EventType) -> Self {
         Error::new(cause).caused_by(self)
     }
 
     #[inline(always)]
     pub fn is_assertion_failure(&self) -> bool {
-        self.inner == Cause::Store(StoreCause::AssertValue)
+        self.inner == EventType::Store(StoreEvent::AssertValueFailed)
     }
 
     #[inline(always)]
     pub fn is_jmap_method_error(&self) -> bool {
         !matches!(
             self.inner,
-            Cause::Jmap(JmapCause::UnknownCapability | JmapCause::NotJSON | JmapCause::NotRequest)
+            EventType::Jmap(
+                JmapEvent::UnknownCapability | JmapEvent::NotJSON | JmapEvent::NotRequest
+            )
         )
     }
 
@@ -427,15 +506,18 @@ impl Error {
     pub fn must_disconnect(&self) -> bool {
         matches!(
             self.inner,
-            Cause::Network
-                | Cause::Auth(AuthCause::TooManyAttempts | AuthCause::Banned)
-                | Cause::Limit(LimitCause::ConcurrentRequest | LimitCause::TooManyRequests)
+            EventType::Network(_)
+                | EventType::Auth(AuthEvent::TooManyAttempts | AuthEvent::Banned)
+                | EventType::Limit(LimitEvent::ConcurrentRequest | LimitEvent::TooManyRequests)
         )
     }
 
     #[inline(always)]
     pub fn should_write_err(&self) -> bool {
-        !matches!(self.inner, Cause::Network | Cause::Auth(AuthCause::Banned))
+        !matches!(
+            self.inner,
+            EventType::Network(_) | EventType::Auth(AuthEvent::Banned)
+        )
     }
 }
 
@@ -572,56 +654,146 @@ impl PartialEq for Error {
     }
 }
 
+impl FromStr for Level {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "disable" => Ok(Self::Disable),
+            "trace" => Ok(Self::Trace),
+            "debug" => Ok(Self::Debug),
+            "info" => Ok(Self::Info),
+            "warn" => Ok(Self::Warn),
+            "error" => Ok(Self::Error),
+            _ => Err(s.to_string()),
+        }
+    }
+}
+
+impl Level {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Disable => "DISABLE",
+            Self::Trace => "TRACE",
+            Self::Debug => "DEBUG",
+            Self::Info => "INFO",
+            Self::Warn => "WARN",
+            Self::Error => "ERROR",
+        }
+    }
+}
+
+impl Display for Level {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
 impl Eq for Error {}
 
 impl EventType {
     pub fn level(&self) -> Level {
         match self {
-            EventType::Error(error) => match error {
-                Cause::Store(_) => Level::Error,
-                Cause::Jmap(_) => Level::Debug,
-                Cause::Imap => Level::Debug,
-                Cause::ManageSieve => Level::Debug,
-                Cause::Pop3 => Level::Debug,
-                Cause::Smtp => Level::Debug,
-                Cause::Thread => Level::Error,
-                Cause::Acme => Level::Error,
-                Cause::Dns => Level::Error,
-                Cause::Ingest => Level::Error,
-                Cause::Network => Level::Debug,
-                Cause::Limit(cause) => match cause {
-                    LimitCause::SizeRequest => Level::Debug,
-                    LimitCause::SizeUpload => Level::Debug,
-                    LimitCause::CallsIn => Level::Debug,
-                    LimitCause::ConcurrentRequest => Level::Debug,
-                    LimitCause::ConcurrentUpload => Level::Debug,
-                    LimitCause::Quota => Level::Debug,
-                    LimitCause::BlobQuota => Level::Debug,
-                    LimitCause::TooManyRequests => Level::Warn,
-                },
-                Cause::Manage(_) => Level::Debug,
-                Cause::Auth(cause) => match cause {
-                    AuthCause::Failed => Level::Debug,
-                    AuthCause::MissingTotp => Level::Trace,
-                    AuthCause::TooManyAttempts => Level::Warn,
-                    AuthCause::Banned => Level::Warn,
-                    AuthCause::Error => Level::Error,
-                },
-                Cause::Configuration => Level::Error,
-                Cause::Resource(cause) => match cause {
-                    ResourceCause::NotFound => Level::Debug,
-                    ResourceCause::BadParameters => Level::Error,
-                    ResourceCause::Error => Level::Error,
-                },
+            EventType::Store(event) => match event {
+                StoreEvent::SqlQuery | StoreEvent::LdapQuery => Level::Trace,
+                _ => Level::Error,
             },
-            EventType::NewConnection => Level::Info,
-            EventType::SqlQuery => Level::Trace,
-            EventType::LdapQuery => Level::Trace,
+            EventType::Jmap(_) => Level::Debug,
+            EventType::Imap(event) => match event {
+                ImapEvent::Error => Level::Debug,
+            },
+            EventType::ManageSieve(event) => match event {
+                ManageSieveEvent::Error => Level::Debug,
+            },
+            EventType::Pop3(event) => match event {
+                Pop3Event::Error => Level::Debug,
+            },
+            EventType::Smtp(event) => match event {
+                SmtpEvent::Error => Level::Debug,
+            },
+            EventType::Network(event) => match event {
+                NetworkEvent::ReadError
+                | NetworkEvent::WriteError
+                | NetworkEvent::FlushError
+                | NetworkEvent::Closed => Level::Trace,
+                NetworkEvent::Timeout => Level::Debug,
+            },
+            EventType::Limit(cause) => match cause {
+                LimitEvent::SizeRequest => Level::Debug,
+                LimitEvent::SizeUpload => Level::Debug,
+                LimitEvent::CallsIn => Level::Debug,
+                LimitEvent::ConcurrentRequest => Level::Debug,
+                LimitEvent::ConcurrentUpload => Level::Debug,
+                LimitEvent::Quota => Level::Debug,
+                LimitEvent::BlobQuota => Level::Debug,
+                LimitEvent::TooManyRequests => Level::Warn,
+            },
+            EventType::Manage(_) => Level::Debug,
+            EventType::Auth(cause) => match cause {
+                AuthEvent::Failed => Level::Debug,
+                AuthEvent::MissingTotp => Level::Trace,
+                AuthEvent::TooManyAttempts => Level::Warn,
+                AuthEvent::Banned => Level::Warn,
+                AuthEvent::Error => Level::Error,
+            },
+            EventType::Config(cause) => match cause {
+                ConfigEvent::ParseError => Level::Error,
+                ConfigEvent::BuildError => Level::Error,
+                ConfigEvent::MacroError => Level::Error,
+                ConfigEvent::WriteError => Level::Error,
+                ConfigEvent::FetchError => Level::Error,
+                ConfigEvent::DefaultApplied => Level::Debug,
+                ConfigEvent::MissingSetting => Level::Debug,
+                ConfigEvent::UnusedSetting => Level::Debug,
+                ConfigEvent::ParseWarning => Level::Debug,
+                ConfigEvent::BuildWarning => Level::Debug,
+            },
+            EventType::Resource(cause) => match cause {
+                ResourceEvent::NotFound => Level::Debug,
+                ResourceEvent::BadParameters => Level::Error,
+                ResourceEvent::Error => Level::Error,
+            },
+            EventType::Arc(_) => Level::Debug,
+            EventType::Dkim(_) => Level::Debug,
+            EventType::MailAuth(_) => Level::Debug,
             EventType::Purge(event) => match event {
                 PurgeEvent::Started => Level::Debug,
                 PurgeEvent::Finished => Level::Debug,
                 PurgeEvent::Running => Level::Info,
                 PurgeEvent::Error => Level::Error,
+            },
+            EventType::Eval(event) => match event {
+                EvalEvent::Result => Level::Trace,
+                EvalEvent::Error => Level::Error,
+            },
+            EventType::Server(event) => match event {
+                ServerEvent::Startup => Level::Info,
+                ServerEvent::Shutdown => Level::Info,
+                ServerEvent::Licensing => Level::Info,
+                ServerEvent::StartupError => Level::Error,
+                ServerEvent::ThreadError => Level::Error,
+            },
+            EventType::Acme(event) => match event {
+                AcmeEvent::DnsRecordCreated => Level::Info,
+                AcmeEvent::DnsRecordNotPropagated => Level::Debug,
+                AcmeEvent::DnsRecordLookupFailed => Level::Debug,
+                AcmeEvent::DnsRecordPropagated => Level::Info,
+                AcmeEvent::DnsRecordPropagationTimeout => Level::Warn,
+                AcmeEvent::AuthStart => Level::Info,
+                AcmeEvent::AuthPending => Level::Info,
+                AcmeEvent::AuthValid => Level::Info,
+                AcmeEvent::AuthCompleted => Level::Info,
+                AcmeEvent::ProcessCert => Level::Info,
+                AcmeEvent::OrderProcessing => Level::Info,
+                AcmeEvent::OrderReady => Level::Info,
+                AcmeEvent::OrderValid => Level::Info,
+                AcmeEvent::OrderInvalid => Level::Warn,
+                AcmeEvent::RenewBackoff => Level::Debug,
+                AcmeEvent::Error => Level::Error,
+                AcmeEvent::AuthError => Level::Warn,
+                AcmeEvent::AuthTooManyAttempts => Level::Warn,
+                AcmeEvent::DnsRecordCreationFailed => Level::Warn,
+                AcmeEvent::DnsRecordDeletionFailed => Level::Debug,
             },
         }
     }

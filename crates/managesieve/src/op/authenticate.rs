@@ -23,14 +23,14 @@ use crate::core::{Command, Session, State, StatusResponse};
 impl<T: SessionStream> Session<T> {
     pub async fn handle_authenticate(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
         if request.tokens.is_empty() {
-            return Err(trc::AuthCause::Error
+            return Err(trc::AuthEvent::Error
                 .into_err()
                 .details("Authentication mechanism missing."));
         }
 
         let mut tokens = request.tokens.into_iter();
         let mechanism = Mechanism::parse(&tokens.next().unwrap().unwrap_bytes())
-            .map_err(|err| trc::AuthCause::Error.into_err().details(err))?;
+            .map_err(|err| trc::AuthEvent::Error.into_err().details(err))?;
         let mut params: Vec<String> = tokens
             .filter_map(|token| token.unwrap_string().ok())
             .collect();
@@ -40,7 +40,7 @@ impl<T: SessionStream> Session<T> {
                 if !params.is_empty() {
                     let challenge =
                         base64_decode(params.pop().unwrap().as_bytes()).ok_or_else(|| {
-                            trc::AuthCause::Error
+                            trc::AuthEvent::Error
                                 .into_err()
                                 .details("Failed to decode challenge.")
                         })?;
@@ -49,7 +49,7 @@ impl<T: SessionStream> Session<T> {
                     } else {
                         decode_challenge_oauth(&challenge)
                     }
-                    .map_err(|err| trc::AuthCause::Error.into_err().details(err)))?
+                    .map_err(|err| trc::AuthEvent::Error.into_err().details(err)))?
                 } else {
                     self.receiver.request = receiver::Request {
                         tag: String::new(),
@@ -61,7 +61,7 @@ impl<T: SessionStream> Session<T> {
                 }
             }
             _ => {
-                return Err(trc::AuthCause::Error
+                return Err(trc::AuthEvent::Error
                     .into_err()
                     .details("Authentication mechanism not supported."))
             }
@@ -94,7 +94,7 @@ impl<T: SessionStream> Session<T> {
             }
         }
         .map_err(|err| {
-            if err.matches(trc::Cause::Auth(trc::AuthCause::Failed)) {
+            if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
                 match &self.state {
                     State::NotAuthenticated { auth_failures }
                         if *auth_failures < self.jmap.core.imap.max_auth_failures =>
@@ -104,7 +104,7 @@ impl<T: SessionStream> Session<T> {
                         };
                     }
                     _ => {
-                        return trc::AuthCause::TooManyAttempts.into_err().caused_by(err);
+                        return trc::AuthEvent::TooManyAttempts.into_err().caused_by(err);
                     }
                 }
             }
@@ -120,7 +120,7 @@ impl<T: SessionStream> Session<T> {
             Some(Some(limiter)) => Some(limiter),
             None => None,
             Some(None) => {
-                return Err(trc::LimitCause::ConcurrentRequest.into_err());
+                return Err(trc::LimitEvent::ConcurrentRequest.into_err());
             }
         };
 

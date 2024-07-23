@@ -29,7 +29,7 @@ impl JMAP {
         access_token: &AccessToken,
     ) -> trc::Result<ParseEmailResponse> {
         if request.blob_ids.len() > self.core.jmap.mail_parse_max_items {
-            return Err(trc::JmapCause::RequestTooLarge.into_err());
+            return Err(trc::JmapEvent::RequestTooLarge.into_err());
         }
         let properties = request.properties.unwrap_or_else(|| {
             vec![
@@ -234,7 +234,7 @@ impl JMAP {
                     }
 
                     _ => {
-                        return Err(trc::JmapCause::InvalidArguments
+                        return Err(trc::JmapEvent::InvalidArguments
                             .into_err()
                             .details(format!("Invalid property {property:?}")));
                     }

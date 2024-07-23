@@ -17,7 +17,6 @@ impl Message {
         &self,
         recipients: impl Iterator<Item = &mut Recipient>,
         delivery_tx: &mpsc::Sender<DeliveryEvent>,
-        span: &tracing::Span,
     ) -> Status<(), Error> {
         // Prepare recipients list
         let mut total_rcpt = 0;
@@ -59,7 +58,6 @@ impl Message {
                     Ok(delivery_result) => delivery_result,
                     Err(_) => {
                         tracing::warn!(
-                            parent: span,
                             context = "deliver_local",
                             event = "error",
                             reason = "result channel closed",
@@ -70,7 +68,6 @@ impl Message {
             }
             Err(_) => {
                 tracing::warn!(
-                    parent: span,
                     context = "deliver_local",
                     event = "error",
                     reason = "tx channel closed",
@@ -85,7 +82,6 @@ impl Message {
             match result {
                 DeliveryResult::Success => {
                     tracing::info!(
-                        parent: span,
                         context = "deliver_local",
                         event = "delivered",
                         rcpt = rcpt.address,
@@ -103,7 +99,6 @@ impl Message {
                 }
                 DeliveryResult::TemporaryFailure { reason } => {
                     tracing::info!(
-                        parent: span,
                         context = "deliver_local",
                         event = "deferred",
                         rcpt = rcpt.address,
@@ -123,7 +118,6 @@ impl Message {
                 }
                 DeliveryResult::PermanentFailure { code, reason } => {
                     tracing::info!(
-                        parent: span,
                         context = "deliver_local",
                         event = "rejected",
                         rcpt = rcpt.address,

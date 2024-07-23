@@ -25,7 +25,6 @@ hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
 hyper-util = { version = "0.1.1", features = ["tokio"] }
 http-body-util = "0.1.0"
 form_urlencoded = "1.1.0"
-tracing = "0.1"
 tokio = { version = "1.23", features = ["rt"] }
 aes-gcm = "0.10.1"
 aes-gcm-siv = "0.11.1"
@@ -58,6 +57,7 @@ lz4_flex = { version = "0.11", default-features = false }
 rev_lines = "0.3.0"
 x509-parser = "0.16.0"
 quick-xml = "0.35"
+tracing = "0.1"
 
 [features]
 test_mode = []

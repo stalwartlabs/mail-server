@@ -7,8 +7,8 @@
 use std::{collections::HashMap, str::FromStr};
 
 use opentelemetry_otlp::{HttpExporterBuilder, TonicExporterBuilder, WithExportConfig};
-use tracing::Level;
 use tracing_appender::rolling::RollingFileAppender;
+use trc::Level;
 use utils::config::Config;
 
 #[derive(Debug)]
@@ -69,7 +69,7 @@ impl Tracers {
                         format!("Invalid log level: {err}"),
                     )
                 })
-                .unwrap_or(Level::INFO);
+                .unwrap_or(Level::Info);
             match config
                 .value(("tracer", id, "type"))
                 .unwrap_or_default()

@@ -726,7 +726,7 @@ impl JMAP {
                 Ok(message) => {
                     response.created.insert(id, message.into());
                 }
-                Err(err) if err.matches(trc::Cause::Limit(trc::LimitCause::Quota)) => {
+                Err(err) if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) => {
                     response.not_created.append(
                         id,
                         SetError::new(SetErrorType::OverQuota)

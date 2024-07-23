@@ -129,14 +129,14 @@ impl JMAP {
                     response.created.append(id, email.into());
                 }
                 Err(mut err) => match err.as_ref() {
-                    trc::Cause::Limit(trc::LimitCause::Quota) => {
+                    trc::EventType::Limit(trc::LimitEvent::Quota) => {
                         response.not_created.append(
                             id,
                             SetError::new(SetErrorType::OverQuota)
                                 .with_description("You have exceeded your disk quota."),
                         );
                     }
-                    trc::Cause::Ingest => {
+                    trc::EventType::Store(trc::StoreEvent::IngestError) => {
                         response.not_created.append(
                             id,
                             SetError::new(SetErrorType::InvalidEmail).with_description(

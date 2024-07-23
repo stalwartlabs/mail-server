@@ -497,13 +497,13 @@ impl SerializeResponse for trc::Error {
         if let Some(code) = self
             .value_as_str(trc::Key::Code)
             .or_else(|| match self.as_ref() {
-                trc::Cause::Store(trc::StoreCause::NotFound) => {
+                trc::EventType::Store(trc::StoreEvent::NotFound) => {
                     Some(ResponseCode::NonExistent.as_str())
                 }
-                trc::Cause::Store(_) => Some(ResponseCode::ContactAdmin.as_str()),
-                trc::Cause::Limit(trc::LimitCause::Quota) => Some(ResponseCode::OverQuota.as_str()),
-                trc::Cause::Limit(_) => Some(ResponseCode::Limit.as_str()),
-                trc::Cause::Auth(_) => Some(ResponseCode::AuthenticationFailed.as_str()),
+                trc::EventType::Store(_) => Some(ResponseCode::ContactAdmin.as_str()),
+                trc::EventType::Limit(trc::LimitEvent::Quota) => Some(ResponseCode::OverQuota.as_str()),
+                trc::EventType::Limit(_) => Some(ResponseCode::Limit.as_str()),
+                trc::EventType::Auth(_) => Some(ResponseCode::AuthenticationFailed.as_str()),
                 _ => None,
             })
         {

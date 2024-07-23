@@ -54,7 +54,7 @@ impl<T: SessionStream> SessionData<T> {
             if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
                 (mailbox.account_id, mailbox.mailbox_id)
             } else {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details("Mailbox does not exist.")
                     .code(ResponseCode::TryCreate)
@@ -75,7 +75,7 @@ impl<T: SessionStream> SessionData<T> {
         {
             Ok(did_remove_emails) => did_remove_emails,
             Err(err) => {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details(err.description.unwrap_or("Delete failed".into()))
                     .code(ResponseCode::from(err.type_))

@@ -83,7 +83,7 @@ impl JMAP {
                         result.append(Property::Id, Value::Id(id));
                     }
                     Property::Url | Property::Keys | Property::Value => {
-                        return Err(trc::JmapCause::Forbidden.into_err().details(
+                        return Err(trc::JmapEvent::Forbidden.into_err().details(
                             "The 'url' and 'keys' properties are not readable".to_string(),
                         ));
                     }
@@ -126,7 +126,7 @@ impl JMAP {
                 })
                 .await?
                 .ok_or_else(|| {
-                    trc::StoreCause::NotFound
+                    trc::StoreEvent::NotFound
                         .into_err()
                         .caused_by(trc::location!())
                         .document_id(document_id)
@@ -137,7 +137,7 @@ impl JMAP {
                 .get(&Property::Expires)
                 .and_then(|p| p.as_date())
                 .ok_or_else(|| {
-                    trc::StoreCause::Unexpected
+                    trc::StoreEvent::UnexpectedError
                         .caused_by(trc::location!())
                         .document_id(document_id)
                 })?
@@ -173,7 +173,7 @@ impl JMAP {
                     .remove(&Property::Value)
                     .and_then(|p| p.try_unwrap_string())
                     .ok_or_else(|| {
-                        trc::StoreCause::Unexpected
+                        trc::StoreEvent::UnexpectedError
                             .caused_by(trc::location!())
                             .document_id(document_id)
                     })?;
@@ -182,7 +182,7 @@ impl JMAP {
                     .remove(&Property::Url)
                     .and_then(|p| p.try_unwrap_string())
                     .ok_or_else(|| {
-                        trc::StoreCause::Unexpected
+                        trc::StoreEvent::UnexpectedError
                             .caused_by(trc::location!())
                             .document_id(document_id)
                     })?;

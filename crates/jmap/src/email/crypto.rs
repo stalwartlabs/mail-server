@@ -606,15 +606,15 @@ impl Deserialize for EncryptionParams {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         let version = *bytes
             .first()
-            .ok_or_else(|| trc::StoreCause::DataCorruption.caused_by(trc::location!()))?;
+            .ok_or_else(|| trc::StoreEvent::DataCorruption.caused_by(trc::location!()))?;
         match version {
             1 if bytes.len() > 1 => bincode::deserialize(&bytes[1..]).map_err(|err| {
-                trc::Cause::Store(trc::StoreCause::Deserialize)
+                trc::EventType::Store(trc::StoreEvent::DeserializeError)
                     .from_bincode_error(err)
                     .caused_by(trc::location!())
             }),
 
-            _ => Err(trc::StoreCause::Deserialize
+            _ => Err(trc::StoreEvent::DeserializeError
                 .into_err()
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Value, version as u64)),
@@ -670,7 +670,7 @@ impl JMAP {
         body: Option<Vec<u8>>,
     ) -> trc::Result<HttpResponse> {
         let request = serde_json::from_slice::<EncryptionType>(body.as_deref().unwrap_or_default())
-            .map_err(|err| trc::ResourceCause::BadParameters.into_err().reason(err))?;
+            .map_err(|err| trc::ResourceEvent::BadParameters.into_err().reason(err))?;
 
         let (method, algo, certs) = match request {
             EncryptionType::PGP { algo, certs } => (EncryptionMethod::PGP, algo, certs),

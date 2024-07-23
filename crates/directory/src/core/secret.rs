@@ -59,7 +59,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
                     // Token needs to validate with at least one of the TOTP secrets
                     is_totp_verified = TOTP::from_url(secret)
                         .map_err(|err| {
-                            trc::AuthCause::Error
+                            trc::AuthEvent::Error
                                 .reason(err)
                                 .details(secret.to_string())
                         })?
@@ -86,7 +86,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
                 // Only let the client know if the TOTP code is missing
                 // if the password is correct
 
-                Err(trc::AuthCause::MissingTotp.into_err())
+                Err(trc::AuthEvent::MissingTotp.into_err())
             } else {
                 // Return the TOTP verification status
 
@@ -128,7 +128,7 @@ async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> trc::Result<bo
                     .ok();
             }
             Err(err) => {
-                tx.send(Err(trc::AuthCause::Error
+                tx.send(Err(trc::AuthEvent::Error
                     .reason(err)
                     .details(hashed_secret)))
                     .ok();
@@ -137,7 +137,9 @@ async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> trc::Result<bo
 
         match rx.await {
             Ok(result) => result,
-            Err(err) => Err(trc::Cause::Thread.reason(err)),
+            Err(err) => Err(trc::EventType::Server(trc::ServerEvent::ThreadError)
+                .caused_by(trc::location!())
+                .reason(err)),
         }
     } else if hashed_secret.starts_with("$2") {
         // Blowfish crypt
@@ -155,7 +157,7 @@ async fn verify_hash_prefix(hashed_secret: &str, secret: &str) -> trc::Result<bo
         // MD5 based hash
         Ok(md5_crypt::verify(secret, hashed_secret))
     } else {
-        Err(trc::AuthCause::Error
+        Err(trc::AuthEvent::Error
             .into_err()
             .details(hashed_secret.to_string()))
     }
@@ -256,12 +258,12 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> trc::Resul
                     }
                 }
                 "PLAIN" | "plain" | "CLEAR" | "clear" => Ok(hashed_secret == secret),
-                _ => Err(trc::AuthCause::Error
+                _ => Err(trc::AuthEvent::Error
                     .ctx(trc::Key::Reason, "Unsupported algorithm")
                     .details(hashed_secret.to_string())),
             }
         } else {
-            Err(trc::AuthCause::Error
+            Err(trc::AuthEvent::Error
                 .into_err()
                 .details(hashed_secret.to_string()))
         }

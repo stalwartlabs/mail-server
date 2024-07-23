@@ -49,7 +49,7 @@ impl JMAP {
                         } else if let Ok(type_state) = DataType::try_from(type_state) {
                             types.insert(type_state);
                         } else {
-                            return Err(trc::ResourceCause::BadParameters.into_err());
+                            return Err(trc::ResourceEvent::BadParameters.into_err());
                         }
                     }
                 }
@@ -58,13 +58,13 @@ impl JMAP {
                         close_after_state = true;
                     }
                     "no" => {}
-                    _ => return Err(trc::ResourceCause::BadParameters.into_err()),
+                    _ => return Err(trc::ResourceEvent::BadParameters.into_err()),
                 },
                 "ping" => match value.parse::<u32>() {
                     Ok(value) => {
                         ping = value;
                     }
-                    Err(_) => return Err(trc::ResourceCause::BadParameters.into_err()),
+                    Err(_) => return Err(trc::ResourceEvent::BadParameters.into_err()),
                 },
                 _ => {}
             }

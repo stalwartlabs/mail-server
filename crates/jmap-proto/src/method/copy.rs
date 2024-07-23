@@ -96,7 +96,7 @@ impl JsonObjectParser for CopyRequest<RequestArguments> {
             arguments: match &parser.ctx {
                 MethodObject::Email => RequestArguments::Email,
                 _ => {
-                    return Err(trc::JmapCause::UnknownMethod
+                    return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
                         .details(format!("{}/copy", parser.ctx)))
                 }

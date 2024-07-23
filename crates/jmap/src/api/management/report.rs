@@ -169,7 +169,7 @@ impl JMAP {
                                     "data": report.inner,
                             }))
                             .into_http_response()),
-                            None => Err(trc::ResourceCause::NotFound.into_err()),
+                            None => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
                         ReportClass::Dmarc { .. } => match self
                             .core
@@ -184,7 +184,7 @@ impl JMAP {
                                     "data": report.inner,
                             }))
                             .into_http_response()),
-                            None => Err(trc::ResourceCause::NotFound.into_err()),
+                            None => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
                         ReportClass::Arf { .. } => match self
                             .core
@@ -199,11 +199,11 @@ impl JMAP {
                                     "data": report.inner,
                             }))
                             .into_http_response()),
-                            None => Err(trc::ResourceCause::NotFound.into_err()),
+                            None => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
                     }
                 } else {
-                    Err(trc::ResourceCause::NotFound.into_err())
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::DELETE) => {
@@ -217,10 +217,10 @@ impl JMAP {
                     }))
                     .into_http_response())
                 } else {
-                    Err(trc::ResourceCause::NotFound.into_err())
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 }

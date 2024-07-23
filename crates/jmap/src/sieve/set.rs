@@ -159,7 +159,7 @@ impl JMAP {
                     .inner
                     .blob_id()
                     .ok_or_else(|| {
-                        trc::StoreCause::NotFound
+                        trc::StoreEvent::NotFound
                             .into_err()
                             .caused_by(trc::location!())
                             .document_id(document_id)
@@ -337,7 +337,7 @@ impl JMAP {
             )
             .await?
             .ok_or_else(|| {
-                trc::StoreCause::NotFound
+                trc::StoreEvent::NotFound
                     .into_err()
                     .caused_by(trc::location!())
                     .document_id(document_id)
@@ -356,7 +356,7 @@ impl JMAP {
         // Delete record
         let mut batch = BatchBuilder::new();
         let blob_id = obj.inner.blob_id().ok_or_else(|| {
-            trc::StoreCause::NotFound
+            trc::StoreEvent::NotFound
                 .into_err()
                 .caused_by(trc::location!())
                 .document_id(document_id)

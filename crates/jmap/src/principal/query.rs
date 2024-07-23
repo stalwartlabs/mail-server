@@ -65,7 +65,7 @@ impl JMAP {
                 }
                 Filter::Type(_) => {}
                 other => {
-                    return Err(trc::JmapCause::UnsupportedFilter
+                    return Err(trc::JmapEvent::UnsupportedFilter
                         .into_err()
                         .details(other.to_string()))
                 }

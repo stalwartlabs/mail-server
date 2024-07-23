@@ -2,6 +2,7 @@ use std::{cmp::Ordering, net::IpAddr, vec::IntoIter};
 
 use mail_auth::IpLookupStrategy;
 use store::{Deserialize, Rows, Value};
+use trc::AddContext;
 
 use crate::Core;
 
@@ -12,8 +13,7 @@ impl Core {
         &self,
         fnc_id: u32,
         params: Vec<Variable<'x>>,
-        property: &str,
-    ) -> Variable<'x> {
+    ) -> trc::Result<Variable<'x>> {
         let mut params = FncParams::new(params);
 
         match fnc_id {
@@ -24,18 +24,8 @@ impl Core {
                 self.get_directory_or_default(directory.as_ref())
                     .is_local_domain(domain.as_ref())
                     .await
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            context = "eval_if",
-                            event = "error",
-                            property = property,
-                            error = ?err,
-                            "Failed to check if domain is local."
-                        );
-
-                        false
-                    })
-                    .into()
+                    .caused_by(trc::location!())
+                    .map(|v| v.into())
             }
             F_IS_LOCAL_ADDRESS => {
                 let directory = params.next_as_string();
@@ -44,18 +34,8 @@ impl Core {
                 self.get_directory_or_default(directory.as_ref())
                     .rcpt(address.as_ref())
                     .await
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            context = "eval_if",
-                            event = "error",
-                            property = property,
-                            error = ?err,
-                            "Failed to check if address is local."
-                        );
-
-                        false
-                    })
-                    .into()
+                    .caused_by(trc::location!())
+                    .map(|v| v.into())
             }
             F_KEY_GET => {
                 let store = params.next_as_string();
@@ -65,17 +45,8 @@ impl Core {
                     .key_get::<VariableWrapper>(key.into_owned().into_bytes())
                     .await
                     .map(|value| value.map(|v| v.into_inner()).unwrap_or_default())
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            context = "eval_if",
-                            event = "error",
-                            property = property,
-                            error = ?err,
-                            "Failed to get key."
-                        );
-
-                        Variable::default()
-                    })
+                    .caused_by(trc::location!())
+                    .map(|v| v.into())
             }
             F_KEY_EXISTS => {
                 let store = params.next_as_string();
@@ -84,18 +55,8 @@ impl Core {
                 self.get_lookup_store(store.as_ref())
                     .key_exists(key.into_owned().into_bytes())
                     .await
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            context = "eval_if",
-                            event = "error",
-                            property = property,
-                            error = ?err,
-                            "Failed to get key."
-                        );
-
-                        false
-                    })
-                    .into()
+                    .caused_by(trc::location!())
+                    .map(|v| v.into())
             }
             F_KEY_SET => {
                 let store = params.next_as_string();
@@ -110,18 +71,8 @@ impl Core {
                     )
                     .await
                     .map(|_| true)
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            context = "eval_if",
-                            event = "error",
-                            property = property,
-                            error = ?err,
-                            "Failed to set key."
-                        );
-
-                        false
-                    })
-                    .into()
+                    .caused_by(trc::location!())
+                    .map(|v| v.into())
             }
             F_COUNTER_INCR => {
                 let store = params.next_as_string();
@@ -132,17 +83,8 @@ impl Core {
                     .counter_incr(key.into_owned().into_bytes(), value, None, true)
                     .await
                     .map(Variable::Integer)
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            context = "eval_if",
-                            event = "error",
-                            property = property,
-                            error = ?err,
-                            "Failed to increment counter."
-                        );
-
-                        Variable::default()
-                    })
+                    .caused_by(trc::location!())
+                    .map(|v| v.into())
             }
             F_COUNTER_GET => {
                 let store = params.next_as_string();
@@ -152,35 +94,23 @@ impl Core {
                     .counter_get(key.into_owned().into_bytes())
                     .await
                     .map(Variable::Integer)
-                    .unwrap_or_else(|err| {
-                        tracing::warn!(
-                            context = "eval_if",
-                            event = "error",
-                            property = property,
-                            error = ?err,
-                            "Failed to increment counter."
-                        );
-
-                        Variable::default()
-                    })
+                    .caused_by(trc::location!())
+                    .map(|v| v.into())
             }
             F_DNS_QUERY => self.dns_query(params).await,
             F_SQL_QUERY => self.sql_query(params).await,
-            _ => Variable::default(),
+            _ => Ok(Variable::default()),
         }
     }
 
-    async fn sql_query<'x>(&self, mut arguments: FncParams<'x>) -> Variable<'x> {
+    async fn sql_query<'x>(&self, mut arguments: FncParams<'x>) -> trc::Result<Variable<'x>> {
         let store = self.get_lookup_store(arguments.next_as_string().as_ref());
         let query = arguments.next_as_string();
 
         if query.is_empty() {
-            tracing::warn!(
-                context = "eval:sql_query",
-                event = "invalid",
-                reason = "Empty query string",
-            );
-            return Variable::default();
+            return Err(trc::EventType::Eval(trc::EvalEvent::Error)
+                .into_err()
+                .details("Empty query string"));
         }
 
         // Obtain arguments
@@ -195,115 +125,140 @@ impl Core {
             .get(..6)
             .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
         {
-            if let Ok(mut rows) = store.query::<Rows>(&query, arguments).await {
-                match rows.rows.len().cmp(&1) {
-                    Ordering::Equal => {
-                        let mut row = rows.rows.pop().unwrap().values;
-                        match row.len().cmp(&1) {
-                            Ordering::Equal if !matches!(row.first(), Some(Value::Null)) => {
-                                row.pop().map(into_variable).unwrap()
-                            }
-                            Ordering::Less => Variable::default(),
-                            _ => Variable::Array(
-                                row.into_iter().map(into_variable).collect::<Vec<_>>(),
-                            ),
+            let mut rows = store
+                .query::<Rows>(&query, arguments)
+                .await
+                .caused_by(trc::location!())?;
+            Ok(match rows.rows.len().cmp(&1) {
+                Ordering::Equal => {
+                    let mut row = rows.rows.pop().unwrap().values;
+                    match row.len().cmp(&1) {
+                        Ordering::Equal if !matches!(row.first(), Some(Value::Null)) => {
+                            row.pop().map(into_variable).unwrap()
+                        }
+                        Ordering::Less => Variable::default(),
+                        _ => {
+                            Variable::Array(row.into_iter().map(into_variable).collect::<Vec<_>>())
                         }
                     }
-                    Ordering::Less => Variable::default(),
-                    Ordering::Greater => rows
-                        .rows
-                        .into_iter()
-                        .map(|r| {
-                            Variable::Array(
-                                r.values.into_iter().map(into_variable).collect::<Vec<_>>(),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .into(),
                 }
-            } else {
-                false.into()
-            }
+                Ordering::Less => Variable::default(),
+                Ordering::Greater => rows
+                    .rows
+                    .into_iter()
+                    .map(|r| {
+                        Variable::Array(r.values.into_iter().map(into_variable).collect::<Vec<_>>())
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
+            })
         } else {
-            store.query::<usize>(&query, arguments).await.is_ok().into()
+            store
+                .query::<usize>(&query, arguments)
+                .await
+                .caused_by(trc::location!())
+                .map(|v| v.into())
         }
     }
 
-    async fn dns_query<'x>(&self, mut arguments: FncParams<'x>) -> Variable<'x> {
+    async fn dns_query<'x>(&self, mut arguments: FncParams<'x>) -> trc::Result<Variable<'x>> {
         let entry = arguments.next_as_string();
         let record_type = arguments.next_as_string();
 
         if record_type.eq_ignore_ascii_case("ip") {
-            match self
-                .smtp
+            self.smtp
                 .resolvers
                 .dns
                 .ip_lookup(entry.as_ref(), IpLookupStrategy::Ipv4thenIpv6, 10)
                 .await
-            {
-                Ok(result) => result
-                    .iter()
-                    .map(|ip| Variable::from(ip.to_string()))
-                    .collect::<Vec<_>>()
-                    .into(),
-                Err(_) => Variable::default(),
-            }
+                .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
+                .map(|result| {
+                    result
+                        .iter()
+                        .map(|ip| Variable::from(ip.to_string()))
+                        .collect::<Vec<_>>()
+                        .into()
+                })
         } else if record_type.eq_ignore_ascii_case("mx") {
-            match self.smtp.resolvers.dns.mx_lookup(entry.as_ref()).await {
-                Ok(result) => result
-                    .iter()
-                    .flat_map(|mx| {
-                        mx.exchanges.iter().map(|host| {
-                            Variable::String(
-                                host.strip_suffix('.')
-                                    .unwrap_or(host.as_str())
-                                    .to_string()
-                                    .into(),
-                            )
+            self.smtp
+                .resolvers
+                .dns
+                .mx_lookup(entry.as_ref())
+                .await
+                .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
+                .map(|result| {
+                    result
+                        .iter()
+                        .flat_map(|mx| {
+                            mx.exchanges.iter().map(|host| {
+                                Variable::String(
+                                    host.strip_suffix('.')
+                                        .unwrap_or(host.as_str())
+                                        .to_string()
+                                        .into(),
+                                )
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>()
-                    .into(),
-                Err(_) => Variable::default(),
-            }
+                        .collect::<Vec<_>>()
+                        .into()
+                })
         } else if record_type.eq_ignore_ascii_case("txt") {
-            match self.smtp.resolvers.dns.txt_raw_lookup(entry.as_ref()).await {
-                Ok(result) => Variable::from(String::from_utf8(result).unwrap_or_default()),
-                Err(_) => Variable::default(),
-            }
+            self.smtp
+                .resolvers
+                .dns
+                .txt_raw_lookup(entry.as_ref())
+                .await
+                .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
+                .map(|result| Variable::from(String::from_utf8(result).unwrap_or_default()))
         } else if record_type.eq_ignore_ascii_case("ptr") {
-            if let Ok(addr) = entry.parse::<IpAddr>() {
-                match self.smtp.resolvers.dns.ptr_lookup(addr).await {
-                    Ok(result) => result
+            self.smtp
+                .resolvers
+                .dns
+                .ptr_lookup(entry.parse::<IpAddr>().map_err(|err| {
+                    trc::EventType::Eval(trc::EvalEvent::Error)
+                        .into_err()
+                        .details("Failed to parse IP address")
+                        .reason(err)
+                })?)
+                .await
+                .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
+                .map(|result| {
+                    result
                         .iter()
                         .map(|host| Variable::from(host.to_string()))
                         .collect::<Vec<_>>()
-                        .into(),
-                    Err(_) => Variable::default(),
-                }
-            } else {
-                Variable::default()
-            }
+                        .into()
+                })
         } else if record_type.eq_ignore_ascii_case("ipv4") {
-            match self.smtp.resolvers.dns.ipv4_lookup(entry.as_ref()).await {
-                Ok(result) => result
-                    .iter()
-                    .map(|ip| Variable::from(ip.to_string()))
-                    .collect::<Vec<_>>()
-                    .into(),
-                Err(_) => Variable::default(),
-            }
+            self.smtp
+                .resolvers
+                .dns
+                .ipv4_lookup(entry.as_ref())
+                .await
+                .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
+                .map(|result| {
+                    result
+                        .iter()
+                        .map(|ip| Variable::from(ip.to_string()))
+                        .collect::<Vec<_>>()
+                        .into()
+                })
         } else if record_type.eq_ignore_ascii_case("ipv6") {
-            match self.smtp.resolvers.dns.ipv6_lookup(entry.as_ref()).await {
-                Ok(result) => result
-                    .iter()
-                    .map(|ip| Variable::from(ip.to_string()))
-                    .collect::<Vec<_>>()
-                    .into(),
-                Err(_) => Variable::default(),
-            }
+            self.smtp
+                .resolvers
+                .dns
+                .ipv6_lookup(entry.as_ref())
+                .await
+                .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
+                .map(|result| {
+                    result
+                        .iter()
+                        .map(|ip| Variable::from(ip.to_string()))
+                        .collect::<Vec<_>>()
+                        .into()
+                })
         } else {
-            Variable::default()
+            Ok(Variable::default())
         }
     }
 }

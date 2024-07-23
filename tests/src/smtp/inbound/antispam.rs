@@ -265,7 +265,6 @@ async fn antispam() {
         .join("resources")
         .join("smtp")
         .join("antispam");
-    let span = tracing::info_span!("sieve_antispam");
     for &test_name in tests.iter().chain(&["combined"]) {
         /*if test_name != "combined" {
             continue;
@@ -418,10 +417,9 @@ async fn antispam() {
             }
 
             // Run script
-            let span = span.clone();
             let core_ = core.clone();
             let script = script.clone();
-            match core_.run_script(script, params, span).await {
+            match core_.run_script(script, params, 0).await {
                 ScriptResult::Accept { modifications } => {
                     if modifications.len() != expected_headers.len() {
                         panic!(

@@ -115,7 +115,7 @@ impl AccessToken {
         if self.has_access(to_account_id.document_id(), to_collection) {
             Ok(self)
         } else {
-            Err(trc::JmapCause::Forbidden.into_err().details(format!(
+            Err(trc::JmapEvent::Forbidden.into_err().details(format!(
                 "You do not have access to account {}",
                 to_account_id
             )))
@@ -126,7 +126,7 @@ impl AccessToken {
         if self.is_member(account_id.document_id()) {
             Ok(self)
         } else {
-            Err(trc::JmapCause::Forbidden
+            Err(trc::JmapEvent::Forbidden
                 .into_err()
                 .details(format!("You are not an owner of account {}", account_id)))
         }

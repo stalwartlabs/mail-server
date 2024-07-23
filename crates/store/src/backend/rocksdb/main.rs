@@ -154,7 +154,7 @@ impl RocksDbStore {
 
         match rx.await {
             Ok(result) => result,
-            Err(err) => Err(trc::Cause::Thread.reason(err)),
+            Err(err) => Err(trc::EventType::Server(trc::ServerEvent::ThreadError).reason(err)),
         }
     }
 }

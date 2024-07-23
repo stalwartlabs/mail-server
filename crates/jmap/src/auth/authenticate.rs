@@ -48,7 +48,7 @@ impl JMAP {
                         self.authenticate_plain(&account, &secret, remote_ip, ServerProtocol::Http)
                             .await?
                     } else {
-                        return Err(trc::AuthCause::Error
+                        return Err(trc::AuthEvent::Error
                             .into_err()
                             .details("Failed to decode Basic auth request.")
                             .id(token)
@@ -65,7 +65,7 @@ impl JMAP {
                 } else {
                     // Enforce anonymous rate limit
                     self.is_anonymous_allowed(&remote_ip).await?;
-                    return Err(trc::AuthCause::Error
+                    return Err(trc::AuthEvent::Error
                         .into_err()
                         .reason("Unsupported authentication mechanism.")
                         .details(token)
@@ -87,7 +87,7 @@ impl JMAP {
             // Enforce anonymous rate limit
             self.is_anonymous_allowed(&remote_ip).await?;
 
-            Err(trc::AuthCause::Error
+            Err(trc::AuthEvent::Error
                 .into_err()
                 .details("Missing Authorization header.")
                 .caused_by(trc::location!()))
@@ -147,7 +147,7 @@ impl JMAP {
         {
             Ok(principal) => Ok(AccessToken::new(principal)),
             Err(err) => {
-                if !err.matches(trc::Cause::Auth(trc::AuthCause::MissingTotp)) {
+                if !err.matches(trc::EventType::Auth(trc::AuthEvent::MissingTotp)) {
                     let _ = self.is_auth_allowed_hard(&remote_ip).await;
                 }
                 Err(err)
@@ -164,7 +164,7 @@ impl JMAP {
             .await
         {
             Ok(Some(principal)) => self.update_access_token(AccessToken::new(principal)).await,
-            Ok(None) => Err(trc::AuthCause::Error
+            Ok(None) => Err(trc::AuthEvent::Error
                 .into_err()
                 .details("Account not found.")
                 .caused_by(trc::location!())),

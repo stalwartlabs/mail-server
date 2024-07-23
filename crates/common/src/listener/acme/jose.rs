@@ -23,7 +23,7 @@ pub(crate) fn sign(
     let combined = format!("{}.{}", &protected, &payload);
     let signature = key
         .sign(&SystemRandom::new(), combined.as_bytes())
-        .map_err(|err| trc::Cause::Acme.caused_by(trc::location!()).reason(err))?;
+        .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).caused_by(trc::location!()).reason(err))?;
     let signature = URL_SAFE_NO_PAD.encode(signature.as_ref());
     let body = Body {
         protected,
@@ -31,7 +31,7 @@ pub(crate) fn sign(
         signature,
     };
 
-    serde_json::to_string(&body).map_err(|err| trc::Cause::Acme.from_json_error(err))
+    serde_json::to_string(&body).map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
 }
 
 pub(crate) fn key_authorization(key: &EcdsaKeyPair, token: &str) -> trc::Result<String> {
@@ -85,8 +85,8 @@ impl<'a> Protected<'a> {
             nonce,
             url,
         };
-        let protected =
-            serde_json::to_vec(&protected).map_err(|err| trc::Cause::Acme.from_json_error(err))?;
+        let protected = serde_json::to_vec(&protected)
+            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))?;
         Ok(URL_SAFE_NO_PAD.encode(protected))
     }
 }
@@ -121,8 +121,8 @@ impl Jwk {
             x: &self.x,
             y: &self.y,
         };
-        let json =
-            serde_json::to_vec(&jwk_thumb).map_err(|err| trc::Cause::Acme.from_json_error(err))?;
+        let json = serde_json::to_vec(&jwk_thumb)
+            .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))?;
         let hash = digest(&SHA256, &json);
         Ok(URL_SAFE_NO_PAD.encode(hash))
     }

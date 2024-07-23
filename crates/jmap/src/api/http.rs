@@ -47,6 +47,7 @@ pub struct HttpSessionData {
     pub remote_ip: IpAddr,
     pub remote_port: u16,
     pub is_tls: bool,
+    pub session_id: u64,
 }
 
 impl JMAP {
@@ -75,7 +76,7 @@ impl JMAP {
                             },
                         )
                         .await
-                        .ok_or_else(|| trc::LimitCause::SizeRequest.into_err())
+                        .ok_or_else(|| trc::LimitEvent::SizeRequest.into_err())
                         .and_then(|bytes| {
                             //let c = println!("<- {}", String::from_utf8_lossy(&bytes));
 
@@ -116,7 +117,7 @@ impl JMAP {
                                     blob,
                                 }
                                 .into_http_response()),
-                                None => Err(trc::ResourceCause::NotFound.into_err()),
+                                None => Err(trc::ResourceEvent::NotFound.into_err()),
                             };
                         }
                     }
@@ -150,7 +151,7 @@ impl JMAP {
                                     )
                                     .await?
                                     .into_http_response()),
-                                None => Err(trc::LimitCause::SizeUpload.into_err()),
+                                None => Err(trc::LimitEvent::SizeUpload.into_err()),
                             };
                         }
                     }
@@ -217,7 +218,7 @@ impl JMAP {
                                 contents: proof.into_bytes(),
                             }
                             .into_http_response()),
-                            None => Err(trc::ResourceCause::NotFound.into_err()),
+                            None => Err(trc::ResourceEvent::NotFound.into_err()),
                         };
                     }
                 }
@@ -229,7 +230,7 @@ impl JMAP {
                         }
                         .into_http_response());
                     } else {
-                        return Err(trc::ResourceCause::NotFound.into_err());
+                        return Err(trc::ResourceEvent::NotFound.into_err());
                     }
                 }
                 ("mail-v1.xml", &Method::GET) => {
@@ -328,18 +329,17 @@ impl JMAP {
                 return if !resource.is_empty() {
                     Ok(resource.into_http_response())
                 } else {
-                    Err(trc::ResourceCause::NotFound.into_err())
+                    Err(trc::ResourceEvent::NotFound.into_err())
                 };
             }
         }
 
-        Err(trc::ResourceCause::NotFound.into_err())
+        Err(trc::ResourceEvent::NotFound.into_err())
     }
 }
 
 impl JmapInstance {
     async fn handle_session<T: SessionStream>(self, session: SessionData<T>) {
-        let span = session.span;
         let _in_flight = session.in_flight;
         let is_tls = session.stream.is_tls();
 
@@ -349,15 +349,10 @@ impl JmapInstance {
                 TokioIo::new(session.stream),
                 service_fn(|req: hyper::Request<body::Incoming>| {
                     let jmap_instance = self.clone();
-                    let span = span.clone();
                     let instance = session.instance.clone();
 
                     async move {
-                        tracing::debug!(
-                            parent: &span,
-                            event = "request",
-                            uri = req.uri().to_string(),
-                        );
+                        tracing::debug!(event = "request", uri = req.uri().to_string(),);
                         let jmap = JMAP::from(jmap_instance);
 
                         // Obtain remote IP
@@ -389,6 +384,7 @@ impl JmapInstance {
                                     remote_ip,
                                     remote_port: session.remote_port,
                                     is_tls,
+                                    session_id: session.session_id,
                                 },
                             )
                             .await
@@ -396,7 +392,7 @@ impl JmapInstance {
                             Ok(response) => response,
                             Err(err) => {
                                 tracing::error!(
-                                    parent: &span,
+
                                     event = "error",
                                     context = "http",
                                     reason = %err,
@@ -422,7 +418,7 @@ impl JmapInstance {
             .await
         {
             tracing::debug!(
-                parent: &span,
+
                 event = "error",
                 context = "http",
                 reason = %http_err,
@@ -469,7 +465,7 @@ impl ResolveVariable for HttpSessionData {
 
 impl HttpSessionData {
     pub async fn resolve_url(&self, core: &Core) -> String {
-        core.eval_if(&core.network.url, self)
+        core.eval_if(&core.network.url, self, self.session_id)
             .await
             .unwrap_or_else(|| {
                 format!(
@@ -517,28 +513,28 @@ impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
 impl ToHttpResponse for trc::Error {
     fn into_http_response(self) -> HttpResponse {
         match self.as_ref() {
-            trc::Cause::Manage(cause) => {
+            trc::EventType::Manage(cause) => {
                 let details_or_reason = self
                     .value(trc::Key::Details)
                     .or_else(|| self.value(trc::Key::Reason))
                     .and_then(|v| v.as_str());
 
                 match cause {
-                    trc::ManageCause::MissingParameter => ManagementApiError::FieldMissing {
+                    trc::ManageEvent::MissingParameter => ManagementApiError::FieldMissing {
                         field: self.value_as_str(trc::Key::Key).unwrap_or_default(),
                     },
-                    trc::ManageCause::AlreadyExists => ManagementApiError::FieldAlreadyExists {
+                    trc::ManageEvent::AlreadyExists => ManagementApiError::FieldAlreadyExists {
                         field: self.value_as_str(trc::Key::Key).unwrap_or_default(),
                         value: self.value_as_str(trc::Key::Value).unwrap_or_default(),
                     },
-                    trc::ManageCause::NotFound => ManagementApiError::NotFound {
+                    trc::ManageEvent::NotFound => ManagementApiError::NotFound {
                         item: self.value_as_str(trc::Key::Key).unwrap_or_default(),
                     },
-                    trc::ManageCause::NotSupported => ManagementApiError::Unsupported {
+                    trc::ManageEvent::NotSupported => ManagementApiError::Unsupported {
                         details: details_or_reason.unwrap_or("Requested action is unsupported"),
                     },
-                    trc::ManageCause::AssertFailed => ManagementApiError::AssertFailed,
-                    trc::ManageCause::Error => ManagementApiError::Other {
+                    trc::ManageEvent::AssertFailed => ManagementApiError::AssertFailed,
+                    trc::ManageEvent::Error => ManagementApiError::Other {
                         details: details_or_reason.unwrap_or("An error occurred."),
                     },
                 }
@@ -563,24 +559,24 @@ impl ToRequestError for trc::Error {
         let details = details_or_reason.unwrap_or_else(|| self.as_ref().message());
 
         match self.as_ref() {
-            trc::Cause::Jmap(cause) => match cause {
-                trc::JmapCause::UnknownCapability => RequestError::unknown_capability(details),
-                trc::JmapCause::NotJSON => RequestError::not_json(details),
-                trc::JmapCause::NotRequest => RequestError::not_request(details),
+            trc::EventType::Jmap(cause) => match cause {
+                trc::JmapEvent::UnknownCapability => RequestError::unknown_capability(details),
+                trc::JmapEvent::NotJSON => RequestError::not_json(details),
+                trc::JmapEvent::NotRequest => RequestError::not_request(details),
                 _ => RequestError::invalid_parameters(),
             },
-            trc::Cause::Limit(cause) => match cause {
-                trc::LimitCause::SizeRequest => RequestError::limit(RequestLimitError::SizeRequest),
-                trc::LimitCause::SizeUpload => RequestError::limit(RequestLimitError::SizeUpload),
-                trc::LimitCause::CallsIn => RequestError::limit(RequestLimitError::CallsIn),
-                trc::LimitCause::ConcurrentRequest => {
+            trc::EventType::Limit(cause) => match cause {
+                trc::LimitEvent::SizeRequest => RequestError::limit(RequestLimitError::SizeRequest),
+                trc::LimitEvent::SizeUpload => RequestError::limit(RequestLimitError::SizeUpload),
+                trc::LimitEvent::CallsIn => RequestError::limit(RequestLimitError::CallsIn),
+                trc::LimitEvent::ConcurrentRequest => {
                     RequestError::limit(RequestLimitError::ConcurrentRequest)
                 }
-                trc::LimitCause::ConcurrentUpload => {
+                trc::LimitEvent::ConcurrentUpload => {
                     RequestError::limit(RequestLimitError::ConcurrentUpload)
                 }
-                trc::LimitCause::Quota => RequestError::over_quota(),
-                trc::LimitCause::BlobQuota => RequestError::over_blob_quota(
+                trc::LimitEvent::Quota => RequestError::over_quota(),
+                trc::LimitEvent::BlobQuota => RequestError::over_blob_quota(
                     self.value(trc::Key::Total)
                         .and_then(|v| v.to_uint())
                         .unwrap_or_default() as usize,
@@ -588,26 +584,26 @@ impl ToRequestError for trc::Error {
                         .and_then(|v| v.to_uint())
                         .unwrap_or_default() as usize,
                 ),
-                trc::LimitCause::TooManyRequests => RequestError::too_many_requests(),
+                trc::LimitEvent::TooManyRequests => RequestError::too_many_requests(),
             },
-            trc::Cause::Auth(cause) => match cause {
-                trc::AuthCause::Failed => RequestError::unauthorized(),
-                trc::AuthCause::MissingTotp => {
+            trc::EventType::Auth(cause) => match cause {
+                trc::AuthEvent::Failed => RequestError::unauthorized(),
+                trc::AuthEvent::MissingTotp => {
                     RequestError::blank(403, "TOTP code required", cause.message())
                 }
-                trc::AuthCause::TooManyAttempts | trc::AuthCause::Banned => {
+                trc::AuthEvent::TooManyAttempts | trc::AuthEvent::Banned => {
                     RequestError::too_many_auth_attempts()
                 }
-                trc::AuthCause::Error => RequestError::unauthorized(),
+                trc::AuthEvent::Error => RequestError::unauthorized(),
             },
-            trc::Cause::Resource(cause) => match cause {
-                trc::ResourceCause::NotFound => RequestError::not_found(),
-                trc::ResourceCause::BadParameters => RequestError::blank(
+            trc::EventType::Resource(cause) => match cause {
+                trc::ResourceEvent::NotFound => RequestError::not_found(),
+                trc::ResourceEvent::BadParameters => RequestError::blank(
                     StatusCode::BAD_REQUEST.as_u16(),
                     "Invalid parameters",
                     details_or_reason.unwrap_or("One or multiple parameters could not be parsed."),
                 ),
-                trc::ResourceCause::Error => RequestError::internal_server_error(),
+                trc::ResourceEvent::Error => RequestError::internal_server_error(),
             },
             _ => RequestError::internal_server_error(),
         }

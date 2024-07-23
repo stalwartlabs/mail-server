@@ -36,7 +36,7 @@ impl<T: SessionStream> SessionData<T> {
             jmap: session.jmap.clone(),
             imap: session.imap.clone(),
             account_id: access_token.primary_id(),
-            span: session.span.clone(),
+            session_id: session.session_id,
             mailboxes: Mutex::new(vec![]),
             state: access_token.state().into(),
             in_flight,
@@ -356,7 +356,7 @@ impl<T: SessionStream> SessionData<T> {
                     {
                         new_accounts.push(account);
                     } else {
-                        tracing::debug!(parent: &self.span, "Removed unlinked shared account {}", account.account_id);
+                        tracing::debug!("Removed unlinked shared account {}", account.account_id);
 
                         // Add unshared mailboxes to deleted list
                         if let Some(changes) = &mut changes {
@@ -374,7 +374,7 @@ impl<T: SessionStream> SessionData<T> {
                         .skip(1)
                         .any(|m| m.account_id == account_id)
                     {
-                        tracing::debug!(parent: &self.span, "Adding shared account {}", account_id);
+                        tracing::debug!("Adding shared account {}", account_id);
                         added_account_ids.push(account_id);
                     }
                 }
@@ -404,7 +404,7 @@ impl<T: SessionStream> SessionData<T> {
                         added_accounts.push(account);
                     }
                     Err(_) => {
-                        tracing::debug!(parent: &self.span, "Failed to fetch shared mailbox.");
+                        tracing::debug!("Failed to fetch shared mailbox.");
                     }
                 }
             }
@@ -520,7 +520,7 @@ impl<T: SessionStream> SessionData<T> {
                             changed_accounts.push(account_mailboxes);
                         }
                         Err(_) => {
-                            tracing::debug!(parent: &self.span, "Failed to fetch mailboxes:.");
+                            tracing::debug!("Failed to fetch mailboxes:.");
                         }
                     }
                 }
@@ -638,7 +638,7 @@ impl<T: SessionStream> SessionData<T> {
                 .await?
                 .map(|mailbox| mailbox.effective_acl(&access_token).contains(item))
                 .ok_or_else(|| {
-                    trc::Cause::Imap
+                    trc::ImapEvent::Error
                         .caused_by(trc::location!())
                         .details("Mailbox no longer exists.")
                 })?)

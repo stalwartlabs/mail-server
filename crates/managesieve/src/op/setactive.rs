@@ -20,7 +20,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .next()
             .and_then(|s| s.unwrap_string().ok())
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Expected script name as a parameter.")
             })?;

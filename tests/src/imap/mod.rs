@@ -414,7 +414,8 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
 #[tokio::test]
 pub async fn imap_tests() {
     if let Ok(level) = std::env::var("LOG") {
-        tracing::subscriber::set_global_default(
+        let todo = "implement";
+        /*tracing::subscriber::set_global_default(
             tracing_subscriber::FmtSubscriber::builder()
                 .with_env_filter(
                     tracing_subscriber::EnvFilter::builder()
@@ -425,7 +426,7 @@ pub async fn imap_tests() {
                 )
                 .finish(),
         )
-        .unwrap();
+        .unwrap();*/
     }
 
     // Prepare settings

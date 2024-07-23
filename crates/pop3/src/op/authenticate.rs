@@ -37,7 +37,7 @@ impl<T: SessionStream> Session<T> {
                                 decode_challenge_oauth(&challenge)
                             }
                         })
-                        .map_err(|err| trc::AuthCause::Error.into_err().details(err))?;
+                        .map_err(|err| trc::AuthEvent::Error.into_err().details(err))?;
 
                     self.handle_auth(credentials).await
                 } else {
@@ -54,7 +54,7 @@ impl<T: SessionStream> Session<T> {
                     self.write_bytes("+\r\n").await
                 }
             }
-            _ => Err(trc::AuthCause::Error
+            _ => Err(trc::AuthEvent::Error
                 .into_err()
                 .details("Authentication mechanism not supported.")),
         }
@@ -83,7 +83,7 @@ impl<T: SessionStream> Session<T> {
             }
         }
         .map_err(|err| {
-            if err.matches(trc::Cause::Auth(trc::AuthCause::Failed)) {
+            if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
                 match &self.state {
                     State::NotAuthenticated {
                         auth_failures,
@@ -95,7 +95,7 @@ impl<T: SessionStream> Session<T> {
                         };
                     }
                     _ => {
-                        return trc::AuthCause::TooManyAttempts.into_err().caused_by(err);
+                        return trc::AuthEvent::TooManyAttempts.into_err().caused_by(err);
                     }
                 }
             }
@@ -111,7 +111,7 @@ impl<T: SessionStream> Session<T> {
             Some(Some(limiter)) => Some(limiter),
             None => None,
             Some(None) => {
-                return Err(trc::LimitCause::ConcurrentRequest.into_err());
+                return Err(trc::LimitEvent::ConcurrentRequest.into_err());
             }
         };
 

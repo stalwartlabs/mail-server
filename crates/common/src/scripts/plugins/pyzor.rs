@@ -77,7 +77,6 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
         }
     }
 
-    let span = ctx.span;
     let address = ctx.arguments[0].to_string();
     let timeout = Duration::from_secs((ctx.arguments[1].to_integer() as u64).clamp(5, 60));
     // Send message to address
@@ -85,7 +84,6 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
         Ok(response) => response.into(),
         Err(err) => {
             tracing::debug!(
-                parent: span,
                 context = "sieve:pyzor_check",
                 event = "failed",
                 reason = %err,

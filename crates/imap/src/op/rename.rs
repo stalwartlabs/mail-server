@@ -62,7 +62,7 @@ impl<T: SessionStream> SessionData<T> {
                         mailbox_id = (*mailbox_id_).into();
                         break;
                     } else {
-                        return Err(trc::Cause::Imap
+                        return Err(trc::ImapEvent::Error
                             .into_err()
                             .details("Cannot move mailboxes between accounts.")
                             .code(ResponseCode::Cannot)
@@ -73,7 +73,7 @@ impl<T: SessionStream> SessionData<T> {
             if let Some(mailbox_id) = mailbox_id {
                 mailbox_id
             } else {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details(format!("Mailbox '{}' not found.", arguments.mailbox_name))
                     .code(ResponseCode::NonExistent)
@@ -93,7 +93,7 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .imap_ctx(&arguments.tag, trc::location!())?
             .ok_or_else(|| {
-                trc::Cause::Imap
+                trc::ImapEvent::Error
                     .into_err()
                     .details(format!("Mailbox '{}' not found.", arguments.mailbox_name))
                     .caused_by(trc::location!())
@@ -112,7 +112,7 @@ impl<T: SessionStream> SessionData<T> {
                 .effective_acl(&access_token)
                 .contains(Acl::Modify)
         {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details("You are not allowed to rename this mailbox.")
                 .code(ResponseCode::NoPerm)

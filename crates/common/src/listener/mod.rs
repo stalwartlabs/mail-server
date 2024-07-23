@@ -67,7 +67,7 @@ pub struct SessionData<T: SessionStream> {
     pub remote_ip: IpAddr,
     pub remote_port: u16,
     pub protocol: ServerProtocol,
-    pub span: tracing::Span,
+    pub session_id: u64,
     pub in_flight: InFlight,
     pub instance: Arc<ServerInstance>,
 }
@@ -110,7 +110,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                                 remote_ip: session.remote_ip,
                                 remote_port: session.remote_port,
                                 protocol: session.protocol,
-                                span: session.span,
+                                session_id: session.session_id,
                                 in_flight: session.in_flight,
                                 instance: session.instance,
                             };

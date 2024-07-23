@@ -36,7 +36,7 @@ impl JMAP {
                 .and_then(|h| h.to_str().ok())
                 != Some("websocket")
         {
-            return Err(trc::ResourceCause::BadParameters
+            return Err(trc::ResourceEvent::BadParameters
                 .into_err()
                 .details("WebSocket upgrade failed")
                 .ctx(
@@ -54,7 +54,7 @@ impl JMAP {
         ) {
             (Some(key), Some("13")) => derive_accept_key(key.as_bytes()),
             _ => {
-                return Err(trc::ResourceCause::BadParameters
+                return Err(trc::ResourceEvent::BadParameters
                     .into_err()
                     .details("WebSocket upgrade failed")
                     .ctx(

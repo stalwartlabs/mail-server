@@ -121,5 +121,5 @@ impl FsStore {
 }
 
 fn into_error(err: std::io::Error) -> trc::Error {
-    trc::StoreCause::Filesystem.reason(err)
+    trc::StoreEvent::FilesystemError.reason(err)
 }

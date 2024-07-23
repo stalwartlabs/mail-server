@@ -91,7 +91,7 @@ impl JMAP {
                     body.as_deref().unwrap_or_default(),
                 )
                 .map_err(|err| {
-                    trc::Cause::Resource(trc::ResourceCause::BadParameters).from_json_error(err)
+                    trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
                 })?;
 
                 Ok(JsonResponse::new(json!({
@@ -152,7 +152,7 @@ impl JMAP {
                     .data
                     .get_account_id(name.as_ref())
                     .await?
-                    .ok_or_else(|| trc::ManageCause::NotFound.into_err())?;
+                    .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
                 match *method {
                     Method::GET => {
@@ -162,7 +162,7 @@ impl JMAP {
                             .data
                             .query(QueryBy::Id(account_id), true)
                             .await?
-                            .ok_or_else(|| trc::ManageCause::NotFound.into_err())?;
+                            .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
                         let principal = self.core.storage.data.map_group_ids(principal).await?;
 
                         // Obtain quota usage
@@ -210,7 +210,7 @@ impl JMAP {
                             body.as_deref().unwrap_or_default(),
                         )
                         .map_err(|err| {
-                            trc::Cause::Resource(trc::ResourceCause::BadParameters)
+                            trc::EventType::Resource(trc::ResourceEvent::BadParameters)
                                 .from_json_error(err)
                         })?;
 
@@ -243,11 +243,11 @@ impl JMAP {
                         }))
                         .into_http_response())
                     }
-                    _ => Err(trc::ResourceCause::NotFound.into_err()),
+                    _ => Err(trc::ResourceEvent::NotFound.into_err()),
                 }
             }
 
-            _ => Err(trc::ResourceCause::NotFound.into_err()),
+            _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
 
@@ -268,7 +268,7 @@ impl JMAP {
                 .directory
                 .query(QueryBy::Id(access_token.primary_id()), false)
                 .await?
-                .ok_or_else(|| trc::ManageCause::NotFound.into_err())?;
+                .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
             for secret in principal.secrets {
                 if secret.is_otp_auth() {
@@ -297,11 +297,11 @@ impl JMAP {
         let requests =
             serde_json::from_slice::<Vec<AccountAuthRequest>>(body.as_deref().unwrap_or_default())
                 .map_err(|err| {
-                    trc::Cause::Resource(trc::ResourceCause::BadParameters).from_json_error(err)
+                    trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
                 })?;
 
         if requests.is_empty() {
-            return Err(trc::Cause::Resource(trc::ResourceCause::BadParameters)
+            return Err(trc::EventType::Resource(trc::ResourceEvent::BadParameters)
                 .into_err()
                 .details("Empty request"));
         }

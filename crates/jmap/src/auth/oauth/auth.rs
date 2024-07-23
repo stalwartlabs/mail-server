@@ -34,7 +34,7 @@ impl JMAP {
         let request =
             serde_json::from_slice::<OAuthCodeRequest>(body.as_deref().unwrap_or_default())
                 .map_err(|err| {
-                    trc::Cause::Resource(trc::ResourceCause::BadParameters).from_json_error(err)
+                    trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
                 })?;
 
         let response = match request {
@@ -44,14 +44,14 @@ impl JMAP {
             } => {
                 // Validate clientId
                 if client_id.len() > CLIENT_ID_MAX_LEN {
-                    return Err(trc::ManageCause::Error
+                    return Err(trc::ManageEvent::Error
                         .into_err()
                         .details("Client ID is invalid."));
                 } else if redirect_uri
                     .as_ref()
                     .map_or(false, |uri| !uri.starts_with("https://"))
                 {
-                    return Err(trc::ManageCause::Error
+                    return Err(trc::ManageEvent::Error
                         .into_err()
                         .details("Redirect URI must be HTTPS."));
                 }
@@ -153,7 +153,7 @@ impl JMAP {
             .remove("client_id")
             .filter(|client_id| client_id.len() < CLIENT_ID_MAX_LEN)
             .ok_or_else(|| {
-                trc::ResourceCause::BadParameters
+                trc::ResourceEvent::BadParameters
                     .into_err()
                     .details("Client ID is missing.")
             })?;

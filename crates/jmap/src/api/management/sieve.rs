@@ -50,7 +50,7 @@ impl JMAP {
         ) {
             (Some(script), &Method::POST) => script,
             _ => {
-                return Err(trc::ResourceCause::NotFound.into_err());
+                return Err(trc::ResourceEvent::NotFound.into_err());
             }
         };
 
@@ -94,11 +94,7 @@ impl JMAP {
         }
 
         // Run script
-        let result = match self
-            .smtp
-            .run_script(script, params, tracing::debug_span!("sieve_manual_run"))
-            .await
-        {
+        let result = match self.smtp.run_script(script, params, 0).await {
             ScriptResult::Accept { modifications } => Response::Accept { modifications },
             ScriptResult::Replace {
                 message,

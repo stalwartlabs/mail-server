@@ -28,12 +28,12 @@ impl SMTP {
         throttle: &'x Throttle,
         envelope: &impl ResolveVariable,
         in_flight: &mut Vec<InFlight>,
-        span: &tracing::Span,
+        session_id: u64,
     ) -> Result<(), Error> {
         if throttle.expr.is_empty()
             || self
                 .core
-                .eval_expr(&throttle.expr, envelope, "throttle")
+                .eval_expr(&throttle.expr, envelope, "throttle", session_id)
                 .await
                 .unwrap_or(false)
         {
@@ -48,7 +48,6 @@ impl SMTP {
                     .await
                 {
                     tracing::info!(
-                        parent: span,
                         context = "throttle",
                         event = "rate-limit-exceeded",
                         max_requests = rate.requests,
@@ -69,7 +68,6 @@ impl SMTP {
                             in_flight.push(inflight);
                         } else {
                             tracing::info!(
-                                parent: span,
                                 context = "throttle",
                                 event = "too-many-requests",
                                 max_concurrent = limiter.max_concurrent,

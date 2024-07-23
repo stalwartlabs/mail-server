@@ -18,7 +18,6 @@ use tokio::{
     sync::watch,
 };
 use tokio_rustls::server::TlsStream;
-use tracing::Span;
 use utils::{config::Config, UnwrapFailure};
 
 use crate::{
@@ -203,19 +202,21 @@ impl BuildSession for Arc<ServerInstance> {
             );
             None
         } else if let Some(in_flight) = self.limiter.is_allowed() {
+            let todo = "build session id";
+            let span = tracing::info_span!(
+                "session",
+                instance = self.id,
+                protocol = ?self.protocol,
+                remote.ip = remote_ip.to_string(),
+                remote.port = remote_port,
+            );
             // Enforce concurrency
             SessionData {
                 stream,
                 in_flight,
-                span: tracing::info_span!(
-                    "session",
-                    instance = self.id,
-                    protocol = ?self.protocol,
-                    remote.ip = remote_ip.to_string(),
-                    remote.port = remote_port,
-                ),
                 local_ip: local_addr.ip(),
                 local_port: local_addr.port(),
+                session_id: 0,
                 remote_ip,
                 remote_port,
                 protocol: self.protocol,
@@ -335,13 +336,12 @@ impl ServerInstance {
     pub async fn tls_accept<T: SessionStream>(
         &self,
         stream: T,
-        span: &Span,
+        session_id: u64,
     ) -> Result<TlsStream<T>, ()> {
         match &self.acceptor {
             TcpAcceptor::Tls { acceptor, .. } => match acceptor.accept(stream).await {
                 Ok(stream) => {
                     tracing::info!(
-                        parent: span,
                         context = "tls",
                         event = "handshake",
                         version = ?stream.get_ref().1.protocol_version().unwrap_or(rustls::ProtocolVersion::TLSv1_3),
@@ -351,7 +351,6 @@ impl ServerInstance {
                 }
                 Err(err) => {
                     tracing::debug!(
-                        parent: span,
                         context = "tls",
                         event = "error",
                         "Failed to accept TLS connection: {}",
@@ -362,7 +361,6 @@ impl ServerInstance {
             },
             TcpAcceptor::Plain => {
                 tracing::debug!(
-                    parent: span,
                     context = "tls",
                     event = "error",
                     "Failed to accept TLS connection: {}",

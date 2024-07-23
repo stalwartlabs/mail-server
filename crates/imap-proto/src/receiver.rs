@@ -464,7 +464,7 @@ impl Display for Token {
 impl Error {
     pub fn err(tag: Option<String>, message: impl Into<trc::Value>) -> Self {
         Error::Error {
-            response: trc::Cause::Imap
+            response: trc::ImapEvent::Error
                 .ctx(trc::Key::Details, message)
                 .ctx_opt(trc::Key::Id, tag)
                 .ctx(trc::Key::Type, ResponseType::Bad)
@@ -488,13 +488,13 @@ impl<T: CommandParser> Default for Receiver<T> {
 
 impl<T: CommandParser> Request<T> {
     pub fn into_error(self, message: impl Into<trc::Value>) -> trc::Error {
-        trc::Cause::Imap
+        trc::ImapEvent::Error
             .ctx(trc::Key::Details, message)
             .ctx(trc::Key::Id, self.tag)
     }
 
     pub fn into_parse_error(self, message: impl Into<trc::Value>) -> trc::Error {
-        trc::Cause::Imap
+        trc::ImapEvent::Error
             .ctx(trc::Key::Details, message)
             .ctx(trc::Key::Id, self.tag)
             .ctx(trc::Key::Code, ResponseCode::Parse)
@@ -503,7 +503,7 @@ impl<T: CommandParser> Request<T> {
 }
 
 pub(crate) fn bad(tag: impl Into<trc::Value>, message: impl Into<trc::Value>) -> trc::Error {
-    trc::Cause::Imap
+    trc::ImapEvent::Error
         .ctx(trc::Key::Details, message)
         .ctx(trc::Key::Id, tag)
         .ctx(trc::Key::Type, ResponseType::Bad)

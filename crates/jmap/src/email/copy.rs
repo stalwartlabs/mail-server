@@ -60,7 +60,7 @@ impl JMAP {
         let from_account_id = request.from_account_id.document_id();
 
         if account_id == from_account_id {
-            return Err(trc::JmapCause::InvalidArguments
+            return Err(trc::JmapEvent::InvalidArguments
                 .into_err()
                 .details("From accountId is equal to fromAccountId"));
         }

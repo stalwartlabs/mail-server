@@ -86,6 +86,7 @@ async fn lookup_ip() {
             &NextHop::MX("mx.foobar.org"),
             &RecipientDomain::new("envelope"),
             2,
+            0,
         )
         .await
         .unwrap();
@@ -121,6 +122,7 @@ async fn lookup_ip() {
             &NextHop::MX("mx.foobar.org"),
             &RecipientDomain::new("envelope"),
             2,
+            0,
         )
         .await
         .unwrap();

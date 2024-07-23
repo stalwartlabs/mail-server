@@ -80,7 +80,7 @@ impl JsonObjectParser for ResultReference {
                 path,
             })
         } else {
-            Err(trc::JmapCause::InvalidResultReference
+            Err(trc::JmapEvent::InvalidResultReference
                 .into_err()
                 .details("Missing required fields"))
         }

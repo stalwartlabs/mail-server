@@ -175,7 +175,6 @@ impl Message {
         raw_headers: Option<&[u8]>,
         raw_message: &[u8],
         core: &SMTP,
-        span: &tracing::Span,
     ) -> bool {
         // Write blob
         let message = if let Some(raw_headers) = raw_headers {
@@ -205,7 +204,6 @@ impl Message {
         );
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
             tracing::error!(
-                parent: span,
                 context = "queue",
                 event = "error",
                 "Failed to write to data store: {}",
@@ -221,7 +219,6 @@ impl Message {
             .await
         {
             tracing::error!(
-                parent: span,
                 context = "queue",
                 event = "error",
                 "Failed to write to blob store: {}",
@@ -231,7 +228,6 @@ impl Message {
         }
 
         tracing::info!(
-            parent: span,
             context = "queue",
             event = "scheduled",
             id = self.id,
@@ -294,7 +290,6 @@ impl Message {
 
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
             tracing::error!(
-                parent: span,
                 context = "queue",
                 event = "error",
                 "Failed to write to store: {}",
@@ -306,7 +301,6 @@ impl Message {
         // Queue the message
         if core.inner.queue_tx.send(Event::Reload).await.is_err() {
             tracing::warn!(
-                parent: span,
                 context = "queue",
                 event = "error",
                 "Queue channel closed: Message queued but won't be sent until next restart."
@@ -340,7 +334,11 @@ impl Message {
 
                 let expires = core
                     .core
-                    .eval_if(&core.core.smtp.queue.expire, &QueueEnvelope::new(self, idx))
+                    .eval_if(
+                        &core.core.smtp.queue.expire,
+                        &QueueEnvelope::new(self, idx),
+                        self.id,
+                    )
                     .await
                     .unwrap_or_else(|| Duration::from_secs(5 * 86400));
 

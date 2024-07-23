@@ -72,7 +72,7 @@ impl JsonObjectParser for GetRequest<RequestArguments> {
                 MethodObject::Blob => RequestArguments::Blob(Default::default()),
                 MethodObject::Quota => RequestArguments::Quota,
                 _ => {
-                    return Err(trc::JmapCause::UnknownMethod
+                    return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
                         .details(format!("{}/get", parser.ctx)))
                 }
@@ -175,7 +175,7 @@ impl<T> GetRequest<T> {
                         .collect::<Vec<_>>(),
                 ))
             } else {
-                Err(trc::JmapCause::RequestTooLarge.into_err())
+                Err(trc::JmapEvent::RequestTooLarge.into_err())
             }
         } else {
             Ok(None)
@@ -195,7 +195,7 @@ impl<T> GetRequest<T> {
                         .collect::<Vec<_>>(),
                 ))
             } else {
-                Err(trc::JmapCause::RequestTooLarge.into_err())
+                Err(trc::JmapEvent::RequestTooLarge.into_err())
             }
         } else {
             Ok(None)

@@ -37,7 +37,7 @@ impl<T: SessionStream> Session<T> {
         let mailbox = if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
             mailbox
         } else {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details("Mailbox does not exist.")
                 .code(ResponseCode::TryCreate)
@@ -72,7 +72,7 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .imap_ctx(&arguments.tag, trc::location!())?
         {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details(
                     "You do not have the required permissions to append messages to this mailbox.",
@@ -116,7 +116,7 @@ impl<T: SessionStream> SessionData<T> {
                     last_change_id = Some(email.change_id);
                 }
                 Err(err) => {
-                    return Err(if err.matches(trc::Cause::Limit(trc::LimitCause::Quota)) {
+                    return Err(if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) {
                         err.details("Disk quota exceeded.")
                             .code(ResponseCode::OverQuota)
                     } else {

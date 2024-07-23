@@ -149,7 +149,7 @@ impl Deserialize for AclItem {
             to_account_id: bytes.deserialize_be_u32(U32_LEN)?,
             to_collection: *bytes
                 .get(U32_LEN * 2)
-                .ok_or_else(|| trc::StoreCause::DataCorruption.caused_by(trc::location!()))?,
+                .ok_or_else(|| trc::StoreEvent::DataCorruption.caused_by(trc::location!()))?,
             to_document_id: bytes.deserialize_be_u32((U32_LEN * 2) + 1)?,
             permissions: 0,
         })

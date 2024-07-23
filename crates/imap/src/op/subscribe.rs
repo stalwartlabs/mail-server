@@ -57,7 +57,7 @@ impl<T: SessionStream> SessionData<T> {
         let (account_id, mailbox_id) = match self.get_mailbox_by_name(&mailbox_name) {
             Some(mailbox) => (mailbox.account_id, mailbox.mailbox_id),
             None => {
-                return Err(trc::Cause::Imap
+                return Err(trc::ImapEvent::Error
                     .into_err()
                     .details("Mailbox does not exist.")
                     .code(ResponseCode::NonExistent)
@@ -71,7 +71,7 @@ impl<T: SessionStream> SessionData<T> {
             if account.account_id == account_id {
                 if let Some(mailbox) = account.mailbox_state.get(&mailbox_id) {
                     if mailbox.is_subscribed == subscribe {
-                        return Err(trc::Cause::Imap
+                        return Err(trc::ImapEvent::Error
                             .into_err()
                             .details(if subscribe {
                                 "Mailbox is already subscribed."
@@ -97,7 +97,7 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .imap_ctx(&tag, trc::location!())?
             .ok_or_else(|| {
-                trc::Cause::Imap
+                trc::ImapEvent::Error
                     .into_err()
                     .details("Mailbox does not exist.")
                     .code(ResponseCode::NonExistent)

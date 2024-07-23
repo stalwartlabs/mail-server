@@ -91,7 +91,10 @@ impl<T> UnwrapFailure<T> for Option<T> {
         match self {
             Some(result) => result,
             None => {
-                tracing::error!("{message}");
+                trc::event!(
+                    Server(trc::ServerEvent::StartupError),
+                    Details = message.to_string()
+                );
                 eprintln!("{message}");
                 std::process::exit(1);
             }
@@ -104,7 +107,11 @@ impl<T, E: std::fmt::Display> UnwrapFailure<T> for Result<T, E> {
         match self {
             Ok(result) => result,
             Err(err) => {
-                tracing::error!("{message}: {err}");
+                trc::event!(
+                    Server(trc::ServerEvent::StartupError),
+                    Details = message.to_string(),
+                    Reason = err.to_string()
+                );
 
                 #[cfg(feature = "test_mode")]
                 panic!("{message}: {err}");
@@ -120,36 +127,48 @@ impl<T, E: std::fmt::Display> UnwrapFailure<T> for Result<T, E> {
 }
 
 pub fn failed(message: &str) -> ! {
-    tracing::error!("{message}");
+    trc::event!(
+        Server(trc::ServerEvent::StartupError),
+        Details = message.to_string(),
+    );
     eprintln!("{message}");
     std::process::exit(1);
 }
 
 pub async fn wait_for_shutdown(message: &str) {
     #[cfg(not(target_env = "msvc"))]
-    {
+    let signal = {
         use tokio::signal::unix::{signal, SignalKind};
 
         let mut h_term = signal(SignalKind::terminate()).failed("start signal handler");
         let mut h_int = signal(SignalKind::interrupt()).failed("start signal handler");
 
         tokio::select! {
-            _ = h_term.recv() => tracing::debug!("Received SIGTERM."),
-            _ = h_int.recv() => tracing::debug!("Received SIGINT."),
-        };
-    }
+            _ = h_term.recv() => "SIGTERM",
+            _ = h_int.recv() => "SIGINT",
+        }
+    };
 
     #[cfg(target_env = "msvc")]
-    {
+    let signal = {
         match tokio::signal::ctrl_c().await {
-            Ok(()) => {}
+            Ok(()) => "SIGINT",
             Err(err) => {
-                eprintln!("Unable to listen for shutdown signal: {}", err);
+                trc::event!(
+                    Server(trc::ServerEvent::Error),
+                    Details = "Unable to listen for shutdown signal",
+                    Reason = err.to_string(),
+                );
+                "Error"
             }
         }
-    }
+    };
 
-    tracing::info!(message);
+    trc::event!(
+        Server(trc::ServerEvent::Shutdown),
+        Details = message.to_string(),
+        CausedBy = signal
+    );
 }
 
 pub fn rustls_client_config(allow_invalid_certs: bool) -> ClientConfig {

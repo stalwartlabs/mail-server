@@ -108,7 +108,6 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
     pub state: State,
     pub instance: Arc<ServerInstance>,
     pub core: SMTP,
-    pub span: Span,
     pub stream: T,
     pub data: SessionData,
     pub params: SessionParameters,
@@ -116,6 +115,7 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
 }
 
 pub struct SessionData {
+    pub session_id: u64,
     pub local_ip: IpAddr,
     pub local_ip_str: String,
     pub local_port: u16,
@@ -188,8 +188,15 @@ pub struct SessionParameters {
 }
 
 impl SessionData {
-    pub fn new(local_ip: IpAddr, local_port: u16, remote_ip: IpAddr, remote_port: u16) -> Self {
+    pub fn new(
+        local_ip: IpAddr,
+        local_port: u16,
+        remote_ip: IpAddr,
+        remote_port: u16,
+        session_id: u64,
+    ) -> Self {
         SessionData {
+            session_id,
             local_ip,
             local_port,
             remote_ip,
@@ -280,21 +287,6 @@ impl Session<common::listener::stream::NullIo> {
             state: State::None,
             instance,
             core,
-            span: tracing::info_span!(
-                "local_delivery",
-                "return_path" =
-                    if let Some(addr) = data.mail_from.as_ref().map(|a| a.address_lcase.as_str()) {
-                        if !addr.is_empty() {
-                            addr
-                        } else {
-                            "<>"
-                        }
-                    } else {
-                        "<>"
-                    },
-                "nrcpt" = data.rcpt_to.len(),
-                "size" = data.message.len(),
-            ),
             stream: common::listener::stream::NullIo::default(),
             data,
             params: SessionParameters {
@@ -326,11 +318,12 @@ impl Session<common::listener::stream::NullIo> {
         mail_from: SessionAddress,
         rcpt_to: Vec<SessionAddress>,
         message: Vec<u8>,
+        session_id: u64,
     ) -> Self {
         Self::local(
             core,
             SIEVE.clone(),
-            SessionData::local(mail_from.into(), rcpt_to, message),
+            SessionData::local(mail_from.into(), rcpt_to, message, session_id),
         )
     }
 
@@ -354,6 +347,7 @@ impl SessionData {
         mail_from: Option<SessionAddress>,
         rcpt_to: Vec<SessionAddress>,
         message: Vec<u8>,
+        session_id: u64,
     ) -> Self {
         SessionData {
             local_ip: IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
@@ -362,6 +356,7 @@ impl SessionData {
             remote_ip_str: "127.0.0.1".to_string(),
             remote_port: 0,
             local_port: 0,
+            session_id,
             helo_domain: "localhost".into(),
             mail_from,
             rcpt_to,
@@ -386,7 +381,7 @@ impl SessionData {
 
 impl Default for SessionData {
     fn default() -> Self {
-        Self::local(None, vec![], vec![])
+        Self::local(None, vec![], vec![], 0)
     }
 }
 

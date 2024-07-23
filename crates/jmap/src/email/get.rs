@@ -399,7 +399,7 @@ impl JMAP {
                     }
 
                     _ => {
-                        return Err(trc::JmapCause::InvalidArguments
+                        return Err(trc::JmapEvent::InvalidArguments
                             .into_err()
                             .details(format!("Invalid property {property:?}")));
                     }

@@ -46,7 +46,7 @@ impl MysqlStore {
                         && start.elapsed() < MAX_COMMIT_TIME => {}
                 Err(CommitError::Retry) => {
                     if retry_count > MAX_COMMIT_ATTEMPTS || start.elapsed() > MAX_COMMIT_TIME {
-                        return Err(trc::StoreCause::AssertValue.into());
+                        return Err(trc::StoreEvent::AssertValueFailed.into());
                     }
                 }
                 Err(CommitError::Mysql(err)) => {
@@ -135,7 +135,9 @@ impl MysqlStore {
                                 Ok(_) => {
                                     if exists.is_some() && trx.affected_rows() == 0 {
                                         trx.rollback().await?;
-                                        return Err(trc::StoreCause::AssertValue.into_err().into());
+                                        return Err(trc::StoreEvent::AssertValueFailed
+                                            .into_err()
+                                            .into());
                                     }
                                 }
                                 Err(err) => {
@@ -308,7 +310,7 @@ impl MysqlStore {
                         .unwrap_or_else(|| (false, assert_value.is_none()));
                     if !matches {
                         trx.rollback().await?;
-                        return Err(trc::StoreCause::AssertValue.into_err().into());
+                        return Err(trc::StoreEvent::AssertValueFailed.into_err().into());
                     }
                     asserted_values.insert(key, exists);
                 }

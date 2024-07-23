@@ -94,10 +94,11 @@ impl FdbStore {
                                                     *key.last_mut().unwrap() += 1;
                                                 } else {
                                                     trx.cancel();
-                                                    return Err(trc::StoreCause::FoundationDB.ctx(
-                                                        trc::Key::Reason,
-                                                        "Value is too large",
-                                                    ));
+                                                    return Err(trc::StoreEvent::FoundationDBError
+                                                        .ctx(
+                                                            trc::Key::Reason,
+                                                            "Value is too large",
+                                                        ));
                                                 }
                                             }
                                         }
@@ -257,7 +258,7 @@ impl FdbStore {
 
                         if !matches {
                             trx.cancel();
-                            return Err(trc::StoreCause::AssertValue.into());
+                            return Err(trc::StoreEvent::AssertValueFailed.into());
                         }
                     }
                 }

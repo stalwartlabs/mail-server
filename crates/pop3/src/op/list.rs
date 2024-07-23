@@ -15,7 +15,7 @@ impl<T: SessionStream> Session<T> {
             if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
                 self.write_ok(format!("{} {}", msg, message.size)).await
             } else {
-                Err(trc::Cause::Pop3
+                Err(trc::Pop3Event::Error
                     .into_err()
                     .details("No such message.")
                     .caused_by(trc::location!()))
@@ -36,7 +36,7 @@ impl<T: SessionStream> Session<T> {
                 self.write_ok(format!("{} {}{}", msg, mailbox.uid_validity, message.uid))
                     .await
             } else {
-                Err(trc::Cause::Pop3
+                Err(trc::Pop3Event::Error
                     .into_err()
                     .details("No such message.")
                     .caused_by(trc::location!()))

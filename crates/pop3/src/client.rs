@@ -47,7 +47,7 @@ impl<T: SessionStream> Session<T> {
                     break;
                 }
                 Err(Error::Parse(err)) => {
-                    requests.push(Err(trc::Cause::Pop3.into_err().details(err)));
+                    requests.push(Err(trc::Pop3Event::Error.into_err().details(err)));
                 }
             }
         }
@@ -139,9 +139,9 @@ impl<T: SessionStream> Session<T> {
                             .handle_sasl(mechanism, params)
                             .await
                             .map(|_| SessionResult::Continue),
-                        Command::Apop { .. } => {
-                            Err(trc::Cause::Pop3.into_err().details("APOP not supported."))
-                        }
+                        Command::Apop { .. } => Err(trc::Pop3Event::Error
+                            .into_err()
+                            .details("APOP not supported.")),
                     },
                     Err(err) => Err(err),
                 },
@@ -180,17 +180,17 @@ impl<T: SessionStream> Session<T> {
                         if !matches!(command, Command::Pass { .. }) || username.is_some() {
                             Ok(command)
                         } else {
-                            Err(trc::Cause::Pop3
+                            Err(trc::Pop3Event::Error
                                 .into_err()
                                 .details("Username was not provided."))
                         }
                     } else {
-                        Err(trc::Cause::Pop3
+                        Err(trc::Pop3Event::Error
                             .into_err()
                             .details("Cannot authenticate over plain-text."))
                     }
                 } else {
-                    Err(trc::Cause::Pop3
+                    Err(trc::Pop3Event::Error
                         .into_err()
                         .details("Already authenticated."))
                 }
@@ -199,7 +199,7 @@ impl<T: SessionStream> Session<T> {
                 if let State::NotAuthenticated { .. } = &self.state {
                     Ok(command)
                 } else {
-                    Err(trc::Cause::Pop3
+                    Err(trc::Pop3Event::Error
                         .into_err()
                         .details("Already authenticated."))
                 }
@@ -208,7 +208,9 @@ impl<T: SessionStream> Session<T> {
                 if !self.stream.is_tls() {
                     Ok(command)
                 } else {
-                    Err(trc::Cause::Pop3.into_err().details("Already in TLS mode."))
+                    Err(trc::Pop3Event::Error
+                        .into_err()
+                        .details("Already in TLS mode."))
                 }
             }
 
@@ -239,13 +241,15 @@ impl<T: SessionStream> Session<T> {
                         {
                             Ok(command)
                         } else {
-                            Err(trc::LimitCause::TooManyRequests.into_err())
+                            Err(trc::LimitEvent::TooManyRequests.into_err())
                         }
                     } else {
                         Ok(command)
                     }
                 } else {
-                    Err(trc::Cause::Pop3.into_err().details("Not authenticated."))
+                    Err(trc::Pop3Event::Error
+                        .into_err()
+                        .details("Not authenticated."))
                 }
             }
         }

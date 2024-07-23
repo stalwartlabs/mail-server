@@ -40,7 +40,7 @@ pub struct Session<T: SessionStream> {
     pub stream: T,
     pub in_flight: InFlight,
     pub remote_addr: IpAddr,
-    pub span: tracing::Span,
+    pub session_id: u64,
 }
 
 pub enum State {

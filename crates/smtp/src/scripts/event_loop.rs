@@ -26,7 +26,7 @@ impl SMTP {
         &self,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
-        span: tracing::Span,
+        session_id: u64,
     ) -> ScriptResult {
         // Create filter instance
         let mut instance = self
@@ -56,7 +56,6 @@ impl SMTP {
                             input = false.into();
                         } else {
                             tracing::warn!(
-                                parent: &span,
                                 context = "sieve",
                                 event = "script-not-found",
                                 script = name.as_str()
@@ -90,7 +89,6 @@ impl SMTP {
                                 }
                             } else {
                                 tracing::debug!(
-                                    parent: &span,
                                     context = "sieve",
                                     event = "list-not-found",
                                     list = list,
@@ -104,7 +102,7 @@ impl SMTP {
                             .run_plugin(
                                 id,
                                 PluginContext {
-                                    span: &span,
+                                    session_id,
                                     core: &self.core,
                                     cache: &self.inner.script_cache,
                                     message: instance.message(),
@@ -152,7 +150,6 @@ impl SMTP {
                             }
                             Recipient::List(list) => {
                                 tracing::warn!(
-                                    parent: &span,
                                     context = "sieve",
                                     event = "send-failed",
                                     reason = format!("Lookup {list:?} not supported.")
@@ -261,7 +258,7 @@ impl SMTP {
                                                 signature.write_header(&mut headers);
                                             }
                                             Err(err) => {
-                                                tracing::warn!(parent: &span,
+                                                tracing::warn!(
                                                     context = "dkim",
                                                     event = "sign-failed",
                                                     reason = %err);
@@ -282,12 +279,10 @@ impl SMTP {
                             };
 
                             if self.has_quota(&mut message).await {
-                                message
-                                    .queue(headers.as_deref(), raw_message, self, &span)
-                                    .await;
+                                message.queue(headers.as_deref(), raw_message, self).await;
                             } else {
                                 tracing::warn!(
-                                    parent: &span,
+
                                     context = "sieve",
                                     event = "send-message",
                                     error = "quota-exceeded",
@@ -313,7 +308,6 @@ impl SMTP {
                     }
                     unsupported => {
                         tracing::warn!(
-                            parent: &span,
                             context = "sieve",
                             event = "runtime-error",
                             reason = format!("Unsupported event: {unsupported:?}")
@@ -322,7 +316,7 @@ impl SMTP {
                     }
                 },
                 Err(err) => {
-                    tracing::warn!(parent: &span,
+                    tracing::warn!(
                         context = "sieve",
                         event = "runtime-error",
                         reason = %err

@@ -153,6 +153,8 @@ impl AddressMapping {
         core: &Core,
         address: &'y str,
     ) -> Cow<'x, str> {
+        let todo = "pass session_id";
+        let session_id = 0;
         match self {
             AddressMapping::Enable => {
                 if let Some((local_part, domain_part)) = address.rsplit_once('@') {
@@ -162,11 +164,10 @@ impl AddressMapping {
                 }
             }
             AddressMapping::Custom(if_block) => {
-                if let Ok(result) = String::try_from(
-                    if_block
-                        .eval(&Address(address), core, "session.rcpt.sub-addressing")
-                        .await,
-                ) {
+                if let Some(result) = core
+                    .eval_if::<String, _>(if_block, &Address(address), session_id)
+                    .await
+                {
                     return result.into();
                 }
             }
@@ -181,23 +182,18 @@ impl AddressMapping {
         core: &Core,
         address: &'y str,
     ) -> Option<Cow<'x, str>> {
+        let todo = "pass session_id";
+        let session_id = 0;
+
         match self {
             AddressMapping::Enable => address
                 .rsplit_once('@')
                 .map(|(_, domain_part)| format!("@{}", domain_part))
                 .map(Cow::Owned),
-
-            AddressMapping::Custom(if_block) => {
-                if let Ok(result) = String::try_from(
-                    if_block
-                        .eval(&Address(address), core, "session.rcpt.catch-all")
-                        .await,
-                ) {
-                    Some(result.into())
-                } else {
-                    None
-                }
-            }
+            AddressMapping::Custom(if_block) => core
+                .eval_if::<String, _>(if_block, &Address(address), session_id)
+                .await
+                .map(Cow::Owned),
             AddressMapping::Disable => None,
         }
     }

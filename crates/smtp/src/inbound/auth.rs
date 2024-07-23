@@ -178,7 +178,7 @@ impl<T: SessionStream> Session<T> {
             {
                 Ok(principal) => {
                     tracing::debug!(
-                        parent: &self.span,
+                        
                         context = "auth",
                         event = "authenticate",
                         result = "success"
@@ -196,9 +196,9 @@ impl<T: SessionStream> Session<T> {
                     return Ok(false);
                 }
                 Err(err) => match err.as_ref() {
-                    trc::Cause::Auth(trc::AuthCause::Failed) => {
+                    trc::EventType::Auth(trc::AuthEvent::Failed) => {
                         tracing::debug!(
-                            parent: &self.span,
+                            
                             context = "auth",
                             event = "authenticate",
                             result = "failed"
@@ -208,9 +208,9 @@ impl<T: SessionStream> Session<T> {
                             .auth_error(b"535 5.7.8 Authentication credentials invalid.\r\n")
                             .await;
                     }
-                    trc::Cause::Auth(trc::AuthCause::MissingTotp) => {
+                    trc::EventType::Auth(trc::AuthEvent::MissingTotp) => {
                         tracing::debug!(
-                            parent: &self.span,
+                            
                             context = "auth",
                             event = "authenticate",
                             result = "missing-totp"
@@ -222,9 +222,9 @@ impl<T: SessionStream> Session<T> {
                             )
                             .await;
                     }
-                    trc::Cause::Auth(trc::AuthCause::Banned) => {
+                    trc::EventType::Auth(trc::AuthEvent::Banned) => {
                         tracing::debug!(
-                            parent: &self.span,
+                            
                             context = "auth",
                             event = "authenticate",
                             result = "banned"
@@ -237,7 +237,7 @@ impl<T: SessionStream> Session<T> {
             }
         } else {
             tracing::warn!(
-                parent: &self.span,
+                
                 context = "auth",
                 event = "error",
                 "No lookup list configured for authentication."
@@ -259,7 +259,7 @@ impl<T: SessionStream> Session<T> {
             self.write(b"421 4.3.0 Too many authentication errors, disconnecting.\r\n")
                 .await?;
             tracing::debug!(
-                parent: &self.span,
+                
                 event = "disconnect",
                 reason = "auth-errors",
                 "Too many authentication errors."

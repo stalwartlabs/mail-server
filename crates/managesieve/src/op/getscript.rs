@@ -23,7 +23,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .next()
             .and_then(|s| s.unwrap_string().ok())
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Expected script name as a parameter.")
             })?;
@@ -40,7 +40,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Script not found")
                     .code(ResponseCode::NonExistent)
@@ -48,7 +48,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .blob_id()
             .and_then(|id| (id.section.as_ref()?.clone(), id.hash.clone()).into())
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Failed to retrieve blobId")
                     .code(ResponseCode::TryLater)
@@ -59,7 +59,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Script blob not found")
                     .code(ResponseCode::NonExistent)

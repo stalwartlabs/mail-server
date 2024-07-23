@@ -43,7 +43,7 @@ impl JMAP {
         let account_id = request.account_id.document_id();
 
         if request.create.len() > self.core.jmap.set_max_objects {
-            return Err(trc::JmapCause::RequestTooLarge.into_err());
+            return Err(trc::JmapEvent::RequestTooLarge.into_err());
         }
 
         'outer: for (create_id, upload_object) in request.create {
@@ -211,7 +211,7 @@ impl JMAP {
                 && used.count + 1 > self.core.jmap.upload_tmp_quota_amount))
             && !access_token.is_super_user()
         {
-            let err = Err(trc::LimitCause::BlobQuota
+            let err = Err(trc::LimitEvent::BlobQuota
                 .into_err()
                 .ctx(trc::Key::Size, self.core.jmap.upload_tmp_quota_size)
                 .ctx(trc::Key::Total, self.core.jmap.upload_tmp_quota_amount));

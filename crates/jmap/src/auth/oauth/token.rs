@@ -68,7 +68,7 @@ impl JMAP {
                                 .await
                                 .map(TokenResponse::Granted)
                                 .map_err(|err| {
-                                    trc::AuthCause::Error
+                                    trc::AuthEvent::Error
                                         .into_err()
                                         .details(err)
                                         .caused_by(trc::location!())
@@ -114,7 +114,7 @@ impl JMAP {
                                     .await
                                     .map(TokenResponse::Granted)
                                     .map_err(|err| {
-                                        trc::AuthCause::Error
+                                        trc::AuthEvent::Error
                                             .into_err()
                                             .details(err)
                                             .caused_by(trc::location!())
@@ -145,7 +145,7 @@ impl JMAP {
                         .await
                         .map(TokenResponse::Granted)
                         .map_err(|err| {
-                            trc::AuthCause::Error
+                            trc::AuthEvent::Error
                                 .into_err()
                                 .details(err)
                                 .caused_by(trc::location!())
@@ -282,7 +282,7 @@ impl JMAP {
     ) -> trc::Result<(u32, String, u64)> {
         // Base64 decode token
         let token = base64_decode(token_.as_bytes()).ok_or_else(|| {
-            trc::AuthCause::Error
+            trc::AuthEvent::Error
                 .into_err()
                 .ctx(trc::Key::Reason, "Failed to decode token")
                 .caused_by(trc::location!())
@@ -300,7 +300,7 @@ impl JMAP {
                     .into()
             })
             .ok_or_else(|| {
-                trc::AuthCause::Error
+                trc::AuthEvent::Error
                     .into_err()
                     .ctx(trc::Key::Reason, "Failed to decode token")
                     .caused_by(trc::location!())
@@ -314,7 +314,7 @@ impl JMAP {
             .unwrap_or(0)
             .saturating_sub(946684800); // Jan 1, 2000
         if expiry <= now {
-            return Err(trc::AuthCause::Error
+            return Err(trc::AuthEvent::Error
                 .into_err()
                 .ctx(trc::Key::Reason, "Token expired"));
         }
@@ -323,7 +323,7 @@ impl JMAP {
         let password_hash = self
             .password_hash(account_id)
             .await
-            .map_err(|err| trc::AuthCause::Error.into_err().ctx(trc::Key::Details, err))?;
+            .map_err(|err| trc::AuthEvent::Error.into_err().ctx(trc::Key::Details, err))?;
 
         // Build context
         let key = self.core.jmap.oauth_key.clone();
@@ -352,7 +352,7 @@ impl JMAP {
                 &nonce,
             )
             .map_err(|err| {
-                trc::AuthCause::Error
+                trc::AuthEvent::Error
                     .into_err()
                     .ctx(trc::Key::Details, "Failed to decode token")
                     .caused_by(trc::location!())

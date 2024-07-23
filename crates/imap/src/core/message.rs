@@ -229,7 +229,7 @@ impl<T: SessionStream> SessionData<T> {
             .await?
             .and_then(|obj| obj.get(&Property::Cid).as_uint())
             .ok_or_else(|| {
-                trc::Cause::Imap
+                trc::ImapEvent::Error
                     .caused_by(trc::location!())
                     .details("Mailbox unavailable")
                     .account_id(mailbox.account_id)
@@ -270,7 +270,7 @@ impl SelectedMailbox {
             Ok(ids)
         } else {
             let saved_ids = self.get_saved_search().await.ok_or_else(|| {
-                trc::Cause::Imap
+                trc::ImapEvent::Error
                     .into_err()
                     .details("No saved search found.")
             })?;

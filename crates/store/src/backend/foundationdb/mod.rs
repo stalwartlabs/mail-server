@@ -77,7 +77,7 @@ impl TimedTransaction {
 
 #[inline(always)]
 fn into_error(error: FdbError) -> trc::Error {
-    trc::StoreCause::FoundationDB
+    trc::StoreEvent::FoundationDBError
         .reason(error.message())
         .ctx(trc::Key::Code, error.code())
 }

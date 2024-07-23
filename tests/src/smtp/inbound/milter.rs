@@ -379,6 +379,7 @@ fn milter_address_modifications() {
         0,
         "127.0.0.1".parse().unwrap(),
         0,
+        0,
     );
 
     // ChangeFrom
@@ -484,6 +485,7 @@ fn milter_message_modifications() {
         0,
         "127.0.0.1".parse().unwrap(),
         0,
+        0,
     );
 
     for test in tests {
@@ -566,7 +568,7 @@ async fn milter_client_test() {
             flags_protocol: None,
             run_on_stage: AHashSet::from([Stage::Data]),
         },
-        tracing::span!(tracing::Level::TRACE, "hi"),
+        0,
     )
     .await
     .unwrap();

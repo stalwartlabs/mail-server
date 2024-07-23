@@ -87,7 +87,7 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .imap_ctx(&arguments.tag, trc::location!())?
         {
-            return Err(trc::Cause::Imap
+            return Err(trc::ImapEvent::Error
                 .into_err()
                 .details(
                     "You do not have the required permissions to modify messages in this mailbox.",

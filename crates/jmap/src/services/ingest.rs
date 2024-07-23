@@ -153,12 +153,12 @@ impl JMAP {
                     );
 
                     match err.as_ref() {
-                        trc::Cause::Limit(trc::LimitCause::Quota) => {
+                        trc::EventType::Limit(trc::LimitEvent::Quota) => {
                             *status = DeliveryResult::TemporaryFailure {
                                 reason: "Mailbox over quota.".into(),
                             }
                         }
-                        trc::Cause::Ingest => {
+                        trc::EventType::Store(trc::StoreEvent::IngestError) => {
                             *status = DeliveryResult::PermanentFailure {
                                 code: err
                                     .value(trc::Key::Code)

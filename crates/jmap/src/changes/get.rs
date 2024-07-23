@@ -48,7 +48,7 @@ impl JMAP {
             RequestArguments::Quota => {
                 access_token.assert_is_member(request.account_id)?;
 
-                return Err(trc::JmapCause::CannotCalculateChanges.into_err());
+                return Err(trc::JmapEvent::CannotCalculateChanges.into_err());
             }
         };
 

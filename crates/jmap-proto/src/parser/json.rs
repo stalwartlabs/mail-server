@@ -41,20 +41,20 @@ impl<'x> Parser<'x> {
     }
 
     pub fn error(&self, message: &str) -> trc::Error {
-        trc::JmapCause::NotJSON
+        trc::JmapEvent::NotJSON
             .into_err()
             .details(format!("{message} at position {}.", self.pos))
     }
 
     pub fn error_unterminated(&self) -> trc::Error {
-        trc::JmapCause::NotJSON.into_err().details(format!(
+        trc::JmapEvent::NotJSON.into_err().details(format!(
             "Unterminated string at position {pos}.",
             pos = self.pos
         ))
     }
 
     pub fn error_utf8(&self) -> trc::Error {
-        trc::JmapCause::NotJSON.into_err().details(format!(
+        trc::JmapEvent::NotJSON.into_err().details(format!(
             "Invalid UTF-8 sequence at position {pos}.",
             pos = self.pos
         ))
@@ -62,7 +62,7 @@ impl<'x> Parser<'x> {
 
     pub fn error_value(&mut self) -> trc::Error {
         if self.is_eof || self.skip_string() {
-            trc::JmapCause::InvalidArguments.into_err().details(format!(
+            trc::JmapEvent::InvalidArguments.into_err().details(format!(
                 "Invalid value {:?} at position {}.",
                 String::from_utf8_lossy(self.bytes[self.pos_marker..self.pos - 1].as_ref()),
                 self.pos

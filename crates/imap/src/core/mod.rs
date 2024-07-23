@@ -77,14 +77,14 @@ pub struct Session<T: SessionStream> {
     pub stream_tx: Arc<tokio::sync::Mutex<WriteHalf<T>>>,
     pub in_flight: InFlight,
     pub remote_addr: IpAddr,
-    pub span: tracing::Span,
+    pub session_id: u64,
 }
 
 pub struct SessionData<T: SessionStream> {
     pub account_id: u32,
     pub jmap: JMAP,
     pub imap: Arc<Inner>,
-    pub span: tracing::Span,
+    pub session_id: u64,
     pub mailboxes: parking_lot::Mutex<Vec<Account>>,
     pub stream_tx: Arc<tokio::sync::Mutex<WriteHalf<T>>>,
     pub state: AtomicU32,
@@ -234,7 +234,7 @@ impl<T: SessionStream> SessionData<T> {
             account_id: self.account_id,
             jmap: self.jmap,
             imap: self.imap,
-            span: self.span,
+            session_id: self.session_id,
             mailboxes: self.mailboxes,
             stream_tx: new_stream,
             state: self.state,

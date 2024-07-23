@@ -20,7 +20,6 @@ dns-update = { version = "0.1" }
 ahash = { version = "0.8.2", features = ["serde"] }
 parking_lot = "0.12.1"
 regex = "1.7.0"
-tracing = "0.1"
 proxy-header = { version = "0.1.0", features = ["tokio"] }
 arc-swap = "1.6.0"
 rustls = { version = "0.23.5", default-features = false, features = ["std", "ring", "tls12"] }
@@ -60,6 +59,7 @@ hostname = "0.4.0"
 zip = "2.1"
 pwhash = "1.0.0"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
+tracing = "0.1"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

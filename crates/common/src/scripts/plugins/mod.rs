@@ -24,7 +24,7 @@ use super::ScriptModification;
 type RegisterPluginFnc = fn(u32, &mut FunctionMap) -> ();
 
 pub struct PluginContext<'x> {
-    pub span: &'x tracing::Span,
+    pub session_id: u64,
     pub core: &'x Core,
     pub cache: &'x ScriptCache,
     pub message: &'x Message<'x>,

@@ -23,7 +23,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .next()
             .and_then(|s| s.unwrap_string().ok())
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Expected old script name as a parameter.")
             })?
@@ -33,7 +33,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .next()
             .and_then(|s| s.unwrap_string().ok())
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Expected new script name as a parameter.")
             })?
@@ -47,7 +47,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         let account_id = self.state.access_token().primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
         if self.validate_name(account_id, &new_name).await?.is_some() {
-            return Err(trc::Cause::ManageSieve
+            return Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details(format!("A sieve script with name '{name}' already exists.",))
                 .code(ResponseCode::AlreadyExists));
@@ -65,7 +65,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| {
-                trc::Cause::ManageSieve
+                trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Script not found")
                     .code(ResponseCode::NonExistent)

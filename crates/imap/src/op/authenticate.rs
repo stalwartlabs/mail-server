@@ -25,7 +25,7 @@ impl<T: SessionStream> Session<T> {
                 if !args.params.is_empty() {
                     let challenge = base64_decode(args.params.pop().unwrap().as_bytes())
                         .ok_or_else(|| {
-                            trc::AuthCause::Error
+                            trc::AuthEvent::Error
                                 .into_err()
                                 .details("Failed to decode challenge.")
                                 .id(args.tag.clone())
@@ -38,7 +38,7 @@ impl<T: SessionStream> Session<T> {
                         decode_challenge_oauth(&challenge)
                     }
                     .map_err(|err| {
-                        trc::AuthCause::Error
+                        trc::AuthEvent::Error
                             .into_err()
                             .details(err)
                             .id(args.tag.clone())
@@ -55,7 +55,7 @@ impl<T: SessionStream> Session<T> {
                     self.write_bytes(b"+ \"\"\r\n".to_vec()).await
                 }
             }
-            _ => Err(trc::AuthCause::Error
+            _ => Err(trc::AuthEvent::Error
                 .into_err()
                 .details("Authentication mechanism not supported.")
                 .id(args.tag)
@@ -93,14 +93,14 @@ impl<T: SessionStream> Session<T> {
             }
         }
         .map_err(|err| {
-            if err.matches(trc::Cause::Auth(trc::AuthCause::Failed)) {
+            if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
                 let auth_failures = self.state.auth_failures();
                 if auth_failures < self.jmap.core.imap.max_auth_failures {
                     self.state = State::NotAuthenticated {
                         auth_failures: auth_failures + 1,
                     };
                 } else {
-                    return trc::AuthCause::TooManyAttempts.into_err().caused_by(err);
+                    return trc::AuthEvent::TooManyAttempts.into_err().caused_by(err);
                 }
             }
 
@@ -115,7 +115,7 @@ impl<T: SessionStream> Session<T> {
             Some(Some(limiter)) => Some(limiter),
             None => None,
             Some(None) => {
-                return Err(trc::LimitCause::ConcurrentRequest
+                return Err(trc::LimitEvent::ConcurrentRequest
                     .into_err()
                     .id(tag.clone()));
             }

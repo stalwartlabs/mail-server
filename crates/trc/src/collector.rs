@@ -18,7 +18,7 @@ use arc_swap::ArcSwap;
 use crate::{
     channel::{EVENT_COUNT, EVENT_RXS},
     subscriber::{Subscriber, SUBSCRIBER_UPDATE},
-    Event, EventType, Level,
+    Event, EventType, Level, ServerEvent,
 };
 
 pub(crate) static TRACING_LEVEL: AtomicUsize = AtomicUsize::new(Level::Info as usize);
@@ -84,7 +84,7 @@ impl Collector {
     }
 
     pub fn shutdown() {
-        Event::new(EventType::Error(crate::Cause::Thread), Level::Disable, 0).send()
+        Event::new(EventType::Server(ServerEvent::Shutdown), Level::Disable, 0).send()
     }
 }
 

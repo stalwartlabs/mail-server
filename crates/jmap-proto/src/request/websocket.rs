@@ -170,12 +170,12 @@ impl WebSocketMessage {
                 MessageType::PushDisable if !found_request_keys && !found_push_keys => {
                     Ok(WebSocketMessage::PushDisable)
                 }
-                _ => Err(trc::JmapCause::NotRequest
+                _ => Err(trc::JmapEvent::NotRequest
                     .into_err()
                     .details("Invalid WebSocket JMAP request")),
             }
         } else {
-            Err(trc::LimitCause::SizeRequest.into_err())
+            Err(trc::LimitEvent::SizeRequest.into_err())
         }
     }
 }

@@ -126,8 +126,10 @@ impl<T: SessionStream> Session<T> {
         self.core
             .run_script(
                 script,
-                params.with_envelope(&self.core.core, self).await,
-                self.span.clone(),
+                params
+                    .with_envelope(&self.core.core, self, self.data.session_id)
+                    .await,
+                self.data.session_id,
             )
             .await
     }

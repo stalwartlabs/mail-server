@@ -100,7 +100,6 @@ impl TestSession for Session<DummyIo> {
             state: State::default(),
             instance: Arc::new(ServerInstance::test_with_shutdown(shutdown_rx)),
             core,
-            span: tracing::info_span!("test"),
             stream: DummyIo {
                 rx_buf: vec![],
                 tx_buf: vec![],
@@ -110,6 +109,7 @@ impl TestSession for Session<DummyIo> {
                 "127.0.0.1".parse().unwrap(),
                 0,
                 "127.0.0.1".parse().unwrap(),
+                0,
                 0,
             ),
             params: SessionParameters::default(),

@@ -31,7 +31,6 @@ impl<T: SessionStream> Session<T> {
         // Throttle recipient
         if !self.throttle_rcpt(rcpt, rate, "dkim").await {
             tracing::debug!(
-                parent: &self.span,
                 context = "report",
                 report = "dkim",
                 event = "throttle",
@@ -44,7 +43,7 @@ impl<T: SessionStream> Session<T> {
         let from_addr = self
             .core
             .core
-            .eval_if(&config.address, self)
+            .eval_if(&config.address, self, self.data.session_id)
             .await
             .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
         let mut report = Vec::with_capacity(128);
@@ -62,7 +61,7 @@ impl<T: SessionStream> Session<T> {
                 (
                     self.core
                         .core
-                        .eval_if(&config.name, self)
+                        .eval_if(&config.name, self, self.data.session_id)
                         .await
                         .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                         .as_str(),
@@ -72,7 +71,7 @@ impl<T: SessionStream> Session<T> {
                 &self
                     .core
                     .core
-                    .eval_if(&config.subject, self)
+                    .eval_if(&config.subject, self, self.data.session_id)
                     .await
                     .unwrap_or_else(|| "DKIM Report".to_string()),
                 &mut report,
@@ -80,7 +79,6 @@ impl<T: SessionStream> Session<T> {
             .ok();
 
         tracing::info!(
-            parent: &self.span,
             context = "report",
             report = "dkim",
             event = "queue",
@@ -90,14 +88,7 @@ impl<T: SessionStream> Session<T> {
 
         // Send report
         self.core
-            .send_report(
-                &from_addr,
-                [rcpt].into_iter(),
-                report,
-                &config.sign,
-                &self.span,
-                true,
-            )
+            .send_report(&from_addr, [rcpt].into_iter(), report, &config.sign, true)
             .await;
     }
 }

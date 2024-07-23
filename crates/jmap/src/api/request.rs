@@ -163,7 +163,7 @@ impl JMAP {
                     if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
                         self.principal_get(req).await?.into()
                     } else {
-                        return Err(trc::JmapCause::Forbidden
+                        return Err(trc::JmapEvent::Forbidden
                             .into_err()
                             .details("Principal lookups are disabled".to_string()));
                     }
@@ -210,7 +210,7 @@ impl JMAP {
                     if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
                         self.principal_query(req).await?.into()
                     } else {
-                        return Err(trc::JmapCause::Forbidden
+                        return Err(trc::JmapEvent::Forbidden
                             .into_err()
                             .details("Principal lookups are disabled".to_string()));
                     }

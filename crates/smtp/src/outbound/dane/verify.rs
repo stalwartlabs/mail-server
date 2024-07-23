@@ -15,7 +15,7 @@ use crate::queue::{Error, ErrorDetails, Status};
 pub trait TlsaVerify {
     fn verify(
         &self,
-        span: &tracing::Span,
+        session_id: u64,
         hostname: &str,
         certificates: Option<&[CertificateDer<'_>]>,
     ) -> Result<(), Status<(), Error>>;
@@ -24,7 +24,7 @@ pub trait TlsaVerify {
 impl TlsaVerify for Tlsa {
     fn verify(
         &self,
-        span: &tracing::Span,
+        session_id: u64,
         hostname: &str,
         certificates: Option<&[CertificateDer<'_>]>,
     ) -> Result<(), Status<(), Error>> {
@@ -32,7 +32,7 @@ impl TlsaVerify for Tlsa {
             certificates
         } else {
             tracing::info!(
-                parent: span,
+                
                 context = "dane",
                 event = "no-server-certs-found",
                 mx = hostname,
@@ -52,7 +52,7 @@ impl TlsaVerify for Tlsa {
                 Ok((_, certificate)) => certificate,
                 Err(err) => {
                     tracing::debug!(
-                        parent: span,
+                        
                         context = "dane",
                         event = "cert-parse-error",
                         "Failed to parse X.509 certificate for host {}: {}",
@@ -96,7 +96,7 @@ impl TlsaVerify for Tlsa {
 
                     if hash == record.data {
                         tracing::debug!(
-                            parent: span,
+                            
                             context = "dane",
                             event = "info",
                             mx = hostname,
@@ -132,7 +132,7 @@ impl TlsaVerify for Tlsa {
                 && (self.has_intermediates == matched_intermediate))
         {
             tracing::info!(
-                parent: span,
+                
                 context = "dane",
                 event = "authenticated",
                 mx = hostname,
@@ -141,7 +141,7 @@ impl TlsaVerify for Tlsa {
             Ok(())
         } else {
             tracing::warn!(
-                parent: span,
+                
                 context = "dane",
                 event = "auth-failure",
                 mx = hostname,
