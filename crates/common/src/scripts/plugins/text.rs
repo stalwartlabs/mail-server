@@ -20,18 +20,18 @@ pub fn register_domain_part(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("domain_part", plugin_id, 2);
 }
 
-pub fn exec_tokenize(ctx: PluginContext<'_>) -> Variable {
+pub fn exec_tokenize(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let mut v = ctx.arguments;
     let (urls, urls_without_scheme, emails) = match v[1].to_string().as_ref() {
-        "html" => return html_to_tokens(v[0].to_string().as_ref()).into(),
-        "words" => return tokenize_words(&v[0]),
+        "html" => return Ok(html_to_tokens(v[0].to_string().as_ref()).into()),
+        "words" => return Ok(tokenize_words(&v[0])),
         "uri" | "url" => (true, true, true),
         "uri_strict" | "url_strict" => (true, false, false),
         "email" => (false, false, true),
-        _ => return Variable::default(),
+        _ => return Ok(Variable::default()),
     };
 
-    match v.remove(0) {
+    Ok(match v.remove(0) {
         v @ (Variable::String(_) | Variable::Array(_)) => {
             TypesTokenizer::new(v.to_string().as_ref(), &ctx.core.smtp.resolvers.psl)
                 .tokenize_numbers(false)
@@ -50,19 +50,19 @@ pub fn exec_tokenize(ctx: PluginContext<'_>) -> Variable {
                 .into()
         }
         v => v,
-    }
+    })
 }
 
-pub fn exec_domain_part(ctx: PluginContext<'_>) -> Variable {
+pub fn exec_domain_part(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let v = ctx.arguments;
     let part = match v[1].to_string().as_ref() {
         "sld" => DomainPart::Sld,
         "tld" => DomainPart::Tld,
         "host" => DomainPart::Host,
-        _ => return Variable::default(),
+        _ => return Ok(Variable::default()),
     };
 
-    v[0].transform(|domain| {
+    Ok(v[0].transform(|domain| {
         ctx.core
             .smtp
             .resolvers
@@ -70,5 +70,5 @@ pub fn exec_domain_part(ctx: PluginContext<'_>) -> Variable {
             .domain_part(domain, part)
             .map(Variable::from)
             .unwrap_or_default()
-    })
+    }))
 }

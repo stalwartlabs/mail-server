@@ -155,7 +155,7 @@ pub struct SmtpResponse {
     pub disconnect: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
 pub enum Modification {
     #[serde(rename = "changeFrom")]

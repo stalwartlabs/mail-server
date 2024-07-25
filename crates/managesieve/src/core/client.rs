@@ -15,11 +15,6 @@ use super::{Command, ResponseCode, SerializeResponse, Session, State};
 
 impl<T: SessionStream> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> SessionResult {
-        /*let tmp = "dd";
-        for line in String::from_utf8_lossy(bytes).split("\r\n") {
-            println!("<- {:?}", &line[..std::cmp::min(line.len(), 100)]);
-        }*/
-
         let mut bytes = bytes.iter();
         let mut requests = Vec::with_capacity(2);
         let mut needs_literal = None;
@@ -34,7 +29,7 @@ impl<T: SessionStream> Session<T> {
                         let mut disconnect = err.must_disconnect();
 
                         if let Err(err) = self.write_error(err).await {
-                            tracing::error!( event = "error", error = ?err);
+                            trc::error!(err.session_id(self.session_id));
                             disconnect = true;
                         }
 
@@ -52,7 +47,7 @@ impl<T: SessionStream> Session<T> {
                 }
                 Err(receiver::Error::Error { response }) => {
                     if let Err(err) = self.write_error(response).await {
-                        tracing::error!( event = "error", error = ?err);
+                        trc::error!(err.session_id(self.session_id));
                         return SessionResult::Close;
                     }
                     break;
@@ -80,7 +75,7 @@ impl<T: SessionStream> Session<T> {
             } {
                 Ok(response) => {
                     if let Err(err) = self.write(&response).await {
-                        tracing::error!( event = "error", error = ?err);
+                        trc::error!(err.session_id(self.session_id));
                         return SessionResult::Close;
                     }
 
@@ -94,7 +89,7 @@ impl<T: SessionStream> Session<T> {
                     let mut disconnect = err.must_disconnect();
 
                     if let Err(err) = self.write_error(err).await {
-                        tracing::error!( event = "error", error = ?err);
+                        trc::error!(err.session_id(self.session_id));
                         disconnect = true;
                     }
 
@@ -110,7 +105,7 @@ impl<T: SessionStream> Session<T> {
                 .write(format!("OK Ready for {} bytes.\r\n", needs_literal).as_bytes())
                 .await
             {
-                tracing::error!( event = "error", error = ?err);
+                trc::error!(err.session_id(self.session_id));
                 return SessionResult::Close;
             }
         }
@@ -193,6 +188,13 @@ impl<T: SessionStream> Session<T> {
 impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     #[inline(always)]
     pub async fn write(&mut self, bytes: &[u8]) -> trc::Result<()> {
+        trc::event!(
+            Imap(trc::ManageSieveEvent::RawOutput),
+            SessionId = self.session_id,
+            Size = bytes.len(),
+            Contents = String::from_utf8_lossy(bytes).into_owned(),
+        );
+
         self.stream.write_all(bytes).await.map_err(|err| {
             trc::NetworkEvent::WriteError
                 .into_err()
@@ -206,18 +208,13 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 .caused_by(trc::location!())
         })?;
 
-        tracing::trace!(
-            event = "write",
-            data = std::str::from_utf8(bytes).unwrap_or_default(),
-            size = bytes.len()
-        );
-
         Ok(())
     }
 
     pub async fn write_error(&mut self, error: trc::Error) -> trc::Result<()> {
-        tracing::error!( event = "error", error = ?error);
-        self.write(&error.serialize()).await
+        let bytes = err.serialize();
+        trc::error!(error.session_id(self.session_id));
+        self.write(&bytes).await
     }
 
     #[inline(always)]
@@ -229,13 +226,11 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 .caused_by(trc::location!())
         })?;
 
-        tracing::trace!(
-            event = "read",
-            data = bytes
-                .get(0..len)
-                .and_then(|bytes| std::str::from_utf8(bytes).ok())
-                .unwrap_or("[invalid UTF8]"),
-            size = len
+        trc::event!(
+            Imap(trc::ManageSieveEvent::RawInput),
+            SessionId = self.session_id,
+            Size = len,
+            Contents = String::from_utf8_lossy(bytes.get(0..len).unwrap_or_default()).into_owned(),
         );
 
         Ok(len)

@@ -29,7 +29,6 @@ use crate::queue::{Error, Message, Recipient, Status};
 use super::TlsStrategy;
 
 pub struct SessionParams<'x> {
-    pub span: &'x tracing::Span,
     pub core: &'x SMTP,
     pub hostname: &'x str,
     pub credentials: Option<&'x Credentials<String>>,
@@ -52,8 +51,8 @@ impl Message {
         let capabilities = match say_helo(&mut smtp_client, &params).await {
             Ok(capabilities) => capabilities,
             Err(status) => {
-                tracing::info!(
-                    parent: params.span,
+                trc::event!(
+
                     context = "ehlo",
                     event = "rejected",
                     mx = &params.hostname,
@@ -67,8 +66,8 @@ impl Message {
         // Authenticate
         if let Some(credentials) = params.credentials {
             if let Err(err) = smtp_client.authenticate(credentials, &capabilities).await {
-                tracing::info!(
-                    parent: params.span,
+                trc::event!(
+
                     context = "auth",
                     event = "failed",
                     mx = &params.hostname,
@@ -83,8 +82,8 @@ impl Message {
             /*capabilities = match say_helo(&mut smtp_client, &params).await {
                 Ok(capabilities) => capabilities,
                 Err(status) => {
-                    tracing::info!(
-                        parent: params.span,
+                    trc::event!(
+
                         context = "ehlo",
                         event = "rejected",
                         mx = &params.hostname,
@@ -104,8 +103,8 @@ impl Message {
             .await
             .and_then(|r| r.assert_positive_completion())
         {
-            tracing::info!(
-                parent: params.span,
+            trc::event!(
+
                 context = "sender",
                 event = "rejected",
                 mx = &params.hostname,
@@ -143,8 +142,8 @@ impl Message {
                         ));
                     }
                     severity => {
-                        tracing::info!(
-                            parent: params.span,
+                        trc::event!(
+
                             context = "rcpt",
                             event = "rejected",
                             rcpt = rcpt.address,
@@ -169,8 +168,8 @@ impl Message {
                     }
                 },
                 Err(err) => {
-                    tracing::info!(
-                        parent: params.span,
+                    trc::event!(
+
                         context = "rcpt",
                         event = "failed",
                         mx = &params.hostname,
@@ -194,8 +193,8 @@ impl Message {
             };
 
             if let Err(status) = send_message(&mut smtp_client, self, &bdat_cmd, &params).await {
-                tracing::info!(
-                    parent: params.span,
+                trc::event!(
+
                     context = "message",
                     event = "rejected",
                     mx = &params.hostname,
@@ -213,8 +212,8 @@ impl Message {
                         // Mark recipients as delivered
                         if response.code() == 250 {
                             for (rcpt, status) in accepted_rcpts {
-                                tracing::info!(
-                                    parent: params.span,
+                                trc::event!(
+
                                     context = "rcpt",
                                     event = "delivered",
                                     rcpt = rcpt.address,
@@ -227,8 +226,8 @@ impl Message {
                                 total_completed += 1;
                             }
                         } else {
-                            tracing::info!(
-                                parent: params.span,
+                            trc::event!(
+
                                 context = "message",
                                 event = "rejected",
                                 mx = &params.hostname,
@@ -244,8 +243,8 @@ impl Message {
                         }
                     }
                     Err(status) => {
-                        tracing::info!(
-                            parent: params.span,
+                        trc::event!(
+
                             context = "message",
                             event = "failed",
                             mx = &params.hostname,
@@ -270,8 +269,8 @@ impl Message {
                             rcpt.flags |= RCPT_STATUS_CHANGED;
                             rcpt.status = match response.severity() {
                                 Severity::PositiveCompletion => {
-                                    tracing::info!(
-                                        parent: params.span,
+                                    trc::event!(
+
                                         context = "rcpt",
                                         event = "delivered",
                                         rcpt = rcpt.address,
@@ -286,8 +285,8 @@ impl Message {
                                     })
                                 }
                                 severity => {
-                                    tracing::info!(
-                                        parent: params.span,
+                                    trc::event!(
+
                                         context = "rcpt",
                                         event = "rejected",
                                         rcpt = rcpt.address,
@@ -316,8 +315,8 @@ impl Message {
                         }
                     }
                     Err(status) => {
-                        tracing::info!(
-                            parent: params.span,
+                        trc::event!(
+
                             context = "message",
                             event = "rejected",
                             mx = &params.hostname,
@@ -544,23 +543,24 @@ pub async fn send_message<T: AsyncRead + AsyncWrite + Unpin>(
             Status::from_smtp_error(params.hostname, bdat_cmd.as_deref().unwrap_or("DATA"), err)
         }),
         Ok(None) => {
-            tracing::error!(parent: params.span,
-            context = "queue",
-            event = "error",
-            "BlobHash {:?} does not exist.",
-            message.blob_hash,
+            trc::event!(
+                context = "queue",
+                event = "error",
+                "BlobHash {:?} does not exist.",
+                message.blob_hash,
             );
             Err(Status::TemporaryFailure(Error::Io(
                 "Queue system error.".to_string(),
             )))
         }
         Err(err) => {
-            tracing::error!(parent: params.span,
-                context = "queue", 
-                event = "error", 
-                "Failed to fetch blobId {:?}: {}", 
+            trc::event!(
+                context = "queue",
+                event = "error",
+                "Failed to fetch blobId {:?}: {}",
                 message.blob_hash,
-                err);
+                err
+            );
             Err(Status::TemporaryFailure(Error::Io(
                 "Queue system error.".to_string(),
             )))

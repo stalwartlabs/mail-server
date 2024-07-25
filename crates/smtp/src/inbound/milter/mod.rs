@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Display, net::IpAddr, time::Duration};
+use std::{borrow::Cow, fmt::Display, net::IpAddr, sync::Arc, time::Duration};
 
 use common::config::smtp::session::MilterVersion;
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,7 @@ pub struct MilterClient<T: AsyncRead + AsyncWrite> {
     options: u32,
     flags_actions: u32,
     flags_protocol: u32,
+    id: Arc<String>,
     session_id: u64,
 }
 

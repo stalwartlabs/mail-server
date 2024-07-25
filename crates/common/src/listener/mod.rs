@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc};
+use std::{borrow::Cow, net::IpAddr, sync::Arc, time::Instant};
 
 use rustls::ServerConfig;
 use std::fmt::Debug;
@@ -94,6 +94,9 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
         let manager = self.clone();
 
         tokio::spawn(async move {
+            let start_time = Instant::now();
+            let session_id = session.session_id;
+
             if is_tls {
                 match session
                     .instance
@@ -117,14 +120,12 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                             manager.handle(session).await;
                         }
                         Err(err) => {
-                            tracing::debug!(
-                                context = "tls",
-                                event = "error",
-                                instance = session.instance.id,
-                                protocol = ?session.instance.protocol,
-                                remote.ip = session.remote_ip.to_string(),
-                                "Failed to accept TLS connection: {}",
-                                err
+                            trc::event!(
+                                Tls(trc::TlsEvent::HandshakeError),
+                                ListenerId = session.instance.id.clone(),
+                                Protocol = session.instance.protocol,
+                                SessionId = session.session_id,
+                                Reason = err.to_string(),
                             );
                         }
                     },
@@ -137,6 +138,12 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
             } else {
                 manager.handle(session).await;
             }
+
+            trc::event!(
+                Session(trc::SessionEvent::Stop),
+                SessionId = session_id,
+                Duration = start_time.elapsed(),
+            );
         });
     }
 

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::backend::internal::manage::ManageDirectory;
+use directory::backend::internal::manage::{self, ManageDirectory};
 
 use hyper::Method;
 use serde::{Deserialize, Serialize};
@@ -185,7 +185,7 @@ impl JMAP {
                         });
                     }
                     Err(err) => {
-                        tracing::debug!("Failed to obtain DKIM public key: {}", err);
+                        trc::error!(err);
                     }
                 }
             }
@@ -303,7 +303,10 @@ impl JMAP {
                 let parsed_cert = match parse_x509_certificate(cert) {
                     Ok((_, parsed_cert)) => parsed_cert,
                     Err(err) => {
-                        tracing::debug!("Failed to parse certificate: {}", err);
+                        trc::error!(manage::error(
+                            "Failed to parse certificate",
+                            err.to_string().into()
+                        ));
                         continue;
                     }
                 };

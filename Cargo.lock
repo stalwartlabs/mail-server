@@ -1063,7 +1063,6 @@ dependencies = [
  "store",
  "tokio",
  "tokio-rustls 0.26.0",
- "tracing",
  "tracing-appender",
  "tracing-journald",
  "tracing-opentelemetry",
@@ -2959,7 +2958,6 @@ dependencies = [
  "store",
  "tokio",
  "tokio-rustls 0.26.0",
- "tracing",
  "trc",
  "utils",
 ]
@@ -3193,7 +3191,6 @@ dependencies = [
  "store",
  "tokio",
  "tokio-tungstenite 0.23.1",
- "tracing",
  "trc",
  "tungstenite 0.23.0",
  "utils",
@@ -3233,7 +3230,6 @@ dependencies = [
  "serde_json",
  "store",
  "tokio",
- "tracing",
  "trc",
  "utils",
 ]
@@ -3595,7 +3591,6 @@ dependencies = [
  "smtp",
  "store",
  "tokio",
- "tracing",
  "trc",
  "utils",
 ]
@@ -3622,7 +3617,6 @@ dependencies = [
  "store",
  "tokio",
  "tokio-rustls 0.26.0",
- "tracing",
  "trc",
  "utils",
 ]
@@ -4474,7 +4468,6 @@ dependencies = [
  "store",
  "tokio",
  "tokio-rustls 0.26.0",
- "tracing",
  "trc",
  "utils",
 ]
@@ -6051,7 +6044,6 @@ dependencies = [
  "store",
  "tokio",
  "tokio-rustls 0.26.0",
- "tracing",
  "trc",
  "utils",
  "webpki-roots 0.26.3",

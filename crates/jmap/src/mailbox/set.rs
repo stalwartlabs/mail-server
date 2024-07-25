@@ -354,15 +354,6 @@ impl JMAP {
                     let orig_len = mailbox_ids.inner.len();
                     mailbox_ids.inner.retain(|id| id.mailbox_id != document_id);
                     if mailbox_ids.inner.len() == orig_len {
-                        tracing::debug!(
-                            event = "error",
-                            context = "mailbox_set",
-                            account_id = account_id,
-                            mailbox_id = document_id,
-                            message_id = message_id,
-                            "Message is not in the mailbox, skipping."
-                        );
-
                         continue;
                     }
 
@@ -404,13 +395,13 @@ impl JMAP {
                                 }
                             }
                         } else {
-                            tracing::debug!(
-                                event = "error",
-                                context = "mailbox_set",
-                                account_id = account_id,
-                                mailbox_id = document_id,
-                                message_id = message_id,
-                                "Message does not have a threadId, skipping."
+                            trc::event!(
+                                Store(trc::StoreEvent::NotFound),
+                                AccountId = account_id,
+                                MessageId = message_id,
+                                MailboxId = document_id,
+                                Details = "Message does not have a threadId.",
+                                CausedBy = trc::location!(),
                             );
                         }
                     } else {

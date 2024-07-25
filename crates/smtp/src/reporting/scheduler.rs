@@ -142,7 +142,7 @@ async fn next_report_event(core: &Core) -> Vec<QueueClass> {
         .await;
 
     if let Err(err) = result {
-        tracing::error!(
+        trc::event!(
             context = "queue",
             event = "error",
             "Failed to read from store: {}",
@@ -174,7 +174,7 @@ impl SMTP {
                     match self.core.storage.data.write(batch.build()).await {
                         Ok(_) => true,
                         Err(err) if err.is_assertion_failure() => {
-                            tracing::debug!(
+                            trc::event!(
                                 context = "queue",
                                 event = "locked",
                                 key = ?lock,
@@ -183,7 +183,7 @@ impl SMTP {
                             false
                         }
                         Err(err) => {
-                            tracing::error!(
+                            trc::event!(
                                 context = "queue",
                                 event = "error",
                                 "Lock busy: {}",
@@ -193,7 +193,7 @@ impl SMTP {
                         }
                     }
                 } else {
-                    tracing::debug!(
+                    trc::event!(
                         context = "queue",
                         event = "locked",
                         key = ?lock,
@@ -204,7 +204,7 @@ impl SMTP {
                 }
             }
             Ok(None) => {
-                tracing::debug!(
+                trc::event!(
                     context = "queue",
                     event = "locked",
                     key = ?lock,
@@ -213,7 +213,7 @@ impl SMTP {
                 false
             }
             Err(err) => {
-                tracing::error!(
+                trc::event!(
                     context = "queue",
                     event = "error",
                     key = ?lock,

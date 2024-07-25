@@ -5,6 +5,7 @@
  */
 
 use smtp::queue;
+use trc::ClusterEvent;
 
 use crate::services::housekeeper;
 
@@ -68,7 +69,7 @@ impl Gossiper {
         let core = self.core.clone();
 
         tokio::spawn(async move {
-            tracing::debug!("One or more nodes became offline, reloading queues.");
+            trc::event!(Cluster(ClusterEvent::OneOrMorePeersOffline));
 
             let _ = core
                 .jmap_inner
@@ -94,7 +95,8 @@ impl Gossiper {
         self.epoch += 1;
 
         if peers.is_empty() {
-            tracing::debug!("Received empty ping packet.");
+            trc::event!(Cluster(ClusterEvent::EmptyPacket));
+
             return;
         }
 
@@ -117,17 +119,22 @@ impl Gossiper {
                             if local_peer.gen_config != peer.gen_config {
                                 local_peer.gen_config = peer.gen_config;
                                 if local_peer.hb_sum > 0 {
-                                    tracing::debug!(
-                                        "Peer {} has configuration changes.",
-                                        peer.addr
+                                    trc::event!(
+                                        Cluster(ClusterEvent::PeerHasConfigChanges),
+                                        RemoteIp = peer.addr
                                     );
+
                                     update_config = true;
                                 }
                             }
                             if local_peer.gen_lists != peer.gen_lists {
                                 local_peer.gen_lists = peer.gen_lists;
                                 if local_peer.hb_sum > 0 {
-                                    tracing::debug!("Peer {} has list changes.", peer.addr);
+                                    trc::event!(
+                                        Cluster(ClusterEvent::PeerHasListChanges),
+                                        RemoteIp = peer.addr
+                                    );
+
                                     update_lists = true;
                                 }
                             }
@@ -141,7 +148,7 @@ impl Gossiper {
             }
 
             // Add new peer to the list.
-            tracing::info!("Discovered new peer at {}.", peer.addr);
+            trc::event!(Cluster(ClusterEvent::PeerDiscovered), RemoteIp = peer.addr);
             self.peers.push(peer.into());
         }
 
@@ -177,15 +184,18 @@ impl Gossiper {
                                 .send(housekeeper::Event::AcmeReload)
                                 .await
                             {
-                                tracing::warn!(
-                                    "Failed to send ACME reload event to housekeeper: {}",
-                                    err
+                                trc::event!(
+                                    Server(trc::ServerEvent::ThreadError),
+                                    Details = "Failed to send ACME reload event to housekeeper",
+                                    CausedBy = trc::location!(),
                                 );
                             }
                         }
                     }
                     Err(err) => {
-                        tracing::error!("Failed to reload configuration: {}", err);
+                        trc::error!(err
+                            .details("Failed to reload settings")
+                            .caused_by(trc::location!()));
                     }
                 }
             });

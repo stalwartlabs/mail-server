@@ -20,7 +20,7 @@ use jmap_proto::{
 };
 use mail_parser::HeaderName;
 use store::{write::Bincode, BlobClass};
-use trc::AddContext;
+use trc::{AddContext, StoreEvent};
 
 use crate::{auth::AccessToken, email::headers::HeaderToValue, mailbox::UidMailbox, JMAP};
 
@@ -153,12 +153,16 @@ impl JMAP {
                 {
                     raw_message
                 } else {
-                    tracing::warn!(event = "not-found",
-                        account_id = account_id,
-                        collection = ?Collection::Email,
-                        document_id = id.document_id(),
-                        blob_id = ?metadata.blob_hash,
-                        "Blob not found");
+                    trc::event!(
+                        Store(StoreEvent::NotFound),
+                        AccountId = account_id,
+                        DocumentId = id.document_id(),
+                        Collection = Collection::Email,
+                        BlobId = metadata.blob_hash.as_slice().to_vec(),
+                        Details = "Blob not found.",
+                        CausedBy = trc::location!(),
+                    );
+
                     response.not_found.push(id.into());
                     continue;
                 }
@@ -211,11 +215,15 @@ impl JMAP {
                         {
                             email.append(property.clone(), mailboxes);
                         } else {
-                            tracing::debug!(event = "not-found",
-                                            account_id = account_id,
-                                            collection = ?Collection::Email,
-                                            document_id = id.document_id(),
-                                            "Mailbox property not found");
+                            trc::event!(
+                                Store(StoreEvent::NotFound),
+                                AccountId = account_id,
+                                DocumentId = id.document_id(),
+                                Collection = Collection::Email,
+                                Details = "Mailbox property not found.",
+                                CausedBy = trc::location!(),
+                            );
+
                             response.not_found.push(id.into());
                             continue 'outer;
                         }
@@ -239,11 +247,15 @@ impl JMAP {
                         {
                             email.append(property.clone(), keywords);
                         } else {
-                            tracing::debug!(event = "not-found",
-                                account_id = account_id,
-                                collection = ?Collection::Email,
-                                document_id = id.document_id(),
-                                "Keywords property not found");
+                            trc::event!(
+                                Store(StoreEvent::NotFound),
+                                AccountId = account_id,
+                                DocumentId = id.document_id(),
+                                Collection = Collection::Email,
+                                Details = "Keywords property not found.",
+                                CausedBy = trc::location!(),
+                            );
+
                             response.not_found.push(id.into());
                             continue 'outer;
                         }

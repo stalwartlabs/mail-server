@@ -116,7 +116,6 @@ impl JMAP {
                             }
                         }
                         Ok(None) => {
-                            tracing::debug!("Broadcast channel was closed.");
                             break;
                         }
                         Err(_) => (),

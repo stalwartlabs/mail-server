@@ -72,13 +72,15 @@ impl<T: SessionStream> SessionData<T> {
             {
                 debug_assert!(item.uid != 0, "UID is zero for message {item:?}");
                 if uid_map.insert(item.uid, message_id).is_some() {
-                    tracing::warn!(event = "error",
-                            context = "store",
-                            account_id = mailbox.account_id,
-                            collection = ?Collection::Mailbox,
-                            mailbox_id = mailbox.mailbox_id,
-                            message_id = message_id,
-                            "Duplicate UID");
+                    trc::event!(
+                        Store(trc::StoreEvent::UnexpectedError),
+                        AccountId = mailbox.account_id,
+                        Collection = Collection::Mailbox as u8,
+                        MailboxId = mailbox.mailbox_id,
+                        MessageId = message_id,
+                        SessionId = self.session_id,
+                        Details = "Duplicate IMAP UID"
+                    );
                 }
             }
         }

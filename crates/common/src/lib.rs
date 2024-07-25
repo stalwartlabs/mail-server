@@ -101,6 +101,7 @@ pub struct IngestMessage {
     pub recipients: Vec<String>,
     pub message_blob: BlobHash,
     pub message_size: usize,
+    pub session_id: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -131,88 +132,82 @@ impl Core {
         self.storage.directories.get(name)
     }
 
-    pub fn get_directory_or_default(&self, name: &str) -> &Arc<Directory> {
+    pub fn get_directory_or_default(&self, name: &str, session_id: u64) -> &Arc<Directory> {
         self.storage.directories.get(name).unwrap_or_else(|| {
-            tracing::debug!(
-                context = "get_directory",
-                event = "error",
-                directory = name,
-                "Directory not found, using default."
+            trc::event!(
+                Eval(trc::EvalEvent::DirectoryNotFound),
+                Id = name.to_string(),
+                SessionId = session_id,
             );
 
             &self.storage.directory
         })
     }
 
-    pub fn get_lookup_store(&self, name: &str) -> &LookupStore {
+    pub fn get_lookup_store(&self, name: &str, session_id: u64) -> &LookupStore {
         self.storage.lookups.get(name).unwrap_or_else(|| {
-            tracing::debug!(
-                context = "get_lookup_store",
-                event = "error",
-                directory = name,
-                "Store not found, using default."
+            trc::event!(
+                Eval(trc::EvalEvent::StoreNotFound),
+                Id = name.to_string(),
+                SessionId = session_id,
             );
 
             &self.storage.lookup
         })
     }
 
-    pub fn get_arc_sealer(&self, name: &str) -> Option<&ArcSealer> {
+    pub fn get_arc_sealer(&self, name: &str, session_id: u64) -> Option<&ArcSealer> {
         self.smtp
             .mail_auth
             .sealers
             .get(name)
             .map(|s| s.as_ref())
             .or_else(|| {
-                tracing::warn!(
-                    context = "get_arc_sealer",
-                    event = "error",
-                    name = name,
-                    "Arc sealer not found."
+                trc::event!(
+                    Arc(trc::ArcEvent::SealerNotFound),
+                    Id = name.to_string(),
+                    SessionId = session_id,
                 );
 
                 None
             })
     }
 
-    pub fn get_dkim_signer(&self, name: &str) -> Option<&DkimSigner> {
+    pub fn get_dkim_signer(&self, name: &str, session_id: u64) -> Option<&DkimSigner> {
         self.smtp
             .mail_auth
             .signers
             .get(name)
             .map(|s| s.as_ref())
             .or_else(|| {
-                tracing::warn!(
-                    context = "get_dkim_signer",
-                    event = "error",
-                    name = name,
-                    "DKIM signer not found."
+                trc::event!(
+                    Dkim(trc::DkimEvent::SignerNotFound),
+                    Id = name.to_string(),
+                    SessionId = session_id,
                 );
 
                 None
             })
     }
 
-    pub fn get_sieve_script(&self, name: &str) -> Option<&Arc<Sieve>> {
+    pub fn get_sieve_script(&self, name: &str, session_id: u64) -> Option<&Arc<Sieve>> {
         self.sieve.scripts.get(name).or_else(|| {
-            tracing::warn!(
-                context = "get_sieve_script",
-                event = "error",
-                name = name,
-                "Sieve script not found."
+            trc::event!(
+                Sieve(trc::SieveEvent::ScriptNotFound),
+                Id = name.to_string(),
+                SessionId = session_id,
             );
 
             None
         })
     }
 
-    pub fn get_relay_host(&self, name: &str) -> Option<&RelayHost> {
+    pub fn get_relay_host(&self, name: &str, session_id: u64) -> Option<&RelayHost> {
         self.smtp.queue.relay_hosts.get(name).or_else(|| {
-            tracing::warn!(
-                context = "get_relay_host",
-                event = "error",
-                name = name,
-                "Remote host not found."
+            trc::event!(
+                Smtp(trc::SmtpEvent::RemoteIdNotFound),
+                Id = name.to_string(),
+                SessionId = session_id,
             );
 
             None
@@ -329,7 +324,9 @@ impl Core {
                             .await;
                         }
 
-                        Err(trc::AuthEvent::Failed.into())
+                        Err(trc::AuthEvent::Failed
+                            .ctx(trc::Key::Name, username.to_string())
+                            .ctx(trc::Key::RemoteIp, remote_ip))
                     };
                 }
             }
@@ -352,14 +349,6 @@ impl Core {
         } else if self.has_fail2ban() {
             let login = credentials.login();
             if self.is_fail2banned(remote_ip, login.to_string()).await? {
-                tracing::info!(
-                    context = "directory",
-                    event = "fail2ban",
-                    remote_ip = ?remote_ip,
-                    login = ?login,
-                    "IP address blocked after too many failed login attempts",
-                );
-
                 // Send webhook event
                 if self.has_webhook_subscribers(WebhookType::AuthBanned) {
                     ipc.send_webhook(
@@ -375,7 +364,10 @@ impl Core {
                     .await;
                 }
 
-                Err(trc::AuthEvent::Banned.into())
+                Err(trc::AuthEvent::Banned
+                    .into_err()
+                    .ctx(trc::Key::RemoteIp, remote_ip)
+                    .ctx(trc::Key::Name, login.to_string()))
             } else {
                 // Send webhook event
                 if self.has_webhook_subscribers(WebhookType::AuthFailure) {
@@ -392,7 +384,9 @@ impl Core {
                     .await;
                 }
 
-                Err(trc::AuthEvent::Failed.into())
+                Err(trc::AuthEvent::Failed
+                    .ctx(trc::Key::RemoteIp, remote_ip)
+                    .ctx(trc::Key::Name, login.to_string()))
             }
         } else {
             // Send webhook event
@@ -409,7 +403,9 @@ impl Core {
                 )
                 .await;
             }
-            Err(trc::AuthEvent::Failed.into())
+            Err(trc::AuthEvent::Failed
+                .ctx(trc::Key::RemoteIp, remote_ip)
+                .ctx(trc::Key::Name, credentials.login().to_string()))
         }
     }
 }

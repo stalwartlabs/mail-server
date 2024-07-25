@@ -339,15 +339,21 @@ impl ConfigManager {
             .map_or(true, |v| v != external.version)
         {
             self.set(external.keys).await?;
+
+            trc::event!(
+                Config(trc::ConfigEvent::ImportExternal),
+                Version = external.version.clone(),
+                Id = resource_id.to_string(),
+            );
+
             Ok(Some(external.version))
         } else {
-            tracing::debug!(
-                context = "config",
-                event = "update",
-                resource_id = resource_id,
-                version = external.version,
-                "Configuration version is up-to-date"
+            trc::event!(
+                Config(trc::ConfigEvent::AlreadyUpToDate),
+                Version = external.version,
+                Id = resource_id.to_string(),
             );
+
             Ok(None)
         }
     }
@@ -380,13 +386,11 @@ impl ConfigManager {
             {
                 external.keys.push(ConfigKey::from((key, value)));
             } else {
-                tracing::debug!(
-                    context = "config",
-                    event = "import",
-                    key = key,
-                    value = value,
-                    resource_id = resource_id,
-                    "Ignoring key"
+                trc::event!(
+                    Config(trc::ConfigEvent::ExternalKeyIgnored),
+                    Key = key,
+                    Value = value,
+                    Id = resource_id.to_string(),
                 );
             }
         }

@@ -28,7 +28,7 @@ directory = { path = "../directory" }
 trc = { path = "../trc" }
 utils = { path = "../utils" }
 tokio = { version = "1.23", features = ["full"] }
-tracing = "0.1"
+
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = "0.5.0"

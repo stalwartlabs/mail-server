@@ -56,7 +56,9 @@ impl<T: SessionStream> Session<T> {
         // Send continuation response
         self.write_bytes(b"+ Idling, send 'DONE' to stop.\r\n".to_vec())
             .await?;
-        tracing::debug!(event = "start", context = "idle", "Starting IDLE.");
+
+        trc::event!(Imap(trc::ImapEvent::IdleStart), SessionId = self.session_id);
+
         let mut buf = vec![0; 1024];
         loop {
             tokio::select! {
@@ -65,13 +67,12 @@ impl<T: SessionStream> Session<T> {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
                                 if (buf[..bytes_read]).windows(4).any(|w| w == b"DONE") {
-                                    tracing::debug!( event = "stop", context = "idle", "Stopping IDLE.");
+                                    trc::event!(Imap(trc::ImapEvent::IdleStop), SessionId = self.session_id);
                                     return self.write_bytes(StatusResponse::completed(Command::Idle)
                                                                     .with_tag(request.tag)
                                                                     .into_bytes()).await;
                                 }
                             } else {
-                                tracing::debug!( event = "close", );
                                 return Err(trc::NetworkEvent::Closed.into_err().details("IMAP connection closed by client.").id(request.tag));
                             }
                         },

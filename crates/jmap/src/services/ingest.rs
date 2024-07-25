@@ -27,13 +27,23 @@ impl JMAP {
             .await
         {
             Ok(Some(raw_message)) => raw_message,
-            result => {
-                tracing::error!(
-                    context = "ingest",
-                    rcpts = ?message.recipients,
-                    error = ?result,
-                    "Failed to fetch message blob."
+            Ok(None) => {
+                trc::event!(
+                    Store(trc::StoreEvent::IngestError),
+                    Reason = "Blob not found.",
+                    SessionId = message.session_id,
                 );
+
+                return (0..message.recipients.len())
+                    .map(|_| DeliveryResult::TemporaryFailure {
+                        reason: "Blob not found.".into(),
+                    })
+                    .collect::<Vec<_>>();
+            }
+            Err(err) => {
+                trc::error!(err
+                    .details("Failed to fetch message blob.")
+                    .session_id(message.session_id));
 
                 return (0..message.recipients.len())
                     .map(|_| DeliveryResult::TemporaryFailure {
@@ -49,7 +59,7 @@ impl JMAP {
         for rcpt in &message.recipients {
             match self
                 .core
-                .email_to_ids(&self.core.storage.directory, rcpt)
+                .email_to_ids(&self.core.storage.directory, rcpt, message.session_id)
                 .await
             {
                 Ok(uids) => {
@@ -59,12 +69,10 @@ impl JMAP {
                     recipients.push(uids);
                 }
                 Err(err) => {
-                    tracing::error!(
-                        context = "ingest",
-                        error = ?err,
-                        rcpt = rcpt,
-                        "Failed to lookup recipient"
-                    );
+                    trc::error!(err
+                        .details("Failed to lookup recipient.")
+                        .ctx(trc::Key::To, rcpt.to_string())
+                        .session_id(message.session_id));
                     recipients.push(vec![]);
                 }
             }
@@ -116,12 +124,10 @@ impl JMAP {
                     .await
                 }
                 Err(err) => {
-                    tracing::error!(
-                        context = "ingest",
-                        error = ?err,
-                        rcpt = rcpt,
-                        "Failed to ingest message"
-                    );
+                    trc::error!(err
+                        .details("Failed to ingest message.")
+                        .ctx(trc::Key::To, rcpt.to_string())
+                        .session_id(message.session_id));
 
                     *status = DeliveryResult::TemporaryFailure {
                         reason: "Transient server failure.".into(),
@@ -145,13 +151,6 @@ impl JMAP {
                     }
                 }
                 Err(mut err) => {
-                    tracing::error!(
-                        context = "ingest",
-                        error = ?err,
-                        rcpt = rcpt,
-                        "Failed to ingest message"
-                    );
-
                     match err.as_ref() {
                         trc::EventType::Limit(trc::LimitEvent::Quota) => {
                             *status = DeliveryResult::TemporaryFailure {
@@ -168,9 +167,9 @@ impl JMAP {
                                     })
                                     .unwrap_or([5, 5, 0]),
                                 reason: err
-                                    .take_value(trc::Key::Reason)
-                                    .and_then(|v| v.into_string())
-                                    .unwrap(),
+                                    .value_as_str(trc::Key::Reason)
+                                    .unwrap_or_default()
+                                    .to_string(),
                             }
                         }
                         _ => {
@@ -179,6 +178,10 @@ impl JMAP {
                             }
                         }
                     }
+
+                    trc::error!(err
+                        .ctx(trc::Key::To, rcpt.to_string())
+                        .session_id(message.session_id));
                 }
             }
         }

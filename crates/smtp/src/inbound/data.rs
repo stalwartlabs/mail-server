@@ -8,7 +8,7 @@ use std::{
     borrow::Cow,
     process::Stdio,
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use chrono::{TimeZone, Utc};
@@ -29,6 +29,7 @@ use smtp_proto::{
 };
 use store::write::now;
 use tokio::{io::AsyncWriteExt, process::Command};
+use trc::SmtpEvent;
 use utils::config::Rate;
 
 use crate::{
@@ -50,10 +51,10 @@ impl<T: SessionStream> Session<T> {
         ) {
             auth_message
         } else {
-            tracing::info!(
-                    context = "data",
-                    event = "parse-failed",
-                    size = raw_message.len());
+            trc::event!(
+                Smtp(SmtpEvent::MessageParseFailed),
+                SessionId = self.data.session_id,
+            );
 
             self.send_failure_webhook(WebhookMessageFailure::ParseFailed)
                 .await;
@@ -73,12 +74,11 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .unwrap_or(50)
         {
-            tracing::info!(
-                context = "data",
-                event = "loop-detected",
-                return_path = self.data.mail_from.as_ref().unwrap().address,
-                from = auth_message.from(),
-                received_headers = auth_message.received_headers_count());
+            trc::event!(
+                Smtp(SmtpEvent::LoopDetected),
+                SessionId = self.data.session_id,
+                Count = auth_message.received_headers_count(),
+            );
 
             self.send_failure_webhook(WebhookMessageFailure::LoopDetected)
                 .await;
@@ -101,6 +101,7 @@ impl<T: SessionStream> Session<T> {
             .await
             .unwrap_or(VerifyStrategy::Relaxed);
         let dkim_output = if dkim.verify() || dmarc.verify() {
+            let time = Instant::now();
             let dkim_output = self
                 .core
                 .core
@@ -109,10 +110,11 @@ impl<T: SessionStream> Session<T> {
                 .dns
                 .verify_dkim(&auth_message)
                 .await;
-            let rejected = dkim.is_strict()
-                && !dkim_output
-                    .iter()
-                    .any(|d| matches!(d.result(), DkimResult::Pass));
+            let pass = dkim_output
+                .iter()
+                .any(|d| matches!(d.result(), DkimResult::Pass));
+            let strict = dkim.is_strict();
+            let rejected = strict && !pass;
 
             // Send reports for failed signatures
             if let Some(rate) = self
@@ -129,15 +131,22 @@ impl<T: SessionStream> Session<T> {
                 }
             }
 
-            if rejected {
-                tracing::info!(
-                    context = "dkim",
-                    event = "failed",
-                    return_path = self.data.mail_from.as_ref().unwrap().address,
-                    from = auth_message.from(),
-                    result = ?dkim_output.iter().map(|d| d.result().to_string()).collect::<Vec<_>>(),
-                    "No passing DKIM signatures found.");
+            trc::event!(
+                Smtp(if pass {
+                    SmtpEvent::DkimPass
+                } else {
+                    SmtpEvent::DkimFail
+                }),
+                SessionId = self.data.session_id,
+                Strict = strict,
+                Result = dkim_output
+                    .iter()
+                    .map(|o| trc::Event::from(o))
+                    .collect::<Vec<_>>(),
+                Elapsed = time.elapsed(),
+            );
 
+            if rejected {
                 self.send_failure_webhook(WebhookMessageFailure::DkimPolicy)
                     .await;
 
@@ -150,14 +159,8 @@ impl<T: SessionStream> Session<T> {
                 } else {
                     (&b"550 5.7.20 No passing DKIM signatures found.\r\n"[..]).into()
                 };
-            } else {
-                tracing::debug!(
-                    context = "dkim",
-                    event = "verify",
-                    return_path = self.data.mail_from.as_ref().unwrap().address,
-                    from = auth_message.from(),
-                    result = ?dkim_output.iter().map(|d| d.result().to_string()).collect::<Vec<_>>());
             }
+
             dkim_output
         } else {
             vec![]
@@ -175,8 +178,9 @@ impl<T: SessionStream> Session<T> {
             .core
             .eval_if::<String, _>(&ac.arc.seal, self, self.data.session_id)
             .await
-            .and_then(|name| self.core.core.get_arc_sealer(&name));
+            .and_then(|name| self.core.core.get_arc_sealer(&name, self.data.session_id));
         let arc_output = if arc.verify() || arc_sealer.is_some() {
+            let time = Instant::now();
             let arc_output = self
                 .core
                 .core
@@ -186,17 +190,22 @@ impl<T: SessionStream> Session<T> {
                 .verify_arc(&auth_message)
                 .await;
 
-            if arc.is_strict()
-                && !matches!(arc_output.result(), DkimResult::Pass | DkimResult::None)
-            {
-                tracing::info!(
-                    context = "arc",
-                    event = "auth-failed",
-                    return_path = self.data.mail_from.as_ref().unwrap().address,
-                    from = auth_message.from(),
-                    result = %arc_output.result(),
-                    "ARC validation failed.");
+            let strict = arc.is_strict();
+            let pass = matches!(arc_output.result(), DkimResult::Pass | DkimResult::None);
 
+            trc::event!(
+                Smtp(if pass {
+                    SmtpEvent::ArcPass
+                } else {
+                    SmtpEvent::ArcFail
+                }),
+                SessionId = self.data.session_id,
+                Strict = strict,
+                Result = trc::Event::from(arc_output.result()),
+                Elapsed = time.elapsed(),
+            );
+
+            if strict && !pass {
                 self.send_failure_webhook(WebhookMessageFailure::ArcPolicy)
                     .await;
 
@@ -205,14 +214,8 @@ impl<T: SessionStream> Session<T> {
                 } else {
                     (&b"550 5.7.29 ARC validation failed.\r\n"[..]).into()
                 };
-            } else {
-                tracing::debug!(
-                    context = "arc",
-                    event = "verify",
-                    return_path = self.data.mail_from.as_ref().unwrap().address,
-                    from = auth_message.from(),
-                    result = %arc_output.result());
             }
+
             arc_output.into()
         } else {
             None
@@ -247,6 +250,7 @@ impl<T: SessionStream> Session<T> {
         let is_report = self.is_report();
         let (dmarc_result, dmarc_policy) = match &self.data.spf_mail_from {
             Some(spf_output) if dmarc.verify() => {
+                let time = Instant::now();
                 let dmarc_output = self
                     .core
                     .core
@@ -265,19 +269,17 @@ impl<T: SessionStream> Session<T> {
                     )
                     .await;
 
-                let rejected = dmarc.is_strict()
-                    && dmarc_output.policy() == dmarc::Policy::Reject
-                    && !(matches!(dmarc_output.spf_result(), DmarcResult::Pass)
-                        || matches!(dmarc_output.dkim_result(), DmarcResult::Pass));
+                let pass = matches!(dmarc_output.spf_result(), DmarcResult::Pass)
+                    || matches!(dmarc_output.dkim_result(), DmarcResult::Pass);
+                let strict = dmarc.is_strict();
+                let rejected = strict && dmarc_output.policy() == dmarc::Policy::Reject && !pass;
                 let is_temp_fail = rejected
                     && matches!(dmarc_output.spf_result(), DmarcResult::TempError(_))
                     || matches!(dmarc_output.dkim_result(), DmarcResult::TempError(_));
 
                 // Add to DMARC output to the Authentication-Results header
                 auth_results = auth_results.with_dmarc_result(&dmarc_output);
-                let dmarc_result = if dmarc_output.spf_result() == &DmarcResult::Pass
-                    || dmarc_output.dkim_result() == &DmarcResult::Pass
-                {
+                let dmarc_result = if pass {
                     DmarcResult::Pass
                 } else if dmarc_output.spf_result() != &DmarcResult::None {
                     dmarc_output.spf_result().clone()
@@ -288,23 +290,19 @@ impl<T: SessionStream> Session<T> {
                 };
                 let dmarc_policy = dmarc_output.policy();
 
-                if !rejected {
-                    tracing::debug!(
-                    context = "dmarc",
-                    event = "verify",
-                    return_path = mail_from.address,
-                    from = auth_message.from(),
-                    dkim_result = %dmarc_output.dkim_result(),
-                    spf_result = %dmarc_output.spf_result());
-                } else {
-                    tracing::info!(
-                    context = "dmarc",
-                    event = "auth-failed",
-                    return_path = mail_from.address,
-                    from = auth_message.from(),
-                    dkim_result = %dmarc_output.dkim_result(),
-                    spf_result = %dmarc_output.spf_result());
-                }
+                trc::event!(
+                    Smtp(if pass {
+                        SmtpEvent::DmarcPass
+                    } else {
+                        SmtpEvent::DmarcFail
+                    }),
+                    SessionId = self.data.session_id,
+                    Strict = strict,
+                    Domain = dmarc_output.domain().to_string(),
+                    Policy = dmarc_policy.to_string(),
+                    Result = trc::Event::from(&dmarc_result),
+                    Elapsed = time.elapsed(),
+                );
 
                 // Send DMARC report
                 if dmarc_output.requested_reports() && !is_report {
@@ -396,12 +394,9 @@ impl<T: SessionStream> Session<T> {
                         set.write_header(&mut headers);
                     }
                     Err(err) => {
-                        tracing::info!(
-                            context = "arc",
-                            event = "seal-failed",
-                            return_path = mail_from.address_lcase,
-                            from = auth_message.from(),
-                            "Failed to seal message: {}", err);
+                        trc::error!(trc::Event::from(err)
+                            .session_id(self.data.session_id)
+                            .details("Failed to ARC seal message"));
                     }
                 }
             }
@@ -412,19 +407,6 @@ impl<T: SessionStream> Session<T> {
         match self.run_milters(Stage::Data, (&auth_message).into()).await {
             Ok(modifications_) => {
                 if !modifications_.is_empty() {
-                    tracing::debug!(
-                    
-                    context = "milter",
-                    event = "accept",
-                    modifications = modifications.iter().fold(String::new(), |mut s, m| {
-                        use std::fmt::Write;
-                        if !s.is_empty() {
-                            s.push_str(", ");
-                        }
-                        let _ = write!(s, "{m}");
-                        s
-                    }),
-                    "Milter filter(s) accepted message.");
                     modifications = modifications_;
                 }
             }
@@ -443,12 +425,6 @@ impl<T: SessionStream> Session<T> {
         {
             Ok(modifications_) => {
                 if !modifications_.is_empty() {
-                    tracing::debug!(
-                            
-                            context = "mta_hook",
-                            event = "accept",
-                            "MTAHook filter(s) accepted message.");
-
                     modifications.retain(|m| !matches!(m, Modification::ReplaceBody { .. }));
                     modifications.extend(modifications_);
                 }
@@ -519,54 +495,58 @@ impl<T: SessionStream> Session<T> {
                                                 edited_message = output.stdout.into();
                                             }
 
-                                            tracing::debug!(
-                                                context = "pipe",
-                                                event = "success",
-                                                command = command_,
-                                                status = output.status.to_string());
+                                            trc::event!(
+                                                Smtp(SmtpEvent::PipeSuccess),
+                                                SessionId = self.data.session_id,
+                                                Path = command_,
+                                                Status = output.status.to_string(),
+                                            );
                                         }
                                         Ok(Err(err)) => {
-                                            tracing::warn!(
-                                                context = "pipe",
-                                                event = "exec-error",
-                                                command = command_,
-                                                reason = %err);
+                                            trc::event!(
+                                                Smtp(SmtpEvent::PipeError),
+                                                SessionId = self.data.session_id,
+                                                Reason = err.to_string(),
+                                            );
                                         }
                                         Err(_) => {
-                                            tracing::warn!(
-                                                context = "pipe",
-                                                event = "timeout",
-                                                command = command_);
+                                            trc::event!(
+                                                Smtp(SmtpEvent::PipeError),
+                                                SessionId = self.data.session_id,
+                                                Reason = "Timeout",
+                                            );
                                         }
                                     }
                                 }
                                 Ok(Err(err)) => {
-                                    tracing::warn!(
-                                        context = "pipe",
-                                        event = "write-error",
-                                        command = command_,
-                                        reason = %err);
+                                    trc::event!(
+                                        Smtp(SmtpEvent::PipeError),
+                                        SessionId = self.data.session_id,
+                                        Reason = err.to_string(),
+                                    );
                                 }
                                 Err(_) => {
-                                    tracing::warn!(
-                                        context = "pipe",
-                                        event = "stdin-timeout",
-                                        command = command_);
+                                    trc::event!(
+                                        Smtp(SmtpEvent::PipeError),
+                                        SessionId = self.data.session_id,
+                                        Reason = "Stdin timeout",
+                                    );
                                 }
                             }
                         } else {
-                            tracing::warn!(
-                                context = "pipe",
-                                event = "stdin-failed",
-                                command = command_);
+                            trc::event!(
+                                Smtp(SmtpEvent::PipeError),
+                                SessionId = self.data.session_id,
+                                Reason = "Stdin not available",
+                            );
                         }
                     }
                     Err(err) => {
-                        tracing::warn!(
-                                context = "pipe",
-                                event = "spawn-error",
-                                command = command_,
-                                reason = %err);
+                        trc::event!(
+                            Smtp(SmtpEvent::PipeError),
+                            SessionId = self.data.session_id,
+                            Reason = err.to_string(),
+                        );
                     }
                 }
             }
@@ -578,7 +558,7 @@ impl<T: SessionStream> Session<T> {
             .core
             .eval_if::<String, _>(&dc.script, self, self.data.session_id)
             .await
-            .and_then(|name| self.core.core.get_sieve_script(&name))
+            .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
         {
             let params = self
                 .build_script_parameters("data")
@@ -639,11 +619,6 @@ impl<T: SessionStream> Session<T> {
                     modifications
                 }
                 ScriptResult::Reject(message) => {
-                    tracing::info!(
-                        context = "sieve",
-                        event = "reject",
-                        reason = message);
-
                     self.send_failure_webhook(WebhookMessageFailure::SieveReject)
                         .await;
 
@@ -730,17 +705,19 @@ impl<T: SessionStream> Session<T> {
             .await
             .unwrap_or_default()
         {
-            if let Some(signer) = self.core.core.get_dkim_signer(&signer) {
+            if let Some(signer) = self
+                .core
+                .core
+                .get_dkim_signer(&signer, self.data.session_id)
+            {
                 match signer.sign_chained(&[headers.as_ref(), raw_message]) {
                     Ok(signature) => {
                         signature.write_header(&mut headers);
                     }
                     Err(err) => {
-                        tracing::info!(
-                        context = "dkim",
-                        event = "sign-failed",
-                        return_path = message.return_path,
-                        "Failed to sign message: {}", err);
+                        trc::error!(trc::Event::from(err)
+                            .session_id(self.data.session_id)
+                            .details("Failed to DKIM sign message"));
                     }
                 }
             }
@@ -805,12 +782,9 @@ impl<T: SessionStream> Session<T> {
                 (b"451 4.3.5 Unable to accept message at this time.\r\n"[..]).into()
             }
         } else {
-            tracing::warn!(
-                
-                context = "queue",
-                event = "quota-exceeded",
-                from = message.return_path,
-                "Queue quota exceeded, rejecting message."
+            trc::event!(
+                Smtp(SmtpEvent::QuotaExceeded),
+                SessionId = self.data.session_id,
             );
 
             self.send_failure_webhook(WebhookMessageFailure::QuotaExceeded)
@@ -974,12 +948,11 @@ impl<T: SessionStream> Session<T> {
             {
                 Ok(true)
             } else {
-                tracing::debug!(
-                    
-                    context = "data",
-                    event = "too-many-messages",
-                    "Maximum number of messages per session exceeded."
+                trc::event!(
+                    Smtp(SmtpEvent::TooManyMessages),
+                    SessionId = self.data.session_id,
                 );
+
                 self.write(b"451 4.4.5 Maximum number of messages per session exceeded.\r\n")
                     .await?;
                 Ok(false)

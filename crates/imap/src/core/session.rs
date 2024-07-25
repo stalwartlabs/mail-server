@@ -67,24 +67,42 @@ impl<T: SessionStream> Session<T> {
                                     }
                                 }
                             } else {
-                                tracing::debug!( event = "close", "IMAP connection closed by client.");
+                                trc::event!(
+                                    Network(trc::NetworkEvent::Closed),
+                                    SessionId = self.session_id,
+                                    CausedBy = trc::location!()
+                                );
                                 break;
                             }
                         },
                         Ok(Err(err)) => {
-                            tracing::debug!( event = "error", reason = %err, "IMAP connection error.");
+                            trc::event!(
+                                Network(trc::NetworkEvent::ReadError),
+                                SessionId = self.session_id,
+                                Reason = err,
+                                CausedBy = trc::location!()
+                            );
                             break;
                         },
                         Err(_) => {
+                            trc::event!(
+                                Network(trc::NetworkEvent::Timeout),
+                                SessionId = self.session_id,
+                                CausedBy = trc::location!()
+                            );
                             self.write_bytes(&b"* BYE Connection timed out.\r\n"[..]).await.ok();
-                            tracing::debug!( "IMAP connection timed out.");
                             break;
                         }
                     }
                 },
                 _ = shutdown_rx.changed() => {
+                    trc::event!(
+                        Network(trc::NetworkEvent::Closed),
+                        SessionId = self.session_id,
+                        Reason = "Server shutting down",
+                        CausedBy = trc::location!()
+                    );
                     self.write_bytes(&b"* BYE Server shutting down.\r\n"[..]).await.ok();
-                    tracing::debug!( event = "shutdown", "IMAP server shutting down.");
                     break;
                 }
             };
@@ -104,7 +122,12 @@ impl<T: SessionStream> Session<T> {
             (false, &manager.imap.imap_inner.greeting_plain)
         };
         if let Err(err) = session.stream.write_all(greeting).await {
-            tracing::debug!( event = "error", reason = %err, "Failed to write greeting.");
+            trc::event!(
+                Network(trc::NetworkEvent::WriteError),
+                Reason = err,
+                SessionId = session.session_id,
+                Details = "Failed to write to stream"
+            );
             return Err(());
         }
         let _ = session.stream.flush().await;
@@ -140,7 +163,11 @@ impl<T: SessionStream> Session<T> {
                 ))) {
             state
         } else {
-            tracing::debug!("Failed to obtain write half state.");
+            trc::event!(
+                Network(trc::NetworkEvent::SplitError),
+                SessionId = self.session_id,
+                Details = "Failed to obtain write half state"
+            );
             return Err(());
         };
 
@@ -150,7 +177,12 @@ impl<T: SessionStream> Session<T> {
         {
             self.stream_rx.unsplit(stream_tx)
         } else {
-            tracing::debug!("Failed to take ownership of write half.");
+            trc::event!(
+                Network(trc::NetworkEvent::SplitError),
+                SessionId = self.session_id,
+                Details = "Failed to take ownership of write half"
+            );
+
             return Err(());
         };
 
@@ -181,13 +213,12 @@ impl<T: SessionStream> Session<T> {
 impl<T: SessionStream> Session<T> {
     pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> trc::Result<()> {
         let bytes = bytes.as_ref();
-        /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
-            let c = println!("{}", line);
-        }*/
-        tracing::trace!(
-            event = "write",
-            data = std::str::from_utf8(bytes).unwrap_or_default(),
-            size = bytes.len()
+
+        trc::event!(
+            Imap(trc::ImapEvent::RawOutput),
+            SessionId = self.session_id,
+            Size = bytes.len(),
+            Contents = String::from_utf8_lossy(bytes).into_owned(),
         );
 
         let mut stream = self.stream_tx.lock().await;
@@ -203,18 +234,20 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn write_error(&self, err: trc::Error) -> bool {
-        tracing::warn!( event = "error", reason = %err, "IMAP error.");
-
         if err.should_write_err() {
             let disconnect = err.must_disconnect();
+            let bytes = err.serialize();
+            trc::error!(err.session_id(self.session_id));
 
-            if let Err(err) = self.write_bytes(err.serialize()).await {
-                tracing::debug!( event = "error", reason = %err, "Failed to write error.");
+            if let Err(err) = self.write_bytes(bytes).await {
+                trc::error!(err.session_id(self.session_id));
                 false
             } else {
                 !disconnect
             }
         } else {
+            trc::error!(err);
+
             false
         }
     }
@@ -223,13 +256,12 @@ impl<T: SessionStream> Session<T> {
 impl<T: SessionStream> super::SessionData<T> {
     pub async fn write_bytes(&self, bytes: impl AsRef<[u8]>) -> trc::Result<()> {
         let bytes = bytes.as_ref();
-        /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
-            let c = println!("{}", line);
-        }*/
-        tracing::trace!(
-            event = "write",
-            data = std::str::from_utf8(bytes).unwrap_or_default(),
-            size = bytes.len()
+
+        trc::event!(
+            Imap(trc::ImapEvent::RawOutput),
+            SessionId = self.session_id,
+            Size = bytes.len(),
+            Contents = String::from_utf8_lossy(bytes).into_owned(),
         );
 
         let mut stream = self.stream_tx.lock().await;
@@ -245,11 +277,12 @@ impl<T: SessionStream> super::SessionData<T> {
     }
 
     pub async fn write_error(&self, err: trc::Error) -> trc::Result<()> {
-        tracing::warn!( event = "error", reason = %err, "IMAP error.");
-
         if err.should_write_err() {
-            self.write_bytes(err.serialize()).await
+            let bytes = err.serialize();
+            trc::error!(err.session_id(self.session_id));
+            self.write_bytes(bytes).await
         } else {
+            trc::error!(err.session_id(self.session_id));
             Ok(())
         }
     }

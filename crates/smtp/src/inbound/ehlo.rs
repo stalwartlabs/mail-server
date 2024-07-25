@@ -4,15 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::{core::Session, scripts::ScriptResult};
 use common::{
     config::smtp::session::{Mechanism, Stage},
     listener::SessionStream,
 };
-use mail_auth::spf::verify::HasValidLabels;
+use mail_auth::{spf::verify::HasValidLabels, SpfResult};
 use smtp_proto::*;
+use trc::SmtpEvent;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_ehlo(&mut self, domain: String, is_extended: bool) -> Result<(), ()> {
@@ -21,19 +22,25 @@ impl<T: SessionStream> Session<T> {
         if domain != self.data.helo_domain {
             // Reject non-FQDN EHLO domains - simply checks that the hostname has at least one dot
             if self.params.ehlo_reject_non_fqdn && !domain.as_str().has_valid_labels() {
-                tracing::info!(
-                    context = "ehlo",
-                    event = "reject",
-                    reason = "invalid",
-                    domain = domain,
+                trc::event!(
+                    Smtp(SmtpEvent::InvalidEhlo),
+                    SessionId = self.data.session_id,
+                    Domain = domain,
                 );
 
                 return self.write(b"550 5.5.0 Invalid EHLO domain.\r\n").await;
             }
 
+            trc::event!(
+                Smtp(SmtpEvent::Ehlo),
+                SessionId = self.data.session_id,
+                Domain = domain.clone(),
+            );
+
             // SPF check
             let prev_helo_domain = std::mem::replace(&mut self.data.helo_domain, domain);
             if self.params.spf_ehlo.verify() {
+                let time = Instant::now();
                 let spf_output = self
                     .core
                     .core
@@ -43,12 +50,16 @@ impl<T: SessionStream> Session<T> {
                     .verify_spf_helo(self.data.remote_ip, &self.data.helo_domain, &self.hostname)
                     .await;
 
-                tracing::debug!(
-                        context = "spf",
-                        event = "lookup",
-                        identity = "ehlo",
-                        domain = self.data.helo_domain,
-                        result = %spf_output.result(),
+                trc::event!(
+                    Smtp(if matches!(spf_output.result(), SpfResult::Pass) {
+                        SmtpEvent::SpfEhloPass
+                    } else {
+                        SmtpEvent::SpfEhloFail
+                    }),
+                    SessionId = self.data.session_id,
+                    Domain = self.data.helo_domain.clone(),
+                    Result = trc::Event::from(&spf_output),
+                    Elapsed = time.elapsed(),
                 );
 
                 if self
@@ -73,18 +84,12 @@ impl<T: SessionStream> Session<T> {
                     self.data.session_id,
                 )
                 .await
-                .and_then(|name| self.core.core.get_sieve_script(&name))
+                .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
             {
                 if let ScriptResult::Reject(message) = self
                     .run_script(script.clone(), self.build_script_parameters("ehlo"))
                     .await
                 {
-                    tracing::info!(
-                        context = "sieve",
-                        event = "reject",
-                        domain = &self.data.helo_domain,
-                        reason = message);
-
                     self.data.mail_from = None;
                     self.data.helo_domain = prev_helo_domain;
                     self.data.spf_ehlo = None;
@@ -94,12 +99,6 @@ impl<T: SessionStream> Session<T> {
 
             // Milter filtering
             if let Err(message) = self.run_milters(Stage::Ehlo, None).await {
-                tracing::info!(
-                    context = "milter",
-                    event = "reject",
-                    domain = &self.data.helo_domain,
-                    reason = message.message.as_ref());
-
                 self.data.mail_from = None;
                 self.data.helo_domain = prev_helo_domain;
                 self.data.spf_ehlo = None;
@@ -108,23 +107,11 @@ impl<T: SessionStream> Session<T> {
 
             // MTAHook filtering
             if let Err(message) = self.run_mta_hooks(Stage::Ehlo, None).await {
-                tracing::info!(
-                                context = "mta_hook",
-                                event = "reject",
-                                domain = &self.data.helo_domain,
-                                reason = message.message.as_ref());
-
                 self.data.mail_from = None;
                 self.data.helo_domain = prev_helo_domain;
                 self.data.spf_ehlo = None;
                 return self.write(message.message.as_bytes()).await;
             }
-
-            tracing::debug!(
-                context = "ehlo",
-                event = "ehlo",
-                domain = self.data.helo_domain,
-            );
         }
 
         // Reset

@@ -7,6 +7,7 @@
 use common::{DeliveryEvent, DeliveryResult, IngestMessage};
 use smtp_proto::Response;
 use tokio::sync::{mpsc, oneshot};
+use trc::ServerEvent;
 
 use crate::queue::{
     Error, ErrorDetails, HostResponse, Message, Recipient, Status, RCPT_STATUS_CHANGED,
@@ -47,6 +48,7 @@ impl Message {
                     recipients: recipient_addresses,
                     message_blob: self.blob_hash.clone(),
                     message_size: self.size,
+                    session_id: self.id,
                 },
                 result_tx,
             })
@@ -57,20 +59,20 @@ impl Message {
                 match result_rx.await {
                     Ok(delivery_result) => delivery_result,
                     Err(_) => {
-                        tracing::warn!(
-                            context = "deliver_local",
-                            event = "error",
-                            reason = "result channel closed",
+                        trc::event!(
+                            Server(ServerEvent::ThreadError),
+                            CausedBy = trc::location!(),
+                            Reason = "Result channel closed",
                         );
                         return Status::local_error();
                     }
                 }
             }
             Err(_) => {
-                tracing::warn!(
-                    context = "deliver_local",
-                    event = "error",
-                    reason = "tx channel closed",
+                trc::event!(
+                    Server(ServerEvent::ThreadError),
+                    CausedBy = trc::location!(),
+                    Reason = "TX channel closed",
                 );
                 return Status::local_error();
             }
@@ -81,12 +83,6 @@ impl Message {
             rcpt.flags |= RCPT_STATUS_CHANGED;
             match result {
                 DeliveryResult::Success => {
-                    tracing::info!(
-                        context = "deliver_local",
-                        event = "delivered",
-                        rcpt = rcpt.address,
-                    );
-
                     rcpt.status = Status::Completed(HostResponse {
                         hostname: "localhost".to_string(),
                         response: Response {
@@ -98,12 +94,6 @@ impl Message {
                     total_completed += 1;
                 }
                 DeliveryResult::TemporaryFailure { reason } => {
-                    tracing::info!(
-                        context = "deliver_local",
-                        event = "deferred",
-                        rcpt = rcpt.address,
-                        reason = reason.as_ref(),
-                    );
                     rcpt.status = Status::TemporaryFailure(HostResponse {
                         hostname: ErrorDetails {
                             entity: "localhost".to_string(),
@@ -117,12 +107,6 @@ impl Message {
                     });
                 }
                 DeliveryResult::PermanentFailure { code, reason } => {
-                    tracing::info!(
-                        context = "deliver_local",
-                        event = "rejected",
-                        rcpt = rcpt.address,
-                        reason = reason.as_ref(),
-                    );
                     total_completed += 1;
                     rcpt.status = Status::PermanentFailure(HostResponse {
                         hostname: ErrorDetails {

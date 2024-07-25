@@ -59,7 +59,7 @@ hostname = "0.4.0"
 zip = "2.1"
 pwhash = "1.0.0"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
-tracing = "0.1"
+
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

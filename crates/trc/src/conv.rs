@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Debug};
+use std::{borrow::Cow, fmt::Debug, time::Duration};
 
 use crate::*;
 
@@ -77,9 +77,21 @@ impl From<IpAddr> for Value {
     }
 }
 
-impl From<Error> for Value {
-    fn from(value: Error) -> Self {
-        Self::Error(Box::new(value))
+impl From<Duration> for Value {
+    fn from(value: Duration) -> Self {
+        Self::Duration(value.as_millis() as u64)
+    }
+}
+
+impl From<Event> for Value {
+    fn from(value: Event) -> Self {
+        Self::Event(Box::new(value))
+    }
+}
+
+impl From<Level> for Value {
+    fn from(value: Level) -> Self {
+        Self::Level(value)
     }
 }
 
@@ -188,7 +200,7 @@ impl EventType {
     }
 }
 
-impl From<mail_auth::Error> for Error {
+impl From<mail_auth::Error> for Event {
     fn from(err: mail_auth::Error) -> Self {
         match err {
             mail_auth::Error::ParseError => {
@@ -262,6 +274,92 @@ impl From<mail_auth::Error> for Error {
                 EventType::MailAuth(MailAuthEvent::DnsInvalidRecordType).into_err()
             }
         }
+    }
+}
+
+impl From<&mail_auth::DkimResult> for Event {
+    fn from(value: &mail_auth::DkimResult) -> Self {
+        match value.clone() {
+            mail_auth::DkimResult::Pass => Event::new(EventType::Dkim(DkimEvent::Pass)),
+            mail_auth::DkimResult::Neutral(err) => {
+                Event::new(EventType::Dkim(DkimEvent::Neutral)).caused_by(Event::from(err))
+            }
+            mail_auth::DkimResult::Fail(err) => {
+                Event::new(EventType::Dkim(DkimEvent::Fail)).caused_by(Event::from(err))
+            }
+            mail_auth::DkimResult::PermError(err) => {
+                Event::new(EventType::Dkim(DkimEvent::PermError)).caused_by(Event::from(err))
+            }
+            mail_auth::DkimResult::TempError(err) => {
+                Event::new(EventType::Dkim(DkimEvent::TempError)).caused_by(Event::from(err))
+            }
+            mail_auth::DkimResult::None => Event::new(EventType::Dkim(DkimEvent::None)),
+        }
+    }
+}
+
+impl From<&mail_auth::DmarcResult> for Event {
+    fn from(value: &mail_auth::DmarcResult) -> Self {
+        match value.clone() {
+            mail_auth::DmarcResult::Pass => Event::new(EventType::Dmarc(DmarcEvent::Pass)),
+            mail_auth::DmarcResult::Fail(err) => {
+                Event::new(EventType::Dmarc(DmarcEvent::Fail)).caused_by(Event::from(err))
+            }
+            mail_auth::DmarcResult::PermError(err) => {
+                Event::new(EventType::Dmarc(DmarcEvent::PermError)).caused_by(Event::from(err))
+            }
+            mail_auth::DmarcResult::TempError(err) => {
+                Event::new(EventType::Dmarc(DmarcEvent::TempError)).caused_by(Event::from(err))
+            }
+            mail_auth::DmarcResult::None => Event::new(EventType::Dmarc(DmarcEvent::None)),
+        }
+    }
+}
+
+impl From<&mail_auth::DkimOutput<'_>> for Event {
+    fn from(value: &mail_auth::DkimOutput<'_>) -> Self {
+        Event::from(value.result()).ctx_opt(Key::Contents, value.signature().map(|s| s.to_string()))
+    }
+}
+
+impl From<&mail_auth::IprevOutput> for Event {
+    fn from(value: &mail_auth::IprevOutput) -> Self {
+        match value.result().clone() {
+            mail_auth::IprevResult::Pass => Event::new(EventType::Iprev(IprevEvent::Pass)),
+            mail_auth::IprevResult::Fail(err) => {
+                Event::new(EventType::Iprev(IprevEvent::Fail)).caused_by(Event::from(err))
+            }
+            mail_auth::IprevResult::PermError(err) => {
+                Event::new(EventType::Iprev(IprevEvent::PermError)).caused_by(Event::from(err))
+            }
+            mail_auth::IprevResult::TempError(err) => {
+                Event::new(EventType::Iprev(IprevEvent::TempError)).caused_by(Event::from(err))
+            }
+            mail_auth::IprevResult::None => Event::new(EventType::Iprev(IprevEvent::None)),
+        }
+        .ctx_opt(
+            Key::Details,
+            value.ptr.as_ref().map(|s| {
+                s.iter()
+                    .map(|v| Value::String(v.to_string()))
+                    .collect::<Vec<_>>()
+            }),
+        )
+    }
+}
+
+impl From<&mail_auth::SpfOutput> for Event {
+    fn from(value: &mail_auth::SpfOutput) -> Self {
+        Event::new(EventType::Spf(match value.result() {
+            mail_auth::SpfResult::Pass => SpfEvent::Pass,
+            mail_auth::SpfResult::Fail => SpfEvent::Fail,
+            mail_auth::SpfResult::SoftFail => SpfEvent::SoftFail,
+            mail_auth::SpfResult::Neutral => SpfEvent::Neutral,
+            mail_auth::SpfResult::PermError => SpfEvent::PermError,
+            mail_auth::SpfResult::TempError => SpfEvent::TempError,
+            mail_auth::SpfResult::None => SpfEvent::None,
+        }))
+        .ctx_opt(Key::Details, value.explanation().map(|s| s.to_string()))
     }
 }
 

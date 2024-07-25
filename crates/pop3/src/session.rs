@@ -85,29 +85,29 @@ impl<T: SessionStream> Session<T> {
                                         return true;
                                     }
                                     SessionResult::Close => {
-                                        tracing::debug!( event = "disconnect", "Disconnecting client.");
+                                        trc::event!( event = "disconnect", "Disconnecting client.");
                                         break;
                                     }
                                 }
                             } else {
-                                tracing::debug!( event = "close", "POP3 connection closed by client.");
+                                trc::event!( event = "close", "POP3 connection closed by client.");
                                 break;
                             }
                         },
                         Ok(Err(err)) => {
-                            tracing::debug!( event = "error", reason = %err, "POP3 connection error.");
+                            trc::event!( event = "error", reason = %err, "POP3 connection error.");
                             break;
                         },
                         Err(_) => {
                             self.write_bytes(&b"-ERR Connection timed out.\r\n"[..]).await.ok();
-                            tracing::debug!( "POP3 connection timed out.");
+                            trc::event!( "POP3 connection timed out.");
                             break;
                         }
                     }
                 },
                 _ = shutdown_rx.changed() => {
                     self.write_bytes(&b"* BYE Server shutting down.\r\n"[..]).await.ok();
-                    tracing::debug!( event = "shutdown", "POP3 server shutting down.");
+                    trc::event!( event = "shutdown", "POP3 server shutting down.");
                     break;
                 }
             };
@@ -140,7 +140,7 @@ impl<T: SessionStream> Session<T> {
         /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
             let c = println!("{}", line);
         }*/
-        tracing::trace!(
+        trc::event!(
             event = "write",
             data = std::str::from_utf8(bytes).unwrap_or_default(),
             size = bytes.len()
@@ -166,12 +166,12 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn write_err(&mut self, err: trc::Error) -> bool {
-        tracing::error!("POP3 error: {}", err);
+        trc::event!("POP3 error: {}", err);
         let disconnect = err.must_disconnect();
 
         if err.should_write_err() {
             if let Err(err) = self.write_bytes(err.serialize()).await {
-                tracing::debug!("Failed to write error: {}", err);
+                trc::event!("Failed to write error: {}", err);
                 return false;
             }
         }

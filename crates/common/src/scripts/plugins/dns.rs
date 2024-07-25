@@ -19,11 +19,11 @@ pub fn register_exists(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("dns_exists", plugin_id, 2);
 }
 
-pub async fn exec(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let entry = ctx.arguments[0].to_string();
     let record_type = ctx.arguments[1].to_string();
 
-    if record_type.eq_ignore_ascii_case("ip") {
+    Ok(if record_type.eq_ignore_ascii_case("ip") {
         match ctx
             .core
             .smtp
@@ -56,7 +56,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
         #[cfg(feature = "test_mode")]
         {
             if entry.contains("origin") {
-                return Variable::from("23028|US|arin|2002-01-04".to_string());
+                return Ok(Variable::from("23028|US|arin|2002-01-04".to_string()));
             }
         }
 
@@ -89,7 +89,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
         {
             if entry.contains(".168.192.") {
                 let parts = entry.split('.').collect::<Vec<_>>();
-                return vec![Variable::from(format!("127.0.{}.{}", parts[1], parts[0]))].into();
+                return Ok(vec![Variable::from(format!("127.0.{}.{}", parts[1], parts[0]))].into());
             }
         }
 
@@ -126,14 +126,14 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
         }
     } else {
         Variable::default()
-    }
+    })
 }
 
-pub async fn exec_exists(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec_exists(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let entry = ctx.arguments[0].to_string();
     let record_type = ctx.arguments[1].to_string();
 
-    if record_type.eq_ignore_ascii_case("ip") {
+    Ok(if record_type.eq_ignore_ascii_case("ip") {
         match ctx
             .core
             .smtp
@@ -166,7 +166,7 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> Variable {
         #[cfg(feature = "test_mode")]
         {
             if entry.starts_with("2.0.168.192.") {
-                return 1.into();
+                return Ok(1.into());
             }
         }
 
@@ -198,7 +198,7 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> Variable {
     } else {
         -1
     }
-    .into()
+    .into())
 }
 
 trait ShortError {

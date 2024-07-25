@@ -124,7 +124,11 @@ impl Gossiper {
             .send((SocketAddr::new(dest, self.port), request))
             .await
         {
-            tracing::error!("Failed to send gossip message: {}", err);
+            trc::event!(
+                Cluster(ClusterEvent::Error),
+                RemoteIp = dest,
+                Reason = "Failed to send gossip message"
+            );
         };
     }
 }

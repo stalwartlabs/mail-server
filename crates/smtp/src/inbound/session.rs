@@ -17,6 +17,7 @@ use smtp_proto::{
     *,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use trc::{NetworkEvent, SmtpEvent};
 
 use crate::core::{Session, State};
 
@@ -293,11 +294,9 @@ impl<T: SessionStream> Session<T> {
                 }
                 State::DataTooLarge(receiver) => {
                     if receiver.ingest(&mut iter) {
-                        tracing::debug!(
-                            
-                            context = "data",
-                            event = "too-large",
-                            "Message is too large."
+                        trc::event!(
+                            Smtp(SmtpEvent::MessageTooLarge),
+                            SessionId = self.data.session_id,
                         );
 
                         self.data.message = Vec::with_capacity(0);
@@ -338,45 +337,60 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
 
     #[inline(always)]
     pub async fn write(&mut self, bytes: &[u8]) -> Result<(), ()> {
-        let err = match self.stream.write_all(bytes).await {
+        match self.stream.write_all(bytes).await {
             Ok(_) => match self.stream.flush().await {
                 Ok(_) => {
-                    tracing::trace!(
-                            event = "write",
-                            data = std::str::from_utf8(bytes).unwrap_or_default() ,
-                            size = bytes.len());
-                    return Ok(());
-                }
-                Err(err) => err,
-            },
-            Err(err) => err,
-        };
+                    trc::event!(
+                        Smtp(SmtpEvent::RawOutput),
+                        SessionId = self.data.session_id,
+                        Size = bytes.len(),
+                        Contents = String::from_utf8_lossy(bytes).into_owned(),
+                    );
 
-        tracing::trace!(
-            event = "error",
-            "Failed to write to stream: {:?}", err);
-        Err(())
+                    Ok(())
+                }
+                Err(err) => {
+                    trc::event!(
+                        Network(NetworkEvent::FlushError),
+                        SessionId = self.data.session_id,
+                        Reason = err.to_string(),
+                    );
+                    Err(())
+                }
+            },
+            Err(err) => {
+                trc::event!(
+                    Network(NetworkEvent::WriteError),
+                    SessionId = self.data.session_id,
+                    Reason = err.to_string(),
+                );
+
+                Err(())
+            }
+        }
     }
 
     #[inline(always)]
     pub async fn read(&mut self, bytes: &mut [u8]) -> Result<usize, ()> {
         match self.stream.read(bytes).await {
             Ok(len) => {
-                tracing::trace!(
-                                event = "read",
-                                data =  if matches!(self.state, State::Request(_)) {bytes
-                                    .get(0..len)
-                                    .and_then(|bytes| std::str::from_utf8(bytes).ok())
-                                    .unwrap_or("[invalid UTF8]")} else {"[DATA]"},
-                                size = len);
+                trc::event!(
+                    Smtp(SmtpEvent::RawInput),
+                    SessionId = self.data.session_id,
+                    Size = len,
+                    Contents =
+                        String::from_utf8_lossy(bytes.get(0..len).unwrap_or_default()).into_owned(),
+                );
+
                 Ok(len)
             }
             Err(err) => {
-                tracing::trace!(
-                    
-                    event = "error",
-                    "Failed to read from stream: {:?}", err
+                trc::event!(
+                    Network(NetworkEvent::ReadError),
+                    SessionId = self.data.session_id,
+                    Reason = err.to_string(),
                 );
+
                 Err(())
             }
         }

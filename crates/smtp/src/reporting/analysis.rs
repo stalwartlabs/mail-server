@@ -61,7 +61,7 @@ impl SMTP {
             let message = if let Some(message) = MessageParser::default().parse(message.as_ref()) {
                 message
             } else {
-                tracing::debug!(context = "report", "Failed to parse message.");
+                trc::event!(context = "report", "Failed to parse message.");
                 return;
             };
             let from = message
@@ -162,7 +162,7 @@ impl SMTP {
                         let mut file = GzDecoder::new(report.data);
                         let mut buf = Vec::new();
                         if let Err(err) = file.read_to_end(&mut buf) {
-                            tracing::debug!(
+                            trc::event!(
                                 context = "report",
                                 from = from,
                                 "Failed to decompress report: {}",
@@ -176,7 +176,7 @@ impl SMTP {
                         let mut archive = match zip::ZipArchive::new(Cursor::new(report.data)) {
                             Ok(archive) => archive,
                             Err(err) => {
-                                tracing::debug!(
+                                trc::event!(
                                     context = "report",
                                     from = from,
                                     "Failed to decompress report: {}",
@@ -191,7 +191,7 @@ impl SMTP {
                                 Ok(mut file) => {
                                     buf = Vec::with_capacity(file.compressed_size() as usize);
                                     if let Err(err) = file.read_to_end(&mut buf) {
-                                        tracing::debug!(
+                                        trc::event!(
                                             context = "report",
                                             from = from,
                                             "Failed to decompress report: {}",
@@ -201,7 +201,7 @@ impl SMTP {
                                     break;
                                 }
                                 Err(err) => {
-                                    tracing::debug!(
+                                    trc::event!(
                                         context = "report",
                                         from = from,
                                         "Failed to decompress report: {}",
@@ -236,7 +236,7 @@ impl SMTP {
                             Format::Dmarc(report)
                         }
                         Err(err) => {
-                            tracing::debug!(
+                            trc::event!(
                                 context = "report",
                                 from = from,
                                 "Failed to parse DMARC report: {}",
@@ -267,7 +267,7 @@ impl SMTP {
                             Format::Tls(report)
                         }
                         Err(err) => {
-                            tracing::debug!(
+                            trc::event!(
                                 context = "report",
                                 from = from,
                                 "Failed to parse TLS report: {:?}",
@@ -297,7 +297,7 @@ impl SMTP {
                             Format::Arf(report.into_owned())
                         }
                         None => {
-                            tracing::debug!(
+                            trc::event!(
                                 context = "report",
                                 from = from,
                                 "Failed to parse Auth Failure report"
@@ -353,7 +353,7 @@ impl SMTP {
                     }
                     let batch = batch.build();
                     if let Err(err) = core.core.storage.data.write(batch).await {
-                        tracing::warn!(
+                        trc::event!(
                             context = "report",
                             event = "error",
                             "Failed to write incoming report: {}",
@@ -430,7 +430,7 @@ impl LogReport for Report {
         let range_to = DateTime::from_timestamp(self.date_range_end() as i64).to_rfc3339();
 
         if (dmarc_reject + dmarc_quarantine + dkim_fail + spf_fail) > 0 {
-            tracing::warn!(
+            trc::event!(
                 context = "dmarc",
                 event = "analyze",
                 range_from = range_from,
@@ -450,7 +450,7 @@ impl LogReport for Report {
                 spf_none = spf_none,
             );
         } else {
-            tracing::info!(
+            trc::event!(
                 context = "dmarc",
                 event = "analyze",
                 range_from = range_from,
@@ -565,7 +565,7 @@ impl LogReport for TlsReport {
             }
 
             if policy.summary.total_failure > 0 {
-                tracing::warn!(
+                trc::event!(
                     context = "tlsrpt",
                     event = "analyze",
                     range_from = self.date_range.start_datetime.to_rfc3339(),
@@ -579,7 +579,7 @@ impl LogReport for TlsReport {
                     details = ?details,
                 );
             } else {
-                tracing::info!(
+                trc::event!(
                     context = "tlsrpt",
                     event = "analyze",
                     range_from = self.date_range.start_datetime.to_rfc3339(),
@@ -632,7 +632,7 @@ impl LogReport for TlsReport {
 
 impl LogReport for Feedback<'_> {
     fn log(&self) {
-        tracing::warn!(
+        trc::event!(
             context = "arf",
             event = "analyze",
             feedback_type = ?self.feedback_type(),

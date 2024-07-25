@@ -160,6 +160,10 @@ impl Serialize for MethodErrorWrapper {
                         "Attempting this same operation later may succeed."
                     ),
                 ),
+                _ => (
+                    "serverUnavailable",
+                    "This server is temporarily unavailable.",
+                ),
             },
             _ => (
                 "serverUnavailable",

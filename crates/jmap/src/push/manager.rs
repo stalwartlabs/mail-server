@@ -9,6 +9,7 @@ use common::IPC_CHANNEL_BUFFER;
 use jmap_proto::types::id::Id;
 use store::ahash::{AHashMap, AHashSet};
 use tokio::sync::mpsc;
+use trc::PushSubscriptionEvent;
 
 use crate::{api::StateChangeResponse, JmapInstance, LONG_SLUMBER};
 
@@ -94,13 +95,14 @@ pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
 
                                         last_verify.insert(account_id, current_time);
                                     } else {
-                                        tracing::debug!(
-                                            concat!(
-                                                "Failed to verify push subscription: ",
-                                                "Too many requests from accountId {}."
-                                            ),
-                                            account_id
+                                        trc::event!(
+                                            PushSubscription(PushSubscriptionEvent::Error),
+                                            Details = "Failed to verify push subscription",
+                                            Url = url.clone(),
+                                            AccountId = account_id,
+                                            Reason = "Too many requests"
                                         );
+
                                         continue;
                                     }
                                 }
@@ -142,7 +144,10 @@ pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
                                     retry_ids.insert(id);
                                 }
                             } else {
-                                tracing::debug!("No push subscription found for id: {}", id);
+                                trc::event!(
+                                    PushSubscription(PushSubscriptionEvent::NotFound),
+                                    Id = id,
+                                );
                             }
                         }
                     }
@@ -191,13 +196,13 @@ pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
                                 if subscription.num_attempts < push_attempts_max {
                                     subscription.send(*retry_id, push_tx.clone(), push_timeout);
                                 } else {
-                                    tracing::debug!(
-                                        concat!(
-                                            "Failed to deliver push subscription: ",
-                                            "Too many attempts for url {}."
-                                        ),
-                                        subscription.url
+                                    trc::event!(
+                                        PushSubscription(PushSubscriptionEvent::Error),
+                                        Details = "Failed to deliver push subscription",
+                                        Url = subscription.url.clone(),
+                                        Reason = "Too many attempts"
                                     );
+
                                     subscription.state_changes.clear();
                                     subscription.num_attempts = 0;
                                 }
@@ -299,16 +304,43 @@ async fn http_request(
             }
             Err(err) => {
                 // Do not reattempt if encryption fails.
-                tracing::debug!("Failed to encrypt push subscription to {}: {}", url, err);
+
+                trc::event!(
+                    PushSubscription(PushSubscriptionEvent::Error),
+                    Details = "Failed to encrypt push subscription",
+                    Url = url,
+                    Reason = err
+                );
                 return true;
             }
         }
     }
 
     match client.body(body).send().await {
-        Ok(response) => response.status().is_success(),
+        Ok(response) => {
+            if response.status().is_success() {
+                trc::event!(PushSubscription(PushSubscriptionEvent::Success), Url = url,);
+
+                true
+            } else {
+                trc::event!(
+                    PushSubscription(PushSubscriptionEvent::Error),
+                    Details = "HTTP POST failed",
+                    Url = url,
+                    Status = response.status().as_u16(),
+                );
+
+                false
+            }
+        }
         Err(err) => {
-            tracing::debug!("HTTP post to {} failed with: {}", url, err);
+            trc::event!(
+                PushSubscription(PushSubscriptionEvent::Error),
+                Details = "HTTP POST failed",
+                Url = url,
+                Reason = err
+            );
+
             false
         }
     }

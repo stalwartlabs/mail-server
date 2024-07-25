@@ -318,16 +318,17 @@ impl JMAP {
         // Request FTS index
         let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;
 
-        tracing::debug!(
-            context = "email_ingest",
-            event = "success",
-            account_id = ?params.account_id,
-            document_id = ?document_id,
-            mailbox_ids = ?params.mailbox_ids,
-            change_id = ?change_id,
-            blob_id = ?blob_id.hash,
-            size = raw_message_len,
-            "Ingested e-mail.");
+        let todo = "add session id";
+
+        trc::event!(
+            Store(trc::StoreEvent::Ingest),
+            AccountId = account_id,
+            DocumentId = document_id,
+            MailboxId = mailbox_ids.as_slice(),
+            BlobId = blob_id.hash.as_slice().to_vec(),
+            ChangeId = change_id,
+            Size = raw_message_len,
+        );
 
         // Send webhook event
         if self

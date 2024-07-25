@@ -8,6 +8,7 @@ use common::{config::smtp::session::Stage, listener::SessionStream, scripts::Scr
 use smtp_proto::{
     RcptTo, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
+use trc::SmtpEvent;
 
 use crate::{
     core::{Session, SessionAddress},
@@ -69,7 +70,7 @@ impl<T: SessionStream> Session<T> {
                 self.data.session_id,
             )
             .await
-            .and_then(|name| self.core.core.get_sieve_script(&name))
+            .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
             .cloned();
 
         if rcpt_script.is_some()
@@ -91,11 +92,6 @@ impl<T: SessionStream> Session<T> {
                 {
                     ScriptResult::Accept { modifications } => {
                         if !modifications.is_empty() {
-                            tracing::debug!(
-                            context = "sieve",
-                            event = "modify",
-                            address = self.data.rcpt_to.last().unwrap().address,
-                            modifications = ?modifications);
                             for modification in modifications {
                                 if let ScriptModification::SetEnvelope { name, value } =
                                     modification
@@ -106,11 +102,6 @@ impl<T: SessionStream> Session<T> {
                         }
                     }
                     ScriptResult::Reject(message) => {
-                        tracing::info!(
-                        context = "sieve",
-                        event = "reject",
-                        address = self.data.rcpt_to.last().unwrap().address,
-                        reason = message);
                         self.data.rcpt_to.pop();
                         return self.write(message.as_bytes()).await;
                     }
@@ -120,24 +111,12 @@ impl<T: SessionStream> Session<T> {
 
             // Milter filtering
             if let Err(message) = self.run_milters(Stage::Rcpt, None).await {
-                tracing::info!(
-                    context = "milter",
-                    event = "reject",
-                    address = self.data.rcpt_to.last().unwrap().address,
-                    reason = message.message.as_ref());
-
                 self.data.rcpt_to.pop();
                 return self.write(message.message.as_bytes()).await;
             }
 
             // MTAHook filtering
             if let Err(message) = self.run_mta_hooks(Stage::Rcpt, None).await {
-                tracing::info!(
-                    context = "mta_hook",
-                    event = "reject",
-                    address = self.data.rcpt_to.last().unwrap().address,
-                    reason = message.message.as_ref());
-
                 self.data.rcpt_to.pop();
                 return self.write(message.message.as_bytes()).await;
             }
@@ -182,66 +161,73 @@ impl<T: SessionStream> Session<T> {
             .await
             .and_then(|name| self.core.core.get_directory(&name))
         {
-            if let Ok(is_local_domain) = directory.is_local_domain(&rcpt.domain).await {
-                if is_local_domain {
-                    if let Ok(is_local_address) =
-                        self.core.core.rcpt(directory, &rcpt.address_lcase).await
-                    {
-                        if !is_local_address {
-                            tracing::debug!(
-                                            context = "rcpt", 
-                                            event = "error",
-                                            address = &rcpt.address_lcase,
-                                            "Mailbox does not exist.");
+            match directory.is_local_domain(&rcpt.domain).await {
+                Ok(is_local_domain) => {
+                    if is_local_domain {
+                        match self
+                            .core
+                            .core
+                            .rcpt(directory, &rcpt.address_lcase, self.data.session_id)
+                            .await
+                        {
+                            Ok(is_local_address) => {
+                                if !is_local_address {
+                                    trc::event!(
+                                        Smtp(SmtpEvent::MailboxDoesNotExist),
+                                        SessionId = self.data.session_id,
+                                        To = rcpt.address_lcase.clone(),
+                                    );
 
-                            self.data.rcpt_to.pop();
-                            return self
-                                .rcpt_error(b"550 5.1.2 Mailbox does not exist.\r\n")
-                                .await;
+                                    self.data.rcpt_to.pop();
+                                    return self
+                                        .rcpt_error(b"550 5.1.2 Mailbox does not exist.\r\n")
+                                        .await;
+                                }
+                            }
+                            Err(err) => {
+                                trc::error!(err
+                                    .session_id(self.data.session_id)
+                                    .caused_by(trc::location!())
+                                    .details("Failed to verify address."));
+
+                                self.data.rcpt_to.pop();
+                                return self
+                                    .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
+                                    .await;
+                            }
                         }
-                    } else {
-                        tracing::debug!(
-                            context = "rcpt", 
-                            event = "error",
-                            address = &rcpt.address_lcase,
-                            "Temporary address verification failure.");
+                    } else if !self
+                        .core
+                        .core
+                        .eval_if(
+                            &self.core.core.smtp.session.rcpt.relay,
+                            self,
+                            self.data.session_id,
+                        )
+                        .await
+                        .unwrap_or(false)
+                    {
+                        trc::event!(
+                            Smtp(SmtpEvent::RelayNotAllowed),
+                            SessionId = self.data.session_id,
+                            To = rcpt.address_lcase.clone(),
+                        );
 
                         self.data.rcpt_to.pop();
-                        return self
-                            .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
-                            .await;
+                        return self.rcpt_error(b"550 5.1.2 Relay not allowed.\r\n").await;
                     }
-                } else if !self
-                    .core
-                    .core
-                    .eval_if(
-                        &self.core.core.smtp.session.rcpt.relay,
-                        self,
-                        self.data.session_id,
-                    )
-                    .await
-                    .unwrap_or(false)
-                {
-                    tracing::debug!(
-                        context = "rcpt", 
-                        event = "error",
-                        address = &rcpt.address_lcase,
-                        "Relay not allowed.");
+                }
+                Err(err) => {
+                    trc::error!(err
+                        .session_id(self.data.session_id)
+                        .caused_by(trc::location!())
+                        .details("Failed to verify address."));
 
                     self.data.rcpt_to.pop();
-                    return self.rcpt_error(b"550 5.1.2 Relay not allowed.\r\n").await;
+                    return self
+                        .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
+                        .await;
                 }
-            } else {
-                tracing::debug!(
-                    context = "rcpt", 
-                    event = "error",
-                    address = &rcpt.address_lcase,
-                    "Temporary address verification failure.");
-
-                self.data.rcpt_to.pop();
-                return self
-                    .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
-                    .await;
             }
         } else if !self
             .core
@@ -254,22 +240,29 @@ impl<T: SessionStream> Session<T> {
             .await
             .unwrap_or(false)
         {
-            tracing::debug!(
-                context = "rcpt", 
-                event = "error",
-                address = &rcpt.address_lcase,
-                "Relay not allowed.");
+            trc::event!(
+                Smtp(SmtpEvent::RelayNotAllowed),
+                SessionId = self.data.session_id,
+                To = rcpt.address_lcase.clone(),
+            );
 
             self.data.rcpt_to.pop();
             return self.rcpt_error(b"550 5.1.2 Relay not allowed.\r\n").await;
         }
 
         if self.is_allowed().await {
-            tracing::debug!(
-                    context = "rcpt",
-                    event = "success",
-                    address = &self.data.rcpt_to.last().unwrap().address);
+            trc::event!(
+                Smtp(SmtpEvent::RelayNotAllowed),
+                SessionId = self.data.session_id,
+                To = self.data.rcpt_to.last().unwrap().address_lcase.clone(),
+            );
         } else {
+            trc::event!(
+                Smtp(SmtpEvent::RateLimitExceeded),
+                SessionId = self.data.session_id,
+                To = self.data.rcpt_to.last().unwrap().address_lcase.clone(),
+            );
+
             self.data.rcpt_to.pop();
             return self
                 .write(b"451 4.4.5 Rate limit exceeded, try again later.\r\n")
@@ -286,15 +279,13 @@ impl<T: SessionStream> Session<T> {
         if self.data.rcpt_errors < self.params.rcpt_errors_max {
             Ok(())
         } else {
+            trc::event!(
+                Smtp(SmtpEvent::TooManyInvalidRcpt),
+                SessionId = self.data.session_id,
+            );
+
             self.write(b"421 4.3.0 Too many errors, disconnecting.\r\n")
                 .await?;
-            tracing::debug!(
-                
-                context = "rcpt",
-                event = "disconnect",
-                reason = "too-many-errors",
-                "Too many invalid RCPT commands."
-            );
             Err(())
         }
     }

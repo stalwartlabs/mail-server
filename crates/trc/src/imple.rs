@@ -4,39 +4,46 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, cmp::Ordering, fmt::Display, str::FromStr};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display, str::FromStr, time::SystemTime};
 
 use crate::*;
 
 impl Event {
-    pub fn new(inner: EventType, level: Level, capacity: usize) -> Self {
+    pub fn with_capacity(inner: EventType, capacity: usize) -> Self {
         Self {
             inner,
-            level,
-            keys: Vec::with_capacity(capacity),
+            keys: Vec::with_capacity(capacity + 2),
         }
     }
 
-    #[inline(always)]
-    pub fn ctx(mut self, key: Key, value: impl Into<Value>) -> Self {
-        self.keys.push((key, value.into()));
-        self
-    }
-
-    pub fn ctx_opt(self, key: Key, value: Option<impl Into<Value>>) -> Self {
-        match value {
-            Some(value) => self.ctx(key, value),
-            None => self,
-        }
-    }
-}
-
-impl Error {
     pub fn new(inner: EventType) -> Self {
         Self {
             inner,
             keys: Vec::with_capacity(5),
         }
+    }
+
+    pub fn with_level(mut self, level: Level) -> Self {
+        let level = (Key::Level, level.into());
+        let time = (
+            Key::Time,
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs())
+                .into(),
+        );
+
+        if self.keys.is_empty() {
+            self.keys.push(level);
+            self.keys.push(time);
+        } else {
+            let mut keys = Vec::with_capacity(self.keys.len() + 2);
+            keys.push(level);
+            keys.push(time);
+            keys.append(&mut self.keys);
+            self.keys = keys;
+        }
+        self
     }
 
     #[inline(always)]
@@ -53,6 +60,7 @@ impl Error {
         self
     }
 
+    #[inline(always)]
     pub fn ctx_opt(self, key: Key, value: Option<impl Into<Value>>) -> Self {
         match value {
             Some(value) => self.ctx(key, value),
@@ -63,6 +71,16 @@ impl Error {
     #[inline(always)]
     pub fn matches(&self, inner: EventType) -> bool {
         self.inner == inner
+    }
+
+    #[inline(always)]
+    pub fn level(&self) -> Level {
+        if let Some((_, Value::Level(level))) = self.keys.first() {
+            *level
+        } else {
+            debug_assert!(false, "Event has no level");
+            Level::Disable
+        }
     }
 
     pub fn value(&self, key: Key) -> Option<&Value> {
@@ -83,6 +101,11 @@ impl Error {
                 None
             }
         })
+    }
+
+    #[inline(always)]
+    pub fn session_id(self, session_id: u64) -> Self {
+        self.ctx(Key::SessionId, session_id)
     }
 
     #[inline(always)]
@@ -133,6 +156,44 @@ impl Error {
     #[inline(always)]
     pub fn property(self, id: impl Into<u8>) -> Self {
         self.ctx(Key::Property, id.into() as u64)
+    }
+
+    #[inline(always)]
+    pub fn wrap(self, cause: EventType) -> Self {
+        Error::new(cause).caused_by(self)
+    }
+
+    #[inline(always)]
+    pub fn is_assertion_failure(&self) -> bool {
+        self.inner == EventType::Store(StoreEvent::AssertValueFailed)
+    }
+
+    #[inline(always)]
+    pub fn is_jmap_method_error(&self) -> bool {
+        !matches!(
+            self.inner,
+            EventType::Jmap(
+                JmapEvent::UnknownCapability | JmapEvent::NotJSON | JmapEvent::NotRequest
+            )
+        )
+    }
+
+    #[inline(always)]
+    pub fn must_disconnect(&self) -> bool {
+        matches!(
+            self.inner,
+            EventType::Network(_)
+                | EventType::Auth(AuthEvent::TooManyAttempts | AuthEvent::Banned)
+                | EventType::Limit(LimitEvent::ConcurrentRequest | LimitEvent::TooManyRequests)
+        )
+    }
+
+    #[inline(always)]
+    pub fn should_write_err(&self) -> bool {
+        !matches!(
+            self.inner,
+            EventType::Network(_) | EventType::Auth(AuthEvent::Banned)
+        )
     }
 
     pub fn corrupted_key(key: &[u8], value: Option<&[u8]>, caused_by: &'static str) -> Error {
@@ -263,7 +324,7 @@ impl AuthEvent {
             ),
             Self::TooManyAttempts => "Too many authentication attempts",
             Self::Banned => "Banned",
-            Self::Error => "Authentication error",
+            _ => "Authentication error",
         }
     }
 }
@@ -342,6 +403,7 @@ impl JmapEvent {
             Self::UnknownCapability => "Unknown capability",
             Self::NotJSON => "Not JSON",
             Self::NotRequest => "Not a request",
+            _ => "Other message",
         }
     }
 }
@@ -373,6 +435,7 @@ impl LimitEvent {
             Self::SizeUpload => "Upload too large",
             Self::CallsIn => "Too many calls in",
             Self::ConcurrentRequest => "Too many concurrent requests",
+            Self::ConcurrentConnection => "Too many concurrent connections",
             Self::ConcurrentUpload => "Too many concurrent uploads",
             Self::Quota => "Quota exceeded",
             Self::BlobQuota => "Blob quota exceeded",
@@ -407,6 +470,7 @@ impl ResourceEvent {
             Self::NotFound => "Not found",
             Self::BadParameters => "Bad parameters",
             Self::Error => "Resource error",
+            _ => "Other status",
         }
     }
 }
@@ -420,6 +484,30 @@ impl SmtpEvent {
     #[inline(always)]
     pub fn into_err(self) -> Error {
         Error::new(EventType::Smtp(self))
+    }
+}
+
+impl SieveEvent {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(EventType::Sieve(self))
+    }
+}
+
+impl SpamEvent {
+    #[inline(always)]
+    pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
+        self.into_err().ctx(key, value)
+    }
+
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(EventType::Spam(self))
     }
 }
 
@@ -478,46 +566,6 @@ impl NetworkEvent {
     #[inline(always)]
     pub fn into_err(self) -> Error {
         Error::new(EventType::Network(self))
-    }
-}
-
-impl Error {
-    #[inline(always)]
-    pub fn wrap(self, cause: EventType) -> Self {
-        Error::new(cause).caused_by(self)
-    }
-
-    #[inline(always)]
-    pub fn is_assertion_failure(&self) -> bool {
-        self.inner == EventType::Store(StoreEvent::AssertValueFailed)
-    }
-
-    #[inline(always)]
-    pub fn is_jmap_method_error(&self) -> bool {
-        !matches!(
-            self.inner,
-            EventType::Jmap(
-                JmapEvent::UnknownCapability | JmapEvent::NotJSON | JmapEvent::NotRequest
-            )
-        )
-    }
-
-    #[inline(always)]
-    pub fn must_disconnect(&self) -> bool {
-        matches!(
-            self.inner,
-            EventType::Network(_)
-                | EventType::Auth(AuthEvent::TooManyAttempts | AuthEvent::Banned)
-                | EventType::Limit(LimitEvent::ConcurrentRequest | LimitEvent::TooManyRequests)
-        )
-    }
-
-    #[inline(always)]
-    pub fn should_write_err(&self) -> bool {
-        !matches!(
-            self.inner,
-            EventType::Network(_) | EventType::Auth(AuthEvent::Banned)
-        )
     }
 }
 
@@ -629,7 +677,8 @@ impl PartialEq for Value {
             (Self::Ipv4(l0), Self::Ipv4(r0)) => l0 == r0,
             (Self::Ipv6(l0), Self::Ipv6(r0)) => l0 == r0,
             (Self::Protocol(l0), Self::Protocol(r0)) => l0 == r0,
-            (Self::Error(l0), Self::Error(r0)) => l0 == r0,
+            (Self::Event(l0), Self::Event(r0)) => l0 == r0,
+            (Self::Level(l0), Self::Level(r0)) => l0 == r0,
             (Self::Array(l0), Self::Array(r0)) => l0 == r0,
             _ => false,
         }
@@ -693,30 +742,46 @@ impl Eq for Error {}
 
 impl EventType {
     pub fn level(&self) -> Level {
+        let todo = "smtp levels and other todos";
         match self {
             EventType::Store(event) => match event {
                 StoreEvent::SqlQuery | StoreEvent::LdapQuery => Level::Trace,
+                StoreEvent::NotFound => Level::Debug,
+                StoreEvent::Ingest => Level::Info,
                 _ => Level::Error,
             },
             EventType::Jmap(_) => Level::Debug,
             EventType::Imap(event) => match event {
-                ImapEvent::Error => Level::Debug,
+                ImapEvent::Error | ImapEvent::IdleStart | ImapEvent::IdleStop => Level::Debug,
+                ImapEvent::RawInput | ImapEvent::RawOutput => Level::Trace,
             },
             EventType::ManageSieve(event) => match event {
                 ManageSieveEvent::Error => Level::Debug,
+                ManageSieveEvent::RawInput | ManageSieveEvent::RawOutput => Level::Trace,
             },
             EventType::Pop3(event) => match event {
                 Pop3Event::Error => Level::Debug,
+                Pop3Event::RawInput | Pop3Event::RawOutput => Level::Trace,
             },
             EventType::Smtp(event) => match event {
                 SmtpEvent::Error => Level::Debug,
+                SmtpEvent::RemoteIdNotFound => Level::Warn,
+                _ => todo!(),
             },
             EventType::Network(event) => match event {
                 NetworkEvent::ReadError
                 | NetworkEvent::WriteError
                 | NetworkEvent::FlushError
                 | NetworkEvent::Closed => Level::Trace,
-                NetworkEvent::Timeout => Level::Debug,
+                NetworkEvent::Timeout | NetworkEvent::AcceptError => Level::Debug,
+                NetworkEvent::ListenStart
+                | NetworkEvent::ListenStop
+                | NetworkEvent::DropBlocked => Level::Info,
+                NetworkEvent::ListenError
+                | NetworkEvent::BindError
+                | NetworkEvent::SetOptError
+                | NetworkEvent::SplitError => Level::Error,
+                NetworkEvent::ProxyError => Level::Warn,
             },
             EventType::Limit(cause) => match cause {
                 LimitEvent::SizeRequest => Level::Debug,
@@ -724,6 +789,7 @@ impl EventType {
                 LimitEvent::CallsIn => Level::Debug,
                 LimitEvent::ConcurrentRequest => Level::Debug,
                 LimitEvent::ConcurrentUpload => Level::Debug,
+                LimitEvent::ConcurrentConnection => Level::Warn,
                 LimitEvent::Quota => Level::Debug,
                 LimitEvent::BlobQuota => Level::Debug,
                 LimitEvent::TooManyRequests => Level::Warn,
@@ -735,36 +801,55 @@ impl EventType {
                 AuthEvent::TooManyAttempts => Level::Warn,
                 AuthEvent::Banned => Level::Warn,
                 AuthEvent::Error => Level::Error,
+                AuthEvent::Success => Level::Info,
             },
             EventType::Config(cause) => match cause {
-                ConfigEvent::ParseError => Level::Error,
-                ConfigEvent::BuildError => Level::Error,
-                ConfigEvent::MacroError => Level::Error,
-                ConfigEvent::WriteError => Level::Error,
-                ConfigEvent::FetchError => Level::Error,
-                ConfigEvent::DefaultApplied => Level::Debug,
-                ConfigEvent::MissingSetting => Level::Debug,
-                ConfigEvent::UnusedSetting => Level::Debug,
-                ConfigEvent::ParseWarning => Level::Debug,
-                ConfigEvent::BuildWarning => Level::Debug,
+                ConfigEvent::ParseError
+                | ConfigEvent::BuildError
+                | ConfigEvent::MacroError
+                | ConfigEvent::WriteError
+                | ConfigEvent::FetchError => Level::Error,
+                ConfigEvent::DefaultApplied
+                | ConfigEvent::MissingSetting
+                | ConfigEvent::UnusedSetting
+                | ConfigEvent::ParseWarning
+                | ConfigEvent::BuildWarning
+                | ConfigEvent::AlreadyUpToDate
+                | ConfigEvent::ExternalKeyIgnored => Level::Debug,
+                ConfigEvent::ImportExternal => Level::Info,
             },
             EventType::Resource(cause) => match cause {
                 ResourceEvent::NotFound => Level::Debug,
-                ResourceEvent::BadParameters => Level::Error,
-                ResourceEvent::Error => Level::Error,
+                ResourceEvent::BadParameters | ResourceEvent::Error => Level::Error,
+                ResourceEvent::DownloadExternal | ResourceEvent::WebadminUnpacked => Level::Info,
             },
-            EventType::Arc(_) => Level::Debug,
-            EventType::Dkim(_) => Level::Debug,
+            EventType::Arc(event) => match event {
+                ArcEvent::ChainTooLong
+                | ArcEvent::InvalidInstance
+                | ArcEvent::InvalidCV
+                | ArcEvent::HasHeaderTag
+                | ArcEvent::BrokenChain => Level::Debug,
+                ArcEvent::SealerNotFound => Level::Warn,
+            },
+            EventType::Dkim(event) => match event {
+                DkimEvent::SignerNotFound => Level::Warn,
+                _ => Level::Debug,
+            },
             EventType::MailAuth(_) => Level::Debug,
             EventType::Purge(event) => match event {
                 PurgeEvent::Started => Level::Debug,
                 PurgeEvent::Finished => Level::Debug,
                 PurgeEvent::Running => Level::Info,
                 PurgeEvent::Error => Level::Error,
+                PurgeEvent::PurgeActive
+                | PurgeEvent::AutoExpunge
+                | PurgeEvent::TombstoneCleanup => Level::Debug,
             },
             EventType::Eval(event) => match event {
                 EvalEvent::Result => Level::Trace,
                 EvalEvent::Error => Level::Error,
+                EvalEvent::DirectoryNotFound => Level::Warn,
+                EvalEvent::StoreNotFound => Level::Warn,
             },
             EventType::Server(event) => match event {
                 ServerEvent::Startup => Level::Info,
@@ -774,27 +859,139 @@ impl EventType {
                 ServerEvent::ThreadError => Level::Error,
             },
             EventType::Acme(event) => match event {
-                AcmeEvent::DnsRecordCreated => Level::Info,
-                AcmeEvent::DnsRecordNotPropagated => Level::Debug,
-                AcmeEvent::DnsRecordLookupFailed => Level::Debug,
-                AcmeEvent::DnsRecordPropagated => Level::Info,
-                AcmeEvent::DnsRecordPropagationTimeout => Level::Warn,
-                AcmeEvent::AuthStart => Level::Info,
-                AcmeEvent::AuthPending => Level::Info,
-                AcmeEvent::AuthValid => Level::Info,
-                AcmeEvent::AuthCompleted => Level::Info,
-                AcmeEvent::ProcessCert => Level::Info,
-                AcmeEvent::OrderProcessing => Level::Info,
-                AcmeEvent::OrderReady => Level::Info,
-                AcmeEvent::OrderValid => Level::Info,
-                AcmeEvent::OrderInvalid => Level::Warn,
-                AcmeEvent::RenewBackoff => Level::Debug,
+                AcmeEvent::DnsRecordCreated
+                | AcmeEvent::DnsRecordPropagated
+                | AcmeEvent::TlsAlpnReceived
+                | AcmeEvent::AuthStart
+                | AcmeEvent::AuthPending
+                | AcmeEvent::AuthValid
+                | AcmeEvent::AuthCompleted
+                | AcmeEvent::ProcessCert
+                | AcmeEvent::OrderProcessing
+                | AcmeEvent::OrderReady
+                | AcmeEvent::OrderValid
+                | AcmeEvent::OrderStart
+                | AcmeEvent::OrderCompleted => Level::Info,
                 AcmeEvent::Error => Level::Error,
-                AcmeEvent::AuthError => Level::Warn,
-                AcmeEvent::AuthTooManyAttempts => Level::Warn,
-                AcmeEvent::DnsRecordCreationFailed => Level::Warn,
-                AcmeEvent::DnsRecordDeletionFailed => Level::Debug,
+                AcmeEvent::OrderInvalid
+                | AcmeEvent::AuthError
+                | AcmeEvent::AuthTooManyAttempts
+                | AcmeEvent::TokenNotFound
+                | AcmeEvent::DnsRecordPropagationTimeout
+                | AcmeEvent::TlsAlpnError
+                | AcmeEvent::DnsRecordCreationFailed => Level::Warn,
+                AcmeEvent::RenewBackoff
+                | AcmeEvent::DnsRecordDeletionFailed
+                | AcmeEvent::ClientSuppliedSNI
+                | AcmeEvent::ClientMissingSNI
+                | AcmeEvent::DnsRecordNotPropagated
+                | AcmeEvent::DnsRecordLookupFailed => Level::Debug,
             },
+            EventType::Session(event) => match event {
+                SessionEvent::Start => Level::Info,
+                SessionEvent::Stop => Level::Info,
+            },
+            EventType::Tls(event) => match event {
+                TlsEvent::Handshake => Level::Info,
+                TlsEvent::HandshakeError => Level::Debug,
+                TlsEvent::NotConfigured => Level::Error,
+                TlsEvent::CertificateNotFound
+                | TlsEvent::NoCertificatesAvailable
+                | TlsEvent::MultipleCertificatesAvailable => Level::Warn,
+            },
+            EventType::Sieve(event) => match event {
+                SieveEvent::NotSupported
+                | SieveEvent::QuotaExceeded
+                | SieveEvent::ListNotFound
+                | SieveEvent::ScriptNotFound
+                | SieveEvent::RuntimeError
+                | SieveEvent::MessageTooLarge => Level::Warn,
+                SieveEvent::SendMessage => Level::Info,
+                SieveEvent::UnexpectedError => Level::Error,
+                SieveEvent::ActionAccept
+                | SieveEvent::ActionAcceptReplace
+                | SieveEvent::ActionDiscard
+                | SieveEvent::ActionReject => Level::Debug,
+            },
+            EventType::Spam(event) => match event {
+                SpamEvent::PyzorError | SpamEvent::TrainError | SpamEvent::ClassifyError => {
+                    Level::Warn
+                }
+                SpamEvent::Train
+                | SpamEvent::Classify
+                | SpamEvent::NotEnoughTrainingData
+                | SpamEvent::TrainBalance => Level::Debug,
+                SpamEvent::ListUpdated => Level::Info,
+            },
+            EventType::Http(event) => match event {
+                HttpEvent::Error | HttpEvent::XForwardedMissing => Level::Warn,
+                HttpEvent::RequestUrl => Level::Debug,
+                HttpEvent::RequestBody | HttpEvent::ResponseBody => Level::Trace,
+            },
+            EventType::PushSubscription(event) => match event {
+                PushSubscriptionEvent::Error | PushSubscriptionEvent::NotFound => Level::Debug,
+                PushSubscriptionEvent::Success => Level::Trace,
+            },
+            EventType::Cluster(event) => match event {
+                ClusterEvent::PeerAlive
+                | ClusterEvent::PeerDiscovered
+                | ClusterEvent::PeerOffline
+                | ClusterEvent::PeerSuspected
+                | ClusterEvent::PeerSuspectedIsAlive
+                | ClusterEvent::PeerBackOnline
+                | ClusterEvent::PeerLeaving => Level::Info,
+                ClusterEvent::PeerHasConfigChanges
+                | ClusterEvent::PeerHasListChanges
+                | ClusterEvent::OneOrMorePeersOffline => Level::Debug,
+                ClusterEvent::EmptyPacket
+                | ClusterEvent::Error
+                | ClusterEvent::DecryptionError
+                | ClusterEvent::InvalidPacket => Level::Warn,
+            },
+            EventType::Housekeeper(event) => match event {
+                HousekeeperEvent::Start
+                | HousekeeperEvent::PurgeAccounts
+                | HousekeeperEvent::PurgeSessions
+                | HousekeeperEvent::PurgeStore
+                | HousekeeperEvent::Schedule
+                | HousekeeperEvent::Stop => Level::Info,
+            },
+            EventType::FtsIndex(event) => match event {
+                FtsIndexEvent::Index => Level::Info,
+                FtsIndexEvent::LockBusy => Level::Warn,
+                FtsIndexEvent::BlobNotFound
+                | FtsIndexEvent::Locked
+                | FtsIndexEvent::MetadataNotFound => Level::Debug,
+            },
+            EventType::Dmarc(_) => Level::Debug,
+            EventType::Spf(_) => Level::Debug,
+            EventType::Iprev(_) => Level::Debug,
+            EventType::Milter(event) => match event {
+                MilterEvent::Read | MilterEvent::Write => Level::Trace,
+                MilterEvent::ActionAccept
+                | MilterEvent::ActionDiscard
+                | MilterEvent::ActionReject
+                | MilterEvent::ActionTempFail
+                | MilterEvent::ActionReplyCode
+                | MilterEvent::ActionConnectionFailure
+                | MilterEvent::ActionShutdown => Level::Info,
+                MilterEvent::IoError
+                | MilterEvent::FrameTooLarge
+                | MilterEvent::FrameInvalid
+                | MilterEvent::UnexpectedResponse
+                | MilterEvent::Timeout
+                | MilterEvent::TlsInvalidName
+                | MilterEvent::Disconnected
+                | MilterEvent::ParseError => Level::Warn,
+            },
+            EventType::MtaHook(event) => match event {
+                MtaHookEvent::ActionAccept
+                | MtaHookEvent::ActionDiscard
+                | MtaHookEvent::ActionReject
+                | MtaHookEvent::ActionQuarantine => Level::Info,
+                MtaHookEvent::Error => Level::Warn,
+            },
+            EventType::Dane(_) => todo!(),
         }
     }
 }

@@ -82,13 +82,10 @@ impl JMAP {
             _ => return Err(trc::ResourceEvent::NotFound.into_err()),
         };
 
-        match obtain_dkim_public_key(algo, &pk) {
-            Ok(data) => Ok(JsonResponse::new(json!({
-                "data": data,
-            }))
-            .into_http_response()),
-            Err(details) => Err(manage::error(details, None::<u32>)),
-        }
+        Ok(JsonResponse::new(json!({
+            "data": obtain_dkim_public_key(algo, &pk)?,
+        }))
+        .into_http_response())
     }
 
     async fn handle_create_signature(&self, body: Option<Vec<u8>>) -> trc::Result<HttpResponse> {
@@ -215,7 +212,7 @@ impl JMAP {
     }
 }
 
-pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> Result<String, &'static str> {
+pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> trc::Result<String> {
     match simple_pem_parse(pk) {
         Some(der) => match algo {
             Algorithm::Rsa => match RsaKey::<Sha256>::from_der(&der).and_then(|key| {
@@ -226,11 +223,10 @@ pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> Result<String, &'sta
                     String::from_utf8(base64_encode(pk.as_bytes()).unwrap_or_default())
                         .unwrap_or_default(),
                 ),
-                Err(err) => {
-                    tracing::debug!("Failed to read RSA DER: {err}");
-
-                    Err("Failed to read RSA DER")
-                }
+                Err(err) => Err(manage::error(
+                    "Failed to read RSA DER",
+                    err.to_string().into(),
+                )),
             },
             Algorithm::Ed25519 => {
                 match Ed25519Key::from_pkcs8_maybe_unchecked_der(&der)
@@ -240,15 +236,11 @@ pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> Result<String, &'sta
                         base64_encode(&pk.public_key()).unwrap_or_default(),
                     )
                     .unwrap_or_default()),
-                    Err(err) => {
-                        tracing::debug!("Failed to read ED25519 DER: {err}");
-
-                        Err("Failed to read ED25519 DER")
-                    }
+                    Err(err) => manage::error(details, err.to_string().into()),
                 }
             }
         },
-        None => Err("Failed to decode private key"),
+        None => Err(manage::error("Failed to decode private key", None::<u32>)),
     }
 }
 

@@ -74,12 +74,11 @@ impl JMAP {
                             } else {
                                 0
                             },
+                            session.session_id,
                         )
                         .await
                         .ok_or_else(|| trc::LimitEvent::SizeRequest.into_err())
                         .and_then(|bytes| {
-                            //let c = println!("<- {}", String::from_utf8_lossy(&bytes));
-
                             Request::parse(
                                 &bytes,
                                 self.core.jmap.request_max_calls,
@@ -88,7 +87,7 @@ impl JMAP {
                         })?;
 
                         return Ok(self
-                            .handle_request(request, access_token, &session.instance)
+                            .handle_request(request, access_token, &session)
                             .await
                             .into_http_response());
                     }
@@ -136,6 +135,7 @@ impl JMAP {
                                 } else {
                                     0
                                 },
+                                session.session_id,
                             )
                             .await
                             {
@@ -259,7 +259,9 @@ impl JMAP {
                 ("token", &Method::POST) => {
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
-                    return self.handle_token_request(&mut req).await;
+                    return self
+                        .handle_token_request(&mut req, session.session_id)
+                        .await;
                 }
                 (_, &Method::OPTIONS) => {
                     return Ok(StatusCode::NO_CONTENT.into_http_response());
@@ -274,7 +276,7 @@ impl JMAP {
 
                 // Authenticate user
                 let (_, access_token) = self.authenticate_headers(&req, session.remote_ip).await?;
-                let body = fetch_body(&mut req, 1024 * 1024).await;
+                let body = fetch_body(&mut req, 1024 * 1024, session.session_id).await;
                 return self
                     .handle_api_manage_request(&req, body, access_token)
                     .await;
@@ -291,7 +293,9 @@ impl JMAP {
                     && path.next().unwrap_or_default() == "autodiscover.xml"
                 {
                     return self
-                        .handle_autodiscover_request(fetch_body(&mut req, 8192).await)
+                        .handle_autodiscover_request(
+                            fetch_body(&mut req, 8192, session.session_id).await,
+                        )
                         .await;
                 }
             }
@@ -352,7 +356,12 @@ impl JmapInstance {
                     let instance = session.instance.clone();
 
                     async move {
-                        tracing::debug!(event = "request", uri = req.uri().to_string(),);
+                        trc::event!(
+                            Http(trc::HttpEvent::RequestUrl),
+                            SessionId = session.session_id,
+                            Url = req.uri().to_string(),
+                        );
+
                         let jmap = JMAP::from(jmap_instance);
 
                         // Obtain remote IP
@@ -367,8 +376,9 @@ impl JmapInstance {
                         {
                             forwarded_for
                         } else {
-                            tracing::warn!(
-                                "Warning: No remote address found in request, using remote ip."
+                            trc::event!(
+                                Http(trc::HttpEvent::XForwardedMissing),
+                                SessionId = session.session_id,
                             );
                             session.remote_ip
                         };
@@ -389,15 +399,22 @@ impl JmapInstance {
                             )
                             .await
                         {
-                            Ok(response) => response,
-                            Err(err) => {
-                                tracing::error!(
-
-                                    event = "error",
-                                    context = "http",
-                                    reason = %err,
+                            Ok(response) => {
+                                trc::event!(
+                                    Http(trc::HttpEvent::ResponseBody),
+                                    SessionId = session.session_id,
+                                    Contents = std::str::from_utf8(response.body())
+                                        .unwrap_or("[binary data]")
+                                        .to_string(),
+                                    Size = response.body().as_ref().len(),
                                 );
-                                err.into_http_response()
+
+                                response
+                            }
+                            Err(err) => {
+                                let response = err.into_http_response();
+                                trc::error!(err.session_id(session.session_id));
+                                response
                             }
                         };
 
@@ -417,11 +434,10 @@ impl JmapInstance {
             .with_upgrades()
             .await
         {
-            tracing::debug!(
-
-                event = "error",
-                context = "http",
-                reason = %http_err,
+            trc::event!(
+                Http(trc::HttpEvent::Error),
+                SessionId = session.session_id,
+                reason = http_err.to_string(),
             );
         }
     }
@@ -478,17 +494,41 @@ impl HttpSessionData {
     }
 }
 
-pub async fn fetch_body(req: &mut HttpRequest, max_size: usize) -> Option<Vec<u8>> {
+pub async fn fetch_body(
+    req: &mut HttpRequest,
+    max_size: usize,
+    session_id: u64,
+) -> Option<Vec<u8>> {
     let mut bytes = Vec::with_capacity(1024);
     while let Some(Ok(frame)) = req.frame().await {
         if let Some(data) = frame.data_ref() {
             if bytes.len() + data.len() <= max_size || max_size == 0 {
                 bytes.extend_from_slice(data);
             } else {
+                trc::event!(
+                    Http(trc::HttpEvent::RequestBody),
+                    SessionId = session_id,
+                    Contents = std::str::from_utf8(&bytes)
+                        .unwrap_or("[binary data]")
+                        .to_string(),
+                    Size = bytes.len(),
+                    Limit = max_size,
+                );
+
                 return None;
             }
         }
     }
+
+    trc::event!(
+        Http(trc::HttpEvent::RequestBody),
+        SessionId = session_id,
+        Contents = std::str::from_utf8(&bytes)
+            .unwrap_or("[binary data]")
+            .to_string(),
+        Size = bytes.len(),
+    );
+
     bytes.into()
 }
 
@@ -510,7 +550,7 @@ impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
     }
 }
 
-impl ToHttpResponse for trc::Error {
+impl ToHttpResponse for &trc::Error {
     fn into_http_response(self) -> HttpResponse {
         match self.as_ref() {
             trc::EventType::Manage(cause) => {
@@ -569,7 +609,7 @@ impl ToRequestError for trc::Error {
                 trc::LimitEvent::SizeRequest => RequestError::limit(RequestLimitError::SizeRequest),
                 trc::LimitEvent::SizeUpload => RequestError::limit(RequestLimitError::SizeUpload),
                 trc::LimitEvent::CallsIn => RequestError::limit(RequestLimitError::CallsIn),
-                trc::LimitEvent::ConcurrentRequest => {
+                trc::LimitEvent::ConcurrentRequest | trc::LimitEvent::ConcurrentConnection => {
                     RequestError::limit(RequestLimitError::ConcurrentRequest)
                 }
                 trc::LimitEvent::ConcurrentUpload => {
@@ -604,6 +644,7 @@ impl ToRequestError for trc::Error {
                     details_or_reason.unwrap_or("One or multiple parameters could not be parsed."),
                 ),
                 trc::ResourceEvent::Error => RequestError::internal_server_error(),
+                _ => RequestError::internal_server_error(),
             },
             _ => RequestError::internal_server_error(),
         }

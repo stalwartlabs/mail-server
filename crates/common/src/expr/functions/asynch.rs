@@ -13,6 +13,7 @@ impl Core {
         &self,
         fnc_id: u32,
         params: Vec<Variable<'x>>,
+        session_id: u64,
     ) -> trc::Result<Variable<'x>> {
         let mut params = FncParams::new(params);
 
@@ -21,7 +22,7 @@ impl Core {
                 let directory = params.next_as_string();
                 let domain = params.next_as_string();
 
-                self.get_directory_or_default(directory.as_ref())
+                self.get_directory_or_default(directory.as_ref(), session_id)
                     .is_local_domain(domain.as_ref())
                     .await
                     .caused_by(trc::location!())
@@ -31,7 +32,7 @@ impl Core {
                 let directory = params.next_as_string();
                 let address = params.next_as_string();
 
-                self.get_directory_or_default(directory.as_ref())
+                self.get_directory_or_default(directory.as_ref(), session_id)
                     .rcpt(address.as_ref())
                     .await
                     .caused_by(trc::location!())
@@ -41,18 +42,17 @@ impl Core {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_lookup_store(store.as_ref())
+                self.get_lookup_store(store.as_ref(), session_id)
                     .key_get::<VariableWrapper>(key.into_owned().into_bytes())
                     .await
                     .map(|value| value.map(|v| v.into_inner()).unwrap_or_default())
                     .caused_by(trc::location!())
-                    .map(|v| v.into())
             }
             F_KEY_EXISTS => {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_lookup_store(store.as_ref())
+                self.get_lookup_store(store.as_ref(), session_id)
                     .key_exists(key.into_owned().into_bytes())
                     .await
                     .caused_by(trc::location!())
@@ -63,7 +63,7 @@ impl Core {
                 let key = params.next_as_string();
                 let value = params.next_as_string();
 
-                self.get_lookup_store(store.as_ref())
+                self.get_lookup_store(store.as_ref(), session_id)
                     .key_set(
                         key.into_owned().into_bytes(),
                         value.into_owned().into_bytes(),
@@ -79,32 +79,34 @@ impl Core {
                 let key = params.next_as_string();
                 let value = params.next_as_integer();
 
-                self.get_lookup_store(store.as_ref())
+                self.get_lookup_store(store.as_ref(), session_id)
                     .counter_incr(key.into_owned().into_bytes(), value, None, true)
                     .await
                     .map(Variable::Integer)
                     .caused_by(trc::location!())
-                    .map(|v| v.into())
             }
             F_COUNTER_GET => {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_lookup_store(store.as_ref())
+                self.get_lookup_store(store.as_ref(), session_id)
                     .counter_get(key.into_owned().into_bytes())
                     .await
                     .map(Variable::Integer)
                     .caused_by(trc::location!())
-                    .map(|v| v.into())
             }
             F_DNS_QUERY => self.dns_query(params).await,
-            F_SQL_QUERY => self.sql_query(params).await,
+            F_SQL_QUERY => self.sql_query(params, session_id).await,
             _ => Ok(Variable::default()),
         }
     }
 
-    async fn sql_query<'x>(&self, mut arguments: FncParams<'x>) -> trc::Result<Variable<'x>> {
-        let store = self.get_lookup_store(arguments.next_as_string().as_ref());
+    async fn sql_query<'x>(
+        &self,
+        mut arguments: FncParams<'x>,
+        session_id: u64,
+    ) -> trc::Result<Variable<'x>> {
+        let store = self.get_lookup_store(arguments.next_as_string().as_ref(), session_id);
         let query = arguments.next_as_string();
 
         if query.is_empty() {

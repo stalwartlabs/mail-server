@@ -356,8 +356,6 @@ impl<T: SessionStream> SessionData<T> {
                     {
                         new_accounts.push(account);
                     } else {
-                        tracing::debug!("Removed unlinked shared account {}", account.account_id);
-
                         // Add unshared mailboxes to deleted list
                         if let Some(changes) = &mut changes {
                             for (mailbox_name, _) in account.mailbox_names {
@@ -374,7 +372,6 @@ impl<T: SessionStream> SessionData<T> {
                         .skip(1)
                         .any(|m| m.account_id == account_id)
                     {
-                        tracing::debug!("Adding shared account {}", account_id);
                         added_account_ids.push(account_id);
                     }
                 }
@@ -396,17 +393,10 @@ impl<T: SessionStream> SessionData<T> {
                         .map(|p| p.name)
                         .unwrap_or_else(|| Id::from(account_id).to_string())
                 );
-                match self
-                    .fetch_account_mailboxes(account_id, prefix.into(), &access_token)
-                    .await
-                {
-                    Ok(account) => {
-                        added_accounts.push(account);
-                    }
-                    Err(_) => {
-                        tracing::debug!("Failed to fetch shared mailbox.");
-                    }
-                }
+                added_accounts.push(
+                    self.fetch_account_mailboxes(account_id, prefix.into(), &access_token)
+                        .await?,
+                );
             }
 
             // Update state
@@ -512,17 +502,11 @@ impl<T: SessionStream> SessionData<T> {
                     } else {
                         None
                     };
-                    match self
-                        .fetch_account_mailboxes(account_id, mailbox_prefix, &access_token)
-                        .await
-                    {
-                        Ok(account_mailboxes) => {
-                            changed_accounts.push(account_mailboxes);
-                        }
-                        Err(_) => {
-                            tracing::debug!("Failed to fetch mailboxes:.");
-                        }
-                    }
+
+                    changed_accounts.push(
+                        self.fetch_account_mailboxes(account_id, mailbox_prefix, &access_token)
+                            .await?,
+                    );
                 }
             }
         }

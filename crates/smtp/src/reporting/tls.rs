@@ -58,7 +58,7 @@ impl SMTP {
             .map(|e| (e.domain.as_str(), e.seq_id, e.due))
             .unwrap();
 
-        let span = tracing::info_span!(
+        let span = trc::event_span!(
             "tls-report",
             domain = domain_name,
             range_from = event_from,
@@ -92,12 +92,12 @@ impl SMTP {
             Ok(Some(report)) => report,
             Ok(None) => {
                 // This should not happen
-                tracing::warn!(event = "empty-report", "No policies found in report");
+                trc::event!(event = "empty-report", "No policies found in report");
                 self.delete_tls_report(events).await;
                 return;
             }
             Err(err) => {
-                tracing::warn!(event = "error", "Failed to read TLS report: {}", err);
+                trc::event!(event = "error", "Failed to read TLS report: {}", err);
                 return;
             }
         };
@@ -109,7 +109,7 @@ impl SMTP {
         {
             Ok(report) => report,
             Err(err) => {
-                tracing::error!(event = "error", "Failed to compress report: {}", err);
+                trc::event!(event = "error", "Failed to compress report: {}", err);
                 self.delete_tls_report(events).await;
                 return;
             }
@@ -141,11 +141,11 @@ impl SMTP {
                         {
                             Ok(response) => {
                                 if response.status().is_success() {
-                                    tracing::info!(context = "http", event = "success", url = uri,);
+                                    trc::event!(context = "http", event = "success", url = uri,);
                                     self.delete_tls_report(events).await;
                                     return;
                                 } else {
-                                    tracing::debug!(
+                                    trc::event!(
 
                                         context = "http",
                                         event = "invalid-response",
@@ -155,7 +155,7 @@ impl SMTP {
                                 }
                             }
                             Err(err) => {
-                                tracing::debug!(
+                                trc::event!(
 
                                     context = "http",
                                     event = "error",
@@ -213,7 +213,7 @@ impl SMTP {
             self.send_report(&from_addr, rcpts.iter(), message, &config.sign, false)
                 .await;
         } else {
-            tracing::info!(
+            trc::event!(
                 event = "delivery-failed",
                 "No valid recipients found to deliver report to."
             );
@@ -478,7 +478,7 @@ impl SMTP {
         );
 
         if let Err(err) = self.core.storage.data.write(builder.build()).await {
-            tracing::error!(
+            trc::event!(
                 context = "report",
                 event = "error",
                 "Failed to write TLS report event: {}",
@@ -515,7 +515,7 @@ impl SMTP {
                 )
                 .await
             {
-                tracing::warn!(
+                trc::event!(
                     context = "report",
                     event = "error",
                     "Failed to remove reports: {}",
@@ -534,7 +534,7 @@ impl SMTP {
         }
 
         if let Err(err) = self.core.storage.data.write(batch.build()).await {
-            tracing::warn!(
+            trc::event!(
                 context = "report",
                 event = "error",
                 "Failed to remove reports: {}",

@@ -279,7 +279,7 @@ impl<T: SessionStream> SessionData<T> {
             ) {
                 (email.inner, keywords)
             } else {
-                tracing::debug!(
+                trc::event!(
                     event = "not-found",
                     account_id = account_id,
                     collection = ?Collection::Email,
@@ -299,7 +299,7 @@ impl<T: SessionStream> SessionData<T> {
                 {
                     Some(raw_message) => raw_message,
                     None => {
-                        tracing::warn!(event = "not-found",
+                        trc::event!(event = "not-found",
                         account_id = account_id,
                         collection = ?Collection::Email,
                         document_id = id,

@@ -17,14 +17,11 @@ use super::{SelectedMailbox, Session, SessionData, State};
 
 impl<T: SessionStream> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> SessionResult {
-        /*for line in String::from_utf8_lossy(bytes).split("\r\n") {
-            let c = println!("{}", line);
-        }*/
-
-        tracing::trace!(
-            event = "read",
-            data = std::str::from_utf8(bytes).unwrap_or("[invalid UTF8]"),
-            size = bytes.len()
+        trc::event!(
+            Imap(trc::ImapEvent::RawInput),
+            SessionId = self.session_id,
+            Size = bytes.len(),
+            Contents = String::from_utf8_lossy(bytes).into_owned(),
         );
 
         let mut bytes = bytes.iter();

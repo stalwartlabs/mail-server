@@ -27,7 +27,7 @@ impl Ipc {
             })
             .await
         {
-            tracing::warn!("Failed to send webhook event: {:?}", err);
+            //trc::event!("Failed to send webhook event: {:?}", err);
         }
     }
 }

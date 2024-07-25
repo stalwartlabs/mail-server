@@ -18,13 +18,18 @@ use crate::{
 };
 
 impl Core {
-    pub async fn email_to_ids(&self, directory: &Directory, email: &str) -> trc::Result<Vec<u32>> {
+    pub async fn email_to_ids(
+        &self,
+        directory: &Directory,
+        email: &str,
+        session_id: u64,
+    ) -> trc::Result<Vec<u32>> {
         let mut address = self
             .smtp
             .session
             .rcpt
             .subaddressing
-            .to_subaddress(self, email)
+            .to_subaddress(self, email, session_id)
             .await;
 
         for _ in 0..2 {
@@ -37,7 +42,7 @@ impl Core {
                 .session
                 .rcpt
                 .catch_all
-                .to_catch_all(self, email)
+                .to_catch_all(self, email, session_id)
                 .await
             {
                 address = catch_all;
@@ -49,14 +54,19 @@ impl Core {
         Ok(vec![])
     }
 
-    pub async fn rcpt(&self, directory: &Directory, email: &str) -> trc::Result<bool> {
+    pub async fn rcpt(
+        &self,
+        directory: &Directory,
+        email: &str,
+        session_id: u64,
+    ) -> trc::Result<bool> {
         // Expand subaddress
         let mut address = self
             .smtp
             .session
             .rcpt
             .subaddressing
-            .to_subaddress(self, email)
+            .to_subaddress(self, email, session_id)
             .await;
 
         for _ in 0..2 {
@@ -67,7 +77,7 @@ impl Core {
                 .session
                 .rcpt
                 .catch_all
-                .to_catch_all(self, email)
+                .to_catch_all(self, email, session_id)
                 .await
             {
                 address = catch_all;
@@ -79,28 +89,38 @@ impl Core {
         Ok(false)
     }
 
-    pub async fn vrfy(&self, directory: &Directory, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn vrfy(
+        &self,
+        directory: &Directory,
+        address: &str,
+        session_id: u64,
+    ) -> trc::Result<Vec<String>> {
         directory
             .vrfy(
                 self.smtp
                     .session
                     .rcpt
                     .subaddressing
-                    .to_subaddress(self, address)
+                    .to_subaddress(self, address, session_id)
                     .await
                     .as_ref(),
             )
             .await
     }
 
-    pub async fn expn(&self, directory: &Directory, address: &str) -> trc::Result<Vec<String>> {
+    pub async fn expn(
+        &self,
+        directory: &Directory,
+        address: &str,
+        session_id: u64,
+    ) -> trc::Result<Vec<String>> {
         directory
             .expn(
                 self.smtp
                     .session
                     .rcpt
                     .subaddressing
-                    .to_subaddress(self, address)
+                    .to_subaddress(self, address, session_id)
                     .await
                     .as_ref(),
             )
@@ -152,9 +172,8 @@ impl AddressMapping {
         &'x self,
         core: &Core,
         address: &'y str,
+        session_id: u64,
     ) -> Cow<'x, str> {
-        let todo = "pass session_id";
-        let session_id = 0;
         match self {
             AddressMapping::Enable => {
                 if let Some((local_part, domain_part)) = address.rsplit_once('@') {
@@ -181,10 +200,8 @@ impl AddressMapping {
         &'x self,
         core: &Core,
         address: &'y str,
+        session_id: u64,
     ) -> Option<Cow<'x, str>> {
-        let todo = "pass session_id";
-        let session_id = 0;
-
         match self {
             AddressMapping::Enable => address
                 .rsplit_once('@')

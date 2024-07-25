@@ -10,6 +10,7 @@ use jmap_proto::types::{
     collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
     type_state::DataType,
 };
+use rasn::der::de;
 use store::{
     ahash::AHashMap,
     roaring::RoaringBitmap,
@@ -19,7 +20,7 @@ use store::{
     },
     BitmapKey, IterateParams, ValueKey, U32_LEN,
 };
-use trc::AddContext;
+use trc::{AddContext, StoreEvent};
 use utils::codec::leb128::Leb128Reader;
 
 use crate::{
@@ -137,12 +138,12 @@ impl JMAP {
                     F_VALUE | F_BITMAP | F_CLEAR,
                 );
             } else {
-                tracing::debug!(
-                    event = "error",
-                    context = "email_delete",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to fetch mailboxIds.",
+                trc::event!(
+                    Store(StoreEvent::NotFound),
+                    AccountId = account_id,
+                    DocumentId = document_id,
+                    Details = "Failed to fetch mailboxIds.",
+                    CausedBy = trc::location!(),
                 );
             }
             if let Some(thread_id) = delete_properties.thread_id {
@@ -156,12 +157,12 @@ impl JMAP {
                     changes.log_child_update(Collection::Thread, thread_id);
                 }
             } else {
-                tracing::debug!(
-                    event = "error",
-                    context = "email_delete",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to fetch threadId.",
+                trc::event!(
+                    Store(StoreEvent::NotFound),
+                    AccountId = account_id,
+                    DocumentId = document_id,
+                    Details = "Failed to fetch threadId.",
+                    CausedBy = trc::location!(),
                 );
             }
             batch.tag(
@@ -238,60 +239,43 @@ impl JMAP {
         {
             Ok(1) => (),
             Ok(count) => {
-                tracing::debug!(
-                    event = "skipped",
-                    context = "email_purge_account",
-                    account_id = account_id,
-                    count,
-                    "Account is already being purged."
+                trc::event!(
+                    Purge(trc::PurgeEvent::PurgeActive),
+                    AccountId = account_id,
+                    Count = count,
                 );
                 return;
             }
             Err(err) => {
-                tracing::error!(
-                    event = "error",
-                    context = "email_purge_account",
-                    account_id = account_id,
-                    error = ?err,
-                    "Failed to lock account."
-                );
+                trc::error!(err
+                    .details("Failed to lock account.")
+                    .account_id(account_id));
                 return;
             }
         }
 
         // Auto-expunge deleted and junk messages
         if let Some(period) = self.core.jmap.mail_autoexpunge_after {
-            if self.emails_auto_expunge(account_id, period).await.is_err() {
-                tracing::error!(
-                    event = "error",
-                    context = "email_auto_expunge",
-                    account_id = account_id,
-                    "Failed to auto-expunge messages."
-                );
+            if let Err(err) = self.emails_auto_expunge(account_id, period).await {
+                trc::error!(err
+                    .details("Failed to auto-expunge messages.")
+                    .account_id(account_id));
             }
         }
 
         // Purge tombstoned messages
         if let Err(err) = self.emails_purge_tombstoned(account_id).await {
-            tracing::error!(
-                event = "error",
-                context = "email_purge_tombstoned",
-                account_id = account_id,
-                error = ?err,
-                "Failed to purge tombstoned messages."
-            );
+            trc::error!(err
+                .details("Failed to purge tombstoned messages.")
+                .account_id(account_id));
         }
 
         // Purge changelogs
         if let Some(history) = self.core.jmap.changes_max_history {
             if let Err(err) = self.delete_changes(account_id, history).await {
-                tracing::error!(
-                    event = "error",
-                    context = "email_purge_account",
-                    account_id = account_id,
-                    error = ?err,
-                    "Failed to purge changes."
-                );
+                trc::error!(err
+                    .details("Failed to purge changes.")
+                    .account_id(account_id));
             }
         }
 
@@ -303,13 +287,7 @@ impl JMAP {
             .counter_delete(format!("purge:{account_id}").into_bytes())
             .await
         {
-            tracing::error!(
-                event = "error",
-                context = "email_purge_account",
-                account_id = account_id,
-                error = ?err,
-                "Failed to delete lock."
-            );
+            trc::error!(err.details("Failed to delete lock.").account_id(account_id));
         }
     }
 
@@ -363,12 +341,10 @@ impl JMAP {
             return Ok(());
         }
 
-        tracing::debug!(
-            event = "info",
-            context = "email_auto_expunge",
-            account_id = account_id,
-            count = destroy_ids.len(),
-            "Auto-expunging messages."
+        trc::event!(
+            Purge(trc::PurgeEvent::AutoExpunge),
+            AccountId = account_id,
+            Count = destroy_ids.len(),
         );
 
         // Tombstone messages
@@ -411,12 +387,10 @@ impl JMAP {
             return Ok(());
         }
 
-        tracing::debug!(
-            event = "info",
-            context = "email_purge_tombstoned",
-            account_id = account_id,
-            count = tombstoned_ids.len(),
-            "Purging tombstoned messages."
+        trc::event!(
+            Purge(trc::PurgeEvent::TombstoneCleanup),
+            AccountId = account_id,
+            Count = tombstoned_ids.len(),
         );
 
         // Delete full-text index
@@ -455,12 +429,12 @@ impl JMAP {
             {
                 batch.value(Property::Keywords, keywords, F_VALUE | F_BITMAP | F_CLEAR);
             } else {
-                tracing::debug!(
-                    event = "error",
-                    context = "email_delete",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to fetch keywords.",
+                trc::event!(
+                    Purge(trc::PurgeEvent::Error),
+                    AccountId = account_id,
+                    DocumentId = document_id,
+                    Reason = "Failed to fetch keywords.",
+                    CausedBy = trc::location!(),
                 );
             }
 
@@ -498,12 +472,12 @@ impl JMAP {
                 // Commit batch
                 self.core.storage.data.write(batch.build()).await?;
             } else {
-                tracing::debug!(
-                    event = "error",
-                    context = "email_delete",
-                    account_id = account_id,
-                    document_id = document_id,
-                    "Failed to fetch message metadata.",
+                trc::event!(
+                    Purge(trc::PurgeEvent::Error),
+                    AccountId = account_id,
+                    DocumentId = document_id,
+                    Reason = "Failed to fetch message metadata.",
+                    CausedBy = trc::location!(),
                 );
             }
         }

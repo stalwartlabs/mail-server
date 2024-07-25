@@ -38,107 +38,113 @@ pub fn register_local_domain(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("is_local_domain", plugin_id, 2);
 }
 
-pub async fn exec(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
-    };
+    }
+    .ok_or_else(|| {
+        trc::SieveEvent::RuntimeError
+            .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
+            .details("Unknown store")
+    })?;
 
-    if let Some(store) = store {
-        match &ctx.arguments[1] {
-            Variable::Array(items) => {
-                for item in items.iter() {
-                    if !item.is_empty()
-                        && store
-                            .key_exists(item.to_string().into_owned().into_bytes())
-                            .await
-                            .unwrap_or(false)
-                    {
-                        return true.into();
-                    }
+    Ok(match &ctx.arguments[1] {
+        Variable::Array(items) => {
+            for item in items.iter() {
+                if !item.is_empty()
+                    && store
+                        .key_exists(item.to_string().into_owned().into_bytes())
+                        .await?
+                {
+                    return Ok(true.into());
                 }
-                false
             }
-            v if !v.is_empty() => store
-                .key_exists(v.to_string().into_owned().into_bytes())
-                .await
-                .unwrap_or(false),
-            _ => false,
+            false
         }
-    } else {
-        tracing::debug!(
-            context = "sieve:lookup",
-            event = "failed",
-            reason = "Unknown lookup id",
-            lookup_id = ctx.arguments[0].to_string().as_ref(),
-        );
-        false
+        v if !v.is_empty() => {
+            store
+                .key_exists(v.to_string().into_owned().into_bytes())
+                .await?
+        }
+        _ => false,
     }
-    .into()
+    .into())
 }
 
-pub async fn exec_get(ctx: PluginContext<'_>) -> Variable {
-    let store = match &ctx.arguments[0] {
+pub async fn exec_get(ctx: PluginContext<'_>) -> trc::Result<Variable> {
+    match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
-    };
-
-    if let Some(store) = store {
-        store
-            .key_get::<VariableWrapper>(ctx.arguments[1].to_string().into_owned().into_bytes())
-            .await
-            .unwrap_or_default()
-            .map(|v| v.into_inner())
-            .unwrap_or_default()
-    } else {
-        tracing::debug!(
-            context = "sieve:key_get",
-            event = "failed",
-            reason = "Unknown store or lookup id",
-            lookup_id = ctx.arguments[0].to_string().as_ref(),
-        );
-        Variable::default()
     }
+    .ok_or_else(|| {
+        trc::SieveEvent::RuntimeError
+            .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
+            .details("Unknown store")
+    })?
+    .key_get::<VariableWrapper>(ctx.arguments[1].to_string().into_owned().into_bytes())
+    .await
+    .map(|v| v.map(|v| v.into_inner()).unwrap_or_default())
 }
 
-pub async fn exec_set(ctx: PluginContext<'_>) -> Variable {
-    let store = match &ctx.arguments[0] {
+pub async fn exec_set(ctx: PluginContext<'_>) -> trc::Result<Variable> {
+    let expires = match &ctx.arguments[3] {
+        Variable::Integer(v) => Some(*v as u64),
+        Variable::Float(v) => Some(*v as u64),
+        _ => None,
+    };
+
+    match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
-    };
+    }
+    .ok_or_else(|| {
+        trc::SieveEvent::RuntimeError
+            .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
+            .details("Unknown store")
+    })?
+    .key_set(
+        ctx.arguments[1].to_string().into_owned().into_bytes(),
+        if !ctx.arguments[2].is_empty() {
+            bincode::serialize(&ctx.arguments[2]).unwrap_or_default()
+        } else {
+            vec![]
+        },
+        expires,
+    )
+    .await
+    .map(|_| true.into())
+}
 
-    if let Some(store) = store {
-        let expires = match &ctx.arguments[3] {
-            Variable::Integer(v) => Some(*v as u64),
-            Variable::Float(v) => Some(*v as u64),
-            _ => None,
-        };
+pub async fn exec_remote(ctx: PluginContext<'_>) -> trc::Result<Variable> {
+    match exec_remote_(&ctx).await {
+        Ok(result) => Ok(result),
+        Err(err) => {
+            // Something went wrong, try again in one hour
+            const RETRY: Duration = Duration::from_secs(3600);
 
-        store
-            .key_set(
-                ctx.arguments[1].to_string().into_owned().into_bytes(),
-                if !ctx.arguments[2].is_empty() {
-                    bincode::serialize(&ctx.arguments[2]).unwrap_or_default()
-                } else {
-                    vec![]
-                },
-                expires,
-            )
-            .await
-            .is_ok()
-            .into()
-    } else {
-        tracing::warn!(
-            context = "sieve:key_set",
-            event = "failed",
-            reason = "Unknown store id",
-            store_id = ctx.arguments[0].to_string().as_ref(),
-        );
-        Variable::default()
+            let mut _lock = ctx.cache.remote_lists.write();
+            let list = _lock
+                .entry(ctx.arguments[0].to_string().to_string())
+                .or_insert_with(|| RemoteList {
+                    entries: HashSet::new(),
+                    expires: Instant::now(),
+                });
+
+            if list.expires > Instant::now() {
+                Ok(list
+                    .entries
+                    .contains(ctx.arguments[1].to_string().as_ref())
+                    .into())
+            } else {
+                list.expires = Instant::now() + RETRY;
+                Err(err)
+            }
+        }
     }
 }
 
-pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
+async fn exec_remote_(ctx: &PluginContext<'_>) -> trc::Result<Variable> {
     let resource = ctx.arguments[0].to_string();
     let item = ctx.arguments[1].to_string();
 
@@ -147,22 +153,21 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
         if (resource.contains("open") && item.contains("open"))
             || (resource.contains("tank") && item.contains("tank"))
         {
-            return true.into();
+            return Ok(true.into());
         }
     }
 
     if resource.is_empty() || item.is_empty() {
-        return false.into();
+        return Ok(false.into());
     }
 
     const TIMEOUT: Duration = Duration::from_secs(45);
-    const RETRY: Duration = Duration::from_secs(3600);
     const MAX_ENTRY_SIZE: usize = 256;
     const MAX_ENTRIES: usize = 100000;
 
     match ctx.cache.remote_lists.read().get(resource.as_ref()) {
         Some(remote_list) if remote_list.expires < Instant::now() => {
-            return remote_list.entries.contains(item.as_ref()).into()
+            return Ok(remote_list.entries.contains(item.as_ref()).into())
         }
         _ => {}
     }
@@ -206,7 +211,7 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
         }
     }
 
-    match reqwest::Client::builder()
+    let response = reqwest::Client::builder()
         .timeout(TIMEOUT)
         .user_agent(USER_AGENT)
         .build()
@@ -214,181 +219,140 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> Variable {
         .get(resource.as_ref())
         .send()
         .await
-    {
-        Ok(response) if response.status().is_success() => {
-            match response.bytes().await {
-                Ok(bytes) => {
-                    let reader: Box<dyn std::io::Read> = if resource.ends_with(".gz") {
-                        Box::new(flate2::read::GzDecoder::new(&bytes[..]))
-                    } else {
-                        Box::new(&bytes[..])
-                    };
+        .map_err(|err| {
+            trc::SieveEvent::RuntimeError
+                .into_err()
+                .reason(err)
+                .ctx(trc::Key::Url, resource.to_string())
+                .details("Failed to build request")
+        })?;
 
-                    // Lock remote list for writing
-                    let mut _lock = ctx.cache.remote_lists.write();
-                    let list = _lock
-                        .entry(resource.to_string())
-                        .or_insert_with(|| RemoteList {
-                            entries: HashSet::new(),
-                            expires: Instant::now(),
-                        });
+    if response.status().is_success() {
+        let bytes = response.bytes().await.map_err(|err| {
+            trc::SieveEvent::RuntimeError
+                .into_err()
+                .reason(err)
+                .ctx(trc::Key::Url, resource.to_string())
+                .details("Failed to fetch resource")
+        })?;
 
-                    // Make sure that the list is still expired
-                    if list.expires > Instant::now() {
-                        return list.entries.contains(item.as_ref()).into();
+        let reader: Box<dyn std::io::Read> = if resource.ends_with(".gz") {
+            Box::new(flate2::read::GzDecoder::new(&bytes[..]))
+        } else {
+            Box::new(&bytes[..])
+        };
+
+        // Lock remote list for writing
+        let mut _lock = ctx.cache.remote_lists.write();
+        let list = _lock
+            .entry(resource.to_string())
+            .or_insert_with(|| RemoteList {
+                entries: HashSet::new(),
+                expires: Instant::now(),
+            });
+
+        // Make sure that the list is still expired
+        if list.expires > Instant::now() {
+            return Ok(list.entries.contains(item.as_ref()).into());
+        }
+
+        for (pos, line) in BufReader::new(reader).lines().enumerate() {
+            let line_ = line.map_err(|err| {
+                trc::SieveEvent::RuntimeError
+                    .into_err()
+                    .reason(err)
+                    .ctx(trc::Key::Url, resource.to_string())
+                    .details("Failed to read line")
+            })?;
+            // Clear list once the first entry has been successfully fetched, decompressed and UTF8-decoded
+            if pos == 0 {
+                list.entries.clear();
+            }
+
+            match &format {
+                Format::List => {
+                    let line = line_.trim();
+                    if !line.is_empty() {
+                        list.entries.insert(line.to_string());
                     }
+                }
+                Format::Csv {
+                    column,
+                    separator,
+                    skip_first,
+                } if pos > 0 || !*skip_first => {
+                    let mut in_quote = false;
+                    let mut col_num = 0;
+                    let mut entry = String::new();
 
-                    for (pos, line) in BufReader::new(reader).lines().enumerate() {
-                        match line {
-                            Ok(line_) => {
-                                // Clear list once the first entry has been successfully fetched, decompressed and UTF8-decoded
-                                if pos == 0 {
-                                    list.entries.clear();
+                    for ch in line_.chars() {
+                        if ch != '"' {
+                            if ch == *separator && !in_quote {
+                                if col_num == *column {
+                                    break;
+                                } else {
+                                    col_num += 1;
                                 }
-
-                                match &format {
-                                    Format::List => {
-                                        let line = line_.trim();
-                                        if !line.is_empty() {
-                                            list.entries.insert(line.to_string());
-                                        }
-                                    }
-                                    Format::Csv {
-                                        column,
-                                        separator,
-                                        skip_first,
-                                    } if pos > 0 || !*skip_first => {
-                                        let mut in_quote = false;
-                                        let mut col_num = 0;
-                                        let mut entry = String::new();
-
-                                        for ch in line_.chars() {
-                                            if ch != '"' {
-                                                if ch == *separator && !in_quote {
-                                                    if col_num == *column {
-                                                        break;
-                                                    } else {
-                                                        col_num += 1;
-                                                    }
-                                                } else if col_num == *column {
-                                                    entry.push(ch);
-                                                    if entry.len() > MAX_ENTRY_SIZE {
-                                                        break;
-                                                    }
-                                                }
-                                            } else {
-                                                in_quote = !in_quote;
-                                            }
-                                        }
-
-                                        if !entry.is_empty() {
-                                            list.entries.insert(entry);
-                                        }
-                                    }
-                                    _ => (),
+                            } else if col_num == *column {
+                                entry.push(ch);
+                                if entry.len() > MAX_ENTRY_SIZE {
+                                    break;
                                 }
                             }
-                            Err(err) => {
-                                tracing::warn!(
-
-                                    context = "sieve:key_exists_http",
-                                    event = "failed",
-                                    resource = resource.as_ref(),
-                                    reason = %err,
-                                );
-                                break;
-                            }
-                        }
-
-                        if list.entries.len() == MAX_ENTRIES {
-                            break;
+                        } else {
+                            in_quote = !in_quote;
                         }
                     }
 
-                    tracing::debug!(
-                        context = "sieve:key_exists_http",
-                        event = "fetch",
-                        resource = resource.as_ref(),
-                        num_entries = list.entries.len(),
-                    );
-
-                    // Update expiration
-                    list.expires = Instant::now() + expires;
-                    return list.entries.contains(item.as_ref()).into();
+                    if !entry.is_empty() {
+                        list.entries.insert(entry);
+                    }
                 }
-                Err(err) => {
-                    tracing::warn!(
+                _ => (),
+            }
 
-                        context = "sieve:key_exists_http",
-                        event = "failed",
-                        resource = resource.as_ref(),
-                        reason = %err,
-                    );
-                }
+            if list.entries.len() == MAX_ENTRIES {
+                break;
             }
         }
-        Ok(response) => {
-            tracing::warn!(
 
-                context = "sieve:key_exists_http",
-                event = "failed",
-                resource = resource.as_ref(),
-                status = %response.status(),
-            );
-        }
-        Err(err) => {
-            tracing::warn!(
+        trc::event!(
+            Spam(trc::SpamEvent::ListUpdated),
+            Url = resource.as_ref().to_string(),
+            Count = list.entries.len(),
+        );
 
-                context = "sieve:key_exists_http",
-                event = "failed",
-                resource = resource.as_ref(),
-                reason = %err,
-            );
-        }
-    }
-
-    // Something went wrong, try again in one hour
-    let mut _lock = ctx.cache.remote_lists.write();
-    let list = _lock
-        .entry(resource.to_string())
-        .or_insert_with(|| RemoteList {
-            entries: HashSet::new(),
-            expires: Instant::now(),
-        });
-    if list.expires > Instant::now() {
-        list.entries.contains(item.as_ref()).into()
+        // Update expiration
+        list.expires = Instant::now() + expires;
+        return Ok(list.entries.contains(item.as_ref()).into());
     } else {
-        list.expires = Instant::now() + RETRY;
-        false.into()
+        trc::bail!(trc::SieveEvent::RuntimeError
+            .into_err()
+            .ctx(trc::Key::Status, response.status().as_u16())
+            .ctx(trc::Key::Url, resource.to_string())
+            .details("Failed to fetch remote list"));
     }
 }
 
-pub async fn exec_local_domain(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec_local_domain(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let domain = ctx.arguments[0].to_string();
 
     if !domain.is_empty() {
-        let directory = match &ctx.arguments[0] {
+        return match &ctx.arguments[0] {
             Variable::String(v) if !v.is_empty() => ctx.core.storage.directories.get(v.as_ref()),
             _ => Some(&ctx.core.storage.directory),
-        };
-
-        if let Some(directory) = directory {
-            return directory
-                .is_local_domain(domain.as_ref())
-                .await
-                .unwrap_or_default()
-                .into();
-        } else {
-            tracing::warn!(
-                context = "sieve:is_local_domain",
-                event = "failed",
-                reason = "Unknown directory",
-                lookup_id = ctx.arguments[0].to_string().as_ref(),
-            );
         }
+        .ok_or_else(|| {
+            trc::SieveEvent::RuntimeError
+                .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
+                .details("Unknown directory")
+        })?
+        .is_local_domain(domain.as_ref())
+        .await
+        .map(Into::into);
     }
 
-    Variable::default()
+    Ok(Variable::default())
 }
 
 #[derive(Debug, PartialEq, Eq)]

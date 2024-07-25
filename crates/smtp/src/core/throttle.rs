@@ -10,6 +10,7 @@ use common::{
     listener::{limiter::ConcurrencyLimiter, SessionStream},
 };
 use dashmap::mapref::entry::Entry;
+use trc::SmtpEvent;
 use utils::config::Rate;
 
 use std::{
@@ -238,12 +239,11 @@ impl<T: SessionStream> Session<T> {
                             if let Some(inflight) = limiter.is_allowed() {
                                 self.in_flight.push(inflight);
                             } else {
-                                tracing::debug!(
-                                    
-                                    context = "throttle",
-                                    event = "too-many-requests",
-                                    max_concurrent = limiter.max_concurrent,
-                                    "Too many concurrent requests."
+                                trc::event!(
+                                    Smtp(SmtpEvent::ConcurrencyLimitExceeded),
+                                    SessionId = self.data.session_id,
+                                    Id = t.id.clone(),
+                                    Limit = limiter.max_concurrent
                                 );
                                 return false;
                             }
@@ -270,14 +270,14 @@ impl<T: SessionStream> Session<T> {
                         .unwrap_or_default()
                         .is_some()
                     {
-                        tracing::debug!(
-                            
-                            context = "throttle",
-                            event = "rate-limit-exceeded",
-                            max_requests = rate.requests,
-                            max_interval = rate.period.as_secs(),
-                            "Rate limit exceeded."
+                        trc::event!(
+                            Smtp(SmtpEvent::RateLimitExceeded),
+                            SessionId = self.data.session_id,
+                            Id = t.id.clone(),
+                            Limit = rate.requests,
+                            Interval = rate.period.as_secs()
                         );
+
                         return false;
                     }
                 }

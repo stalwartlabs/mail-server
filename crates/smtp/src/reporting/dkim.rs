@@ -30,7 +30,7 @@ impl<T: SessionStream> Session<T> {
 
         // Throttle recipient
         if !self.throttle_rcpt(rcpt, rate, "dkim").await {
-            tracing::debug!(
+            trc::event!(
                 context = "report",
                 report = "dkim",
                 event = "throttle",
@@ -78,7 +78,7 @@ impl<T: SessionStream> Session<T> {
             )
             .ok();
 
-        tracing::info!(
+        trc::event!(
             context = "report",
             report = "dkim",
             event = "queue",

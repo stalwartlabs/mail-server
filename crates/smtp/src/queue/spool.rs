@@ -82,7 +82,7 @@ impl SMTP {
                     if event.lock_expiry < now {
                         events.push(event);
                     } else {
-                        tracing::trace!(
+                        trc::event!(
                             context = "queue",
                             event = "locked",
                             id = event.queue_id,
@@ -97,7 +97,7 @@ impl SMTP {
             .await;
 
         if let Err(err) = result {
-            tracing::error!(
+            trc::event!(
                 context = "queue",
                 event = "error",
                 "Failed to read from store: {}",
@@ -128,7 +128,7 @@ impl SMTP {
         match self.core.storage.data.write(batch.build()).await {
             Ok(_) => Some(event),
             Err(err) if err.is_assertion_failure() => {
-                tracing::debug!(
+                trc::event!(
                     context = "queue",
                     event = "locked",
                     id = event.queue_id,
@@ -138,7 +138,7 @@ impl SMTP {
                 None
             }
             Err(err) => {
-                tracing::error!(context = "queue", event = "error", "Lock error: {}", err);
+                trc::event!(context = "queue", event = "error", "Lock error: {}", err);
                 None
             }
         }
@@ -157,7 +157,7 @@ impl SMTP {
             Ok(Some(message)) => Some(message.inner),
             Ok(None) => None,
             Err(err) => {
-                tracing::error!(
+                trc::event!(
                     context = "queue",
                     event = "error",
                     "Failed to read message from store: {}",
@@ -203,7 +203,7 @@ impl Message {
             0u32.serialize(),
         );
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
-            tracing::error!(
+            trc::event!(
                 context = "queue",
                 event = "error",
                 "Failed to write to data store: {}",
@@ -218,7 +218,7 @@ impl Message {
             .put_blob(self.blob_hash.as_slice(), message.as_ref())
             .await
         {
-            tracing::error!(
+            trc::event!(
                 context = "queue",
                 event = "error",
                 "Failed to write to blob store: {}",
@@ -227,7 +227,7 @@ impl Message {
             return false;
         }
 
-        tracing::info!(
+        trc::event!(
             context = "queue",
             event = "scheduled",
             id = self.id,
@@ -289,7 +289,7 @@ impl Message {
             );
 
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
-            tracing::error!(
+            trc::event!(
                 context = "queue",
                 event = "error",
                 "Failed to write to store: {}",
@@ -300,7 +300,7 @@ impl Message {
 
         // Queue the message
         if core.inner.queue_tx.send(Event::Reload).await.is_err() {
-            tracing::warn!(
+            trc::event!(
                 context = "queue",
                 event = "error",
                 "Queue channel closed: Message queued but won't be sent until next restart."
@@ -403,7 +403,7 @@ impl Message {
         );
 
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
-            tracing::error!(
+            trc::event!(
                 context = "queue",
                 event = "error",
                 "Failed to update queued message: {}",
@@ -445,7 +445,7 @@ impl Message {
             .clear(ValueClass::Queue(QueueClass::Message(self.id)));
 
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
-            tracing::error!(
+            trc::event!(
                 context = "queue",
                 event = "error",
                 "Failed to update queued message: {}",

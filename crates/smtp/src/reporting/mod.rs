@@ -191,7 +191,7 @@ impl SMTP {
 
     pub async fn schedule_report(&self, report: impl Into<Event>) {
         if self.inner.report_tx.send(report.into()).await.is_err() {
-            tracing::warn!(context = "report", "Channel send failed.");
+            trc::event!(context = "report", "Channel send failed.");
         }
     }
 
@@ -215,7 +215,7 @@ impl SMTP {
                             signature.write_header(&mut headers);
                         }
                         Err(err) => {
-                            tracing::warn!(
+                            trc::event!(
                         context = "dkim",
                         event = "sign-failed",
                         reason = %err);

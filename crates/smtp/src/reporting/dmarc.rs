@@ -83,7 +83,7 @@ impl<T: SessionStream> Session<T> {
                         new_rcpts
                     } else {
                         if !dmarc_record.ruf().is_empty() {
-                            tracing::debug!(
+                            trc::event!(
 
                                 context = "report",
                                 report = "dkim",
@@ -96,7 +96,7 @@ impl<T: SessionStream> Session<T> {
                     }
                 }
                 None => {
-                    tracing::debug!(
+                    trc::event!(
 
                         context = "report",
                         report = "dmarc",
@@ -215,7 +215,7 @@ impl<T: SessionStream> Session<T> {
                     )
                     .ok();
 
-                tracing::info!(
+                trc::event!(
 
                     context = "report",
                     report = "dmarc",
@@ -229,7 +229,7 @@ impl<T: SessionStream> Session<T> {
                     .send_report(&from_addr, rcpts.into_iter(), report, &config.sign, true)
                     .await;
             } else {
-                tracing::debug!(
+                trc::event!(
 
                     context = "report",
                     report = "dmarc",
@@ -292,7 +292,7 @@ impl<T: SessionStream> Session<T> {
 
 impl SMTP {
     pub async fn send_dmarc_aggregate_report(&self, event: ReportEvent) {
-        let span = tracing::info_span!(
+        let span = trc::event_span!(
             "dmarc-report",
             domain = event.domain,
             range_from = event.seq_id,
@@ -324,14 +324,14 @@ impl SMTP {
         {
             Ok(Some(report)) => report,
             Ok(None) => {
-                tracing::warn!(
+                trc::event!(
                     event = "missing",
                     "Failed to read DMARC report: Report not found"
                 );
                 return;
             }
             Err(err) => {
-                tracing::warn!(event = "error", "Failed to read DMARC records: {}", err);
+                trc::event!(event = "error", "Failed to read DMARC records: {}", err);
                 return;
             }
         };
@@ -352,7 +352,7 @@ impl SMTP {
                         .map(|u| u.uri().to_string())
                         .collect::<Vec<_>>()
                 } else {
-                    tracing::info!(
+                    trc::event!(
 
                         event = "failed",
                         reason = "unauthorized-rua",
@@ -364,7 +364,7 @@ impl SMTP {
                 }
             }
             None => {
-                tracing::info!(
+                trc::event!(
 
                     event = "failed",
                     reason = "dns-failure",
@@ -565,7 +565,7 @@ impl SMTP {
             )
             .await
         {
-            tracing::warn!(
+            trc::event!(
                 context = "report",
                 event = "error",
                 "Failed to remove repors: {}",
@@ -577,7 +577,7 @@ impl SMTP {
         let mut batch = BatchBuilder::new();
         batch.clear(ValueClass::Queue(QueueClass::DmarcReportHeader(event)));
         if let Err(err) = self.core.storage.data.write(batch.build()).await {
-            tracing::warn!(
+            trc::event!(
                 context = "report",
                 event = "error",
                 "Failed to remove repors: {}",
@@ -640,7 +640,7 @@ impl SMTP {
         );
 
         if let Err(err) = self.core.storage.data.write(builder.build()).await {
-            tracing::error!(
+            trc::event!(
                 context = "report",
                 event = "error",
                 "Failed to write DMARC report event: {}",

@@ -85,24 +85,28 @@ impl<T: SessionStream> Session<T> {
                                         }
                                     }
                                 } else {
-                                    tracing::debug!(
-
-                                        event = "disconnect",
-                                        reason = "peer",
-                                        "Connection closed by peer."
+                                    trc::event!(
+                                        Network(trc::NetworkEvent::Closed),
+                                        SessionId = self.session_id,
+                                        CausedBy = trc::location!()
                                     );
                                     break;
                                 }
                             }
-                            Ok(Err(_)) => {
+                            Ok(Err(err)) => {
+                                trc::event!(
+                                    Network(trc::NetworkEvent::ReadError),
+                                    SessionId = self.session_id,
+                                    Reason = err,
+                                    CausedBy = trc::location!()
+                                );
                                 break;
                             }
                             Err(_) => {
-                                tracing::debug!(
-
-                                    event = "disconnect",
-                                    reason = "timeout",
-                                    "Connection timed out."
+                                trc::event!(
+                                    Network(trc::NetworkEvent::Timeout),
+                                    SessionId = self.session_id,
+                                    CausedBy = trc::location!()
                                 );
                                 self
                                     .write(b"BYE \"Connection timed out.\"\r\n")
@@ -113,11 +117,11 @@ impl<T: SessionStream> Session<T> {
                         }
                 },
                 _ = shutdown_rx.changed() => {
-                    tracing::debug!(
-
-                        event = "disconnect",
-                        reason = "shutdown",
-                        "Server shutting down."
+                    trc::event!(
+                        Network(trc::NetworkEvent::Closed),
+                        SessionId = self.session_id,
+                        Reason = "Server shutting down",
+                        CausedBy = trc::location!()
                     );
                     self.write(b"BYE \"Server shutting down.\"\r\n").await.ok();
                     break;

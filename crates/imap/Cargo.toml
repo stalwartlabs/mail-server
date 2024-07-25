@@ -25,7 +25,7 @@ ahash = { version = "0.8" }
 md5 = "0.7.0"
 dashmap = "6.0"
 rand = "0.8.5"
-tracing = "0.1"
+
 
 [features]
 test_mode = []

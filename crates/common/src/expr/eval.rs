@@ -34,7 +34,7 @@ impl Core {
             return None;
         }
 
-        match if_block.eval(resolver, self).await {
+        match if_block.eval(resolver, self, session_id).await {
             Ok(result) => {
                 trc::event!(
                     Eval(EvalEvent::Result),
@@ -81,7 +81,7 @@ impl Core {
             return None;
         }
 
-        match expr.eval(resolver, self, &mut Vec::new()).await {
+        match expr.eval(resolver, self, &mut Vec::new(), session_id).await {
             Ok(result) => {
                 trc::event!(
                     Eval(EvalEvent::Result),
@@ -123,21 +123,27 @@ impl IfBlock {
         &'x self,
         resolver: &'x V,
         core: &Core,
+        session_id: u64,
     ) -> trc::Result<Variable<'x>> {
         let mut captures = Vec::new();
 
         for if_then in &self.if_then {
             if if_then
                 .expr
-                .eval(resolver, core, &mut captures)
+                .eval(resolver, core, &mut captures, session_id)
                 .await?
                 .to_bool()
             {
-                return if_then.then.eval(resolver, core, &mut captures).await;
+                return if_then
+                    .then
+                    .eval(resolver, core, &mut captures, session_id)
+                    .await;
             }
         }
 
-        self.default.eval(resolver, core, &mut captures).await
+        self.default
+            .eval(resolver, core, &mut captures, session_id)
+            .await
     }
 }
 
@@ -147,6 +153,7 @@ impl Expression {
         resolver: &'x V,
         core: &Core,
         captures: &'y mut Vec<String>,
+        session_id: u64,
     ) -> trc::Result<Variable<'x>> {
         let mut stack = Vec::new();
         let mut exprs = self.items.iter();
@@ -205,7 +212,7 @@ impl Expression {
                     let result = if let Some((_, fnc, _)) = FUNCTIONS.get(*id as usize) {
                         (fnc)(arguments)
                     } else {
-                        core.eval_fnc(*id - FUNCTIONS.len() as u32, arguments)
+                        core.eval_fnc(*id - FUNCTIONS.len() as u32, arguments, session_id)
                             .await?
                     };
 

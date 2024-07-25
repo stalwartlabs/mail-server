@@ -6,15 +6,16 @@
 
 use std::sync::Arc;
 
-use common::listener::ServerInstance;
+use common::{config::smtp::session, listener::ServerInstance};
 use http_body_util::{BodyExt, Full};
 use hyper::{body::Bytes, Response};
 use hyper_util::rt::TokioIo;
 use tokio_tungstenite::WebSocketStream;
+use trc::JmapEvent;
 use tungstenite::{handshake::derive_accept_key, protocol::Role};
 
 use crate::{
-    api::{HttpRequest, HttpResponse},
+    api::{http::HttpSessionData, HttpRequest, HttpResponse},
     auth::AccessToken,
     JMAP,
 };
@@ -24,7 +25,7 @@ impl JMAP {
         &self,
         req: HttpRequest,
         access_token: Arc<AccessToken>,
-        instance: Arc<ServerInstance>,
+        session: HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         let headers = req.headers();
         if headers
@@ -68,6 +69,7 @@ impl JMAP {
         let jmap = self.clone();
         tokio::spawn(async move {
             // Upgrade connection
+            let session_id = session.session_id;
             match hyper::upgrade::on(req).await {
                 Ok(upgraded) => {
                     jmap.handle_websocket_stream(
@@ -78,12 +80,17 @@ impl JMAP {
                         )
                         .await,
                         access_token,
-                        instance,
+                        session,
                     )
                     .await;
                 }
                 Err(e) => {
-                    tracing::debug!("WebSocket upgrade failed: {}", e);
+                    trc::event!(
+                        Jmap(JmapEvent::WebsocketError),
+                        Details = "Websocket upgrade failed",
+                        SessionId = session_id,
+                        Reason = err.to_string()
+                    );
                 }
             }
         });

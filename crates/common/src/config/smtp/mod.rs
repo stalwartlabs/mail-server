@@ -34,6 +34,7 @@ pub struct SmtpConfig {
 #[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
 pub struct Throttle {
+    pub id: String,
     pub expr: Expression,
     pub keys: u16,
     pub concurrency: Option<u64>,

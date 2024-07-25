@@ -30,7 +30,11 @@ use super::{
 
 impl JMAP {
     // Token endpoint
-    pub async fn handle_token_request(&self, req: &mut HttpRequest) -> trc::Result<HttpResponse> {
+    pub async fn handle_token_request(
+        &self,
+        req: &mut HttpRequest,
+        session_id: u64,
+    ) -> trc::Result<HttpResponse> {
         // Parse form
         let params = FormData::from_request(req, MAX_POST_LEN).await?;
         let grant_type = params.get("grant_type").unwrap_or_default();
@@ -151,7 +155,10 @@ impl JMAP {
                                 .caused_by(trc::location!())
                         })?,
                     Err(err) => {
-                        tracing::warn!("Failed to validate refresh token: {:?}", err);
+                        trc::error!(err
+                            .caused_by(trc::location!())
+                            .details("Failed to validate refresh token")
+                            .session_id(session_id));
                         TokenResponse::error(ErrorType::InvalidGrant)
                     }
                 };

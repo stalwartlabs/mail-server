@@ -35,7 +35,7 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("pyzor_check", plugin_id, 2);
 }
 
-pub async fn exec(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     // Make sure there is at least one text part
     if !ctx
         .message
@@ -43,7 +43,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
         .iter()
         .any(|p| matches!(p.body, PartType::Text(_) | PartType::Html(_)))
     {
-        return Variable::default();
+        return Ok(Variable::default());
     }
 
     // Hash message
@@ -54,43 +54,43 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
     #[cfg(feature = "test_mode")]
     {
         if request.contains("b5b476f0b5ba6e1c038361d3ded5818dd39c90a2") {
-            return PyzorResponse {
+            return Ok(PyzorResponse {
                 code: 200,
                 count: 1000,
                 wl_count: 0,
             }
-            .into();
+            .into());
         } else if request.contains("d67d4b8bfc3860449e3418bb6017e2612f3e2a99") {
-            return PyzorResponse {
+            return Ok(PyzorResponse {
                 code: 200,
                 count: 60,
                 wl_count: 10,
             }
-            .into();
+            .into());
         } else if request.contains("81763547012b75e57a20d18ce0b93014208cdfdb") {
-            return PyzorResponse {
+            return Ok(PyzorResponse {
                 code: 200,
                 count: 50,
                 wl_count: 20,
             }
-            .into();
+            .into());
         }
     }
 
     let address = ctx.arguments[0].to_string();
     let timeout = Duration::from_secs((ctx.arguments[1].to_integer() as u64).clamp(5, 60));
+
     // Send message to address
-    match pyzor_send_message(address.as_ref(), timeout, &request).await {
-        Ok(response) => response.into(),
-        Err(err) => {
-            tracing::debug!(
-                context = "sieve:pyzor_check",
-                event = "failed",
-                reason = %err,
-            );
-            Variable::default()
-        }
-    }
+    pyzor_send_message(address.as_ref(), timeout, &request)
+        .await
+        .map(Into::into)
+        .map_err(|err| {
+            trc::SpamEvent::PyzorError
+                .into_err()
+                .ctx(trc::Key::Url, address.to_string())
+                .reason(err)
+                .details("Pyzor failed")
+        })
 }
 
 impl From<PyzorResponse> for Variable {

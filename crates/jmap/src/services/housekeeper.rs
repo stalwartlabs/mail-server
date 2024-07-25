@@ -10,8 +10,12 @@ use std::{
 };
 
 use common::IPC_CHANNEL_BUFFER;
-use store::{write::purge::PurgeStore, BlobStore, LookupStore, Store};
+use store::{
+    write::{now, purge::PurgeStore},
+    BlobStore, LookupStore, Store,
+};
 use tokio::sync::mpsc;
+use trc::HousekeeperEvent;
 use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{Inner, JmapInstance, JMAP, LONG_SLUMBER};
@@ -60,7 +64,7 @@ struct Queue {
 
 pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
     tokio::spawn(async move {
-        tracing::debug!("Housekeeper task started.");
+        trc::event!(Housekeeper(HousekeeperEvent::Start));
 
         let mut index_busy = true;
         let mut index_pending = false;
@@ -100,11 +104,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                         );
                     }
                     Err(err) => {
-                        tracing::error!(
-                        context = "acme",
-                        event = "error",
-                        error = ?err,
-                        "Failed to initialize ACME certificate manager.");
+                        trc::error!(err.details("Failed to initialize ACME certificate manager."));
                     }
                 };
             }
@@ -145,11 +145,8 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             .ok();
                                     }
                                     Err(err) => {
-                                        tracing::error!(
-                                            context = "acme",
-                                            event = "error",
-                                            error = ?err,
-                                            "Failed to reload ACME certificate manager.");
+                                        trc::error!(err
+                                            .details("Failed to reload ACME certificate manager."));
                                     }
                                 };
                             }
@@ -188,29 +185,38 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                     Event::Purge(purge) => match purge {
                         PurgeType::Data(store) => {
                             tokio::spawn(async move {
+                                trc::event!(
+                                    Housekeeper(HousekeeperEvent::PurgeStore),
+                                    Type = "data"
+                                );
                                 if let Err(err) = store.purge_store().await {
-                                    tracing::error!("Failed to purge data store: {err}",);
+                                    trc::error!(err.details("Failed to purge data store"));
                                 }
                             });
                         }
                         PurgeType::Blobs { store, blob_store } => {
+                            trc::event!(Housekeeper(HousekeeperEvent::PurgeStore), Type = "blob");
+
                             tokio::spawn(async move {
                                 if let Err(err) = store.purge_blobs(blob_store).await {
-                                    tracing::error!("Failed to purge blob store: {err}",);
+                                    trc::error!(err.details("Failed to purge blob store"));
                                 }
                             });
                         }
                         PurgeType::Lookup(store) => {
+                            trc::event!(Housekeeper(HousekeeperEvent::PurgeStore), Type = "lookup");
+
                             tokio::spawn(async move {
                                 if let Err(err) = store.purge_lookup_store().await {
-                                    tracing::error!("Failed to purge lookup store: {err}",);
+                                    trc::error!(err.details("Failed to purge lookup store"));
                                 }
                             });
                         }
                         PurgeType::Account(account_id) => {
                             let jmap = JMAP::from(core.clone());
                             tokio::spawn(async move {
-                                tracing::debug!("Purging accounts.");
+                                trc::event!(Housekeeper(HousekeeperEvent::PurgeAccounts));
+
                                 if let Some(account_id) = account_id {
                                     jmap.purge_account(account_id).await;
                                 } else {
@@ -224,12 +230,13 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                         tx.send(index_busy).ok();
                     }
                     Event::Exit => {
-                        tracing::debug!("Housekeeper task exiting.");
+                        trc::event!(Housekeeper(HousekeeperEvent::Stop));
+
                         return;
                     }
                 },
                 Ok(None) => {
-                    tracing::debug!("Housekeeper task exiting.");
+                    trc::event!(Housekeeper(HousekeeperEvent::Stop));
                     return;
                 }
                 Err(_) => {
@@ -243,28 +250,27 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     if let Some(provider) =
                                         core.tls.acme_providers.get(&provider_id)
                                     {
-                                        tracing::info!(
-                                            context = "acme",
-                                            event = "order",
-                                            domains = ?provider.domains,
-                                            "Ordering certificates.");
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::OrderStart),
+                                            Name = provider.domains.as_slice()
+                                        );
 
                                         let renew_at = match core.renew(provider).await {
                                             Ok(renew_at) => {
-                                                tracing::info!(
-                                                    context = "acme",
-                                                    event = "success",
-                                                    domains = ?provider.domains,
-                                                    next_renewal = ?renew_at,
-                                                    "Certificates renewed.");
+                                                trc::event!(
+                                                    Acme(trc::AcmeEvent::OrderCompleted),
+                                                    Name = provider.domains.as_slice(),
+                                                    NextRenewal = trc::Value::Timestamp(
+                                                        now() + renew_at.as_secs()
+                                                    )
+                                                );
+
                                                 renew_at
                                             }
                                             Err(err) => {
-                                                tracing::error!(
-                                                    context = "acme",
-                                                    event = "error",
-                                                    error = ?err,
-                                                    "Failed to renew certificates.");
+                                                trc::error!(
+                                                    err.details("Failed to renew certificates.")
+                                                );
 
                                                 Duration::from_secs(3600)
                                             }
@@ -286,7 +292,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             ActionClass::Account => {
                                 let jmap = JMAP::from(core.clone());
                                 tokio::spawn(async move {
-                                    tracing::debug!("Purging accounts.");
+                                    trc::event!(Housekeeper(HousekeeperEvent::PurgeAccounts));
                                     jmap.purge_accounts().await;
                                 });
                                 queue.schedule(
@@ -298,7 +304,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             ActionClass::Session => {
                                 let inner = core.jmap_inner.clone();
                                 tokio::spawn(async move {
-                                    tracing::debug!("Purging session cache.");
+                                    trc::event!(Housekeeper(HousekeeperEvent::PurgeSessions));
                                     inner.purge();
                                 });
                                 queue.schedule(
@@ -330,16 +336,17 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
                                         match result {
                                             Ok(_) => {
-                                                tracing::debug!(
-                                                    "Purged {class} store {}.",
-                                                    schedule.store_id
+                                                trc::event!(
+                                                    Housekeeper(HousekeeperEvent::PurgeStore),
+                                                    Id = schedule.store_id
                                                 );
                                             }
                                             Err(err) => {
-                                                tracing::error!(
-                                                    "Failed to purge {class} store {}: {err}",
-                                                    schedule.store_id
-                                                );
+                                                trc::error!(err
+                                                    .details(format!(
+                                                        "Failed to purge {class} store."
+                                                    ))
+                                                    .id(schedule.store_id));
                                             }
                                         }
                                     });
@@ -370,7 +377,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                         }
                                     }
                                     Err(err) => {
-                                        tracing::warn!("Failed to reload configuration: {err}",);
+                                        trc::error!(err.details("Failed to reload configuration."));
                                     }
                                 }
                             } // SPDX-SnippetEnd
@@ -384,7 +391,14 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
 impl Queue {
     pub fn schedule(&mut self, due: Instant, event: ActionClass) {
-        tracing::debug!(due_in = due.saturating_duration_since(Instant::now()).as_secs(), event = ?event, "Scheduling housekeeper event.");
+        trc::event!(
+            Housekeeper(HousekeeperEvent::Schedule),
+            Due = trc::Value::Timestamp(
+                now() + due.saturating_duration_since(Instant::now()).as_secs()
+            ),
+            Id = format!("{:?}", event)
+        );
+
         self.heap.push(Action { due, event });
     }
 

@@ -11,6 +11,7 @@ use tokio::{
     net::TcpStream,
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
+use trc::MilterEvent;
 
 use super::{
     protocol::{SMFIC_CONNECT, SMFIC_HELO, SMFIC_MAIL, SMFIC_RCPT},
@@ -48,6 +49,7 @@ impl MilterClient<TcpStream> {
                                     | SMFIF_ADDRCPT_PAR,
                             ),
                             flags_protocol: config.flags_protocol.unwrap_or(0x42),
+                            id: config.id.clone(),
                         });
                     }
                     Err(err) => {
@@ -86,6 +88,7 @@ impl MilterClient<TcpStream> {
                 session_id: self.session_id,
                 flags_actions: self.flags_actions,
                 flags_protocol: self.flags_protocol,
+                id: self.id,
             })
         })
         .await
@@ -306,11 +309,11 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
     }
 
     async fn write(&mut self, action: Command<'_>) -> super::Result<()> {
-        //let p = println!("Action: {}", action);
-        tracing::trace!(
-            context = "milter",
-            event = "write",
-            "action" = action.to_string()
+        trc::event!(
+            Milter(MilterEvent::Write),
+            SessionId = self.session_id,
+            Id = self.id.to_string(),
+            Contents = action.to_string(),
         );
 
         tokio::time::timeout(self.timeout_cmd, async {
@@ -326,12 +329,13 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
             match self.receiver.read_frame(&self.buf[..self.bytes_read]) {
                 FrameResult::Frame(frame) => {
                     if let Some(response) = Response::deserialize(&frame) {
-                        tracing::trace!(
-                            context = "milter",
-                            event = "read",
-                            "action" = response.to_string()
+                        trc::event!(
+                            Milter(MilterEvent::Read),
+                            SessionId = self.session_id,
+                            Id = self.id.to_string(),
+                            Contents = response.to_string(),
                         );
-                        //let p = println!("Response: {}", response);
+
                         return Ok(response);
                     } else {
                         return Err(Error::FrameInvalid(frame.into_owned()));

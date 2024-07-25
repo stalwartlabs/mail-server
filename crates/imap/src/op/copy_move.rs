@@ -175,11 +175,6 @@ impl<T: SessionStream> SessionData<T> {
                     .contains(&UidMailbox::new_unassigned(src_mailbox.id.mailbox_id))
                     || mailboxes.current().contains(&dest_mailbox_id)
                 {
-                    tracing::debug!(
-                        account_id = account_id,
-                        document_id = id,
-                        "Message does not belong to this mailbox"
-                    );
                     continue;
                 }
 
@@ -408,11 +403,15 @@ impl<T: SessionStream> SessionData<T> {
         ) {
             Ok(Some((TagManager::new(mailboxes), thread_id)))
         } else {
-            tracing::debug!(
-                account_id = account_id,
-                document_id = id,
-                "Message not found"
+            trc::event!(
+                Store(trc::StoreEvent::NotFound),
+                AccountId = account_id,
+                Collection = Collection::Email as u8,
+                MessageId = id,
+                SessionId = self.session_id,
+                Details = "Message not found"
             );
+
             Ok(None)
         }
     }

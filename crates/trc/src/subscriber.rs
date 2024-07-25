@@ -34,7 +34,7 @@ pub struct SubscriberBuilder {
 impl Subscriber {
     #[inline(always)]
     pub fn push_event(&mut self, trace: Arc<Event>) {
-        if trace.level >= self.level && !self.disabled.contains(&trace.inner) {
+        if trace.level() >= self.level && !self.disabled.contains(&trace.inner) {
             self.batch.push(trace);
         }
     }
@@ -45,7 +45,7 @@ impl Subscriber {
                 Ok(_) => Ok(()),
                 Err(TrySendError::Full(mut events)) => {
                     if self.lossy && events.len() > MAX_BATCH_SIZE {
-                        events.retain(|e| e.level == Level::Error);
+                        events.retain(|e| e.level() == Level::Error);
                         if events.len() > MAX_BATCH_SIZE {
                             events.truncate(MAX_BATCH_SIZE);
                         }
@@ -93,7 +93,7 @@ impl SubscriberBuilder {
         });
 
         // Notify collector
-        Event::new(EventType::Server(ServerEvent::Startup), Level::Info, 0).send();
+        Event::new(EventType::Server(ServerEvent::Startup)).send();
 
         rx
     }

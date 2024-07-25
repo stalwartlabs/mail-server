@@ -72,3 +72,16 @@ impl Display for ServerProtocol {
         f.write_str(self.as_str())
     }
 }
+
+impl From<ServerProtocol> for trc::Value {
+    fn from(value: ServerProtocol) -> Self {
+        trc::Value::Protocol(match value {
+            ServerProtocol::Smtp => trc::Protocol::Smtp,
+            ServerProtocol::Lmtp => trc::Protocol::Lmtp,
+            ServerProtocol::Imap => trc::Protocol::Imap,
+            ServerProtocol::Pop3 => trc::Protocol::Pop3,
+            ServerProtocol::Http => trc::Protocol::Http,
+            ServerProtocol::ManageSieve => trc::Protocol::ManageSieve,
+        })
+    }
+}

@@ -11,6 +11,7 @@ use common::{
     listener::{self, SessionManager, SessionStream},
 };
 use tokio_rustls::server::TlsStream;
+use trc::SmtpEvent;
 
 use crate::{
     core::{Session, SessionData, SessionParameters, SmtpSessionManager, State},
@@ -88,18 +89,12 @@ impl<T: SessionStream> Session<T> {
             .core
             .eval_if::<String, _>(&config.script, self, self.data.session_id)
             .await
-            .and_then(|name| self.core.core.get_sieve_script(&name))
+            .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
         {
             if let ScriptResult::Reject(message) = self
                 .run_script(script.clone(), self.build_script_parameters("connect"))
                 .await
             {
-                tracing::debug!(
-                    context = "connect",
-                    event = "sieve-reject",
-                    reason = message
-                );
-
                 let _ = self.write(message.as_bytes()).await;
                 return false;
             }
@@ -107,22 +102,12 @@ impl<T: SessionStream> Session<T> {
 
         // Milter filtering
         if let Err(message) = self.run_milters(Stage::Connect, None).await {
-            tracing::debug!(
-                context = "connect",
-                event = "milter-reject",
-                reason = message.message.as_ref()
-            );
             let _ = self.write(message.message.as_bytes()).await;
             return false;
         }
 
         // MTAHook filtering
         if let Err(message) = self.run_mta_hooks(Stage::Connect, None).await {
-            tracing::debug!(
-                context = "connect",
-                event = "mta_hook-reject",
-                reason = message.message.as_ref()
-            );
             let _ = self.write(message.message.as_bytes()).await;
             return false;
         }
@@ -135,10 +120,9 @@ impl<T: SessionStream> Session<T> {
             .await
             .unwrap_or_default();
         if self.hostname.is_empty() {
-            tracing::warn!(
-                context = "connect",
-                event = "hostname",
-                "No hostname configured, using 'localhost'."
+            trc::event!(
+                Smtp(SmtpEvent::MissingLocalHostname),
+                SessionId = self.data.session_id,
             );
             self.hostname = "localhost".to_string();
         }
@@ -188,33 +172,34 @@ impl<T: SessionStream> Session<T> {
                                             .write(format!("451 4.7.28 {} Session exceeded transfer quota.\r\n", self.hostname).as_bytes())
                                             .await
                                             .ok();
-                                        tracing::debug!(
 
-                                            event = "disconnect",
-                                            reason = "transfer-limit",
-                                            "Client exceeded incoming transfer limit."
+                                        trc::event!(
+                                            Smtp(SmtpEvent::TransferLimitExceeded),
+                                            SessionId = self.data.session_id,
+                                            Size = bytes_read,
                                         );
+
                                         break;
                                     } else {
                                         self
                                             .write(format!("453 4.3.2 {} Session open for too long.\r\n", self.hostname).as_bytes())
                                             .await
                                             .ok();
-                                        tracing::debug!(
 
-                                            event = "disconnect",
-                                            reason = "loiter",
-                                            "Session open for too long."
+                                        trc::event!(
+                                            Smtp(SmtpEvent::TimeLimitExceeded),
+                                            SessionId = self.data.session_id,
                                         );
+
                                         break;
                                     }
                                 } else {
-                                    tracing::debug!(
-
-                                        event = "disconnect",
-                                        reason = "peer",
-                                        "Connection closed by peer."
+                                    trc::event!(
+                                        Network(trc::NetworkEvent::Closed),
+                                        SessionId = self.data.session_id,
+                                        CausedBy = trc::location!()
                                     );
+
                                     break;
                                 }
                             }
@@ -222,12 +207,12 @@ impl<T: SessionStream> Session<T> {
                                 break;
                             }
                             Err(_) => {
-                                tracing::debug!(
-
-                                    event = "disconnect",
-                                    reason = "timeout",
-                                    "Connection timed out."
+                                trc::event!(
+                                    Network(trc::NetworkEvent::Timeout),
+                                    SessionId = self.data.session_id,
+                                    CausedBy = trc::location!()
                                 );
+
                                 self
                                     .write(format!("221 2.0.0 {} Disconnecting inactive client.\r\n", self.hostname).as_bytes())
                                     .await
@@ -237,11 +222,11 @@ impl<T: SessionStream> Session<T> {
                         }
                 },
                 _ = shutdown_rx.changed() => {
-                    tracing::debug!(
-
-                        event = "disconnect",
-                        reason = "shutdown",
-                        "Server shutting down."
+                    trc::event!(
+                        Network(trc::NetworkEvent::Closed),
+                        SessionId = self.data.session_id,
+                        Reason = "Server shutting down",
+                        CausedBy = trc::location!()
                     );
                     self.write(b"421 4.3.0 Server shutting down.\r\n").await.ok();
                     break;

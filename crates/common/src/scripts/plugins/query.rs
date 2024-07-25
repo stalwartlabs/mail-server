@@ -16,34 +16,24 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
     fnc_map.set_external_function("query", plugin_id, 3);
 }
 
-pub async fn exec(ctx: PluginContext<'_>) -> Variable {
+pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     // Obtain store name
     let store = match &ctx.arguments[0] {
         Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
         _ => Some(&ctx.core.storage.lookup),
-    };
-
-    let store = if let Some(store) = store {
-        store
-    } else {
-        tracing::warn!(
-            context = "sieve:query",
-            event = "failed",
-            reason = "Unknown store",
-            store = ctx.arguments[0].to_string().as_ref(),
-        );
-        return false.into();
-    };
+    }
+    .ok_or_else(|| {
+        trc::SieveEvent::RuntimeError
+            .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
+            .details("Unknown store")
+    })?;
 
     // Obtain query string
     let query = ctx.arguments[1].to_string();
     if query.is_empty() {
-        tracing::warn!(
-            context = "sieve:query",
-            event = "invalid",
-            reason = "Empty query string",
-        );
-        return false.into();
+        trc::bail!(trc::SieveEvent::RuntimeError
+            .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
+            .details("Empty query string"));
     }
 
     // Obtain arguments
@@ -58,43 +48,40 @@ pub async fn exec(ctx: PluginContext<'_>) -> Variable {
         .get(..6)
         .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
     {
-        if let Ok(mut rows) = store.query::<Rows>(&query, arguments).await {
-            match rows.rows.len().cmp(&1) {
-                Ordering::Equal => {
-                    let mut row = rows.rows.pop().unwrap().values;
-                    match row.len().cmp(&1) {
-                        Ordering::Equal if !matches!(row.first(), Some(Value::Null)) => {
-                            row.pop().map(into_sieve_value).unwrap()
-                        }
-                        Ordering::Less => Variable::default(),
-                        _ => Variable::Array(
-                            row.into_iter()
-                                .map(into_sieve_value)
-                                .collect::<Vec<_>>()
-                                .into(),
-                        ),
+        let mut rows = store.query::<Rows>(&query, arguments).await?;
+        Ok(match rows.rows.len().cmp(&1) {
+            Ordering::Equal => {
+                let mut row = rows.rows.pop().unwrap().values;
+                match row.len().cmp(&1) {
+                    Ordering::Equal if !matches!(row.first(), Some(Value::Null)) => {
+                        row.pop().map(into_sieve_value).unwrap()
                     }
+                    Ordering::Less => Variable::default(),
+                    _ => Variable::Array(
+                        row.into_iter()
+                            .map(into_sieve_value)
+                            .collect::<Vec<_>>()
+                            .into(),
+                    ),
                 }
-                Ordering::Less => Variable::default(),
-                Ordering::Greater => rows
-                    .rows
-                    .into_iter()
-                    .map(|r| {
-                        Variable::Array(
-                            r.values
-                                .into_iter()
-                                .map(into_sieve_value)
-                                .collect::<Vec<_>>()
-                                .into(),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .into(),
             }
-        } else {
-            false.into()
-        }
+            Ordering::Less => Variable::default(),
+            Ordering::Greater => rows
+                .rows
+                .into_iter()
+                .map(|r| {
+                    Variable::Array(
+                        r.values
+                            .into_iter()
+                            .map(into_sieve_value)
+                            .collect::<Vec<_>>()
+                            .into(),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .into(),
+        })
     } else {
-        store.query::<usize>(&query, arguments).await.is_ok().into()
+        Ok(store.query::<usize>(&query, arguments).await.is_ok().into())
     }
 }

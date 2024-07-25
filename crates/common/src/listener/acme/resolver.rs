@@ -14,6 +14,7 @@ use rustls::{
 };
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use store::write::Bincode;
+use trc::AcmeEvent;
 
 use crate::{listener::acme::directory::SerializedCert, Core};
 
@@ -73,35 +74,26 @@ impl Core {
                         key,
                     ))),
                     Err(err) => {
-                        tracing::error!(
-                            context = "acme",
-                            event = "error",
-                            domain = %domain,
-                            reason = %err,
-                            "Failed to parse private key",
+                        trc::event!(
+                            Acme(AcmeEvent::Error),
+                            Name = domain.to_string(),
+                            Reason = err.to_string(),
+                            Details = "Failed to parse private key"
                         );
                         None
                     }
                 }
             }
             Err(err) => {
-                tracing::error!(
-                    context = "acme",
-                    event = "error",
-                    domain = %domain,
-                    reason = %err,
-                    "Failed to lookup token",
+                trc::event!(
+                    Acme(AcmeEvent::Error),
+                    Name = domain.to_string(),
+                    CausedBy = err
                 );
                 None
             }
             Ok(None) => {
-                tracing::debug!(
-                    context = "acme",
-                    event = "error",
-                    domain = %domain,
-                    reason = "missing-token",
-                    "Token not found in lookup store"
-                );
+                trc::event!(Acme(AcmeEvent::TokenNotFound), Name = domain.to_string());
                 None
             }
         }

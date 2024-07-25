@@ -5,6 +5,7 @@
  */
 
 use common::listener::SessionStream;
+use trc::SmtpEvent;
 
 use crate::core::Session;
 use std::fmt::Write;
@@ -26,7 +27,7 @@ impl<T: SessionStream> Session<T> {
                 match self
                     .core
                     .core
-                    .vrfy(directory, &address.to_lowercase())
+                    .vrfy(directory, &address.to_lowercase(), self.data.session_id)
                     .await
                 {
                     Ok(values) if !values.is_empty() => {
@@ -40,28 +41,31 @@ impl<T: SessionStream> Session<T> {
                             );
                         }
 
-                        tracing::debug!(
-                            context = "vrfy",
-                            event = "success",
-                            address = &address);
+                        trc::event!(
+                            Smtp(SmtpEvent::Vrfy),
+                            SessionId = self.data.session_id,
+                            Name = address,
+                            Result = values,
+                        );
 
                         self.write(result.as_bytes()).await
                     }
                     Ok(_) => {
-                        tracing::debug!(
-                            context = "vrfy",
-                            event = "not-found",
-                            address = &address);
+                        trc::event!(
+                            Smtp(SmtpEvent::VrfyNotFound),
+                            SessionId = self.data.session_id,
+                            Name = address,
+                        );
 
                         self.write(b"550 5.1.2 Address not found.\r\n").await
                     }
                     Err(err) => {
-                        tracing::debug!(
-                            context = "vrfy",
-                            event = "temp-fail",
-                            address = &address);
+                        let is_not_supported =
+                            err.matches(trc::EventType::Store(trc::StoreEvent::NotSupported));
 
-                        if !err.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
+                        trc::error!(err.session_id(self.data.session_id).details("VRFY failed"));
+
+                        if !is_not_supported {
                             self.write(b"252 2.4.3 Unable to verify address at this time.\r\n")
                                 .await
                         } else {
@@ -71,10 +75,11 @@ impl<T: SessionStream> Session<T> {
                 }
             }
             _ => {
-                tracing::debug!(
-                    context = "vrfy",
-                    event = "forbidden",
-                    address = &address);
+                trc::event!(
+                    Smtp(SmtpEvent::VrfyDisabled),
+                    SessionId = self.data.session_id,
+                    Name = address,
+                );
 
                 self.write(b"252 2.5.1 VRFY is disabled.\r\n").await
             }
@@ -97,7 +102,7 @@ impl<T: SessionStream> Session<T> {
                 match self
                     .core
                     .core
-                    .expn(directory, &address.to_lowercase())
+                    .expn(directory, &address.to_lowercase(), self.data.session_id)
                     .await
                 {
                     Ok(values) if !values.is_empty() => {
@@ -110,27 +115,32 @@ impl<T: SessionStream> Session<T> {
                                 value
                             );
                         }
-                        tracing::debug!(
-                            context = "expn",
-                            event = "success",
-                            address = &address);
+
+                        trc::event!(
+                            Smtp(SmtpEvent::Expn),
+                            SessionId = self.data.session_id,
+                            Name = address,
+                            Result = values,
+                        );
+
                         self.write(result.as_bytes()).await
                     }
                     Ok(_) => {
-                        tracing::debug!(
-                            context = "expn",
-                            event = "not-found",
-                            address = &address);
+                        trc::event!(
+                            Smtp(SmtpEvent::ExpnNotFound),
+                            SessionId = self.data.session_id,
+                            Name = address,
+                        );
 
                         self.write(b"550 5.1.2 Mailing list not found.\r\n").await
                     }
                     Err(err) => {
-                        tracing::debug!(
-                            context = "expn",
-                            event = "temp-fail",
-                            address = &address);
+                        let is_not_supported =
+                            err.matches(trc::EventType::Store(trc::StoreEvent::NotSupported));
 
-                        if !err.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
+                        trc::error!(err.session_id(self.data.session_id).details("VRFY failed"));
+
+                        if !is_not_supported {
                             self.write(b"252 2.4.3 Unable to expand mailing list at this time.\r\n")
                                 .await
                         } else {
@@ -140,10 +150,11 @@ impl<T: SessionStream> Session<T> {
                 }
             }
             _ => {
-                tracing::debug!(
-                    context = "expn",
-                    event = "forbidden",
-                    address = &address);
+                trc::event!(
+                    Smtp(SmtpEvent::ExpnDisabled),
+                    SessionId = self.data.session_id,
+                    Name = address,
+                );
 
                 self.write(b"252 2.5.1 EXPN is disabled.\r\n").await
             }

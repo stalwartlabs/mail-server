@@ -415,7 +415,7 @@ impl Message {
                 String::from_utf8(buf).unwrap_or_default()
             }
             Ok(None) => {
-                tracing::error!(
+                trc::event!(
                     context = "queue",
                     event = "error",
                     "Failed to open blob {:?}: not found",
@@ -424,7 +424,7 @@ impl Message {
                 String::new()
             }
             Err(err) => {
-                tracing::error!(
+                trc::event!(
                     context = "queue",
                     event = "error",
                     "Failed to open blob {:?}: {}",
@@ -495,7 +495,7 @@ impl Message {
         }
 
         if !is_double_bounce.is_empty() {
-            tracing::info!(
+            trc::event!(
 
                 context = "queue",
                 event = "double-bounce",

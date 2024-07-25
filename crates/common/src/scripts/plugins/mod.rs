@@ -78,7 +78,8 @@ impl Core {
             return test_print(ctx);
         }
 
-        match id {
+        let session_id = ctx.session_id;
+        let result = match id {
             0 => query::exec(ctx).await,
             1 => exec::exec(ctx).await,
             2 => lookup::exec(ctx).await,
@@ -98,8 +99,17 @@ impl Core {
             16 => text::exec_tokenize(ctx),
             17 => text::exec_domain_part(ctx),
             _ => unreachable!(),
+        };
+
+        match result {
+            Ok(result) => result.into(),
+            Err(err) => {
+                trc::error!(err
+                    .ctx(trc::Key::SessionId, session_id)
+                    .details("Sieve runtime error"));
+                Input::FncResult(Variable::default())
+            }
         }
-        .into()
     }
 }
 

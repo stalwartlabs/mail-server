@@ -137,12 +137,16 @@ impl JMAP {
             {
                 raw_message
             } else {
-                tracing::warn!(event = "not-found",
-                    account_id = account_id,
-                    collection = ?Collection::Email,
-                    document_id = email_id.document_id(),
-                    blob_id = ?metadata.blob_hash,
-                    "Blob not found");
+                trc::event!(
+                    Store(trc::StoreEvent::NotFound),
+                    AccountId = account_id,
+                    DocumentId = email_id.document_id(),
+                    Collection = Collection::Email,
+                    BlobId = metadata.blob_hash.as_slice().to_vec(),
+                    Details = "Blob not found.",
+                    CausedBy = trc::location!(),
+                );
+
                 response.not_found.push(email_id);
                 continue;
             };

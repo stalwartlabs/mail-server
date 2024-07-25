@@ -156,6 +156,7 @@ pub struct Pipe {
 #[derive(Clone)]
 pub struct Milter {
     pub enable: IfBlock,
+    pub id: Arc<String>,
     pub addrs: Vec<SocketAddr>,
     pub hostname: String,
     pub port: u16,
@@ -181,6 +182,7 @@ pub enum MilterVersion {
 #[derive(Clone)]
 pub struct MTAHook {
     pub enable: IfBlock,
+    pub id: String,
     pub url: String,
     pub timeout: Duration,
     pub headers: HeaderMap,
@@ -532,6 +534,7 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
             .unwrap_or_else(|| {
                 IfBlock::new::<()>(format!("session.milter.{id}.enable"), [], "false")
             }),
+        id: id.to_string().into(),
         addrs: format!("{}:{}", hostname, port)
             .to_socket_addrs()
             .map_err(|err| {
@@ -638,6 +641,7 @@ fn parse_hooks(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<MT
             .unwrap_or_else(|| {
                 IfBlock::new::<()>(format!("session.hook.{id}.enable"), [], "false")
             }),
+        id: id.to_string(),
         url: config
             .value_require(("session.hook", id, "url"))?
             .to_string(),

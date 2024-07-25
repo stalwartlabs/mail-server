@@ -14,6 +14,7 @@ use store::{
     Deserialize, IterateParams, Serialize, ValueKey, U32_LEN, U64_LEN,
 };
 
+use trc::FtsIndexEvent;
 use utils::{BlobHash, BLOB_HASH_LEN};
 
 use crate::{
@@ -70,13 +71,11 @@ impl JMAP {
                     if event.lock_expiry < now {
                         entries.push(event);
                     } else {
-                        tracing::trace!(
-                            context = "queue",
-                            event = "locked",
-                            account_id = event.account_id,
-                            document_id = event.document_id,
-                            expiry = event.lock_expiry - now,
-                            "Index event locked by another process."
+                        trc::event!(
+                            FtsIndex(FtsIndexEvent::Locked),
+                            AccountId = event.account_id,
+                            DocumentId = event.document_id,
+                            Expires = trc::Value::Timestamp(event.lock_expiry),
                         );
                     }
 
@@ -85,12 +84,7 @@ impl JMAP {
             )
             .await
             .map_err(|err| {
-                tracing::error!(
-                    context = "fts_index_queued",
-                    event = "error",
-                    reason = ?err,
-                    "Failed to iterate over index emails"
-                );
+                trc::error!(err.details("Failed to iterate over index emails"));
             });
 
         // Add entries to the index
@@ -119,13 +113,11 @@ impl JMAP {
                     {
                         raw_message
                     } else {
-                        tracing::warn!(
-                            context = "fts_index_queued",
-                            event = "error",
-                            account_id = event.account_id,
-                            document_id = event.document_id,
-                            blob_hash = ?metadata.inner.blob_hash,
-                            "Message blob not found"
+                        trc::event!(
+                            FtsIndex(FtsIndexEvent::BlobNotFound),
+                            AccountId = event.account_id,
+                            DocumentId = event.document_id,
+                            BlobId = metadata.inner.blob_hash.as_slice().to_vec(),
                         );
                         continue;
                     };
@@ -139,45 +131,36 @@ impl JMAP {
                             .with_document_id(event.document_id)
                             .index_message(&message);
                     if let Err(err) = self.core.storage.fts.index(document).await {
-                        tracing::error!(
-                            context = "fts_index_queued",
-                            event = "error",
-                            account_id = event.account_id,
-                            document_id = event.document_id,
-                            reason = ?err,
-                            "Failed to index email in FTS index"
-                        );
+                        trc::error!(err
+                            .account_id(event.account_id)
+                            .document_id(event.document_id)
+                            .details("Failed to index email in FTS index"));
+
                         continue;
                     }
 
-                    tracing::debug!(
-                        context = "fts_index_queued",
-                        event = "index",
-                        account_id = event.account_id,
-                        document_id = event.document_id,
-                        "Indexed document in FTS index"
+                    trc::event!(
+                        FtsIndex(FtsIndexEvent::Index),
+                        AccountId = event.account_id,
+                        DocumentId = event.document_id,
                     );
                 }
 
                 Err(err) => {
-                    tracing::error!(
-                        context = "fts_index_queued",
-                        event = "error",
-                        account_id = event.account_id,
-                        document_id = event.document_id,
-                        reason = ?err,
-                        "Failed to retrieve email metadata"
-                    );
+                    trc::error!(err
+                        .account_id(event.account_id)
+                        .document_id(event.document_id)
+                        .caused_by(trc::location!())
+                        .details("Failed to retrieve email metadata"));
+
                     break;
                 }
                 _ => {
                     // The message was probably deleted or overwritten
-                    tracing::debug!(
-                        context = "fts_index_queued",
-                        event = "error",
-                        account_id = event.account_id,
-                        document_id = event.document_id,
-                        "Email metadata not found"
+                    trc::event!(
+                        FtsIndex(FtsIndexEvent::MetadataNotFound),
+                        AccountId = event.account_id,
+                        DocumentId = event.document_id,
                     );
                 }
             }
@@ -197,18 +180,21 @@ impl JMAP {
                 )
                 .await
             {
-                tracing::error!(
-                    context = "fts_index_queued",
-                    event = "error",
-                    reason = ?err,
-                    "Failed to remove index email from queue"
-                );
+                trc::error!(err
+                    .account_id(event.account_id)
+                    .document_id(event.document_id)
+                    .details("Failed to remove index email from queue."));
+
                 break;
             }
         }
 
         if let Err(err) = self.inner.housekeeper_tx.send(Event::IndexDone).await {
-            tracing::warn!("Failed to send index done event to housekeeper: {}", err);
+            trc::event!(
+                Server(trc::ServerEvent::ThreadError),
+                Details = "Failed to send event to Housekeeper",
+                CausedBy = trc::location!()
+            );
         }
     }
 
@@ -223,22 +209,21 @@ impl JMAP {
         match self.core.storage.data.write(batch.build()).await {
             Ok(_) => true,
             Err(err) if err.is_assertion_failure() => {
-                tracing::trace!(
-                    context = "queue",
-                    event = "locked",
-                    account_id = event.account_id,
-                    document_id = event.document_id,
-                    "Lock busy: Index already locked."
+                trc::event!(
+                    FtsIndex(FtsIndexEvent::LockBusy),
+                    AccountId = event.account_id,
+                    DocumentId = event.document_id,
+                    CausedBy = err,
                 );
+
                 false
             }
             Err(err) => {
-                tracing::error!(
-                    context = "queue",
-                    event = "error",
-                    "Failed to lock index: {}",
-                    err
-                );
+                trc::error!(err
+                    .account_id(event.account_id)
+                    .document_id(event.document_id)
+                    .details("Failed to lock FTS index"));
+
                 false
             }
         }

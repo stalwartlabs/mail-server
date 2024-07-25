@@ -30,7 +30,6 @@ use tokio::{
     sync::mpsc,
 };
 use tokio_rustls::TlsConnector;
-use tracing::Span;
 use utils::snowflake::SnowflakeIdGenerator;
 
 use crate::{

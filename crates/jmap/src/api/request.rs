@@ -19,12 +19,14 @@ use jmap_proto::{
 
 use crate::{auth::AccessToken, JMAP};
 
+use super::http::HttpSessionData;
+
 impl JMAP {
     pub async fn handle_request(
         &self,
         request: Request,
         access_token: Arc<AccessToken>,
-        instance: &Arc<ServerInstance>,
+        session: &HttpSessionData,
     ) -> Response {
         let mut response = Response::new(
             access_token.state(),
@@ -32,11 +34,14 @@ impl JMAP {
             request.method_calls.len(),
         );
         let add_created_ids = !response.created_ids.is_empty();
+        let instance = &session.instance;
 
         for mut call in request.method_calls {
             // Resolve result and id references
-            if let Err(method_error) = response.resolve_references(&mut call.method) {
-                tracing::error!(error = ?method_error, "Error handling method call");
+            if let Err(error) = response.resolve_references(&mut call.method) {
+                let method_error = error.clone();
+
+                trc::error!(error.session_id(session.session_id));
 
                 response.push_response(call.id, MethodName::error(), method_error);
                 continue;
@@ -85,10 +90,12 @@ impl JMAP {
 
                         response.push_response(call.id, call.name, method_response);
                     }
-                    Err(err) => {
-                        tracing::error!(error = ?err, "Error handling method call");
+                    Err(error) => {
+                        let method_error = error.clone();
 
-                        response.push_error(call.id, err);
+                        trc::error!(error.session_id(session.session_id));
+
+                        response.push_error(call.id, method_error);
                     }
                 }
 

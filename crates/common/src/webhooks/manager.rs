@@ -149,7 +149,7 @@ fn spawn_webhook_handler(
                 webhook_id: webhook.id,
             },
             Err(err) => {
-                tracing::warn!("Failed to post webhook events: {}", err);
+                //trc::event!("Failed to post webhook events: {}", err);
                 WebhookEvent::Retry {
                     webhook_id: webhook.id,
                     events,
@@ -159,7 +159,7 @@ fn spawn_webhook_handler(
 
         // Notify manager
         if let Err(err) = webhook_tx.send(response).await {
-            tracing::error!("Failed to send webhook event: {}", err);
+            //trc::event!("Failed to send webhook event: {}", err);
         }
     });
 }

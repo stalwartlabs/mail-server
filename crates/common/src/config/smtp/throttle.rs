@@ -27,6 +27,7 @@ pub fn parse_throttle(
         if let Some(throttle) = parse_throttle_item(
             config,
             (&prefix_, throttle_id),
+            throttle_id,
             token_map,
             available_throttle_keys,
         ) {
@@ -40,6 +41,7 @@ pub fn parse_throttle(
 fn parse_throttle_item(
     config: &mut Config,
     prefix: impl AsKey,
+    throttle_id: &str,
     token_map: &TokenMap,
     available_throttle_keys: u16,
 ) -> Option<Throttle> {
@@ -75,6 +77,7 @@ fn parse_throttle_item(
     }
 
     let throttle = Throttle {
+        id: throttle_id.to_string(),
         expr: Expression::try_parse(config, (prefix.as_str(), "match"), token_map)
             .unwrap_or_default(),
         keys,

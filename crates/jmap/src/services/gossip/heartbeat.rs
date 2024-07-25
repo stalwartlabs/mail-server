@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use trc::ClusterEvent;
+
 use super::{Peer, State, HEARTBEAT_WINDOW, HEARTBEAT_WINDOW_MASK};
 use std::time::Instant;
 
@@ -21,21 +23,24 @@ impl Peer {
 
         match self.state {
             State::Seed | State::Offline => {
-                tracing::debug!("Peer {} is now alive.", self.addr);
+                trc::event!(Cluster(ClusterEvent::PeerAlive), RemoteIp = self.addr);
+
                 self.state = State::Alive;
 
                 // Do not count stale heartbeats.
                 return true;
             }
             State::Suspected => {
-                tracing::debug!("Suspected peer {} was confirmed alive.", self.addr);
+                trc::event!(
+                    Cluster(ClusterEvent::PeerSuspectedIsAlive),
+                    RemoteIp = self.addr
+                );
+
                 self.state = State::Alive;
             }
             State::Left if is_direct_ping => {
-                tracing::debug!(
-                    "Peer {} is back online after leaving the cluster.",
-                    self.addr
-                );
+                trc::event!(Cluster(ClusterEvent::PeerBackOnline), RemoteIp = self.addr);
+
                 self.state = State::Alive;
 
                 // Do not count stale heartbeats.
@@ -89,7 +94,7 @@ impl Peer {
             -(1.0 - 1.0 / (1.0 + e)).log10()
         };
 
-        /*tracing::debug!(
+        /*trc::event!(
             "Heartbeat from {}: mean={:.2}ms, variance={:.2}ms, std_dev={:.2}ms, phi={:.2}, samples={}, status={:?}",
             self.addr, hb_mean, hb_variance, hb_std_dev, phi, sample_size, if phi > HB_PHI_CONVICT_THRESHOLD {
                 State::Offline
@@ -101,11 +106,13 @@ impl Peer {
         );*/
 
         if phi > HB_PHI_CONVICT_THRESHOLD {
-            tracing::debug!("Peer {} is offline.", self.addr);
+            trc::event!(Cluster(ClusterEvent::PeerOffline), RemoteIp = self.addr);
+
             self.state = State::Offline;
             false
         } else if phi > HB_PHI_SUSPECT_THRESHOLD {
-            tracing::debug!("Peer {} is suspected to be offline.", self.addr);
+            trc::event!(Cluster(ClusterEvent::PeerSuspected), RemoteIp = self.addr);
+
             self.state = State::Suspected;
             true
         } else {

@@ -47,7 +47,7 @@ impl SMTP {
                     .is_rate_allowed(key.as_ref(), rate, false)
                     .await
                 {
-                    tracing::info!(
+                    trc::event!(
                         context = "throttle",
                         event = "rate-limit-exceeded",
                         max_requests = rate.requests,
@@ -67,7 +67,7 @@ impl SMTP {
                         if let Some(inflight) = limiter.is_allowed() {
                             in_flight.push(inflight);
                         } else {
-                            tracing::info!(
+                            trc::event!(
                                 context = "throttle",
                                 event = "too-many-requests",
                                 max_concurrent = limiter.max_concurrent,

@@ -11,6 +11,7 @@ use common::{
     DAEMON_NAME,
 };
 use mail_auth::AuthenticatedMessage;
+use trc::MtaHookEvent;
 
 use crate::{
     core::Session,
@@ -51,6 +52,22 @@ impl<T: SessionStream> Session<T> {
 
             match self.run_mta_hook(stage, mta_hook, message).await {
                 Ok(response) => {
+                    trc::event!(
+                        MtaHook(match response.action {
+                            Action::Accept => MtaHookEvent::ActionAccept,
+                            Action::Discard => MtaHookEvent::ActionDiscard,
+                            Action::Reject => MtaHookEvent::ActionReject,
+                            Action::Quarantine => MtaHookEvent::ActionQuarantine,
+                        }),
+                        SessionId = self.data.session_id,
+                        Id = mta_hook.id.clone(),
+                        Contents = response
+                            .modifications
+                            .iter()
+                            .map(|m| format!("{m:?}"))
+                            .collect::<Vec<_>>()
+                    );
+
                     let mut new_modifications = Vec::with_capacity(response.modifications.len());
                     for modification in response.modifications {
                         new_modifications.push(match modification {
@@ -135,13 +152,13 @@ impl<T: SessionStream> Session<T> {
                     return Err(message);
                 }
                 Err(err) => {
-                    tracing::warn!(
-                        
-                        mta_hook.url = &mta_hook.url,
-                        context = "mta_hook",
-                        event = "error",
-                        reason = ?err,
-                        "MTAHook filter failed");
+                    trc::event!(
+                        MtaHook(MtaHookEvent::Error),
+                        SessionId = self.data.session_id,
+                        Id = mta_hook.id.clone(),
+                        Reason = err,
+                    );
+
                     if mta_hook.tempfail_on_error {
                         return Err(FilterResponse::server_failure());
                     }

@@ -13,11 +13,10 @@ macro_rules! event {
             let et = $crate::EventType::$event($($param),*);
             let level = et.effective_level();
             if level.is_enabled() {
-                $crate::Event::new(
+                $crate::Event::with_capacity(
                     et,
-                    level,
                     trc::__count!($($key)*)
-                )
+                ).with_level(level)
                 $(
                     .ctx($crate::Key::$key, $crate::Value::from($value))
                 )*
@@ -31,11 +30,10 @@ macro_rules! event {
             let et = $crate::EventType::$event;
             let level = et.effective_level();
             if level.is_enabled() {
-                $crate::Event::new(
+                $crate::Event::with_capacity(
                     et,
-                    level,
                     trc::__count!($($key)*)
-                )
+                ).init(level)
                 $(
                     .ctx($crate::Key::$key, $crate::Value::from($value))
                 )*
@@ -62,5 +60,17 @@ macro_rules! location {
 macro_rules! bail {
     ($err:expr $(,)?) => {
         return Err($err);
+    };
+}
+
+#[macro_export]
+macro_rules! error {
+    ($err:expr $(,)?) => {
+        let err = $err;
+        let level = err.as_ref().effective_level();
+
+        if level.is_enabled() {
+            err.with_level(level).send();
+        }
     };
 }

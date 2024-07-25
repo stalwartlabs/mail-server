@@ -52,7 +52,7 @@ impl Collector {
                             let subscribers = { std::mem::take(&mut (*SUBSCRIBER_UPDATE.lock())) };
                             if !subscribers.is_empty() {
                                 self.subscribers.extend(subscribers);
-                            } else if event.level == Level::Disable {
+                            } else if event.matches(EventType::Server(ServerEvent::Shutdown)) {
                                 do_continue = false;
                             }
                         }
@@ -84,7 +84,7 @@ impl Collector {
     }
 
     pub fn shutdown() {
-        Event::new(EventType::Server(ServerEvent::Shutdown), Level::Disable, 0).send()
+        Event::new(EventType::Server(ServerEvent::Shutdown)).send()
     }
 }
 
