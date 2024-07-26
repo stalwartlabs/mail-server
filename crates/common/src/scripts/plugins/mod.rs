@@ -104,9 +104,7 @@ impl Core {
         match result {
             Ok(result) => result.into(),
             Err(err) => {
-                trc::error!(err
-                    .ctx(trc::Key::SessionId, session_id)
-                    .details("Sieve runtime error"));
+                trc::error!(err.span_id(session_id).details("Sieve runtime error"));
                 Input::FncResult(Variable::default())
             }
         }

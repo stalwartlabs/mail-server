@@ -54,10 +54,7 @@ impl<T: SessionStream> Session<T> {
                     .caused_by(trc::location!()))
             }
         } else {
-            Err(trc::Pop3Event::Error
-                .into_err()
-                .details("No such message.")
-                .caused_by(trc::location!()))
+            Err(trc::Pop3Event::Error.into_err().details("No such message."))
         }
     }
 }

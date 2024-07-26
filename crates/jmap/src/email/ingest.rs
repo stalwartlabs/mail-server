@@ -63,6 +63,7 @@ pub struct IngestEmail<'x> {
     pub received_at: Option<u64>,
     pub source: IngestSource,
     pub encrypt: bool,
+    pub session_id: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -273,6 +274,10 @@ impl JMAP {
         }
 
         // Build write batch
+        let mailbox_ids_event = mailbox_ids
+            .iter()
+            .map(|m| trc::Value::from(m.mailbox_id))
+            .collect::<Vec<_>>();
         let maybe_thread_id = thread_id
             .map(MaybeDynamicId::Static)
             .unwrap_or(MaybeDynamicId::Dynamic(0));
@@ -318,16 +323,15 @@ impl JMAP {
         // Request FTS index
         let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;
 
-        let todo = "add session id";
-
         trc::event!(
             Store(trc::StoreEvent::Ingest),
-            AccountId = account_id,
+            SpanId = params.session_id,
+            AccountId = params.account_id,
             DocumentId = document_id,
-            MailboxId = mailbox_ids.as_slice(),
-            BlobId = blob_id.hash.as_slice().to_vec(),
+            MailboxId = mailbox_ids_event,
+            BlobId = blob_id.hash.to_hex(),
             ChangeId = change_id,
-            Size = raw_message_len,
+            Size = raw_message_len as u64,
         );
 
         // Send webhook event

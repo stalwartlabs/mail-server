@@ -16,8 +16,14 @@ const MAX_BATCH_SIZE: usize = 32768;
 
 pub(crate) static SUBSCRIBER_UPDATE: Mutex<Vec<Subscriber>> = Mutex::new(Vec::new());
 
+pub(crate) enum SubscriberUpdate {
+    Add(Subscriber),
+    RemoveAll,
+}
+
 #[derive(Debug)]
 pub(crate) struct Subscriber {
+    pub id: String,
     pub level: Level,
     pub disabled: AHashSet<EventType>,
     pub tx: mpsc::Sender<Vec<Arc<Event>>>,
@@ -26,6 +32,7 @@ pub(crate) struct Subscriber {
 }
 
 pub struct SubscriberBuilder {
+    pub id: String,
     pub level: Level,
     pub disabled: AHashSet<EventType>,
     pub lossy: bool,
@@ -34,7 +41,9 @@ pub struct SubscriberBuilder {
 impl Subscriber {
     #[inline(always)]
     pub fn push_event(&mut self, trace: Arc<Event>) {
-        if trace.level() >= self.level && !self.disabled.contains(&trace.inner) {
+        let level = trace.level();
+
+        if self.level >= trace.level() && !self.disabled.contains(&trace.inner) {
             self.batch.push(trace);
         }
     }
@@ -62,8 +71,13 @@ impl Subscriber {
 }
 
 impl SubscriberBuilder {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(id: String) -> Self {
+        Self {
+            id,
+            level: Level::Info,
+            disabled: AHashSet::new(),
+            lossy: true,
+        }
     }
 
     pub fn with_level(mut self, level: Level) -> Self {
@@ -85,6 +99,7 @@ impl SubscriberBuilder {
         let (tx, rx) = mpsc::channel(8192);
 
         SUBSCRIBER_UPDATE.lock().push(Subscriber {
+            id: self.id,
             level: self.level,
             disabled: self.disabled,
             tx,
@@ -96,15 +111,5 @@ impl SubscriberBuilder {
         Event::new(EventType::Server(ServerEvent::Startup)).send();
 
         rx
-    }
-}
-
-impl Default for SubscriberBuilder {
-    fn default() -> Self {
-        Self {
-            level: Level::Info,
-            disabled: AHashSet::new(),
-            lossy: true,
-        }
     }
 }

@@ -46,6 +46,7 @@ impl Server {
             limiter: ConcurrencyLimiter::new(self.max_connections),
             acceptor,
             shutdown_rx,
+            id_generator: self.id_generator,
         });
         let is_tls = matches!(instance.acceptor, TcpAcceptor::Tls { implicit, .. } if implicit);
         let is_https = is_tls && self.protocol == ServerProtocol::Http;
@@ -218,18 +219,6 @@ impl BuildSession for Arc<ServerInstance> {
             );
             None
         } else if let Some(in_flight) = self.limiter.is_allowed() {
-            let todo = "build session id";
-            let session_id = 0;
-
-            trc::event!(
-                Session(trc::SessionEvent::Start),
-                ListenerId = self.id.clone(),
-                Protocol = self.protocol,
-                RemoteIp = remote_ip,
-                RemotePort = remote_port,
-                SessionId = session_id,
-            );
-
             // Enforce concurrency
             SessionData {
                 stream,
@@ -361,7 +350,7 @@ impl ServerInstance {
                         Tls(trc::TlsEvent::Handshake),
                         ListenerId = self.id.clone(),
                         Protocol = self.protocol,
-                        SessionId = session_id,
+                        SpanId = session_id,
                         Version = format!(
                             "{:?}",
                             stream
@@ -386,7 +375,7 @@ impl ServerInstance {
                         Tls(trc::TlsEvent::HandshakeError),
                         ListenerId = self.id.clone(),
                         Protocol = self.protocol,
-                        SessionId = session_id,
+                        SpanId = session_id,
                         Reason = err.to_string(),
                     );
                     Err(())
@@ -397,7 +386,7 @@ impl ServerInstance {
                     Tls(trc::TlsEvent::NotConfigured),
                     ListenerId = self.id.clone(),
                     Protocol = self.protocol,
-                    SessionId = session_id,
+                    SpanId = session_id,
                 );
                 Err(())
             }

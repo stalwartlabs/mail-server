@@ -69,7 +69,7 @@ impl<T: SessionStream> Session<T> {
                             } else {
                                 trc::event!(
                                     Network(trc::NetworkEvent::Closed),
-                                    SessionId = self.session_id,
+                                    SpanId = self.session_id,
                                     CausedBy = trc::location!()
                                 );
                                 break;
@@ -78,8 +78,8 @@ impl<T: SessionStream> Session<T> {
                         Ok(Err(err)) => {
                             trc::event!(
                                 Network(trc::NetworkEvent::ReadError),
-                                SessionId = self.session_id,
-                                Reason = err,
+                                SpanId = self.session_id,
+                                Reason = err.to_string(),
                                 CausedBy = trc::location!()
                             );
                             break;
@@ -87,7 +87,7 @@ impl<T: SessionStream> Session<T> {
                         Err(_) => {
                             trc::event!(
                                 Network(trc::NetworkEvent::Timeout),
-                                SessionId = self.session_id,
+                                SpanId = self.session_id,
                                 CausedBy = trc::location!()
                             );
                             self.write_bytes(&b"* BYE Connection timed out.\r\n"[..]).await.ok();
@@ -98,7 +98,7 @@ impl<T: SessionStream> Session<T> {
                 _ = shutdown_rx.changed() => {
                     trc::event!(
                         Network(trc::NetworkEvent::Closed),
-                        SessionId = self.session_id,
+                        SpanId = self.session_id,
                         Reason = "Server shutting down",
                         CausedBy = trc::location!()
                     );
@@ -124,8 +124,8 @@ impl<T: SessionStream> Session<T> {
         if let Err(err) = session.stream.write_all(greeting).await {
             trc::event!(
                 Network(trc::NetworkEvent::WriteError),
-                Reason = err,
-                SessionId = session.session_id,
+                Reason = err.to_string(),
+                SpanId = session.session_id,
                 Details = "Failed to write to stream"
             );
             return Err(());
@@ -165,7 +165,7 @@ impl<T: SessionStream> Session<T> {
         } else {
             trc::event!(
                 Network(trc::NetworkEvent::SplitError),
-                SessionId = self.session_id,
+                SpanId = self.session_id,
                 Details = "Failed to obtain write half state"
             );
             return Err(());
@@ -179,7 +179,7 @@ impl<T: SessionStream> Session<T> {
         } else {
             trc::event!(
                 Network(trc::NetworkEvent::SplitError),
-                SessionId = self.session_id,
+                SpanId = self.session_id,
                 Details = "Failed to take ownership of write half"
             );
 
@@ -216,7 +216,7 @@ impl<T: SessionStream> Session<T> {
 
         trc::event!(
             Imap(trc::ImapEvent::RawOutput),
-            SessionId = self.session_id,
+            SpanId = self.session_id,
             Size = bytes.len(),
             Contents = String::from_utf8_lossy(bytes).into_owned(),
         );
@@ -237,10 +237,10 @@ impl<T: SessionStream> Session<T> {
         if err.should_write_err() {
             let disconnect = err.must_disconnect();
             let bytes = err.serialize();
-            trc::error!(err.session_id(self.session_id));
+            trc::error!(err.span_id(self.session_id));
 
             if let Err(err) = self.write_bytes(bytes).await {
-                trc::error!(err.session_id(self.session_id));
+                trc::error!(err.span_id(self.session_id));
                 false
             } else {
                 !disconnect
@@ -259,7 +259,7 @@ impl<T: SessionStream> super::SessionData<T> {
 
         trc::event!(
             Imap(trc::ImapEvent::RawOutput),
-            SessionId = self.session_id,
+            SpanId = self.session_id,
             Size = bytes.len(),
             Contents = String::from_utf8_lossy(bytes).into_owned(),
         );
@@ -279,10 +279,10 @@ impl<T: SessionStream> super::SessionData<T> {
     pub async fn write_error(&self, err: trc::Error) -> trc::Result<()> {
         if err.should_write_err() {
             let bytes = err.serialize();
-            trc::error!(err.session_id(self.session_id));
+            trc::error!(err.span_id(self.session_id));
             self.write_bytes(bytes).await
         } else {
-            trc::error!(err.session_id(self.session_id));
+            trc::error!(err.span_id(self.session_id));
             Ok(())
         }
     }

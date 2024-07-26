@@ -11,12 +11,13 @@ use jmap_proto::{
 };
 use store::{query::ResultSet, roaring::RoaringBitmap};
 
-use crate::JMAP;
+use crate::{api::http::HttpSessionData, JMAP};
 
 impl JMAP {
     pub async fn principal_query(
         &self,
         mut request: QueryRequest<RequestArguments>,
+        session: &HttpSessionData,
     ) -> trc::Result<QueryResponse> {
         let account_id = request.account_id.document_id();
         let mut result_set = ResultSet {
@@ -51,7 +52,7 @@ impl JMAP {
                     let mut ids = RoaringBitmap::new();
                     for id in self
                         .core
-                        .email_to_ids(&self.core.storage.directory, &email)
+                        .email_to_ids(&self.core.storage.directory, &email, session.session_id)
                         .await?
                     {
                         ids.insert(id);

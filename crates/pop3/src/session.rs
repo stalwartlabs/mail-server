@@ -85,29 +85,48 @@ impl<T: SessionStream> Session<T> {
                                         return true;
                                     }
                                     SessionResult::Close => {
-                                        trc::event!( event = "disconnect", "Disconnecting client.");
                                         break;
                                     }
                                 }
                             } else {
-                                trc::event!( event = "close", "POP3 connection closed by client.");
+                                trc::event!(
+                                    Network(trc::NetworkEvent::Closed),
+                                    SpanId = self.session_id,
+                                    CausedBy = trc::location!()
+                                );
                                 break;
                             }
                         },
                         Ok(Err(err)) => {
-                            trc::event!( event = "error", reason = %err, "POP3 connection error.");
+                            trc::event!(
+                                Network(trc::NetworkEvent::ReadError),
+                                SpanId = self.session_id,
+                                Reason = err.to_string()    ,
+                                CausedBy = trc::location!()
+                            );
                             break;
                         },
                         Err(_) => {
+                            trc::event!(
+                                Network(trc::NetworkEvent::Timeout),
+                                SpanId = self.session_id,
+                                CausedBy = trc::location!()
+                            );
+
                             self.write_bytes(&b"-ERR Connection timed out.\r\n"[..]).await.ok();
-                            trc::event!( "POP3 connection timed out.");
                             break;
                         }
                     }
                 },
                 _ = shutdown_rx.changed() => {
+                    trc::event!(
+                        Network(trc::NetworkEvent::Closed),
+                        SpanId = self.session_id,
+                        Reason = "Server shutting down",
+                        CausedBy = trc::location!()
+                    );
+
                     self.write_bytes(&b"* BYE Server shutting down.\r\n"[..]).await.ok();
-                    trc::event!( event = "shutdown", "POP3 server shutting down.");
                     break;
                 }
             };
@@ -137,13 +156,12 @@ impl<T: SessionStream> Session<T> {
 impl<T: SessionStream> Session<T> {
     pub async fn write_bytes(&mut self, bytes: impl AsRef<[u8]>) -> trc::Result<()> {
         let bytes = bytes.as_ref();
-        /*for line in String::from_utf8_lossy(bytes.as_ref()).split("\r\n") {
-            let c = println!("{}", line);
-        }*/
+
         trc::event!(
-            event = "write",
-            data = std::str::from_utf8(bytes).unwrap_or_default(),
-            size = bytes.len()
+            Pop3(trc::Pop3Event::RawOutput),
+            SpanId = self.session_id,
+            Size = bytes.len(),
+            Contents = String::from_utf8_lossy(bytes).into_owned(),
         );
 
         self.stream.write_all(bytes.as_ref()).await.map_err(|err| {
@@ -166,12 +184,15 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn write_err(&mut self, err: trc::Error) -> bool {
-        trc::event!("POP3 error: {}", err);
         let disconnect = err.must_disconnect();
+        let response = err.serialize();
+        let write_err = err.should_write_err();
 
-        if err.should_write_err() {
-            if let Err(err) = self.write_bytes(err.serialize()).await {
-                trc::event!("Failed to write error: {}", err);
+        trc::error!(err.span_id(self.session_id));
+
+        if write_err {
+            if let Err(err) = self.write_bytes(response).await {
+                trc::error!(err.span_id(self.session_id));
                 return false;
             }
         }

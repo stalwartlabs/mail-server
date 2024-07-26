@@ -41,6 +41,7 @@ impl JMAP {
         envelope_from: &str,
         envelope_to: &str,
         account_id: u32,
+        session_id: u64,
         mut active_script: ActiveScript,
     ) -> trc::Result<IngestedEmail> {
         // Parse message
@@ -224,7 +225,8 @@ impl JMAP {
                             trc::event!(
                                 Sieve(SieveEvent::UnexpectedError),
                                 Details = "Unknown message id.",
-                                MessageId = message_id
+                                MessageId = message_id,
+                                SpanId = session_id
                             );
                         }
                         input = true.into();
@@ -302,7 +304,8 @@ impl JMAP {
                             trc::event!(
                                 Sieve(SieveEvent::UnexpectedError),
                                 Details = "Unknown message id.",
-                                MessageId = message_id
+                                MessageId = message_id,
+                                SpanId = session_id
                             );
                         }
                         input = true.into();
@@ -334,9 +337,10 @@ impl JMAP {
                                         .map(|r| trc::Value::String(r.address_lcase.clone()))
                                         .collect::<Vec<_>>(),
                                     Size = message.raw_message.len(),
+                                    SpanId = session_id
                                 );
 
-                                let result = Session::<NullIo>::sieve(
+                                Session::<NullIo>::sieve(
                                     self.smtp.clone(),
                                     SessionAddress::new(mail_from.clone()),
                                     recipients,
@@ -354,14 +358,16 @@ impl JMAP {
                                         .map(|r| trc::Value::String(r.address_lcase.clone()))
                                         .collect::<Vec<_>>(),
                                     Size = message.raw_message.len(),
-                                    Limit = self.core.jmap.mail_max_size
+                                    Limit = self.core.jmap.mail_max_size,
+                                    SpanId = session_id,
                                 );
                             }
                         } else {
                             trc::event!(
                                 Sieve(SieveEvent::UnexpectedError),
                                 Details = "Unknown message id.",
-                                MessageId = message_id
+                                MessageId = message_id,
+                                SpanId = session_id
                             );
 
                             continue;
@@ -390,7 +396,11 @@ impl JMAP {
                 }
 
                 Err(err) => {
-                    trc::event!(Sieve(SieveEvent::RuntimeError), Reason = err.to_string());
+                    trc::event!(
+                        Sieve(SieveEvent::RuntimeError),
+                        Reason = err.to_string(),
+                        SpanId = session_id
+                    );
 
                     input = true.into();
                 }
@@ -418,6 +428,7 @@ impl JMAP {
                     trc::event!(
                         Sieve(SieveEvent::UnexpectedError),
                         Details = "Failed to parse Sieve generated message.",
+                        SpanId = session_id
                     );
 
                     continue;
@@ -435,6 +446,7 @@ impl JMAP {
                         received_at: None,
                         source: IngestSource::Smtp,
                         encrypt: self.core.jmap.encrypt,
+                        session_id,
                     })
                     .await
                 {

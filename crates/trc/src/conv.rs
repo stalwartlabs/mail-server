@@ -32,6 +32,12 @@ impl From<u64> for Value {
     }
 }
 
+impl From<i64> for Value {
+    fn from(value: i64) -> Self {
+        Self::Int(value)
+    }
+}
+
 impl From<f64> for Value {
     fn from(value: f64) -> Self {
         Self::Float(value)
@@ -72,7 +78,16 @@ impl From<IpAddr> for Value {
     fn from(value: IpAddr) -> Self {
         match value {
             IpAddr::V4(ip) => Value::Ipv4(ip),
-            IpAddr::V6(ip) => Value::Ipv6(Box::new(ip)),
+            IpAddr::V6(ip) => Value::Ipv6(ip),
+        }
+    }
+}
+
+impl<T: Into<Value>> From<Option<T>> for Value {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => value.into(),
+            None => Self::None,
         }
     }
 }
@@ -85,7 +100,7 @@ impl From<Duration> for Value {
 
 impl From<Event> for Value {
     fn from(value: Event) -> Self {
-        Self::Event(Box::new(value))
+        Self::Event(value)
     }
 }
 

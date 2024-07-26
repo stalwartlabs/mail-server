@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{net::IpAddr, sync::Arc};
+use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use common::{
     expr::{functions::ResolveVariable, *},
@@ -36,8 +36,8 @@ use crate::{
 };
 
 use super::{
-    management::ManagementApiError, HtmlResponse, HttpRequest, HttpResponse, JmapSessionManager,
-    JsonResponse,
+    management::ManagementApiError, HtmlResponse, HttpRequest, HttpResponse, HttpResponseBody,
+    JmapSessionManager, JsonResponse,
 };
 
 pub struct HttpSessionData {
@@ -168,11 +168,7 @@ impl JMAP {
                             self.authenticate_headers(&req, session.remote_ip).await?;
 
                         return self
-                            .upgrade_websocket_connection(
-                                req,
-                                access_token,
-                                session.instance.clone(),
-                            )
+                            .upgrade_websocket_connection(req, access_token, session)
                             .await;
                     }
                     (_, &Method::OPTIONS) => {
@@ -253,7 +249,11 @@ impl JMAP {
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
                     return self
-                        .handle_device_auth(&mut req, session.resolve_url(&self.core).await)
+                        .handle_device_auth(
+                            &mut req,
+                            session.resolve_url(&self.core).await,
+                            session.session_id,
+                        )
                         .await;
                 }
                 ("token", &Method::POST) => {
@@ -278,7 +278,7 @@ impl JMAP {
                 let (_, access_token) = self.authenticate_headers(&req, session.remote_ip).await?;
                 let body = fetch_body(&mut req, 1024 * 1024, session.session_id).await;
                 return self
-                    .handle_api_manage_request(&req, body, access_token)
+                    .handle_api_manage_request(&req, body, access_token, &session)
                     .await;
             }
             "mail" => {
@@ -358,7 +358,7 @@ impl JmapInstance {
                     async move {
                         trc::event!(
                             Http(trc::HttpEvent::RequestUrl),
-                            SessionId = session.session_id,
+                            SpanId = session.session_id,
                             Url = req.uri().to_string(),
                         );
 
@@ -378,13 +378,13 @@ impl JmapInstance {
                         } else {
                             trc::event!(
                                 Http(trc::HttpEvent::XForwardedMissing),
-                                SessionId = session.session_id,
+                                SpanId = session.session_id,
                             );
                             session.remote_ip
                         };
 
                         // Parse HTTP request
-                        let mut response = match jmap
+                        let response = match jmap
                             .parse_http_request(
                                 req,
                                 HttpSessionData {
@@ -399,24 +399,29 @@ impl JmapInstance {
                             )
                             .await
                         {
-                            Ok(response) => {
-                                trc::event!(
-                                    Http(trc::HttpEvent::ResponseBody),
-                                    SessionId = session.session_id,
-                                    Contents = std::str::from_utf8(response.body())
-                                        .unwrap_or("[binary data]")
-                                        .to_string(),
-                                    Size = response.body().as_ref().len(),
-                                );
-
-                                response
-                            }
+                            Ok(response) => response,
                             Err(err) => {
                                 let response = err.into_http_response();
-                                trc::error!(err.session_id(session.session_id));
+                                trc::error!(err.span_id(session.session_id));
                                 response
                             }
                         };
+
+                        trc::event!(
+                            Http(trc::HttpEvent::ResponseBody),
+                            SpanId = session.session_id,
+                            Contents = match &response.body {
+                                HttpResponseBody::Text(value) => trc::Value::String(value.clone()),
+                                HttpResponseBody::Binary(_) => trc::Value::Static("[binary data]"),
+                                HttpResponseBody::Stream(_) => trc::Value::Static("[stream]"),
+                                _ => trc::Value::None,
+                            },
+                            Status = response.status.as_u16(),
+                            Size = response.size(),
+                        );
+
+                        // Build response
+                        let mut response = response.build();
 
                         // Add custom headers
                         if !jmap.core.jmap.http_headers.is_empty() {
@@ -436,8 +441,8 @@ impl JmapInstance {
         {
             trc::event!(
                 Http(trc::HttpEvent::Error),
-                SessionId = session.session_id,
-                reason = http_err.to_string(),
+                SpanId = session.session_id,
+                Reason = http_err.to_string(),
             );
         }
     }
@@ -507,7 +512,7 @@ pub async fn fetch_body(
             } else {
                 trc::event!(
                     Http(trc::HttpEvent::RequestBody),
-                    SessionId = session_id,
+                    SpanId = session_id,
                     Contents = std::str::from_utf8(&bytes)
                         .unwrap_or("[binary data]")
                         .to_string(),
@@ -522,7 +527,7 @@ pub async fn fetch_body(
 
     trc::event!(
         Http(trc::HttpEvent::RequestBody),
-        SessionId = session_id,
+        SpanId = session_id,
         Contents = std::str::from_utf8(&bytes)
             .unwrap_or("[binary data]")
             .to_string(),
@@ -536,17 +541,118 @@ pub trait ToHttpResponse {
     fn into_http_response(self) -> HttpResponse;
 }
 
-impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
-    fn into_http_response(self) -> HttpResponse {
-        hyper::Response::builder()
-            .status(self.status)
-            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
-            .body(
-                Full::new(Bytes::from(serde_json::to_string(&self.inner).unwrap()))
+impl HttpResponse {
+    pub fn new_empty(status: StatusCode) -> Self {
+        HttpResponse {
+            status,
+            content_type: "".into(),
+            content_disposition: "".into(),
+            cache_control: "".into(),
+            body: HttpResponseBody::Empty,
+        }
+    }
+
+    pub fn new_text(
+        status: StatusCode,
+        content_type: impl Into<Cow<'static, str>>,
+        body: impl Into<String>,
+    ) -> Self {
+        HttpResponse {
+            status,
+            content_type: content_type.into(),
+            content_disposition: "".into(),
+            cache_control: "".into(),
+            body: HttpResponseBody::Text(body.into()),
+        }
+    }
+
+    pub fn new_binary(
+        status: StatusCode,
+        content_type: impl Into<Cow<'static, str>>,
+        body: impl Into<Vec<u8>>,
+    ) -> Self {
+        HttpResponse {
+            status,
+            content_type: content_type.into(),
+            content_disposition: "".into(),
+            cache_control: "".into(),
+            body: HttpResponseBody::Binary(body.into()),
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match &self.body {
+            HttpResponseBody::Text(value) => value.len(),
+            HttpResponseBody::Binary(value) => value.len(),
+            _ => 0,
+        }
+    }
+
+    pub fn build(
+        self,
+    ) -> hyper::Response<http_body_util::combinators::BoxBody<hyper::body::Bytes, hyper::Error>>
+    {
+        let builder = hyper::Response::builder().status(self.status);
+
+        match self.body {
+            HttpResponseBody::Text(body) => builder
+                .header(header::CONTENT_TYPE, self.content_type.as_ref())
+                .body(
+                    Full::new(Bytes::from(body))
+                        .map_err(|never| match never {})
+                        .boxed(),
+                ),
+            HttpResponseBody::Binary(body) => {
+                let mut builder = builder.header(header::CONTENT_TYPE, self.content_type.as_ref());
+
+                if !self.content_disposition.is_empty() {
+                    builder = builder.header(
+                        header::CONTENT_DISPOSITION,
+                        self.content_disposition.as_ref(),
+                    );
+                }
+
+                if !self.cache_control.is_empty() {
+                    builder = builder.header(header::CACHE_CONTROL, self.cache_control.as_ref());
+                }
+
+                builder.body(
+                    Full::new(Bytes::from(body))
+                        .map_err(|never| match never {})
+                        .boxed(),
+                )
+            }
+            HttpResponseBody::Empty => builder.body(
+                Full::new(Bytes::new())
                     .map_err(|never| match never {})
                     .boxed(),
-            )
-            .unwrap()
+            ),
+            HttpResponseBody::Stream(stream) => builder
+                .header(header::CONTENT_TYPE, self.content_type.as_ref())
+                .header(header::CACHE_CONTROL, self.cache_control.as_ref())
+                .body(stream),
+            HttpResponseBody::WebsocketUpgrade(derived_key) => builder
+                .header(header::CONNECTION, "upgrade")
+                .header(header::UPGRADE, "websocket")
+                .header("Sec-WebSocket-Accept", &derived_key)
+                .header("Sec-WebSocket-Protocol", "jmap")
+                .body(
+                    Full::new(Bytes::from("Switching to WebSocket protocol"))
+                        .map_err(|never| match never {})
+                        .boxed(),
+                ),
+        }
+        .unwrap()
+    }
+}
+
+impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
+    fn into_http_response(self) -> HttpResponse {
+        HttpResponse::new_text(
+            self.status,
+            "application/json; charset=utf-8",
+            serde_json::to_string(&self.inner).unwrap_or_default(),
+        )
     }
 }
 
@@ -627,14 +733,13 @@ impl ToRequestError for trc::Error {
                 trc::LimitEvent::TooManyRequests => RequestError::too_many_requests(),
             },
             trc::EventType::Auth(cause) => match cause {
-                trc::AuthEvent::Failed => RequestError::unauthorized(),
                 trc::AuthEvent::MissingTotp => {
                     RequestError::blank(403, "TOTP code required", cause.message())
                 }
                 trc::AuthEvent::TooManyAttempts | trc::AuthEvent::Banned => {
                     RequestError::too_many_auth_attempts()
                 }
-                trc::AuthEvent::Error => RequestError::unauthorized(),
+                _ => RequestError::unauthorized(),
             },
             trc::EventType::Resource(cause) => match cause {
                 trc::ResourceEvent::NotFound => RequestError::not_found(),
@@ -679,14 +784,12 @@ impl HtmlResponse {
 
 impl ToHttpResponse for Response {
     fn into_http_response(self) -> HttpResponse {
-        //let c = println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
         JsonResponse::new(self).into_http_response()
     }
 }
 
 impl ToHttpResponse for Session {
     fn into_http_response(self) -> HttpResponse {
-        //let c = println!("-> {}", serde_json::to_string_pretty(&self).unwrap());
         JsonResponse::new(self).into_http_response()
     }
 }
@@ -699,40 +802,23 @@ impl ToHttpResponse for ManagementApiError<'_> {
 
 impl ToHttpResponse for DownloadResponse {
     fn into_http_response(self) -> HttpResponse {
-        hyper::Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, self.content_type)
-            .header(
-                header::CONTENT_DISPOSITION,
-                format!(
-                    "attachment; filename=\"{}\"",
-                    self.filename.replace('\"', "\\\"")
-                ),
+        HttpResponse {
+            status: StatusCode::OK,
+            content_type: self.content_type.into(),
+            content_disposition: format!(
+                "attachment; filename=\"{}\"",
+                self.filename.replace('\"', "\\\"")
             )
-            .header(
-                header::CACHE_CONTROL,
-                "private, immutable, max-age=31536000",
-            )
-            .body(
-                Full::new(Bytes::from(self.blob))
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap()
+            .into(),
+            cache_control: "private, immutable, max-age=31536000".into(),
+            body: HttpResponseBody::Binary(self.blob),
+        }
     }
 }
 
 impl ToHttpResponse for Resource<Vec<u8>> {
     fn into_http_response(self) -> HttpResponse {
-        hyper::Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, self.content_type)
-            .body(
-                Full::new(Bytes::from(self.contents))
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap()
+        HttpResponse::new_binary(StatusCode::OK, self.content_type, self.contents)
     }
 }
 
@@ -744,41 +830,22 @@ impl ToHttpResponse for UploadResponse {
 
 impl ToHttpResponse for RequestError<'_> {
     fn into_http_response(self) -> HttpResponse {
-        hyper::Response::builder()
-            .status(StatusCode::from_u16(self.status).unwrap())
-            .header(header::CONTENT_TYPE, "application/problem+json")
-            .body(
-                Full::new(Bytes::from(serde_json::to_string(&self).unwrap()))
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap()
+        HttpResponse::new_text(
+            StatusCode::from_u16(self.status).unwrap_or(StatusCode::BAD_REQUEST),
+            "application/problem+json",
+            serde_json::to_string(&self).unwrap_or_default(),
+        )
     }
 }
 
 impl ToHttpResponse for HtmlResponse {
     fn into_http_response(self) -> HttpResponse {
-        hyper::Response::builder()
-            .status(self.status)
-            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .body(
-                Full::new(Bytes::from(self.body))
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap()
+        HttpResponse::new_text(self.status, "text/html; charset=utf-8", self.body)
     }
 }
 
 impl ToHttpResponse for StatusCode {
     fn into_http_response(self) -> HttpResponse {
-        hyper::Response::builder()
-            .status(self)
-            .body(
-                Full::new(Bytes::new())
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap()
+        HttpResponse::new_empty(self)
     }
 }

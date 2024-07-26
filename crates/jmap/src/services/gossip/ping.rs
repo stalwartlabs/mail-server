@@ -179,10 +179,11 @@ impl Gossiper {
                             core.store(new_core.into());
 
                             // Reload ACME
-                            if let Err(err) = inner
+                            if inner
                                 .housekeeper_tx
                                 .send(housekeeper::Event::AcmeReload)
                                 .await
+                                .is_err()
                             {
                                 trc::event!(
                                     Server(trc::ServerEvent::ThreadError),

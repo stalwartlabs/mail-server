@@ -90,16 +90,22 @@ impl TryFrom<Collection> for DataType {
 
 impl Display for Collection {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.as_str().fmt(f)
+    }
+}
+
+impl Collection {
+    pub fn as_str(&self) -> &'static str {
         match self {
-            Collection::PushSubscription => write!(f, "pushSubscription"),
-            Collection::Email => write!(f, "email"),
-            Collection::Mailbox => write!(f, "mailbox"),
-            Collection::Thread => write!(f, "thread"),
-            Collection::Identity => write!(f, "identity"),
-            Collection::EmailSubmission => write!(f, "emailSubmission"),
-            Collection::SieveScript => write!(f, "sieveScript"),
-            Collection::Principal => write!(f, "principal"),
-            Collection::None => write!(f, ""),
+            Collection::PushSubscription => "pushSubscription",
+            Collection::Email => "email",
+            Collection::Mailbox => "mailbox",
+            Collection::Thread => "thread",
+            Collection::Identity => "identity",
+            Collection::EmailSubmission => "emailSubmission",
+            Collection::SieveScript => "sieveScript",
+            Collection::Principal => "principal",
+            Collection::None => "",
         }
     }
 }
@@ -119,6 +125,12 @@ impl FromStr for Collection {
             "principal" => Ok(Collection::Principal),
             _ => Err(()),
         }
+    }
+}
+
+impl From<Collection> for trc::Value {
+    fn from(value: Collection) -> Self {
+        trc::Value::Static(value.as_str())
     }
 }
 

@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime};
 use store::write::key::DeserializeBigEndian;
 use store::write::{now, BatchBuilder, Bincode, BlobOp, QueueClass, QueueEvent, ValueClass};
 use store::{Deserialize, IterateParams, Serialize, ValueKey, U64_LEN};
+use trc::ServerEvent;
 use utils::BlobHash;
 
 use crate::core::SMTP;
@@ -83,12 +84,10 @@ impl SMTP {
                         events.push(event);
                     } else {
                         trc::event!(
-                            context = "queue",
-                            event = "locked",
-                            id = event.queue_id,
-                            due = event.due,
-                            expiry = event.lock_expiry - now,
-                            "Queue event locked by another process."
+                            Queue(trc::QueueEvent::Locked),
+                            SpanId = event.queue_id,
+                            Due = trc::Value::Timestamp(event.due),
+                            Expires = trc::Value::Timestamp(event.lock_expiry),
                         );
                     }
                     Ok(do_continue)
@@ -97,12 +96,9 @@ impl SMTP {
             .await;
 
         if let Err(err) = result {
-            trc::event!(
-                context = "queue",
-                event = "error",
-                "Failed to read from store: {}",
-                err
-            );
+            trc::error!(err
+                .details("Failed to read queue.")
+                .caused_by(trc::location!()));
         }
 
         events
@@ -129,16 +125,18 @@ impl SMTP {
             Ok(_) => Some(event),
             Err(err) if err.is_assertion_failure() => {
                 trc::event!(
-                    context = "queue",
-                    event = "locked",
-                    id = event.queue_id,
-                    due = event.due,
-                    "Lock busy: Event already locked."
+                    Queue(trc::QueueEvent::LockBusy),
+                    SpanId = event.queue_id,
+                    Due = trc::Value::Timestamp(event.due),
+                    CausedBy = err,
                 );
+
                 None
             }
             Err(err) => {
-                trc::event!(context = "queue", event = "error", "Lock error: {}", err);
+                trc::error!(err
+                    .details("Failed to lock event.")
+                    .caused_by(trc::location!()));
                 None
             }
         }
@@ -157,12 +155,10 @@ impl SMTP {
             Ok(Some(message)) => Some(message.inner),
             Ok(None) => None,
             Err(err) => {
-                trc::event!(
-                    context = "queue",
-                    event = "error",
-                    "Failed to read message from store: {}",
-                    err
-                );
+                trc::error!(err
+                    .details("Failed to read message.")
+                    .caused_by(trc::location!()));
+
                 None
             }
         }
@@ -174,6 +170,7 @@ impl Message {
         mut self,
         raw_headers: Option<&[u8]>,
         raw_message: &[u8],
+        parent_session_id: u64,
         core: &SMTP,
     ) -> bool {
         // Write blob
@@ -203,12 +200,12 @@ impl Message {
             0u32.serialize(),
         );
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
-            trc::event!(
-                context = "queue",
-                event = "error",
-                "Failed to write to data store: {}",
-                err
-            );
+            trc::error!(err
+                .details("Failed to write to store.")
+                .span_id(self.id)
+                .parent_span_id(parent_session_id)
+                .caused_by(trc::location!()));
+
             return false;
         }
         if let Err(err) = core
@@ -218,31 +215,35 @@ impl Message {
             .put_blob(self.blob_hash.as_slice(), message.as_ref())
             .await
         {
-            trc::event!(
-                context = "queue",
-                event = "error",
-                "Failed to write to blob store: {}",
-                err
-            );
+            trc::error!(err
+                .details("Failed to write blob.")
+                .span_id(self.id)
+                .parent_span_id(parent_session_id)
+                .caused_by(trc::location!()));
+
             return false;
         }
 
         trc::event!(
-            context = "queue",
-            event = "scheduled",
-            id = self.id,
-            from = if !self.return_path.is_empty() {
-                self.return_path.as_str()
+            Queue(trc::QueueEvent::Scheduled),
+            SpanId = self.id,
+            ParentSpanId = parent_session_id,
+            From = if !self.return_path.is_empty() {
+                trc::Value::String(self.return_path.to_string())
             } else {
-                "<>"
+                trc::Value::Static("<>")
             },
-            nrcpts = self.recipients.len(),
-            size = self.size,
-            "Message queued for delivery."
+            To = self
+                .recipients
+                .iter()
+                .map(|r| trc::Value::String(r.address_lcase.clone()))
+                .collect::<Vec<_>>(),
+            Size = self.size,
         );
 
         // Write message to queue
         let mut batch = BatchBuilder::new();
+        let span_id = self.id;
 
         // Reserve quotas
         for quota_key in &self.quota_keys {
@@ -289,21 +290,23 @@ impl Message {
             );
 
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
-            trc::event!(
-                context = "queue",
-                event = "error",
-                "Failed to write to store: {}",
-                err
-            );
+            trc::error!(err
+                .details("Failed to write to store.")
+                .span_id(span_id)
+                .parent_span_id(parent_session_id)
+                .caused_by(trc::location!()));
+
             return false;
         }
 
         // Queue the message
         if core.inner.queue_tx.send(Event::Reload).await.is_err() {
             trc::event!(
-                context = "queue",
-                event = "error",
-                "Queue channel closed: Message queued but won't be sent until next restart."
+                Server(ServerEvent::ThreadError),
+                Reason = "Channel closed.",
+                CausedBy = trc::location!(),
+                SpanId = span_id,
+                ParentSpanId = parent_session_id,
             );
         }
 
@@ -397,18 +400,17 @@ impl Message {
                 );
         }
 
+        let span_id = self.id;
         batch.set(
             ValueClass::Queue(QueueClass::Message(self.id)),
             Bincode::new(self).serialize(),
         );
 
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
-            trc::event!(
-                context = "queue",
-                event = "error",
-                "Failed to update queued message: {}",
-                err
-            );
+            trc::error!(err
+                .details("Failed to save changes.")
+                .span_id(span_id)
+                .caused_by(trc::location!()));
             false
         } else {
             true
@@ -445,12 +447,10 @@ impl Message {
             .clear(ValueClass::Queue(QueueClass::Message(self.id)));
 
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
-            trc::event!(
-                context = "queue",
-                event = "error",
-                "Failed to update queued message: {}",
-                err
-            );
+            trc::error!(err
+                .details("Failed to write to update queue.")
+                .span_id(self.id)
+                .caused_by(trc::location!()));
             false
         } else {
             true

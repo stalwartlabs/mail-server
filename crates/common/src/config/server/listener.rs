@@ -13,9 +13,12 @@ use rustls::{
 
 use tokio::net::TcpSocket;
 use tokio_rustls::TlsAcceptor;
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config,
+use utils::{
+    config::{
+        utils::{AsKey, ParseValue},
+        Config,
+    },
+    snowflake::SnowflakeIdGenerator,
 };
 
 use crate::{
@@ -33,18 +36,31 @@ impl Servers {
         // Parse ACME managers
         let mut servers = Servers::default();
 
+        // Create sessionId generator
+        let id_generator = Arc::new(
+            config
+                .property::<u64>("cluster.node-id")
+                .map(SnowflakeIdGenerator::with_node_id)
+                .unwrap_or_default(),
+        );
+
         // Parse servers
         for id in config
             .sub_keys("server.listener", ".protocol")
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
         {
-            servers.parse_server(config, id);
+            servers.parse_server(config, id, id_generator.clone());
         }
         servers
     }
 
-    fn parse_server(&mut self, config: &mut Config, id_: String) {
+    fn parse_server(
+        &mut self,
+        config: &mut Config,
+        id_: String,
+        id_generator: Arc<SnowflakeIdGenerator>,
+    ) {
         // Parse protocol
         let id = id_.as_str();
         let protocol =
@@ -193,6 +209,7 @@ impl Servers {
             protocol,
             listeners,
             proxy_networks,
+            id_generator,
         });
     }
 

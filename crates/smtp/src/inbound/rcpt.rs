@@ -174,7 +174,7 @@ impl<T: SessionStream> Session<T> {
                                 if !is_local_address {
                                     trc::event!(
                                         Smtp(SmtpEvent::MailboxDoesNotExist),
-                                        SessionId = self.data.session_id,
+                                        SpanId = self.data.session_id,
                                         To = rcpt.address_lcase.clone(),
                                     );
 
@@ -186,7 +186,7 @@ impl<T: SessionStream> Session<T> {
                             }
                             Err(err) => {
                                 trc::error!(err
-                                    .session_id(self.data.session_id)
+                                    .span_id(self.data.session_id)
                                     .caused_by(trc::location!())
                                     .details("Failed to verify address."));
 
@@ -209,7 +209,7 @@ impl<T: SessionStream> Session<T> {
                     {
                         trc::event!(
                             Smtp(SmtpEvent::RelayNotAllowed),
-                            SessionId = self.data.session_id,
+                            SpanId = self.data.session_id,
                             To = rcpt.address_lcase.clone(),
                         );
 
@@ -219,7 +219,7 @@ impl<T: SessionStream> Session<T> {
                 }
                 Err(err) => {
                     trc::error!(err
-                        .session_id(self.data.session_id)
+                        .span_id(self.data.session_id)
                         .caused_by(trc::location!())
                         .details("Failed to verify address."));
 
@@ -242,7 +242,7 @@ impl<T: SessionStream> Session<T> {
         {
             trc::event!(
                 Smtp(SmtpEvent::RelayNotAllowed),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 To = rcpt.address_lcase.clone(),
             );
 
@@ -253,13 +253,13 @@ impl<T: SessionStream> Session<T> {
         if self.is_allowed().await {
             trc::event!(
                 Smtp(SmtpEvent::RelayNotAllowed),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 To = self.data.rcpt_to.last().unwrap().address_lcase.clone(),
             );
         } else {
             trc::event!(
                 Smtp(SmtpEvent::RateLimitExceeded),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 To = self.data.rcpt_to.last().unwrap().address_lcase.clone(),
             );
 
@@ -281,7 +281,7 @@ impl<T: SessionStream> Session<T> {
         } else {
             trc::event!(
                 Smtp(SmtpEvent::TooManyInvalidRcpt),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
             );
 
             self.write(b"421 4.3.0 Too many errors, disconnecting.\r\n")

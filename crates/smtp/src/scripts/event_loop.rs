@@ -58,7 +58,7 @@ impl SMTP {
                         } else {
                             trc::event!(
                                 Sieve(SieveEvent::ScriptNotFound),
-                                SessionId = session_id,
+                                SpanId = session_id,
                                 Name = name.as_str().to_string(),
                             );
                             break;
@@ -91,7 +91,7 @@ impl SMTP {
                             } else {
                                 trc::event!(
                                     Sieve(SieveEvent::ListNotFound),
-                                    SessionId = session_id,
+                                    SpanId = session_id,
                                     Name = list,
                                 );
                             }
@@ -152,7 +152,7 @@ impl SMTP {
                             Recipient::List(list) => {
                                 trc::event!(
                                     Sieve(SieveEvent::NotSupported),
-                                    SessionId = session_id,
+                                    SpanId = session_id,
                                     Name = list,
                                     Reason = "Sending to lists is not supported.",
                                 );
@@ -262,7 +262,7 @@ impl SMTP {
                                             }
                                             Err(err) => {
                                                 trc::error!(trc::Event::from(err)
-                                                    .session_id(session_id)
+                                                    .span_id(session_id)
                                                     .caused_by(trc::location!())
                                                     .details("DKIM sign failed"));
                                             }
@@ -282,11 +282,13 @@ impl SMTP {
                             };
 
                             if self.has_quota(&mut message).await {
-                                message.queue(headers.as_deref(), raw_message, self).await;
+                                message
+                                    .queue(headers.as_deref(), raw_message, session_id, self)
+                                    .await;
                             } else {
                                 trc::event!(
                                     Sieve(SieveEvent::QuotaExceeded),
-                                    SessionId = session_id,
+                                    SpanId = session_id,
                                     From = message.return_path_lcase,
                                     To = message
                                         .recipients
@@ -313,7 +315,7 @@ impl SMTP {
                     unsupported => {
                         trc::event!(
                             Sieve(SieveEvent::NotSupported),
-                            SessionId = session_id,
+                            SpanId = session_id,
                             Reason = "Unsupported event",
                             Details = format!("{unsupported:?}"),
                         );
@@ -323,7 +325,7 @@ impl SMTP {
                 Err(err) => {
                     trc::event!(
                         Sieve(SieveEvent::RuntimeError),
-                        SessionId = session_id,
+                        SpanId = session_id,
                         Reason = err.to_string(),
                     );
                     break;
@@ -366,7 +368,7 @@ impl SMTP {
         if keep_id == 0 {
             trc::event!(
                 Sieve(SieveEvent::ActionAccept),
-                SessionId = session_id,
+                SpanId = session_id,
                 Details = modifications
                     .iter()
                     .map(|m| trc::Value::from(format!("{m:?}")))
@@ -377,7 +379,7 @@ impl SMTP {
         } else if let Some(mut reject_reason) = reject_reason {
             trc::event!(
                 Sieve(SieveEvent::ActionReject),
-                SessionId = session_id,
+                SpanId = session_id,
                 Details = reject_reason.clone(),
             );
 
@@ -398,7 +400,7 @@ impl SMTP {
             if let Some(message) = messages.into_iter().nth(keep_id - 1) {
                 trc::event!(
                     Sieve(SieveEvent::ActionAccept),
-                    SessionId = session_id,
+                    SpanId = session_id,
                     Details = modifications
                         .iter()
                         .map(|m| trc::Value::from(format!("{m:?}")))
@@ -412,7 +414,7 @@ impl SMTP {
             } else {
                 trc::event!(
                     Sieve(SieveEvent::ActionAcceptReplace),
-                    SessionId = session_id,
+                    SpanId = session_id,
                     Details = modifications
                         .iter()
                         .map(|m| trc::Value::from(format!("{m:?}")))
@@ -422,7 +424,7 @@ impl SMTP {
                 ScriptResult::Accept { modifications }
             }
         } else {
-            trc::event!(Sieve(SieveEvent::ActionDiscard), SessionId = session_id,);
+            trc::event!(Sieve(SieveEvent::ActionDiscard), SpanId = session_id,);
 
             ScriptResult::Discard
         }

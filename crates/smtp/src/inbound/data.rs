@@ -53,7 +53,7 @@ impl<T: SessionStream> Session<T> {
         } else {
             trc::event!(
                 Smtp(SmtpEvent::MessageParseFailed),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
             );
 
             self.send_failure_webhook(WebhookMessageFailure::ParseFailed)
@@ -76,7 +76,7 @@ impl<T: SessionStream> Session<T> {
         {
             trc::event!(
                 Smtp(SmtpEvent::LoopDetected),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 Count = auth_message.received_headers_count(),
             );
 
@@ -137,12 +137,9 @@ impl<T: SessionStream> Session<T> {
                 } else {
                     SmtpEvent::DkimFail
                 }),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 Strict = strict,
-                Result = dkim_output
-                    .iter()
-                    .map(|o| trc::Event::from(o))
-                    .collect::<Vec<_>>(),
+                Result = dkim_output.iter().map(trc::Event::from).collect::<Vec<_>>(),
                 Elapsed = time.elapsed(),
             );
 
@@ -199,7 +196,7 @@ impl<T: SessionStream> Session<T> {
                 } else {
                     SmtpEvent::ArcFail
                 }),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 Strict = strict,
                 Result = trc::Event::from(arc_output.result()),
                 Elapsed = time.elapsed(),
@@ -296,7 +293,7 @@ impl<T: SessionStream> Session<T> {
                     } else {
                         SmtpEvent::DmarcFail
                     }),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                     Strict = strict,
                     Domain = dmarc_output.domain().to_string(),
                     Policy = dmarc_policy.to_string(),
@@ -335,7 +332,8 @@ impl<T: SessionStream> Session<T> {
 
         // Analyze reports
         if is_report {
-            self.core.analyze_report(raw_message.clone());
+            self.core
+                .analyze_report(raw_message.clone(), self.data.session_id);
             if !rc.analysis.forward {
                 self.data.messages_sent += 1;
                 return (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into();
@@ -395,7 +393,7 @@ impl<T: SessionStream> Session<T> {
                     }
                     Err(err) => {
                         trc::error!(trc::Event::from(err)
-                            .session_id(self.data.session_id)
+                            .span_id(self.data.session_id)
                             .details("Failed to ARC seal message"));
                     }
                 }
@@ -497,7 +495,7 @@ impl<T: SessionStream> Session<T> {
 
                                             trc::event!(
                                                 Smtp(SmtpEvent::PipeSuccess),
-                                                SessionId = self.data.session_id,
+                                                SpanId = self.data.session_id,
                                                 Path = command_,
                                                 Status = output.status.to_string(),
                                             );
@@ -505,14 +503,14 @@ impl<T: SessionStream> Session<T> {
                                         Ok(Err(err)) => {
                                             trc::event!(
                                                 Smtp(SmtpEvent::PipeError),
-                                                SessionId = self.data.session_id,
+                                                SpanId = self.data.session_id,
                                                 Reason = err.to_string(),
                                             );
                                         }
                                         Err(_) => {
                                             trc::event!(
                                                 Smtp(SmtpEvent::PipeError),
-                                                SessionId = self.data.session_id,
+                                                SpanId = self.data.session_id,
                                                 Reason = "Timeout",
                                             );
                                         }
@@ -521,14 +519,14 @@ impl<T: SessionStream> Session<T> {
                                 Ok(Err(err)) => {
                                     trc::event!(
                                         Smtp(SmtpEvent::PipeError),
-                                        SessionId = self.data.session_id,
+                                        SpanId = self.data.session_id,
                                         Reason = err.to_string(),
                                     );
                                 }
                                 Err(_) => {
                                     trc::event!(
                                         Smtp(SmtpEvent::PipeError),
-                                        SessionId = self.data.session_id,
+                                        SpanId = self.data.session_id,
                                         Reason = "Stdin timeout",
                                     );
                                 }
@@ -536,7 +534,7 @@ impl<T: SessionStream> Session<T> {
                         } else {
                             trc::event!(
                                 Smtp(SmtpEvent::PipeError),
-                                SessionId = self.data.session_id,
+                                SpanId = self.data.session_id,
                                 Reason = "Stdin not available",
                             );
                         }
@@ -544,7 +542,7 @@ impl<T: SessionStream> Session<T> {
                     Err(err) => {
                         trc::event!(
                             Smtp(SmtpEvent::PipeError),
-                            SessionId = self.data.session_id,
+                            SpanId = self.data.session_id,
                             Reason = err.to_string(),
                         );
                     }
@@ -716,7 +714,7 @@ impl<T: SessionStream> Session<T> {
                     }
                     Err(err) => {
                         trc::error!(trc::Event::from(err)
-                            .session_id(self.data.session_id)
+                            .span_id(self.data.session_id)
                             .details("Failed to DKIM sign message"));
                     }
                 }
@@ -762,7 +760,15 @@ impl<T: SessionStream> Session<T> {
                 });
 
             // Queue message
-            if message.queue(Some(&headers), raw_message, &self.core).await {
+            if message
+                .queue(
+                    Some(&headers),
+                    raw_message,
+                    self.data.session_id,
+                    &self.core,
+                )
+                .await
+            {
                 // Send webhook event
                 if let Some(event) = webhook_event {
                     self.core
@@ -784,7 +790,7 @@ impl<T: SessionStream> Session<T> {
         } else {
             trc::event!(
                 Smtp(SmtpEvent::QuotaExceeded),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
             );
 
             self.send_failure_webhook(WebhookMessageFailure::QuotaExceeded)
@@ -950,7 +956,7 @@ impl<T: SessionStream> Session<T> {
             } else {
                 trc::event!(
                     Smtp(SmtpEvent::TooManyMessages),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                 );
 
                 self.write(b"451 4.4.5 Maximum number of messages per session exceeded.\r\n")

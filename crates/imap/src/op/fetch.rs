@@ -280,11 +280,13 @@ impl<T: SessionStream> SessionData<T> {
                 (email.inner, keywords)
             } else {
                 trc::event!(
-                    event = "not-found",
-                    account_id = account_id,
-                    collection = ?Collection::Email,
-                    document_id = id,
-                    "Message metadata not found");
+                    Store(trc::StoreEvent::NotFound),
+                    AccountId = account_id,
+                    DocumentId = id,
+                    Collection = Collection::Email,
+                    Details = "Message metadata not found.",
+                    CausedBy = trc::location!(),
+                );
                 continue;
             };
 
@@ -299,12 +301,16 @@ impl<T: SessionStream> SessionData<T> {
                 {
                     Some(raw_message) => raw_message,
                     None => {
-                        trc::event!(event = "not-found",
-                        account_id = account_id,
-                        collection = ?Collection::Email,
-                        document_id = id,
-                        blob_id = ?email.blob_hash,
-                        "Blob not found");
+                        trc::event!(
+                            Store(trc::StoreEvent::NotFound),
+                            AccountId = account_id,
+                            DocumentId = id,
+                            Collection = Collection::Email,
+                            BlobId = email.blob_hash.to_hex(),
+                            Details = "Blob not found.",
+                            CausedBy = trc::location!(),
+                        );
+
                         continue;
                     }
                 }

@@ -12,14 +12,14 @@ use std::{
 use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::{
     body::{Bytes, Frame},
-    header, StatusCode,
+    StatusCode,
 };
 use jmap_proto::types::type_state::DataType;
 use utils::map::bitmap::Bitmap;
 
 use crate::{auth::AccessToken, JMAP, LONG_SLUMBER};
 
-use super::{HttpRequest, HttpResponse, StateChangeResponse};
+use super::{HttpRequest, HttpResponse, HttpResponseBody, StateChangeResponse};
 
 struct Ping {
     interval: Duration,
@@ -96,11 +96,12 @@ impl JMAP {
             .subscribe_state_manager(access_token.primary_id(), types)
             .await?;
 
-        Ok(hyper::Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, "text/event-stream")
-            .header(header::CACHE_CONTROL, "no-store")
-            .body(BoxBody::new(StreamBody::new(async_stream::stream! {
+        Ok(HttpResponse {
+            status: StatusCode::OK,
+            content_type: "text/event-stream".into(),
+            content_disposition: "".into(),
+            cache_control: "no-store".into(),
+            body: HttpResponseBody::Stream(BoxBody::new(StreamBody::new(async_stream::stream! {
                 let mut last_message = Instant::now() - throttle;
                 let mut timeout =
                     ping.as_ref().map(|p| p.interval).unwrap_or(LONG_SLUMBER);
@@ -152,7 +153,7 @@ impl JMAP {
                         LONG_SLUMBER
                     };
                 }
-            })))
-            .unwrap())
+            }))),
+        })
     }
 }

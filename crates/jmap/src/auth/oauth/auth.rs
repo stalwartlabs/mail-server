@@ -146,9 +146,10 @@ impl JMAP {
         &self,
         req: &mut HttpRequest,
         base_url: impl AsRef<str>,
+        session_id: u64,
     ) -> trc::Result<HttpResponse> {
         // Parse form
-        let client_id = FormData::from_request(req, MAX_POST_LEN)
+        let client_id = FormData::from_request(req, MAX_POST_LEN, session_id)
             .await?
             .remove("client_id")
             .filter(|client_id| client_id.len() < CLIENT_ID_MAX_LEN)

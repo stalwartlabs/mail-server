@@ -25,12 +25,12 @@ pub struct Event {
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 #[repr(usize)]
 pub enum Level {
-    Disable,
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
+    Disable = 0,
+    Trace = 1,
+    Debug = 2,
+    Info = 3,
+    Warn = 4,
+    Error = 5,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -45,9 +45,9 @@ pub enum Value {
     Bytes(Vec<u8>),
     Bool(bool),
     Ipv4(Ipv4Addr),
-    Ipv6(Box<Ipv6Addr>),
+    Ipv6(Ipv6Addr),
     Protocol(Protocol),
-    Event(Box<Event>),
+    Event(Event),
     Array(Vec<Value>),
     Level(Level),
     #[default]
@@ -81,7 +81,8 @@ pub enum Key {
     DocumentId,
     Collection,
     AccountId,
-    SessionId,
+    SpanId,
+    ParentSpanId,
     MessageId,
     MailboxId,
     ChangeId,
@@ -121,6 +122,22 @@ pub enum Key {
     Domain,
     Policy,
     Elapsed,
+    RangeFrom,
+    RangeTo,
+    DmarcPass,
+    DmarcQuarantine,
+    DmarcReject,
+    DmarcNone,
+    DkimPass,
+    DkimFail,
+    DkimNone,
+    SpfPass,
+    SpfFail,
+    SpfNone,
+    PolicyType,
+    TotalSuccesses,
+    TotalFailures,
+    Date,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -149,7 +166,6 @@ pub enum EventType {
     Dane(DaneEvent),
     Spf(SpfEvent),
     MailAuth(MailAuthEvent),
-    Session(SessionEvent),
     Tls(TlsEvent),
     Sieve(SieveEvent),
     Spam(SpamEvent),
@@ -159,6 +175,12 @@ pub enum EventType {
     FtsIndex(FtsIndexEvent),
     Milter(MilterEvent),
     MtaHook(MtaHookEvent),
+    Delivery(DeliveryEvent),
+    Queue(QueueEvent),
+    TlsRpt(TlsRptEvent),
+    MtaSts(MtaStsEvent),
+    IncomingReport(IncomingReportEvent),
+    OutgoingReport(OutgoingReportEvent),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -277,12 +299,113 @@ pub enum SmtpEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DeliveryEvent {
+    AttemptStart,
+    AttemptEnd,
+    Completed,
+    Failed,
+    AttemptCount,
+    MxLookupFailed,
+    IpLookupFailed,
+    NullMX,
+    Connect,
+    ConnectError,
+    MissingOutboundHostname,
+    GreetingFailed,
+    EhloRejected,
+    AuthFailed,
+    MailFromRejected,
+    Delivered,
+    RcptToRejected,
+    RcptToFailed,
+    MessageRejected,
+    StartTls,
+    StartTlsUnavailable,
+    StartTlsError,
+    StartTlsDisabled,
+    ImplicitTlsError,
+    TooManyConcurrent,
+    DoubleBounce,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum QueueEvent {
+    Scheduled,
+    Rescheduled,
+    LockBusy,
+    Locked,
+    BlobNotFound,
+    RateLimitExceeded,
+    ConcurrencyLimitExceeded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IncomingReportEvent {
+    DmarcReport,
+    DmarcReportWithWarnings,
+    TlsReport,
+    TlsReportWithWarnings,
+    AbuseReport,
+    AuthFailureReport,
+    FraudReport,
+    NotSpamReport,
+    VirusReport,
+    OtherReport,
+    MessageParseFailed,
+    DmarcParseFailed,
+    TlsRpcParseFailed,
+    ArfParseFailed,
+    DecompressError,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OutgoingReportEvent {
+    SpfReport,
+    SpfRateLimited,
+    DkimReport,
+    DkimRateLimited,
+    DmarcReport,
+    DmarcRateLimited,
+    DmarcAggregateReport,
+    TlsAggregate,
+    HttpSubmission,
+    UnauthorizedReportingAddress,
+    ReportingAddressValidationError,
+    NotFound,
+    SubmissionError,
+    NoRecipientsFound,
+    LockBusy,
+    LockDeleted,
+    Locked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MtaStsEvent {
+    PolicyFetch,
+    PolicyNotFound,
+    PolicyFetchError,
+    InvalidPolicy,
+    NotAuthorized,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TlsRptEvent {
+    RecordFetch,
+    RecordFetchError,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DaneEvent {
     AuthenticationSuccess,
     AuthenticationFailure,
     NoCertificatesFound,
     CertificateParseError,
     TlsaRecordMatch,
+    TlsaRecordFetch,
+    TlsaRecordFetchError,
+    TlsaRecordNotFound,
+    TlsaRecordNotDnssecSigned,
+    TlsaRecordInvalid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -313,12 +436,6 @@ pub enum MtaHookEvent {
     ActionReject,
     ActionQuarantine,
     Error,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SessionEvent {
-    Start,
-    Stop,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -368,6 +485,8 @@ pub enum TlsEvent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NetworkEvent {
+    ConnectionStart,
+    ConnectionStop,
     ListenStart,
     ListenStop,
     ListenError,

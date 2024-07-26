@@ -18,6 +18,7 @@ use std::{
     time::Instant,
 };
 use tokio::sync::mpsc;
+use trc::ClusterEvent;
 
 use crate::JmapInstance;
 
@@ -127,7 +128,8 @@ impl Gossiper {
             trc::event!(
                 Cluster(ClusterEvent::Error),
                 RemoteIp = dest,
-                Reason = "Failed to send gossip message"
+                Details = "Failed to send gossip message",
+                Reason = err.to_string()
             );
         };
     }

@@ -78,14 +78,14 @@ async fn lmtp_directory() {
 
     for (item, expected) in &tests {
         let result: LookupResult = match item {
-            Item::IsAccount(v) => core.rcpt(&handle, v).await.unwrap().into(),
+            Item::IsAccount(v) => core.rcpt(&handle, v, 0).await.unwrap().into(),
             Item::Authenticate(v) => handle
                 .query(QueryBy::Credentials(v), true)
                 .await
                 .unwrap()
                 .is_some()
                 .into(),
-            Item::Verify(v) => match core.vrfy(&handle, v).await {
+            Item::Verify(v) => match core.vrfy(&handle, v, 0).await {
                 Ok(v) => v.into(),
                 Err(e) => {
                     if e.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
@@ -95,7 +95,7 @@ async fn lmtp_directory() {
                     }
                 }
             },
-            Item::Expand(v) => match core.expn(&handle, v).await {
+            Item::Expand(v) => match core.expn(&handle, v, 0).await {
                 Ok(v) => v.into(),
                 Err(e) => {
                     if e.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
@@ -122,14 +122,14 @@ async fn lmtp_directory() {
         requests.push((
             tokio::spawn(async move {
                 let result: LookupResult = match &item {
-                    Item::IsAccount(v) => core.rcpt(&handle, v).await.unwrap().into(),
+                    Item::IsAccount(v) => core.rcpt(&handle, v, 0).await.unwrap().into(),
                     Item::Authenticate(v) => handle
                         .query(QueryBy::Credentials(v), true)
                         .await
                         .unwrap()
                         .is_some()
                         .into(),
-                    Item::Verify(v) => match core.vrfy(&handle, v).await {
+                    Item::Verify(v) => match core.vrfy(&handle, v, 0).await {
                         Ok(v) => v.into(),
                         Err(e) => {
                             if e.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
@@ -139,7 +139,7 @@ async fn lmtp_directory() {
                             }
                         }
                     },
-                    Item::Expand(v) => match core.expn(&handle, v).await {
+                    Item::Expand(v) => match core.expn(&handle, v, 0).await {
                         Ok(v) => v.into(),
                         Err(e) => {
                             if e.matches(trc::EventType::Store(trc::StoreEvent::NotSupported)) {
@@ -182,7 +182,7 @@ async fn lmtp_directory() {
             requests.push((
                 tokio::spawn(async move {
                     let result: LookupResult = match &item {
-                        Item::IsAccount(v) => core.rcpt(&handle, v).await.unwrap().into(),
+                        Item::IsAccount(v) => core.rcpt(&handle, v, 0).await.unwrap().into(),
                         _ => unreachable!(),
                     };
 

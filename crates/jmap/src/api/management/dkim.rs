@@ -236,7 +236,7 @@ pub fn obtain_dkim_public_key(algo: Algorithm, pk: &str) -> trc::Result<String> 
                         base64_encode(&pk.public_key()).unwrap_or_default(),
                     )
                     .unwrap_or_default()),
-                    Err(err) => manage::error(details, err.to_string().into()),
+                    Err(err) => Err(manage::error("Crypto error", err.to_string().into())),
                 }
             }
         },

@@ -75,10 +75,10 @@ impl<T: SessionStream> SessionData<T> {
                     trc::event!(
                         Store(trc::StoreEvent::UnexpectedError),
                         AccountId = mailbox.account_id,
-                        Collection = Collection::Mailbox as u8,
+                        Collection = Collection::Mailbox,
                         MailboxId = mailbox.mailbox_id,
                         MessageId = message_id,
-                        SessionId = self.session_id,
+                        SpanId = self.session_id,
                         Details = "Duplicate IMAP UID"
                     );
                 }

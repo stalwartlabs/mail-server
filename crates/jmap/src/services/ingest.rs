@@ -31,7 +31,7 @@ impl JMAP {
                 trc::event!(
                     Store(trc::StoreEvent::IngestError),
                     Reason = "Blob not found.",
-                    SessionId = message.session_id,
+                    SpanId = message.session_id,
                 );
 
                 return (0..message.recipients.len())
@@ -43,7 +43,7 @@ impl JMAP {
             Err(err) => {
                 trc::error!(err
                     .details("Failed to fetch message blob.")
-                    .session_id(message.session_id));
+                    .span_id(message.session_id));
 
                 return (0..message.recipients.len())
                     .map(|_| DeliveryResult::TemporaryFailure {
@@ -72,7 +72,7 @@ impl JMAP {
                     trc::error!(err
                         .details("Failed to lookup recipient.")
                         .ctx(trc::Key::To, rcpt.to_string())
-                        .session_id(message.session_id));
+                        .span_id(message.session_id));
                     recipients.push(vec![]);
                 }
             }
@@ -88,6 +88,7 @@ impl JMAP {
                         &message.sender_address,
                         rcpt,
                         *uid,
+                        message.session_id,
                         active_script,
                     )
                     .await
@@ -120,6 +121,7 @@ impl JMAP {
                         received_at: None,
                         source: IngestSource::Smtp,
                         encrypt: self.core.jmap.encrypt,
+                        session_id: message.session_id,
                     })
                     .await
                 }
@@ -127,7 +129,7 @@ impl JMAP {
                     trc::error!(err
                         .details("Failed to ingest message.")
                         .ctx(trc::Key::To, rcpt.to_string())
-                        .session_id(message.session_id));
+                        .span_id(message.session_id));
 
                     *status = DeliveryResult::TemporaryFailure {
                         reason: "Transient server failure.".into(),
@@ -150,7 +152,7 @@ impl JMAP {
                         .await;
                     }
                 }
-                Err(mut err) => {
+                Err(err) => {
                     match err.as_ref() {
                         trc::EventType::Limit(trc::LimitEvent::Quota) => {
                             *status = DeliveryResult::TemporaryFailure {
@@ -169,7 +171,8 @@ impl JMAP {
                                 reason: err
                                     .value_as_str(trc::Key::Reason)
                                     .unwrap_or_default()
-                                    .to_string(),
+                                    .to_string()
+                                    .into(),
                             }
                         }
                         _ => {
@@ -181,7 +184,7 @@ impl JMAP {
 
                     trc::error!(err
                         .ctx(trc::Key::To, rcpt.to_string())
-                        .session_id(message.session_id));
+                        .span_id(message.session_id));
                 }
             }
         }

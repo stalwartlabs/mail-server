@@ -183,7 +183,7 @@ impl<T: SessionStream> Session<T> {
                     trc::event!(
                         Auth(trc::AuthEvent::Success),
                         Name = self.data.authenticated_as.clone(),
-                        SessionId = self.data.session_id,
+                        SpanId = self.data.session_id,
                         Protocol = trc::Protocol::Smtp,
                     );
 
@@ -198,10 +198,10 @@ impl<T: SessionStream> Session<T> {
                     return Ok(false);
                 }
                 Err(err) => {
-                    let reason = err.as_ref().clone();
+                    let reason = *err.as_ref();
 
                     trc::error!(err
-                        .session_id(self.data.session_id)
+                        .span_id(self.data.session_id)
                         .protocol(trc::Protocol::Smtp));
 
                     match reason {
@@ -227,7 +227,7 @@ impl<T: SessionStream> Session<T> {
         } else {
             trc::event!(
                 Smtp(SmtpEvent::MissingAuthDirectory),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
             );
         }
         self.write(b"454 4.7.0 Temporary authentication failure\r\n")
@@ -245,7 +245,7 @@ impl<T: SessionStream> Session<T> {
         } else {
             trc::event!(
                 Auth(AuthEvent::TooManyAttempts),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
             );
 
             self.write(b"421 4.3.0 Too many authentication errors, disconnecting.\r\n")

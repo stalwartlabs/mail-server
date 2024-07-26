@@ -9,7 +9,6 @@ use std::{
     collections::hash_map::Entry,
     io::{Cursor, Read},
     sync::Arc,
-    time::SystemTime,
 };
 
 use ahash::AHashMap;
@@ -25,6 +24,7 @@ use store::{
     write::{now, BatchBuilder, Bincode, ReportClass, ValueClass},
     Serialize,
 };
+use trc::IncomingReportEvent;
 
 use crate::core::SMTP;
 
@@ -55,13 +55,17 @@ pub struct IncomingReport<T> {
 }
 
 impl SMTP {
-    pub fn analyze_report(&self, message: Arc<Vec<u8>>) {
+    pub fn analyze_report(&self, message: Arc<Vec<u8>>, session_id: u64) {
         let core = self.clone();
         tokio::spawn(async move {
             let message = if let Some(message) = MessageParser::default().parse(message.as_ref()) {
                 message
             } else {
-                trc::event!(context = "report", "Failed to parse message.");
+                trc::event!(
+                    IncomingReport(IncomingReportEvent::MessageParseFailed),
+                    SpanId = session_id
+                );
+
                 return;
             };
             let from = message
@@ -163,11 +167,13 @@ impl SMTP {
                         let mut buf = Vec::new();
                         if let Err(err) = file.read_to_end(&mut buf) {
                             trc::event!(
-                                context = "report",
-                                from = from,
-                                "Failed to decompress report: {}",
-                                err
+                                IncomingReport(IncomingReportEvent::DecompressError),
+                                SpanId = session_id,
+                                From = from.to_string(),
+                                Reason = err.to_string(),
+                                CausedBy = trc::location!()
                             );
+
                             continue;
                         }
                         Cow::Owned(buf)
@@ -177,11 +183,13 @@ impl SMTP {
                             Ok(archive) => archive,
                             Err(err) => {
                                 trc::event!(
-                                    context = "report",
-                                    from = from,
-                                    "Failed to decompress report: {}",
-                                    err
+                                    IncomingReport(IncomingReportEvent::DecompressError),
+                                    SpanId = session_id,
+                                    From = from.to_string(),
+                                    Reason = err.to_string(),
+                                    CausedBy = trc::location!()
                                 );
+
                                 continue;
                             }
                         };
@@ -192,20 +200,22 @@ impl SMTP {
                                     buf = Vec::with_capacity(file.compressed_size() as usize);
                                     if let Err(err) = file.read_to_end(&mut buf) {
                                         trc::event!(
-                                            context = "report",
-                                            from = from,
-                                            "Failed to decompress report: {}",
-                                            err
+                                            IncomingReport(IncomingReportEvent::DecompressError),
+                                            SpanId = session_id,
+                                            From = from.to_string(),
+                                            Reason = err.to_string(),
+                                            CausedBy = trc::location!()
                                         );
                                     }
                                     break;
                                 }
                                 Err(err) => {
                                     trc::event!(
-                                        context = "report",
-                                        from = from,
-                                        "Failed to decompress report: {}",
-                                        err
+                                        IncomingReport(IncomingReportEvent::DecompressError),
+                                        SpanId = session_id,
+                                        From = from.to_string(),
+                                        Reason = err.to_string(),
+                                        CausedBy = trc::location!()
                                     );
                                 }
                             }
@@ -237,11 +247,13 @@ impl SMTP {
                         }
                         Err(err) => {
                             trc::event!(
-                                context = "report",
-                                from = from,
-                                "Failed to parse DMARC report: {}",
-                                err
+                                IncomingReport(IncomingReportEvent::DmarcParseFailed),
+                                SpanId = session_id,
+                                From = from.to_string(),
+                                Reason = err,
+                                CausedBy = trc::location!()
                             );
+
                             continue;
                         }
                     },
@@ -268,11 +280,13 @@ impl SMTP {
                         }
                         Err(err) => {
                             trc::event!(
-                                context = "report",
-                                from = from,
-                                "Failed to parse TLS report: {:?}",
-                                err
+                                IncomingReport(IncomingReportEvent::TlsRpcParseFailed),
+                                SpanId = session_id,
+                                From = from.to_string(),
+                                Reason = format!("{err:?}"),
+                                CausedBy = trc::location!()
                             );
+
                             continue;
                         }
                     },
@@ -298,10 +312,12 @@ impl SMTP {
                         }
                         None => {
                             trc::event!(
-                                context = "report",
-                                from = from,
-                                "Failed to parse Auth Failure report"
+                                IncomingReport(IncomingReportEvent::ArfParseFailed),
+                                SpanId = session_id,
+                                From = from.to_string(),
+                                CausedBy = trc::location!()
                             );
+
                             continue;
                         }
                     },
@@ -353,12 +369,10 @@ impl SMTP {
                     }
                     let batch = batch.build();
                     if let Err(err) = core.core.storage.data.write(batch).await {
-                        trc::event!(
-                            context = "report",
-                            event = "error",
-                            "Failed to write incoming report: {}",
-                            err
-                        );
+                        trc::error!(err
+                            .span_id(session_id)
+                            .caused_by(trc::location!())
+                            .details("Failed to write report"));
                     }
                 }
                 return;
@@ -426,50 +440,30 @@ impl LogReport for Report {
             }
         }
 
-        let range_from = DateTime::from_timestamp(self.date_range_begin() as i64).to_rfc3339();
-        let range_to = DateTime::from_timestamp(self.date_range_end() as i64).to_rfc3339();
-
-        if (dmarc_reject + dmarc_quarantine + dkim_fail + spf_fail) > 0 {
-            trc::event!(
-                context = "dmarc",
-                event = "analyze",
-                range_from = range_from,
-                range_to = range_to,
-                domain = self.domain(),
-                report_email = self.email(),
-                report_id = self.report_id(),
-                dmarc_pass = dmarc_pass,
-                dmarc_quarantine = dmarc_quarantine,
-                dmarc_reject = dmarc_reject,
-                dmarc_none = dmarc_none,
-                dkim_pass = dkim_pass,
-                dkim_fail = dkim_fail,
-                dkim_none = dkim_none,
-                spf_pass = spf_pass,
-                spf_fail = spf_fail,
-                spf_none = spf_none,
-            );
-        } else {
-            trc::event!(
-                context = "dmarc",
-                event = "analyze",
-                range_from = range_from,
-                range_to = range_to,
-                domain = self.domain(),
-                report_email = self.email(),
-                report_id = self.report_id(),
-                dmarc_pass = dmarc_pass,
-                dmarc_quarantine = dmarc_quarantine,
-                dmarc_reject = dmarc_reject,
-                dmarc_none = dmarc_none,
-                dkim_pass = dkim_pass,
-                dkim_fail = dkim_fail,
-                dkim_none = dkim_none,
-                spf_pass = spf_pass,
-                spf_fail = spf_fail,
-                spf_none = spf_none,
-            );
-        }
+        trc::event!(
+            IncomingReport(
+                if (dmarc_reject + dmarc_quarantine + dkim_fail + spf_fail) > 0 {
+                    IncomingReportEvent::DmarcReportWithWarnings
+                } else {
+                    IncomingReportEvent::DmarcReport
+                }
+            ),
+            RangeFrom = trc::Value::Timestamp(self.date_range_begin()),
+            RangeTo = trc::Value::Timestamp(self.date_range_end()),
+            Domain = self.domain().to_string(),
+            From = self.email().to_string(),
+            Id = self.report_id().to_string(),
+            DmarcPass = dmarc_pass,
+            DmarcQuarantine = dmarc_quarantine,
+            DmarcReject = dmarc_reject,
+            DmarcNone = dmarc_none,
+            DkimPass = dkim_pass,
+            DkimFail = dkim_fail,
+            DkimNone = dkim_none,
+            SpfPass = spf_pass,
+            SpfFail = spf_fail,
+            SpfNone = spf_none,
+        );
     }
 
     fn webhook_payload(&self) -> WebhookPayload {
@@ -564,35 +558,23 @@ impl LogReport for TlsReport {
                 }
             }
 
-            if policy.summary.total_failure > 0 {
-                trc::event!(
-                    context = "tlsrpt",
-                    event = "analyze",
-                    range_from = self.date_range.start_datetime.to_rfc3339(),
-                    range_to = self.date_range.end_datetime.to_rfc3339(),
-                    domain = policy.policy.policy_domain,
-                    report_contact = self.contact_info.as_deref().unwrap_or("unknown"),
-                    report_id = self.report_id,
-                    policy_type = ?policy.policy.policy_type,
-                    total_success = policy.summary.total_success,
-                    total_failures = policy.summary.total_failure,
-                    details = ?details,
-                );
-            } else {
-                trc::event!(
-                    context = "tlsrpt",
-                    event = "analyze",
-                    range_from = self.date_range.start_datetime.to_rfc3339(),
-                    range_to = self.date_range.end_datetime.to_rfc3339(),
-                    domain = policy.policy.policy_domain,
-                    report_contact = self.contact_info.as_deref().unwrap_or("unknown"),
-                    report_id = self.report_id,
-                    policy_type = ?policy.policy.policy_type,
-                    total_success = policy.summary.total_success,
-                    total_failures = policy.summary.total_failure,
-                    details = ?details,
-                );
-            }
+            trc::event!(
+                IncomingReport(if policy.summary.total_failure > 0 {
+                    IncomingReportEvent::TlsReportWithWarnings
+                } else {
+                    IncomingReportEvent::TlsReport
+                }),
+                RangeFrom =
+                    trc::Value::Timestamp(self.date_range.start_datetime.to_timestamp() as u64),
+                RangeTo = trc::Value::Timestamp(self.date_range.end_datetime.to_timestamp() as u64),
+                Domain = policy.policy.policy_domain.clone(),
+                From = self.contact_info.as_deref().unwrap_or_default().to_string(),
+                Id = self.report_id.clone(),
+                PolicyType = format!("{:?}", policy.policy.policy_type),
+                TotalSuccesses = policy.summary.total_success,
+                TotalFailures = policy.summary.total_failure,
+                Details = format!("{details:?}"),
+            );
         }
     }
 
@@ -632,28 +614,54 @@ impl LogReport for TlsReport {
 
 impl LogReport for Feedback<'_> {
     fn log(&self) {
+        let rt = match self.feedback_type() {
+            mail_auth::report::FeedbackType::Abuse => IncomingReportEvent::AbuseReport,
+            mail_auth::report::FeedbackType::AuthFailure => IncomingReportEvent::AuthFailureReport,
+            mail_auth::report::FeedbackType::Fraud => IncomingReportEvent::FraudReport,
+            mail_auth::report::FeedbackType::NotSpam => IncomingReportEvent::NotSpamReport,
+            mail_auth::report::FeedbackType::Other => IncomingReportEvent::OtherReport,
+            mail_auth::report::FeedbackType::Virus => IncomingReportEvent::VirusReport,
+        };
+
+        /*
+
+           user_agent = self.user_agent().unwrap_or_default(),
+           auth_failure = ?self.auth_failure(),
+           dkim_domain = self.dkim_domain().unwrap_or_default(),
+           dkim_identity = self.dkim_identity().unwrap_or_default(),
+           dkim_selector = self.dkim_selector().unwrap_or_default(),
+           identity_alignment = ?self.identity_alignment(),
+
+        */
+
         trc::event!(
-            context = "arf",
-            event = "analyze",
-            feedback_type = ?self.feedback_type(),
-            arrival_date = DateTime::from_timestamp(self.arrival_date().unwrap_or_else(|| {
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .map_or(0, |d| d.as_secs()) as i64
-            })).to_rfc3339(),
-            authentication_results = ?self.authentication_results(),
-            incidents = self.incidents(),
-            reported_domain = ?self.reported_domain(),
-            reported_uri = ?self.reported_uri(),
-            reporting_mta = self.reporting_mta().unwrap_or_default(),
-            source_ip = ?self.source_ip(),
-            user_agent = self.user_agent().unwrap_or_default(),
-            auth_failure = ?self.auth_failure(),
-            delivery_result = ?self.delivery_result(),
-            dkim_domain = self.dkim_domain().unwrap_or_default(),
-            dkim_identity = self.dkim_identity().unwrap_or_default(),
-            dkim_selector = self.dkim_selector().unwrap_or_default(),
-            identity_alignment = ?self.identity_alignment(),
+            IncomingReport(rt),
+            Date = trc::Value::Timestamp(
+                self.arrival_date()
+                    .map(|d| d as u64)
+                    .unwrap_or_else(|| { now() })
+            ),
+            Domain = self
+                .reported_domain()
+                .iter()
+                .map(|d| trc::Value::String(d.to_string()))
+                .collect::<Vec<_>>(),
+            Hostname = self
+                .reporting_mta()
+                .map(|d| trc::Value::String(d.to_string())),
+            Url = self
+                .reported_uri()
+                .iter()
+                .map(|d| trc::Value::String(d.to_string()))
+                .collect::<Vec<_>>(),
+            RemoteIp = self.source_ip(),
+            Count = self.incidents(),
+            Result = format!("{:?}", self.delivery_result()),
+            Details = self
+                .authentication_results()
+                .iter()
+                .map(|d| trc::Value::String(d.to_string()))
+                .collect::<Vec<_>>(),
         );
     }
 

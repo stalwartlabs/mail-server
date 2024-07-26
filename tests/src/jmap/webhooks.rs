@@ -115,7 +115,7 @@ pub fn spawn_mock_webhook_endpoint() -> Arc<MockWebhookEndpoint> {
                                     async move {
                                         // Verify HMAC signature
                                         let key = hmac::Key::new(hmac::HMAC_SHA256, "ovos-moles".as_bytes());
-                                        let body = fetch_body(&mut req, 1024 * 1024).await.unwrap();
+                                        let body = fetch_body(&mut req, 1024 * 1024, 0).await.unwrap();
                                         let tag = STANDARD.decode(req.headers().get("X-Signature").unwrap().to_str().unwrap()).unwrap();
                                         hmac::verify(&key, &body, &tag).expect("Invalid signature");
 
@@ -134,13 +134,13 @@ pub fn spawn_mock_webhook_endpoint() -> Arc<MockWebhookEndpoint> {
                                                     content_type: "application/json",
                                                     contents: "[]".to_string().into_bytes(),
                                                 }
-                                                .into_http_response(),
+                                                .into_http_response().build(),
                                             )
                                         } else {
                                             //let c = print!("rejected webhook: {}", serde_json::to_string_pretty(&request).unwrap());
 
                                             Ok::<_, hyper::Error>(
-                                                RequestError::not_found().into_http_response()
+                                                RequestError::not_found().into_http_response().build()
                                             )
                                         }
 

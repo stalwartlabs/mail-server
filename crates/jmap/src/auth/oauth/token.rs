@@ -36,7 +36,7 @@ impl JMAP {
         session_id: u64,
     ) -> trc::Result<HttpResponse> {
         // Parse form
-        let params = FormData::from_request(req, MAX_POST_LEN).await?;
+        let params = FormData::from_request(req, MAX_POST_LEN, session_id).await?;
         let grant_type = params.get("grant_type").unwrap_or_default();
 
         let mut response = TokenResponse::error(ErrorType::InvalidGrant);
@@ -158,7 +158,7 @@ impl JMAP {
                         trc::error!(err
                             .caused_by(trc::location!())
                             .details("Failed to validate refresh token")
-                            .session_id(session_id));
+                            .span_id(session_id));
                         TokenResponse::error(ErrorType::InvalidGrant)
                     }
                 };

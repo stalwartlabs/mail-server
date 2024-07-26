@@ -11,7 +11,10 @@ use base64::{
     Engine,
 };
 use common::{
-    config::server::{ServerProtocol, Servers},
+    config::{
+        server::{ServerProtocol, Servers},
+        tracers::Tracer,
+    },
     manager::config::{ConfigManager, Patterns},
     webhooks::manager::spawn_webhook_manager,
     Core, Ipc, IPC_CHANNEL_BUFFER,
@@ -33,6 +36,7 @@ use store::{
     IterateParams, Stores, SUBSPACE_PROPERTY,
 };
 use tokio::sync::{mpsc, watch};
+use trc::collector::Collector;
 use utils::config::Config;
 use webhooks::{spawn_mock_webhook_endpoint, MockWebhookEndpoint};
 
@@ -286,20 +290,14 @@ throttle = "100ms"
 #[tokio::test(flavor = "multi_thread")]
 pub async fn jmap_tests() {
     if let Ok(level) = std::env::var("LOG") {
-        let todo = "implement";
-
-        /*tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::builder()
-                        .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level},common={level}"),
-                        )
-                        .unwrap(),
-                )
-                .finish(),
-        )
-        .unwrap();*/
+        let level = level.parse().unwrap();
+        Collector::set_level(level);
+        Tracer::Stdout {
+            id: "stdout".to_string(),
+            level,
+            ansi: true,
+        }
+        .spawn();
     }
 
     let delete = true;
@@ -346,20 +344,14 @@ pub async fn jmap_tests() {
 #[ignore]
 pub async fn jmap_stress_tests() {
     if let Ok(level) = std::env::var("LOG") {
-        let todo = "implement";
-
-        /*tracing::subscriber::set_global_default(
-            tracing_subscriber::FmtSubscriber::builder()
-                .with_env_filter(
-                    tracing_subscriber::EnvFilter::builder()
-                        .parse(
-                            format!("smtp={level},imap={level},jmap={level},store={level},utils={level},directory={level},common={level}"),
-                        )
-                        .unwrap(),
-                )
-                .finish(),
-        )
-        .unwrap();*/
+        let level = level.parse().unwrap();
+        Collector::set_level(level);
+        Tracer::Stdout {
+            id: "stdout".to_string(),
+            level,
+            ansi: true,
+        }
+        .spawn();
     }
 
     let params = init_jmap_tests(

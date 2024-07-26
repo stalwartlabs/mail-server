@@ -22,7 +22,10 @@ use trc::AddContext;
 use utils::{url_params::UrlParams, BlobHash};
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
+    api::{
+        http::{HttpSessionData, ToHttpResponse},
+        HttpRequest, HttpResponse, JsonResponse,
+    },
     email::ingest::{IngestEmail, IngestSource},
     mailbox::INBOX_ID,
     JMAP,
@@ -54,9 +57,13 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
+        session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         match path.get(1).copied().unwrap_or_default() {
-            "undelete" => self.handle_undelete_api_request(req, path, body).await,
+            "undelete" => {
+                self.handle_undelete_api_request(req, path, body, session)
+                    .await
+            }
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
@@ -66,6 +73,7 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
+        session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         match (path.get(2).copied(), req.method()) {
             (Some(account_name), &Method::GET) => {
@@ -183,6 +191,7 @@ impl JMAP {
                                             received_at: (request.time as u64).into(),
                                             source: IngestSource::Smtp,
                                             encrypt: false,
+                                            session_id: session.session_id,
                                         })
                                         .await
                                     {

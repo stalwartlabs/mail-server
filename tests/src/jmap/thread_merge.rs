@@ -249,6 +249,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                         received_at: None,
                         source: IngestSource::Smtp,
                         encrypt: false,
+                        session_id: 0,
                     })
                     .await
                 {

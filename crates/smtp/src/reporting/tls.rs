@@ -11,7 +11,6 @@ use common::{
     config::smtp::{
         report::AggregateFrequency,
         resolver::{Mode, MxPattern},
-        session,
     },
     USER_AGENT,
 };
@@ -30,6 +29,7 @@ use store::{
     write::{now, BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, Serialize, ValueKey,
 };
+use trc::OutgoingReportEvent;
 
 use crate::{core::SMTP, queue::RecipientDomain};
 
@@ -58,15 +58,15 @@ impl SMTP {
             .map(|e| (e.domain.as_str(), e.seq_id, e.due))
             .unwrap();
 
-        let span = trc::event_span!(
-            "tls-report",
-            domain = domain_name,
-            range_from = event_from,
-            range_to = event_to,
-        );
+        let session_id = event_from;
 
-        let todo = "generate session id";
-        let session_id = 0;
+        trc::event!(
+            OutgoingReport(OutgoingReportEvent::TlsAggregate),
+            SpanId = session_id,
+            Domain = domain_name.to_string(),
+            RangeFrom = trc::Value::Timestamp(event_from),
+            RangeTo = trc::Value::Timestamp(event_to),
+        );
 
         // Generate report
         let mut rua = Vec::new();
@@ -92,12 +92,19 @@ impl SMTP {
             Ok(Some(report)) => report,
             Ok(None) => {
                 // This should not happen
-                trc::event!(event = "empty-report", "No policies found in report");
+                trc::event!(
+                    OutgoingReport(OutgoingReportEvent::NotFound),
+                    SpanId = session_id,
+                    CausedBy = trc::location!()
+                );
                 self.delete_tls_report(events).await;
                 return;
             }
             Err(err) => {
-                trc::event!(event = "error", "Failed to read TLS report: {}", err);
+                trc::error!(err
+                    .span_id(session_id)
+                    .caused_by(trc::location!())
+                    .details("Failed to read TLS report"));
                 return;
             }
         };
@@ -109,7 +116,13 @@ impl SMTP {
         {
             Ok(report) => report,
             Err(err) => {
-                trc::event!(event = "error", "Failed to compress report: {}", err);
+                trc::event!(
+                    OutgoingReport(OutgoingReportEvent::SubmissionError),
+                    SpanId = session_id,
+                    Reason = err.to_string(),
+                    Details = "Failed to compress report"
+                );
+
                 self.delete_tls_report(events).await;
                 return;
             }
@@ -141,26 +154,32 @@ impl SMTP {
                         {
                             Ok(response) => {
                                 if response.status().is_success() {
-                                    trc::event!(context = "http", event = "success", url = uri,);
+                                    trc::event!(
+                                        OutgoingReport(OutgoingReportEvent::HttpSubmission),
+                                        SpanId = session_id,
+                                        Url = uri.to_string(),
+                                        Status = response.status().as_u16(),
+                                    );
+
                                     self.delete_tls_report(events).await;
                                     return;
                                 } else {
                                     trc::event!(
-
-                                        context = "http",
-                                        event = "invalid-response",
-                                        url = uri,
-                                        status = %response.status()
+                                        OutgoingReport(OutgoingReportEvent::SubmissionError),
+                                        SpanId = session_id,
+                                        Url = uri.to_string(),
+                                        Status = response.status().as_u16(),
+                                        Details = "Invalid HTTP response"
                                     );
                                 }
                             }
                             Err(err) => {
                                 trc::event!(
-
-                                    context = "http",
-                                    event = "error",
-                                    url = uri,
-                                    reason = %err
+                                    OutgoingReport(OutgoingReportEvent::SubmissionError),
+                                    SpanId = session_id,
+                                    Url = uri.to_string(),
+                                    Reason = err.to_string(),
+                                    Details = "HTTP submission error"
                                 );
                             }
                         }
@@ -210,12 +229,19 @@ impl SMTP {
             );
 
             // Send report
-            self.send_report(&from_addr, rcpts.iter(), message, &config.sign, false)
-                .await;
+            self.send_report(
+                &from_addr,
+                rcpts.iter(),
+                message,
+                &config.sign,
+                false,
+                session_id,
+            )
+            .await;
         } else {
             trc::event!(
-                event = "delivery-failed",
-                "No valid recipients found to deliver report to."
+                OutgoingReport(OutgoingReportEvent::NoRecipientsFound),
+                SpanId = session_id,
             );
         }
         self.delete_tls_report(events).await;
@@ -478,12 +504,9 @@ impl SMTP {
         );
 
         if let Err(err) = self.core.storage.data.write(builder.build()).await {
-            trc::event!(
-                context = "report",
-                event = "error",
-                "Failed to write TLS report event: {}",
-                err
-            );
+            trc::error!(err
+                .caused_by(trc::location!())
+                .details("Failed to write TLS report"));
         }
     }
 
@@ -515,12 +538,10 @@ impl SMTP {
                 )
                 .await
             {
-                trc::event!(
-                    context = "report",
-                    event = "error",
-                    "Failed to remove reports: {}",
-                    err
-                );
+                trc::error!(err
+                    .caused_by(trc::location!())
+                    .details("Failed to delete TLS reports"));
+
                 return;
             }
 
@@ -534,12 +555,9 @@ impl SMTP {
         }
 
         if let Err(err) = self.core.storage.data.write(batch.build()).await {
-            trc::event!(
-                context = "report",
-                event = "error",
-                "Failed to remove reports: {}",
-                err
-            );
+            trc::error!(err
+                .caused_by(trc::location!())
+                .details("Failed to delete TLS reports"));
         }
     }
 }

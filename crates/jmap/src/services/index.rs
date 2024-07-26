@@ -117,7 +117,7 @@ impl JMAP {
                             FtsIndex(FtsIndexEvent::BlobNotFound),
                             AccountId = event.account_id,
                             DocumentId = event.document_id,
-                            BlobId = metadata.inner.blob_hash.as_slice().to_vec(),
+                            BlobId = metadata.inner.blob_hash.to_hex(),
                         );
                         continue;
                     };
@@ -189,7 +189,13 @@ impl JMAP {
             }
         }
 
-        if let Err(err) = self.inner.housekeeper_tx.send(Event::IndexDone).await {
+        if self
+            .inner
+            .housekeeper_tx
+            .send(Event::IndexDone)
+            .await
+            .is_err()
+        {
             trc::event!(
                 Server(trc::ServerEvent::ThreadError),
                 Details = "Failed to send event to Housekeeper",

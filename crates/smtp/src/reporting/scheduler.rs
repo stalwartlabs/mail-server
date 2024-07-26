@@ -11,7 +11,7 @@ use mail_auth::dmarc::Dmarc;
 use std::time::{Duration, Instant, SystemTime};
 use store::{
     write::{now, BatchBuilder, QueueClass, ReportEvent, ValueClass},
-    Deserialize, IterateParams, Serialize, ValueKey,
+    Deserialize, IterateParams, Key, Serialize, ValueKey,
 };
 use tokio::sync::mpsc;
 
@@ -142,12 +142,9 @@ async fn next_report_event(core: &Core) -> Vec<QueueClass> {
         .await;
 
     if let Err(err) = result {
-        trc::event!(
-            context = "queue",
-            event = "error",
-            "Failed to read from store: {}",
-            err
-        );
+        trc::error!(err
+            .caused_by(trc::location!())
+            .details("Failed to read from store"));
     }
 
     events
@@ -175,51 +172,44 @@ impl SMTP {
                         Ok(_) => true,
                         Err(err) if err.is_assertion_failure() => {
                             trc::event!(
-                                context = "queue",
-                                event = "locked",
-                                key = ?lock,
-                                "Lock busy: Event already locked."
+                                OutgoingReport(trc::OutgoingReportEvent::LockBusy),
+                                Expires = trc::Value::Timestamp(expiry),
+                                CausedBy = err,
+                                Key = ValueKey::from(ValueClass::Queue(lock)).serialize(0)
                             );
                             false
                         }
                         Err(err) => {
-                            trc::event!(
-                                context = "queue",
-                                event = "error",
-                                "Lock busy: {}",
-                                err
-                            );
+                            trc::error!(err
+                                .caused_by(trc::location!())
+                                .details("Failed to lock report"));
+
                             false
                         }
                     }
                 } else {
                     trc::event!(
-                        context = "queue",
-                        event = "locked",
-                        key = ?lock,
-                        expiry = expiry - now,
-                        "Lock busy: Report already locked."
+                        OutgoingReport(trc::OutgoingReportEvent::Locked),
+                        Expires = trc::Value::Timestamp(expiry),
+                        Key = ValueKey::from(ValueClass::Queue(lock)).serialize(0)
                     );
+
                     false
                 }
             }
             Ok(None) => {
                 trc::event!(
-                    context = "queue",
-                    event = "locked",
-                    key = ?lock,
-                    "Lock busy: Report lock deleted."
+                    OutgoingReport(trc::OutgoingReportEvent::LockDeleted),
+                    Key = ValueKey::from(ValueClass::Queue(lock)).serialize(0)
                 );
+
                 false
             }
             Err(err) => {
-                trc::event!(
-                    context = "queue",
-                    event = "error",
-                    key = ?lock,
-                    "Lock error: {}",
-                    err
-                );
+                trc::error!(err
+                    .caused_by(trc::location!())
+                    .details("Failed to lock report"));
+
                 false
             }
         }

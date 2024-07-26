@@ -200,37 +200,37 @@ async fn sql_directory() {
 
         // Ids by email
         assert_eq!(
-            core.email_to_ids(&handle, "jane@example.org")
+            core.email_to_ids(&handle, "jane@example.org", 0)
                 .await
                 .unwrap(),
             map_account_ids(base_store, vec!["jane"]).await
         );
         assert_eq!(
-            core.email_to_ids(&handle, "info@example.org")
+            core.email_to_ids(&handle, "info@example.org", 0)
                 .await
                 .unwrap(),
             map_account_ids(base_store, vec!["bill", "jane", "john"]).await
         );
         assert_eq!(
-            core.email_to_ids(&handle, "jane+alias@example.org")
+            core.email_to_ids(&handle, "jane+alias@example.org", 0)
                 .await
                 .unwrap(),
             map_account_ids(base_store, vec!["jane"]).await
         );
         assert_eq!(
-            core.email_to_ids(&handle, "info+alias@example.org")
+            core.email_to_ids(&handle, "info+alias@example.org", 0)
                 .await
                 .unwrap(),
             map_account_ids(base_store, vec!["bill", "jane", "john"]).await
         );
         assert_eq!(
-            core.email_to_ids(&handle, "unknown@example.org")
+            core.email_to_ids(&handle, "unknown@example.org", 0)
                 .await
                 .unwrap(),
             Vec::<u32>::new()
         );
         assert_eq!(
-            core.email_to_ids(&handle, "anything@catchall.org")
+            core.email_to_ids(&handle, "anything@catchall.org", 0)
                 .await
                 .unwrap(),
             map_account_ids(base_store, vec!["robert"]).await
@@ -241,41 +241,47 @@ async fn sql_directory() {
         assert!(!handle.is_local_domain("other.org").await.unwrap());
 
         // RCPT TO
-        assert!(core.rcpt(&handle, "jane@example.org").await.unwrap());
-        assert!(core.rcpt(&handle, "info@example.org").await.unwrap());
-        assert!(core.rcpt(&handle, "jane+alias@example.org").await.unwrap());
-        assert!(core.rcpt(&handle, "info+alias@example.org").await.unwrap());
+        assert!(core.rcpt(&handle, "jane@example.org", 0).await.unwrap());
+        assert!(core.rcpt(&handle, "info@example.org", 0).await.unwrap());
         assert!(core
-            .rcpt(&handle, "random_user@catchall.org")
+            .rcpt(&handle, "jane+alias@example.org", 0)
             .await
             .unwrap());
-        assert!(!core.rcpt(&handle, "invalid@example.org").await.unwrap());
+        assert!(core
+            .rcpt(&handle, "info+alias@example.org", 0)
+            .await
+            .unwrap());
+        assert!(core
+            .rcpt(&handle, "random_user@catchall.org", 0)
+            .await
+            .unwrap());
+        assert!(!core.rcpt(&handle, "invalid@example.org", 0).await.unwrap());
 
         // VRFY
         assert_eq!(
-            core.vrfy(&handle, "jane").await.unwrap(),
+            core.vrfy(&handle, "jane", 0).await.unwrap(),
             vec!["jane@example.org".to_string()]
         );
         assert_eq!(
-            core.vrfy(&handle, "john").await.unwrap(),
+            core.vrfy(&handle, "john", 0).await.unwrap(),
             vec!["john@example.org".to_string()]
         );
         assert_eq!(
-            core.vrfy(&handle, "jane+alias@example").await.unwrap(),
+            core.vrfy(&handle, "jane+alias@example", 0).await.unwrap(),
             vec!["jane@example.org".to_string()]
         );
         assert_eq!(
-            core.vrfy(&handle, "info").await.unwrap(),
+            core.vrfy(&handle, "info", 0).await.unwrap(),
             Vec::<String>::new()
         );
         assert_eq!(
-            core.vrfy(&handle, "invalid").await.unwrap(),
+            core.vrfy(&handle, "invalid", 0).await.unwrap(),
             Vec::<String>::new()
         );
 
         // EXPN
         assert_eq!(
-            core.expn(&handle, "info@example.org").await.unwrap(),
+            core.expn(&handle, "info@example.org", 0).await.unwrap(),
             vec![
                 "bill@example.org".to_string(),
                 "jane@example.org".to_string(),
@@ -283,7 +289,7 @@ async fn sql_directory() {
             ]
         );
         assert_eq!(
-            core.expn(&handle, "john@example.org").await.unwrap(),
+            core.expn(&handle, "john@example.org", 0).await.unwrap(),
             Vec::<String>::new()
         );
     }

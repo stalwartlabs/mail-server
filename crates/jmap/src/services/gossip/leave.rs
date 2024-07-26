@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use trc::ClusterEvent;
+
 use crate::services::gossip::State;
 
 use super::request::Request;

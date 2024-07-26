@@ -406,9 +406,9 @@ impl<T: SessionStream> SessionData<T> {
             trc::event!(
                 Store(trc::StoreEvent::NotFound),
                 AccountId = account_id,
-                Collection = Collection::Email as u8,
+                Collection = Collection::Email,
                 MessageId = id,
-                SessionId = self.session_id,
+                SpanId = self.session_id,
                 Details = "Message not found"
             );
 

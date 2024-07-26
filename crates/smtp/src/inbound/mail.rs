@@ -53,7 +53,7 @@ impl<T: SessionStream> Session<T> {
                 } else {
                     SmtpEvent::IprevFail
                 }),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 Domain = self.data.helo_domain.clone(),
                 Result = trc::Event::from(&iprev),
                 Elapsed = time.elapsed(),
@@ -362,7 +362,7 @@ impl<T: SessionStream> Session<T> {
                     } else {
                         SmtpEvent::SpfFromFail
                     }),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                     Domain = self.data.helo_domain.clone(),
                     From = if !mail_from.address.is_empty() {
                         mail_from.address.as_str()
@@ -387,7 +387,7 @@ impl<T: SessionStream> Session<T> {
 
             trc::event!(
                 Smtp(SmtpEvent::MailFrom),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 From = self.data.mail_from.as_ref().unwrap().address_lcase.clone(),
             );
 
@@ -396,7 +396,7 @@ impl<T: SessionStream> Session<T> {
         } else {
             trc::event!(
                 Smtp(SmtpEvent::RateLimitExceeded),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 From = self.data.mail_from.as_ref().unwrap().address_lcase.clone(),
             );
 

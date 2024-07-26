@@ -90,7 +90,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
 
             match event {
                 Event::Stop => {
-                    if let Err(err) = push_tx.send(crate::push::Event::Reset).await {
+                    if push_tx.send(crate::push::Event::Reset).await.is_err() {
                         trc::event!(
                             Server(ServerEvent::ThreadError),
                             Details = "Error sending push reset.",
@@ -209,7 +209,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
 
                                                 tokio::spawn(async move {
                                                     // Timeout after 500ms in case there is a blocked client
-                                                    if let Err(_) = subscriber_tx
+                                                    if subscriber_tx
                                                         .send_timeout(
                                                             StateChange {
                                                                 account_id: state_change.account_id,
@@ -218,6 +218,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                                                             SEND_TIMEOUT,
                                                         )
                                                         .await
+                                                        .is_err()
                                                     {
                                                         trc::event!(
                                                             Server(ServerEvent::ThreadError),
@@ -244,20 +245,20 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                             }
                         }
 
-                        if !push_ids.is_empty() {
-                            if let Err(err) = push_tx
+                        if !push_ids.is_empty()
+                            && push_tx
                                 .send(crate::push::Event::Push {
                                     ids: push_ids,
                                     state_change,
                                 })
                                 .await
-                            {
-                                trc::event!(
-                                    Server(ServerEvent::ThreadError),
-                                    Details = "Error sending push updates.",
-                                    CausedBy = trc::location!()
-                                );
-                            }
+                                .is_err()
+                        {
+                            trc::event!(
+                                Server(ServerEvent::ThreadError),
+                                Details = "Error sending push updates.",
+                                CausedBy = trc::location!()
+                            );
                         }
                     }
                 }
@@ -331,19 +332,19 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                         }
                     }
 
-                    if !push_updates.is_empty() {
-                        if let Err(err) = push_tx
+                    if !push_updates.is_empty()
+                        && push_tx
                             .send(crate::push::Event::Update {
                                 updates: push_updates,
                             })
                             .await
-                        {
-                            trc::event!(
-                                Server(ServerEvent::ThreadError),
-                                Details = "Error sending push updates.",
-                                CausedBy = trc::location!()
-                            );
-                        }
+                            .is_err()
+                    {
+                        trc::event!(
+                            Server(ServerEvent::ThreadError),
+                            Details = "Error sending push updates.",
+                            CausedBy = trc::location!()
+                        );
                     }
                 }
             }
@@ -419,7 +420,7 @@ impl JMAP {
             .await
         {
             Ok(_) => true,
-            Err(err) => {
+            Err(_) => {
                 trc::event!(
                     Server(ServerEvent::ThreadError),
                     Details = "Error sending state change.",
@@ -444,7 +445,7 @@ impl JMAP {
 
         let state_tx = self.inner.state_tx.clone();
         for event in [Event::UpdateSharedAccounts { account_id }, push_subs] {
-            if let Err(err) = state_tx.send(event).await {
+            if state_tx.send(event).await.is_err() {
                 trc::event!(
                     Server(ServerEvent::ThreadError),
                     Details = "Error sending state change.",

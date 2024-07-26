@@ -9,6 +9,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+#[derive(Debug)]
 pub struct SnowflakeIdGenerator {
     epoch: SystemTime,
     node_id: u64,
@@ -20,6 +21,16 @@ const NODE_ID_LEN: u64 = 9;
 
 const SEQUENCE_MASK: u64 = (1 << SEQUENCE_LEN) - 1;
 const NODE_ID_MASK: u64 = (1 << NODE_ID_LEN) - 1;
+
+/*
+
+ID characteristics:
+
+- 43 bits for milliseconds since January 1st, 2022: 2^43 / (1000 * 60 * 60 * 24 * 365) = 278.92 years
+- 9 bits for a node id: 2^9 = 512 nodes
+- 12 bits for a sequence number: 2^12 = 4096 ids per millisecond
+
+*/
 
 impl SnowflakeIdGenerator {
     pub fn new() -> Self {

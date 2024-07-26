@@ -621,13 +621,13 @@ async fn address_mappings() {
         let subaddressing = AddressMapping::parse(&mut config, (test, "subaddressing"));
 
         assert_eq!(
-            subaddressing.to_subaddress(&core, ADDR).await,
+            subaddressing.to_subaddress(&core, ADDR, 0).await,
             config.value_require((test, "expected-sub")).unwrap(),
             "failed subaddress for {test:?}"
         );
 
         assert_eq!(
-            subaddressing.to_subaddress(&core, ADDR_NO_MATCH).await,
+            subaddressing.to_subaddress(&core, ADDR_NO_MATCH, 0).await,
             config
                 .value_require((test, "expected-sub-nomatch"))
                 .unwrap(),
@@ -635,7 +635,7 @@ async fn address_mappings() {
         );
 
         assert_eq!(
-            catch_all.to_catch_all(&core, ADDR).await,
+            catch_all.to_catch_all(&core, ADDR, 0).await,
             config
                 .property_require::<Option<String>>((test, "expected-catch"))
                 .unwrap()

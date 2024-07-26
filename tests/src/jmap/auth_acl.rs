@@ -139,7 +139,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_get(
                 email_ids.get("jane").unwrap().first().unwrap(),
                 [Property::Subject].into(),
@@ -148,7 +148,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .mailbox_get(&inbox_id, None::<Vec<_>>)
             .await,
     );
@@ -169,7 +169,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_query(None::<Filter>, None::<Vec<_>>)
             .await,
     );
@@ -183,7 +183,7 @@ pub async fn test(params: &mut JMAPTest) {
     // John should have ReadItems access to Inbox
     assert_eq!(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_get(
                 email_ids.get("jane").unwrap().first().unwrap(),
                 [Property::Subject].into(),
@@ -197,7 +197,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_eq!(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_query(None::<Filter>, None::<Vec<_>>)
             .await
             .unwrap()
@@ -218,7 +218,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // John should not have access to emails in Jane's Trash folder
     assert!(john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .email_get(
             email_ids.get("jane").unwrap().last().unwrap(),
             [Property::Subject].into(),
@@ -239,7 +239,7 @@ pub async fn test(params: &mut JMAPTest) {
         .take_blob_id();
     john_client
         .set_default_account_id(&john_id.to_string())
-        .blob_copy(&jane_id.to_string(), &blob_id)
+        .blob_copy(jane_id.to_string(), &blob_id)
         .await
         .unwrap();
     let blob_id = jane_client
@@ -254,14 +254,14 @@ pub async fn test(params: &mut JMAPTest) {
     assert_forbidden(
         john_client
             .set_default_account_id(&john_id.to_string())
-            .blob_copy(&jane_id.to_string(), &blob_id)
+            .blob_copy(jane_id.to_string(), &blob_id)
             .await,
     );
 
     // John only has ReadItems access to Inbox but no Read access
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .mailbox_get(&inbox_id, [mailbox::Property::MyRights].into())
             .await,
     );
@@ -271,7 +271,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap();
     assert_eq!(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .mailbox_get(&inbox_id, [mailbox::Property::MyRights].into())
             .await
             .unwrap()
@@ -302,7 +302,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap()
         .take_blob_id();
     let mut request = john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .build();
     let email_id = request
         .import_email()
@@ -318,7 +318,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_copy(
                 &john_id.to_string(),
                 email_ids.get("john").unwrap().last().unwrap(),
@@ -340,7 +340,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap();
 
     let mut request = john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .build();
     let email_id = request
         .import_email()
@@ -355,7 +355,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap()
         .take_id();
     let email_id_2 = john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .email_copy(
             &john_id.to_string(),
             email_ids.get("john").unwrap().last().unwrap(),
@@ -391,7 +391,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Try removing items
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_destroy(&email_id)
             .await,
     );
@@ -404,7 +404,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
     john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .email_destroy(&email_id)
         .await
         .unwrap();
@@ -412,7 +412,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Try to set keywords
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_set_keyword(&email_id_2, "$seen", true)
             .await,
     );
@@ -431,12 +431,12 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
     john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .email_set_keyword(&email_id_2, "$seen", true)
         .await
         .unwrap();
     john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .email_set_keyword(&email_id_2, "my-keyword", true)
         .await
         .unwrap();
@@ -444,7 +444,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Try to create a child
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .mailbox_create("John's mailbox", None::<&str>, Role::None)
             .await,
     );
@@ -464,7 +464,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
     let mailbox_id = john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .mailbox_create("John's mailbox", Some(&inbox_id), Role::None)
         .await
         .unwrap()
@@ -473,7 +473,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Try renaming a mailbox
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .mailbox_rename(&mailbox_id, "John's private mailbox")
             .await,
     );
@@ -486,7 +486,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
     john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .mailbox_rename(&mailbox_id, "John's private mailbox")
         .await
         .unwrap();
@@ -494,7 +494,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Try moving a message
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_set_mailbox(&email_id_2, &mailbox_id, true)
             .await,
     );
@@ -507,7 +507,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
     john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .email_set_mailbox(&email_id_2, &mailbox_id, true)
         .await
         .unwrap();
@@ -515,7 +515,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Try deleting a mailbox
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .mailbox_destroy(&mailbox_id, true)
             .await,
     );
@@ -535,7 +535,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap();
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .mailbox_destroy(&mailbox_id, true)
             .await,
     );
@@ -555,7 +555,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap();
     john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .mailbox_destroy(&mailbox_id, true)
         .await
         .unwrap();
@@ -563,13 +563,13 @@ pub async fn test(params: &mut JMAPTest) {
     // Try changing ACL
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .mailbox_update_acl(&inbox_id, "bill@example.com", [ACL::Read, ACL::ReadItems])
             .await,
     );
     assert_forbidden(
         bill_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_query(None::<Filter>, None::<Vec<_>>)
             .await,
     );
@@ -592,7 +592,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap();
     assert_eq!(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .mailbox_get(&inbox_id, [mailbox::Property::MyRights].into())
             .await
             .unwrap()
@@ -610,13 +610,13 @@ pub async fn test(params: &mut JMAPTest) {
         ]
     );
     john_client
-        .set_default_account_id(&jane_id.to_string())
+        .set_default_account_id(jane_id.to_string())
         .mailbox_update_acl(&inbox_id, "bill@example.com", [ACL::Read, ACL::ReadItems])
         .await
         .unwrap();
     assert_eq!(
         bill_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_query(
                 None::<Filter>,
                 vec![email::query::Comparator::subject()].into()
@@ -637,7 +637,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap();
     assert_forbidden(
         john_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_get(
                 email_ids.get("jane").unwrap().first().unwrap(),
                 [Property::Subject].into(),
@@ -651,7 +651,7 @@ pub async fn test(params: &mut JMAPTest) {
         .is_none());
     assert_eq!(
         bill_client
-            .set_default_account_id(&jane_id.to_string())
+            .set_default_account_id(jane_id.to_string())
             .email_get(
                 email_ids.get("jane").unwrap().first().unwrap(),
                 [Property::Subject].into(),

@@ -120,6 +120,7 @@ impl SMTP {
         report: Vec<u8>,
         sign_config: &IfBlock,
         deliver_now: bool,
+        parent_session_id: u64,
     ) {
         // Build message
         let from_addr_lcase = from_addr.to_lowercase();
@@ -186,12 +187,18 @@ impl SMTP {
         }
 
         // Queue message
-        message.queue(signature.as_deref(), &report, self).await;
+        message
+            .queue(signature.as_deref(), &report, parent_session_id, self)
+            .await;
     }
 
     pub async fn schedule_report(&self, report: impl Into<Event>) {
         if self.inner.report_tx.send(report.into()).await.is_err() {
-            trc::event!(context = "report", "Channel send failed.");
+            trc::event!(
+                Server(trc::ServerEvent::ThreadError),
+                CausedBy = trc::location!(),
+                Details = "Failed to send event to ReportScheduler"
+            );
         }
     }
 
@@ -209,16 +216,16 @@ impl SMTP {
         if !signers.is_empty() {
             let mut headers = Vec::with_capacity(64);
             for signer in signers.iter() {
-                if let Some(signer) = self.core.get_dkim_signer(signer) {
+                if let Some(signer) = self.core.get_dkim_signer(signer, message.id) {
                     match signer.sign(bytes) {
                         Ok(signature) => {
                             signature.write_header(&mut headers);
                         }
                         Err(err) => {
-                            trc::event!(
-                        context = "dkim",
-                        event = "sign-failed",
-                        reason = %err);
+                            trc::error!(trc::Event::from(err)
+                                .span_id(message.id)
+                                .details("Failed to sign message")
+                                .caused_by(trc::location!()));
                         }
                     }
                 }

@@ -57,7 +57,7 @@ impl<T: SessionStream> Session<T> {
                 Ok(new_modifications) => {
                     trc::event!(
                         Milter(MilterEvent::ActionAccept),
-                        SessionId = self.data.session_id,
+                        SpanId = self.data.session_id,
                         Id = milter.id.to_string(),
                         Contents = new_modifications
                             .iter()
@@ -93,7 +93,7 @@ impl<T: SessionStream> Session<T> {
                             Action::ConnectionFailure => MilterEvent::ActionConnectionFailure,
                             Action::Accept | Action::Continue => unreachable!(),
                         }),
-                        SessionId = self.data.session_id,
+                        SpanId = self.data.session_id,
                         Id = milter.id.to_string(),
                     );
 
@@ -141,7 +141,7 @@ impl<T: SessionStream> Session<T> {
 
                     trc::event!(
                         Milter(code),
-                        SessionId = self.data.session_id,
+                        SpanId = self.data.session_id,
                         Id = milter.id.to_string(),
                         Details = details,
                     );
@@ -320,7 +320,7 @@ impl SessionData {
                             Err(err) => {
                                 trc::event!(
                                     Milter(MilterEvent::ParseError),
-                                    SessionId = self.session_id,
+                                    SpanId = self.session_id,
                                     Details = "Failed to parse milter mailFrom parameters",
                                     Reason = err.to_string(),
                                 );
@@ -356,7 +356,7 @@ impl SessionData {
                                 Err(err) => {
                                     trc::event!(
                                         Milter(MilterEvent::ParseError),
-                                        SessionId = self.session_id,
+                                        SpanId = self.session_id,
                                         Details = "Failed to parse milter rcptTo parameters",
                                         Reason = err.to_string(),
                                     );

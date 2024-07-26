@@ -18,6 +18,7 @@ use tokio::{
     net::TcpStream,
 };
 use tokio_rustls::{client::TlsStream, TlsConnector};
+use trc::DeliveryEvent;
 
 use crate::{
     core::SMTP,
@@ -38,6 +39,7 @@ pub struct SessionParams<'x> {
     pub timeout_mail: Duration,
     pub timeout_rcpt: Duration,
     pub timeout_data: Duration,
+    pub session_id: u64,
 }
 
 impl Message {
@@ -52,11 +54,10 @@ impl Message {
             Ok(capabilities) => capabilities,
             Err(status) => {
                 trc::event!(
-
-                    context = "ehlo",
-                    event = "rejected",
-                    mx = &params.hostname,
-                    reason = %status,
+                    Delivery(DeliveryEvent::EhloRejected),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    Reason = status.to_string(),
                 );
                 quit(smtp_client).await;
                 return status;
@@ -67,12 +68,12 @@ impl Message {
         if let Some(credentials) = params.credentials {
             if let Err(err) = smtp_client.authenticate(credentials, &capabilities).await {
                 trc::event!(
-
-                    context = "auth",
-                    event = "failed",
-                    mx = &params.hostname,
-                    reason = %err,
+                    Delivery(DeliveryEvent::AuthFailed),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    Reason = err.to_string(),
                 );
+
                 quit(smtp_client).await;
                 return Status::from_smtp_error(params.hostname, "AUTH ...", err);
             }
@@ -104,12 +105,12 @@ impl Message {
             .and_then(|r| r.assert_positive_completion())
         {
             trc::event!(
-
-                context = "sender",
-                event = "rejected",
-                mx = &params.hostname,
-                reason = %err,
+                Delivery(DeliveryEvent::MailFromRejected),
+                SpanId = params.session_id,
+                Hostname = params.hostname.to_string(),
+                Reason = err.to_string(),
             );
+
             quit(smtp_client).await;
             return Status::from_smtp_error(params.hostname, &cmd, err);
         }
@@ -143,12 +144,11 @@ impl Message {
                     }
                     severity => {
                         trc::event!(
-
-                            context = "rcpt",
-                            event = "rejected",
-                            rcpt = rcpt.address,
-                            mx = &params.hostname,
-                            reason = %response,
+                            Delivery(DeliveryEvent::RcptToRejected),
+                            SpanId = params.session_id,
+                            Hostname = params.hostname.to_string(),
+                            To = rcpt.address.to_string(),
+                            Reason = response.to_string(),
                         );
 
                         let response = HostResponse {
@@ -169,12 +169,11 @@ impl Message {
                 },
                 Err(err) => {
                     trc::event!(
-
-                        context = "rcpt",
-                        event = "failed",
-                        mx = &params.hostname,
-                        rcpt = rcpt.address,
-                        reason = %err,
+                        Delivery(DeliveryEvent::RcptToFailed),
+                        SpanId = params.session_id,
+                        Hostname = params.hostname.to_string(),
+                        To = rcpt.address.to_string(),
+                        Reason = err.to_string(),
                     );
 
                     // Something went wrong, abort.
@@ -194,11 +193,10 @@ impl Message {
 
             if let Err(status) = send_message(&mut smtp_client, self, &bdat_cmd, &params).await {
                 trc::event!(
-
-                    context = "message",
-                    event = "rejected",
-                    mx = &params.hostname,
-                    reason = %status,
+                    Delivery(DeliveryEvent::MessageRejected),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    Reason = status.to_string(),
                 );
 
                 quit(smtp_client).await;
@@ -213,12 +211,11 @@ impl Message {
                         if response.code() == 250 {
                             for (rcpt, status) in accepted_rcpts {
                                 trc::event!(
-
-                                    context = "rcpt",
-                                    event = "delivered",
-                                    rcpt = rcpt.address,
-                                    mx = &params.hostname,
-                                    response = %status,
+                                    Delivery(DeliveryEvent::Delivered),
+                                    SpanId = params.session_id,
+                                    Hostname = params.hostname.to_string(),
+                                    To = rcpt.address.to_string(),
+                                    Details = status.to_string(),
                                 );
 
                                 rcpt.status = status;
@@ -227,11 +224,10 @@ impl Message {
                             }
                         } else {
                             trc::event!(
-
-                                context = "message",
-                                event = "rejected",
-                                mx = &params.hostname,
-                                reason = %response,
+                                Delivery(DeliveryEvent::MessageRejected),
+                                SpanId = params.session_id,
+                                Hostname = params.hostname.to_string(),
+                                Reason = response.to_string(),
                             );
 
                             quit(smtp_client).await;
@@ -244,11 +240,10 @@ impl Message {
                     }
                     Err(status) => {
                         trc::event!(
-
-                            context = "message",
-                            event = "failed",
-                            mx = &params.hostname,
-                            reason = %status,
+                            Delivery(DeliveryEvent::MailFromRejected),
+                            SpanId = params.session_id,
+                            Hostname = params.hostname.to_string(),
+                            Reason = status.to_string(),
                         );
 
                         quit(smtp_client).await;
@@ -270,12 +265,11 @@ impl Message {
                             rcpt.status = match response.severity() {
                                 Severity::PositiveCompletion => {
                                     trc::event!(
-
-                                        context = "rcpt",
-                                        event = "delivered",
-                                        rcpt = rcpt.address,
-                                        mx = &params.hostname,
-                                        response = %response,
+                                        Delivery(DeliveryEvent::Delivered),
+                                        SpanId = params.session_id,
+                                        Hostname = params.hostname.to_string(),
+                                        To = rcpt.address.to_string(),
+                                        Details = response.to_string(),
                                     );
 
                                     total_completed += 1;
@@ -286,12 +280,11 @@ impl Message {
                                 }
                                 severity => {
                                     trc::event!(
-
-                                        context = "rcpt",
-                                        event = "rejected",
-                                        rcpt = rcpt.address,
-                                        mx = &params.hostname,
-                                        reason = %response,
+                                        Delivery(DeliveryEvent::RcptToRejected),
+                                        SpanId = params.session_id,
+                                        Hostname = params.hostname.to_string(),
+                                        To = rcpt.address.to_string(),
+                                        Reason = response.to_string(),
                                     );
 
                                     let response = HostResponse {
@@ -316,11 +309,10 @@ impl Message {
                     }
                     Err(status) => {
                         trc::event!(
-
-                            context = "message",
-                            event = "rejected",
-                            mx = &params.hostname,
-                            reason = %status,
+                            Delivery(DeliveryEvent::MessageRejected),
+                            SpanId = params.session_id,
+                            Hostname = params.hostname.to_string(),
+                            Reason = status.to_string(),
                         );
 
                         quit(smtp_client).await;
@@ -544,23 +536,21 @@ pub async fn send_message<T: AsyncRead + AsyncWrite + Unpin>(
         }),
         Ok(None) => {
             trc::event!(
-                context = "queue",
-                event = "error",
-                "BlobHash {:?} does not exist.",
-                message.blob_hash,
+                Queue(trc::QueueEvent::BlobNotFound),
+                SpanId = message.id,
+                BlobId = message.blob_hash.to_hex(),
+                CausedBy = trc::location!()
             );
             Err(Status::TemporaryFailure(Error::Io(
                 "Queue system error.".to_string(),
             )))
         }
         Err(err) => {
-            trc::event!(
-                context = "queue",
-                event = "error",
-                "Failed to fetch blobId {:?}: {}",
-                message.blob_hash,
-                err
-            );
+            trc::error!(err
+                .span_id(message.id)
+                .details("Failed to fetch blobId")
+                .caused_by(trc::location!()));
+
             Err(Status::TemporaryFailure(Error::Io(
                 "Queue system error.".to_string(),
             )))

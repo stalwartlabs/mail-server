@@ -146,7 +146,7 @@ pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
                             } else {
                                 trc::event!(
                                     PushSubscription(PushSubscriptionEvent::NotFound),
-                                    Id = id,
+                                    Id = id.document_id(),
                                 );
                             }
                         }
@@ -338,7 +338,7 @@ async fn http_request(
                 PushSubscription(PushSubscriptionEvent::Error),
                 Details = "HTTP POST failed",
                 Url = url,
-                Reason = err
+                Reason = err.to_string()
             );
 
             false

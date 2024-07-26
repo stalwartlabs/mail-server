@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{fmt::Display, net::SocketAddr, time::Duration};
+use std::{fmt::Display, net::SocketAddr, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpSocket;
-use utils::config::ipmask::IpAddrMask;
+use utils::{config::ipmask::IpAddrMask, snowflake::SnowflakeIdGenerator};
 
 use crate::listener::TcpAcceptor;
 
@@ -29,6 +29,7 @@ pub struct Server {
     pub listeners: Vec<Listener>,
     pub proxy_networks: Vec<IpAddrMask>,
     pub max_connections: u64,
+    pub id_generator: Arc<SnowflakeIdGenerator>,
 }
 
 #[derive(Debug)]

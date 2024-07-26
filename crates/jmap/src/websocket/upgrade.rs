@@ -6,16 +6,14 @@
 
 use std::sync::Arc;
 
-use common::{config::smtp::session, listener::ServerInstance};
-use http_body_util::{BodyExt, Full};
-use hyper::{body::Bytes, Response};
+use hyper::StatusCode;
 use hyper_util::rt::TokioIo;
 use tokio_tungstenite::WebSocketStream;
 use trc::JmapEvent;
 use tungstenite::{handshake::derive_accept_key, protocol::Role};
 
 use crate::{
-    api::{http::HttpSessionData, HttpRequest, HttpResponse},
+    api::{http::HttpSessionData, HttpRequest, HttpResponse, HttpResponseBody},
     auth::AccessToken,
     JMAP,
 };
@@ -84,28 +82,23 @@ impl JMAP {
                     )
                     .await;
                 }
-                Err(e) => {
+                Err(err) => {
                     trc::event!(
                         Jmap(JmapEvent::WebsocketError),
                         Details = "Websocket upgrade failed",
-                        SessionId = session_id,
+                        SpanId = session_id,
                         Reason = err.to_string()
                     );
                 }
             }
         });
 
-        Ok(Response::builder()
-            .status(hyper::StatusCode::SWITCHING_PROTOCOLS)
-            .header(hyper::header::CONNECTION, "upgrade")
-            .header(hyper::header::UPGRADE, "websocket")
-            .header("Sec-WebSocket-Accept", &derived_key)
-            .header("Sec-WebSocket-Protocol", "jmap")
-            .body(
-                Full::new(Bytes::from("Switching to WebSocket protocol"))
-                    .map_err(|never| match never {})
-                    .boxed(),
-            )
-            .unwrap())
+        Ok(HttpResponse {
+            status: StatusCode::SWITCHING_PROTOCOLS,
+            content_type: "".into(),
+            content_disposition: "".into(),
+            cache_control: "".into(),
+            body: HttpResponseBody::WebsocketUpgrade(derived_key),
+        })
     }
 }

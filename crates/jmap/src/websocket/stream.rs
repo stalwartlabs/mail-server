@@ -6,7 +6,6 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::listener::ServerInstance;
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
@@ -37,7 +36,7 @@ impl JMAP {
     ) {
         trc::event!(
             Jmap(JmapEvent::WebsocketStart),
-            SessionId = session.session_id,
+            SpanId = session.session_id,
             AccountId = access_token.primary_id(),
         );
 
@@ -59,7 +58,7 @@ impl JMAP {
             Err(err) => {
                 trc::error!(err
                     .details("Failed to subscribe to state manager")
-                    .session_id(session.session_id));
+                    .span_id(session.session_id));
 
                 let _ = stream
                     .send(Message::Text(
@@ -112,14 +111,14 @@ impl JMAP {
                                         }
                                         Err(err) => {
                                             let response = WebSocketRequestError::from(err.to_request_error()).to_json();
-                                            trc::error!(err.details("Failed to parse WebSocket message").session_id(session.session_id));
+                                            trc::error!(err.details("Failed to parse WebSocket message").span_id(session.session_id));
                                             response
                                         },
                                     };
                                     if let Err(err) = stream.send(Message::Text(response)).await {
                                         trc::event!(Jmap(JmapEvent::WebsocketError),
                                                     Details = "Failed to send text message",
-                                                    SessionId = session.session_id,
+                                                    SpanId = session.session_id,
                                                     Reason = err.to_string()
                                         );
                                     }
@@ -128,7 +127,7 @@ impl JMAP {
                                     if let Err(err) = stream.send(Message::Pong(bytes)).await {
                                         trc::event!(Jmap(JmapEvent::WebsocketError),
                                                     Details = "Failed to send pong message",
-                                                    SessionId = session.session_id,
+                                                    SpanId = session.session_id,
                                                     Reason = err.to_string()
                                         );
                                     }
@@ -146,7 +145,7 @@ impl JMAP {
                         Ok(Some(Err(err))) => {
                             trc::event!(Jmap(JmapEvent::WebsocketError),
                                                     Details = "Websocket error",
-                                                    SessionId = session.session_id,
+                                                    SpanId = session.session_id,
                                                     Reason = err.to_string()
                                         );
                             break;
@@ -157,7 +156,7 @@ impl JMAP {
                             if last_request.elapsed() > timeout {
                                 trc::event!(
                                     Jmap(JmapEvent::WebsocketStop),
-                                    SessionId = session.session_id,
+                                    SpanId = session.session_id,
                                     Reason = "Idle client"
                                 );
 
@@ -183,7 +182,7 @@ impl JMAP {
                     } else {
                         trc::event!(
                             Jmap(JmapEvent::WebsocketStop),
-                            SessionId = session.session_id,
+                            SpanId = session.session_id,
                             Reason = "State manager channel closed"
                         );
 
@@ -200,7 +199,7 @@ impl JMAP {
                         trc::event!(
                             Jmap(JmapEvent::WebsocketError),
                             Details = "Failed to send state change message.",
-                            SessionId = session.session_id,
+                            SpanId = session.session_id,
                             Reason = err.to_string()
                         );
                     }
@@ -216,7 +215,7 @@ impl JMAP {
                     trc::event!(
                         Jmap(JmapEvent::WebsocketError),
                         Details = "Failed to send ping message.",
-                        SessionId = session.session_id,
+                        SpanId = session.session_id,
                         Reason = err.to_string()
                     );
                     break;

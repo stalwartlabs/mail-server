@@ -18,6 +18,7 @@ use tokio::{
 
 use smtp::core::{Session, SessionAddress, SessionData, SessionParameters, State, SMTP};
 use tokio_rustls::TlsAcceptor;
+use utils::snowflake::SnowflakeIdGenerator;
 
 pub struct DummyIo {
     pub tx_buf: Vec<u8>,
@@ -359,6 +360,7 @@ impl TestServerInstance for ServerInstance {
             limiter: ConcurrencyLimiter::new(100),
             shutdown_rx,
             proxy_networks: vec![],
+            id_generator: Arc::new(SnowflakeIdGenerator::new()),
         }
     }
 }

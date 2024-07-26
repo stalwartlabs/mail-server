@@ -10,7 +10,6 @@ use jmap_proto::types::{
     collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
     type_state::DataType,
 };
-use rasn::der::de;
 use store::{
     ahash::AHashMap,
     roaring::RoaringBitmap,

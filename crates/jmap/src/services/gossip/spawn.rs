@@ -183,7 +183,7 @@ impl GossiperBuilder {
                                             Cluster(trc::ClusterEvent::DecryptionError),
                                             RemoteIp = addr.ip(),
                                             RemotePort = addr.port(),
-                                            Contents = bytes,
+                                            Contents = (buf[..size]).to_vec(),
                                             Reason = err,
                                         );
                                     },
@@ -207,7 +207,7 @@ impl GossiperBuilder {
                         trc::event!(
                             Network(trc::NetworkEvent::ListenStop),
                             LocalIp = bind_addr,
-                            LocalPort = port,
+                            LocalPort = bind_port,
                             Protocol = trc::Protocol::Gossip,
                         );
 

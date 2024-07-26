@@ -57,7 +57,7 @@ impl<T: SessionStream> Session<T> {
         self.write_bytes(b"+ Idling, send 'DONE' to stop.\r\n".to_vec())
             .await?;
 
-        trc::event!(Imap(trc::ImapEvent::IdleStart), SessionId = self.session_id);
+        trc::event!(Imap(trc::ImapEvent::IdleStart), SpanId = self.session_id);
 
         let mut buf = vec![0; 1024];
         loop {
@@ -67,7 +67,7 @@ impl<T: SessionStream> Session<T> {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
                                 if (buf[..bytes_read]).windows(4).any(|w| w == b"DONE") {
-                                    trc::event!(Imap(trc::ImapEvent::IdleStop), SessionId = self.session_id);
+                                    trc::event!(Imap(trc::ImapEvent::IdleStop), SpanId = self.session_id);
                                     return self.write_bytes(StatusResponse::completed(Command::Idle)
                                                                     .with_tag(request.tag)
                                                                     .into_bytes()).await;

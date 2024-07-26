@@ -19,7 +19,7 @@ use jmap_proto::{
 use mail_parser::MessageParser;
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::{api::http::HttpSessionData, auth::AccessToken, JMAP};
 
 use super::ingest::{IngestEmail, IngestSource};
 
@@ -28,6 +28,7 @@ impl JMAP {
         &self,
         request: ImportEmailRequest,
         access_token: &AccessToken,
+        session: &HttpSessionData,
     ) -> trc::Result<ImportEmailResponse> {
         // Validate state
         let account_id = request.account_id.document_id();
@@ -122,6 +123,7 @@ impl JMAP {
                     received_at: email.received_at.map(|r| r.into()),
                     source: IngestSource::Jmap,
                     encrypt: self.core.jmap.encrypt && self.core.jmap.encrypt_append,
+                    session_id: session.session_id,
                 })
                 .await
             {

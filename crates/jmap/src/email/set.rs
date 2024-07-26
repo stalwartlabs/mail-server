@@ -40,7 +40,7 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{auth::AccessToken, mailbox::UidMailbox, JMAP};
+use crate::{api::http::HttpSessionData, auth::AccessToken, mailbox::UidMailbox, JMAP};
 
 use super::{
     headers::{BuildHeader, ValueToHeader},
@@ -52,6 +52,7 @@ impl JMAP {
         &self,
         mut request: SetRequest<RequestArguments>,
         access_token: &AccessToken,
+        session: &HttpSessionData,
     ) -> trc::Result<SetResponse> {
         // Prepare response
         let account_id = request.account_id.document_id();
@@ -720,6 +721,7 @@ impl JMAP {
                     received_at,
                     source: IngestSource::Jmap,
                     encrypt: self.core.jmap.encrypt && self.core.jmap.encrypt_append,
+                    session_id: session.session_id,
                 })
                 .await
             {

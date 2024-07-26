@@ -43,7 +43,7 @@ impl<T: SessionStream> Session<T> {
 
                         trc::event!(
                             Smtp(SmtpEvent::Vrfy),
-                            SessionId = self.data.session_id,
+                            SpanId = self.data.session_id,
                             Name = address,
                             Result = values,
                         );
@@ -53,7 +53,7 @@ impl<T: SessionStream> Session<T> {
                     Ok(_) => {
                         trc::event!(
                             Smtp(SmtpEvent::VrfyNotFound),
-                            SessionId = self.data.session_id,
+                            SpanId = self.data.session_id,
                             Name = address,
                         );
 
@@ -63,7 +63,7 @@ impl<T: SessionStream> Session<T> {
                         let is_not_supported =
                             err.matches(trc::EventType::Store(trc::StoreEvent::NotSupported));
 
-                        trc::error!(err.session_id(self.data.session_id).details("VRFY failed"));
+                        trc::error!(err.span_id(self.data.session_id).details("VRFY failed"));
 
                         if !is_not_supported {
                             self.write(b"252 2.4.3 Unable to verify address at this time.\r\n")
@@ -77,7 +77,7 @@ impl<T: SessionStream> Session<T> {
             _ => {
                 trc::event!(
                     Smtp(SmtpEvent::VrfyDisabled),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                     Name = address,
                 );
 
@@ -118,7 +118,7 @@ impl<T: SessionStream> Session<T> {
 
                         trc::event!(
                             Smtp(SmtpEvent::Expn),
-                            SessionId = self.data.session_id,
+                            SpanId = self.data.session_id,
                             Name = address,
                             Result = values,
                         );
@@ -128,7 +128,7 @@ impl<T: SessionStream> Session<T> {
                     Ok(_) => {
                         trc::event!(
                             Smtp(SmtpEvent::ExpnNotFound),
-                            SessionId = self.data.session_id,
+                            SpanId = self.data.session_id,
                             Name = address,
                         );
 
@@ -138,7 +138,7 @@ impl<T: SessionStream> Session<T> {
                         let is_not_supported =
                             err.matches(trc::EventType::Store(trc::StoreEvent::NotSupported));
 
-                        trc::error!(err.session_id(self.data.session_id).details("VRFY failed"));
+                        trc::error!(err.span_id(self.data.session_id).details("VRFY failed"));
 
                         if !is_not_supported {
                             self.write(b"252 2.4.3 Unable to expand mailing list at this time.\r\n")
@@ -152,7 +152,7 @@ impl<T: SessionStream> Session<T> {
             _ => {
                 trc::event!(
                     Smtp(SmtpEvent::ExpnDisabled),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                     Name = address,
                 );
 

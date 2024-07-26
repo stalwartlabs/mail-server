@@ -276,6 +276,7 @@ static ref SIEVE: Arc<ServerInstance> = Arc::new(ServerInstance {
     limiter: ConcurrencyLimiter::new(0),
     shutdown_rx: tokio::sync::watch::channel(false).1,
     proxy_networks: vec![],
+    id_generator: Arc::new(SnowflakeIdGenerator::new()),
 });
 }
 

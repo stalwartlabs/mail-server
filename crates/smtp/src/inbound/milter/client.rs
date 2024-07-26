@@ -311,7 +311,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
     async fn write(&mut self, action: Command<'_>) -> super::Result<()> {
         trc::event!(
             Milter(MilterEvent::Write),
-            SessionId = self.session_id,
+            SpanId = self.session_id,
             Id = self.id.to_string(),
             Contents = action.to_string(),
         );
@@ -331,7 +331,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> MilterClient<T> {
                     if let Some(response) = Response::deserialize(&frame) {
                         trc::event!(
                             Milter(MilterEvent::Read),
-                            SessionId = self.session_id,
+                            SpanId = self.session_id,
                             Id = self.id.to_string(),
                             Contents = response.to_string(),
                         );

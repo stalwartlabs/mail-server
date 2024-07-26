@@ -297,7 +297,8 @@ impl common::listener::SessionManager for SessionManager {
                                     StatusCode::TOO_MANY_REQUESTS,
                                     "too many requests".to_string(),
                                 )
-                                .into_http_response());
+                                .into_http_response()
+                                .build());
                             }
                             let is_encrypted = req
                                 .headers()
@@ -305,7 +306,7 @@ impl common::listener::SessionManager for SessionManager {
                                 .map_or(false, |encoding| {
                                     encoding.to_str().unwrap() == "aes128gcm"
                                 });
-                            let body = fetch_body(&mut req, 1024 * 1024).await.unwrap();
+                            let body = fetch_body(&mut req, 1024 * 1024, 0).await.unwrap();
                             let message = serde_json::from_slice::<PushMessage>(&if is_encrypted {
                                 ece::decrypt(
                                     &push.keypair,
@@ -323,7 +324,9 @@ impl common::listener::SessionManager for SessionManager {
                             push.tx.send(message).await.unwrap();
 
                             Ok::<_, hyper::Error>(
-                                HtmlResponse::new("ok".to_string()).into_http_response(),
+                                HtmlResponse::new("ok".to_string())
+                                    .into_http_response()
+                                    .build(),
                             )
                         }
                     }),

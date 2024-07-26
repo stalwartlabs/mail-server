@@ -48,12 +48,13 @@ impl SMTP {
                     .await
                 {
                     trc::event!(
-                        context = "throttle",
-                        event = "rate-limit-exceeded",
-                        max_requests = rate.requests,
-                        max_interval = rate.period.as_secs(),
-                        "Queue rate limit exceeded."
+                        Queue(trc::QueueEvent::RateLimitExceeded),
+                        SpanId = session_id,
+                        Id = throttle.id.clone(),
+                        Limit = rate.requests,
+                        Interval = rate.period.as_secs()
                     );
+
                     return Err(Error::Rate {
                         retry_at: now() + next_refill,
                     });
@@ -68,11 +69,12 @@ impl SMTP {
                             in_flight.push(inflight);
                         } else {
                             trc::event!(
-                                context = "throttle",
-                                event = "too-many-requests",
-                                max_concurrent = limiter.max_concurrent,
-                                "Queue concurrency limit exceeded."
+                                Queue(trc::QueueEvent::ConcurrencyLimitExceeded),
+                                SpanId = session_id,
+                                Id = throttle.id.clone(),
+                                Limit = limiter.max_concurrent,
                             );
+
                             return Err(Error::Concurrency {
                                 limiter: limiter.clone(),
                             });

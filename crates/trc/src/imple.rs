@@ -104,8 +104,12 @@ impl Event {
     }
 
     #[inline(always)]
-    pub fn session_id(self, session_id: u64) -> Self {
-        self.ctx(Key::SessionId, session_id)
+    pub fn span_id(self, session_id: u64) -> Self {
+        self.ctx(Key::SpanId, session_id)
+    }
+    #[inline(always)]
+    pub fn parent_span_id(self, session_id: u64) -> Self {
+        self.ctx(Key::ParentSpanId, session_id)
     }
 
     #[inline(always)]
@@ -742,7 +746,6 @@ impl Eq for Error {}
 
 impl EventType {
     pub fn level(&self) -> Level {
-        let todo = "smtp levels and other todos";
         match self {
             EventType::Store(event) => match event {
                 StoreEvent::SqlQuery | StoreEvent::LdapQuery => Level::Trace,
@@ -764,9 +767,44 @@ impl EventType {
                 Pop3Event::RawInput | Pop3Event::RawOutput => Level::Trace,
             },
             EventType::Smtp(event) => match event {
-                SmtpEvent::Error => Level::Debug,
-                SmtpEvent::RemoteIdNotFound => Level::Warn,
-                _ => todo!(),
+                SmtpEvent::PipeSuccess | SmtpEvent::PipeError | SmtpEvent::Error => Level::Debug,
+                SmtpEvent::MissingLocalHostname | SmtpEvent::RemoteIdNotFound => Level::Warn,
+                SmtpEvent::ConcurrencyLimitExceeded
+                | SmtpEvent::TransferLimitExceeded
+                | SmtpEvent::RateLimitExceeded
+                | SmtpEvent::TimeLimitExceeded
+                | SmtpEvent::MissingAuthDirectory
+                | SmtpEvent::MessageParseFailed
+                | SmtpEvent::MessageTooLarge
+                | SmtpEvent::LoopDetected
+                | SmtpEvent::DkimPass
+                | SmtpEvent::DkimFail
+                | SmtpEvent::ArcPass
+                | SmtpEvent::ArcFail
+                | SmtpEvent::SpfEhloPass
+                | SmtpEvent::SpfEhloFail
+                | SmtpEvent::SpfFromPass
+                | SmtpEvent::SpfFromFail
+                | SmtpEvent::DmarcPass
+                | SmtpEvent::DmarcFail
+                | SmtpEvent::IprevPass
+                | SmtpEvent::IprevFail
+                | SmtpEvent::QuotaExceeded
+                | SmtpEvent::TooManyMessages
+                | SmtpEvent::Ehlo
+                | SmtpEvent::InvalidEhlo
+                | SmtpEvent::MailFrom
+                | SmtpEvent::MailboxDoesNotExist
+                | SmtpEvent::RelayNotAllowed
+                | SmtpEvent::RcptTo
+                | SmtpEvent::TooManyInvalidRcpt
+                | SmtpEvent::Vrfy
+                | SmtpEvent::VrfyNotFound
+                | SmtpEvent::VrfyDisabled
+                | SmtpEvent::Expn
+                | SmtpEvent::ExpnNotFound
+                | SmtpEvent::ExpnDisabled => Level::Info,
+                SmtpEvent::RawInput | SmtpEvent::RawOutput => Level::Trace,
             },
             EventType::Network(event) => match event {
                 NetworkEvent::ReadError
@@ -774,7 +812,9 @@ impl EventType {
                 | NetworkEvent::FlushError
                 | NetworkEvent::Closed => Level::Trace,
                 NetworkEvent::Timeout | NetworkEvent::AcceptError => Level::Debug,
-                NetworkEvent::ListenStart
+                NetworkEvent::ConnectionStart
+                | NetworkEvent::ConnectionStop
+                | NetworkEvent::ListenStart
                 | NetworkEvent::ListenStop
                 | NetworkEvent::DropBlocked => Level::Info,
                 NetworkEvent::ListenError
@@ -887,10 +927,6 @@ impl EventType {
                 | AcmeEvent::DnsRecordNotPropagated
                 | AcmeEvent::DnsRecordLookupFailed => Level::Debug,
             },
-            EventType::Session(event) => match event {
-                SessionEvent::Start => Level::Info,
-                SessionEvent::Stop => Level::Info,
-            },
             EventType::Tls(event) => match event {
                 TlsEvent::Handshake => Level::Info,
                 TlsEvent::HandshakeError => Level::Debug,
@@ -991,7 +1027,101 @@ impl EventType {
                 | MtaHookEvent::ActionQuarantine => Level::Info,
                 MtaHookEvent::Error => Level::Warn,
             },
-            EventType::Dane(_) => todo!(),
+            EventType::Dane(event) => match event {
+                DaneEvent::AuthenticationSuccess
+                | DaneEvent::AuthenticationFailure
+                | DaneEvent::NoCertificatesFound
+                | DaneEvent::CertificateParseError
+                | DaneEvent::TlsaRecordMatch
+                | DaneEvent::TlsaRecordFetch
+                | DaneEvent::TlsaRecordFetchError
+                | DaneEvent::TlsaRecordNotFound
+                | DaneEvent::TlsaRecordNotDnssecSigned
+                | DaneEvent::TlsaRecordInvalid => Level::Info,
+            },
+            EventType::Delivery(event) => match event {
+                DeliveryEvent::AttemptStart
+                | DeliveryEvent::AttemptEnd
+                | DeliveryEvent::Completed
+                | DeliveryEvent::Failed
+                | DeliveryEvent::AttemptCount
+                | DeliveryEvent::MxLookupFailed
+                | DeliveryEvent::IpLookupFailed
+                | DeliveryEvent::NullMX
+                | DeliveryEvent::Connect
+                | DeliveryEvent::ConnectError
+                | DeliveryEvent::GreetingFailed
+                | DeliveryEvent::EhloRejected
+                | DeliveryEvent::AuthFailed
+                | DeliveryEvent::MailFromRejected
+                | DeliveryEvent::Delivered
+                | DeliveryEvent::RcptToRejected
+                | DeliveryEvent::RcptToFailed
+                | DeliveryEvent::MessageRejected
+                | DeliveryEvent::StartTls
+                | DeliveryEvent::StartTlsUnavailable
+                | DeliveryEvent::StartTlsError
+                | DeliveryEvent::StartTlsDisabled
+                | DeliveryEvent::ImplicitTlsError
+                | DeliveryEvent::TooManyConcurrent
+                | DeliveryEvent::DoubleBounce => Level::Info,
+                DeliveryEvent::MissingOutboundHostname => Level::Warn,
+            },
+            EventType::Queue(event) => match event {
+                QueueEvent::RateLimitExceeded
+                | QueueEvent::ConcurrencyLimitExceeded
+                | QueueEvent::Scheduled
+                | QueueEvent::Rescheduled => Level::Info,
+                QueueEvent::LockBusy | QueueEvent::Locked | QueueEvent::BlobNotFound => {
+                    Level::Debug
+                }
+            },
+            EventType::TlsRpt(event) => match event {
+                TlsRptEvent::RecordFetch | TlsRptEvent::RecordFetchError => Level::Info,
+            },
+            EventType::MtaSts(event) => match event {
+                MtaStsEvent::PolicyFetch
+                | MtaStsEvent::PolicyNotFound
+                | MtaStsEvent::PolicyFetchError
+                | MtaStsEvent::InvalidPolicy
+                | MtaStsEvent::NotAuthorized => Level::Info,
+            },
+            EventType::IncomingReport(event) => match event {
+                IncomingReportEvent::DmarcReportWithWarnings
+                | IncomingReportEvent::TlsReportWithWarnings => Level::Warn,
+                IncomingReportEvent::DmarcReport
+                | IncomingReportEvent::TlsReport
+                | IncomingReportEvent::AbuseReport
+                | IncomingReportEvent::AuthFailureReport
+                | IncomingReportEvent::FraudReport
+                | IncomingReportEvent::NotSpamReport
+                | IncomingReportEvent::VirusReport
+                | IncomingReportEvent::OtherReport
+                | IncomingReportEvent::MessageParseFailed
+                | IncomingReportEvent::DmarcParseFailed
+                | IncomingReportEvent::TlsRpcParseFailed
+                | IncomingReportEvent::ArfParseFailed
+                | IncomingReportEvent::DecompressError => Level::Info,
+            },
+            EventType::OutgoingReport(event) => match event {
+                OutgoingReportEvent::LockBusy
+                | OutgoingReportEvent::LockDeleted
+                | OutgoingReportEvent::Locked
+                | OutgoingReportEvent::NotFound => Level::Info,
+                OutgoingReportEvent::SpfReport
+                | OutgoingReportEvent::SpfRateLimited
+                | OutgoingReportEvent::DkimReport
+                | OutgoingReportEvent::DkimRateLimited
+                | OutgoingReportEvent::DmarcReport
+                | OutgoingReportEvent::DmarcRateLimited
+                | OutgoingReportEvent::DmarcAggregateReport
+                | OutgoingReportEvent::TlsAggregate
+                | OutgoingReportEvent::HttpSubmission
+                | OutgoingReportEvent::UnauthorizedReportingAddress
+                | OutgoingReportEvent::ReportingAddressValidationError
+                | OutgoingReportEvent::SubmissionError
+                | OutgoingReportEvent::NoRecipientsFound => Level::Info,
+            },
         }
     }
 }

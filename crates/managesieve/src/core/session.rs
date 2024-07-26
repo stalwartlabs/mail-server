@@ -87,7 +87,7 @@ impl<T: SessionStream> Session<T> {
                                 } else {
                                     trc::event!(
                                         Network(trc::NetworkEvent::Closed),
-                                        SessionId = self.session_id,
+                                        SpanId = self.session_id,
                                         CausedBy = trc::location!()
                                     );
                                     break;
@@ -96,7 +96,7 @@ impl<T: SessionStream> Session<T> {
                             Ok(Err(err)) => {
                                 trc::event!(
                                     Network(trc::NetworkEvent::ReadError),
-                                    SessionId = self.session_id,
+                                    SpanId = self.session_id,
                                     Reason = err,
                                     CausedBy = trc::location!()
                                 );
@@ -105,7 +105,7 @@ impl<T: SessionStream> Session<T> {
                             Err(_) => {
                                 trc::event!(
                                     Network(trc::NetworkEvent::Timeout),
-                                    SessionId = self.session_id,
+                                    SpanId = self.session_id,
                                     CausedBy = trc::location!()
                                 );
                                 self
@@ -119,7 +119,7 @@ impl<T: SessionStream> Session<T> {
                 _ = shutdown_rx.changed() => {
                     trc::event!(
                         Network(trc::NetworkEvent::Closed),
-                        SessionId = self.session_id,
+                        SpanId = self.session_id,
                         Reason = "Server shutting down",
                         CausedBy = trc::location!()
                     );

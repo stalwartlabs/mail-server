@@ -296,7 +296,7 @@ impl<T: SessionStream> Session<T> {
                     if receiver.ingest(&mut iter) {
                         trc::event!(
                             Smtp(SmtpEvent::MessageTooLarge),
-                            SessionId = self.data.session_id,
+                            SpanId = self.data.session_id,
                         );
 
                         self.data.message = Vec::with_capacity(0);
@@ -342,7 +342,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 Ok(_) => {
                     trc::event!(
                         Smtp(SmtpEvent::RawOutput),
-                        SessionId = self.data.session_id,
+                        SpanId = self.data.session_id,
                         Size = bytes.len(),
                         Contents = String::from_utf8_lossy(bytes).into_owned(),
                     );
@@ -352,7 +352,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
                 Err(err) => {
                     trc::event!(
                         Network(NetworkEvent::FlushError),
-                        SessionId = self.data.session_id,
+                        SpanId = self.data.session_id,
                         Reason = err.to_string(),
                     );
                     Err(())
@@ -361,7 +361,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             Err(err) => {
                 trc::event!(
                     Network(NetworkEvent::WriteError),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                     Reason = err.to_string(),
                 );
 
@@ -376,7 +376,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             Ok(len) => {
                 trc::event!(
                     Smtp(SmtpEvent::RawInput),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                     Size = len,
                     Contents =
                         String::from_utf8_lossy(bytes.get(0..len).unwrap_or_default()).into_owned(),
@@ -387,7 +387,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             Err(err) => {
                 trc::event!(
                     Network(NetworkEvent::ReadError),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                     Reason = err.to_string(),
                 );
 

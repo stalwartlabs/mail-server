@@ -105,6 +105,7 @@ impl<T: SessionStream> SessionData<T> {
                     received_at: message.received_at.map(|d| d as u64),
                     source: IngestSource::Imap,
                     encrypt: self.jmap.core.jmap.encrypt && self.jmap.core.jmap.encrypt_append,
+                    session_id: self.session_id,
                 })
                 .await
             {
@@ -116,13 +117,15 @@ impl<T: SessionStream> SessionData<T> {
                     last_change_id = Some(email.change_id);
                 }
                 Err(err) => {
-                    return Err(if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) {
-                        err.details("Disk quota exceeded.")
-                            .code(ResponseCode::OverQuota)
-                    } else {
-                        err
-                    }
-                    .id(arguments.tag));
+                    return Err(
+                        if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) {
+                            err.details("Disk quota exceeded.")
+                                .code(ResponseCode::OverQuota)
+                        } else {
+                            err
+                        }
+                        .id(arguments.tag),
+                    );
                 }
             }
         }

@@ -19,7 +19,7 @@ impl<T: SessionStream> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> SessionResult {
         trc::event!(
             Imap(trc::ImapEvent::RawInput),
-            SessionId = self.session_id,
+            SpanId = self.session_id,
             Size = bytes.len(),
             Contents = String::from_utf8_lossy(bytes).into_owned(),
         );

@@ -241,7 +241,7 @@ impl<T: SessionStream> Session<T> {
                             } else {
                                 trc::event!(
                                     Smtp(SmtpEvent::ConcurrencyLimitExceeded),
-                                    SessionId = self.data.session_id,
+                                    SpanId = self.data.session_id,
                                     Id = t.id.clone(),
                                     Limit = limiter.max_concurrent
                                 );
@@ -272,7 +272,7 @@ impl<T: SessionStream> Session<T> {
                     {
                         trc::event!(
                             Smtp(SmtpEvent::RateLimitExceeded),
-                            SessionId = self.data.session_id,
+                            SpanId = self.data.session_id,
                             Id = t.id.clone(),
                             Limit = rate.requests,
                             Interval = rate.period.as_secs()

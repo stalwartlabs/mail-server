@@ -122,7 +122,7 @@ impl<T: SessionStream> Session<T> {
         if self.hostname.is_empty() {
             trc::event!(
                 Smtp(SmtpEvent::MissingLocalHostname),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
             );
             self.hostname = "localhost".to_string();
         }
@@ -175,7 +175,7 @@ impl<T: SessionStream> Session<T> {
 
                                         trc::event!(
                                             Smtp(SmtpEvent::TransferLimitExceeded),
-                                            SessionId = self.data.session_id,
+                                            SpanId = self.data.session_id,
                                             Size = bytes_read,
                                         );
 
@@ -188,7 +188,7 @@ impl<T: SessionStream> Session<T> {
 
                                         trc::event!(
                                             Smtp(SmtpEvent::TimeLimitExceeded),
-                                            SessionId = self.data.session_id,
+                                            SpanId = self.data.session_id,
                                         );
 
                                         break;
@@ -196,7 +196,7 @@ impl<T: SessionStream> Session<T> {
                                 } else {
                                     trc::event!(
                                         Network(trc::NetworkEvent::Closed),
-                                        SessionId = self.data.session_id,
+                                        SpanId = self.data.session_id,
                                         CausedBy = trc::location!()
                                     );
 
@@ -209,7 +209,7 @@ impl<T: SessionStream> Session<T> {
                             Err(_) => {
                                 trc::event!(
                                     Network(trc::NetworkEvent::Timeout),
-                                    SessionId = self.data.session_id,
+                                    SpanId = self.data.session_id,
                                     CausedBy = trc::location!()
                                 );
 
@@ -224,7 +224,7 @@ impl<T: SessionStream> Session<T> {
                 _ = shutdown_rx.changed() => {
                     trc::event!(
                         Network(trc::NetworkEvent::Closed),
-                        SessionId = self.data.session_id,
+                        SpanId = self.data.session_id,
                         Reason = "Server shutting down",
                         CausedBy = trc::location!()
                     );

@@ -6,6 +6,7 @@
 
 use common::listener::SessionStream;
 use mail_auth::{report::AuthFailureType, AuthenticationResults, SpfOutput};
+use trc::OutgoingReportEvent;
 use utils::config::Rate;
 
 use crate::core::Session;
@@ -21,11 +22,13 @@ impl<T: SessionStream> Session<T> {
         // Throttle recipient
         if !self.throttle_rcpt(rcpt, rate, "spf").await {
             trc::event!(
-                context = "report",
-                report = "spf",
-                event = "throttle",
-                rcpt = rcpt,
+                OutgoingReport(OutgoingReportEvent::SpfRateLimited),
+                SpanId = self.data.session_id,
+                To = rcpt.to_string(),
+                Limit = rate.requests,
+                Interval = rate.period
             );
+
             return;
         }
 
@@ -79,16 +82,21 @@ impl<T: SessionStream> Session<T> {
             .ok();
 
         trc::event!(
-            context = "report",
-            report = "spf",
-            event = "queue",
-            rcpt = rcpt,
-            "Queueing SPF authentication failure report."
+            OutgoingReport(OutgoingReportEvent::SpfReport),
+            SpanId = self.data.session_id,
+            To = rcpt.to_string(),
         );
 
         // Send report
         self.core
-            .send_report(&from_addr, [rcpt].into_iter(), report, &config.sign, true)
+            .send_report(
+                &from_addr,
+                [rcpt].into_iter(),
+                report,
+                &config.sign,
+                true,
+                self.data.session_id,
+            )
             .await;
     }
 }

@@ -39,7 +39,7 @@ impl Collector {
         // Collect all events
         let mut do_continue = true;
         EVENT_RXS.lock().retain_mut(|rx| {
-            loop {
+            while do_continue {
                 match rx.try_recv() {
                     Ok(Some(event)) => {
                         if !event.keys.is_empty() {
@@ -54,6 +54,7 @@ impl Collector {
                                 self.subscribers.extend(subscribers);
                             } else if event.matches(EventType::Server(ServerEvent::Shutdown)) {
                                 do_continue = false;
+                                return false;
                             }
                         }
                     }
@@ -65,11 +66,21 @@ impl Collector {
                     }
                 }
             }
+
+            false
         });
 
         if !self.subscribers.is_empty() {
-            self.subscribers
-                .retain_mut(|subscriber| subscriber.send_batch().is_ok());
+            if do_continue {
+                // Send batched events
+                self.subscribers
+                    .retain_mut(|subscriber| subscriber.send_batch().is_ok());
+            } else {
+                // Send remaining events
+                for mut subscriber in self.subscribers.drain(..) {
+                    let _ = subscriber.send_batch();
+                }
+            }
         }
 
         do_continue

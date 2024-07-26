@@ -77,7 +77,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> trc::Result<Variable> 
 
     trc::event!(
         Spam(trc::SpamEvent::Train),
-        SessionId = ctx.session_id,
+        SpanId = ctx.session_id,
         Spam = is_spam,
         Size = model.weights.len(),
     );
@@ -175,7 +175,7 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     if spam_learns < classifier.min_learns || ham_learns < classifier.min_learns {
         trc::event!(
             Spam(trc::SpamEvent::NotEnoughTrainingData),
-            SessionId = ctx.session_id,
+            SpanId = ctx.session_id,
             MinLearns = classifier.min_learns,
             SpamLearns = spam_learns,
             HamLearns = ham_learns
@@ -199,7 +199,7 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> trc::Result<Variable> {
 
     trc::event!(
         Spam(trc::SpamEvent::Classify),
-        SessionId = ctx.session_id,
+        SpanId = ctx.session_id,
         MinLearns = classifier.min_learns,
         SpamLearns = spam_learns,
         HamLearns = ham_learns,
@@ -251,7 +251,7 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> trc::Result<Variable> {
 
     trc::event!(
         Spam(trc::SpamEvent::TrainBalance),
-        SessionId = ctx.session_id,
+        SpanId = ctx.session_id,
         Spam = learn_spam,
         MinBalance = min_balance,
         SpamLearns = spam_learns,
@@ -292,8 +292,7 @@ impl LookupOrInsert for BayesTokenCache {
             } else {
                 self.insert_negative(hash);
                 Weights::default()
-            }
-            .into())
+            })
         }
     }
 }

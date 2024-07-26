@@ -15,10 +15,12 @@ use crate::{
 
 impl<T: SessionStream> Session<T> {
     pub async fn ingest(&mut self, bytes: &[u8]) -> SessionResult {
-        /*let tmp = "dd";
-        for line in String::from_utf8_lossy(bytes).split("\r\n") {
-            println!("<- {:?}", &line[..std::cmp::min(line.len(), 100)]);
-        }*/
+        trc::event!(
+            Pop3(trc::Pop3Event::RawInput),
+            SpanId = self.session_id,
+            Size = bytes.len(),
+            Contents = String::from_utf8_lossy(bytes).into_owned(),
+        );
 
         let mut bytes = bytes.iter();
         let mut requests = Vec::with_capacity(2);

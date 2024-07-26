@@ -24,7 +24,7 @@ impl<T: SessionStream> Session<T> {
             if self.params.ehlo_reject_non_fqdn && !domain.as_str().has_valid_labels() {
                 trc::event!(
                     Smtp(SmtpEvent::InvalidEhlo),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                     Domain = domain,
                 );
 
@@ -33,7 +33,7 @@ impl<T: SessionStream> Session<T> {
 
             trc::event!(
                 Smtp(SmtpEvent::Ehlo),
-                SessionId = self.data.session_id,
+                SpanId = self.data.session_id,
                 Domain = domain.clone(),
             );
 
@@ -56,7 +56,7 @@ impl<T: SessionStream> Session<T> {
                     } else {
                         SmtpEvent::SpfEhloFail
                     }),
-                    SessionId = self.data.session_id,
+                    SpanId = self.data.session_id,
                     Domain = self.data.helo_domain.clone(),
                     Result = trc::Event::from(&spf_output),
                     Elapsed = time.elapsed(),

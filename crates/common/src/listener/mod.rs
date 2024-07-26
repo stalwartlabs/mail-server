@@ -13,7 +13,7 @@ use tokio::{
     sync::watch,
 };
 use tokio_rustls::{Accept, TlsAcceptor};
-use utils::config::ipmask::IpAddrMask;
+use utils::{config::ipmask::IpAddrMask, snowflake::SnowflakeIdGenerator};
 
 use crate::{
     config::server::ServerProtocol,
@@ -37,6 +37,7 @@ pub struct ServerInstance {
     pub limiter: ConcurrencyLimiter,
     pub proxy_networks: Vec<IpAddrMask>,
     pub shutdown_rx: watch::Receiver<bool>,
+    pub id_generator: Arc<SnowflakeIdGenerator>,
 }
 
 #[derive(Default)]
@@ -95,54 +96,99 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
 
         tokio::spawn(async move {
             let start_time = Instant::now();
-            let session_id = session.session_id;
+            let session_id;
 
             if is_tls {
                 match session
                     .instance
                     .acceptor
-                    .accept(session.stream, acme_core)
+                    .accept(session.stream, acme_core, &session.instance)
                     .await
                 {
                     TcpAcceptorResult::Tls(accept) => match accept.await {
                         Ok(stream) => {
-                            let session = SessionData {
-                                stream,
-                                local_ip: session.local_ip,
-                                local_port: session.local_port,
-                                remote_ip: session.remote_ip,
-                                remote_port: session.remote_port,
-                                protocol: session.protocol,
-                                session_id: session.session_id,
-                                in_flight: session.in_flight,
-                                instance: session.instance,
-                            };
-                            manager.handle(session).await;
+                            // Generate sessionId
+                            session.session_id =
+                                session.instance.id_generator.generate().unwrap_or_default();
+                            session_id = session.session_id;
+
+                            trc::event!(
+                                Network(trc::NetworkEvent::ConnectionStart),
+                                ListenerId = session.instance.id.clone(),
+                                Protocol = session.instance.protocol,
+                                RemoteIp = session.remote_ip,
+                                RemotePort = session.remote_port,
+                                SpanId = session.session_id,
+                            );
+
+                            manager
+                                .handle(SessionData {
+                                    stream,
+                                    local_ip: session.local_ip,
+                                    local_port: session.local_port,
+                                    remote_ip: session.remote_ip,
+                                    remote_port: session.remote_port,
+                                    protocol: session.protocol,
+                                    session_id: session.session_id,
+                                    in_flight: session.in_flight,
+                                    instance: session.instance,
+                                })
+                                .await;
                         }
                         Err(err) => {
                             trc::event!(
                                 Tls(trc::TlsEvent::HandshakeError),
                                 ListenerId = session.instance.id.clone(),
                                 Protocol = session.instance.protocol,
-                                SessionId = session.session_id,
+                                RemoteIp = session.remote_ip,
+                                RemotePort = session.remote_port,
                                 Reason = err.to_string(),
                             );
+
+                            return;
                         }
                     },
                     TcpAcceptorResult::Plain(stream) => {
+                        // Generate sessionId
+                        session.session_id =
+                            session.instance.id_generator.generate().unwrap_or_default();
+                        session_id = session.session_id;
+
+                        trc::event!(
+                            Network(trc::NetworkEvent::ConnectionStart),
+                            ListenerId = session.instance.id.clone(),
+                            Protocol = session.instance.protocol,
+                            RemoteIp = session.remote_ip,
+                            RemotePort = session.remote_port,
+                            SpanId = session.session_id,
+                        );
+
                         session.stream = stream;
                         manager.handle(session).await;
                     }
-                    TcpAcceptorResult::Close => (),
+                    TcpAcceptorResult::Close => return,
                 }
             } else {
+                // Generate sessionId
+                session.session_id = session.instance.id_generator.generate().unwrap_or_default();
+                session_id = session.session_id;
+
+                trc::event!(
+                    Network(trc::NetworkEvent::ConnectionStart),
+                    ListenerId = session.instance.id.clone(),
+                    Protocol = session.instance.protocol,
+                    RemoteIp = session.remote_ip,
+                    RemotePort = session.remote_port,
+                    SpanId = session.session_id,
+                );
+
                 manager.handle(session).await;
             }
 
             trc::event!(
-                Session(trc::SessionEvent::Stop),
-                SessionId = session_id,
-                Duration = start_time.elapsed(),
+                Network(trc::NetworkEvent::ConnectionStop),
+                SpanId = session_id,
+                Elapsed = start_time.elapsed(),
             );
         });
     }

@@ -6,7 +6,6 @@
 
 use std::sync::Arc;
 
-use common::listener::ServerInstance;
 use jmap_proto::{
     method::{
         get, query,
@@ -34,14 +33,13 @@ impl JMAP {
             request.method_calls.len(),
         );
         let add_created_ids = !response.created_ids.is_empty();
-        let instance = &session.instance;
 
         for mut call in request.method_calls {
             // Resolve result and id references
             if let Err(error) = response.resolve_references(&mut call.method) {
                 let method_error = error.clone();
 
-                trc::error!(error.session_id(session.session_id));
+                trc::error!(error.span_id(session.session_id));
 
                 response.push_response(call.id, MethodName::error(), method_error);
                 continue;
@@ -52,7 +50,7 @@ impl JMAP {
 
                 // Add response
                 match self
-                    .handle_method_call(call.method, &access_token, &mut next_call, instance)
+                    .handle_method_call(call.method, &access_token, &mut next_call, session)
                     .await
                 {
                     Ok(mut method_response) => {
@@ -93,7 +91,7 @@ impl JMAP {
                     Err(error) => {
                         let method_error = error.clone();
 
-                        trc::error!(error.session_id(session.session_id));
+                        trc::error!(error.span_id(session.session_id));
 
                         response.push_error(call.id, method_error);
                     }
@@ -122,7 +120,7 @@ impl JMAP {
         method: RequestMethod,
         access_token: &AccessToken,
         next_call: &mut Option<Call<RequestMethod>>,
-        instance: &Arc<ServerInstance>,
+        session: &HttpSessionData,
     ) -> trc::Result<ResponseMethod> {
         Ok(match method {
             RequestMethod::Get(mut req) => match req.take_arguments() {
@@ -215,7 +213,7 @@ impl JMAP {
                 }
                 query::RequestArguments::Principal => {
                     if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
-                        self.principal_query(req).await?.into()
+                        self.principal_query(req, session).await?.into()
                     } else {
                         return Err(trc::JmapEvent::Forbidden
                             .into_err()
@@ -232,7 +230,7 @@ impl JMAP {
                 set::RequestArguments::Email => {
                     access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                    self.email_set(req, access_token).await?.into()
+                    self.email_set(req, access_token, session).await?.into()
                 }
                 set::RequestArguments::Mailbox(arguments) => {
                     access_token.assert_has_access(req.account_id, Collection::Mailbox)?;
@@ -249,9 +247,13 @@ impl JMAP {
                 set::RequestArguments::EmailSubmission(arguments) => {
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.email_submission_set(req.with_arguments(arguments), instance, next_call)
-                        .await?
-                        .into()
+                    self.email_submission_set(
+                        req.with_arguments(arguments),
+                        &session.instance,
+                        next_call,
+                    )
+                    .await?
+                    .into()
                 }
                 set::RequestArguments::PushSubscription => {
                     self.push_subscription_set(req, access_token).await?.into()
@@ -280,7 +282,7 @@ impl JMAP {
             RequestMethod::ImportEmail(req) => {
                 access_token.assert_has_access(req.account_id, Collection::Email)?;
 
-                self.email_import(req, access_token).await?.into()
+                self.email_import(req, access_token, session).await?.into()
             }
             RequestMethod::ParseEmail(req) => {
                 access_token.assert_has_access(req.account_id, Collection::Email)?;

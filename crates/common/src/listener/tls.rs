@@ -28,7 +28,7 @@ use super::{
         resolver::{build_acme_static_resolver, IsTlsAlpnChallenge},
         AcmeProvider,
     },
-    SessionStream, TcpAcceptor, TcpAcceptorResult,
+    ServerInstance, SessionStream, TcpAcceptor, TcpAcceptorResult,
 };
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
@@ -110,6 +110,7 @@ impl TcpAcceptor {
         &self,
         stream: IO,
         enable_acme: Option<Arc<Core>>,
+        instance: &ServerInstance,
     ) -> TcpAcceptorResult<IO>
     where
         IO: SessionStream,
@@ -133,6 +134,8 @@ impl TcpAcceptor {
 
                                         trc::event!(
                                             Acme(trc::AcmeEvent::ClientSuppliedSNI),
+                                            ListenerId = instance.id.clone(),
+                                            Protocol = instance.protocol,
                                             Name = domain.to_string(),
                                             Key = key.is_some(),
                                         );
@@ -140,7 +143,11 @@ impl TcpAcceptor {
                                         key
                                     }
                                     None => {
-                                        trc::event!(Acme(trc::AcmeEvent::ClientMissingSNI));
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::ClientMissingSNI),
+                                            ListenerId = instance.id.clone(),
+                                            Protocol = instance.protocol,
+                                        );
 
                                         None
                                     }
@@ -151,13 +158,19 @@ impl TcpAcceptor {
                                     .await
                                 {
                                     Ok(mut tls) => {
-                                        trc::event!(Acme(trc::AcmeEvent::TlsAlpnReceived));
+                                        trc::event!(
+                                            Acme(trc::AcmeEvent::TlsAlpnReceived),
+                                            ListenerId = instance.id.clone(),
+                                            Protocol = instance.protocol,
+                                        );
 
                                         let _ = tls.shutdown().await;
                                     }
                                     Err(err) => {
                                         trc::event!(
                                             Acme(trc::AcmeEvent::TlsAlpnError),
+                                            ListenerId = instance.id.clone(),
+                                            Protocol = instance.protocol,
                                             Reason = err.to_string(),
                                         );
                                     }
@@ -171,6 +184,8 @@ impl TcpAcceptor {
                         Err(err) => {
                             trc::event!(
                                 Tls(trc::TlsEvent::HandshakeError),
+                                ListenerId = instance.id.clone(),
+                                Protocol = instance.protocol,
                                 Reason = err.to_string(),
                             );
                         }

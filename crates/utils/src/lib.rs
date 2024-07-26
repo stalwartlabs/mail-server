@@ -38,6 +38,14 @@ impl BlobHash {
     pub fn as_slice(&self) -> &[u8] {
         self.0.as_ref()
     }
+
+    pub fn to_hex(&self) -> String {
+        let mut hex = String::with_capacity(BLOB_HASH_LEN * 2);
+        for byte in self.0.iter() {
+            hex.push_str(&format!("{:02x}", byte));
+        }
+        hex
+    }
 }
 
 impl From<&[u8]> for BlobHash {

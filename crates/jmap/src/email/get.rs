@@ -158,7 +158,7 @@ impl JMAP {
                         AccountId = account_id,
                         DocumentId = id.document_id(),
                         Collection = Collection::Email,
-                        BlobId = metadata.blob_hash.as_slice().to_vec(),
+                        BlobId = metadata.blob_hash.to_hex(),
                         Details = "Blob not found.",
                         CausedBy = trc::location!(),
                     );

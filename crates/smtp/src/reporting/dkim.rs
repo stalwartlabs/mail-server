@@ -8,6 +8,7 @@ use common::listener::SessionStream;
 use mail_auth::{
     common::verify::VerifySignature, AuthenticatedMessage, AuthenticationResults, DkimOutput,
 };
+use trc::OutgoingReportEvent;
 use utils::config::Rate;
 
 use crate::core::Session;
@@ -31,11 +32,13 @@ impl<T: SessionStream> Session<T> {
         // Throttle recipient
         if !self.throttle_rcpt(rcpt, rate, "dkim").await {
             trc::event!(
-                context = "report",
-                report = "dkim",
-                event = "throttle",
-                rcpt = rcpt,
+                OutgoingReport(OutgoingReportEvent::DkimRateLimited),
+                SpanId = self.data.session_id,
+                To = rcpt.to_string(),
+                Limit = rate.requests,
+                Interval = rate.period
             );
+
             return;
         }
 
@@ -79,16 +82,21 @@ impl<T: SessionStream> Session<T> {
             .ok();
 
         trc::event!(
-            context = "report",
-            report = "dkim",
-            event = "queue",
-            rcpt = rcpt,
-            "Queueing DKIM authentication failure report."
+            OutgoingReport(OutgoingReportEvent::DkimReport),
+            SpanId = self.data.session_id,
+            To = rcpt.to_string(),
         );
 
         // Send report
         self.core
-            .send_report(&from_addr, [rcpt].into_iter(), report, &config.sign, true)
+            .send_report(
+                &from_addr,
+                [rcpt].into_iter(),
+                report,
+                &config.sign,
+                true,
+                self.data.session_id,
+            )
             .await;
     }
 }

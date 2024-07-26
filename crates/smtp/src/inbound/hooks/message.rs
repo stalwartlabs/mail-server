@@ -59,7 +59,7 @@ impl<T: SessionStream> Session<T> {
                             Action::Reject => MtaHookEvent::ActionReject,
                             Action::Quarantine => MtaHookEvent::ActionQuarantine,
                         }),
-                        SessionId = self.data.session_id,
+                        SpanId = self.data.session_id,
                         Id = mta_hook.id.clone(),
                         Contents = response
                             .modifications
@@ -154,7 +154,7 @@ impl<T: SessionStream> Session<T> {
                 Err(err) => {
                     trc::event!(
                         MtaHook(MtaHookEvent::Error),
-                        SessionId = self.data.session_id,
+                        SpanId = self.data.session_id,
                         Id = mta_hook.id.clone(),
                         Reason = err,
                     );

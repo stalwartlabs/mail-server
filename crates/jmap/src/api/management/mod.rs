@@ -23,7 +23,7 @@ use directory::backend::internal::manage;
 use hyper::Method;
 use serde::Serialize;
 
-use super::{HttpRequest, HttpResponse};
+use super::{http::HttpSessionData, HttpRequest, HttpResponse};
 use crate::{auth::AccessToken, JMAP};
 
 #[derive(Serialize)]
@@ -44,6 +44,7 @@ impl JMAP {
         req: &HttpRequest,
         body: Option<Vec<u8>>,
         access_token: Arc<AccessToken>,
+        session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         let path = req.uri().path().split('/').skip(2).collect::<Vec<_>>();
         let is_superuser = access_token.is_super_user();
@@ -91,7 +92,8 @@ impl JMAP {
                 // for copyright infringement, breach of contract, and fraud.
 
                 if self.core.is_enterprise_edition() {
-                    self.handle_enterprise_api_request(req, path, body).await
+                    self.handle_enterprise_api_request(req, path, body, session)
+                        .await
                 } else {
                     Err(manage::unsupported(
                         "This feature is only available in the Enterprise version",

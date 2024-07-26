@@ -29,7 +29,7 @@ impl<T: SessionStream> Session<T> {
                         let mut disconnect = err.must_disconnect();
 
                         if let Err(err) = self.write_error(err).await {
-                            trc::error!(err.session_id(self.session_id));
+                            trc::error!(err.span_id(self.session_id));
                             disconnect = true;
                         }
 
@@ -47,7 +47,7 @@ impl<T: SessionStream> Session<T> {
                 }
                 Err(receiver::Error::Error { response }) => {
                     if let Err(err) = self.write_error(response).await {
-                        trc::error!(err.session_id(self.session_id));
+                        trc::error!(err.span_id(self.session_id));
                         return SessionResult::Close;
                     }
                     break;
@@ -75,7 +75,7 @@ impl<T: SessionStream> Session<T> {
             } {
                 Ok(response) => {
                     if let Err(err) = self.write(&response).await {
-                        trc::error!(err.session_id(self.session_id));
+                        trc::error!(err.span_id(self.session_id));
                         return SessionResult::Close;
                     }
 
@@ -89,7 +89,7 @@ impl<T: SessionStream> Session<T> {
                     let mut disconnect = err.must_disconnect();
 
                     if let Err(err) = self.write_error(err).await {
-                        trc::error!(err.session_id(self.session_id));
+                        trc::error!(err.span_id(self.session_id));
                         disconnect = true;
                     }
 
@@ -105,7 +105,7 @@ impl<T: SessionStream> Session<T> {
                 .write(format!("OK Ready for {} bytes.\r\n", needs_literal).as_bytes())
                 .await
             {
-                trc::error!(err.session_id(self.session_id));
+                trc::error!(err.span_id(self.session_id));
                 return SessionResult::Close;
             }
         }
@@ -189,8 +189,8 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     #[inline(always)]
     pub async fn write(&mut self, bytes: &[u8]) -> trc::Result<()> {
         trc::event!(
-            Imap(trc::ManageSieveEvent::RawOutput),
-            SessionId = self.session_id,
+            ManageSieve(trc::ManageSieveEvent::RawOutput),
+            SpanId = self.session_id,
             Size = bytes.len(),
             Contents = String::from_utf8_lossy(bytes).into_owned(),
         );
@@ -212,8 +212,8 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
     }
 
     pub async fn write_error(&mut self, error: trc::Error) -> trc::Result<()> {
-        let bytes = err.serialize();
-        trc::error!(error.session_id(self.session_id));
+        let bytes = error.serialize();
+        trc::error!(error.span_id(self.session_id));
         self.write(&bytes).await
     }
 
@@ -227,8 +227,8 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         })?;
 
         trc::event!(
-            Imap(trc::ManageSieveEvent::RawInput),
-            SessionId = self.session_id,
+            ManageSieve(trc::ManageSieveEvent::RawInput),
+            SpanId = self.session_id,
             Size = len,
             Contents = String::from_utf8_lossy(bytes.get(0..len).unwrap_or_default()).into_owned(),
         );

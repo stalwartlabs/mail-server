@@ -34,7 +34,7 @@ impl TlsaVerify for Tlsa {
         } else {
             trc::event!(
                 Dane(DaneEvent::NoCertificatesFound),
-                SessionId = session_id,
+                SpanId = session_id,
                 Hostname = hostname.to_string(),
             );
 
@@ -53,7 +53,7 @@ impl TlsaVerify for Tlsa {
                 Err(err) => {
                     trc::event!(
                         Dane(DaneEvent::CertificateParseError),
-                        SessionId = session_id,
+                        SpanId = session_id,
                         Hostname = hostname.to_string(),
                         Reason = err.to_string(),
                     );
@@ -96,7 +96,7 @@ impl TlsaVerify for Tlsa {
                     if hash == record.data {
                         trc::event!(
                             Dane(DaneEvent::TlsaRecordMatch),
-                            SessionId = session_id,
+                            SpanId = session_id,
                             Hostname = hostname.to_string(),
                             Type = if is_end_entity {
                                 "end-entity"
@@ -130,7 +130,7 @@ impl TlsaVerify for Tlsa {
         {
             trc::event!(
                 Dane(DaneEvent::AuthenticationSuccess),
-                SessionId = session_id,
+                SpanId = session_id,
                 Hostname = hostname.to_string(),
             );
 
@@ -138,7 +138,7 @@ impl TlsaVerify for Tlsa {
         } else {
             trc::event!(
                 Dane(DaneEvent::AuthenticationFailure),
-                SessionId = session_id,
+                SpanId = session_id,
                 Hostname = hostname.to_string(),
             );
 

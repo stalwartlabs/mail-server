@@ -14,18 +14,22 @@ use utils::config::Config;
 #[derive(Debug)]
 pub enum Tracer {
     Stdout {
+        id: String,
         level: Level,
         ansi: bool,
     },
     Log {
+        id: String,
         level: Level,
         appender: RollingFileAppender,
         ansi: bool,
     },
     Journal {
+        id: String,
         level: Level,
     },
     Otel {
+        id: String,
         level: Level,
         tracer: OtelTracer,
     },
@@ -96,6 +100,7 @@ impl Tracers {
                                 }
                             };
                         tracers.push(Tracer::Log {
+                            id: id.to_string(),
                             level,
                             appender,
                             ansi: config
@@ -106,6 +111,7 @@ impl Tracers {
                 }
                 "stdout" => {
                     tracers.push(Tracer::Stdout {
+                        id: id.to_string(),
                         level,
                         ansi: config
                             .property_or_default(("tracer", id, "ansi"), "true")
@@ -123,6 +129,7 @@ impl Tracers {
                                 exporter = exporter.with_endpoint(endpoint);
                             }
                             tracers.push(Tracer::Otel {
+                                id: id.to_string(),
                                 level,
                                 tracer: OtelTracer::Gprc(exporter),
                             });
@@ -158,6 +165,7 @@ impl Tracers {
                                 }
 
                                 tracers.push(Tracer::Otel {
+                                    id: id.to_string(),
                                     level,
                                     tracer: OtelTracer::Http(exporter),
                                 });
@@ -172,7 +180,10 @@ impl Tracers {
                 }
                 "journal" => {
                     if !tracers.iter().any(|t| matches!(t, Tracer::Journal { .. })) {
-                        tracers.push(Tracer::Journal { level });
+                        tracers.push(Tracer::Journal {
+                            id: id.to_string(),
+                            level,
+                        });
                     } else {
                         config.new_build_error(
                             ("tracer", id, "type"),

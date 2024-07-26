@@ -49,7 +49,9 @@ impl SMTP {
                     .await;
 
                 // Queue DSN
-                dsn_message.queue(signature.as_deref(), &dsn, self).await;
+                dsn_message
+                    .queue(signature.as_deref(), &dsn, message.id, self)
+                    .await;
             }
         } else {
             // Handle double bounce
@@ -416,21 +418,20 @@ impl Message {
             }
             Ok(None) => {
                 trc::event!(
-                    context = "queue",
-                    event = "error",
-                    "Failed to open blob {:?}: not found",
-                    self.blob_hash
+                    Queue(trc::QueueEvent::BlobNotFound),
+                    SpanId = self.id,
+                    BlobId = self.blob_hash.to_hex(),
+                    CausedBy = trc::location!()
                 );
+
                 String::new()
             }
             Err(err) => {
-                trc::event!(
-                    context = "queue",
-                    event = "error",
-                    "Failed to open blob {:?}: {}",
-                    self.blob_hash,
-                    err
-                );
+                trc::error!(err
+                    .span_id(self.id)
+                    .details("Failed to fetch blobId")
+                    .caused_by(trc::location!()));
+
                 String::new()
             }
         };
@@ -496,12 +497,9 @@ impl Message {
 
         if !is_double_bounce.is_empty() {
             trc::event!(
-
-                context = "queue",
-                event = "double-bounce",
-                id = self.id,
-                failures = ?is_double_bounce,
-                "Failed delivery of message with null return path.",
+                Delivery(trc::DeliveryEvent::DoubleBounce),
+                SpanId = self.id,
+                To = is_double_bounce
             );
         }
     }
