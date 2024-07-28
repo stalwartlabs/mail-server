@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use crate::{
     core::{SelectedMailbox, Session, SessionData},
@@ -28,6 +28,7 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_uid: bool,
     ) -> trc::Result<()> {
+        let op_start = Instant::now();
         let command = request.command;
         let mut arguments = request.parse_thread()?;
         let (data, mailbox) = self.state.mailbox_state();
@@ -35,7 +36,7 @@ impl<T: SessionStream> Session<T> {
         spawn_op!(data, {
             let tag = std::mem::take(&mut arguments.tag);
 
-            match data.thread(arguments, mailbox, is_uid).await {
+            match data.thread(arguments, mailbox, is_uid, op_start).await {
                 Ok(response) => {
                     data.write_bytes(
                         StatusResponse::completed(command)
@@ -56,6 +57,7 @@ impl<T: SessionStream> SessionData<T> {
         arguments: Arguments,
         mailbox: Arc<SelectedMailbox>,
         is_uid: bool,
+        op_start: Instant,
     ) -> trc::Result<Response> {
         // Run query
         let (result_set, _) = self.query(arguments.filter, &mailbox, &None).await?;
@@ -96,6 +98,15 @@ impl<T: SessionStream> SessionData<T> {
             })
             .collect::<Vec<_>>();
         threads.sort_unstable();
+
+        trc::event!(
+            Imap(trc::ImapEvent::Thread),
+            SpanId = self.session_id,
+            AccountId = mailbox.id.account_id,
+            MailboxId = mailbox.id.mailbox_id,
+            Count = threads.len(),
+            Elapsed = op_start.elapsed()
+        );
 
         // Build response
         Ok(Response { is_uid, threads })

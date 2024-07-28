@@ -17,8 +17,6 @@ use ring::hmac;
 use tokio::sync::mpsc;
 use utils::snowflake::SnowflakeIdGenerator;
 
-use super::{Webhook, WebhookEvents, WebhookPayload, WebhookType};
-
 pub enum WebhookEvent {
     Send {
         typ: WebhookType,

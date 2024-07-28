@@ -5,19 +5,15 @@
  */
 
 use common::config::smtp::queue::RequireOptional;
-use mail_send::{smtp::AssertReply, Credentials, SmtpClient};
+use mail_send::{smtp::AssertReply, Credentials};
 use smtp_proto::{
-    EhloResponse, Response, Severity, EXT_CHUNKING, EXT_DSN, EXT_REQUIRE_TLS, EXT_SIZE,
-    EXT_SMTP_UTF8, EXT_START_TLS, MAIL_REQUIRETLS, MAIL_RET_FULL, MAIL_RET_HDRS, MAIL_SMTPUTF8,
-    RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
+    EhloResponse, Severity, EXT_CHUNKING, EXT_DSN, EXT_REQUIRE_TLS, EXT_SIZE, EXT_SMTP_UTF8,
+    MAIL_REQUIRETLS, MAIL_RET_FULL, MAIL_RET_HDRS, MAIL_SMTPUTF8, RCPT_NOTIFY_DELAY,
+    RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use std::fmt::Write;
 use std::time::Duration;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    net::TcpStream,
-};
-use tokio_rustls::{client::TlsStream, TlsConnector};
+use std::{fmt::Write, time::Instant};
+use tokio::io::{AsyncRead, AsyncWrite};
 use trc::DeliveryEvent;
 
 use crate::{
@@ -27,7 +23,7 @@ use crate::{
 
 use crate::queue::{Error, Message, Recipient, Status};
 
-use super::TlsStrategy;
+use super::{client::SmtpClient, TlsStrategy};
 
 pub struct SessionParams<'x> {
     pub core: &'x SMTP,
@@ -50,33 +46,54 @@ impl Message {
         params: SessionParams<'_>,
     ) -> Status<(), Error> {
         // Obtain capabilities
-        let capabilities = match say_helo(&mut smtp_client, &params).await {
-            Ok(capabilities) => capabilities,
+        let time = Instant::now();
+        let capabilities = match smtp_client.say_helo(&params).await {
+            Ok(capabilities) => {
+                trc::event!(
+                    Delivery(DeliveryEvent::Ehlo),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    Details = capabilities.capabilities(),
+                    Elapsed = time.elapsed(),
+                );
+
+                capabilities
+            }
             Err(status) => {
                 trc::event!(
                     Delivery(DeliveryEvent::EhloRejected),
                     SpanId = params.session_id,
                     Hostname = params.hostname.to_string(),
                     Reason = status.to_string(),
+                    Elapsed = time.elapsed(),
                 );
-                quit(smtp_client).await;
+                smtp_client.quit().await;
                 return status;
             }
         };
 
         // Authenticate
         if let Some(credentials) = params.credentials {
+            let time = Instant::now();
             if let Err(err) = smtp_client.authenticate(credentials, &capabilities).await {
                 trc::event!(
                     Delivery(DeliveryEvent::AuthFailed),
                     SpanId = params.session_id,
                     Hostname = params.hostname.to_string(),
                     Reason = err.to_string(),
+                    Elapsed = time.elapsed(),
                 );
 
-                quit(smtp_client).await;
+                smtp_client.quit().await;
                 return Status::from_smtp_error(params.hostname, "AUTH ...", err);
             }
+
+            trc::event!(
+                Delivery(DeliveryEvent::Auth),
+                SpanId = params.session_id,
+                Hostname = params.hostname.to_string(),
+                Elapsed = time.elapsed(),
+            );
 
             // Refresh capabilities
             // Disabled as some SMTP servers deauthenticate after EHLO
@@ -90,13 +107,14 @@ impl Message {
                         mx = &params.hostname,
                         reason = %status,
                     );
-                    quit(smtp_client).await;
+                    smtp_client.quit().await;
                     return status;
                 }
             };*/
         }
 
         // MAIL FROM
+        let time = Instant::now();
         smtp_client.timeout = params.timeout_mail;
         let cmd = self.build_mail_from(&capabilities);
         if let Err(err) = smtp_client
@@ -109,11 +127,20 @@ impl Message {
                 SpanId = params.session_id,
                 Hostname = params.hostname.to_string(),
                 Reason = err.to_string(),
+                Elapsed = time.elapsed(),
             );
 
-            quit(smtp_client).await;
+            smtp_client.quit().await;
             return Status::from_smtp_error(params.hostname, &cmd, err);
         }
+
+        trc::event!(
+            Delivery(DeliveryEvent::MailFrom),
+            SpanId = params.session_id,
+            Hostname = params.hostname.to_string(),
+            From = self.return_path.to_string(),
+            Elapsed = time.elapsed(),
+        );
 
         // RCPT TO
         let mut total_rcpt = 0;
@@ -121,6 +148,7 @@ impl Message {
         let mut accepted_rcpts = Vec::new();
         smtp_client.timeout = params.timeout_rcpt;
         for rcpt in recipients {
+            let time = Instant::now();
             total_rcpt += 1;
             if matches!(
                 &rcpt.status,
@@ -134,6 +162,15 @@ impl Message {
             match smtp_client.cmd(cmd.as_bytes()).await {
                 Ok(response) => match response.severity() {
                     Severity::PositiveCompletion => {
+                        trc::event!(
+                            Delivery(DeliveryEvent::RcptTo),
+                            SpanId = params.session_id,
+                            Hostname = params.hostname.to_string(),
+                            To = rcpt.address.to_string(),
+                            Details = response.to_string(),
+                            Elapsed = time.elapsed(),
+                        );
+
                         accepted_rcpts.push((
                             rcpt,
                             Status::Completed(HostResponse {
@@ -149,6 +186,7 @@ impl Message {
                             Hostname = params.hostname.to_string(),
                             To = rcpt.address.to_string(),
                             Reason = response.to_string(),
+                            Elapsed = time.elapsed(),
                         );
 
                         let response = HostResponse {
@@ -174,10 +212,11 @@ impl Message {
                         Hostname = params.hostname.to_string(),
                         To = rcpt.address.to_string(),
                         Reason = err.to_string(),
+                        Elapsed = time.elapsed(),
                     );
 
                     // Something went wrong, abort.
-                    quit(smtp_client).await;
+                    smtp_client.quit().await;
                     return Status::from_smtp_error(params.hostname, "", err);
                 }
             }
@@ -185,27 +224,30 @@ impl Message {
 
         // Send message
         if !accepted_rcpts.is_empty() {
-            let bdat_cmd = if capabilities.has_capability(EXT_CHUNKING) {
-                format!("BDAT {} LAST\r\n", self.size).into()
-            } else {
-                None
-            };
+            let time = Instant::now();
+            let bdat_cmd = capabilities
+                .has_capability(EXT_CHUNKING)
+                .then(|| format!("BDAT {} LAST\r\n", self.size));
 
-            if let Err(status) = send_message(&mut smtp_client, self, &bdat_cmd, &params).await {
+            if let Err(status) = smtp_client.send_message(self, &bdat_cmd, &params).await {
                 trc::event!(
                     Delivery(DeliveryEvent::MessageRejected),
                     SpanId = params.session_id,
                     Hostname = params.hostname.to_string(),
                     Reason = status.to_string(),
+                    Elapsed = time.elapsed(),
                 );
 
-                quit(smtp_client).await;
+                smtp_client.quit().await;
                 return status;
             }
 
             if params.is_smtp {
                 // Handle SMTP response
-                match read_smtp_data_response(&mut smtp_client, params.hostname, &bdat_cmd).await {
+                match smtp_client
+                    .read_smtp_data_response(params.hostname, &bdat_cmd)
+                    .await
+                {
                     Ok(response) => {
                         // Mark recipients as delivered
                         if response.code() == 250 {
@@ -216,6 +258,7 @@ impl Message {
                                     Hostname = params.hostname.to_string(),
                                     To = rcpt.address.to_string(),
                                     Details = status.to_string(),
+                                    Elapsed = time.elapsed(),
                                 );
 
                                 rcpt.status = status;
@@ -228,9 +271,10 @@ impl Message {
                                 SpanId = params.session_id,
                                 Hostname = params.hostname.to_string(),
                                 Reason = response.to_string(),
+                                Elapsed = time.elapsed(),
                             );
 
-                            quit(smtp_client).await;
+                            smtp_client.quit().await;
                             return Status::from_smtp_error(
                                 params.hostname,
                                 bdat_cmd.as_deref().unwrap_or("DATA"),
@@ -240,24 +284,22 @@ impl Message {
                     }
                     Err(status) => {
                         trc::event!(
-                            Delivery(DeliveryEvent::MailFromRejected),
+                            Delivery(DeliveryEvent::MessageRejected),
                             SpanId = params.session_id,
                             Hostname = params.hostname.to_string(),
                             Reason = status.to_string(),
+                            Elapsed = time.elapsed(),
                         );
 
-                        quit(smtp_client).await;
+                        smtp_client.quit().await;
                         return status;
                     }
                 }
             } else {
                 // Handle LMTP responses
-                match read_lmtp_data_response(
-                    &mut smtp_client,
-                    params.hostname,
-                    accepted_rcpts.len(),
-                )
-                .await
+                match smtp_client
+                    .read_lmtp_data_response(params.hostname, accepted_rcpts.len())
+                    .await
                 {
                     Ok(responses) => {
                         for ((rcpt, _), response) in accepted_rcpts.into_iter().zip(responses) {
@@ -270,6 +312,7 @@ impl Message {
                                         Hostname = params.hostname.to_string(),
                                         To = rcpt.address.to_string(),
                                         Details = response.to_string(),
+                                        Elapsed = time.elapsed(),
                                     );
 
                                     total_completed += 1;
@@ -285,6 +328,7 @@ impl Message {
                                         Hostname = params.hostname.to_string(),
                                         To = rcpt.address.to_string(),
                                         Reason = response.to_string(),
+                                        Elapsed = time.elapsed(),
                                     );
 
                                     let response = HostResponse {
@@ -313,16 +357,17 @@ impl Message {
                             SpanId = params.session_id,
                             Hostname = params.hostname.to_string(),
                             Reason = status.to_string(),
+                            Elapsed = time.elapsed(),
                         );
 
-                        quit(smtp_client).await;
+                        smtp_client.quit().await;
                         return status;
                     }
                 }
             }
         }
 
-        quit(smtp_client).await;
+        smtp_client.quit().await;
         if total_completed == total_rcpt {
             Status::Completed(())
         } else {
@@ -402,191 +447,6 @@ impl Recipient {
     pub fn has_flag(&self, flag: u64) -> bool {
         (self.flags & flag) != 0
     }
-}
-
-pub enum StartTlsResult {
-    Success {
-        smtp_client: SmtpClient<TlsStream<TcpStream>>,
-    },
-    Error {
-        error: mail_send::Error,
-    },
-    Unavailable {
-        response: Option<Response<String>>,
-        smtp_client: SmtpClient<TcpStream>,
-    },
-}
-
-pub async fn try_start_tls(
-    mut smtp_client: SmtpClient<TcpStream>,
-    tls_connector: &TlsConnector,
-    hostname: &str,
-    capabilities: &EhloResponse<String>,
-) -> StartTlsResult {
-    if capabilities.has_capability(EXT_START_TLS) {
-        match smtp_client.cmd("STARTTLS\r\n").await {
-            Ok(response) => {
-                if response.code() == 220 {
-                    match smtp_client.into_tls(tls_connector, hostname).await {
-                        Ok(smtp_client) => StartTlsResult::Success { smtp_client },
-                        Err(error) => StartTlsResult::Error { error },
-                    }
-                } else {
-                    StartTlsResult::Unavailable {
-                        response: response.into(),
-                        smtp_client,
-                    }
-                }
-            }
-            Err(error) => StartTlsResult::Error { error },
-        }
-    } else {
-        StartTlsResult::Unavailable {
-            smtp_client,
-            response: None,
-        }
-    }
-}
-
-pub async fn read_greeting<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    hostname: &str,
-) -> Result<(), Status<(), Error>> {
-    tokio::time::timeout(smtp_client.timeout, smtp_client.read())
-        .await
-        .map_err(|_| Status::timeout(hostname, "reading greeting"))?
-        .and_then(|r| r.assert_code(220))
-        .map_err(|err| Status::from_smtp_error(hostname, "", err))
-}
-
-pub async fn read_smtp_data_response<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    hostname: &str,
-    bdat_cmd: &Option<String>,
-) -> Result<Response<String>, Status<(), Error>> {
-    tokio::time::timeout(smtp_client.timeout, smtp_client.read())
-        .await
-        .map_err(|_| Status::timeout(hostname, "reading SMTP DATA response"))?
-        .map_err(|err| {
-            Status::from_smtp_error(hostname, bdat_cmd.as_deref().unwrap_or("DATA"), err)
-        })
-}
-
-pub async fn read_lmtp_data_response<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    hostname: &str,
-    num_responses: usize,
-) -> Result<Vec<Response<String>>, Status<(), Error>> {
-    tokio::time::timeout(smtp_client.timeout, async {
-        smtp_client.read_many(num_responses).await
-    })
-    .await
-    .map_err(|_| Status::timeout(hostname, "reading LMTP DATA responses"))?
-    .map_err(|err| Status::from_smtp_error(hostname, "", err))
-}
-
-pub async fn write_chunks<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    chunks: &[&[u8]],
-) -> Result<(), mail_send::Error> {
-    for chunk in chunks {
-        smtp_client
-            .stream
-            .write_all(chunk)
-            .await
-            .map_err(mail_send::Error::from)?;
-    }
-    smtp_client
-        .stream
-        .flush()
-        .await
-        .map_err(mail_send::Error::from)
-}
-
-pub async fn send_message<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    message: &Message,
-    bdat_cmd: &Option<String>,
-    params: &SessionParams<'_>,
-) -> Result<(), Status<(), Error>> {
-    match params
-        .core
-        .core
-        .storage
-        .blob
-        .get_blob(message.blob_hash.as_slice(), 0..usize::MAX)
-        .await
-    {
-        Ok(Some(raw_message)) => tokio::time::timeout(params.timeout_data, async {
-            if let Some(bdat_cmd) = bdat_cmd {
-                write_chunks(smtp_client, &[bdat_cmd.as_bytes(), &raw_message]).await
-            } else {
-                write_chunks(smtp_client, &[b"DATA\r\n"]).await?;
-                smtp_client.read().await?.assert_code(354)?;
-                smtp_client
-                    .write_message(&raw_message)
-                    .await
-                    .map_err(mail_send::Error::from)
-            }
-        })
-        .await
-        .map_err(|_| Status::timeout(params.hostname, "sending message"))?
-        .map_err(|err| {
-            Status::from_smtp_error(params.hostname, bdat_cmd.as_deref().unwrap_or("DATA"), err)
-        }),
-        Ok(None) => {
-            trc::event!(
-                Queue(trc::QueueEvent::BlobNotFound),
-                SpanId = message.id,
-                BlobId = message.blob_hash.to_hex(),
-                CausedBy = trc::location!()
-            );
-            Err(Status::TemporaryFailure(Error::Io(
-                "Queue system error.".to_string(),
-            )))
-        }
-        Err(err) => {
-            trc::error!(err
-                .span_id(message.id)
-                .details("Failed to fetch blobId")
-                .caused_by(trc::location!()));
-
-            Err(Status::TemporaryFailure(Error::Io(
-                "Queue system error.".to_string(),
-            )))
-        }
-    }
-}
-
-pub async fn say_helo<T: AsyncRead + AsyncWrite + Unpin>(
-    smtp_client: &mut SmtpClient<T>,
-    params: &SessionParams<'_>,
-) -> Result<EhloResponse<String>, Status<(), Error>> {
-    let cmd = if params.is_smtp {
-        format!("EHLO {}\r\n", params.local_hostname)
-    } else {
-        format!("LHLO {}\r\n", params.local_hostname)
-    };
-    tokio::time::timeout(params.timeout_ehlo, async {
-        smtp_client.stream.write_all(cmd.as_bytes()).await?;
-        smtp_client.stream.flush().await?;
-        smtp_client.read_ehlo().await
-    })
-    .await
-    .map_err(|_| Status::timeout(params.hostname, "reading EHLO response"))?
-    .map_err(|err| Status::from_smtp_error(params.hostname, &cmd, err))
-}
-
-pub async fn quit<T: AsyncRead + AsyncWrite + Unpin>(mut smtp_client: SmtpClient<T>) {
-    let _ = tokio::time::timeout(Duration::from_secs(10), async {
-        if smtp_client.stream.write_all(b"QUIT\r\n").await.is_ok()
-            && smtp_client.stream.flush().await.is_ok()
-        {
-            let mut buf = [0u8; 128];
-            let _ = smtp_client.stream.read(&mut buf).await;
-        }
-    })
-    .await;
 }
 
 impl TlsStrategy {

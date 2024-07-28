@@ -17,9 +17,9 @@ use crate::queue::{
     spool::QueueEventLock, DeliveryAttempt, Error, ErrorDetails, HostResponse, Status,
 };
 
+pub mod client;
 pub mod dane;
 pub mod delivery;
-
 pub mod local;
 pub mod lookup;
 pub mod mta_sts;

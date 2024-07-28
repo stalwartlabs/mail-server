@@ -69,9 +69,19 @@ impl LdapDirectory {
 
                     ldap3::drive!(conn);
 
-                    ldap.simple_bind(&auth_bind.build(username), secret)
+                    let dn = auth_bind.build(username);
+
+                    trc::event!(Store(trc::StoreEvent::LdapBind), Details = dn.clone());
+
+                    if ldap
+                        .simple_bind(&dn, secret)
                         .await
-                        .map_err(|err| err.into_error().caused_by(trc::location!()))?;
+                        .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                        .success()
+                        .is_err()
+                    {
+                        return Ok(None);
+                    }
 
                     match self
                         .find_principal(&mut ldap, &self.mappings.filter_name.build(username))
@@ -159,6 +169,7 @@ impl LdapDirectory {
     }
 
     pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
+        let filter = self.mappings.filter_email.build(address.as_ref());
         let rs = self
             .pool
             .get()
@@ -167,7 +178,7 @@ impl LdapDirectory {
             .search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_email.build(address.as_ref()),
+                &filter,
                 &self.mappings.attr_name,
             )
             .await
@@ -175,6 +186,15 @@ impl LdapDirectory {
             .success()
             .map(|(rs, _res)| rs)
             .map_err(|err| err.into_error().caused_by(trc::location!()))?;
+
+        trc::event!(
+            Store(trc::StoreEvent::LdapQuery),
+            Details = filter,
+            Result = rs
+                .iter()
+                .map(|e| trc::Value::from(format!("{e:?}")))
+                .collect::<Vec<_>>()
+        );
 
         let mut ids = Vec::with_capacity(rs.len());
         for entry in rs {
@@ -193,6 +213,7 @@ impl LdapDirectory {
     }
 
     pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
+        let filter = self.mappings.filter_email.build(address.as_ref());
         self.pool
             .get()
             .await
@@ -200,18 +221,29 @@ impl LdapDirectory {
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_email.build(address.as_ref()),
+                &filter,
                 &self.mappings.attr_email_address,
             )
             .await
             .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .next()
             .await
-            .map(|entry| entry.is_some())
+            .map(|entry| {
+                let success = entry.is_some();
+
+                trc::event!(
+                    Store(trc::StoreEvent::LdapQuery),
+                    Details = filter,
+                    Result = entry.map(|e| trc::Value::from(format!("{e:?}")))
+                );
+
+                success
+            })
             .map_err(|err| err.into_error().caused_by(trc::location!()))
     }
 
     pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
+        let filter = self.mappings.filter_verify.build(address);
         let mut stream = self
             .pool
             .get()
@@ -220,7 +252,7 @@ impl LdapDirectory {
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_verify.build(address),
+                &filter,
                 &self.mappings.attr_email_address,
             )
             .await
@@ -243,11 +275,21 @@ impl LdapDirectory {
                 }
             }
         }
+
+        trc::event!(
+            Store(trc::StoreEvent::LdapQuery),
+            Details = filter,
+            Result = emails
+                .iter()
+                .map(|e| trc::Value::from(e.clone()))
+                .collect::<Vec<_>>()
+        );
 
         Ok(emails)
     }
 
     pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
+        let filter = self.mappings.filter_expand.build(address);
         let mut stream = self
             .pool
             .get()
@@ -256,7 +298,7 @@ impl LdapDirectory {
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_expand.build(address),
+                &filter,
                 &self.mappings.attr_email_address,
             )
             .await
@@ -280,10 +322,20 @@ impl LdapDirectory {
             }
         }
 
+        trc::event!(
+            Store(trc::StoreEvent::LdapQuery),
+            Details = filter,
+            Result = emails
+                .iter()
+                .map(|e| trc::Value::from(e.clone()))
+                .collect::<Vec<_>>()
+        );
+
         Ok(emails)
     }
 
     pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
+        let filter = self.mappings.filter_domains.build(domain);
         self.pool
             .get()
             .await
@@ -291,14 +343,24 @@ impl LdapDirectory {
             .streaming_search(
                 &self.mappings.base_dn,
                 Scope::Subtree,
-                &self.mappings.filter_domains.build(domain),
+                &filter,
                 Vec::<String>::new(),
             )
             .await
             .map_err(|err| err.into_error().caused_by(trc::location!()))?
             .next()
             .await
-            .map(|entry| entry.is_some())
+            .map(|entry| {
+                let success = entry.is_some();
+
+                trc::event!(
+                    Store(trc::StoreEvent::LdapQuery),
+                    Details = filter,
+                    Result = entry.map(|e| trc::Value::from(format!("{e:?}")))
+                );
+
+                success
+            })
             .map_err(|err| err.into_error().caused_by(trc::location!()))
     }
 }
@@ -319,6 +381,15 @@ impl LdapDirectory {
         .map_err(|err| err.into_error().caused_by(trc::location!()))?
         .success()
         .map(|(rs, _)| {
+            trc::event!(
+                Store(trc::StoreEvent::LdapQuery),
+                Details = filter.to_string(),
+                Result = rs
+                    .iter()
+                    .map(|e| trc::Value::from(format!("{e:?}")))
+                    .collect::<Vec<_>>()
+            );
+
             rs.into_iter().next().map(|entry| {
                 self.mappings
                     .entry_to_principal(SearchEntry::construct(entry))
@@ -331,11 +402,6 @@ impl LdapDirectory {
 impl LdapMappings {
     fn entry_to_principal(&self, entry: SearchEntry) -> Principal<String> {
         let mut principal = Principal::default();
-
-        trc::event!(
-            Store(trc::StoreEvent::LdapQuery),
-            Value = format!("{entry:?}")
-        );
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {

@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use imap_proto::receiver::Request;
 use jmap::sieve::set::SCHEMA;
 use jmap_proto::{
@@ -18,6 +20,7 @@ use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
     pub async fn handle_renamescript(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        let op_start = Instant::now();
         let mut tokens = request.tokens.into_iter();
         let name = tokens
             .next()
@@ -80,7 +83,9 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             .custom(
                 ObjectIndexBuilder::new(SCHEMA)
                     .with_current(script)
-                    .with_changes(Object::with_capacity(1).with_property(Property::Name, new_name)),
+                    .with_changes(
+                        Object::with_capacity(1).with_property(Property::Name, new_name.clone()),
+                    ),
             );
         if !batch.is_empty() {
             self.jmap
@@ -94,6 +99,15 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .await
                 .caused_by(trc::location!())?;
         }
+
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::RenameScript),
+            SpanId = self.session_id,
+            OldName = name,
+            Name = new_name,
+            DocumentId = document_id,
+            Elapsed = op_start.elapsed()
+        );
 
         Ok(StatusResponse::ok("Success.").into_bytes())
     }

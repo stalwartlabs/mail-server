@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, sync::Arc, time::Instant};
 
 use crate::{
     core::{SelectedMailbox, Session, SessionData},
@@ -44,6 +44,7 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_uid: bool,
     ) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_fetch()?;
 
         let (data, mailbox) = self.state.select_data();
@@ -68,6 +69,7 @@ impl<T: SessionStream> Session<T> {
                     is_qresync,
                     is_rev2,
                     enabled_condstore,
+                    op_start,
                 )
                 .await?;
             data.write_bytes(response.into_bytes()).await
@@ -76,6 +78,7 @@ impl<T: SessionStream> Session<T> {
 }
 
 impl<T: SessionStream> SessionData<T> {
+    #[allow(clippy::too_many_arguments)]
     pub async fn fetch(
         &self,
         mut arguments: Arguments,
@@ -84,6 +87,7 @@ impl<T: SessionStream> SessionData<T> {
         is_qresync: bool,
         _is_rev2: bool,
         enabled_condstore: bool,
+        op_start: Instant,
     ) -> trc::Result<StatusResponse> {
         // Validate VANISHED parameter
         if arguments.include_vanished {
@@ -178,6 +182,15 @@ impl<T: SessionStream> SessionData<T> {
                     )
                     .await?;
                 }
+
+                trc::event!(
+                    Imap(trc::ImapEvent::Fetch),
+                    SpanId = self.session_id,
+                    AccountId = account_id,
+                    MailboxId = mailbox.id.mailbox_id,
+                    Elapsed = op_start.elapsed()
+                );
+
                 return Ok(
                     StatusResponse::completed(Command::Fetch(is_uid)).with_tag(arguments.tag)
                 );
@@ -255,6 +268,11 @@ impl<T: SessionStream> SessionData<T> {
             .map(|(id, imap_id)| (imap_id.seqnum, imap_id.uid, id))
             .collect::<Vec<_>>();
         ids.sort_unstable_by_key(|(seqnum, _, _)| *seqnum);
+        let fetched_ids = ids
+            .iter()
+            .map(|id| trc::Value::from(id.2))
+            .collect::<Vec<_>>();
+
         for (seqnum, uid, id) in ids {
             // Obtain attributes and keywords
             let (email, keywords) = if let (Some(email), Some(keywords)) = (
@@ -543,6 +561,20 @@ impl<T: SessionStream> SessionData<T> {
                     .await;
             }
         }
+
+        trc::event!(
+            Imap(trc::ImapEvent::Fetch),
+            SpanId = self.session_id,
+            AccountId = account_id,
+            MailboxId = mailbox.id.mailbox_id,
+            DocumentId = fetched_ids,
+            Details = arguments
+                .attributes
+                .iter()
+                .map(|c| trc::Value::from(format!("{c:?}")))
+                .collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         // Condstore was enabled with this command
         if enabled_condstore {

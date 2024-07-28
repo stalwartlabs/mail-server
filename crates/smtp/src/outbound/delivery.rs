@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::outbound::dane::verify::TlsaVerify;
+use crate::outbound::client::SmtpClient;
 use crate::outbound::mta_sts::verify::VerifyPolicy;
+use crate::outbound::{client::StartTlsResult, dane::verify::TlsaVerify};
 use common::config::{
     server::ServerProtocol,
     smtp::{queue::RequireOptional, report::AggregateFrequency},
@@ -14,7 +15,6 @@ use mail_auth::{
     mta_sts::TlsRpt,
     report::tlsrpt::{FailureDetails, ResultType},
 };
-use mail_send::SmtpClient;
 use smtp_proto::MAIL_REQUIRETLS;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -29,12 +29,7 @@ use crate::{
     reporting::{tls::TlsRptOptions, PolicyType, TlsEvent},
 };
 
-use super::{
-    lookup::ToNextHop,
-    mta_sts,
-    session::{read_greeting, say_helo, try_start_tls, SessionParams, StartTlsResult},
-    NextHop, TlsStrategy,
-};
+use super::{lookup::ToNextHop, mta_sts, session::SessionParams, NextHop, TlsStrategy};
 use crate::queue::{
     throttle, DeliveryAttempt, Domain, Error, Event, OnHold, QueueEnvelope, Status,
 };
@@ -141,6 +136,12 @@ impl DeliveryAttempt {
                         let next_due = message.next_event_after(now());
                         message.save_changes(&core, None, None).await;
 
+                        trc::event!(
+                            Delivery(DeliveryEvent::ConcurrencyLimitExceeded),
+                            Id = throttle.id.clone(),
+                            SpanId = message_id,
+                        );
+
                         Event::OnHold(OnHold {
                             next_due,
                             limiters: vec![limiter],
@@ -153,6 +154,14 @@ impl DeliveryAttempt {
                             retry_at,
                             message.next_event_after(now()).unwrap_or(u64::MAX),
                         );
+
+                        trc::event!(
+                            Delivery(DeliveryEvent::RateLimitExceeded),
+                            Id = throttle.id.clone(),
+                            SpanId = message_id,
+                            NextRetry = trc::Value::Timestamp(next_event)
+                        );
+
                         message
                             .save_changes(&core, self.event.due.into(), next_event.into())
                             .await;
@@ -203,6 +212,13 @@ impl DeliveryAttempt {
                     .is_allowed(throttle, &envelope, &mut in_flight, message.id)
                     .await
                 {
+                    trc::event!(
+                        Delivery(DeliveryEvent::RateLimitExceeded),
+                        Id = throttle.id.clone(),
+                        SpanId = message_id,
+                        Domain = domain.domain.clone(),
+                    );
+
                     message.domains[domain_idx].set_throttle_error(err, &mut on_hold);
                     continue 'next_domain;
                 }
@@ -267,6 +283,7 @@ impl DeliveryAttempt {
                 | AggregateFrequency::Weekly)
                     if is_smtp =>
                 {
+                    let time = Instant::now();
                     match core
                         .core
                         .smtp
@@ -280,7 +297,8 @@ impl DeliveryAttempt {
                                 TlsRpt(TlsRptEvent::RecordFetch),
                                 SpanId = message.id,
                                 Domain = domain.domain.clone(),
-                                Details = format!("{record:?}")
+                                Details = format!("{record:?}"),
+                                Elapsed = time.elapsed(),
                             );
 
                             TlsRptOptions { record, interval }.into()
@@ -290,7 +308,8 @@ impl DeliveryAttempt {
                                 TlsRpt(TlsRptEvent::RecordFetchError),
                                 SpanId = message.id,
                                 Domain = domain.domain.clone(),
-                                CausedBy = trc::Event::from(err)
+                                CausedBy = trc::Event::from(err),
+                                Elapsed = time.elapsed(),
                             );
                             None
                         }
@@ -301,6 +320,7 @@ impl DeliveryAttempt {
 
             // Obtain MTA-STS policy for domain
             let mta_sts_policy = if tls_strategy.try_mta_sts() && is_smtp {
+                let time = Instant::now();
                 match core
                     .lookup_mta_sts_policy(
                         &domain.domain,
@@ -316,7 +336,8 @@ impl DeliveryAttempt {
                             MtaSts(MtaStsEvent::PolicyFetch),
                             SpanId = message.id,
                             Domain = domain.domain.clone(),
-                            Details = mta_sts_policy.to_string()
+                            Details = mta_sts_policy.to_string(),
+                            Elapsed = time.elapsed(),
                         );
 
                         mta_sts_policy.into()
@@ -365,6 +386,7 @@ impl DeliveryAttempt {
                                     SpanId = message.id,
                                     Domain = domain.domain.clone(),
                                     Strict = strict,
+                                    Elapsed = time.elapsed(),
                                 );
                             }
                             mta_sts::Error::Dns(err) => {
@@ -374,6 +396,7 @@ impl DeliveryAttempt {
                                     Domain = domain.domain.clone(),
                                     CausedBy = trc::Event::from(err.clone()),
                                     Strict = strict,
+                                    Elapsed = time.elapsed(),
                                 );
                             }
                             mta_sts::Error::Http(err) => {
@@ -383,6 +406,7 @@ impl DeliveryAttempt {
                                     Domain = domain.domain.clone(),
                                     Reason = err.to_string(),
                                     Strict = strict,
+                                    Elapsed = time.elapsed(),
                                 );
                             }
                             mta_sts::Error::InvalidPolicy(reason) => {
@@ -392,6 +416,7 @@ impl DeliveryAttempt {
                                     Domain = domain.domain.clone(),
                                     Reason = reason.clone(),
                                     Strict = strict,
+                                    Elapsed = time.elapsed(),
                                 );
                             }
                         }
@@ -421,6 +446,7 @@ impl DeliveryAttempt {
             let mx_list;
             if is_smtp && remote_hosts.is_empty() {
                 // Lookup MX
+                let time = Instant::now();
                 mx_list = match core.core.smtp.resolvers.dns.mx_lookup(&domain.domain).await {
                     Ok(mx) => mx,
                     Err(err) => {
@@ -429,6 +455,7 @@ impl DeliveryAttempt {
                             SpanId = message.id,
                             Domain = domain.domain.clone(),
                             CausedBy = trc::Event::from(err.clone()),
+                            Elapsed = time.elapsed(),
                         );
 
                         let schedule = core
@@ -448,12 +475,23 @@ impl DeliveryAttempt {
                         .await
                         .unwrap_or(5),
                 ) {
+                    trc::event!(
+                        Delivery(DeliveryEvent::MxLookup),
+                        SpanId = message.id,
+                        Domain = domain.domain.clone(),
+                        Details = remote_hosts_
+                            .iter()
+                            .map(|h| trc::Value::String(h.hostname().to_string()))
+                            .collect::<Vec<_>>(),
+                        Elapsed = time.elapsed(),
+                    );
                     remote_hosts = remote_hosts_;
                 } else {
                     trc::event!(
                         Delivery(DeliveryEvent::NullMX),
                         SpanId = message.id,
                         Domain = domain.domain.clone(),
+                        Elapsed = time.elapsed(),
                     );
 
                     let schedule = core
@@ -482,6 +520,7 @@ impl DeliveryAttempt {
                 // Validate MTA-STS
                 envelope.mx = remote_host.hostname();
                 if let Some(mta_sts_policy) = &mta_sts_policy {
+                    let strict = mta_sts_policy.enforce();
                     if !mta_sts_policy.verify(envelope.mx) {
                         // Report MTA-STS failed verification
                         if let Some(tls_report) = &tls_report {
@@ -498,8 +537,6 @@ impl DeliveryAttempt {
                             .await;
                         }
 
-                        let strict = mta_sts_policy.enforce();
-
                         trc::event!(
                             MtaSts(MtaStsEvent::NotAuthorized),
                             SpanId = message.id,
@@ -515,15 +552,40 @@ impl DeliveryAttempt {
                             )));
                             continue 'next_host;
                         }
+                    } else {
+                        trc::event!(
+                            MtaSts(MtaStsEvent::Authorized),
+                            SpanId = message.id,
+                            Domain = domain.domain.clone(),
+                            Hostname = envelope.mx.to_string(),
+                            Strict = strict,
+                        );
                     }
                 }
 
                 // Obtain source and remote IPs
+                let time = Instant::now();
                 let resolve_result = match core
                     .resolve_host(remote_host, &envelope, max_multihomed, message.id)
                     .await
                 {
-                    Ok(result) => result,
+                    Ok(result) => {
+                        trc::event!(
+                            Delivery(DeliveryEvent::IpLookup),
+                            SpanId = message.id,
+                            Domain = domain.domain.clone(),
+                            Hostname = envelope.mx.to_string(),
+                            Details = result
+                                .remote_ips
+                                .iter()
+                                .map(|ip| trc::Value::from(*ip))
+                                .collect::<Vec<_>>(),
+                            Limit = max_multihomed,
+                            Elapsed = time.elapsed(),
+                        );
+
+                        result
+                    }
                     Err(status) => {
                         trc::event!(
                             Delivery(DeliveryEvent::IpLookupFailed),
@@ -531,6 +593,7 @@ impl DeliveryAttempt {
                             Domain = domain.domain.clone(),
                             Hostname = envelope.mx.to_string(),
                             Details = status.to_string(),
+                            Elapsed = time.elapsed(),
                         );
 
                         last_status = status;
@@ -552,6 +615,7 @@ impl DeliveryAttempt {
 
                 // Lookup DANE policy
                 let dane_policy = if tls_strategy.try_dane() && is_smtp {
+                    let time = Instant::now();
                     let strict = tls_strategy.is_dane_required();
                     match core.tlsa_lookup(format!("_25._tcp.{}.", envelope.mx)).await {
                         Ok(Some(tlsa)) => {
@@ -563,6 +627,7 @@ impl DeliveryAttempt {
                                     Hostname = envelope.mx.to_string(),
                                     Details = format!("{tlsa:?}"),
                                     Strict = strict,
+                                    Elapsed = time.elapsed(),
                                 );
 
                                 tlsa.into()
@@ -574,6 +639,7 @@ impl DeliveryAttempt {
                                     Hostname = envelope.mx.to_string(),
                                     Details = format!("{tlsa:?}"),
                                     Strict = strict,
+                                    Elapsed = time.elapsed(),
                                 );
 
                                 // Report invalid TLSA record
@@ -609,6 +675,7 @@ impl DeliveryAttempt {
                                 Domain = domain.domain.clone(),
                                 Hostname = envelope.mx.to_string(),
                                 Strict = strict,
+                                Elapsed = time.elapsed(),
                             );
 
                             if strict {
@@ -648,6 +715,7 @@ impl DeliveryAttempt {
                                     Domain = domain.domain.clone(),
                                     Hostname = envelope.mx.to_string(),
                                     Strict = strict,
+                                    Elapsed = time.elapsed(),
                                 );
                             } else {
                                 trc::event!(
@@ -657,6 +725,7 @@ impl DeliveryAttempt {
                                     Hostname = envelope.mx.to_string(),
                                     CausedBy = trc::Event::from(err.clone()),
                                     Strict = strict,
+                                    Elapsed = time.elapsed(),
                                 );
                             }
 
@@ -713,12 +782,19 @@ impl DeliveryAttempt {
                             .is_allowed(throttle, &envelope, &mut in_flight_host, message.id)
                             .await
                         {
+                            trc::event!(
+                                Delivery(DeliveryEvent::RateLimitExceeded),
+                                SpanId = message.id,
+                                Id = throttle.id.clone(),
+                                RemoteIp = remote_ip,
+                            );
                             message.domains[domain_idx].set_throttle_error(err, &mut on_hold);
                             continue 'next_domain;
                         }
                     }
 
                     // Connect
+                    let time = Instant::now();
                     let conn_timeout = core
                         .core
                         .eval_if(&queue_config.timeout.connect, &envelope, message.id)
@@ -729,12 +805,14 @@ impl DeliveryAttempt {
                             ip_addr,
                             SocketAddr::new(remote_ip, remote_host.port()),
                             conn_timeout,
+                            message_id,
                         )
                         .await
                     } else {
                         SmtpClient::connect(
                             SocketAddr::new(remote_ip, remote_host.port()),
                             conn_timeout,
+                            message_id,
                         )
                         .await
                     } {
@@ -747,6 +825,7 @@ impl DeliveryAttempt {
                                 LocalIp = source_ip.unwrap_or(no_ip),
                                 RemoteIp = remote_ip,
                                 RemotePort = remote_host.port(),
+                                Elapsed = time.elapsed(),
                             );
 
                             smtp_client
@@ -761,6 +840,7 @@ impl DeliveryAttempt {
                                 RemoteIp = remote_ip,
                                 RemotePort = remote_host.port(),
                                 Reason = err.to_string(),
+                                Elapsed = time.elapsed(),
                             );
 
                             last_status = Status::from_smtp_error(envelope.mx, "", err);
@@ -829,7 +909,7 @@ impl DeliveryAttempt {
                             .eval_if(&queue_config.timeout.greeting, &envelope, message.id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(5 * 60));
-                        if let Err(status) = read_greeting(&mut smtp_client, envelope.mx).await {
+                        if let Err(status) = smtp_client.read_greeting(envelope.mx).await {
                             trc::event!(
                                 Delivery(DeliveryEvent::GreetingFailed),
                                 SpanId = message.id,
@@ -843,8 +923,20 @@ impl DeliveryAttempt {
                         }
 
                         // Say EHLO
-                        let capabilities = match say_helo(&mut smtp_client, &params).await {
-                            Ok(capabilities) => capabilities,
+                        let time = Instant::now();
+                        let capabilities = match smtp_client.say_helo(&params).await {
+                            Ok(capabilities) => {
+                                trc::event!(
+                                    Delivery(DeliveryEvent::Ehlo),
+                                    SpanId = message.id,
+                                    Domain = domain.domain.clone(),
+                                    Hostname = envelope.mx.to_string(),
+                                    Details = capabilities.capabilities(),
+                                    Elapsed = time.elapsed(),
+                                );
+
+                                capabilities
+                            }
                             Err(status) => {
                                 trc::event!(
                                     Delivery(DeliveryEvent::EhloRejected),
@@ -852,6 +944,7 @@ impl DeliveryAttempt {
                                     Domain = domain.domain.clone(),
                                     Hostname = envelope.mx.to_string(),
                                     Details = status.to_string(),
+                                    Elapsed = time.elapsed(),
                                 );
 
                                 last_status = status;
@@ -861,18 +954,15 @@ impl DeliveryAttempt {
 
                         // Try starting TLS
                         if tls_strategy.try_start_tls() {
+                            let time = Instant::now();
                             smtp_client.timeout = core
                                 .core
                                 .eval_if(&queue_config.timeout.tls, &envelope, message.id)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(3 * 60));
-                            match try_start_tls(
-                                smtp_client,
-                                tls_connector,
-                                envelope.mx,
-                                &capabilities,
-                            )
-                            .await
+                            match smtp_client
+                                .try_start_tls(tls_connector, envelope.mx, &capabilities)
+                                .await
                             {
                                 StartTlsResult::Success { smtp_client } => {
                                     trc::event!(
@@ -888,6 +978,7 @@ impl DeliveryAttempt {
                                             "{:?}",
                                             smtp_client.tls_connection().negotiated_cipher_suite()
                                         ),
+                                        Elapsed = time.elapsed(),
                                     );
 
                                     // Verify DANE
@@ -961,6 +1052,7 @@ impl DeliveryAttempt {
                                         Domain = domain.domain.clone(),
                                         Hostname = envelope.mx.to_string(),
                                         Details = reason.clone(),
+                                        Elapsed = time.elapsed(),
                                     );
 
                                     if let Some(tls_report) = &tls_report {
@@ -1004,6 +1096,7 @@ impl DeliveryAttempt {
                                         Domain = domain.domain.clone(),
                                         Hostname = envelope.mx.to_string(),
                                         Reason = error.to_string(),
+                                        Elapsed = time.elapsed(),
                                     );
 
                                     // Report TLS failure
@@ -1081,7 +1174,7 @@ impl DeliveryAttempt {
                             .eval_if(&queue_config.timeout.greeting, &envelope, message.id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(5 * 60));
-                        if let Err(status) = read_greeting(&mut smtp_client, envelope.mx).await {
+                        if let Err(status) = smtp_client.read_greeting(envelope.mx).await {
                             trc::event!(
                                 Delivery(DeliveryEvent::GreetingFailed),
                                 SpanId = message.id,
@@ -1135,7 +1228,7 @@ impl DeliveryAttempt {
             message.save_changes(&core, None, None).await;
 
             trc::event!(
-                Delivery(DeliveryEvent::TooManyConcurrent),
+                Delivery(DeliveryEvent::ConcurrencyLimitExceeded),
                 SpanId = message_id,
             );
 
@@ -1145,16 +1238,18 @@ impl DeliveryAttempt {
                 message: self.event,
             })
         } else if let Some(due) = message.next_event() {
+            trc::event!(
+                Queue(trc::QueueEvent::Rescheduled),
+                SpanId = message_id,
+                NextRetry = trc::Value::Timestamp(message.next_delivery_event()),
+                NextDsn = trc::Value::Timestamp(message.next_dsn()),
+                Expires = trc::Value::Timestamp(message.expires()),
+            );
+
             // Save changes to disk
             message
                 .save_changes(&core, self.event.due.into(), due.into())
                 .await;
-
-            trc::event!(
-                Queue(trc::QueueEvent::Rescheduled),
-                SpanId = message_id,
-                Due = trc::Value::Timestamp(due)
-            );
 
             Event::Reload
         } else {

@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     fts::index::FtsDocument,
@@ -89,6 +91,7 @@ impl JMAP {
 
         // Add entries to the index
         for event in entries {
+            let op_start = Instant::now();
             // Lock index
             if !self.try_lock_index(&event).await {
                 continue;
@@ -142,7 +145,9 @@ impl JMAP {
                     trc::event!(
                         FtsIndex(FtsIndexEvent::Index),
                         AccountId = event.account_id,
+                        Collection = Collection::Email,
                         DocumentId = event.document_id,
+                        Elapsed = op_start.elapsed(),
                     );
                 }
 

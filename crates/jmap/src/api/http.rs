@@ -65,7 +65,7 @@ impl JMAP {
                     ("", &Method::POST) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, session.remote_ip).await?;
+                            self.authenticate_headers(&req, &session).await?;
 
                         let request = fetch_body(
                             &mut req,
@@ -94,7 +94,7 @@ impl JMAP {
                     ("download", &Method::GET) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, session.remote_ip).await?;
+                            self.authenticate_headers(&req, &session).await?;
 
                         if let (Some(_), Some(blob_id), Some(name)) = (
                             path.next().and_then(|p| Id::from_bytes(p.as_bytes())),
@@ -123,7 +123,7 @@ impl JMAP {
                     ("upload", &Method::POST) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, session.remote_ip).await?;
+                            self.authenticate_headers(&req, &session).await?;
 
                         if let Some(account_id) =
                             path.next().and_then(|p| Id::from_bytes(p.as_bytes()))
@@ -158,14 +158,14 @@ impl JMAP {
                     ("eventsource", &Method::GET) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, session.remote_ip).await?;
+                            self.authenticate_headers(&req, &session).await?;
 
                         return self.handle_event_source(req, access_token).await;
                     }
                     ("ws", &Method::GET) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, session.remote_ip).await?;
+                            self.authenticate_headers(&req, &session).await?;
 
                         return self
                             .upgrade_websocket_connection(req, access_token, session)
@@ -181,7 +181,7 @@ impl JMAP {
                 ("jmap", &Method::GET) => {
                     // Authenticate request
                     let (_in_flight, access_token) =
-                        self.authenticate_headers(&req, session.remote_ip).await?;
+                        self.authenticate_headers(&req, &session).await?;
 
                     return Ok(self
                         .handle_session_resource(
@@ -275,7 +275,7 @@ impl JMAP {
                 }
 
                 // Authenticate user
-                let (_, access_token) = self.authenticate_headers(&req, session.remote_ip).await?;
+                let (_, access_token) = self.authenticate_headers(&req, &session).await?;
                 let body = fetch_body(&mut req, 1024 * 1024, session.session_id).await;
                 return self
                     .handle_api_manage_request(&req, body, access_token, &session)

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{config::server::ServerProtocol, listener::SessionStream};
+use common::listener::SessionStream;
 use imap_proto::{
     protocol::{authenticate::Mechanism, capability::Capability},
     receiver::{self, Request},
@@ -78,7 +78,7 @@ impl<T: SessionStream> Session<T> {
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
                 self.jmap
-                    .authenticate_plain(&username, &secret, self.remote_addr, ServerProtocol::Imap)
+                    .authenticate_plain(&username, &secret, self.remote_addr, self.session_id)
                     .await
             }
             Credentials::OAuthBearer { token } => {

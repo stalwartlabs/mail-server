@@ -170,7 +170,7 @@ impl EncryptMessage for Message<'_> {
                             .supported()
                             .alive()
                             .revoked(false)
-                            .key_flags(&KeyFlags::empty().set_transport_encryption())
+                            .key_flags(KeyFlags::empty().set_transport_encryption())
                         {
                             keys.push(key);
                         }
@@ -449,7 +449,7 @@ fn has_pgp_keys(cert: openpgp::Cert) -> bool {
         .supported()
         .alive()
         .revoked(false)
-        .key_flags(&KeyFlags::empty().set_transport_encryption())
+        .key_flags(KeyFlags::empty().set_transport_encryption())
         .next()
         .is_some()
 }

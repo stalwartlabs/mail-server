@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use crate::{
     core::{Account, Mailbox, Session, SessionData},
     op::ImapContext,
@@ -53,6 +55,8 @@ impl<T: SessionStream> Session<T> {
 
 impl<T: SessionStream> SessionData<T> {
     pub async fn create_folder(&self, arguments: Arguments) -> trc::Result<StatusResponse> {
+        let op_start = Instant::now();
+
         // Refresh mailboxes
         self.synchronize_mailboxes(false)
             .await
@@ -121,6 +125,18 @@ impl<T: SessionStream> SessionData<T> {
                 StateChange::new(params.account_id).with_change(DataType::Mailbox, change_id),
             )
             .await;
+
+        trc::event!(
+            Imap(trc::ImapEvent::CreateMailbox),
+            SpanId = self.session_id,
+            Name = arguments.mailbox_name.clone(),
+            AccountId = params.account_id,
+            MailboxId = create_ids
+                .iter()
+                .map(|&id| trc::Value::from(id))
+                .collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         // Add created mailboxes to session
         std::mem::drop(

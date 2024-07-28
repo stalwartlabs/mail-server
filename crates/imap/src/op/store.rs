@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use crate::{
     core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData},
@@ -39,13 +39,15 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_uid: bool,
     ) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_store()?;
-
         let (data, mailbox) = self.state.select_data();
         let is_condstore = self.is_condstore || mailbox.is_condstore;
 
         spawn_op!(data, {
-            let response = data.store(arguments, mailbox, is_uid, is_condstore).await?;
+            let response = data
+                .store(arguments, mailbox, is_uid, is_condstore, op_start)
+                .await?;
 
             data.write_bytes(response).await
         })
@@ -59,6 +61,7 @@ impl<T: SessionStream> SessionData<T> {
         mailbox: Arc<SelectedMailbox>,
         is_uid: bool,
         is_condstore: bool,
+        op_start: Instant,
     ) -> trc::Result<Vec<u8>> {
         // Resync messages if needed
         let account_id = mailbox.id.account_id;
@@ -152,6 +155,20 @@ impl<T: SessionStream> SessionData<T> {
             response = response.with_code(response_code)
         }
         if ids.is_empty() {
+            trc::event!(
+                Imap(trc::ImapEvent::Store),
+                SpanId = self.session_id,
+                AccountId = mailbox.id.account_id,
+                MailboxId = mailbox.id.mailbox_id,
+                Type = format!("{:?}", arguments.operation),
+                Details = arguments
+                    .keywords
+                    .iter()
+                    .map(|c| trc::Value::from(format!("{c:?}")))
+                    .collect::<Vec<_>>(),
+                Elapsed = op_start.elapsed()
+            );
+
             return Ok(response.into_bytes());
         }
         let mut items = Response {
@@ -161,12 +178,12 @@ impl<T: SessionStream> SessionData<T> {
         // Process each change
         let set_keywords = arguments
             .keywords
-            .into_iter()
-            .map(Keyword::from)
+            .iter()
+            .map(|k| Keyword::from(k.clone()))
             .collect::<Vec<_>>();
         let mut changelog = ChangeLogBuilder::new();
         let mut changed_mailboxes = AHashSet::new();
-        'outer: for (id, imap_id) in ids {
+        'outer: for (id, imap_id) in &ids {
             let mut try_count = 0;
             loop {
                 // Obtain current keywords
@@ -175,13 +192,13 @@ impl<T: SessionStream> SessionData<T> {
                         .get_property::<HashedValue<Vec<Keyword>>>(
                             account_id,
                             Collection::Email,
-                            id,
+                            *id,
                             Property::Keywords,
                         )
                         .await
                         .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
                     self.jmap
-                        .get_property::<u32>(account_id, Collection::Email, id, Property::ThreadId)
+                        .get_property::<u32>(account_id, Collection::Email, *id, Property::ThreadId)
                         .await
                         .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
                 ) {
@@ -228,7 +245,7 @@ impl<T: SessionStream> SessionData<T> {
                     batch
                         .with_account_id(account_id)
                         .with_collection(Collection::Email)
-                        .update_document(id);
+                        .update_document(*id);
                     keywords.update_batch(&mut batch, Property::Keywords);
                     if changelog.change_id == u64::MAX {
                         changelog.change_id = self
@@ -247,7 +264,7 @@ impl<T: SessionStream> SessionData<T> {
                                     .get_property::<Vec<UidMailbox>>(
                                         account_id,
                                         Collection::Email,
-                                        id,
+                                        *id,
                                         Property::MailboxIds,
                                     )
                                     .await
@@ -258,7 +275,7 @@ impl<T: SessionStream> SessionData<T> {
                                     }
                                 }
                             }
-                            changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
+                            changelog.log_update(Collection::Email, Id::from_parts(thread_id, *id));
 
                             // Add item to response
                             let modseq = changelog.change_id + 1;
@@ -328,6 +345,24 @@ impl<T: SessionStream> SessionData<T> {
                 })
                 .await;
         }
+
+        trc::event!(
+            Imap(trc::ImapEvent::Store),
+            SpanId = self.session_id,
+            AccountId = mailbox.id.account_id,
+            MailboxId = mailbox.id.mailbox_id,
+            DocumentId = ids
+                .iter()
+                .map(|id| trc::Value::from(*id.0))
+                .collect::<Vec<_>>(),
+            Type = format!("{:?}", arguments.operation),
+            Details = arguments
+                .keywords
+                .iter()
+                .map(|c| trc::Value::from(format!("{c:?}")))
+                .collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         // Send response
         Ok(response.serialize(items.serialize()))

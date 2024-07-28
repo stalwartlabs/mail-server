@@ -23,6 +23,12 @@ pub mod setactive;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_start_tls(&self) -> trc::Result<Vec<u8>> {
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::StartTls),
+            SpanId = self.session_id,
+            Elapsed = trc::Value::Duration(0)
+        );
+
         Ok(StatusResponse::ok("Begin TLS negotiation now").into_bytes())
     }
 }

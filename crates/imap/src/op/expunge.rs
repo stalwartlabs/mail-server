@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use ahash::AHashMap;
 use imap_proto::{
@@ -34,6 +34,7 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_uid: bool,
     ) -> trc::Result<()> {
+        let op_start = Instant::now();
         let (data, mailbox) = self.state.select_data();
 
         // Validate ACL
@@ -78,7 +79,7 @@ impl<T: SessionStream> Session<T> {
         };
 
         // Expunge
-        data.expunge(mailbox.clone(), sequence)
+        data.expunge(mailbox.clone(), sequence, op_start)
             .await
             .imap_ctx(&request.tag, trc::location!())?;
 
@@ -108,6 +109,7 @@ impl<T: SessionStream> SessionData<T> {
         &self,
         mailbox: Arc<SelectedMailbox>,
         sequence: Option<AHashMap<u32, ImapId>>,
+        op_start: Instant,
     ) -> trc::Result<()> {
         // Obtain message ids
         let account_id = mailbox.id.account_id;
@@ -144,11 +146,20 @@ impl<T: SessionStream> SessionData<T> {
         self.email_untag_or_delete(
             account_id,
             mailbox.id.mailbox_id,
-            deleted_ids,
+            &deleted_ids,
             &mut changelog,
         )
         .await
         .caused_by(trc::location!())?;
+
+        trc::event!(
+            Imap(trc::ImapEvent::Expunge),
+            SpanId = self.session_id,
+            AccountId = account_id,
+            MailboxId = mailbox.id.mailbox_id,
+            DocumentId = deleted_ids.iter().map(trc::Value::from).collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         // Write changes on source account
         if !changelog.is_empty() {
@@ -170,7 +181,7 @@ impl<T: SessionStream> SessionData<T> {
         &self,
         account_id: u32,
         mailbox_id: u32,
-        deleted_ids: RoaringBitmap,
+        deleted_ids: &RoaringBitmap,
         changelog: &mut ChangeLogBuilder,
     ) -> trc::Result<()> {
         let mailbox_id = UidMailbox::new_unassigned(mailbox_id);
@@ -181,7 +192,7 @@ impl<T: SessionStream> SessionData<T> {
             .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
                 account_id,
                 Collection::Email,
-                &deleted_ids,
+                deleted_ids,
                 Property::MailboxIds,
             )
             .await

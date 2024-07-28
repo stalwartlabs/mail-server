@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use common::listener::SessionStream;
 use jmap_proto::request::capability::Capabilities;
 
@@ -11,6 +13,8 @@ use crate::core::{Session, StatusResponse};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_capability(&self, message: &'static str) -> trc::Result<Vec<u8>> {
+        let op_start = Instant::now();
+
         let mut response = Vec::with_capacity(128);
         response.extend_from_slice(b"\"IMPLEMENTATION\" \"Stalwart ManageSieve\"\r\n");
         response.extend_from_slice(b"\"VERSION\" \"1.0\"\r\n");
@@ -53,6 +57,14 @@ impl<T: SessionStream> Session<T> {
         } else {
             response.extend_from_slice(b"\"SIEVE\" \"\"\r\n");
         }
+
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::Capabilities),
+            SpanId = self.session_id,
+            Tls = self.stream.is_tls(),
+            Strict = !self.jmap.core.imap.allow_plain_auth,
+            Elapsed = op_start.elapsed()
+        );
 
         Ok(StatusResponse::ok(message).serialize(response))
     }

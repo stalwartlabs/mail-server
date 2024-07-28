@@ -33,7 +33,7 @@ use store::{
     BlobClass,
 };
 
-use crate::{auth::AccessToken, JMAP};
+use crate::{api::http::HttpSessionData, auth::AccessToken, JMAP};
 
 struct SetContext<'x> {
     account_id: u32,
@@ -58,6 +58,7 @@ impl JMAP {
         &self,
         mut request: SetRequest<SetArguments>,
         access_token: &AccessToken,
+        session: &HttpSessionData,
     ) -> trc::Result<SetResponse> {
         let account_id = request.account_id.document_id();
         let mut sieve_ids = self
@@ -78,7 +79,10 @@ impl JMAP {
         let mut changes = ChangeLogBuilder::new();
         for (id, object) in request.unwrap_create() {
             if sieve_ids.len() as usize <= self.core.jmap.sieve_max_scripts {
-                match self.sieve_set_item(object, None, &ctx).await? {
+                match self
+                    .sieve_set_item(object, None, &ctx, session.session_id)
+                    .await?
+                {
                     Ok((mut builder, Some(blob))) => {
                         // Store blob
                         let blob_id = builder.changes_mut().unwrap().blob_id_mut().unwrap();
@@ -167,7 +171,12 @@ impl JMAP {
                     .clone();
 
                 match self
-                    .sieve_set_item(object, (document_id, sieve).into(), &ctx)
+                    .sieve_set_item(
+                        object,
+                        (document_id, sieve).into(),
+                        &ctx,
+                        session.session_id,
+                    )
                     .await?
                 {
                     Ok((mut builder, blob)) => {
@@ -384,6 +393,7 @@ impl JMAP {
         changes_: Object<SetValue>,
         update: Option<(u32, HashedValue<Object<Value>>)>,
         ctx: &SetContext<'_>,
+        session_id: u64,
     ) -> trc::Result<Result<(ObjectIndexBuilder, Option<Vec<u8>>), SetError>> {
         // Vacation script cannot be modified
         if matches!(update.as_ref().and_then(|(_, obj)| obj.inner.properties.get(&Property::Name)), Some(Value::Text ( value )) if value.eq_ignore_ascii_case("vacation"))
@@ -488,11 +498,18 @@ impl JMAP {
                 // Check access
                 if let Some(mut bytes) = self.blob_download(&blob_id, ctx.access_token).await? {
                     // Check quota
-                    if !self
+                    match self
                         .has_available_quota(ctx.account_id, ctx.account_quota, bytes.len() as i64)
-                        .await?
-                        {
-                            return Ok(Err(SetError::over_quota()));
+                        .await {
+                            Ok(_) => (),
+                            Err(err) => {
+                                if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) {
+                                    trc::error!(err.account_id(ctx.account_id).span_id(session_id));
+                                    return Ok(Err(SetError::over_quota()));
+                                } else {
+                                    return Err(err);
+                                }
+                            },
                         }
 
                     // Compile script

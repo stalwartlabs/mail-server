@@ -413,7 +413,6 @@ impl Default for Inner {
             },
             ipc: Ipc {
                 delivery_tx: mpsc::channel(1).0,
-                webhook_tx: mpsc::channel(1).0,
             },
             script_cache: Default::default(),
         }

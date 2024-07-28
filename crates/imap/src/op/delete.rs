@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use crate::{
     core::{Session, SessionData},
     spawn_op,
@@ -44,6 +46,8 @@ impl<T: SessionStream> Session<T> {
 
 impl<T: SessionStream> SessionData<T> {
     pub async fn delete_folder(&self, arguments: Arguments) -> trc::Result<StatusResponse> {
+        let op_start = Instant::now();
+
         // Refresh mailboxes
         self.synchronize_mailboxes(false)
             .await
@@ -110,6 +114,15 @@ impl<T: SessionStream> SessionData<T> {
                 break;
             }
         }
+
+        trc::event!(
+            Imap(trc::ImapEvent::DeleteMailbox),
+            SpanId = self.session_id,
+            Name = arguments.mailbox_name,
+            AccountId = account_id,
+            MailboxId = mailbox_id,
+            Elapsed = op_start.elapsed()
+        );
 
         Ok(StatusResponse::ok("Mailbox deleted.").with_tag(arguments.tag))
     }

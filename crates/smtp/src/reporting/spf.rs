@@ -85,6 +85,7 @@ impl<T: SessionStream> Session<T> {
             OutgoingReport(OutgoingReportEvent::SpfReport),
             SpanId = self.data.session_id,
             To = rcpt.to_string(),
+            From = from_addr.to_string(),
         );
 
         // Send report

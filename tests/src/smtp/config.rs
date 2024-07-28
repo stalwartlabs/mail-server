@@ -262,7 +262,7 @@ fn parse_throttles() {
         throttle,
         vec![
             Throttle {
-                id: "0".to_string(),
+                id: "0000".to_string(),
                 expr: Expression {
                     items: vec![
                         ExpressionItem::Variable(8),
@@ -279,7 +279,7 @@ fn parse_throttles() {
                 .into()
             },
             Throttle {
-                id: "1".to_string(),
+                id: "0001".to_string(),
                 expr: Expression::default(),
                 keys: THROTTLE_SENDER_DOMAIN,
                 concurrency: 10000.into(),

@@ -6,14 +6,14 @@
 
 use std::{net::IpAddr, sync::Arc, time::Instant};
 
-use common::{config::server::ServerProtocol, listener::limiter::InFlight};
+use common::listener::limiter::InFlight;
 use directory::{Principal, QueryBy};
 use hyper::header;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use utils::map::ttl_dashmap::TtlMap;
 
-use crate::JMAP;
+use crate::{api::http::HttpSessionData, JMAP};
 
 use super::AccessToken;
 
@@ -21,7 +21,7 @@ impl JMAP {
     pub async fn authenticate_headers(
         &self,
         req: &hyper::Request<hyper::body::Incoming>,
-        remote_ip: IpAddr,
+        session: &HttpSessionData,
     ) -> trc::Result<(InFlight, Arc<AccessToken>)> {
         if let Some((mechanism, token)) = req
             .headers()
@@ -34,7 +34,7 @@ impl JMAP {
             } else {
                 let access_token = if mechanism.eq_ignore_ascii_case("basic") {
                     // Enforce rate limit for authentication requests
-                    self.is_auth_allowed_soft(&remote_ip).await?;
+                    self.is_auth_allowed_soft(&session.remote_ip).await?;
 
                     // Decode the base64 encoded credentials
                     if let Some((account, secret)) = base64_decode(token.as_bytes())
@@ -45,8 +45,13 @@ impl JMAP {
                             })
                         })
                     {
-                        self.authenticate_plain(&account, &secret, remote_ip, ServerProtocol::Http)
-                            .await?
+                        self.authenticate_plain(
+                            &account,
+                            &secret,
+                            session.remote_ip,
+                            session.session_id,
+                        )
+                        .await?
                     } else {
                         return Err(trc::AuthEvent::Error
                             .into_err()
@@ -56,7 +61,7 @@ impl JMAP {
                     }
                 } else if mechanism.eq_ignore_ascii_case("bearer") {
                     // Enforce anonymous rate limit for bearer auth requests
-                    self.is_anonymous_allowed(&remote_ip).await?;
+                    self.is_anonymous_allowed(&session.remote_ip).await?;
 
                     let (account_id, _, _) =
                         self.validate_access_token("access_token", &token).await?;
@@ -64,7 +69,7 @@ impl JMAP {
                     self.get_access_token(account_id).await?
                 } else {
                     // Enforce anonymous rate limit
-                    self.is_anonymous_allowed(&remote_ip).await?;
+                    self.is_anonymous_allowed(&session.remote_ip).await?;
                     return Err(trc::AuthEvent::Error
                         .into_err()
                         .reason("Unsupported authentication mechanism.")
@@ -85,7 +90,7 @@ impl JMAP {
                 .map(|in_flight| (in_flight, access_token))
         } else {
             // Enforce anonymous rate limit
-            self.is_anonymous_allowed(&remote_ip).await?;
+            self.is_anonymous_allowed(&session.remote_ip).await?;
 
             Err(trc::AuthEvent::Error
                 .into_err()
@@ -128,19 +133,18 @@ impl JMAP {
         username: &str,
         secret: &str,
         remote_ip: IpAddr,
-        protocol: ServerProtocol,
+        session_id: u64,
     ) -> trc::Result<AccessToken> {
         match self
             .core
             .authenticate(
                 &self.core.storage.directory,
-                &self.smtp.inner.ipc,
+                session_id,
                 &Credentials::Plain {
                     username: username.to_string(),
                     secret: secret.to_string(),
                 },
                 remote_ip,
-                protocol,
                 true,
             )
             .await

@@ -154,7 +154,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_forbidden(
         john_client
-            .set_default_account_id(&sales_id.to_string())
+            .set_default_account_id(sales_id.to_string())
             .email_get(
                 email_ids.get("sales").unwrap().first().unwrap(),
                 [Property::Subject].into(),
@@ -163,7 +163,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_forbidden(
         john_client
-            .set_default_account_id(&sales_id.to_string())
+            .set_default_account_id(sales_id.to_string())
             .mailbox_get(&inbox_id, None::<Vec<_>>)
             .await,
     );
@@ -238,7 +238,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap()
         .take_blob_id();
     john_client
-        .set_default_account_id(&john_id.to_string())
+        .set_default_account_id(john_id.to_string())
         .blob_copy(jane_id.to_string(), &blob_id)
         .await
         .unwrap();
@@ -253,7 +253,7 @@ pub async fn test(params: &mut JMAPTest) {
         .take_blob_id();
     assert_forbidden(
         john_client
-            .set_default_account_id(&john_id.to_string())
+            .set_default_account_id(john_id.to_string())
             .blob_copy(jane_id.to_string(), &blob_id)
             .await,
     );
@@ -284,7 +284,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Try to add items using import and copy
     let blob_id = john_client
-        .set_default_account_id(&john_id.to_string())
+        .set_default_account_id(john_id.to_string())
         .upload(
             Some(&john_id.to_string()),
             concat!(
@@ -703,7 +703,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Insert a message in Sales's inbox
     let blob_id = john_client
-        .set_default_account_id(&sales_id.to_string())
+        .set_default_account_id(sales_id.to_string())
         .upload(
             Some(&sales_id.to_string()),
             concat!(
@@ -737,7 +737,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Both Jane and John should be able to see this message, but not Bill
     assert_eq!(
         john_client
-            .set_default_account_id(&sales_id.to_string())
+            .set_default_account_id(sales_id.to_string())
             .email_get(&email_id, [Property::Subject].into(),)
             .await
             .unwrap()
@@ -748,7 +748,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_eq!(
         jane_client
-            .set_default_account_id(&sales_id.to_string())
+            .set_default_account_id(sales_id.to_string())
             .email_get(&email_id, [Property::Subject].into(),)
             .await
             .unwrap()
@@ -759,7 +759,7 @@ pub async fn test(params: &mut JMAPTest) {
     );
     assert_forbidden(
         bill_client
-            .set_default_account_id(&sales_id.to_string())
+            .set_default_account_id(sales_id.to_string())
             .email_get(&email_id, [Property::Subject].into())
             .await,
     );
@@ -772,14 +772,14 @@ pub async fn test(params: &mut JMAPTest) {
     server.inner.sessions.clear();
     assert_forbidden(
         john_client
-            .set_default_account_id(&sales_id.to_string())
+            .set_default_account_id(sales_id.to_string())
             .email_get(&email_id, [Property::Subject].into())
             .await,
     );
 
     // Destroy test account data
     for id in [john_id, bill_id, jane_id, sales_id] {
-        params.client.set_default_account_id(&id.to_string());
+        params.client.set_default_account_id(id.to_string());
         destroy_all_mailboxes(params).await;
     }
     assert_is_empty(server).await;

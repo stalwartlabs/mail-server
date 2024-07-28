@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use jmap_proto::{
     method::{
@@ -15,6 +15,7 @@ use jmap_proto::{
     response::{Response, ResponseMethod},
     types::collection::Collection,
 };
+use trc::JmapEvent;
 
 use crate::{auth::AccessToken, JMAP};
 
@@ -49,8 +50,15 @@ impl JMAP {
                 let mut next_call = None;
 
                 // Add response
+                let method_name = call.name.as_str();
                 match self
-                    .handle_method_call(call.method, &access_token, &mut next_call, session)
+                    .handle_method_call(
+                        call.method,
+                        method_name,
+                        &access_token,
+                        &mut next_call,
+                        session,
+                    )
                     .await
                 {
                     Ok(mut method_response) => {
@@ -91,7 +99,10 @@ impl JMAP {
                     Err(error) => {
                         let method_error = error.clone();
 
-                        trc::error!(error.span_id(session.session_id));
+                        trc::error!(error
+                            .span_id(session.session_id)
+                            .ctx_unique(trc::Key::AccountId, access_token.primary_id())
+                            .caused_by(method_name));
 
                         response.push_error(call.id, method_error);
                     }
@@ -118,11 +129,13 @@ impl JMAP {
     async fn handle_method_call(
         &self,
         method: RequestMethod,
+        method_name: &'static str,
         access_token: &AccessToken,
         next_call: &mut Option<Call<RequestMethod>>,
         session: &HttpSessionData,
     ) -> trc::Result<ResponseMethod> {
-        Ok(match method {
+        let op_start = Instant::now();
+        let response = match method {
             RequestMethod::Get(mut req) => match req.take_arguments() {
                 get::RequestArguments::Email(arguments) => {
                     access_token.assert_has_access(req.account_id, Collection::Email)?;
@@ -261,7 +274,7 @@ impl JMAP {
                 set::RequestArguments::SieveScript(arguments) => {
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.sieve_script_set(req.with_arguments(arguments), access_token)
+                    self.sieve_script_set(req.with_arguments(arguments), access_token, session)
                         .await?
                         .into()
                 }
@@ -277,7 +290,9 @@ impl JMAP {
                     .assert_has_access(req.account_id, Collection::Email)?
                     .assert_has_access(req.from_account_id, Collection::Email)?;
 
-                self.email_copy(req, access_token, next_call).await?.into()
+                self.email_copy(req, access_token, next_call, session)
+                    .await?
+                    .into()
             }
             RequestMethod::ImportEmail(req) => {
                 access_token.assert_has_access(req.account_id, Collection::Email)?;
@@ -317,6 +332,16 @@ impl JMAP {
             }
             RequestMethod::Echo(req) => req.into(),
             RequestMethod::Error(error) => return Err(error),
-        })
+        };
+
+        trc::event!(
+            Jmap(JmapEvent::MethodCall),
+            Name = method_name,
+            SpanId = session.session_id,
+            AccountId = access_token.primary_id(),
+            Elapsed = op_start.elapsed(),
+        );
+
+        Ok(response)
     }
 }

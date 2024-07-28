@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use crate::{
     core::{Session, SessionData},
     spawn_op,
@@ -28,12 +30,18 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_subscribe: bool,
     ) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_subscribe(self.version)?;
         let data = self.state.session_data();
 
         spawn_op!(data, {
             let response = data
-                .subscribe_folder(arguments.tag, arguments.mailbox_name, is_subscribe)
+                .subscribe_folder(
+                    arguments.tag,
+                    arguments.mailbox_name,
+                    is_subscribe,
+                    op_start,
+                )
                 .await?;
 
             data.write_bytes(response.into_bytes()).await
@@ -47,6 +55,7 @@ impl<T: SessionStream> SessionData<T> {
         tag: String,
         mailbox_name: String,
         subscribe: bool,
+        op_start: Instant,
     ) -> trc::Result<StatusResponse> {
         // Refresh mailboxes
         self.synchronize_mailboxes(false)
@@ -152,6 +161,19 @@ impl<T: SessionStream> SessionData<T> {
                 }
             }
         }
+
+        trc::event!(
+            Imap(if subscribe {
+                trc::ImapEvent::Subscribe
+            } else {
+                trc::ImapEvent::Unsubscribe
+            }),
+            SpanId = self.session_id,
+            AccountId = account_id,
+            MailboxId = mailbox_id,
+            Name = mailbox_name,
+            Elapsed = op_start.elapsed()
+        );
 
         Ok(StatusResponse::ok(if subscribe {
             "Mailbox subscribed."

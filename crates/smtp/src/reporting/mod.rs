@@ -6,14 +6,12 @@
 
 use std::{io, sync::Arc, time::SystemTime};
 
-use chrono::{TimeZone, Utc};
 use common::{
     config::smtp::{
         report::{AddressMatch, AggregateFrequency},
         resolver::{Policy, Tlsa},
     },
     expr::if_block::IfBlock,
-    webhooks::{WebhookPayload, WebhookType},
     USER_AGENT,
 };
 use mail_auth::{
@@ -146,44 +144,6 @@ impl SMTP {
                     domain.notify.due += delivery_time;
                 }
             }
-        }
-
-        // Send webhook
-        if self
-            .core
-            .has_webhook_subscribers(WebhookType::OutgoingReport)
-        {
-            self.inner
-                .ipc
-                .send_webhook(
-                    WebhookType::OutgoingReport,
-                    WebhookPayload::MessageAccepted {
-                        id: message.id,
-                        remote_ip: None,
-                        local_port: None,
-                        authenticated_as: None,
-                        return_path: message.return_path_lcase.clone(),
-                        recipients: message
-                            .recipients
-                            .iter()
-                            .map(|r| r.address_lcase.clone())
-                            .collect(),
-                        next_retry: Utc
-                            .timestamp_opt(message.next_delivery_event() as i64, 0)
-                            .single()
-                            .unwrap_or_else(Utc::now),
-                        next_dsn: Utc
-                            .timestamp_opt(message.next_dsn() as i64, 0)
-                            .single()
-                            .unwrap_or_else(Utc::now),
-                        expires: Utc
-                            .timestamp_opt(message.expires() as i64, 0)
-                            .single()
-                            .unwrap_or_else(Utc::now),
-                        size: message.size,
-                    },
-                )
-                .await;
         }
 
         // Queue message

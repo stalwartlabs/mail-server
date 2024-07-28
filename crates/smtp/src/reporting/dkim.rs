@@ -84,6 +84,7 @@ impl<T: SessionStream> Session<T> {
         trc::event!(
             OutgoingReport(OutgoingReportEvent::DkimReport),
             SpanId = self.data.session_id,
+            From = from_addr.to_string(),
             To = rcpt.to_string(),
         );
 

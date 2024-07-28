@@ -12,13 +12,12 @@ use std::{
 };
 
 use ahash::AHashMap;
-use common::webhooks::{WebhookPayload, WebhookTlsPolicy, WebhookType};
 use mail_auth::{
     flate2::read::GzDecoder,
     report::{tlsrpt::TlsReport, ActionDisposition, DmarcResult, Feedback, Report},
     zip,
 };
-use mail_parser::{DateTime, MessageParser, MimeHeaders, PartType};
+use mail_parser::{MessageParser, MimeHeaders, PartType};
 
 use store::{
     write::{now, BatchBuilder, Bincode, ReportClass, ValueClass},
@@ -227,20 +226,6 @@ impl SMTP {
                 let report = match report.format {
                     Format::Dmarc(_) => match Report::parse_xml(&data) {
                         Ok(report) => {
-                            // Send webhook
-                            if core
-                                .core
-                                .has_webhook_subscribers(WebhookType::IncomingDmarcReport)
-                            {
-                                core.inner
-                                    .ipc
-                                    .send_webhook(
-                                        WebhookType::IncomingDmarcReport,
-                                        report.webhook_payload(),
-                                    )
-                                    .await;
-                            }
-
                             // Log
                             report.log();
                             Format::Dmarc(report)
@@ -259,22 +244,7 @@ impl SMTP {
                     },
                     Format::Tls(_) => match TlsReport::parse_json(&data) {
                         Ok(report) => {
-                            // Send webhook
-                            if core
-                                .core
-                                .has_webhook_subscribers(WebhookType::IncomingTlsReport)
-                            {
-                                core.inner
-                                    .ipc
-                                    .send_webhook(
-                                        WebhookType::IncomingTlsReport,
-                                        report.webhook_payload(),
-                                    )
-                                    .await;
-                            }
-
                             // Log
-
                             report.log();
                             Format::Tls(report)
                         }
@@ -292,20 +262,6 @@ impl SMTP {
                     },
                     Format::Arf(_) => match Feedback::parse_arf(&data) {
                         Some(report) => {
-                            // Send webhook
-                            if core
-                                .core
-                                .has_webhook_subscribers(WebhookType::IncomingArfReport)
-                            {
-                                core.inner
-                                    .ipc
-                                    .send_webhook(
-                                        WebhookType::IncomingArfReport,
-                                        report.webhook_payload(),
-                                    )
-                                    .await;
-                            }
-
                             // Log
                             report.log();
                             Format::Arf(report.into_owned())
@@ -383,7 +339,6 @@ impl SMTP {
 
 trait LogReport {
     fn log(&self);
-    fn webhook_payload(&self) -> WebhookPayload;
 }
 
 impl LogReport for Report {
@@ -465,81 +420,6 @@ impl LogReport for Report {
             SpfNone = spf_none,
         );
     }
-
-    fn webhook_payload(&self) -> WebhookPayload {
-        let mut dmarc_pass = 0;
-        let mut dmarc_quarantine = 0;
-        let mut dmarc_reject = 0;
-        let mut dmarc_none = 0;
-        let mut dkim_pass = 0;
-        let mut dkim_fail = 0;
-        let mut dkim_none = 0;
-        let mut spf_pass = 0;
-        let mut spf_fail = 0;
-        let mut spf_none = 0;
-
-        for record in self.records() {
-            let count = std::cmp::min(record.count(), 1);
-
-            match record.action_disposition() {
-                ActionDisposition::Pass => {
-                    dmarc_pass += count;
-                }
-                ActionDisposition::Quarantine => {
-                    dmarc_quarantine += count;
-                }
-                ActionDisposition::Reject => {
-                    dmarc_reject += count;
-                }
-                ActionDisposition::None | ActionDisposition::Unspecified => {
-                    dmarc_none += count;
-                }
-            }
-            match record.dmarc_dkim_result() {
-                DmarcResult::Pass => {
-                    dkim_pass += count;
-                }
-                DmarcResult::Fail => {
-                    dkim_fail += count;
-                }
-                DmarcResult::Unspecified => {
-                    dkim_none += count;
-                }
-            }
-            match record.dmarc_spf_result() {
-                DmarcResult::Pass => {
-                    spf_pass += count;
-                }
-                DmarcResult::Fail => {
-                    spf_fail += count;
-                }
-                DmarcResult::Unspecified => {
-                    spf_none += count;
-                }
-            }
-        }
-
-        let range_from = DateTime::from_timestamp(self.date_range_begin() as i64).to_rfc3339();
-        let range_to = DateTime::from_timestamp(self.date_range_end() as i64).to_rfc3339();
-
-        WebhookPayload::IncomingDmarcReport {
-            range_from,
-            range_to,
-            domain: self.domain().to_string(),
-            report_email: self.email().to_string(),
-            report_id: self.report_id().to_string(),
-            dmarc_pass,
-            dmarc_quarantine,
-            dmarc_reject,
-            dmarc_none,
-            dkim_pass,
-            dkim_fail,
-            dkim_none,
-            spf_pass,
-            spf_fail,
-            spf_none,
-        }
-    }
 }
 
 impl LogReport for TlsReport {
@@ -576,39 +456,6 @@ impl LogReport for TlsReport {
                 Details = format!("{details:?}"),
             );
         }
-    }
-
-    fn webhook_payload(&self) -> WebhookPayload {
-        let mut policies = Vec::with_capacity(self.policies.len());
-
-        for policy in self.policies.iter().take(5) {
-            let mut details = AHashMap::with_capacity(policy.failure_details.len());
-            for failure in &policy.failure_details {
-                let num_failures = std::cmp::min(1, failure.failed_session_count);
-                match details.entry(failure.result_type) {
-                    Entry::Occupied(mut e) => {
-                        *e.get_mut() += num_failures;
-                    }
-                    Entry::Vacant(e) => {
-                        e.insert(num_failures);
-                    }
-                }
-            }
-
-            policies.push(WebhookTlsPolicy {
-                range_from: self.date_range.start_datetime.to_rfc3339(),
-                range_to: self.date_range.end_datetime.to_rfc3339(),
-                domain: policy.policy.policy_domain.clone(),
-                report_contact: self.contact_info.clone(),
-                report_id: self.report_id.clone(),
-                policy_type: policy.policy.policy_type,
-                total_successes: policy.summary.total_success,
-                total_failures: policy.summary.total_failure,
-                details,
-            });
-        }
-
-        WebhookPayload::IncomingTlsReport { policies }
     }
 }
 
@@ -663,35 +510,5 @@ impl LogReport for Feedback<'_> {
                 .map(|d| trc::Value::String(d.to_string()))
                 .collect::<Vec<_>>(),
         );
-    }
-
-    fn webhook_payload(&self) -> WebhookPayload {
-        WebhookPayload::IncomingArfReport {
-            feedback_type: self.feedback_type(),
-            arrival_date: self
-                .arrival_date()
-                .map(|a| DateTime::from_timestamp(a).to_rfc3339()),
-            authentication_results: self
-                .authentication_results()
-                .iter()
-                .map(|t| t.to_string())
-                .collect(),
-            incidents: self.incidents(),
-            reported_domain: self
-                .reported_domain()
-                .iter()
-                .map(|t| t.to_string())
-                .collect(),
-            reported_uri: self.reported_uri().iter().map(|t| t.to_string()).collect(),
-            reporting_mta: self.reporting_mta().map(|t| t.to_string()),
-            source_ip: self.source_ip(),
-            user_agent: self.user_agent().map(|t| t.to_string()),
-            auth_failure: self.auth_failure(),
-            delivery_result: self.delivery_result(),
-            dkim_domain: self.dkim_domain().map(|t| t.to_string()),
-            dkim_identity: self.dkim_identity().map(|t| t.to_string()),
-            dkim_selector: self.dkim_selector().map(|t| t.to_string()),
-            identity_alignment: self.identity_alignment(),
-        }
     }
 }

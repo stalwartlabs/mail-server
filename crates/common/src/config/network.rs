@@ -4,19 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{str::FromStr, time::Duration};
-
 use crate::{
     expr::{if_block::IfBlock, tokenizer::TokenMap},
     listener::blocked::{AllowedIps, BlockedIps},
-    webhooks::{Webhook, WebhookType, Webhooks},
     Network,
-};
-use ahash::AHashSet;
-use base64::{engine::general_purpose::STANDARD, Engine};
-use hyper::{
-    header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
-    HeaderMap,
 };
 use utils::config::Config;
 
@@ -55,6 +46,7 @@ impl Network {
     }
 }
 
+/*
 impl Webhooks {
     pub fn parse(config: &mut Config) -> Self {
         let mut hooks = Webhooks {
@@ -183,3 +175,4 @@ impl FromStr for WebhookType {
         }
     }
 }
+*/

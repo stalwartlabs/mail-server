@@ -31,7 +31,6 @@ use common::{
         server::{ServerProtocol, Servers},
         tracers::Tracer,
     },
-    webhooks::manager::spawn_webhook_manager,
     Core, Ipc, IPC_CHANNEL_BUFFER,
 };
 
@@ -309,15 +308,9 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     // Parse acceptors
     servers.parse_tcp_acceptors(&mut config, shared_core.clone());
 
-    // Spawn webhook manager
-    let webhook_tx = spawn_webhook_manager(shared_core.clone());
-
     // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let ipc = Ipc {
-        delivery_tx,
-        webhook_tx,
-    };
+    let ipc = Ipc { delivery_tx };
 
     // Init servers
     let smtp = SMTP::init(&mut config, shared_core.clone(), ipc).await;

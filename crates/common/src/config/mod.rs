@@ -11,10 +11,7 @@ use directory::{Directories, Directory};
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use utils::config::Config;
 
-use crate::{
-    expr::*, listener::tls::TlsManager, manager::config::ConfigManager, webhooks::Webhooks, Core,
-    Network,
-};
+use crate::{expr::*, listener::tls::TlsManager, manager::config::ConfigManager, Core, Network};
 
 use self::{
     imap::ImapConfig, jmap::settings::JmapConfig, scripts::Scripting, smtp::SmtpConfig,
@@ -141,7 +138,6 @@ impl Core {
             jmap: JmapConfig::parse(config),
             imap: ImapConfig::parse(config),
             tls: TlsManager::parse(config),
-            web_hooks: Webhooks::parse(config),
             storage: Storage {
                 data,
                 blob,

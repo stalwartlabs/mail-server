@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use crate::{
     core::{Session, SessionData},
     spawn_op,
@@ -24,6 +26,7 @@ use super::ImapContext;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_list(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let command = request.command;
         let is_lsub = command == Command::Lsub;
         let arguments = if !is_lsub {
@@ -36,7 +39,7 @@ impl<T: SessionStream> Session<T> {
             let data = self.state.session_data();
             let version = self.version;
 
-            spawn_op!(data, data.list(arguments, is_lsub, version).await)
+            spawn_op!(data, data.list(arguments, is_lsub, version, op_start).await)
         } else {
             self.write_bytes(
                 StatusResponse::completed(command)
@@ -66,6 +69,7 @@ impl<T: SessionStream> SessionData<T> {
         arguments: Arguments,
         is_lsub: bool,
         version: ProtocolVersion,
+        op_start: Instant,
     ) -> trc::Result<()> {
         let (tag, reference_name, mut patterns, selection_options, return_options) = match arguments
         {
@@ -255,6 +259,20 @@ impl<T: SessionStream> SessionData<T> {
                 }
             }
         }
+
+        trc::event!(
+            Imap(if !is_lsub {
+                trc::ImapEvent::List
+            } else {
+                trc::ImapEvent::Lsub
+            }),
+            SpanId = self.session_id,
+            Details = list_items
+                .iter()
+                .map(|item| trc::Value::from(item.mailbox_name.clone()))
+                .collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         // Write response
         self.write_bytes(

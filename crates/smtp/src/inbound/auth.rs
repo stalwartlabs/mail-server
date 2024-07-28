@@ -169,24 +169,15 @@ impl<T: SessionStream> Session<T> {
                 .core
                 .authenticate(
                     directory,
-                    &self.core.inner.ipc,
+                    self.data.session_id,
                     &credentials,
                     self.data.remote_ip,
-                    self.instance.protocol,
                     false,
                 )
                 .await
             {
                 Ok(principal) => {
                     self.data.authenticated_as = authenticated_as.to_lowercase();
-
-                    trc::event!(
-                        Auth(trc::AuthEvent::Success),
-                        Name = self.data.authenticated_as.clone(),
-                        SpanId = self.data.session_id,
-                        Protocol = trc::Protocol::Smtp,
-                    );
-
                     self.data.authenticated_emails = principal
                         .emails
                         .into_iter()
@@ -200,9 +191,7 @@ impl<T: SessionStream> Session<T> {
                 Err(err) => {
                     let reason = *err.as_ref();
 
-                    trc::error!(err
-                        .span_id(self.data.session_id)
-                        .protocol(trc::Protocol::Smtp));
+                    trc::error!(err.span_id(self.data.session_id));
 
                     match reason {
                         trc::EventType::Auth(trc::AuthEvent::Failed) => {

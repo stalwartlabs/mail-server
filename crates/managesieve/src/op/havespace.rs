@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use imap_proto::receiver::Request;
 use tokio::io::{AsyncRead, AsyncWrite};
 use trc::AddContext;
@@ -12,6 +14,7 @@ use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
     pub async fn handle_havespace(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        let op_start = Instant::now();
         let mut tokens = request.tokens.into_iter();
         let name = tokens
             .next()
@@ -51,6 +54,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                     .caused_by(trc::location!())?
                 <= access_token.quota as i64
         {
+            trc::event!(
+                ManageSieve(trc::ManageSieveEvent::HaveSpace),
+                SpanId = self.session_id,
+                Size = size,
+                Elapsed = op_start.elapsed()
+            );
+
             Ok(StatusResponse::ok("").into_bytes())
         } else {
             Err(trc::ManageSieveEvent::Error

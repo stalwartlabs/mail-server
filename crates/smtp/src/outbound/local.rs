@@ -62,6 +62,7 @@ impl Message {
                         trc::event!(
                             Server(ServerEvent::ThreadError),
                             CausedBy = trc::location!(),
+                            SpanId = self.id,
                             Reason = "Result channel closed",
                         );
                         return Status::local_error();
@@ -72,6 +73,7 @@ impl Message {
                 trc::event!(
                     Server(ServerEvent::ThreadError),
                     CausedBy = trc::location!(),
+                    SpanId = self.id,
                     Reason = "TX channel closed",
                 );
                 return Status::local_error();

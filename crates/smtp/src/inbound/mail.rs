@@ -25,14 +25,29 @@ impl<T: SessionStream> Session<T> {
                 || self.params.spf_ehlo.verify()
                 || self.params.spf_mail_from.verify())
         {
+            trc::event!(
+                Smtp(SmtpEvent::DidNotSayEhlo),
+                SpanId = self.data.session_id,
+            );
+
             return self
                 .write(b"503 5.5.1 Polite people say EHLO first.\r\n")
                 .await;
         } else if self.data.mail_from.is_some() {
+            trc::event!(
+                Smtp(SmtpEvent::MultipleMailFrom),
+                SpanId = self.data.session_id,
+            );
+
             return self
                 .write(b"503 5.5.1 Multiple MAIL commands not allowed.\r\n")
                 .await;
         } else if self.params.auth_require && self.data.authenticated_as.is_empty() {
+            trc::event!(
+                Smtp(SmtpEvent::MailFromUnauthenticated),
+                SpanId = self.data.session_id,
+            );
+
             return self
                 .write(b"503 5.5.1 You must authenticate first.\r\n")
                 .await;
@@ -103,6 +118,21 @@ impl<T: SessionStream> Session<T> {
                     e == &address_lcase || (e.starts_with('@') && address_lcase.ends_with(e))
                 }))
         {
+            trc::event!(
+                Smtp(SmtpEvent::MailFromUnauthorized),
+                SpanId = self.data.session_id,
+                From = address_lcase,
+                Details = [trc::Value::String(self.data.authenticated_as.to_string())]
+                    .into_iter()
+                    .chain(
+                        self.data
+                            .authenticated_emails
+                            .iter()
+                            .map(|e| trc::Value::String(e.to_string()))
+                    )
+                    .collect::<Vec<_>>()
+            );
+
             return self
                 .write(b"501 5.5.4 You are not allowed to send from this address.\r\n")
                 .await;
@@ -175,6 +205,14 @@ impl<T: SessionStream> Session<T> {
             .await
         {
             let mail_from = self.data.mail_from.as_mut().unwrap();
+
+            trc::event!(
+                Smtp(SmtpEvent::MailFromRewritten),
+                SpanId = self.data.session_id,
+                OldName = mail_from.address_lcase.clone(),
+                Name = new_address.clone(),
+            );
+
             if new_address.contains('@') {
                 mail_from.address_lcase = new_address.to_lowercase();
                 mail_from.domain = mail_from.address_lcase.domain_part().to_string();
@@ -197,6 +235,10 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .unwrap_or(false)
         {
+            trc::event!(
+                Smtp(SmtpEvent::RequireTlsDisabled),
+                SpanId = self.data.session_id,
+            );
             self.data.mail_from = None;
             return self
                 .write(b"501 5.5.4 REQUIRETLS has been disabled.\r\n")
@@ -215,6 +257,13 @@ impl<T: SessionStream> Session<T> {
                     self.data.delivery_by = from.by;
                 } else {
                     self.data.mail_from = None;
+
+                    trc::event!(
+                        Smtp(SmtpEvent::DeliverByInvalid),
+                        SpanId = self.data.session_id,
+                        Details = from.by,
+                    );
+
                     return self
                         .write(
                             format!(
@@ -226,6 +275,10 @@ impl<T: SessionStream> Session<T> {
                         .await;
                 }
             } else {
+                trc::event!(
+                    Smtp(SmtpEvent::DeliverByDisabled),
+                    SpanId = self.data.session_id,
+                );
                 self.data.mail_from = None;
                 return self
                     .write(b"501 5.5.4 DELIVERBY extension has been disabled.\r\n")
@@ -243,10 +296,19 @@ impl<T: SessionStream> Session<T> {
                 if (-6..6).contains(&from.mt_priority) {
                     self.data.priority = from.mt_priority as i16;
                 } else {
+                    trc::event!(
+                        Smtp(SmtpEvent::MtPriorityInvalid),
+                        SpanId = self.data.session_id,
+                        Details = from.mt_priority,
+                    );
                     self.data.mail_from = None;
                     return self.write(b"501 5.5.4 Invalid priority value.\r\n").await;
                 }
             } else {
+                trc::event!(
+                    Smtp(SmtpEvent::MtPriorityDisabled),
+                    SpanId = self.data.session_id,
+                );
                 self.data.mail_from = None;
                 return self
                     .write(b"501 5.5.4 MT-PRIORITY extension has been disabled.\r\n")
@@ -262,6 +324,12 @@ impl<T: SessionStream> Session<T> {
                     .await
                     .unwrap_or(25 * 1024 * 1024)
         {
+            trc::event!(
+                Smtp(SmtpEvent::MessageTooLarge),
+                SpanId = self.data.session_id,
+                Size = from.size,
+            );
+
             self.data.mail_from = None;
             return self
                 .write(b"552 5.3.4 Message too big for system.\r\n")
@@ -290,6 +358,11 @@ impl<T: SessionStream> Session<T> {
                 if hold_for <= max_hold {
                     self.data.future_release = hold_for;
                 } else {
+                    trc::event!(
+                        Smtp(SmtpEvent::FutureReleaseInvalid),
+                        SpanId = self.data.session_id,
+                        Details = hold_for,
+                    );
                     self.data.mail_from = None;
                     return self
                         .write(
@@ -301,6 +374,10 @@ impl<T: SessionStream> Session<T> {
                         .await;
                 }
             } else {
+                trc::event!(
+                    Smtp(SmtpEvent::FutureReleaseDisabled),
+                    SpanId = self.data.session_id,
+                );
                 self.data.mail_from = None;
                 return self
                     .write(b"501 5.5.4 FUTURERELEASE extension has been disabled.\r\n")
@@ -315,6 +392,7 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .unwrap_or(false)
         {
+            trc::event!(Smtp(SmtpEvent::DsnDisabled), SpanId = self.data.session_id,);
             self.data.mail_from = None;
             return self
                 .write(b"501 5.5.4 DSN extension has been disabled.\r\n")

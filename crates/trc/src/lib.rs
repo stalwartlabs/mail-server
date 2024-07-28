@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+pub mod atomic;
 pub mod channel;
 pub mod collector;
 pub mod conv;
@@ -77,7 +78,9 @@ pub enum Key {
     Property,
     Path,
     Url,
+    Used,
     Name,
+    OldName,
     DocumentId,
     Collection,
     AccountId,
@@ -96,6 +99,7 @@ pub enum Key {
     Renewal,
     Attempt,
     NextRetry,
+    NextDsn,
     LocalIp,
     LocalPort,
     RemoteIp,
@@ -138,6 +142,12 @@ pub enum Key {
     TotalSuccesses,
     TotalFailures,
     Date,
+    Uid,
+    UidValidity,
+    UidNext,
+    SourceAccountId,
+    SourceMailboxId,
+    SourceUid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -231,23 +241,94 @@ pub enum FtsIndexEvent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImapEvent {
-    Error,
-    RawInput,
-    RawOutput,
+    // Commands
+    GetAcl,
+    SetAcl,
+    MyRights,
+    ListRights,
+    Append,
+    Capabilities,
+    Id,
+    Close,
+    Copy,
+    Move,
+    CreateMailbox,
+    DeleteMailbox,
+    RenameMailbox,
+    Enable,
+    Expunge,
+    Fetch,
     IdleStart,
     IdleStop,
+    List,
+    Lsub,
+    Logout,
+    Namespace,
+    Noop,
+    Search,
+    Sort,
+    Select,
+    Status,
+    Store,
+    Subscribe,
+    Unsubscribe,
+    Thread,
+
+    // Errors
+    Error,
+
+    // Debugging
+    RawInput,
+    RawOutput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Pop3Event {
+    // Commands
+    Delete,
+    Reset,
+    Quit,
+    Fetch,
+    List,
+    ListMessage,
+    Uidl,
+    UidlMessage,
+    Stat,
+    Noop,
+    Capabilities,
+    StartTls,
+    Utf8,
+
+    // Errors
     Error,
+
+    // Debugging
     RawInput,
     RawOutput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ManageSieveEvent {
+    // Commands
+    CreateScript,
+    UpdateScript,
+    GetScript,
+    DeleteScript,
+    RenameScript,
+    CheckScript,
+    HaveSpace,
+    ListScripts,
+    SetActive,
+    Capabilities,
+    StartTls,
+    Unauthenticate,
+    Logout,
+    Noop,
+
+    // Errors
     Error,
+
+    // Debugging
     RawInput,
     RawOutput,
 }
@@ -278,14 +359,25 @@ pub enum SmtpEvent {
     DmarcFail,
     IprevPass,
     IprevFail,
-    QuotaExceeded,
     TooManyMessages,
     Ehlo,
     InvalidEhlo,
+    DidNotSayEhlo,
+    EhloExpected,
+    LhloExpected,
+    MailFromUnauthenticated,
+    MailFromUnauthorized,
+    MailFromRewritten,
+    MailFromMissing,
     MailFrom,
+    MultipleMailFrom,
     MailboxDoesNotExist,
     RelayNotAllowed,
     RcptTo,
+    RcptToDuplicate,
+    RcptToRewritten,
+    RcptToMissing,
+    TooManyRecipients,
     TooManyInvalidRcpt,
     RawInput,
     RawOutput,
@@ -296,6 +388,33 @@ pub enum SmtpEvent {
     Expn,
     ExpnNotFound,
     ExpnDisabled,
+    RequireTlsDisabled,
+    DeliverByDisabled,
+    DeliverByInvalid,
+    FutureReleaseDisabled,
+    FutureReleaseInvalid,
+    MtPriorityDisabled,
+    MtPriorityInvalid,
+    DsnDisabled,
+    AuthNotAllowed,
+    AuthMechanismNotSupported,
+    AuthExchangeTooLong,
+    AlreadyAuthenticated,
+    Noop,
+    StartTls,
+    StartTlsUnavailable,
+    StartTlsAlready,
+    Rset,
+    Quit,
+    Help,
+    CommandNotImplemented,
+    InvalidCommand,
+    InvalidSenderAddress,
+    InvalidRecipientAddress,
+    InvalidParameter,
+    UnsupportedParameter,
+    SyntaxError,
+    RequestTooLarge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -305,17 +424,23 @@ pub enum DeliveryEvent {
     Completed,
     Failed,
     AttemptCount,
+    MxLookup,
     MxLookupFailed,
+    IpLookup,
     IpLookupFailed,
     NullMX,
     Connect,
     ConnectError,
     MissingOutboundHostname,
     GreetingFailed,
+    Ehlo,
     EhloRejected,
+    Auth,
     AuthFailed,
+    MailFrom,
     MailFromRejected,
     Delivered,
+    RcptTo,
     RcptToRejected,
     RcptToFailed,
     MessageRejected,
@@ -324,8 +449,14 @@ pub enum DeliveryEvent {
     StartTlsError,
     StartTlsDisabled,
     ImplicitTlsError,
-    TooManyConcurrent,
+    ConcurrencyLimitExceeded,
+    RateLimitExceeded,
     DoubleBounce,
+    DsnSuccess,
+    DsnTempFail,
+    DsnPermFail,
+    RawInput,
+    RawOutput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -337,6 +468,7 @@ pub enum QueueEvent {
     BlobNotFound,
     RateLimitExceeded,
     ConcurrencyLimitExceeded,
+    QuotaExceeded,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -381,11 +513,12 @@ pub enum OutgoingReportEvent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MtaStsEvent {
+    Authorized,
+    NotAuthorized,
     PolicyFetch,
     PolicyNotFound,
     PolicyFetchError,
     InvalidPolicy,
-    NotAuthorized,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -486,7 +619,7 @@ pub enum TlsEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NetworkEvent {
     ConnectionStart,
-    ConnectionStop,
+    ConnectionEnd,
     ListenStart,
     ListenStop,
     ListenError,
@@ -685,13 +818,18 @@ pub enum StoreEvent {
     // Traces
     SqlQuery,
     LdapQuery,
+    LdapBind,
 
     // Events
     Ingest,
+    IngestDuplicate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum JmapEvent {
+    // Calls
+    MethodCall,
+
     // Method errors
     InvalidArguments,
     RequestTooLarge,

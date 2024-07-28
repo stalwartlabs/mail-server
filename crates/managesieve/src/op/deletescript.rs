@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use imap_proto::receiver::Request;
 use jmap_proto::types::collection::Collection;
 use store::write::log::ChangeLogBuilder;
@@ -14,6 +16,8 @@ use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
     pub async fn handle_deletescript(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        let op_start = Instant::now();
+
         let name = request
             .tokens
             .into_iter()
@@ -40,6 +44,14 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .commit_changes(account_id, changelog)
                 .await
                 .caused_by(trc::location!())?;
+
+            trc::event!(
+                ManageSieve(trc::ManageSieveEvent::DeleteScript),
+                SpanId = self.session_id,
+                Name = name,
+                DocumentId = document_id,
+                Elapsed = op_start.elapsed()
+            );
 
             Ok(StatusResponse::ok("Deleted.").into_bytes())
         } else {

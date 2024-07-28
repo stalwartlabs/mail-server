@@ -28,8 +28,17 @@ impl<T: SessionStream> Session<T> {
         }
 
         if self.data.mail_from.is_none() {
+            trc::event!(
+                Smtp(SmtpEvent::MailFromMissing),
+                SpanId = self.data.session_id,
+            );
             return self.write(b"503 5.5.1 MAIL is required first.\r\n").await;
         } else if self.data.rcpt_to.len() >= self.params.rcpt_max {
+            trc::event!(
+                Smtp(SmtpEvent::TooManyRecipients),
+                SpanId = self.data.session_id,
+                Limit = self.params.rcpt_max,
+            );
             return self.write(b"451 4.5.3 Too many recipients.\r\n").await;
         }
 
@@ -40,6 +49,7 @@ impl<T: SessionStream> Session<T> {
             || to.orcpt.is_some())
             && !self.params.rcpt_dsn
         {
+            trc::event!(Smtp(SmtpEvent::DsnDisabled), SpanId = self.data.session_id,);
             return self
                 .write(b"501 5.5.4 DSN extension has been disabled.\r\n")
                 .await;
@@ -56,6 +66,11 @@ impl<T: SessionStream> Session<T> {
         };
 
         if self.data.rcpt_to.contains(&rcpt) {
+            trc::event!(
+                Smtp(SmtpEvent::RcptToDuplicate),
+                SpanId = self.data.session_id,
+                To = rcpt.address_lcase,
+            );
             return self.write(b"250 2.1.5 OK\r\n").await;
         }
         self.data.rcpt_to.push(rcpt);
@@ -133,6 +148,14 @@ impl<T: SessionStream> Session<T> {
                 .await
             {
                 let rcpt = self.data.rcpt_to.last_mut().unwrap();
+
+                trc::event!(
+                    Smtp(SmtpEvent::RcptToRewritten),
+                    SpanId = self.data.session_id,
+                    OldName = rcpt.address_lcase.clone(),
+                    Name = new_address.clone(),
+                );
+
                 if new_address.contains('@') {
                     rcpt.address_lcase = new_address.to_lowercase();
                     rcpt.domain = rcpt.address_lcase.domain_part().to_string();
@@ -143,6 +166,11 @@ impl<T: SessionStream> Session<T> {
             // Check for duplicates
             let rcpt = self.data.rcpt_to.last().unwrap();
             if self.data.rcpt_to.iter().filter(|r| r == &rcpt).count() > 1 {
+                trc::event!(
+                    Smtp(SmtpEvent::RcptToDuplicate),
+                    SpanId = self.data.session_id,
+                    To = rcpt.address_lcase.clone(),
+                );
                 self.data.rcpt_to.pop();
                 return self.write(b"250 2.1.5 OK\r\n").await;
             }

@@ -25,7 +25,7 @@ impl RocksDbStore {
             db.get_pinned_cf(
                 &db.cf_handle(std::str::from_utf8(&[key.subspace()]).unwrap())
                     .unwrap(),
-                &key.serialize(0),
+                key.serialize(0),
             )
             .map_err(into_error)
             .and_then(|value| {

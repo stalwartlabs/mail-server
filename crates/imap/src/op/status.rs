@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use crate::{
     core::{Mailbox, Session, SessionData},
@@ -34,6 +34,7 @@ use super::ToModSeq;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_status(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_status(self.version)?;
         let version = self.version;
         let data = self.state.session_data();
@@ -49,6 +50,19 @@ impl<T: SessionStream> Session<T> {
                 .status(arguments.mailbox_name, &arguments.items)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
+
+            trc::event!(
+                Imap(trc::ImapEvent::Status),
+                SpanId = data.session_id,
+                Name = status.mailbox_name.clone(),
+                Details = arguments
+                    .items
+                    .iter()
+                    .map(|c| trc::Value::from(format!("{c:?}")))
+                    .collect::<Vec<_>>(),
+                Elapsed = op_start.elapsed()
+            );
+
             let mut buf = Vec::with_capacity(32);
             status.serialize(&mut buf, version.is_rev2());
             data.write_bytes(

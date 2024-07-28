@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use imap_proto::receiver::Request;
 use jmap::sieve::set::ObjectBlobId;
 use jmap_proto::{
@@ -17,6 +19,7 @@ use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
     pub async fn handle_getscript(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        let op_start = Instant::now();
         let name = request
             .tokens
             .into_iter()
@@ -72,6 +75,14 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         response.extend_from_slice(b"}\r\n");
         response.extend(script);
         response.extend_from_slice(b"\r\n");
+
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::GetScript),
+            SpanId = self.session_id,
+            Name = name,
+            DocumentId = document_id,
+            Elapsed = op_start.elapsed()
+        );
 
         Ok(StatusResponse::ok("").serialize(response))
     }

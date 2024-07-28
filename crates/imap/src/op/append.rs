@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use imap_proto::{
     protocol::{append::Arguments, select::HighestModSeq},
@@ -25,6 +25,7 @@ use super::{ImapContext, ToModSeq};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_append(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_append(self.version)?;
         let (data, selected_mailbox) = self.state.session_mailbox_state();
 
@@ -47,7 +48,7 @@ impl<T: SessionStream> Session<T> {
 
         spawn_op!(data, {
             let response = data
-                .append_messages(arguments, selected_mailbox, mailbox, is_qresync)
+                .append_messages(arguments, selected_mailbox, mailbox, is_qresync, op_start)
                 .await?
                 .into_bytes();
 
@@ -63,6 +64,7 @@ impl<T: SessionStream> SessionData<T> {
         selected_mailbox: Option<Arc<SelectedMailbox>>,
         mailbox: MailboxId,
         is_qresync: bool,
+        op_start: Instant,
     ) -> trc::Result<StatusResponse> {
         // Verify ACLs
         let account_id = mailbox.account_id;
@@ -141,6 +143,19 @@ impl<T: SessionStream> SessionData<T> {
                 )
                 .await;
         }
+
+        trc::event!(
+            Imap(trc::ImapEvent::Append),
+            SpanId = self.session_id,
+            Name = arguments.mailbox_name.clone(),
+            AccountId = account_id,
+            MailboxId = mailbox_id,
+            DocumentId = created_ids
+                .iter()
+                .map(|r| trc::Value::from(r.id))
+                .collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         if !created_ids.is_empty() {
             let uids = created_ids.iter().map(|id| id.uid).collect();

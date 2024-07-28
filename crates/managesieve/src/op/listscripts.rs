@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
@@ -15,6 +17,7 @@ use crate::core::{Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
     pub async fn handle_listscripts(&mut self) -> trc::Result<Vec<u8>> {
+        let op_start = Instant::now();
         let account_id = self.state.access_token().primary_id();
         let document_ids = self
             .jmap
@@ -28,6 +31,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         }
 
         let mut response = Vec::with_capacity(128);
+        let count = document_ids.len();
 
         for document_id in document_ids {
             if let Some(script) = self
@@ -58,6 +62,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 }
             }
         }
+
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::ListScripts),
+            SpanId = self.session_id,
+            Total = count,
+            Elapsed = op_start.elapsed()
+        );
 
         Ok(StatusResponse::ok("").serialize(response))
     }

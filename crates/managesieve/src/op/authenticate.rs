@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{
-    config::server::ServerProtocol,
-    listener::{limiter::ConcurrencyLimiter, SessionStream},
-};
+use common::listener::{limiter::ConcurrencyLimiter, SessionStream};
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use imap_proto::{
     protocol::authenticate::Mechanism,
@@ -74,12 +71,7 @@ impl<T: SessionStream> Session<T> {
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
                 self.jmap
-                    .authenticate_plain(
-                        &username,
-                        &secret,
-                        self.remote_addr,
-                        ServerProtocol::ManageSieve,
-                    )
+                    .authenticate_plain(&username, &secret, self.remote_addr, self.session_id)
                     .await
             }
             Credentials::OAuthBearer { token } => {
@@ -139,6 +131,12 @@ impl<T: SessionStream> Session<T> {
 
     pub async fn handle_unauthenticate(&mut self) -> trc::Result<Vec<u8>> {
         self.state = State::NotAuthenticated { auth_failures: 0 };
+
+        trc::event!(
+            ManageSieve(trc::ManageSieveEvent::Unauthenticate),
+            SpanId = self.session_id,
+            Elapsed = trc::Value::Duration(0)
+        );
 
         Ok(StatusResponse::ok("Unauthenticate successful.").into_bytes())
     }

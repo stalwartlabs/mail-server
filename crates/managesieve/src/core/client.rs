@@ -192,7 +192,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             ManageSieve(trc::ManageSieveEvent::RawOutput),
             SpanId = self.session_id,
             Size = bytes.len(),
-            Contents = String::from_utf8_lossy(bytes).into_owned(),
+            Contents = trc::Value::from_maybe_string(bytes),
         );
 
         self.stream.write_all(bytes).await.map_err(|err| {
@@ -230,7 +230,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
             ManageSieve(trc::ManageSieveEvent::RawInput),
             SpanId = self.session_id,
             Size = len,
-            Contents = String::from_utf8_lossy(bytes.get(0..len).unwrap_or_default()).into_owned(),
+            Contents = trc::Value::from_maybe_string(bytes.get(0..len).unwrap_or_default()),
         );
 
         Ok(len)

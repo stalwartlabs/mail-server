@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use common::listener::SessionStream;
 use directory::QueryBy;
@@ -43,12 +43,13 @@ use crate::{
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_get_acl(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_acl(self.version)?;
         let is_rev2 = self.version.is_rev2();
         let data = self.state.session_data();
 
         spawn_op!(data, {
-            let (_, values, _) = data
+            let (mailbox, values, _) = data
                 .get_acl_mailbox(&arguments, true)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
@@ -115,6 +116,16 @@ impl<T: SessionStream> Session<T> {
                 }
             }
 
+            trc::event!(
+                Imap(trc::ImapEvent::GetAcl),
+                SpanId = data.session_id,
+                Name = arguments.mailbox_name.clone(),
+                AccountId = mailbox.account_id,
+                MailboxId = mailbox.mailbox_id,
+                Count = permissions.len(),
+                Elapsed = op_start.elapsed()
+            );
+
             data.write_bytes(
                 StatusResponse::completed(Command::GetAcl)
                     .with_tag(arguments.tag)
@@ -131,6 +142,7 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_my_rights(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_acl(self.version)?;
         let data = self.state.session_data();
         let is_rev2 = self.version.is_rev2();
@@ -140,54 +152,69 @@ impl<T: SessionStream> Session<T> {
                 .get_acl_mailbox(&arguments, false)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
+            let rights = if access_token.is_shared(mailbox.account_id) {
+                let acl = values.inner.effective_acl(&access_token);
+                let mut rights = Vec::with_capacity(5);
+                if acl.contains(Acl::ReadItems) {
+                    rights.push(Rights::Read);
+                    rights.push(Rights::Lookup);
+                }
+                if acl.contains(Acl::AddItems) {
+                    rights.push(Rights::Insert);
+                }
+                if acl.contains(Acl::RemoveItems) {
+                    rights.push(Rights::DeleteMessages);
+                    rights.push(Rights::Expunge);
+                }
+                if acl.contains(Acl::ModifyItems) {
+                    rights.push(Rights::Seen);
+                    rights.push(Rights::Write);
+                }
+                if acl.contains(Acl::CreateChild) {
+                    rights.push(Rights::CreateMailbox);
+                }
+                if acl.contains(Acl::Delete) {
+                    rights.push(Rights::DeleteMailbox);
+                }
+                if acl.contains(Acl::Submit) {
+                    rights.push(Rights::Post);
+                }
+                rights
+            } else {
+                vec![
+                    Rights::Read,
+                    Rights::Lookup,
+                    Rights::Insert,
+                    Rights::DeleteMessages,
+                    Rights::Expunge,
+                    Rights::Seen,
+                    Rights::Write,
+                    Rights::CreateMailbox,
+                    Rights::DeleteMailbox,
+                    Rights::Post,
+                ]
+            };
+
+            trc::event!(
+                Imap(trc::ImapEvent::MyRights),
+                SpanId = data.session_id,
+                Name = arguments.mailbox_name.clone(),
+                AccountId = mailbox.account_id,
+                MailboxId = mailbox.mailbox_id,
+                Details = rights
+                    .iter()
+                    .map(|r| trc::Value::String(r.to_string()))
+                    .collect::<Vec<_>>(),
+                Elapsed = op_start.elapsed()
+            );
+
             data.write_bytes(
                 StatusResponse::completed(Command::MyRights)
                     .with_tag(arguments.tag)
                     .serialize(
                         MyRightsResponse {
                             mailbox_name: arguments.mailbox_name,
-                            rights: if access_token.is_shared(mailbox.account_id) {
-                                let acl = values.inner.effective_acl(&access_token);
-                                let mut rights = Vec::with_capacity(5);
-                                if acl.contains(Acl::ReadItems) {
-                                    rights.push(Rights::Read);
-                                    rights.push(Rights::Lookup);
-                                }
-                                if acl.contains(Acl::AddItems) {
-                                    rights.push(Rights::Insert);
-                                }
-                                if acl.contains(Acl::RemoveItems) {
-                                    rights.push(Rights::DeleteMessages);
-                                    rights.push(Rights::Expunge);
-                                }
-                                if acl.contains(Acl::ModifyItems) {
-                                    rights.push(Rights::Seen);
-                                    rights.push(Rights::Write);
-                                }
-                                if acl.contains(Acl::CreateChild) {
-                                    rights.push(Rights::CreateMailbox);
-                                }
-                                if acl.contains(Acl::Delete) {
-                                    rights.push(Rights::DeleteMailbox);
-                                }
-                                if acl.contains(Acl::Submit) {
-                                    rights.push(Rights::Post);
-                                }
-                                rights
-                            } else {
-                                vec![
-                                    Rights::Read,
-                                    Rights::Lookup,
-                                    Rights::Insert,
-                                    Rights::DeleteMessages,
-                                    Rights::Expunge,
-                                    Rights::Seen,
-                                    Rights::Write,
-                                    Rights::CreateMailbox,
-                                    Rights::DeleteMailbox,
-                                    Rights::Post,
-                                ]
-                            },
+                            rights,
                         }
                         .into_bytes(is_rev2),
                     ),
@@ -197,6 +224,7 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_set_acl(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let command = request.command;
         let arguments = request.parse_acl(self.version)?;
         let data = self.state.session_data();
@@ -293,6 +321,11 @@ impl<T: SessionStream> Session<T> {
                 }
             }
 
+            let grants = acl
+                .iter()
+                .map(|r| trc::Value::from(r.account_id))
+                .collect::<Vec<_>>();
+
             // Write changes
             let mailbox_id = mailbox.mailbox_id;
             let mut batch = BatchBuilder::new();
@@ -328,6 +361,16 @@ impl<T: SessionStream> Session<T> {
             // Invalidate ACLs
             data.jmap.inner.access_tokens.remove(&acl_account_id);
 
+            trc::event!(
+                Imap(trc::ImapEvent::SetAcl),
+                SpanId = data.session_id,
+                Name = arguments.mailbox_name.clone(),
+                AccountId = mailbox.account_id,
+                MailboxId = mailbox.mailbox_id,
+                Details = grants,
+                Elapsed = op_start.elapsed()
+            );
+
             data.write_bytes(
                 StatusResponse::completed(command)
                     .with_tag(arguments.tag)
@@ -338,7 +381,16 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_list_rights(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_acl(self.version)?;
+
+        trc::event!(
+            Imap(trc::ImapEvent::ListRights),
+            SpanId = self.session_id,
+            Name = arguments.mailbox_name.clone(),
+            Elapsed = op_start.elapsed()
+        );
+
         self.write_bytes(
             StatusResponse::completed(Command::ListRights)
                 .with_tag(arguments.tag)

@@ -21,7 +21,7 @@ impl<T: SessionStream> Session<T> {
             Imap(trc::ImapEvent::RawInput),
             SpanId = self.session_id,
             Size = bytes.len(),
-            Contents = String::from_utf8_lossy(bytes).into_owned(),
+            Contents = trc::Value::from_maybe_string(bytes),
         );
 
         let mut bytes = bytes.iter();

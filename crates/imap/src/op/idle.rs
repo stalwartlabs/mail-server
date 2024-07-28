@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use ahash::AHashSet;
 use imap_proto::{
@@ -32,6 +32,7 @@ use crate::{
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_idle(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let (data, mailbox, types) = match &self.state {
             State::Authenticated { data, .. } => {
                 (data.clone(), None, Bitmap::from_iter([DataType::Mailbox]))
@@ -57,8 +58,13 @@ impl<T: SessionStream> Session<T> {
         self.write_bytes(b"+ Idling, send 'DONE' to stop.\r\n".to_vec())
             .await?;
 
-        trc::event!(Imap(trc::ImapEvent::IdleStart), SpanId = self.session_id);
+        trc::event!(
+            Imap(trc::ImapEvent::IdleStart),
+            SpanId = self.session_id,
+            Elapsed = op_start.elapsed()
+        );
 
+        let op_start = Instant::now();
         let mut buf = vec![0; 1024];
         loop {
             tokio::select! {
@@ -67,7 +73,7 @@ impl<T: SessionStream> Session<T> {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
                                 if (buf[..bytes_read]).windows(4).any(|w| w == b"DONE") {
-                                    trc::event!(Imap(trc::ImapEvent::IdleStop), SpanId = self.session_id);
+                                    trc::event!(Imap(trc::ImapEvent::IdleStop), SpanId = self.session_id, Elapsed = op_start.elapsed());
                                     return self.write_bytes(StatusResponse::completed(Command::Idle)
                                                                     .with_tag(request.tag)
                                                                     .into_bytes()).await;
@@ -215,6 +221,7 @@ impl<T: SessionStream> SessionData<T> {
                 };
 
                 if !changed_ids.is_empty() {
+                    let op_start = Instant::now();
                     return self
                         .fetch(
                             fetch::Arguments {
@@ -234,6 +241,7 @@ impl<T: SessionStream> SessionData<T> {
                             is_qresync,
                             is_rev2,
                             false,
+                            op_start,
                         )
                         .await
                         .caused_by(trc::location!())

@@ -6,7 +6,6 @@
 
 use std::{borrow::Cow, time::Duration};
 
-use common::webhooks::{WebhookIngestSource, WebhookPayload, WebhookType};
 use jmap_proto::{
     object::Object,
     types::{
@@ -80,13 +79,9 @@ impl JMAP {
     pub async fn email_ingest(&self, mut params: IngestEmail<'_>) -> trc::Result<IngestedEmail> {
         // Check quota
         let mut raw_message_len = params.raw_message.len() as i64;
-        if !self
-            .has_available_quota(params.account_id, params.account_quota, raw_message_len)
+        self.has_available_quota(params.account_id, params.account_quota, raw_message_len)
             .await
-            .caused_by(trc::location!())?
-        {
-            return Err(trc::LimitEvent::Quota.into_err());
-        }
+            .caused_by(trc::location!())?;
 
         // Parse message
         let mut raw_message = Cow::from(params.raw_message);
@@ -166,6 +161,13 @@ impl JMAP {
                     .results
                     .is_empty()
             {
+                trc::event!(
+                    Store(trc::StoreEvent::IngestDuplicate),
+                    SpanId = params.session_id,
+                    AccountId = params.account_id,
+                    MessageId = message_id.to_string(),
+                );
+
                 return Ok(IngestedEmail {
                     id: Id::default(),
                     change_id: u64::MAX,
@@ -333,31 +335,6 @@ impl JMAP {
             ChangeId = change_id,
             Size = raw_message_len as u64,
         );
-
-        // Send webhook event
-        if self
-            .core
-            .has_webhook_subscribers(WebhookType::MessageAppended)
-        {
-            self.smtp
-                .inner
-                .ipc
-                .send_webhook(
-                    WebhookType::MessageAppended,
-                    WebhookPayload::MessageAppended {
-                        account_id: params.account_id,
-                        mailbox_ids: params.mailbox_ids,
-                        source: match params.source {
-                            IngestSource::Smtp => WebhookIngestSource::Smtp,
-                            IngestSource::Jmap => WebhookIngestSource::Jmap,
-                            IngestSource::Imap => WebhookIngestSource::Imap,
-                        },
-                        encrypt: params.encrypt,
-                        size: raw_message_len as usize,
-                    },
-                )
-                .await;
-        }
 
         Ok(IngestedEmail {
             id,

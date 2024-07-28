@@ -574,6 +574,14 @@ impl NetworkEvent {
 }
 
 impl Value {
+    pub fn from_maybe_string(value: &[u8]) -> Self {
+        if let Ok(value) = std::str::from_utf8(value) {
+            Self::String(value.to_string())
+        } else {
+            Self::Bytes(value.to_vec())
+        }
+    }
+
     pub fn to_uint(&self) -> Option<u64> {
         match self {
             Self::UInt(value) => Some(*value),
@@ -748,26 +756,141 @@ impl EventType {
     pub fn level(&self) -> Level {
         match self {
             EventType::Store(event) => match event {
-                StoreEvent::SqlQuery | StoreEvent::LdapQuery => Level::Trace,
+                StoreEvent::SqlQuery | StoreEvent::LdapQuery | StoreEvent::LdapBind => Level::Trace,
                 StoreEvent::NotFound => Level::Debug,
-                StoreEvent::Ingest => Level::Info,
-                _ => Level::Error,
+                StoreEvent::Ingest | StoreEvent::IngestDuplicate => Level::Info,
+                StoreEvent::IngestError
+                | StoreEvent::AssertValueFailed
+                | StoreEvent::FoundationDBError
+                | StoreEvent::MySQLError
+                | StoreEvent::PostgreSQLError
+                | StoreEvent::RocksDBError
+                | StoreEvent::SQLiteError
+                | StoreEvent::LdapError
+                | StoreEvent::ElasticSearchError
+                | StoreEvent::RedisError
+                | StoreEvent::S3Error
+                | StoreEvent::FilesystemError
+                | StoreEvent::PoolError
+                | StoreEvent::DataCorruption
+                | StoreEvent::DecompressError
+                | StoreEvent::DeserializeError
+                | StoreEvent::NotConfigured
+                | StoreEvent::NotSupported
+                | StoreEvent::UnexpectedError
+                | StoreEvent::CryptoError => Level::Error,
+                StoreEvent::BlobMissingMarker => Level::Warn,
             },
             EventType::Jmap(_) => Level::Debug,
             EventType::Imap(event) => match event {
-                ImapEvent::Error | ImapEvent::IdleStart | ImapEvent::IdleStop => Level::Debug,
+                ImapEvent::GetAcl
+                | ImapEvent::SetAcl
+                | ImapEvent::MyRights
+                | ImapEvent::ListRights
+                | ImapEvent::Append
+                | ImapEvent::Capabilities
+                | ImapEvent::Id
+                | ImapEvent::Close
+                | ImapEvent::Copy
+                | ImapEvent::Move
+                | ImapEvent::CreateMailbox
+                | ImapEvent::DeleteMailbox
+                | ImapEvent::RenameMailbox
+                | ImapEvent::Enable
+                | ImapEvent::Expunge
+                | ImapEvent::Fetch
+                | ImapEvent::List
+                | ImapEvent::Lsub
+                | ImapEvent::Logout
+                | ImapEvent::Namespace
+                | ImapEvent::Noop
+                | ImapEvent::Search
+                | ImapEvent::Sort
+                | ImapEvent::Select
+                | ImapEvent::Status
+                | ImapEvent::Store
+                | ImapEvent::Subscribe
+                | ImapEvent::Unsubscribe
+                | ImapEvent::Thread
+                | ImapEvent::Error
+                | ImapEvent::IdleStart
+                | ImapEvent::IdleStop => Level::Debug,
                 ImapEvent::RawInput | ImapEvent::RawOutput => Level::Trace,
             },
             EventType::ManageSieve(event) => match event {
-                ManageSieveEvent::Error => Level::Debug,
+                ManageSieveEvent::CreateScript
+                | ManageSieveEvent::UpdateScript
+                | ManageSieveEvent::GetScript
+                | ManageSieveEvent::DeleteScript
+                | ManageSieveEvent::RenameScript
+                | ManageSieveEvent::CheckScript
+                | ManageSieveEvent::HaveSpace
+                | ManageSieveEvent::ListScripts
+                | ManageSieveEvent::SetActive
+                | ManageSieveEvent::Capabilities
+                | ManageSieveEvent::StartTls
+                | ManageSieveEvent::Unauthenticate
+                | ManageSieveEvent::Logout
+                | ManageSieveEvent::Noop
+                | ManageSieveEvent::Error => Level::Debug,
                 ManageSieveEvent::RawInput | ManageSieveEvent::RawOutput => Level::Trace,
             },
             EventType::Pop3(event) => match event {
-                Pop3Event::Error => Level::Debug,
+                Pop3Event::Delete
+                | Pop3Event::Reset
+                | Pop3Event::Quit
+                | Pop3Event::Fetch
+                | Pop3Event::List
+                | Pop3Event::ListMessage
+                | Pop3Event::Uidl
+                | Pop3Event::UidlMessage
+                | Pop3Event::Stat
+                | Pop3Event::Noop
+                | Pop3Event::Capabilities
+                | Pop3Event::StartTls
+                | Pop3Event::Utf8
+                | Pop3Event::Error => Level::Debug,
                 Pop3Event::RawInput | Pop3Event::RawOutput => Level::Trace,
             },
             EventType::Smtp(event) => match event {
-                SmtpEvent::PipeSuccess | SmtpEvent::PipeError | SmtpEvent::Error => Level::Debug,
+                SmtpEvent::DidNotSayEhlo
+                | SmtpEvent::EhloExpected
+                | SmtpEvent::LhloExpected
+                | SmtpEvent::MailFromUnauthenticated
+                | SmtpEvent::MailFromUnauthorized
+                | SmtpEvent::MailFromRewritten
+                | SmtpEvent::MailFromMissing
+                | SmtpEvent::MultipleMailFrom
+                | SmtpEvent::RcptToDuplicate
+                | SmtpEvent::RcptToRewritten
+                | SmtpEvent::RcptToMissing
+                | SmtpEvent::RequireTlsDisabled
+                | SmtpEvent::DeliverByDisabled
+                | SmtpEvent::DeliverByInvalid
+                | SmtpEvent::FutureReleaseDisabled
+                | SmtpEvent::FutureReleaseInvalid
+                | SmtpEvent::MtPriorityDisabled
+                | SmtpEvent::MtPriorityInvalid
+                | SmtpEvent::DsnDisabled
+                | SmtpEvent::AuthExchangeTooLong
+                | SmtpEvent::AlreadyAuthenticated
+                | SmtpEvent::Noop
+                | SmtpEvent::StartTls
+                | SmtpEvent::StartTlsUnavailable
+                | SmtpEvent::StartTlsAlready
+                | SmtpEvent::Rset
+                | SmtpEvent::Quit
+                | SmtpEvent::Help
+                | SmtpEvent::CommandNotImplemented
+                | SmtpEvent::InvalidCommand
+                | SmtpEvent::InvalidSenderAddress
+                | SmtpEvent::InvalidRecipientAddress
+                | SmtpEvent::InvalidParameter
+                | SmtpEvent::UnsupportedParameter
+                | SmtpEvent::SyntaxError
+                | SmtpEvent::PipeSuccess
+                | SmtpEvent::PipeError
+                | SmtpEvent::Error => Level::Debug,
                 SmtpEvent::MissingLocalHostname | SmtpEvent::RemoteIdNotFound => Level::Warn,
                 SmtpEvent::ConcurrencyLimitExceeded
                 | SmtpEvent::TransferLimitExceeded
@@ -789,7 +912,6 @@ impl EventType {
                 | SmtpEvent::DmarcFail
                 | SmtpEvent::IprevPass
                 | SmtpEvent::IprevFail
-                | SmtpEvent::QuotaExceeded
                 | SmtpEvent::TooManyMessages
                 | SmtpEvent::Ehlo
                 | SmtpEvent::InvalidEhlo
@@ -803,7 +925,11 @@ impl EventType {
                 | SmtpEvent::VrfyDisabled
                 | SmtpEvent::Expn
                 | SmtpEvent::ExpnNotFound
-                | SmtpEvent::ExpnDisabled => Level::Info,
+                | SmtpEvent::AuthNotAllowed
+                | SmtpEvent::AuthMechanismNotSupported
+                | SmtpEvent::ExpnDisabled
+                | SmtpEvent::RequestTooLarge
+                | SmtpEvent::TooManyRecipients => Level::Info,
                 SmtpEvent::RawInput | SmtpEvent::RawOutput => Level::Trace,
             },
             EventType::Network(event) => match event {
@@ -813,7 +939,7 @@ impl EventType {
                 | NetworkEvent::Closed => Level::Trace,
                 NetworkEvent::Timeout | NetworkEvent::AcceptError => Level::Debug,
                 NetworkEvent::ConnectionStart
-                | NetworkEvent::ConnectionStop
+                | NetworkEvent::ConnectionEnd
                 | NetworkEvent::ListenStart
                 | NetworkEvent::ListenStop
                 | NetworkEvent::DropBlocked => Level::Info,
@@ -1063,15 +1189,27 @@ impl EventType {
                 | DeliveryEvent::StartTlsError
                 | DeliveryEvent::StartTlsDisabled
                 | DeliveryEvent::ImplicitTlsError
-                | DeliveryEvent::TooManyConcurrent
                 | DeliveryEvent::DoubleBounce => Level::Info,
-                DeliveryEvent::MissingOutboundHostname => Level::Warn,
+                DeliveryEvent::ConcurrencyLimitExceeded
+                | DeliveryEvent::RateLimitExceeded
+                | DeliveryEvent::MissingOutboundHostname => Level::Warn,
+                DeliveryEvent::DsnSuccess
+                | DeliveryEvent::DsnTempFail
+                | DeliveryEvent::DsnPermFail => Level::Info,
+                DeliveryEvent::MxLookup
+                | DeliveryEvent::IpLookup
+                | DeliveryEvent::Ehlo
+                | DeliveryEvent::Auth
+                | DeliveryEvent::MailFrom
+                | DeliveryEvent::RcptTo => Level::Debug,
+                DeliveryEvent::RawInput | DeliveryEvent::RawOutput => Level::Trace,
             },
             EventType::Queue(event) => match event {
                 QueueEvent::RateLimitExceeded
                 | QueueEvent::ConcurrencyLimitExceeded
                 | QueueEvent::Scheduled
-                | QueueEvent::Rescheduled => Level::Info,
+                | QueueEvent::Rescheduled
+                | QueueEvent::QuotaExceeded => Level::Info,
                 QueueEvent::LockBusy | QueueEvent::Locked | QueueEvent::BlobNotFound => {
                     Level::Debug
                 }
@@ -1084,7 +1222,8 @@ impl EventType {
                 | MtaStsEvent::PolicyNotFound
                 | MtaStsEvent::PolicyFetchError
                 | MtaStsEvent::InvalidPolicy
-                | MtaStsEvent::NotAuthorized => Level::Info,
+                | MtaStsEvent::NotAuthorized
+                | MtaStsEvent::Authorized => Level::Info,
             },
             EventType::IncomingReport(event) => match event {
                 IncomingReportEvent::DmarcReportWithWarnings

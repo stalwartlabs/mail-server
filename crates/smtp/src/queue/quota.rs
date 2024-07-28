@@ -9,6 +9,7 @@ use store::{
     write::{BatchBuilder, QueueClass, ValueClass},
     ValueKey,
 };
+use trc::QueueEvent;
 
 use crate::core::{throttle::NewKey, SMTP};
 
@@ -24,6 +25,13 @@ impl SMTP {
                     .check_quota(quota, message, message.size, 0, &mut quota_keys, message.id)
                     .await
                 {
+                    trc::event!(
+                        Queue(QueueEvent::QuotaExceeded),
+                        SpanId = message.id,
+                        Id = quota.id.clone(),
+                        Type = "Sender"
+                    );
+
                     return false;
                 }
             }
@@ -42,6 +50,13 @@ impl SMTP {
                     )
                     .await
                 {
+                    trc::event!(
+                        Queue(QueueEvent::QuotaExceeded),
+                        SpanId = message.id,
+                        Id = quota.id.clone(),
+                        Type = "Domain"
+                    );
+
                     return false;
                 }
             }
@@ -60,6 +75,13 @@ impl SMTP {
                     )
                     .await
                 {
+                    trc::event!(
+                        Queue(QueueEvent::QuotaExceeded),
+                        SpanId = message.id,
+                        Id = quota.id.clone(),
+                        Type = "Recipient"
+                    );
+
                     return false;
                 }
             }

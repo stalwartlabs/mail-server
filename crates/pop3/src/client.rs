@@ -19,7 +19,7 @@ impl<T: SessionStream> Session<T> {
             Pop3(trc::Pop3Event::RawInput),
             SpanId = self.session_id,
             Size = bytes.len(),
-            Contents = String::from_utf8_lossy(bytes).into_owned(),
+            Contents = trc::Value::from_maybe_string(bytes),
         );
 
         let mut bytes = bytes.iter();
@@ -108,6 +108,12 @@ impl<T: SessionStream> Session<T> {
                             self.handle_uidl(msg).await.map(|_| SessionResult::Continue)
                         }
                         Command::Noop => {
+                            trc::event!(
+                                Pop3(trc::Pop3Event::Noop),
+                                SpanId = self.session_id,
+                                Elapsed = trc::Value::Duration(0)
+                            );
+
                             self.write_ok("NOOP").await.map(|_| SessionResult::Continue)
                         }
                         Command::Rset => self.handle_rset().await.map(|_| SessionResult::Continue),
@@ -119,6 +125,14 @@ impl<T: SessionStream> Session<T> {
                                     vec![Mechanism::OAuthBearer]
                                 };
 
+                            trc::event!(
+                                Pop3(trc::Pop3Event::Capabilities),
+                                SpanId = self.session_id,
+                                Tls = self.stream.is_tls(),
+                                Strict = !self.jmap.core.imap.allow_plain_auth,
+                                Elapsed = trc::Value::Duration(0)
+                            );
+
                             self.write_bytes(
                                 Response::Capability::<u32> {
                                     mechanisms,
@@ -129,14 +143,28 @@ impl<T: SessionStream> Session<T> {
                             .await
                             .map(|_| SessionResult::Continue)
                         }
-                        Command::Stls => self
-                            .write_ok("Begin TLS negotiation now")
-                            .await
-                            .map(|_| SessionResult::UpgradeTls),
-                        Command::Utf8 => self
-                            .write_ok("UTF8 enabled")
-                            .await
-                            .map(|_| SessionResult::Continue),
+                        Command::Stls => {
+                            trc::event!(
+                                Pop3(trc::Pop3Event::StartTls),
+                                SpanId = self.session_id,
+                                Elapsed = trc::Value::Duration(0)
+                            );
+
+                            self.write_ok("Begin TLS negotiation now")
+                                .await
+                                .map(|_| SessionResult::UpgradeTls)
+                        }
+                        Command::Utf8 => {
+                            trc::event!(
+                                Pop3(trc::Pop3Event::Utf8),
+                                SpanId = self.session_id,
+                                Elapsed = trc::Value::Duration(0)
+                            );
+
+                            self.write_ok("UTF8 enabled")
+                                .await
+                                .map(|_| SessionResult::Continue)
+                        }
                         Command::Auth { mechanism, params } => self
                             .handle_sasl(mechanism, params)
                             .await

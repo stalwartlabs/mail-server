@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use imap_proto::receiver::Request;
 use jmap::sieve::set::{ObjectBlobId, SCHEMA};
 use jmap_proto::{
@@ -23,6 +25,7 @@ use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
 impl<T: AsyncRead + AsyncWrite> Session<T> {
     pub async fn handle_putscript(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        let op_start = Instant::now();
         let mut tokens = request.tokens.into_iter();
         let name = tokens
             .next()
@@ -47,21 +50,14 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         // Check quota
         let access_token = self.state.access_token();
         let account_id = access_token.primary_id();
-        if !self
-            .jmap
+        self.jmap
             .has_available_quota(
                 account_id,
                 access_token.quota as i64,
                 script_bytes.len() as i64,
             )
             .await
-            .caused_by(trc::location!())?
-        {
-            return Err(trc::ManageSieveEvent::Error
-                .into_err()
-                .details("Quota exceeded.")
-                .code(ResponseCode::Quota));
-        }
+            .caused_by(trc::location!())?;
 
         if self
             .jmap
@@ -96,7 +92,9 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                         .details(err.to_string())
                         .code(ResponseCode::QuotaMaxSize)
                 } else {
-                    trc::ManageSieveEvent::Error.into_err().details(err.to_string())
+                    trc::ManageSieveEvent::Error
+                        .into_err()
+                        .details(err.to_string())
                 });
             }
         }
@@ -181,6 +179,16 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .write_batch(batch)
                 .await
                 .caused_by(trc::location!())?;
+
+            trc::event!(
+                ManageSieve(trc::ManageSieveEvent::UpdateScript),
+                SpanId = self.session_id,
+                Name = name.to_string(),
+                DocumentId = document_id,
+                Size = script_size,
+                Elapsed = op_start.elapsed(),
+
+            );
         } else {
             // Write script blob
             let blob_id = BlobId::new(
@@ -213,15 +221,24 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                 .custom(
                     ObjectIndexBuilder::new(SCHEMA).with_changes(
                         Object::with_capacity(3)
-                            .with_property(Property::Name, name)
+                            .with_property(Property::Name, name.clone())
                             .with_property(Property::IsActive, Value::Bool(false))
                             .with_property(Property::BlobId, Value::BlobId(blob_id)),
                     ),
                 );
-            self.jmap
+            let assigned_ids = self
+                .jmap
                 .write_batch(batch)
                 .await
                 .caused_by(trc::location!())?;
+
+            trc::event!(
+                ManageSieve(trc::ManageSieveEvent::CreateScript),
+                SpanId = self.session_id,
+                Name = name,
+                DocumentId = assigned_ids.last_document_id().ok(),
+                Elapsed = op_start.elapsed()
+            );
         }
 
         Ok(StatusResponse::ok("Success.").into_bytes())

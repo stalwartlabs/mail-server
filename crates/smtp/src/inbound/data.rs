@@ -11,12 +11,10 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use chrono::{TimeZone, Utc};
 use common::{
     config::smtp::{auth::VerifyStrategy, session::Stage},
     listener::SessionStream,
     scripts::ScriptModification,
-    webhooks::{WebhookMessageFailure, WebhookPayload, WebhookType},
 };
 use mail_auth::{
     common::{headers::HeaderWriter, verify::VerifySignature},
@@ -56,9 +54,6 @@ impl<T: SessionStream> Session<T> {
                 SpanId = self.data.session_id,
             );
 
-            self.send_failure_webhook(WebhookMessageFailure::ParseFailed)
-                .await;
-
             return (&b"550 5.7.7 Failed to parse message.\r\n"[..]).into();
         };
 
@@ -79,9 +74,6 @@ impl<T: SessionStream> Session<T> {
                 SpanId = self.data.session_id,
                 Count = auth_message.received_headers_count(),
             );
-
-            self.send_failure_webhook(WebhookMessageFailure::LoopDetected)
-                .await;
 
             return (&b"450 4.4.6 Too many Received headers. Possible loop detected.\r\n"[..])
                 .into();
@@ -144,9 +136,6 @@ impl<T: SessionStream> Session<T> {
             );
 
             if rejected {
-                self.send_failure_webhook(WebhookMessageFailure::DkimPolicy)
-                    .await;
-
                 // 'Strict' mode violates the advice of Section 6.1 of RFC6376
                 return if dkim_output
                     .iter()
@@ -203,9 +192,6 @@ impl<T: SessionStream> Session<T> {
             );
 
             if strict && !pass {
-                self.send_failure_webhook(WebhookMessageFailure::ArcPolicy)
-                    .await;
-
                 return if matches!(arc_output.result(), DkimResult::TempError(_)) {
                     (&b"451 4.7.29 ARC validation failed.\r\n"[..]).into()
                 } else {
@@ -315,9 +301,6 @@ impl<T: SessionStream> Session<T> {
                 }
 
                 if rejected {
-                    self.send_failure_webhook(WebhookMessageFailure::DmarcPolicy)
-                        .await;
-
                     return if is_temp_fail {
                         (&b"451 4.7.1 Email temporarily rejected per DMARC policy.\r\n"[..]).into()
                     } else {
@@ -409,9 +392,6 @@ impl<T: SessionStream> Session<T> {
                 }
             }
             Err(response) => {
-                self.send_failure_webhook(WebhookMessageFailure::MilterReject)
-                    .await;
-
                 return response.into_bytes();
             }
         };
@@ -428,9 +408,6 @@ impl<T: SessionStream> Session<T> {
                 }
             }
             Err(response) => {
-                self.send_failure_webhook(WebhookMessageFailure::MilterReject)
-                    .await;
-
                 return response.into_bytes();
             }
         };
@@ -617,15 +594,9 @@ impl<T: SessionStream> Session<T> {
                     modifications
                 }
                 ScriptResult::Reject(message) => {
-                    self.send_failure_webhook(WebhookMessageFailure::SieveReject)
-                        .await;
-
                     return message.into_bytes().into();
                 }
                 ScriptResult::Discard => {
-                    self.send_failure_webhook(WebhookMessageFailure::SieveDiscard)
-                        .await;
-
                     return (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into();
                 }
             };
@@ -728,36 +699,6 @@ impl<T: SessionStream> Session<T> {
         if self.core.has_quota(&mut message).await {
             // Prepare webhook event
             let queue_id = message.id;
-            let webhook_event = self
-                .core
-                .core
-                .has_webhook_subscribers(WebhookType::MessageAccepted)
-                .then(|| WebhookPayload::MessageAccepted {
-                    id: queue_id,
-                    remote_ip: self.data.remote_ip.into(),
-                    local_port: self.data.local_port.into(),
-                    authenticated_as: (!self.data.authenticated_as.is_empty())
-                        .then(|| self.data.authenticated_as.clone()),
-                    return_path: message.return_path_lcase.clone(),
-                    recipients: message
-                        .recipients
-                        .iter()
-                        .map(|r| r.address_lcase.clone())
-                        .collect(),
-                    next_retry: Utc
-                        .timestamp_opt(message.next_delivery_event() as i64, 0)
-                        .single()
-                        .unwrap_or_else(Utc::now),
-                    next_dsn: Utc
-                        .timestamp_opt(message.next_dsn() as i64, 0)
-                        .single()
-                        .unwrap_or_else(Utc::now),
-                    expires: Utc
-                        .timestamp_opt(message.expires() as i64, 0)
-                        .single()
-                        .unwrap_or_else(Utc::now),
-                    size: message.size,
-                });
 
             // Queue message
             if message
@@ -769,33 +710,13 @@ impl<T: SessionStream> Session<T> {
                 )
                 .await
             {
-                // Send webhook event
-                if let Some(event) = webhook_event {
-                    self.core
-                        .inner
-                        .ipc
-                        .send_webhook(WebhookType::MessageAccepted, event)
-                        .await;
-                }
-
                 self.state = State::Accepted(queue_id);
                 self.data.messages_sent += 1;
                 (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into()
             } else {
-                self.send_failure_webhook(WebhookMessageFailure::ServerFailure)
-                    .await;
-
                 (b"451 4.3.5 Unable to accept message at this time.\r\n"[..]).into()
             }
         } else {
-            trc::event!(
-                Smtp(SmtpEvent::QuotaExceeded),
-                SpanId = self.data.session_id,
-            );
-
-            self.send_failure_webhook(WebhookMessageFailure::QuotaExceeded)
-                .await;
-
             (b"452 4.3.1 Mail system full, try again later.\r\n"[..]).into()
         }
     }
@@ -964,6 +885,11 @@ impl<T: SessionStream> Session<T> {
                 Ok(false)
             }
         } else {
+            trc::event!(
+                Smtp(SmtpEvent::RcptToMissing),
+                SpanId = self.data.session_id,
+            );
+
             self.write(b"503 5.5.1 RCPT is required first.\r\n").await?;
             Ok(false)
         }
@@ -1009,39 +935,5 @@ impl<T: SessionStream> Session<T> {
         headers.extend_from_slice(b";\r\n\t");
         headers.extend_from_slice(Date::now().to_rfc822().as_bytes());
         headers.extend_from_slice(b"\r\n");
-    }
-
-    async fn send_failure_webhook(&self, reason: WebhookMessageFailure) {
-        if self
-            .core
-            .core
-            .has_webhook_subscribers(WebhookType::MessageRejected)
-        {
-            self.core
-                .inner
-                .ipc
-                .send_webhook(
-                    WebhookType::MessageRejected,
-                    WebhookPayload::MessageRejected {
-                        reason,
-                        remote_ip: self.data.remote_ip,
-                        local_port: self.data.local_port,
-                        authenticated_as: (!self.data.authenticated_as.is_empty())
-                            .then(|| self.data.authenticated_as.clone()),
-                        return_path: self
-                            .data
-                            .mail_from
-                            .as_ref()
-                            .map(|m| m.address_lcase.clone()),
-                        recipients: self
-                            .data
-                            .rcpt_to
-                            .iter()
-                            .map(|r| r.address_lcase.clone())
-                            .collect(),
-                    },
-                )
-                .await;
-        }
     }
 }

@@ -14,6 +14,12 @@ use imap_proto::{
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_namespace(&mut self, request: Request<Command>) -> trc::Result<()> {
+        trc::event!(
+            Imap(trc::ImapEvent::Namespace),
+            SpanId = self.session_id,
+            Elapsed = trc::Value::Duration(0)
+        );
+
         self.write_bytes(
             StatusResponse::completed(Command::Namespace)
                 .with_tag(request.tag)

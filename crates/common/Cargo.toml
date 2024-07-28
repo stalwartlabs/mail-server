@@ -68,3 +68,4 @@ tracing-journald = "0.3"
 [features]
 test_mode = []
 enterprise = []
+foundation = []

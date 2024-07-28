@@ -122,6 +122,18 @@ impl Type {
             Self::List => "list",
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Individual => "Individual",
+            Self::Group => "Group",
+            Self::Resource => "Resource",
+            Self::Location => "Location",
+            Self::Superuser => "Superuser",
+            Self::List => "List",
+            Self::Other => "Other",
+        }
+    }
 }
 
 #[derive(Default, Clone, Debug)]

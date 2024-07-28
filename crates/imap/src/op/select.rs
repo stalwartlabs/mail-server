@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use imap_proto::{
     protocol::{
@@ -26,6 +26,7 @@ use super::{ImapContext, ToModSeq};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_select(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let is_select = request.command == Command::Select;
         let command = request.command;
         let arguments = request.parse_select(self.version)?;
@@ -119,11 +120,24 @@ impl<T: SessionStream> Session<T> {
                         true,
                         is_rev2,
                         false,
+                        Instant::now(),
                     )
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?;
                 }
             }
+
+            trc::event!(
+                Imap(trc::ImapEvent::Select),
+                SpanId = self.session_id,
+                Name = arguments.mailbox_name.clone(),
+                AccountId = mailbox.id.account_id,
+                MailboxId = mailbox.id.mailbox_id,
+                Total = total_messages,
+                UidNext = uid_next,
+                UidValidity = uid_validity,
+                Elapsed = op_start.elapsed()
+            );
 
             // Build response
             let response = Response {

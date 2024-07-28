@@ -219,6 +219,7 @@ impl<T: SessionStream> Session<T> {
                 trc::event!(
                     OutgoingReport(OutgoingReportEvent::DmarcReport),
                     SpanId = self.data.session_id,
+                    From = from_addr.to_string(),
                     To = rcpts
                         .iter()
                         .map(|a| trc::Value::String(a.to_string()))

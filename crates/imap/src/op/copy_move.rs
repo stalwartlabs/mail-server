@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use imap_proto::{
     protocol::copy_move::Arguments, receiver::Request, Command, ResponseCode, ResponseType,
@@ -38,6 +38,7 @@ impl<T: SessionStream> Session<T> {
         is_move: bool,
         is_uid: bool,
     ) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_copy_move(self.version)?;
         let (data, src_mailbox) = self.state.mailbox_state();
         let is_qresync = self.is_qresync;
@@ -78,6 +79,7 @@ impl<T: SessionStream> Session<T> {
                 is_move,
                 is_uid,
                 is_qresync,
+                op_start,
             )
             .await
         })
@@ -85,6 +87,7 @@ impl<T: SessionStream> Session<T> {
 }
 
 impl<T: SessionStream> SessionData<T> {
+    #[allow(clippy::too_many_arguments)]
     pub async fn copy_move(
         &self,
         arguments: Arguments,
@@ -93,6 +96,7 @@ impl<T: SessionStream> SessionData<T> {
         is_move: bool,
         is_uid: bool,
         is_qresync: bool,
+        op_start: Instant,
     ) -> trc::Result<()> {
         // Convert IMAP ids to JMAP ids.
         let ids = src_mailbox
@@ -247,6 +251,7 @@ impl<T: SessionStream> SessionData<T> {
                         vec![dest_mailbox_id],
                         Vec::new(),
                         None,
+                        self.session_id,
                     )
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
@@ -280,7 +285,7 @@ impl<T: SessionStream> SessionData<T> {
                 self.email_untag_or_delete(
                     src_account_id,
                     src_mailbox.id.mailbox_id,
-                    destroy_ids,
+                    &destroy_ids,
                     &mut changelog,
                 )
                 .await
@@ -347,6 +352,28 @@ impl<T: SessionStream> SessionData<T> {
         }
         src_uids.sort_unstable();
         dest_uids.sort_unstable();
+
+        trc::event!(
+            Imap(if is_move {
+                trc::ImapEvent::Move
+            } else {
+                trc::ImapEvent::Copy
+            }),
+            SpanId = self.session_id,
+            SourceAccountId = src_mailbox.id.account_id,
+            SourceMailboxId = src_mailbox.id.mailbox_id,
+            SourceUid = src_uids
+                .iter()
+                .map(|r| trc::Value::from(*r))
+                .collect::<Vec<_>>(),
+            AccountId = dest_mailbox.account_id,
+            MailboxId = dest_mailbox.mailbox_id,
+            Uid = dest_uids
+                .iter()
+                .map(|r| trc::Value::from(*r))
+                .collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         let response = if is_move {
             self.write_bytes(

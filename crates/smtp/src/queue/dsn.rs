@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use chrono::{TimeZone, Utc};
-use common::webhooks::{WebhookDSN, WebhookDSNType, WebhookPayload, WebhookType};
 use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::HeaderType;
 use mail_builder::mime::{make_boundary, BodyPart, MimePart};
@@ -27,8 +25,8 @@ use super::{
 
 impl SMTP {
     pub async fn send_dsn(&self, message: &mut Message) {
-        // Send webhook event
-        self.send_dsn_webhook(message).await;
+        // Send DSN events
+        self.log_dsn(message).await;
 
         if !message.return_path.is_empty() {
             // Build DSN
@@ -59,18 +57,8 @@ impl SMTP {
         }
     }
 
-    async fn send_dsn_webhook(&self, message: &Message) {
-        let typ = if !message.return_path.is_empty() {
-            WebhookType::DSN
-        } else {
-            WebhookType::DoubleBounce
-        };
-        if !self.core.has_webhook_subscribers(typ) {
-            return;
-        }
-
+    async fn log_dsn(&self, message: &Message) {
         let now = now();
-        let mut webhook_data = Vec::new();
 
         for rcpt in &message.recipients {
             if rcpt.has_flag(RCPT_DSN_SENT) {
@@ -80,98 +68,75 @@ impl SMTP {
             let domain = &message.domains[rcpt.domain_idx];
             match &rcpt.status {
                 Status::Completed(response) => {
-                    webhook_data.push(WebhookDSN {
-                        address: rcpt.address_lcase.clone(),
-                        typ: WebhookDSNType::Success,
-                        remote_host: response.hostname.clone().into(),
-                        message: response.response.to_string(),
-                        next_retry: None,
-                        expires: None,
-                        retry_count: None,
-                    });
+                    trc::event!(
+                        Delivery(trc::DeliveryEvent::DsnSuccess),
+                        SpanId = message.id,
+                        To = rcpt.address_lcase.clone(),
+                        Hostname = response.hostname.clone(),
+                        Details = response.response.to_string(),
+                    );
                 }
                 Status::TemporaryFailure(response) if domain.notify.due <= now => {
-                    webhook_data.push(WebhookDSN {
-                        address: rcpt.address_lcase.clone(),
-                        typ: WebhookDSNType::TemporaryFailure,
-                        remote_host: response.hostname.entity.clone().into(),
-                        message: response.response.to_string(),
-                        next_retry: Utc.timestamp_opt(domain.retry.due as i64, 0).single(),
-                        expires: Utc.timestamp_opt(domain.expires as i64, 0).single(),
-                        retry_count: domain.retry.inner.into(),
-                    });
+                    trc::event!(
+                        Delivery(trc::DeliveryEvent::DsnTempFail),
+                        SpanId = message.id,
+                        To = rcpt.address_lcase.clone(),
+                        Hostname = response.hostname.entity.clone(),
+                        Details = response.response.to_string(),
+                        NextRetry = trc::Value::Timestamp(domain.retry.due),
+                        Expires = trc::Value::Timestamp(domain.expires),
+                        Count = domain.retry.inner,
+                    );
                 }
                 Status::PermanentFailure(response) => {
-                    webhook_data.push(WebhookDSN {
-                        address: rcpt.address_lcase.clone(),
-                        typ: WebhookDSNType::PermanentFailure,
-                        remote_host: response.hostname.entity.clone().into(),
-                        message: response.response.to_string(),
-                        next_retry: None,
-                        expires: None,
-                        retry_count: domain.retry.inner.into(),
-                    });
+                    trc::event!(
+                        Delivery(trc::DeliveryEvent::DsnPermFail),
+                        SpanId = message.id,
+                        To = rcpt.address_lcase.clone(),
+                        Hostname = response.hostname.entity.clone(),
+                        Details = response.response.to_string(),
+                        Count = domain.retry.inner,
+                    );
                 }
                 Status::Scheduled => {
                     // There is no status for this address, use the domain's status.
                     match &domain.status {
                         Status::PermanentFailure(err) => {
-                            webhook_data.push(WebhookDSN {
-                                address: rcpt.address_lcase.clone(),
-                                typ: WebhookDSNType::PermanentFailure,
-                                remote_host: None,
-                                message: err.to_string(),
-                                next_retry: None,
-                                expires: None,
-                                retry_count: domain.retry.inner.into(),
-                            });
+                            trc::event!(
+                                Delivery(trc::DeliveryEvent::DsnPermFail),
+                                SpanId = message.id,
+                                To = rcpt.address_lcase.clone(),
+                                Details = err.to_string(),
+                                Count = domain.retry.inner,
+                            );
                         }
                         Status::TemporaryFailure(err) if domain.notify.due <= now => {
-                            webhook_data.push(WebhookDSN {
-                                address: rcpt.address_lcase.clone(),
-                                typ: WebhookDSNType::TemporaryFailure,
-                                remote_host: None,
-                                message: err.to_string(),
-                                next_retry: Utc.timestamp_opt(domain.retry.due as i64, 0).single(),
-                                expires: Utc.timestamp_opt(domain.expires as i64, 0).single(),
-                                retry_count: domain.retry.inner.into(),
-                            });
+                            trc::event!(
+                                Delivery(trc::DeliveryEvent::DsnTempFail),
+                                SpanId = message.id,
+                                To = rcpt.address_lcase.clone(),
+                                Details = err.to_string(),
+                                NextRetry = trc::Value::Timestamp(domain.retry.due),
+                                Expires = trc::Value::Timestamp(domain.expires),
+                                Count = domain.retry.inner,
+                            );
                         }
                         Status::Scheduled if domain.notify.due <= now => {
-                            webhook_data.push(WebhookDSN {
-                                address: rcpt.address_lcase.clone(),
-                                typ: WebhookDSNType::TemporaryFailure,
-                                remote_host: None,
-                                message: "Concurrency limited".to_string(),
-                                next_retry: Utc.timestamp_opt(domain.retry.due as i64, 0).single(),
-                                expires: Utc.timestamp_opt(domain.expires as i64, 0).single(),
-                                retry_count: domain.retry.inner.into(),
-                            });
+                            trc::event!(
+                                Delivery(trc::DeliveryEvent::DsnTempFail),
+                                SpanId = message.id,
+                                To = rcpt.address_lcase.clone(),
+                                Details = "Concurrency limited",
+                                NextRetry = trc::Value::Timestamp(domain.retry.due),
+                                Expires = trc::Value::Timestamp(domain.expires),
+                                Count = domain.retry.inner,
+                            );
                         }
                         _ => continue,
                     }
                 }
                 _ => continue,
             }
-        }
-
-        // Send webhook event
-        if !webhook_data.is_empty() {
-            self.inner
-                .ipc
-                .send_webhook(
-                    typ,
-                    WebhookPayload::DSN {
-                        id: message.id,
-                        sender: message.return_path_lcase.clone(),
-                        status: webhook_data,
-                        created: Utc
-                            .timestamp_opt(message.created as i64, 0)
-                            .single()
-                            .unwrap_or_else(Utc::now),
-                    },
-                )
-                .await;
         }
     }
 }

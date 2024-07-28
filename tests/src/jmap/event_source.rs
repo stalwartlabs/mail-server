@@ -112,9 +112,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_state(&mut event_rx, &account_id, &[TypeState::Mailbox]).await;
 
     // Destroy Inbox
-    params
-        .client
-        .set_default_account_id(&account_id.to_string());
+    params.client.set_default_account_id(account_id.to_string());
     params
         .client
         .mailbox_destroy(&Id::from(INBOX_ID).to_string(), true)

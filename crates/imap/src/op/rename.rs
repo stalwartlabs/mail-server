@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Instant};
 
 use crate::{
     core::{Session, SessionData},
@@ -29,18 +29,23 @@ use super::ImapContext;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_rename(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
         let arguments = request.parse_rename(self.version)?;
         let data = self.state.session_data();
 
         spawn_op!(data, {
-            let response = data.rename_folder(arguments).await?;
+            let response = data.rename_folder(arguments, op_start).await?;
             data.write_bytes(response.into_bytes()).await
         })
     }
 }
 
 impl<T: SessionStream> SessionData<T> {
-    pub async fn rename_folder(&self, arguments: Arguments) -> trc::Result<StatusResponse> {
+    pub async fn rename_folder(
+        &self,
+        arguments: Arguments,
+        op_start: Instant,
+    ) -> trc::Result<StatusResponse> {
         // Refresh mailboxes
         self.synchronize_mailboxes(false)
             .await
@@ -245,6 +250,16 @@ impl<T: SessionStream> SessionData<T> {
                 break;
             }
         }
+
+        trc::event!(
+            Imap(trc::ImapEvent::RenameMailbox),
+            SpanId = self.session_id,
+            AccountId = params.account_id,
+            OldName = arguments.mailbox_name,
+            Name = arguments.new_mailbox_name,
+            MailboxId = mailbox_id,
+            Elapsed = op_start.elapsed()
+        );
 
         Ok(StatusResponse::completed(Command::Rename).with_tag(arguments.tag))
     }

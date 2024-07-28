@@ -239,6 +239,9 @@ impl Message {
                 .map(|r| trc::Value::String(r.address_lcase.clone()))
                 .collect::<Vec<_>>(),
             Size = self.size,
+            NextRetry = trc::Value::Timestamp(self.next_delivery_event()),
+            NextDsn = trc::Value::Timestamp(self.next_dsn()),
+            Expires = trc::Value::Timestamp(self.expires()),
         );
 
         // Write message to queue

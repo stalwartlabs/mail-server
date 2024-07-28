@@ -186,7 +186,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
             }
 
             trc::event!(
-                Network(trc::NetworkEvent::ConnectionStop),
+                Network(trc::NetworkEvent::ConnectionEnd),
                 SpanId = session_id,
                 Elapsed = start_time.elapsed(),
             );

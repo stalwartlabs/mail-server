@@ -11,7 +11,6 @@ use config::{
     imap::ImapConfig,
     jmap::settings::JmapConfig,
     scripts::Scripting,
-    server::ServerProtocol,
     smtp::{
         auth::{ArcSealer, DkimSigner},
         queue::RelayHost,
@@ -31,7 +30,6 @@ use sieve::Sieve;
 use store::LookupStore;
 use tokio::sync::{mpsc, oneshot};
 use utils::BlobHash;
-use webhooks::{manager::WebhookEvent, WebhookPayload, WebhookType, Webhooks};
 
 pub mod addresses;
 pub mod config;
@@ -42,7 +40,6 @@ pub mod listener;
 pub mod manager;
 pub mod scripts;
 pub mod tracing;
-pub mod webhooks;
 
 pub static USER_AGENT: &str = concat!("Stalwart/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);
@@ -60,7 +57,6 @@ pub struct Core {
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
     pub imap: ImapConfig,
-    pub web_hooks: Webhooks,
     #[cfg(feature = "enterprise")]
     pub enterprise: Option<enterprise::Enterprise>,
 }
@@ -83,7 +79,6 @@ pub enum DeliveryEvent {
 
 pub struct Ipc {
     pub delivery_tx: mpsc::Sender<DeliveryEvent>,
-    pub webhook_tx: mpsc::Sender<WebhookEvent>,
 }
 
 #[derive(Debug)]
@@ -208,10 +203,9 @@ impl Core {
     pub async fn authenticate(
         &self,
         directory: &Directory,
-        ipc: &Ipc,
+        session_id: u64,
         credentials: &Credentials<String>,
         remote_ip: IpAddr,
-        protocol: ServerProtocol,
         return_member_of: bool,
     ) -> trc::Result<Principal<u32>> {
         // First try to authenticate the user against the default directory
@@ -220,20 +214,13 @@ impl Core {
             .await
         {
             Ok(Some(principal)) => {
-                // Send webhook event
-                if self.has_webhook_subscribers(WebhookType::AuthSuccess) {
-                    ipc.send_webhook(
-                        WebhookType::AuthSuccess,
-                        WebhookPayload::Authentication {
-                            login: credentials.login().to_string(),
-                            protocol,
-                            remote_ip,
-                            typ: principal.typ.into(),
-                            as_master: None,
-                        },
-                    )
-                    .await;
-                }
+                trc::event!(
+                    Auth(trc::AuthEvent::Success),
+                    Name = credentials.login().to_string(),
+                    AccountId = principal.id,
+                    SpanId = session_id,
+                    Type = principal.typ.as_str(),
+                );
 
                 return Ok(principal);
             }
@@ -257,20 +244,13 @@ impl Core {
                 if username == fallback_admin =>
             {
                 if verify_secret_hash(fallback_pass, secret).await? {
-                    // Send webhook event
-                    if self.has_webhook_subscribers(WebhookType::AuthSuccess) {
-                        ipc.send_webhook(
-                            WebhookType::AuthSuccess,
-                            WebhookPayload::Authentication {
-                                login: username.to_string(),
-                                protocol,
-                                remote_ip,
-                                typ: Type::Superuser.into(),
-                                as_master: None,
-                            },
-                        )
-                        .await;
-                    }
+                    trc::event!(
+                        Auth(trc::AuthEvent::Success),
+                        Name = username.clone(),
+                        SpanId = session_id,
+                        Type = Type::Superuser.as_str(),
+                    );
+
                     return Ok(Principal::fallback_admin(fallback_pass));
                 }
             }
@@ -280,120 +260,41 @@ impl Core {
                 if verify_secret_hash(master_pass, secret).await? {
                     let username = username.strip_suffix(master_user).unwrap();
                     let username = username.strip_suffix('%').unwrap_or(username);
-                    return if let Some(principal) = directory
+
+                    if let Some(principal) = directory
                         .query(QueryBy::Name(username), return_member_of)
                         .await?
                     {
-                        // Send webhook event
-                        if self.has_webhook_subscribers(WebhookType::AuthSuccess) {
-                            ipc.send_webhook(
-                                WebhookType::AuthSuccess,
-                                WebhookPayload::Authentication {
-                                    login: username.to_string(),
-                                    protocol,
-                                    remote_ip,
-                                    typ: principal.typ.into(),
-                                    as_master: true.into(),
-                                },
-                            )
-                            .await;
-                        }
-                        Ok(principal)
-                    } else {
-                        // Send webhook event
-                        if self.has_webhook_subscribers(WebhookType::AuthFailure) {
-                            ipc.send_webhook(
-                                WebhookType::AuthFailure,
-                                WebhookPayload::Authentication {
-                                    login: username.to_string(),
-                                    protocol,
-                                    remote_ip,
-                                    typ: None,
-                                    as_master: true.into(),
-                                },
-                            )
-                            .await;
-                        }
+                        trc::event!(
+                            Auth(trc::AuthEvent::Success),
+                            Name = username.to_string(),
+                            SpanId = session_id,
+                            AccountId = principal.id,
+                            Type = principal.typ.as_str(),
+                        );
 
-                        Err(trc::AuthEvent::Failed
-                            .ctx(trc::Key::Name, username.to_string())
-                            .ctx(trc::Key::RemoteIp, remote_ip))
-                    };
+                        return Ok(principal);
+                    }
                 }
             }
             _ => {}
         }
 
         if let Err(err) = result {
-            // Send webhook event
-            if self.has_webhook_subscribers(WebhookType::AuthError) {
-                ipc.send_webhook(
-                    WebhookType::AuthError,
-                    WebhookPayload::Error {
-                        message: err.to_string(),
-                    },
-                )
-                .await;
-            }
-
             Err(err)
         } else if self.has_fail2ban() {
             let login = credentials.login();
             if self.is_fail2banned(remote_ip, login.to_string()).await? {
-                // Send webhook event
-                if self.has_webhook_subscribers(WebhookType::AuthBanned) {
-                    ipc.send_webhook(
-                        WebhookType::AuthBanned,
-                        WebhookPayload::Authentication {
-                            login: credentials.login().to_string(),
-                            protocol,
-                            remote_ip,
-                            typ: None,
-                            as_master: None,
-                        },
-                    )
-                    .await;
-                }
-
                 Err(trc::AuthEvent::Banned
                     .into_err()
                     .ctx(trc::Key::RemoteIp, remote_ip)
                     .ctx(trc::Key::Name, login.to_string()))
             } else {
-                // Send webhook event
-                if self.has_webhook_subscribers(WebhookType::AuthFailure) {
-                    ipc.send_webhook(
-                        WebhookType::AuthFailure,
-                        WebhookPayload::Authentication {
-                            login: credentials.login().to_string(),
-                            protocol,
-                            remote_ip,
-                            typ: None,
-                            as_master: None,
-                        },
-                    )
-                    .await;
-                }
-
                 Err(trc::AuthEvent::Failed
                     .ctx(trc::Key::RemoteIp, remote_ip)
                     .ctx(trc::Key::Name, login.to_string()))
             }
         } else {
-            // Send webhook event
-            if self.has_webhook_subscribers(WebhookType::AuthFailure) {
-                ipc.send_webhook(
-                    WebhookType::AuthFailure,
-                    WebhookPayload::Authentication {
-                        login: credentials.login().to_string(),
-                        protocol,
-                        remote_ip,
-                        typ: None,
-                        as_master: None,
-                    },
-                )
-                .await;
-            }
             Err(trc::AuthEvent::Failed
                 .ctx(trc::Key::RemoteIp, remote_ip)
                 .ctx(trc::Key::Name, credentials.login().to_string()))

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use common::listener::SessionStream;
 use imap_proto::{
@@ -41,6 +41,7 @@ impl<T: SessionStream> Session<T> {
         is_sort: bool,
         is_uid: bool,
     ) -> trc::Result<()> {
+        let op_start = Instant::now();
         let mut arguments = if !is_sort {
             request.parse_search(self.version)
         } else {
@@ -69,6 +70,7 @@ impl<T: SessionStream> Session<T> {
                     results_tx,
                     prev_saved_search.clone(),
                     is_uid,
+                    op_start,
                 )
                 .await
             {
@@ -103,6 +105,7 @@ impl<T: SessionStream> SessionData<T> {
         results_tx: Option<watch::Sender<Arc<Vec<ImapId>>>>,
         prev_saved_search: Option<Option<Arc<Vec<ImapId>>>>,
         is_uid: bool,
+        op_start: Instant,
     ) -> trc::Result<search::Response> {
         // Run query
         let (result_set, include_highest_modseq) = self
@@ -204,6 +207,19 @@ impl<T: SessionStream> SessionData<T> {
             };
             results_tx.send(saved_results).ok();
         }
+
+        trc::event!(
+            Imap(if !is_sort {
+                trc::ImapEvent::Search
+            } else {
+                trc::ImapEvent::Sort
+            }),
+            SpanId = self.session_id,
+            AccountId = mailbox.id.account_id,
+            MailboxId = mailbox.id.mailbox_id,
+            Total = total,
+            Elapsed = op_start.elapsed()
+        );
 
         // Build response
         Ok(Response {

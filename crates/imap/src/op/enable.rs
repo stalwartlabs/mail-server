@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use crate::core::Session;
 use common::listener::SessionStream;
 use imap_proto::{
@@ -14,10 +16,13 @@ use imap_proto::{
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_enable(&mut self, request: Request<Command>) -> trc::Result<()> {
+        let op_start = Instant::now();
+
         let arguments = request.parse_enable()?;
         let mut response = enable::Response {
             enabled: Vec::with_capacity(arguments.capabilities.len()),
         };
+
         for capability in arguments.capabilities {
             match capability {
                 Capability::IMAP4rev2 => {
@@ -40,6 +45,17 @@ impl<T: SessionStream> Session<T> {
             }
             response.enabled.push(capability);
         }
+
+        trc::event!(
+            Imap(trc::ImapEvent::Enable),
+            SpanId = self.session_id,
+            Details = response
+                .enabled
+                .iter()
+                .map(|c| trc::Value::from(format!("{c:?}")))
+                .collect::<Vec<_>>(),
+            Elapsed = op_start.elapsed()
+        );
 
         self.write_bytes(
             StatusResponse::ok("ENABLE successful.")

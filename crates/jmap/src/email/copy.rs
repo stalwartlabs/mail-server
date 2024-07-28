@@ -41,7 +41,10 @@ use store::{
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, mailbox::UidMailbox, services::housekeeper::Event, JMAP};
+use crate::{
+    api::http::HttpSessionData, auth::AccessToken, mailbox::UidMailbox,
+    services::housekeeper::Event, JMAP,
+};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
@@ -55,6 +58,7 @@ impl JMAP {
         request: CopyRequest<RequestArguments>,
         access_token: &AccessToken,
         next_call: &mut Option<Call<RequestMethod>>,
+        session: &HttpSessionData,
     ) -> trc::Result<CopyResponse> {
         let account_id = request.account_id.document_id();
         let from_account_id = request.from_account_id.document_id();
@@ -219,6 +223,7 @@ impl JMAP {
                     mailboxes,
                     keywords,
                     received_at,
+                    session.session_id,
                 )
                 .await?
             {
@@ -278,6 +283,7 @@ impl JMAP {
         mailboxes: Vec<u32>,
         keywords: Vec<Keyword>,
         received_at: Option<UTCDate>,
+        session_id: u64,
     ) -> trc::Result<Result<IngestedEmail, SetError>> {
         // Obtain metadata
         let mut metadata = if let Some(metadata) = self
@@ -298,11 +304,19 @@ impl JMAP {
         };
 
         // Check quota
-        if !self
+        match self
             .has_available_quota(account_id, account_quota, metadata.size as i64)
-            .await?
+            .await
         {
-            return Ok(Err(SetError::over_quota()));
+            Ok(_) => (),
+            Err(err) => {
+                if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) {
+                    trc::error!(err.account_id(account_id).span_id(session_id));
+                    return Ok(Err(SetError::over_quota()));
+                } else {
+                    return Err(err);
+                }
+            }
         }
 
         // Set receivedAt

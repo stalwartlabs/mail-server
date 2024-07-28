@@ -13,10 +13,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use common::{
-    manager::webadmin::Resource,
-    webhooks::{WebhookEvent, WebhookEvents},
-};
+use common::manager::webadmin::Resource;
 use hyper::{body, server::conn::http1, service::service_fn};
 use hyper_util::rt::TokioIo;
 use jmap::api::http::{fetch_body, ToHttpResponse};
@@ -29,7 +26,7 @@ use super::JMAPTest;
 
 pub struct MockWebhookEndpoint {
     pub tx: watch::Sender<bool>,
-    pub events: Mutex<Vec<WebhookEvent>>,
+    pub events: Mutex<Vec<serde_json::Value>>,
     pub reject: AtomicBool,
 }
 
@@ -120,7 +117,11 @@ pub fn spawn_mock_webhook_endpoint() -> Arc<MockWebhookEndpoint> {
                                         hmac::verify(&key, &body, &tag).expect("Invalid signature");
 
                                         // Deserialize JSON
-                                        let request = serde_json::from_slice::<WebhookEvents>(&body)
+                                        #[derive(serde::Deserialize)]
+                                        struct WebhookRequest {
+                                            events: Vec<serde_json::Value>,
+                                        }
+                                        let request = serde_json::from_slice::<WebhookRequest>(&body)
                                         .expect("Failed to parse JSON");
 
                                         if !endpoint.reject.load(Ordering::Relaxed) {

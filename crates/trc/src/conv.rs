@@ -6,6 +6,8 @@
 
 use std::{borrow::Cow, fmt::Debug, time::Duration};
 
+use mail_auth::common::headers::HeaderWriter;
+
 use crate::*;
 
 impl AsRef<EventType> for Error {
@@ -333,7 +335,17 @@ impl From<&mail_auth::DmarcResult> for Event {
 
 impl From<&mail_auth::DkimOutput<'_>> for Event {
     fn from(value: &mail_auth::DkimOutput<'_>) -> Self {
-        Event::from(value.result()).ctx_opt(Key::Contents, value.signature().map(|s| s.to_string()))
+        Event::from(value.result()).ctx_opt(
+            Key::Contents,
+            value.signature().map(|s| {
+                let mut buf = Vec::new();
+                s.write_header(&mut buf);
+
+                String::from_utf8(buf)
+                    .map(Value::String)
+                    .unwrap_or_else(|err| Value::Bytes(err.into_bytes()))
+            }),
+        )
     }
 }
 

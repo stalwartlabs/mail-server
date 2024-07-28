@@ -32,6 +32,7 @@ impl JMAP {
                     Store(trc::StoreEvent::IngestError),
                     Reason = "Blob not found.",
                     SpanId = message.session_id,
+                    CausedBy = trc::location!()
                 );
 
                 return (0..message.recipients.len())
@@ -43,7 +44,8 @@ impl JMAP {
             Err(err) => {
                 trc::error!(err
                     .details("Failed to fetch message blob.")
-                    .span_id(message.session_id));
+                    .span_id(message.session_id)
+                    .caused_by(trc::location!()));
 
                 return (0..message.recipients.len())
                     .map(|_| DeliveryResult::TemporaryFailure {
@@ -72,7 +74,8 @@ impl JMAP {
                     trc::error!(err
                         .details("Failed to lookup recipient.")
                         .ctx(trc::Key::To, rcpt.to_string())
-                        .span_id(message.session_id));
+                        .span_id(message.session_id)
+                        .caused_by(trc::location!()));
                     recipients.push(vec![]);
                 }
             }
@@ -103,7 +106,13 @@ impl JMAP {
                     {
                         Ok(Some(p)) => p.quota as i64,
                         Ok(None) => 0,
-                        Err(_) => {
+                        Err(err) => {
+                            trc::error!(err
+                                .details("Failed to obtain account quota.")
+                                .ctx(trc::Key::To, rcpt.to_string())
+                                .span_id(message.session_id)
+                                .caused_by(trc::location!()));
+
                             *status = DeliveryResult::TemporaryFailure {
                                 reason: "Transient server failure.".into(),
                             };

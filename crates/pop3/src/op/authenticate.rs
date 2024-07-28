@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{
-    config::server::ServerProtocol,
-    listener::{limiter::ConcurrencyLimiter, SessionStream},
-};
+use common::listener::{limiter::ConcurrencyLimiter, SessionStream};
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use jmap::auth::rate_limit::ConcurrencyLimiters;
 use mail_parser::decoders::base64::base64_decode;
@@ -68,7 +65,7 @@ impl<T: SessionStream> Session<T> {
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
                 self.jmap
-                    .authenticate_plain(&username, &secret, self.remote_addr, ServerProtocol::Pop3)
+                    .authenticate_plain(&username, &secret, self.remote_addr, self.session_id)
                     .await
             }
             Credentials::OAuthBearer { token } => {

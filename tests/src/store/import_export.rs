@@ -130,7 +130,7 @@ pub async fn test(db: Store) {
                     batch.ops.push(Operation::Bitmap {
                         class: BitmapClass::Text {
                             field,
-                            token: BitmapHash::new(&random_bytes(field as usize + 2)),
+                            token: BitmapHash::new(random_bytes(field as usize + 2)),
                         },
                         set: true,
                     });
