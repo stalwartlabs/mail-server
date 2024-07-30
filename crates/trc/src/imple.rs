@@ -4,48 +4,51 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, cmp::Ordering, fmt::Display, str::FromStr, time::SystemTime};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display, str::FromStr};
 
 use crate::*;
 
-impl Event {
-    pub fn with_capacity(inner: EventType, capacity: usize) -> Self {
+impl<T> Event<T> {
+    pub fn with_capacity(inner: T, capacity: usize) -> Self {
         Self {
             inner,
-            keys: Vec::with_capacity(capacity + 2),
+            keys: Vec::with_capacity(capacity),
         }
     }
 
-    pub fn new(inner: EventType) -> Self {
+    pub fn new(inner: T) -> Self {
         Self {
             inner,
             keys: Vec::with_capacity(5),
         }
     }
 
-    pub fn with_level(mut self, level: Level) -> Self {
-        let level = (Key::Level, level.into());
-        let time = (
-            Key::Time,
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs())
-                .into(),
-        );
-
-        if self.keys.is_empty() {
-            self.keys.push(level);
-            self.keys.push(time);
-        } else {
-            let mut keys = Vec::with_capacity(self.keys.len() + 2);
-            keys.push(level);
-            keys.push(time);
-            keys.append(&mut self.keys);
-            self.keys = keys;
-        }
-        self
+    pub fn value(&self, key: Key) -> Option<&Value> {
+        self.keys
+            .iter()
+            .find_map(|(k, v)| if *k == key { Some(v) } else { None })
     }
 
+    pub fn value_as_str(&self, key: Key) -> Option<&str> {
+        self.value(key).and_then(|v| v.as_str())
+    }
+
+    pub fn value_as_uint(&self, key: Key) -> Option<u64> {
+        self.value(key).and_then(|v| v.to_uint())
+    }
+
+    pub fn take_value(&mut self, key: Key) -> Option<Value> {
+        self.keys.iter_mut().find_map(|(k, v)| {
+            if *k == key {
+                Some(std::mem::take(v))
+            } else {
+                None
+            }
+        })
+    }
+}
+
+impl Event<EventType> {
     #[inline(always)]
     pub fn ctx(mut self, key: Key, value: impl Into<Value>) -> Self {
         self.keys.push((key, value.into()));
@@ -74,42 +77,8 @@ impl Event {
     }
 
     #[inline(always)]
-    pub fn level(&self) -> Level {
-        if let Some((_, Value::Level(level))) = self.keys.first() {
-            *level
-        } else {
-            debug_assert!(false, "Event has no level");
-            Level::Disable
-        }
-    }
-
-    pub fn value(&self, key: Key) -> Option<&Value> {
-        self.keys
-            .iter()
-            .find_map(|(k, v)| if *k == key { Some(v) } else { None })
-    }
-
-    pub fn value_as_str(&self, key: Key) -> Option<&str> {
-        self.value(key).and_then(|v| v.as_str())
-    }
-
-    pub fn take_value(&mut self, key: Key) -> Option<Value> {
-        self.keys.iter_mut().find_map(|(k, v)| {
-            if *k == key {
-                Some(std::mem::take(v))
-            } else {
-                None
-            }
-        })
-    }
-
-    #[inline(always)]
     pub fn span_id(self, session_id: u64) -> Self {
         self.ctx(Key::SpanId, session_id)
-    }
-    #[inline(always)]
-    pub fn parent_span_id(self, session_id: u64) -> Self {
-        self.ctx(Key::ParentSpanId, session_id)
     }
 
     #[inline(always)]
@@ -205,6 +174,20 @@ impl Event {
             .ctx(Key::Key, key)
             .ctx_opt(Key::Value, value)
             .ctx(Key::CausedBy, caused_by)
+    }
+}
+
+impl Event<EventDetails> {
+    pub fn span_id(&self) -> Option<u64> {
+        for (key, value) in &self.keys {
+            match (key, value) {
+                (Key::SpanId, Value::UInt(value)) => return Some(*value),
+                (Key::SpanId, Value::Int(value)) => return Some(*value as u64),
+                _ => {}
+            }
+        }
+
+        None
     }
 }
 
@@ -690,7 +673,6 @@ impl PartialEq for Value {
             (Self::Ipv6(l0), Self::Ipv6(r0)) => l0 == r0,
             (Self::Protocol(l0), Self::Protocol(r0)) => l0 == r0,
             (Self::Event(l0), Self::Event(r0)) => l0 == r0,
-            (Self::Level(l0), Self::Level(r0)) => l0 == r0,
             (Self::Array(l0), Self::Array(r0)) => l0 == r0,
             _ => false,
         }
@@ -1013,16 +995,18 @@ impl EventType {
             },
             EventType::Eval(event) => match event {
                 EvalEvent::Result => Level::Trace,
-                EvalEvent::Error => Level::Error,
-                EvalEvent::DirectoryNotFound => Level::Warn,
-                EvalEvent::StoreNotFound => Level::Warn,
+                EvalEvent::Error | EvalEvent::DirectoryNotFound | EvalEvent::StoreNotFound => {
+                    Level::Warn
+                }
             },
             EventType::Server(event) => match event {
-                ServerEvent::Startup => Level::Info,
-                ServerEvent::Shutdown => Level::Info,
-                ServerEvent::Licensing => Level::Info,
-                ServerEvent::StartupError => Level::Error,
-                ServerEvent::ThreadError => Level::Error,
+                ServerEvent::Startup | ServerEvent::Shutdown | ServerEvent::Licensing => {
+                    Level::Info
+                }
+                ServerEvent::StartupError
+                | ServerEvent::ThreadError
+                | ServerEvent::TracingError => Level::Error,
+                ServerEvent::CollectorUpdate => Level::Disable,
             },
             EventType::Acme(event) => match event {
                 AcmeEvent::DnsRecordCreated
@@ -1262,5 +1246,11 @@ impl EventType {
                 | OutgoingReportEvent::NoRecipientsFound => Level::Info,
             },
         }
+    }
+}
+
+impl From<EventType> for usize {
+    fn from(value: EventType) -> Self {
+        value.id()
     }
 }

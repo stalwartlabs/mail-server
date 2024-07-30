@@ -4,19 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-// Helper macro to count the number of arguments
-
 #[macro_export]
 macro_rules! event {
     ($event:ident($($param:expr),* $(,)?) $(, $key:ident = $value:expr)* $(,)?) => {
         {
-            let et = $crate::EventType::$event($($param),*);
-            let level = et.effective_level();
-            if level.is_enabled() {
+            const ET : $crate::EventType = $crate::EventType::$event($($param),*);
+            const ET_ID : usize = ET.id();
+            if $crate::collector::Collector::has_interest(ET_ID) {
                 $crate::Event::with_capacity(
-                    et,
+                    ET,
                     trc::__count!($($key)*)
-                ).with_level(level)
+                )
                 $(
                     .ctx($crate::Key::$key, $crate::Value::from($value))
                 )*
@@ -24,16 +22,18 @@ macro_rules! event {
             }
         }
     };
+}
 
-    ($event:ident $(, $key:ident = $value:expr)* $(,)?) => {
+#[macro_export]
+macro_rules! eventd {
+    ($event:ident($($param:expr),* $(,)?) $(, $key:ident = $value:expr)* $(,)?) => {
         {
-            let et = $crate::EventType::$event;
-            let level = et.effective_level();
-            if level.is_enabled() {
+            let et = $crate::EventType::$event($($param),*);
+            if $crate::collector::Collector::has_interest(et) {
                 $crate::Event::with_capacity(
                     et,
                     trc::__count!($($key)*)
-                ).init(level)
+                )
                 $(
                     .ctx($crate::Key::$key, $crate::Value::from($value))
                 )*
@@ -67,10 +67,9 @@ macro_rules! bail {
 macro_rules! error {
     ($err:expr $(,)?) => {
         let err = $err;
-        let level = err.as_ref().effective_level();
 
-        if level.is_enabled() {
-            err.with_level(level).send();
+        if $crate::collector::Collector::has_interest(err.as_ref().id()) {
+            err.send();
         }
     };
 }

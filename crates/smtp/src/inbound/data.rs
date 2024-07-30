@@ -123,7 +123,7 @@ impl<T: SessionStream> Session<T> {
                 }
             }
 
-            trc::event!(
+            trc::eventd!(
                 Smtp(if pass {
                     SmtpEvent::DkimPass
                 } else {
@@ -179,7 +179,7 @@ impl<T: SessionStream> Session<T> {
             let strict = arc.is_strict();
             let pass = matches!(arc_output.result(), DkimResult::Pass | DkimResult::None);
 
-            trc::event!(
+            trc::eventd!(
                 Smtp(if pass {
                     SmtpEvent::ArcPass
                 } else {
@@ -273,7 +273,7 @@ impl<T: SessionStream> Session<T> {
                 };
                 let dmarc_policy = dmarc_output.policy();
 
-                trc::event!(
+                trc::eventd!(
                     Smtp(if pass {
                         SmtpEvent::DmarcPass
                     } else {
@@ -324,7 +324,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Add Received header
-        let message_id = self.core.inner.snowflake_id.generate().unwrap_or_else(now);
+        let message_id = self.core.inner.queue_id_gen.generate().unwrap_or_else(now);
         let mut headers = Vec::with_capacity(64);
         if self
             .core
@@ -622,7 +622,9 @@ impl<T: SessionStream> Session<T> {
         // Build message
         let mail_from = self.data.mail_from.clone().unwrap();
         let rcpt_to = std::mem::take(&mut self.data.rcpt_to);
-        let mut message = self.build_message(mail_from, rcpt_to, message_id).await;
+        let mut message = self
+            .build_message(mail_from, rcpt_to, message_id, self.data.session_id)
+            .await;
 
         // Add Return-Path
         if self
@@ -698,7 +700,7 @@ impl<T: SessionStream> Session<T> {
         // Verify queue quota
         if self.core.has_quota(&mut message).await {
             // Prepare webhook event
-            let queue_id = message.id;
+            let queue_id = message.queue_id;
 
             // Queue message
             if message
@@ -725,14 +727,16 @@ impl<T: SessionStream> Session<T> {
         &self,
         mail_from: SessionAddress,
         mut rcpt_to: Vec<SessionAddress>,
-        id: u64,
+        queue_id: u64,
+        span_id: u64,
     ) -> Message {
         // Build message
         let created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         let mut message = Message {
-            id,
+            queue_id,
+            span_id,
             created,
             return_path: mail_from.address,
             return_path_lcase: mail_from.address_lcase,

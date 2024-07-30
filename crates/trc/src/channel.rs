@@ -17,7 +17,7 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 use crate::{
     collector::{spawn_collector, CollectorThread},
-    Event,
+    Event, EventType,
 };
 
 pub(crate) static EVENT_RXS: Mutex<Vec<Receiver>> = Mutex::new(Vec::new());
@@ -37,20 +37,20 @@ thread_local! {
 }
 
 pub struct Sender {
-    tx: Producer<Arc<Event>>,
+    tx: Producer<Event<EventType>>,
     collector: Arc<CollectorThread>,
-    overflow: Vec<Arc<Event>>,
+    overflow: Vec<Event<EventType>>,
 }
 
 pub struct Receiver {
-    rx: Consumer<Arc<Event>>,
+    rx: Consumer<Event<EventType>>,
 }
 
 #[derive(Debug)]
 pub struct ChannelError;
 
 impl Sender {
-    pub fn send(&mut self, event: Arc<Event>) -> Result<(), ChannelError> {
+    pub fn send(&mut self, event: Event<EventType>) -> Result<(), ChannelError> {
         while let Some(event) = self.overflow.pop() {
             if let Err(PushError::Full(event)) = self.tx.push(event) {
                 self.overflow.push(event);
@@ -71,7 +71,7 @@ impl Sender {
 }
 
 impl Receiver {
-    pub fn try_recv(&mut self) -> Result<Option<Arc<Event>>, ChannelError> {
+    pub fn try_recv(&mut self) -> Result<Option<Event<EventType>>, ChannelError> {
         match self.rx.pop() {
             Ok(event) => Ok(Some(event)),
             Err(_) => {
@@ -85,12 +85,12 @@ impl Receiver {
     }
 }
 
-impl Event {
+impl Event<EventType> {
     pub fn send(self) {
         // SAFETY: EVENT_TX is thread-local.
         let _ = EVENT_TX.try_with(|tx| unsafe {
             let tx = &mut *tx.get();
-            if tx.send(Arc::new(self)).is_ok() {
+            if tx.send(self).is_ok() {
                 EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
                 tx.collector.thread().unpark();
             }

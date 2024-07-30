@@ -133,7 +133,7 @@ async fn smtp_delivery() {
     assert_eq!(num_domains, 3);
     local
         .qr
-        .delivery_attempt(message.id)
+        .delivery_attempt(message.queue_id)
         .await
         .try_deliver(core.clone())
         .await;

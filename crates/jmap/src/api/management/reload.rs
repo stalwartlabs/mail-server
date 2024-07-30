@@ -58,6 +58,11 @@ impl JMAP {
                         self.inner.increment_config_version();
                     }
 
+                    if let Some(tracers) = result.tracers {
+                        // Update tracers
+                        tracers.update();
+                    }
+
                     // Reload ACME
                     self.inner
                         .housekeeper_tx

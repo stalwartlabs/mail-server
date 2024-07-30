@@ -260,7 +260,7 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
 
-        trc::event!(
+        trc::eventd!(
             Imap(if !is_lsub {
                 trc::ImapEvent::List
             } else {

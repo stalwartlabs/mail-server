@@ -81,7 +81,7 @@ impl<T: SessionStream> Session<T> {
                     }
                 }
                 Err(Rejection::Action(action)) => {
-                    trc::event!(
+                    trc::eventd!(
                         Milter(match &action {
                             Action::Discard => MilterEvent::ActionDiscard,
                             Action::Reject => MilterEvent::ActionReject,
@@ -139,7 +139,7 @@ impl<T: SessionStream> Session<T> {
                         Error::Disconnected => (MilterEvent::Disconnected, trc::Value::None),
                     };
 
-                    trc::event!(
+                    trc::eventd!(
                         Milter(code),
                         SpanId = self.data.session_id,
                         Id = milter.id.to_string(),

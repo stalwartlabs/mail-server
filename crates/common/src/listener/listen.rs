@@ -46,7 +46,7 @@ impl Server {
             limiter: ConcurrencyLimiter::new(self.max_connections),
             acceptor,
             shutdown_rx,
-            id_generator: self.id_generator,
+            span_id_gen: self.span_id_gen,
         });
         let is_tls = matches!(instance.acceptor, TcpAcceptor::Tls { implicit, .. } if implicit);
         let is_https = is_tls && self.protocol == ServerProtocol::Http;

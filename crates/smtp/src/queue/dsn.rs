@@ -31,7 +31,7 @@ impl SMTP {
         if !message.return_path.is_empty() {
             // Build DSN
             if let Some(dsn) = message.build_dsn(self).await {
-                let mut dsn_message = self.new_message("", "", "");
+                let mut dsn_message = self.new_message("", "", "", message.span_id);
                 dsn_message
                     .add_recipient_parts(
                         &message.return_path,
@@ -48,7 +48,7 @@ impl SMTP {
 
                 // Queue DSN
                 dsn_message
-                    .queue(signature.as_deref(), &dsn, message.id, self)
+                    .queue(signature.as_deref(), &dsn, message.span_id, self)
                     .await;
             }
         } else {
@@ -70,7 +70,7 @@ impl SMTP {
                 Status::Completed(response) => {
                     trc::event!(
                         Delivery(trc::DeliveryEvent::DsnSuccess),
-                        SpanId = message.id,
+                        SpanId = message.span_id,
                         To = rcpt.address_lcase.clone(),
                         Hostname = response.hostname.clone(),
                         Details = response.response.to_string(),
@@ -79,7 +79,7 @@ impl SMTP {
                 Status::TemporaryFailure(response) if domain.notify.due <= now => {
                     trc::event!(
                         Delivery(trc::DeliveryEvent::DsnTempFail),
-                        SpanId = message.id,
+                        SpanId = message.span_id,
                         To = rcpt.address_lcase.clone(),
                         Hostname = response.hostname.entity.clone(),
                         Details = response.response.to_string(),
@@ -91,7 +91,7 @@ impl SMTP {
                 Status::PermanentFailure(response) => {
                     trc::event!(
                         Delivery(trc::DeliveryEvent::DsnPermFail),
-                        SpanId = message.id,
+                        SpanId = message.span_id,
                         To = rcpt.address_lcase.clone(),
                         Hostname = response.hostname.entity.clone(),
                         Details = response.response.to_string(),
@@ -104,7 +104,7 @@ impl SMTP {
                         Status::PermanentFailure(err) => {
                             trc::event!(
                                 Delivery(trc::DeliveryEvent::DsnPermFail),
-                                SpanId = message.id,
+                                SpanId = message.span_id,
                                 To = rcpt.address_lcase.clone(),
                                 Details = err.to_string(),
                                 Count = domain.retry.inner,
@@ -113,7 +113,7 @@ impl SMTP {
                         Status::TemporaryFailure(err) if domain.notify.due <= now => {
                             trc::event!(
                                 Delivery(trc::DeliveryEvent::DsnTempFail),
-                                SpanId = message.id,
+                                SpanId = message.span_id,
                                 To = rcpt.address_lcase.clone(),
                                 Details = err.to_string(),
                                 NextRetry = trc::Value::Timestamp(domain.retry.due),
@@ -124,7 +124,7 @@ impl SMTP {
                         Status::Scheduled if domain.notify.due <= now => {
                             trc::event!(
                                 Delivery(trc::DeliveryEvent::DsnTempFail),
-                                SpanId = message.id,
+                                SpanId = message.span_id,
                                 To = rcpt.address_lcase.clone(),
                                 Details = "Concurrency limited",
                                 NextRetry = trc::Value::Timestamp(domain.retry.due),
@@ -306,7 +306,7 @@ impl Message {
 
                     if let Some(next_notify) = core
                         .core
-                        .eval_if::<Vec<Duration>, _>(&config.notify, &envelope, self.id)
+                        .eval_if::<Vec<Duration>, _>(&config.notify, &envelope, self.span_id)
                         .await
                         .and_then(|notify| {
                             notify.into_iter().nth((domain.notify.inner + 1) as usize)
@@ -329,17 +329,17 @@ impl Message {
         // Obtain hostname and sender addresses
         let from_name = core
             .core
-            .eval_if(&config.dsn.name, self, self.id)
+            .eval_if(&config.dsn.name, self, self.span_id)
             .await
             .unwrap_or_else(|| String::from("Mail Delivery Subsystem"));
         let from_addr = core
             .core
-            .eval_if(&config.dsn.address, self, self.id)
+            .eval_if(&config.dsn.address, self, self.span_id)
             .await
             .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
         let reporting_mta = core
             .core
-            .eval_if(&core.core.smtp.report.submitter, self, self.id)
+            .eval_if(&core.core.smtp.report.submitter, self, self.span_id)
             .await
             .unwrap_or_else(|| String::from("localhost"));
 
@@ -384,7 +384,7 @@ impl Message {
             Ok(None) => {
                 trc::event!(
                     Queue(trc::QueueEvent::BlobNotFound),
-                    SpanId = self.id,
+                    SpanId = self.span_id,
                     BlobId = self.blob_hash.to_hex(),
                     CausedBy = trc::location!()
                 );
@@ -393,7 +393,7 @@ impl Message {
             }
             Err(err) => {
                 trc::error!(err
-                    .span_id(self.id)
+                    .span_id(self.span_id)
                     .details("Failed to fetch blobId")
                     .caused_by(trc::location!()));
 
@@ -463,7 +463,7 @@ impl Message {
         if !is_double_bounce.is_empty() {
             trc::event!(
                 Delivery(trc::DeliveryEvent::DoubleBounce),
-                SpanId = self.id,
+                SpanId = self.span_id,
                 To = is_double_bounce
             );
         }

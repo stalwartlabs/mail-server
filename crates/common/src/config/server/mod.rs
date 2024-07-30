@@ -20,6 +20,7 @@ pub mod tls;
 pub struct Servers {
     pub servers: Vec<Server>,
     pub tcp_acceptors: AHashMap<String, TcpAcceptor>,
+    pub span_id_gen: Arc<SnowflakeIdGenerator>,
 }
 
 #[derive(Debug, Default)]
@@ -29,7 +30,7 @@ pub struct Server {
     pub listeners: Vec<Listener>,
     pub proxy_networks: Vec<IpAddrMask>,
     pub max_connections: u64,
-    pub id_generator: Arc<SnowflakeIdGenerator>,
+    pub span_id_gen: Arc<SnowflakeIdGenerator>,
 }
 
 #[derive(Debug)]

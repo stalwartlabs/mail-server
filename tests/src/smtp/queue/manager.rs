@@ -123,10 +123,11 @@ fn delivery_events() {
     assert!(message.next_event().is_none());
 }
 
-pub fn new_message(id: u64) -> Message {
+pub fn new_message(queue_id: u64) -> Message {
     Message {
         size: 0,
-        id,
+        queue_id,
+        span_id: 0,
         created: 0,
         return_path: "sender@foobar.org".to_string(),
         return_path_lcase: "".to_string(),

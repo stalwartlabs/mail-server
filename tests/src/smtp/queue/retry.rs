@@ -165,7 +165,7 @@ async fn queue_retry() {
         .await;
     let now_ = now();
     let message = qr.expect_message().await;
-    assert!([59, 60].contains(&(qr.message_due(message.id).await - now_)));
+    assert!([59, 60].contains(&(qr.message_due(message.queue_id).await - now_)));
     assert!([59, 60].contains(&(message.next_delivery_event() - now_)));
     assert!([3599, 3600].contains(&(message.domains.first().unwrap().expires - now_)));
     assert!([54059, 54060].contains(&(message.domains.first().unwrap().notify.due - now_)));

@@ -353,7 +353,7 @@ impl<T: SessionStream> SessionData<T> {
         src_uids.sort_unstable();
         dest_uids.sort_unstable();
 
-        trc::event!(
+        trc::eventd!(
             Imap(if is_move {
                 trc::ImapEvent::Move
             } else {

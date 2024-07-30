@@ -29,7 +29,7 @@ use ::managesieve::core::ManageSieveSessionManager;
 use common::{
     config::{
         server::{ServerProtocol, Servers},
-        tracers::Tracer,
+        tracers::Tracers,
     },
     Core, Ipc, IPC_CHANNEL_BUFFER,
 };
@@ -47,7 +47,6 @@ use tokio::{
     net::TcpStream,
     sync::{mpsc, watch},
 };
-use trc::collector::Collector;
 use utils::config::Config;
 
 use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
@@ -313,7 +312,13 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let ipc = Ipc { delivery_tx };
 
     // Init servers
-    let smtp = SMTP::init(&mut config, shared_core.clone(), ipc).await;
+    let smtp = SMTP::init(
+        &mut config,
+        shared_core.clone(),
+        ipc,
+        servers.span_id_gen.clone(),
+    )
+    .await;
     let jmap = JMAP::init(
         &mut config,
         delivery_rx,
@@ -411,14 +416,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
 #[tokio::test]
 pub async fn imap_tests() {
     if let Ok(level) = std::env::var("LOG") {
-        let level = level.parse().unwrap();
-        Collector::set_level(level);
-        Tracer::Stdout {
-            id: "stdout".to_string(),
-            level,
-            ansi: true,
-        }
-        .spawn();
+        Tracers::test_tracer(level.parse().unwrap());
     }
 
     // Prepare settings

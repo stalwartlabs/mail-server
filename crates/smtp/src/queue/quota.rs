@@ -22,12 +22,19 @@ impl SMTP {
         if !self.core.smtp.queue.quota.sender.is_empty() {
             for quota in &self.core.smtp.queue.quota.sender {
                 if !self
-                    .check_quota(quota, message, message.size, 0, &mut quota_keys, message.id)
+                    .check_quota(
+                        quota,
+                        message,
+                        message.size,
+                        0,
+                        &mut quota_keys,
+                        message.span_id,
+                    )
                     .await
                 {
                     trc::event!(
                         Queue(QueueEvent::QuotaExceeded),
-                        SpanId = message.id,
+                        SpanId = message.span_id,
                         Id = quota.id.clone(),
                         Type = "Sender"
                     );
@@ -46,13 +53,13 @@ impl SMTP {
                         message.size,
                         ((domain_idx + 1) << 32) as u64,
                         &mut quota_keys,
-                        message.id,
+                        message.span_id,
                     )
                     .await
                 {
                     trc::event!(
                         Queue(QueueEvent::QuotaExceeded),
-                        SpanId = message.id,
+                        SpanId = message.span_id,
                         Id = quota.id.clone(),
                         Type = "Domain"
                     );
@@ -71,13 +78,13 @@ impl SMTP {
                         message.size,
                         (rcpt_idx + 1) as u64,
                         &mut quota_keys,
-                        message.id,
+                        message.span_id,
                     )
                     .await
                 {
                     trc::event!(
                         Queue(QueueEvent::QuotaExceeded),
-                        SpanId = message.id,
+                        SpanId = message.span_id,
                         Id = quota.id.clone(),
                         Type = "Recipient"
                     );

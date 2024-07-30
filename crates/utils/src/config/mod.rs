@@ -171,7 +171,7 @@ impl Config {
         self.keys.extend(settings);
     }
 
-    pub fn log_errors(&self, use_stderr: bool) {
+    pub fn log_errors(&self) {
         for (key, err) in &self.errors {
             let (cause, message) = match err {
                 ConfigError::Parse { error } => (
@@ -187,15 +187,12 @@ impl Config {
                     format!("Macro expansion error for setting {key:?}: {error}"),
                 ),
             };
-            if !use_stderr {
-                trc::event!(Config(cause), Details = message);
-            } else {
-                eprintln!("ERROR: {message}");
-            }
+
+            trc::error!(trc::EventType::Config(cause).into_err().details(message));
         }
     }
 
-    pub fn log_warnings(&mut self, use_stderr: bool) {
+    pub fn log_warnings(&mut self) {
         #[cfg(debug_assertions)]
         self.warn_unread_keys();
 
@@ -222,11 +219,8 @@ impl Config {
                     format!("WARNING for {key:?}: {error}"),
                 ),
             };
-            if !use_stderr {
-                trc::event!(Config(cause), Details = message);
-            } else {
-                eprintln!("{}", message);
-            }
+
+            trc::error!(trc::EventType::Config(cause).into_err().details(message));
         }
     }
 }

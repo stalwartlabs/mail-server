@@ -45,7 +45,8 @@ async fn generate_dsn() {
     let flags = RCPT_NOTIFY_FAILURE | RCPT_NOTIFY_DELAY | RCPT_NOTIFY_SUCCESS;
     let mut message = Message {
         size,
-        id: 0,
+        queue_id: 0,
+        span_id: 0,
         created: SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),

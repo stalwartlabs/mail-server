@@ -216,7 +216,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
             Ok(None) => {
                 trc::event!(
                     Queue(trc::QueueEvent::BlobNotFound),
-                    SpanId = message.id,
+                    SpanId = message.span_id,
                     BlobId = message.blob_hash.to_hex(),
                     CausedBy = trc::location!()
                 );
@@ -226,7 +226,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
             }
             Err(err) => {
                 trc::error!(err
-                    .span_id(message.id)
+                    .span_id(message.span_id)
                     .details("Failed to fetch blobId")
                     .caused_by(trc::location!()));
 

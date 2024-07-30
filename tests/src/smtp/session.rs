@@ -258,7 +258,8 @@ impl TestSession for Session<DummyIo> {
                         dsn_info: None,
                     },
                 ],
-                self.core.inner.snowflake_id.generate().unwrap(),
+                self.core.inner.queue_id_gen.generate().unwrap(),
+                0,
             )
             .await;
         assert_eq!(
@@ -360,7 +361,7 @@ impl TestServerInstance for ServerInstance {
             limiter: ConcurrencyLimiter::new(100),
             shutdown_rx,
             proxy_networks: vec![],
-            id_generator: Arc::new(SnowflakeIdGenerator::new()),
+            span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
         }
     }
 }

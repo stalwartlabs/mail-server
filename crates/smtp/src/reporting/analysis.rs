@@ -282,7 +282,7 @@ impl SMTP {
                 // Store report
                 if let Some(expires_in) = &core.core.smtp.report.analysis.store {
                     let expires = now() + expires_in.as_secs();
-                    let id = core.inner.snowflake_id.generate().unwrap_or(expires);
+                    let id = core.inner.queue_id_gen.generate().unwrap_or(expires);
 
                     let mut batch = BatchBuilder::new();
                     match report {
@@ -395,7 +395,7 @@ impl LogReport for Report {
             }
         }
 
-        trc::event!(
+        trc::eventd!(
             IncomingReport(
                 if (dmarc_reject + dmarc_quarantine + dkim_fail + spf_fail) > 0 {
                     IncomingReportEvent::DmarcReportWithWarnings
@@ -438,7 +438,7 @@ impl LogReport for TlsReport {
                 }
             }
 
-            trc::event!(
+            trc::eventd!(
                 IncomingReport(if policy.summary.total_failure > 0 {
                     IncomingReportEvent::TlsReportWithWarnings
                 } else {
@@ -461,15 +461,6 @@ impl LogReport for TlsReport {
 
 impl LogReport for Feedback<'_> {
     fn log(&self) {
-        let rt = match self.feedback_type() {
-            mail_auth::report::FeedbackType::Abuse => IncomingReportEvent::AbuseReport,
-            mail_auth::report::FeedbackType::AuthFailure => IncomingReportEvent::AuthFailureReport,
-            mail_auth::report::FeedbackType::Fraud => IncomingReportEvent::FraudReport,
-            mail_auth::report::FeedbackType::NotSpam => IncomingReportEvent::NotSpamReport,
-            mail_auth::report::FeedbackType::Other => IncomingReportEvent::OtherReport,
-            mail_auth::report::FeedbackType::Virus => IncomingReportEvent::VirusReport,
-        };
-
         /*
 
            user_agent = self.user_agent().unwrap_or_default(),
@@ -481,8 +472,16 @@ impl LogReport for Feedback<'_> {
 
         */
 
-        trc::event!(
-            IncomingReport(rt),
+        trc::eventd!(
+            IncomingReport(match self.feedback_type() {
+                mail_auth::report::FeedbackType::Abuse => IncomingReportEvent::AbuseReport,
+                mail_auth::report::FeedbackType::AuthFailure =>
+                    IncomingReportEvent::AuthFailureReport,
+                mail_auth::report::FeedbackType::Fraud => IncomingReportEvent::FraudReport,
+                mail_auth::report::FeedbackType::NotSpam => IncomingReportEvent::NotSpamReport,
+                mail_auth::report::FeedbackType::Other => IncomingReportEvent::OtherReport,
+                mail_auth::report::FeedbackType::Virus => IncomingReportEvent::VirusReport,
+            }),
             Date = trc::Value::Timestamp(
                 self.arrival_date()
                     .map(|d| d as u64)

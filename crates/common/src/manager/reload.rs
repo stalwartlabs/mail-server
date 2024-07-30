@@ -23,6 +23,7 @@ use super::config::{ConfigManager, Patterns};
 pub struct ReloadResult {
     pub config: Config,
     pub new_core: Option<Core>,
+    pub tracers: Option<Tracers>,
 }
 
 impl Core {
@@ -75,6 +76,7 @@ impl Core {
         Ok(ReloadResult {
             config,
             new_core: core.into(),
+            tracers: None,
         })
     }
 
@@ -82,7 +84,7 @@ impl Core {
         let mut config = self.storage.config.build_config("").await?;
 
         // Parse tracers
-        Tracers::parse(&mut config);
+        let tracers = Tracers::parse(&mut config);
 
         // Load stores
         let mut stores = Stores {
@@ -136,6 +138,7 @@ impl Core {
             ReloadResult {
                 config,
                 new_core: core.into(),
+                tracers: tracers.into(),
             }
         } else {
             config.into()
@@ -148,6 +151,7 @@ impl From<Config> for ReloadResult {
         Self {
             config,
             new_core: None,
+            tracers: None,
         }
     }
 }

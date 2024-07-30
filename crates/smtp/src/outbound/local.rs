@@ -48,7 +48,7 @@ impl Message {
                     recipients: recipient_addresses,
                     message_blob: self.blob_hash.clone(),
                     message_size: self.size,
-                    session_id: self.id,
+                    session_id: self.span_id,
                 },
                 result_tx,
             })
@@ -62,7 +62,7 @@ impl Message {
                         trc::event!(
                             Server(ServerEvent::ThreadError),
                             CausedBy = trc::location!(),
-                            SpanId = self.id,
+                            SpanId = self.span_id,
                             Reason = "Result channel closed",
                         );
                         return Status::local_error();
@@ -73,7 +73,7 @@ impl Message {
                 trc::event!(
                     Server(ServerEvent::ThreadError),
                     CausedBy = trc::location!(),
-                    SpanId = self.id,
+                    SpanId = self.span_id,
                     Reason = "TX channel closed",
                 );
                 return Status::local_error();

@@ -139,6 +139,7 @@ impl SMTP {
                             params.return_path.clone(),
                             return_path_lcase,
                             return_path_domain,
+                            session_id,
                         );
                         match recipient {
                             Recipient::Address(rcpt) => {

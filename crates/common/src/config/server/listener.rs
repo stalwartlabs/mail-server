@@ -34,15 +34,15 @@ use super::{
 impl Servers {
     pub fn parse(config: &mut Config) -> Self {
         // Parse ACME managers
-        let mut servers = Servers::default();
-
-        // Create sessionId generator
-        let id_generator = Arc::new(
-            config
-                .property::<u64>("cluster.node-id")
-                .map(SnowflakeIdGenerator::with_node_id)
-                .unwrap_or_default(),
-        );
+        let mut servers = Servers {
+            span_id_gen: Arc::new(
+                config
+                    .property::<u64>("cluster.node-id")
+                    .map(SnowflakeIdGenerator::with_node_id)
+                    .unwrap_or_default(),
+            ),
+            ..Default::default()
+        };
 
         // Parse servers
         for id in config
@@ -50,17 +50,12 @@ impl Servers {
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
         {
-            servers.parse_server(config, id, id_generator.clone());
+            servers.parse_server(config, id);
         }
         servers
     }
 
-    fn parse_server(
-        &mut self,
-        config: &mut Config,
-        id_: String,
-        id_generator: Arc<SnowflakeIdGenerator>,
-    ) {
+    fn parse_server(&mut self, config: &mut Config, id_: String) {
         // Parse protocol
         let id = id_.as_str();
         let protocol =
@@ -197,6 +192,7 @@ impl Servers {
             proxy_networks.push(network);
         }
 
+        let span_id_gen = self.span_id_gen.clone();
         self.servers.push(Server {
             max_connections: config
                 .property_or_else(
@@ -209,7 +205,7 @@ impl Servers {
             protocol,
             listeners,
             proxy_networks,
-            id_generator,
+            span_id_gen,
         });
     }
 

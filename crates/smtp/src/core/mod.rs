@@ -80,7 +80,8 @@ pub struct Inner {
     pub queue_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
     pub queue_tx: mpsc::Sender<queue::Event>,
     pub report_tx: mpsc::Sender<reporting::Event>,
-    pub snowflake_id: SnowflakeIdGenerator,
+    pub queue_id_gen: SnowflakeIdGenerator,
+    pub span_id_gen: Arc<SnowflakeIdGenerator>,
     pub connectors: TlsConnectors,
     pub ipc: Ipc,
     pub script_cache: ScriptCache,
@@ -276,7 +277,7 @@ static ref SIEVE: Arc<ServerInstance> = Arc::new(ServerInstance {
     limiter: ConcurrencyLimiter::new(0),
     shutdown_rx: tokio::sync::watch::channel(false).1,
     proxy_networks: vec![],
-    id_generator: Arc::new(SnowflakeIdGenerator::new()),
+    span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
 });
 }
 
@@ -406,7 +407,8 @@ impl Default for Inner {
             queue_throttle: Default::default(),
             queue_tx: mpsc::channel(1).0,
             report_tx: mpsc::channel(1).0,
-            snowflake_id: Default::default(),
+            queue_id_gen: Default::default(),
+            span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
             connectors: TlsConnectors {
                 pki_verify: mail_send::smtp::tls::build_tls_connector(false),
                 dummy_verify: mail_send::smtp::tls::build_tls_connector(true),

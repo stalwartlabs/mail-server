@@ -51,7 +51,7 @@ pub struct Schedule<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Message {
-    pub id: QueueId,
+    pub queue_id: QueueId,
     pub created: u64,
     pub blob_hash: BlobHash,
 
@@ -67,6 +67,9 @@ pub struct Message {
 
     pub size: usize,
     pub quota_keys: Vec<QuotaKey>,
+
+    #[serde(skip)]
+    pub span_id: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

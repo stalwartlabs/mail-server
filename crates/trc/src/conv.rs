@@ -100,15 +100,9 @@ impl From<Duration> for Value {
     }
 }
 
-impl From<Event> for Value {
-    fn from(value: Event) -> Self {
+impl From<Event<EventType>> for Value {
+    fn from(value: Event<EventType>) -> Self {
         Self::Event(value)
-    }
-}
-
-impl From<Level> for Value {
-    fn from(value: Level) -> Self {
-        Self::Level(value)
     }
 }
 
@@ -217,7 +211,7 @@ impl EventType {
     }
 }
 
-impl From<mail_auth::Error> for Event {
+impl From<mail_auth::Error> for Event<EventType> {
     fn from(err: mail_auth::Error) -> Self {
         match err {
             mail_auth::Error::ParseError => {
@@ -294,7 +288,7 @@ impl From<mail_auth::Error> for Event {
     }
 }
 
-impl From<&mail_auth::DkimResult> for Event {
+impl From<&mail_auth::DkimResult> for Event<EventType> {
     fn from(value: &mail_auth::DkimResult) -> Self {
         match value.clone() {
             mail_auth::DkimResult::Pass => Event::new(EventType::Dkim(DkimEvent::Pass)),
@@ -315,7 +309,7 @@ impl From<&mail_auth::DkimResult> for Event {
     }
 }
 
-impl From<&mail_auth::DmarcResult> for Event {
+impl From<&mail_auth::DmarcResult> for Event<EventType> {
     fn from(value: &mail_auth::DmarcResult) -> Self {
         match value.clone() {
             mail_auth::DmarcResult::Pass => Event::new(EventType::Dmarc(DmarcEvent::Pass)),
@@ -333,7 +327,7 @@ impl From<&mail_auth::DmarcResult> for Event {
     }
 }
 
-impl From<&mail_auth::DkimOutput<'_>> for Event {
+impl From<&mail_auth::DkimOutput<'_>> for Event<EventType> {
     fn from(value: &mail_auth::DkimOutput<'_>) -> Self {
         Event::from(value.result()).ctx_opt(
             Key::Contents,
@@ -349,7 +343,7 @@ impl From<&mail_auth::DkimOutput<'_>> for Event {
     }
 }
 
-impl From<&mail_auth::IprevOutput> for Event {
+impl From<&mail_auth::IprevOutput> for Event<EventType> {
     fn from(value: &mail_auth::IprevOutput) -> Self {
         match value.result().clone() {
             mail_auth::IprevResult::Pass => Event::new(EventType::Iprev(IprevEvent::Pass)),
@@ -375,7 +369,7 @@ impl From<&mail_auth::IprevOutput> for Event {
     }
 }
 
-impl From<&mail_auth::SpfOutput> for Event {
+impl From<&mail_auth::SpfOutput> for Event<EventType> {
     fn from(value: &mail_auth::SpfOutput) -> Self {
         Event::new(EventType::Spf(match value.result() {
             mail_auth::SpfResult::Pass => SpfEvent::Pass,

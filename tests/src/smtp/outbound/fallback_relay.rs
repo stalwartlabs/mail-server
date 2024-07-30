@@ -101,7 +101,7 @@ async fn fallback_relay() {
     let mut retry = local.qr.expect_message().await;
     let prev_due = retry.domains[0].retry.due;
     let next_due = now();
-    let queue_id = retry.id;
+    let queue_id = retry.queue_id;
     retry.domains[0].retry.due = next_due;
     retry
         .save_changes(&core, prev_due.into(), next_due.into())

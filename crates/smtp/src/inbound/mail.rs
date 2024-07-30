@@ -62,7 +62,7 @@ impl<T: SessionStream> Session<T> {
                 .verify_iprev(self.data.remote_ip)
                 .await;
 
-            trc::event!(
+            trc::eventd!(
                 Smtp(if matches!(iprev.result(), IprevResult::Pass) {
                     SmtpEvent::IprevPass
                 } else {
@@ -434,7 +434,7 @@ impl<T: SessionStream> Session<T> {
                         .await
                 };
 
-                trc::event!(
+                trc::eventd!(
                     Smtp(if matches!(spf_output.result(), SpfResult::Pass) {
                         SmtpEvent::SpfFromPass
                     } else {

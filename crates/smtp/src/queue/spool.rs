@@ -34,12 +34,14 @@ impl SMTP {
         return_path: impl Into<String>,
         return_path_lcase: impl Into<String>,
         return_path_domain: impl Into<String>,
+        span_id: u64,
     ) -> Message {
         let created = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         Message {
-            id: self.inner.snowflake_id.generate().unwrap_or(created),
+            queue_id: self.inner.queue_id_gen.generate().unwrap_or(created),
+            span_id,
             created,
             return_path: return_path.into(),
             return_path_lcase: return_path_lcase.into(),
@@ -170,7 +172,7 @@ impl Message {
         mut self,
         raw_headers: Option<&[u8]>,
         raw_message: &[u8],
-        parent_session_id: u64,
+        session_id: u64,
         core: &SMTP,
     ) -> bool {
         // Write blob
@@ -202,8 +204,7 @@ impl Message {
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
             trc::error!(err
                 .details("Failed to write to store.")
-                .span_id(self.id)
-                .parent_span_id(parent_session_id)
+                .span_id(session_id)
                 .caused_by(trc::location!()));
 
             return false;
@@ -217,8 +218,7 @@ impl Message {
         {
             trc::error!(err
                 .details("Failed to write blob.")
-                .span_id(self.id)
-                .parent_span_id(parent_session_id)
+                .span_id(session_id)
                 .caused_by(trc::location!()));
 
             return false;
@@ -226,8 +226,8 @@ impl Message {
 
         trc::event!(
             Queue(trc::QueueEvent::Scheduled),
-            SpanId = self.id,
-            ParentSpanId = parent_session_id,
+            SpanId = session_id,
+            QueueId = self.queue_id,
             From = if !self.return_path.is_empty() {
                 trc::Value::String(self.return_path.to_string())
             } else {
@@ -246,7 +246,6 @@ impl Message {
 
         // Write message to queue
         let mut batch = BatchBuilder::new();
-        let span_id = self.id;
 
         // Reserve quotas
         for quota_key in &self.quota_keys {
@@ -266,7 +265,7 @@ impl Message {
             .set(
                 ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                     due: self.next_event().unwrap_or_default(),
-                    queue_id: self.id,
+                    queue_id: self.queue_id,
                 })),
                 0u64.serialize(),
             )
@@ -277,7 +276,7 @@ impl Message {
             .set(
                 BlobOp::LinkId {
                     hash: self.blob_hash.clone(),
-                    id: self.id,
+                    id: self.queue_id,
                 },
                 vec![],
             )
@@ -288,15 +287,14 @@ impl Message {
                 vec![],
             )
             .set(
-                ValueClass::Queue(QueueClass::Message(self.id)),
+                ValueClass::Queue(QueueClass::Message(self.queue_id)),
                 Bincode::new(self).serialize(),
             );
 
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
             trc::error!(err
                 .details("Failed to write to store.")
-                .span_id(span_id)
-                .parent_span_id(parent_session_id)
+                .span_id(session_id)
                 .caused_by(trc::location!()));
 
             return false;
@@ -308,8 +306,7 @@ impl Message {
                 Server(ServerEvent::ThreadError),
                 Reason = "Channel closed.",
                 CausedBy = trc::location!(),
-                SpanId = span_id,
-                ParentSpanId = parent_session_id,
+                SpanId = session_id,
             );
         }
 
@@ -343,7 +340,7 @@ impl Message {
                     .eval_if(
                         &core.core.smtp.queue.expire,
                         &QueueEnvelope::new(self, idx),
-                        self.id,
+                        self.span_id,
                     )
                     .await
                     .unwrap_or_else(|| Duration::from_secs(5 * 86400));
@@ -392,20 +389,20 @@ impl Message {
             batch
                 .clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                     due: prev_event,
-                    queue_id: self.id,
+                    queue_id: self.queue_id,
                 })))
                 .set(
                     ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                         due: next_event,
-                        queue_id: self.id,
+                        queue_id: self.queue_id,
                     })),
                     0u64.serialize(),
                 );
         }
 
-        let span_id = self.id;
+        let span_id = self.span_id;
         batch.set(
-            ValueClass::Queue(QueueClass::Message(self.id)),
+            ValueClass::Queue(QueueClass::Message(self.queue_id)),
             Bincode::new(self).serialize(),
         );
 
@@ -441,18 +438,18 @@ impl Message {
         batch
             .clear(BlobOp::LinkId {
                 hash: self.blob_hash.clone(),
-                id: self.id,
+                id: self.queue_id,
             })
             .clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
                 due: prev_event,
-                queue_id: self.id,
+                queue_id: self.queue_id,
             })))
-            .clear(ValueClass::Queue(QueueClass::Message(self.id)));
+            .clear(ValueClass::Queue(QueueClass::Message(self.queue_id)));
 
         if let Err(err) = core.core.storage.data.write(batch.build()).await {
             trc::error!(err
                 .details("Failed to write to update queue.")
-                .span_id(self.id)
+                .span_id(self.span_id)
                 .caused_by(trc::location!()));
             false
         } else {

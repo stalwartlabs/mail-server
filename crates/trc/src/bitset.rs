@@ -6,9 +6,11 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[derive(Clone, Debug)]
+pub struct Bitset<const N: usize>([usize; N]);
 pub struct AtomicBitset<const N: usize>([AtomicUsize; N]);
 
-const USIZE_BITS: usize = std::mem::size_of::<usize>() * 8;
+pub(crate) const USIZE_BITS: usize = std::mem::size_of::<usize>() * 8;
 const USIZE_BITS_MASK: usize = USIZE_BITS - 1;
 
 impl<const N: usize> AtomicBitset<N> {
@@ -45,10 +47,63 @@ impl<const N: usize> AtomicBitset<N> {
         self.0[index / USIZE_BITS].load(Ordering::Relaxed) & (1 << (index & USIZE_BITS_MASK)) != 0
     }
 
+    pub fn update(&self, bitset: impl AsRef<Bitset<N>>) {
+        let bitset = bitset.as_ref();
+        for i in 0..N {
+            self.0[i].store(bitset.0[i], Ordering::Relaxed);
+        }
+    }
+
     pub fn clear_all(&self) {
         for i in 0..N {
             self.0[i].store(0, Ordering::Relaxed);
         }
+    }
+}
+
+impl<const N: usize> Bitset<N> {
+    #[allow(clippy::new_without_default)]
+    pub const fn new() -> Self {
+        Self([0; N])
+    }
+
+    #[inline(always)]
+    pub fn set(&mut self, index: impl Into<usize>) {
+        let index = index.into();
+        self.0[index / USIZE_BITS] |= 1 << (index & USIZE_BITS_MASK);
+    }
+
+    #[inline(always)]
+    pub fn clear(&mut self, index: impl Into<usize>) {
+        let index = index.into();
+        self.0[index / USIZE_BITS] &= !(1 << (index & USIZE_BITS_MASK));
+    }
+
+    #[inline(always)]
+    pub fn get(&self, index: impl Into<usize>) -> bool {
+        let index = index.into();
+        self.0[index / USIZE_BITS] & (1 << (index & USIZE_BITS_MASK)) != 0
+    }
+
+    pub fn clear_all(&mut self) {
+        for i in 0..N {
+            self.0[i] = 0;
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        for i in 0..N {
+            if self.0[i] != 0 {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl<const N: usize> Default for Bitset<N> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

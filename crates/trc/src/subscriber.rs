@@ -6,44 +6,38 @@
 
 use std::sync::Arc;
 
-use ahash::AHashSet;
-use parking_lot::Mutex;
 use tokio::sync::mpsc::{self, error::TrySendError};
 
-use crate::{channel::ChannelError, Event, EventType, Level, ServerEvent};
+use crate::{
+    bitset::{Bitset, USIZE_BITS},
+    channel::ChannelError,
+    collector::{Collector, Update, COLLECTOR_UPDATES},
+    Event, EventDetails, EventType, Level, TOTAL_EVENT_COUNT,
+};
 
 const MAX_BATCH_SIZE: usize = 32768;
 
-pub(crate) static SUBSCRIBER_UPDATE: Mutex<Vec<Subscriber>> = Mutex::new(Vec::new());
-
-pub(crate) enum SubscriberUpdate {
-    Add(Subscriber),
-    RemoveAll,
-}
+pub type Interests = Box<Bitset<{ (TOTAL_EVENT_COUNT + USIZE_BITS - 1) / USIZE_BITS }>>;
 
 #[derive(Debug)]
 pub(crate) struct Subscriber {
     pub id: String,
-    pub level: Level,
-    pub disabled: AHashSet<EventType>,
-    pub tx: mpsc::Sender<Vec<Arc<Event>>>,
+    pub interests: Interests,
+    pub tx: mpsc::Sender<Vec<Arc<Event<EventDetails>>>>,
     pub lossy: bool,
-    pub batch: Vec<Arc<Event>>,
+    pub batch: Vec<Arc<Event<EventDetails>>>,
 }
 
 pub struct SubscriberBuilder {
     pub id: String,
-    pub level: Level,
-    pub disabled: AHashSet<EventType>,
+    pub interests: Interests,
     pub lossy: bool,
 }
 
 impl Subscriber {
     #[inline(always)]
-    pub fn push_event(&mut self, trace: Arc<Event>) {
-        let level = trace.level();
-
-        if self.level >= trace.level() && !self.disabled.contains(&trace.inner) {
+    pub fn push_event(&mut self, event_id: usize, trace: Arc<Event<EventDetails>>) {
+        if self.interests.get(event_id) {
             self.batch.push(trace);
         }
     }
@@ -54,7 +48,7 @@ impl Subscriber {
                 Ok(_) => Ok(()),
                 Err(TrySendError::Full(mut events)) => {
                     if self.lossy && events.len() > MAX_BATCH_SIZE {
-                        events.retain(|e| e.level() == Level::Error);
+                        events.retain(|e| e.inner.level == Level::Error);
                         if events.len() > MAX_BATCH_SIZE {
                             events.truncate(MAX_BATCH_SIZE);
                         }
@@ -74,19 +68,29 @@ impl SubscriberBuilder {
     pub fn new(id: String) -> Self {
         Self {
             id,
-            level: Level::Info,
-            disabled: AHashSet::new(),
+            interests: Default::default(),
             lossy: true,
         }
     }
 
-    pub fn with_level(mut self, level: Level) -> Self {
-        self.level = level;
+    pub fn with_default_interests(mut self, level: Level) -> Self {
+        for event in EventType::variants() {
+            if event.level() >= level {
+                self.interests.set(event);
+            }
+        }
         self
     }
 
-    pub fn with_disabled(mut self, disabled: impl IntoIterator<Item = EventType>) -> Self {
-        self.disabled.extend(disabled);
+    pub fn with_interests(mut self, interests: Interests) -> Self {
+        self.interests = interests;
+        self
+    }
+
+    pub fn set_interests(mut self, interest: impl IntoIterator<Item = impl Into<usize>>) -> Self {
+        for level in interest {
+            self.interests.set(level);
+        }
         self
     }
 
@@ -95,20 +99,21 @@ impl SubscriberBuilder {
         self
     }
 
-    pub fn register(self) -> mpsc::Receiver<Vec<Arc<Event>>> {
+    pub fn register(self) -> mpsc::Receiver<Vec<Arc<Event<EventDetails>>>> {
         let (tx, rx) = mpsc::channel(8192);
 
-        SUBSCRIBER_UPDATE.lock().push(Subscriber {
-            id: self.id,
-            level: self.level,
-            disabled: self.disabled,
-            tx,
-            lossy: self.lossy,
-            batch: Vec::new(),
+        COLLECTOR_UPDATES.lock().push(Update::Register {
+            subscriber: Subscriber {
+                id: self.id,
+                interests: self.interests,
+                tx,
+                lossy: self.lossy,
+                batch: Vec::new(),
+            },
         });
 
         // Notify collector
-        Event::new(EventType::Server(ServerEvent::Startup)).send();
+        Collector::reload();
 
         rx
     }

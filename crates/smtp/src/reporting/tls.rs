@@ -58,11 +58,12 @@ impl SMTP {
             .map(|e| (e.domain.as_str(), e.seq_id, e.due))
             .unwrap();
 
-        let session_id = event_from;
+        let span_id = self.inner.span_id_gen.generate().unwrap_or_else(now);
 
         trc::event!(
             OutgoingReport(OutgoingReportEvent::TlsAggregate),
-            SpanId = session_id,
+            SpanId = span_id,
+            ReportId = event_from,
             Domain = domain_name.to_string(),
             RangeFrom = trc::Value::Timestamp(event_from),
             RangeTo = trc::Value::Timestamp(event_to),
@@ -75,18 +76,13 @@ impl SMTP {
                 .eval_if(
                     &self.core.smtp.report.tls.max_size,
                     &RecipientDomain::new(domain_name),
-                    session_id,
+                    span_id,
                 )
                 .await
                 .unwrap_or(25 * 1024 * 1024),
         ));
         let report = match self
-            .generate_tls_aggregate_report(
-                &events,
-                &mut rua,
-                Some(&mut serialized_size),
-                session_id,
-            )
+            .generate_tls_aggregate_report(&events, &mut rua, Some(&mut serialized_size), span_id)
             .await
         {
             Ok(Some(report)) => report,
@@ -94,7 +90,7 @@ impl SMTP {
                 // This should not happen
                 trc::event!(
                     OutgoingReport(OutgoingReportEvent::NotFound),
-                    SpanId = session_id,
+                    SpanId = span_id,
                     CausedBy = trc::location!()
                 );
                 self.delete_tls_report(events).await;
@@ -102,7 +98,7 @@ impl SMTP {
             }
             Err(err) => {
                 trc::error!(err
-                    .span_id(session_id)
+                    .span_id(span_id)
                     .caused_by(trc::location!())
                     .details("Failed to read TLS report"));
                 return;
@@ -118,7 +114,7 @@ impl SMTP {
             Err(err) => {
                 trc::event!(
                     OutgoingReport(OutgoingReportEvent::SubmissionError),
-                    SpanId = session_id,
+                    SpanId = span_id,
                     Reason = err.to_string(),
                     Details = "Failed to compress report"
                 );
@@ -156,7 +152,7 @@ impl SMTP {
                                 if response.status().is_success() {
                                     trc::event!(
                                         OutgoingReport(OutgoingReportEvent::HttpSubmission),
-                                        SpanId = session_id,
+                                        SpanId = span_id,
                                         Url = uri.to_string(),
                                         Status = response.status().as_u16(),
                                     );
@@ -166,7 +162,7 @@ impl SMTP {
                                 } else {
                                     trc::event!(
                                         OutgoingReport(OutgoingReportEvent::SubmissionError),
-                                        SpanId = session_id,
+                                        SpanId = span_id,
                                         Url = uri.to_string(),
                                         Status = response.status().as_u16(),
                                         Details = "Invalid HTTP response"
@@ -176,7 +172,7 @@ impl SMTP {
                             Err(err) => {
                                 trc::event!(
                                     OutgoingReport(OutgoingReportEvent::SubmissionError),
-                                    SpanId = session_id,
+                                    SpanId = span_id,
                                     Url = uri.to_string(),
                                     Reason = err.to_string(),
                                     Details = "HTTP submission error"
@@ -196,11 +192,7 @@ impl SMTP {
             let config = &self.core.smtp.report.tls;
             let from_addr = self
                 .core
-                .eval_if(
-                    &config.address,
-                    &RecipientDomain::new(domain_name),
-                    session_id,
-                )
+                .eval_if(&config.address, &RecipientDomain::new(domain_name), span_id)
                 .await
                 .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
             let mut message = Vec::with_capacity(2048);
@@ -211,13 +203,13 @@ impl SMTP {
                     .eval_if(
                         &self.core.smtp.report.submitter,
                         &RecipientDomain::new(domain_name),
-                        session_id,
+                        span_id,
                     )
                     .await
                     .unwrap_or_else(|| "localhost".to_string()),
                 (
                     self.core
-                        .eval_if(&config.name, &RecipientDomain::new(domain_name), session_id)
+                        .eval_if(&config.name, &RecipientDomain::new(domain_name), span_id)
                         .await
                         .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                         .as_str(),
@@ -235,13 +227,13 @@ impl SMTP {
                 message,
                 &config.sign,
                 false,
-                session_id,
+                span_id,
             )
             .await;
         } else {
             trc::event!(
                 OutgoingReport(OutgoingReportEvent::NoRecipientsFound),
-                SpanId = session_id,
+                SpanId = span_id,
             );
         }
         self.delete_tls_report(events).await;
@@ -252,7 +244,7 @@ impl SMTP {
         events: &[ReportEvent],
         rua: &mut Vec<ReportUri>,
         mut serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
-        session_id: u64,
+        span_id: u64,
     ) -> trc::Result<Option<TlsReport>> {
         let (domain_name, event_from, event_to, policy) = events
             .first()
@@ -265,7 +257,7 @@ impl SMTP {
                 .eval_if(
                     &config.org_name,
                     &RecipientDomain::new(domain_name),
-                    session_id,
+                    span_id,
                 )
                 .await
                 .clone(),
@@ -278,7 +270,7 @@ impl SMTP {
                 .eval_if(
                     &config.contact_info,
                     &RecipientDomain::new(domain_name),
-                    session_id,
+                    span_id,
                 )
                 .await
                 .clone(),
@@ -497,7 +489,7 @@ impl SMTP {
         }
 
         // Write entry
-        report_event.seq_id = self.inner.snowflake_id.generate().unwrap_or_else(now);
+        report_event.seq_id = self.inner.queue_id_gen.generate().unwrap_or_else(now);
         builder.set(
             ValueClass::Queue(QueueClass::TlsReportEvent(report_event)),
             Bincode::new(event.failure).serialize(),

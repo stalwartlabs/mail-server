@@ -13,6 +13,7 @@ use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
+use trc::collector::Collector;
 use utils::wait_for_shutdown;
 
 #[cfg(not(target_env = "msvc"))]
@@ -36,14 +37,20 @@ async fn main() -> std::io::Result<()> {
     let ipc = Ipc { delivery_tx };
 
     // Init servers
-    let smtp = SMTP::init(&mut config, core.clone(), ipc).await;
+    let smtp = SMTP::init(
+        &mut config,
+        core.clone(),
+        ipc,
+        init.servers.span_id_gen.clone(),
+    )
+    .await;
     let jmap = JMAP::init(&mut config, delivery_rx, core.clone(), smtp.inner.clone()).await;
     let imap = IMAP::init(&mut config, jmap.clone()).await;
     let gossiper = GossiperBuilder::try_parse(&mut config);
 
     // Log configuration errors
-    config.log_errors(init.guards.is_none());
-    config.log_warnings(init.guards.is_none());
+    config.log_errors();
+    config.log_warnings();
 
     // Log licensing information
     #[cfg(feature = "enterprise")]
@@ -96,6 +103,9 @@ async fn main() -> std::io::Result<()> {
         env!("CARGO_PKG_VERSION")
     ))
     .await;
+
+    // Shutdown collector
+    Collector::shutdown();
 
     // Stop services
     let _ = shutdown_tx.send(true);

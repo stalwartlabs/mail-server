@@ -13,7 +13,7 @@ use base64::{
 use common::{
     config::{
         server::{ServerProtocol, Servers},
-        tracers::Tracer,
+        tracers::Tracers,
     },
     manager::config::{ConfigManager, Patterns},
     Core, Ipc, IPC_CHANNEL_BUFFER,
@@ -35,7 +35,6 @@ use store::{
     IterateParams, Stores, SUBSPACE_PROPERTY,
 };
 use tokio::sync::{mpsc, watch};
-use trc::collector::Collector;
 use utils::config::Config;
 use webhooks::{spawn_mock_webhook_endpoint, MockWebhookEndpoint};
 
@@ -289,14 +288,7 @@ throttle = "100ms"
 #[tokio::test(flavor = "multi_thread")]
 pub async fn jmap_tests() {
     if let Ok(level) = std::env::var("LOG") {
-        let level = level.parse().unwrap();
-        Collector::set_level(level);
-        Tracer::Stdout {
-            id: "stdout".to_string(),
-            level,
-            ansi: true,
-        }
-        .spawn();
+        Tracers::test_tracer(level.parse().unwrap());
     }
 
     let delete = true;
@@ -343,14 +335,7 @@ pub async fn jmap_tests() {
 #[ignore]
 pub async fn jmap_stress_tests() {
     if let Ok(level) = std::env::var("LOG") {
-        let level = level.parse().unwrap();
-        Collector::set_level(level);
-        Tracer::Stdout {
-            id: "stdout".to_string(),
-            level,
-            ansi: true,
-        }
-        .spawn();
+        Tracers::test_tracer(level.parse().unwrap());
     }
 
     let params = init_jmap_tests(
@@ -481,7 +466,13 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let ipc = Ipc { delivery_tx };
 
     // Init servers
-    let smtp = SMTP::init(&mut config, shared_core.clone(), ipc).await;
+    let smtp = SMTP::init(
+        &mut config,
+        shared_core.clone(),
+        ipc,
+        servers.span_id_gen.clone(),
+    )
+    .await;
     let jmap = JMAP::init(
         &mut config,
         delivery_rx,

@@ -4,23 +4,37 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod atomic;
+pub mod bitset;
 pub mod channel;
 pub mod collector;
 pub mod conv;
+pub mod fmt;
 pub mod imple;
 pub mod macros;
 pub mod subscriber;
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::Arc,
+};
+
+use event_macro::{camel_names, event_family, event_type, total_event_count};
 
 pub type Result<T> = std::result::Result<T, Error>;
-pub type Error = Event;
+pub type Error = Event<EventType>;
 
 #[derive(Debug, Clone)]
-pub struct Event {
-    inner: EventType,
+pub struct Event<T> {
+    pub inner: T,
     keys: Vec<(Key, Value)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EventDetails {
+    pub typ: EventType,
+    pub timestamp: u64,
+    pub level: Level,
+    pub span: Option<Arc<Event<EventDetails>>>,
 }
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -48,17 +62,15 @@ pub enum Value {
     Ipv4(Ipv4Addr),
     Ipv6(Ipv6Addr),
     Protocol(Protocol),
-    Event(Event),
+    Event(Event<EventType>),
     Array(Vec<Value>),
-    Level(Level),
     #[default]
     None,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[camel_names]
 pub enum Key {
-    Level,
-    Time,
     #[default]
     CausedBy,
     Reason,
@@ -84,8 +96,9 @@ pub enum Key {
     DocumentId,
     Collection,
     AccountId,
+    QueueId,
     SpanId,
-    ParentSpanId,
+    ReportId,
     MessageId,
     MailboxId,
     ChangeId,
@@ -151,6 +164,7 @@ pub enum Key {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_family]
 pub enum EventType {
     Server(ServerEvent),
     Purge(PurgeEvent),
@@ -193,7 +207,7 @@ pub enum EventType {
     OutgoingReport(OutgoingReportEvent),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum HttpEvent {
     Error,
     RequestUrl,
@@ -202,7 +216,7 @@ pub enum HttpEvent {
     XForwardedMissing,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum ClusterEvent {
     PeerAlive,
     PeerDiscovered,
@@ -220,7 +234,7 @@ pub enum ClusterEvent {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum HousekeeperEvent {
     Start,
     Stop,
@@ -230,7 +244,7 @@ pub enum HousekeeperEvent {
     PurgeStore,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum FtsIndexEvent {
     Index,
     Locked,
@@ -239,7 +253,7 @@ pub enum FtsIndexEvent {
     MetadataNotFound,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum ImapEvent {
     // Commands
     GetAcl,
@@ -282,7 +296,7 @@ pub enum ImapEvent {
     RawOutput,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum Pop3Event {
     // Commands
     Delete,
@@ -307,7 +321,7 @@ pub enum Pop3Event {
     RawOutput,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum ManageSieveEvent {
     // Commands
     CreateScript,
@@ -333,7 +347,7 @@ pub enum ManageSieveEvent {
     RawOutput,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum SmtpEvent {
     Error,
     RemoteIdNotFound,
@@ -417,7 +431,7 @@ pub enum SmtpEvent {
     RequestTooLarge,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum DeliveryEvent {
     AttemptStart,
     AttemptEnd,
@@ -459,7 +473,7 @@ pub enum DeliveryEvent {
     RawOutput,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum QueueEvent {
     Scheduled,
     Rescheduled,
@@ -471,7 +485,7 @@ pub enum QueueEvent {
     QuotaExceeded,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum IncomingReportEvent {
     DmarcReport,
     DmarcReportWithWarnings,
@@ -490,7 +504,7 @@ pub enum IncomingReportEvent {
     DecompressError,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum OutgoingReportEvent {
     SpfReport,
     SpfRateLimited,
@@ -511,7 +525,7 @@ pub enum OutgoingReportEvent {
     Locked,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum MtaStsEvent {
     Authorized,
     NotAuthorized,
@@ -521,13 +535,13 @@ pub enum MtaStsEvent {
     InvalidPolicy,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum TlsRptEvent {
     RecordFetch,
     RecordFetchError,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum DaneEvent {
     AuthenticationSuccess,
     AuthenticationFailure,
@@ -541,7 +555,7 @@ pub enum DaneEvent {
     TlsaRecordInvalid,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum MilterEvent {
     Read,
     Write,
@@ -562,7 +576,7 @@ pub enum MilterEvent {
     ParseError,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum MtaHookEvent {
     ActionAccept,
     ActionDiscard,
@@ -571,14 +585,14 @@ pub enum MtaHookEvent {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum PushSubscriptionEvent {
     Success,
     Error,
     NotFound,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum SpamEvent {
     PyzorError,
     ListUpdated,
@@ -590,7 +604,7 @@ pub enum SpamEvent {
     NotEnoughTrainingData,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum SieveEvent {
     ActionAccept,
     ActionAcceptReplace,
@@ -606,7 +620,7 @@ pub enum SieveEvent {
     QuotaExceeded,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum TlsEvent {
     Handshake,
     HandshakeError,
@@ -616,7 +630,7 @@ pub enum TlsEvent {
     MultipleCertificatesAvailable,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum NetworkEvent {
     ConnectionStart,
     ConnectionEnd,
@@ -636,16 +650,18 @@ pub enum NetworkEvent {
     DropBlocked,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum ServerEvent {
     Startup,
     Shutdown,
     StartupError,
     ThreadError,
+    TracingError,
     Licensing,
+    CollectorUpdate,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum AcmeEvent {
     AuthStart,
     AuthPending,
@@ -676,7 +692,7 @@ pub enum AcmeEvent {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum PurgeEvent {
     Started,
     Finished,
@@ -687,7 +703,7 @@ pub enum PurgeEvent {
     TombstoneCleanup,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum EvalEvent {
     Result,
     Error,
@@ -695,7 +711,7 @@ pub enum EvalEvent {
     StoreNotFound,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum ConfigEvent {
     ParseError,
     BuildError,
@@ -712,7 +728,7 @@ pub enum ConfigEvent {
     AlreadyUpToDate,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum ArcEvent {
     ChainTooLong,
     InvalidInstance,
@@ -722,7 +738,7 @@ pub enum ArcEvent {
     SealerNotFound,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum DkimEvent {
     Pass,
     Neutral,
@@ -744,7 +760,7 @@ pub enum DkimEvent {
     SignerNotFound,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum SpfEvent {
     Pass,
     Fail,
@@ -755,7 +771,7 @@ pub enum SpfEvent {
     None,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum DmarcEvent {
     Pass,
     Fail,
@@ -764,7 +780,7 @@ pub enum DmarcEvent {
     None,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum IprevEvent {
     Pass,
     Fail,
@@ -773,7 +789,7 @@ pub enum IprevEvent {
     None,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum MailAuthEvent {
     ParseError,
     MissingParameters,
@@ -787,7 +803,7 @@ pub enum MailAuthEvent {
     PolicyNotAligned,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum StoreEvent {
     // Errors
     IngestError,
@@ -825,7 +841,7 @@ pub enum StoreEvent {
     IngestDuplicate,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum JmapEvent {
     // Calls
     MethodCall,
@@ -858,7 +874,7 @@ pub enum JmapEvent {
     WebsocketError,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum LimitEvent {
     SizeRequest,
     SizeUpload,
@@ -871,7 +887,7 @@ pub enum LimitEvent {
     TooManyRequests,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum ManageEvent {
     MissingParameter,
     AlreadyExists,
@@ -881,7 +897,7 @@ pub enum ManageEvent {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum AuthEvent {
     Success,
     Failed,
@@ -891,7 +907,7 @@ pub enum AuthEvent {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[event_type]
 pub enum ResourceEvent {
     NotFound,
     BadParameters,
@@ -901,6 +917,7 @@ pub enum ResourceEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[camel_names]
 pub enum Protocol {
     Jmap,
     Imap,
@@ -913,6 +930,8 @@ pub enum Protocol {
     Http,
     Gossip,
 }
+
+pub const TOTAL_EVENT_COUNT: usize = total_event_count!();
 
 pub trait AddContext<T> {
     fn caused_by(self, location: &'static str) -> Result<T>;

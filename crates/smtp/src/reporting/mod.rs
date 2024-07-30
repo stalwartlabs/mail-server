@@ -123,7 +123,12 @@ impl SMTP {
         // Build message
         let from_addr_lcase = from_addr.to_lowercase();
         let from_addr_domain = from_addr_lcase.domain_part().to_string();
-        let mut message = self.new_message(from_addr, from_addr_lcase, from_addr_domain);
+        let mut message = self.new_message(
+            from_addr,
+            from_addr_lcase,
+            from_addr_domain,
+            parent_session_id,
+        );
         for rcpt_ in rcpts {
             message.add_recipient(rcpt_.as_ref(), self).await;
         }
@@ -170,20 +175,20 @@ impl SMTP {
     ) -> Option<Vec<u8>> {
         let signers = self
             .core
-            .eval_if::<Vec<String>, _>(config, message, message.id)
+            .eval_if::<Vec<String>, _>(config, message, message.span_id)
             .await
             .unwrap_or_default();
         if !signers.is_empty() {
             let mut headers = Vec::with_capacity(64);
             for signer in signers.iter() {
-                if let Some(signer) = self.core.get_dkim_signer(signer, message.id) {
+                if let Some(signer) = self.core.get_dkim_signer(signer, message.span_id) {
                     match signer.sign(bytes) {
                         Ok(signature) => {
                             signature.write_header(&mut headers);
                         }
                         Err(err) => {
                             trc::error!(trc::Event::from(err)
-                                .span_id(message.id)
+                                .span_id(message.span_id)
                                 .details("Failed to sign message")
                                 .caused_by(trc::location!()));
                         }

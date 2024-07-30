@@ -317,7 +317,7 @@ fn parse_servers() {
             }],
             max_connections: 8192,
             proxy_networks: vec![],
-            id_generator: id_generator.clone(),
+            span_id_gen: id_generator.clone(),
         },
         Server {
             id: "smtps".to_string(),
@@ -342,7 +342,7 @@ fn parse_servers() {
             ],
             max_connections: 1024,
             proxy_networks: vec![],
-            id_generator: id_generator.clone(),
+            span_id_gen: id_generator.clone(),
         },
         Server {
             id: "submission".to_string(),
@@ -357,7 +357,7 @@ fn parse_servers() {
             }],
             max_connections: 8192,
             proxy_networks: vec![],
-            id_generator: id_generator.clone(),
+            span_id_gen: id_generator.clone(),
         },
     ];
 

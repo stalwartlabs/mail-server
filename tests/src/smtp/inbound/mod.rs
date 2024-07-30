@@ -133,7 +133,7 @@ impl QueueReceiver {
     pub async fn expect_message_then_deliver(&mut self) -> DeliveryAttempt {
         let message = self.expect_message().await;
 
-        self.delivery_attempt(message.id).await
+        self.delivery_attempt(message.queue_id).await
     }
 
     pub async fn delivery_attempt(&mut self, queue_id: u64) -> DeliveryAttempt {
@@ -183,7 +183,7 @@ impl QueueReceiver {
                 IterateParams::new(from_key, to_key).descending(),
                 |key, value| {
                     let value = Bincode::<Message>::deserialize(value)?;
-                    assert_eq!(key.deserialize_be_u64(0)?, value.inner.id);
+                    assert_eq!(key.deserialize_be_u64(0)?, value.inner.queue_id);
                     messages.push(value.inner);
                     Ok(true)
                 },
@@ -243,7 +243,8 @@ impl QueueReceiver {
     }
 
     pub async fn last_queued_due(&self) -> u64 {
-        self.message_due(self.last_queued_message().await.id).await
+        self.message_due(self.last_queued_message().await.queue_id)
+            .await
     }
 
     pub async fn message_due(&self, queue_id: QueueId) -> u64 {
@@ -262,7 +263,7 @@ impl QueueReceiver {
 
     pub async fn clear_queue(&self, core: &SMTP) {
         for message in self.read_queued_messages().await {
-            let due = self.message_due(message.id).await;
+            let due = self.message_due(message.queue_id).await;
             message.remove(core, due).await;
         }
     }

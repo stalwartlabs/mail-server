@@ -12,7 +12,6 @@ use store::{
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     Stores,
 };
-use tracing_appender::non_blocking::WorkerGuard;
 use utils::{
     config::{Config, ConfigKey},
     failed, UnwrapFailure,
@@ -32,7 +31,6 @@ pub struct BootManager {
     pub config: Config,
     pub core: SharedCore,
     pub servers: Servers,
-    pub guards: Option<Vec<WorkerGuard>>,
 }
 
 const HELP: &str = r#"Stalwart Mail Server
@@ -164,7 +162,7 @@ impl BootManager {
         }
 
         // Enable tracing
-        let guards = Tracers::parse(&mut config).enable(&mut config);
+        Tracers::parse(&mut config).enable();
 
         match import_export {
             ImportExport::None => {
@@ -323,7 +321,6 @@ impl BootManager {
 
                 BootManager {
                     core,
-                    guards,
                     config,
                     servers,
                 }

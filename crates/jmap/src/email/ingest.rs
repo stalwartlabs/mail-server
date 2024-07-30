@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, time::Duration};
+use std::{
+    borrow::Cow,
+    time::{Duration, Instant},
+};
 
 use jmap_proto::{
     object::Object,
@@ -78,6 +81,7 @@ impl JMAP {
     #[allow(clippy::blocks_in_conditions)]
     pub async fn email_ingest(&self, mut params: IngestEmail<'_>) -> trc::Result<IngestedEmail> {
         // Check quota
+        let start_time = Instant::now();
         let mut raw_message_len = params.raw_message.len() as i64;
         self.has_available_quota(params.account_id, params.account_quota, raw_message_len)
             .await
@@ -334,6 +338,7 @@ impl JMAP {
             BlobId = blob_id.hash.to_hex(),
             ChangeId = change_id,
             Size = raw_message_len as u64,
+            Elapsed = start_time.elapsed(),
         );
 
         Ok(IngestedEmail {

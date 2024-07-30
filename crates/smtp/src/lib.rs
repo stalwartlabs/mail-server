@@ -6,6 +6,7 @@
 
 use crate::core::{throttle::ThrottleKeyHasherBuilder, TlsConnectors};
 use core::{Inner, SmtpInstance, SMTP};
+use std::sync::Arc;
 
 use common::{config::scripts::ScriptCache, Ipc, SharedCore};
 use dashmap::DashMap;
@@ -23,7 +24,12 @@ pub mod reporting;
 pub mod scripts;
 
 impl SMTP {
-    pub async fn init(config: &mut Config, core: SharedCore, ipc: Ipc) -> SmtpInstance {
+    pub async fn init(
+        config: &mut Config,
+        core: SharedCore,
+        ipc: Ipc,
+        span_id_gen: Arc<SnowflakeIdGenerator>,
+    ) -> SmtpInstance {
         // Build inner
         let capacity = config.property("cache.capacity").unwrap_or(2);
         let shard = config
@@ -45,10 +51,11 @@ impl SMTP {
             ),
             queue_tx,
             report_tx,
-            snowflake_id: config
+            queue_id_gen: config
                 .property::<u64>("cluster.node-id")
                 .map(SnowflakeIdGenerator::with_node_id)
                 .unwrap_or_default(),
+            span_id_gen,
             connectors: TlsConnectors {
                 pki_verify: build_tls_connector(false),
                 dummy_verify: build_tls_connector(true),

@@ -37,7 +37,7 @@ pub struct ServerInstance {
     pub limiter: ConcurrencyLimiter,
     pub proxy_networks: Vec<IpAddrMask>,
     pub shutdown_rx: watch::Receiver<bool>,
-    pub id_generator: Arc<SnowflakeIdGenerator>,
+    pub span_id_gen: Arc<SnowflakeIdGenerator>,
 }
 
 #[derive(Default)]
@@ -109,7 +109,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                         Ok(stream) => {
                             // Generate sessionId
                             session.session_id =
-                                session.instance.id_generator.generate().unwrap_or_default();
+                                session.instance.span_id_gen.generate().unwrap_or_default();
                             session_id = session.session_id;
 
                             trc::event!(
@@ -151,7 +151,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                     TcpAcceptorResult::Plain(stream) => {
                         // Generate sessionId
                         session.session_id =
-                            session.instance.id_generator.generate().unwrap_or_default();
+                            session.instance.span_id_gen.generate().unwrap_or_default();
                         session_id = session.session_id;
 
                         trc::event!(
@@ -170,7 +170,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                 }
             } else {
                 // Generate sessionId
-                session.session_id = session.instance.id_generator.generate().unwrap_or_default();
+                session.session_id = session.instance.span_id_gen.generate().unwrap_or_default();
                 session_id = session.session_id;
 
                 trc::event!(

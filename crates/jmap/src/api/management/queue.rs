@@ -500,7 +500,7 @@ impl From<&queue::Message> for Message {
         let now = now();
 
         Message {
-            id: message.id,
+            id: message.queue_id,
             return_path: message.return_path.clone(),
             created: DateTime::from_timestamp(message.created as i64),
             size: message.size,

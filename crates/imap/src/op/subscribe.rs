@@ -162,7 +162,7 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
 
-        trc::event!(
+        trc::eventd!(
             Imap(if subscribe {
                 trc::ImapEvent::Subscribe
             } else {
