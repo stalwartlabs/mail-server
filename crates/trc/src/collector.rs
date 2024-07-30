@@ -17,7 +17,7 @@ use crate::{
     bitset::{AtomicBitset, USIZE_BITS},
     channel::{EVENT_COUNT, EVENT_RXS},
     subscriber::{Interests, Subscriber},
-    DeliveryEvent, Event, EventDetails, EventType, Level, NetworkEvent, ServerEvent,
+    DeliveryEvent, Event, EventDetails, EventType, Level, NetworkEvent, TracingEvent,
     TOTAL_EVENT_COUNT,
 };
 
@@ -58,7 +58,7 @@ const EV_CONN_START: usize = EventType::Network(NetworkEvent::ConnectionStart).i
 const EV_CONN_END: usize = EventType::Network(NetworkEvent::ConnectionEnd).id();
 const EV_ATTEMPT_START: usize = EventType::Delivery(DeliveryEvent::AttemptStart).id();
 const EV_ATTEMPT_END: usize = EventType::Delivery(DeliveryEvent::AttemptEnd).id();
-const EV_COLLECTOR_UPDATE: usize = EventType::Server(ServerEvent::CollectorUpdate).id();
+const EV_COLLECTOR_UPDATE: usize = EventType::Tracing(TracingEvent::Update).id();
 
 const STALE_SPAN_CHECK_WATERMARK: usize = 8000;
 const SPAN_MAX_HOLD: u64 = 86400;
@@ -119,7 +119,12 @@ impl Collector {
                                     .remove(&event.span_id().expect("Missing span ID"))
                                     .is_none()
                                 {
-                                    debug_assert!(false, "Unregistered span ID: {event:?}");
+                                    #[cfg(debug_assertions)]
+                                    {
+                                        if event.span_id().unwrap() != 0 {
+                                            panic!("Unregistered span ID: {event:?}");
+                                        }
+                                    }
                                 }
                                 Arc::new(event)
                             }
@@ -136,7 +141,12 @@ impl Collector {
                                     if let Some(span) = self.active_spans.get(&span_id) {
                                         event.inner.span = Some(span.clone());
                                     } else {
-                                        debug_assert!(false, "Unregistered span ID: {event:?}");
+                                        #[cfg(debug_assertions)]
+                                        {
+                                            if span_id != 0 {
+                                                panic!("Unregistered span ID: {event:?}");
+                                            }
+                                        }
                                     }
                                 }
 
@@ -226,6 +236,10 @@ impl Collector {
         INTERESTS.update(interests);
     }
 
+    pub fn union_interests(interests: Interests) {
+        INTERESTS.union(interests);
+    }
+
     pub fn enable_event(event: impl Into<usize>) {
         INTERESTS.set(event);
     }
@@ -271,7 +285,7 @@ impl Collector {
     }
 
     pub fn reload() {
-        Event::new(EventType::Server(ServerEvent::CollectorUpdate)).send()
+        Event::new(EventType::Tracing(TracingEvent::Update)).send()
     }
 }
 

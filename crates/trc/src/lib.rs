@@ -11,6 +11,7 @@ pub mod conv;
 pub mod fmt;
 pub mod imple;
 pub mod macros;
+pub mod serializer;
 pub mod subscriber;
 
 use std::{
@@ -68,7 +69,7 @@ pub enum Value {
     None,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 #[camel_names]
 pub enum Key {
     #[default]
@@ -205,6 +206,7 @@ pub enum EventType {
     MtaSts(MtaStsEvent),
     IncomingReport(IncomingReportEvent),
     OutgoingReport(OutgoingReportEvent),
+    Tracing(TracingEvent),
 }
 
 #[event_type]
@@ -656,9 +658,16 @@ pub enum ServerEvent {
     Shutdown,
     StartupError,
     ThreadError,
-    TracingError,
     Licensing,
-    CollectorUpdate,
+}
+
+#[event_type]
+pub enum TracingEvent {
+    Update,
+    LogError,
+    WebhookError,
+    OtelError,
+    JournalError,
 }
 
 #[event_type]

@@ -140,7 +140,7 @@ impl JMAP {
         if let Err(err) = inner.webadmin.unpack(&core.load().storage.blob).await {
             trc::event!(
                 Resource(trc::ResourceEvent::Error),
-                Reason = err.to_string(),
+                Reason = err,
                 Details = "Failed to unpack webadmin bundle"
             );
         }

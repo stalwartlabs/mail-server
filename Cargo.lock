@@ -6615,6 +6615,7 @@ dependencies = [
  "parking_lot",
  "reqwest 0.12.5",
  "rtrb",
+ "serde",
  "serde_json",
  "tokio",
 ]

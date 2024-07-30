@@ -16,13 +16,13 @@ use tokio::io::AsyncWrite;
 use trc::{fmt::FmtWriter, subscriber::SubscriberBuilder};
 
 pub(crate) fn spawn_console_tracer(builder: SubscriberBuilder, settings: ConsoleTracer) {
-    let mut tx = builder.register();
+    let (_, mut rx) = builder.register();
     tokio::spawn(async move {
         let mut buf = FmtWriter::new(StdErrWriter::default())
             .with_ansi(settings.ansi)
             .with_multiline(settings.multiline);
 
-        while let Some(events) = tx.recv().await {
+        while let Some(events) = rx.recv().await {
             for event in events {
                 let _ = buf.write(&event).await;
 

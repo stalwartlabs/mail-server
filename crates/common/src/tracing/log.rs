@@ -13,10 +13,10 @@ use tokio::{
     fs::{File, OpenOptions},
     io::BufWriter,
 };
-use trc::{fmt::FmtWriter, subscriber::SubscriberBuilder, ServerEvent};
+use trc::{fmt::FmtWriter, subscriber::SubscriberBuilder, TracingEvent};
 
 pub(crate) fn spawn_log_tracer(builder: SubscriberBuilder, settings: LogTracer) {
-    let mut tx = builder.register();
+    let (_, mut rx) = builder.register();
     tokio::spawn(async move {
         if let Some(writer) = settings.build_writer().await {
             let mut buf = FmtWriter::new(writer)
@@ -24,13 +24,13 @@ pub(crate) fn spawn_log_tracer(builder: SubscriberBuilder, settings: LogTracer) 
                 .with_multiline(settings.multiline);
             let mut roatation_timestamp = settings.next_rotation();
 
-            while let Some(events) = tx.recv().await {
+            while let Some(events) = rx.recv().await {
                 for event in events {
                     // Check if we need to rotate the log file
                     if roatation_timestamp != 0 && event.inner.timestamp > roatation_timestamp {
                         if let Err(err) = buf.flush().await {
                             trc::event!(
-                                Server(ServerEvent::TracingError),
+                                Tracing(TracingEvent::LogError),
                                 Reason = err.to_string(),
                                 Details = "Failed to flush log buffer"
                             );
@@ -46,7 +46,7 @@ pub(crate) fn spawn_log_tracer(builder: SubscriberBuilder, settings: LogTracer) 
 
                     if let Err(err) = buf.write(&event).await {
                         trc::event!(
-                            Server(ServerEvent::TracingError),
+                            Tracing(TracingEvent::LogError),
                             Reason = err.to_string(),
                             Details = "Failed to write event to log"
                         );
@@ -56,7 +56,7 @@ pub(crate) fn spawn_log_tracer(builder: SubscriberBuilder, settings: LogTracer) 
 
                 if let Err(err) = buf.flush().await {
                     trc::event!(
-                        Server(ServerEvent::TracingError),
+                        Tracing(TracingEvent::LogError),
                         Reason = err.to_string(),
                         Details = "Failed to flush log buffer"
                     );
@@ -105,7 +105,7 @@ impl LogTracer {
             Ok(writer) => Some(BufWriter::new(writer)),
             Err(err) => {
                 trc::event!(
-                    Server(ServerEvent::TracingError),
+                    Tracing(TracingEvent::LogError),
                     Details = "Failed to create log file",
                     Path = path.to_string_lossy().into_owned(),
                     Reason = err.to_string(),

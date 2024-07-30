@@ -6,10 +6,12 @@
 
 pub mod log;
 pub mod stdout;
+pub mod webhook;
 
 use log::spawn_log_tracer;
 use stdout::spawn_console_tracer;
 use trc::{collector::Collector, subscriber::SubscriberBuilder};
+use webhook::spawn_webhook_tracer;
 
 use crate::config::tracers::{ConsoleTracer, TracerType, Tracers};
 
@@ -82,7 +84,7 @@ impl Tracers {
             },
         );
 
-        Collector::set_interests(interests);
+        Collector::union_interests(interests);
         Collector::reload();
     }
 }
@@ -92,8 +94,8 @@ impl TracerType {
         match self {
             TracerType::Console(settings) => spawn_console_tracer(builder, settings),
             TracerType::Log(settings) => spawn_log_tracer(builder, settings),
+            TracerType::Webhook(settings) => spawn_webhook_tracer(builder, settings),
             TracerType::Otel(_) => todo!(),
-            TracerType::Webhook(_) => todo!(),
             TracerType::Journal => todo!(),
         }
     }

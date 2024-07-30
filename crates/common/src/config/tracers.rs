@@ -12,8 +12,8 @@ use hyper::{
     header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
     HeaderMap,
 };
-use trc::{subscriber::Interests, EventType, Level};
-use utils::config::Config;
+use trc::{subscriber::Interests, EventType, Level, TracingEvent};
+use utils::config::{utils::ParseValue, Config};
 
 #[derive(Debug)]
 pub struct Tracer {
@@ -61,6 +61,7 @@ pub struct WebhookTracer {
     pub key: String,
     pub timeout: Duration,
     pub throttle: Duration,
+    pub discard_after: Duration,
     pub tls_allow_invalid_certs: bool,
     pub headers: HeaderMap,
 }
@@ -244,7 +245,7 @@ impl Tracers {
 
             // Create tracer
             let mut tracer = Tracer {
-                id: id.to_string(),
+                id: format!("t_{id}"),
                 interests: Default::default(),
                 lossy: config
                     .property_or_default(("tracer", id, "lossy"), "false")
@@ -264,6 +265,21 @@ impl Tracers {
 
             // Parse disabled events
             let mut disabled_events = AHashSet::new();
+            match &tracer.typ {
+                TracerType::Console(_) => (),
+                TracerType::Log(_) => {
+                    disabled_events.insert(EventType::Tracing(TracingEvent::LogError));
+                }
+                TracerType::Otel(_) => {
+                    disabled_events.insert(EventType::Tracing(TracingEvent::OtelError));
+                }
+                TracerType::Webhook(_) => {
+                    disabled_events.insert(EventType::Tracing(TracingEvent::WebhookError));
+                }
+                TracerType::Journal => {
+                    disabled_events.insert(EventType::Tracing(TracingEvent::JournalError));
+                }
+            }
             for (_, event_type) in config.properties::<EventType>(("tracer", id, "disabled-events"))
             {
                 disabled_events.insert(event_type);
@@ -379,7 +395,7 @@ fn parse_webhook(
 
     // Build tracer
     let mut tracer = Tracer {
-        id: id.to_string(),
+        id: format!("w_{id}"),
         interests: Default::default(),
         lossy: config
             .property_or_default(("webhook", id, "lossy"), "false")
@@ -400,13 +416,55 @@ fn parse_webhook(
             throttle: config
                 .property_or_default(("webhook", id, "throttle"), "1s")
                 .unwrap_or_else(|| Duration::from_secs(1)),
+            discard_after: config
+                .property_or_default(("webhook", id, "discard-after"), "5m")
+                .unwrap_or_else(|| Duration::from_secs(300)),
         }),
     };
 
     // Parse webhook events
-    for (_, event_type) in config.properties::<EventType>(("webhook", id, "events")) {
-        tracer.interests.set(event_type);
-        global_interests.set(event_type);
+    let event_names = EventType::variants()
+        .into_iter()
+        .filter_map(|e| {
+            if e != EventType::Tracing(TracingEvent::WebhookError) {
+                Some((e, e.name()))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    for (_, event_type) in config.properties::<EventOrMany>(("webhook", id, "events")) {
+        match event_type {
+            EventOrMany::Event(event_type) => {
+                if event_type != EventType::Tracing(TracingEvent::WebhookError) {
+                    tracer.interests.set(event_type);
+                    global_interests.set(event_type);
+                }
+            }
+            EventOrMany::StartsWith(value) => {
+                for (event_type, name) in event_names.iter() {
+                    if name.starts_with(&value) {
+                        tracer.interests.set(*event_type);
+                        global_interests.set(*event_type);
+                    }
+                }
+            }
+            EventOrMany::EndsWith(value) => {
+                for (event_type, name) in event_names.iter() {
+                    if name.ends_with(&value) {
+                        tracer.interests.set(*event_type);
+                        global_interests.set(*event_type);
+                    }
+                }
+            }
+            EventOrMany::All => {
+                for (event_type, _) in event_names.iter() {
+                    tracer.interests.set(*event_type);
+                    global_interests.set(*event_type);
+                }
+                break;
+            }
+        }
     }
 
     if !tracer.interests.is_empty() {
@@ -414,5 +472,27 @@ fn parse_webhook(
     } else {
         config.new_build_warning(("webhook", id), "No events enabled for webhook");
         None
+    }
+}
+
+enum EventOrMany {
+    Event(EventType),
+    StartsWith(String),
+    EndsWith(String),
+    All,
+}
+
+impl ParseValue for EventOrMany {
+    fn parse_value(value: &str) -> Result<Self, String> {
+        let value = value.trim();
+        if value == "*" {
+            Ok(EventOrMany::All)
+        } else if let Some(suffix) = value.strip_prefix("*") {
+            Ok(EventOrMany::EndsWith(suffix.to_string()))
+        } else if let Some(prefix) = value.strip_suffix("*") {
+            Ok(EventOrMany::StartsWith(prefix.to_string()))
+        } else {
+            EventType::parse_value(value).map(EventOrMany::Event)
+        }
     }
 }

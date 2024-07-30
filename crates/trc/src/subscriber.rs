@@ -18,14 +18,15 @@ use crate::{
 const MAX_BATCH_SIZE: usize = 32768;
 
 pub type Interests = Box<Bitset<{ (TOTAL_EVENT_COUNT + USIZE_BITS - 1) / USIZE_BITS }>>;
+pub type EventBatch = Vec<Arc<Event<EventDetails>>>;
 
 #[derive(Debug)]
 pub(crate) struct Subscriber {
     pub id: String,
     pub interests: Interests,
-    pub tx: mpsc::Sender<Vec<Arc<Event<EventDetails>>>>,
+    pub tx: mpsc::Sender<EventBatch>,
     pub lossy: bool,
-    pub batch: Vec<Arc<Event<EventDetails>>>,
+    pub batch: EventBatch,
 }
 
 pub struct SubscriberBuilder {
@@ -99,14 +100,14 @@ impl SubscriberBuilder {
         self
     }
 
-    pub fn register(self) -> mpsc::Receiver<Vec<Arc<Event<EventDetails>>>> {
+    pub fn register(self) -> (mpsc::Sender<EventBatch>, mpsc::Receiver<EventBatch>) {
         let (tx, rx) = mpsc::channel(8192);
 
         COLLECTOR_UPDATES.lock().push(Update::Register {
             subscriber: Subscriber {
                 id: self.id,
                 interests: self.interests,
-                tx,
+                tx: tx.clone(),
                 lossy: self.lossy,
                 batch: Vec::new(),
             },
@@ -115,6 +116,6 @@ impl SubscriberBuilder {
         // Notify collector
         Collector::reload();
 
-        rx
+        (tx, rx)
     }
 }

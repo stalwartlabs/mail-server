@@ -1003,10 +1003,7 @@ impl EventType {
                 ServerEvent::Startup | ServerEvent::Shutdown | ServerEvent::Licensing => {
                     Level::Info
                 }
-                ServerEvent::StartupError
-                | ServerEvent::ThreadError
-                | ServerEvent::TracingError => Level::Error,
-                ServerEvent::CollectorUpdate => Level::Disable,
+                ServerEvent::StartupError | ServerEvent::ThreadError => Level::Error,
             },
             EventType::Acme(event) => match event {
                 AcmeEvent::DnsRecordCreated
@@ -1244,6 +1241,10 @@ impl EventType {
                 | OutgoingReportEvent::ReportingAddressValidationError
                 | OutgoingReportEvent::SubmissionError
                 | OutgoingReportEvent::NoRecipientsFound => Level::Info,
+            },
+            EventType::Tracing(event) => match event {
+                TracingEvent::Update => Level::Disable,
+                _ => Level::Error,
             },
         }
     }

@@ -276,10 +276,7 @@ vrfy = true
 
 [webhook."test"]
 url = "http://127.0.0.1:8821/hook"
-events = ["auth.success", "auth.failure", "auth.banned", "auth.error", 
-          "message.accepted", "message.rejected", "message.appended", 
-          "account.over-quota", "dsn", "double-bounce", "report.incoming.dmarc", 
-          "report.incoming.tls", "report.incoming.arf", "report.outgoing"]
+events = ["*"]
 signature-key = "ovos-moles"
 throttle = "100ms"
 
@@ -454,12 +451,16 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             .cloned()
             .unwrap_or_default(),
     };
+    let tracers = Tracers::parse(&mut config);
     let core = Core::parse(&mut config, stores, config_manager).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
 
     // Parse acceptors
     servers.parse_tcp_acceptors(&mut config, shared_core.clone());
+
+    // Enable tracing
+    tracers.enable();
 
     // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);

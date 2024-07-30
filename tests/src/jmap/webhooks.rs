@@ -42,7 +42,7 @@ pub async fn test(params: &mut JMAPTest) {
     tokio::time::sleep(Duration::from_millis(1000)).await;
 
     // Check for events
-    params.webhook.assert_contains(&["auth.success"]);
+    params.webhook.assert_contains(&["authSuccess"]);
 }
 
 impl MockWebhookEndpoint {

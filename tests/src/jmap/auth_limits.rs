@@ -267,10 +267,10 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Check webhook events
     params.webhook.assert_contains(&[
-        "auth.failure",
-        "auth.success",
-        "auth.banned",
-        "\"login\": \"jdoe@example.com\"",
-        "\"accountType\": \"individual\"",
+        "authFailure",
+        "authSuccess",
+        "authBanned",
+        "\"name\": \"jdoe@example.com\"",
+        "\"type\": \"individual\"",
     ]);
 }

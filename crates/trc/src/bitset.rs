@@ -54,6 +54,13 @@ impl<const N: usize> AtomicBitset<N> {
         }
     }
 
+    pub fn union(&self, bitset: impl AsRef<Bitset<N>>) {
+        let bitset = bitset.as_ref();
+        for i in 0..N {
+            self.0[i].fetch_or(bitset.0[i], Ordering::Relaxed);
+        }
+    }
+
     pub fn clear_all(&self) {
         for i in 0..N {
             self.0[i].store(0, Ordering::Relaxed);
