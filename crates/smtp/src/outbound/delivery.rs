@@ -200,7 +200,7 @@ impl DeliveryAttempt {
             }
 
             trc::event!(
-                Delivery(DeliveryEvent::AttemptCount),
+                Delivery(DeliveryEvent::DomainDeliveryStart),
                 SpanId = message.span_id,
                 Domain = domain.domain.clone(),
                 Count = domain.retry.inner,

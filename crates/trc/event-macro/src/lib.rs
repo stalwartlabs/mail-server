@@ -15,10 +15,7 @@ pub fn event_type(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
     let name_str = name.to_string();
-    let prefix = name_str
-        .strip_suffix("Event")
-        .unwrap_or(&name_str)
-        .to_ascii_lowercase();
+    let prefix = to_snake_case(name_str.strip_suffix("Event").unwrap_or(&name_str));
 
     let enum_variants = match &input.data {
         Data::Enum(data_enum) => &data_enum.variants,
@@ -28,7 +25,6 @@ pub fn event_type(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut variant_ids = Vec::new();
     let mut variant_names = Vec::new();
     let mut event_names = Vec::new();
-    let mut event_names_lowercase = Vec::new();
 
     for variant in enum_variants {
         unsafe {
@@ -36,10 +32,11 @@ pub fn event_type(_attr: TokenStream, item: TokenStream) -> TokenStream {
             GLOBAL_ID_COUNTER += 1;
         }
         let variant_name = &variant.ident;
-        let event_name = format!("{prefix}{variant_name}");
+        event_names.push(format!(
+            "{prefix}.{}",
+            to_snake_case(&variant_name.to_string())
+        ));
         variant_names.push(variant_name);
-        event_names_lowercase.push(event_name.to_ascii_lowercase());
-        event_names.push(event_name);
     }
 
     let id_fn = quote! {
@@ -61,7 +58,7 @@ pub fn event_type(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let parse_fn = quote! {
         pub fn try_parse(name: &str) -> Option<Self> {
             match name {
-                #(#event_names_lowercase => Some(Self::#variant_names),)*
+                #(#event_names => Some(Self::#variant_names),)*
                 _ => None,
             }
         }
@@ -117,12 +114,8 @@ pub fn event_family(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let variant_names: Vec<_> = variant_idents
         .iter()
         .map(|ident| {
-            ident
-                .to_string()
-                .char_indices()
-                .take_while(|(i, c)| *i == 0 || c.is_lowercase())
-                .map(|(_, c)| c.to_ascii_lowercase())
-                .collect::<String>()
+            let name_str = ident.to_string();
+            to_snake_case(name_str.strip_suffix("Event").unwrap_or(&name_str))
         })
         .collect();
 
@@ -145,14 +138,12 @@ pub fn event_family(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             pub fn try_parse(name: &str) -> Option<Self> {
-                let name = name.to_ascii_lowercase();
-
+                match name.trim().split_once('.')?.0 {
                 #(
-                    if name.starts_with(#variant_names) {
-                        return <#event_types>::try_parse(&name).map(#name::#variant_idents);
-                    }
+                    #variant_names =>  <#event_types>::try_parse(&name).map(#name::#variant_idents),
                 )*
-                None
+                    _ => None,
+                }
             }
 
             pub fn variants() -> Vec<#name> {
@@ -218,4 +209,19 @@ pub fn total_event_count(_item: TokenStream) -> TokenStream {
         #count
     };
     TokenStream::from(expanded)
+}
+
+fn to_snake_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for (idx, ch) in name.char_indices() {
+        if ch.is_ascii_uppercase() {
+            if idx > 0 {
+                out.push('-');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }

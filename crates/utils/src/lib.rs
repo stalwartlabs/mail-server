@@ -143,7 +143,7 @@ pub fn failed(message: &str) -> ! {
     std::process::exit(1);
 }
 
-pub async fn wait_for_shutdown(message: &str) {
+pub async fn wait_for_shutdown() {
     #[cfg(not(target_env = "msvc"))]
     let signal = {
         use tokio::signal::unix::{signal, SignalKind};
@@ -172,11 +172,7 @@ pub async fn wait_for_shutdown(message: &str) {
         }
     };
 
-    trc::event!(
-        Server(trc::ServerEvent::Shutdown),
-        Details = message.to_string(),
-        CausedBy = signal
-    );
+    trc::event!(Server(trc::ServerEvent::Shutdown), CausedBy = signal);
 }
 
 pub fn rustls_client_config(allow_invalid_certs: bool) -> ClientConfig {

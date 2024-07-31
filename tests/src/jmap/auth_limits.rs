@@ -266,11 +266,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_is_empty(server).await;
 
     // Check webhook events
-    params.webhook.assert_contains(&[
-        "authFailure",
-        "authSuccess",
-        "authBanned",
-        "\"name\": \"jdoe@example.com\"",
-        "\"type\": \"individual\"",
-    ]);
+    params
+        .webhook
+        .assert_contains(&["auth.failed", "auth.success", "auth.banned"]);
 }

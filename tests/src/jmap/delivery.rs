@@ -307,13 +307,10 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Check webhook events
     params.webhook.assert_contains(&[
-        "message.accepted",
-        "message.appended",
-        "dsn",
-        "\"returnPath\": \"bill@example.com\"",
-        "\"sender\": \"bill@example.com\"",
-        "\"address\": \"john.doe@example.com\"",
-        "\"type\": \"success\"",
+        "store.ingest",
+        "delivery.dsn",
+        "\"from\": \"bill@example.com\"",
+        "\"to\": \"john.doe@example.com\"",
     ]);
 }
 

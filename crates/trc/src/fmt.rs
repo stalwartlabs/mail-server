@@ -96,13 +96,18 @@ impl<T: AsyncWrite + Unpin> FmtWriter<T> {
                 .await?;
         }
         self.writer
-            .write_all(event.inner.typ.name().as_bytes())
+            .write_all(event.inner.typ.description().as_bytes())
             .await?;
         if self.ansi {
             self.writer.write_all(Color::reset().as_bytes()).await?;
         }
+        self.writer.write_all(" (".as_bytes()).await?;
         self.writer
-            .write_all(if self.multiline { "\n" } else { " " }.as_bytes())
+            .write_all(event.inner.typ.name().as_bytes())
+            .await?;
+
+        self.writer
+            .write_all(if self.multiline { ")\n" } else { ") " }.as_bytes())
             .await?;
 
         // Write keys
@@ -235,7 +240,12 @@ impl<T: AsyncWrite + Unpin> FmtWriter<T> {
                     self.writer.write_all(v.name().as_bytes()).await?;
                 }
                 Value::Event(e) => {
+                    self.writer
+                        .write_all(e.inner.description().as_bytes())
+                        .await?;
+                    self.writer.write_all(" (".as_bytes()).await?;
                     self.writer.write_all(e.inner.name().as_bytes()).await?;
+                    self.writer.write_all(")".as_bytes()).await?;
                     if !e.keys.is_empty() {
                         self.writer
                             .write_all(if self.multiline { "\n" } else { " { " }.as_bytes())
@@ -308,5 +318,24 @@ impl Color {
 
     pub fn reset() -> &'static str {
         "\x1b[0m"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{EventType, Level};
+
+    #[test]
+    fn print_all_events() {
+        assert!(!Level::Disable.is_contained(Level::Warn));
+        assert!(Level::Trace.is_contained(Level::Error));
+        assert!(Level::Trace.is_contained(Level::Debug));
+        assert!(!Level::Error.is_contained(Level::Trace));
+        assert!(!Level::Debug.is_contained(Level::Trace));
+
+        for event in EventType::variants() {
+            println!("{}", event.name());
+            assert_eq!(EventType::try_parse(event.name()).unwrap(), event);
+        }
     }
 }

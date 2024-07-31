@@ -98,11 +98,7 @@ async fn main() -> std::io::Result<()> {
     }
 
     // Wait for shutdown signal
-    wait_for_shutdown(&format!(
-        "Shutting down Stalwart Mail Server v{}...",
-        env!("CARGO_PKG_VERSION")
-    ))
-    .await;
+    wait_for_shutdown().await;
 
     // Shutdown collector
     Collector::shutdown();

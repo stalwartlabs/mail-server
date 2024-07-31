@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use crate::config::tracers::WebhookTracer;
@@ -23,7 +23,7 @@ use trc::{
     ServerEvent, TracingEvent,
 };
 
-pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);
+use super::LONG_SLUMBER;
 
 pub(crate) fn spawn_webhook_tracer(builder: SubscriberBuilder, settings: WebhookTracer) {
     let (tx, mut rx) = builder.register();

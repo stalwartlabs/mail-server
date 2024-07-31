@@ -269,6 +269,14 @@ user-code = "1s"
 token = "1s"
 refresh-token = "3s"
 refresh-token-renew = "2s"
+
+[tracer.console]
+type = "console"
+level = "{LEVEL}"
+multiline = false
+ansi = true
+disabled-events = ["network.*"]
+
 "#;
 
 #[allow(dead_code)]
@@ -285,7 +293,11 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let mut config = Config::new(
         add_test_certs(SERVER)
             .replace("{STORE}", store_id)
-            .replace("{TMP}", &temp_dir.path.display().to_string()),
+            .replace("{TMP}", &temp_dir.path.display().to_string())
+            .replace(
+                "{LEVEL}",
+                &std::env::var("LOG").unwrap_or_else(|_| "disable".to_string()),
+            ),
     )
     .unwrap();
     config.resolve_all_macros().await;
@@ -300,12 +312,16 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let stores = Stores::parse_all(&mut config).await;
 
     // Parse core
+    let tracers = Tracers::parse(&mut config);
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
 
     // Parse acceptors
     servers.parse_tcp_acceptors(&mut config, shared_core.clone());
+
+    // Enable tracing
+    tracers.enable();
 
     // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
@@ -415,10 +431,6 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
 
 #[tokio::test]
 pub async fn imap_tests() {
-    if let Ok(level) = std::env::var("LOG") {
-        Tracers::test_tracer(level.parse().unwrap());
-    }
-
     // Prepare settings
     let start_time = Instant::now();
     let delete = true;

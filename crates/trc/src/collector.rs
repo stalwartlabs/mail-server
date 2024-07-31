@@ -114,11 +114,12 @@ impl Collector {
                                 event
                             }
                             EV_CONN_END | EV_ATTEMPT_END => {
-                                if self
+                                if let Some(span) = self
                                     .active_spans
                                     .remove(&event.span_id().expect("Missing span ID"))
-                                    .is_none()
                                 {
+                                    event.inner.span = Some(span.clone());
+                                } else {
                                     #[cfg(debug_assertions)]
                                     {
                                         if event.span_id().unwrap() != 0 {

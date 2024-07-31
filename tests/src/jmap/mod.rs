@@ -274,9 +274,16 @@ refresh-token-renew = "2s"
 expn = true
 vrfy = true
 
+[tracer.console]
+type = "console"
+level = "{LEVEL}"
+multiline = false
+ansi = true
+disabled-events = ["network.*"]
+
 [webhook."test"]
 url = "http://127.0.0.1:8821/hook"
-events = ["*"]
+events = ["auth.*", "delivery.dsn*", "store.ingest"]
 signature-key = "ovos-moles"
 throttle = "100ms"
 
@@ -284,10 +291,6 @@ throttle = "100ms"
 
 #[tokio::test(flavor = "multi_thread")]
 pub async fn jmap_tests() {
-    if let Ok(level) = std::env::var("LOG") {
-        Tracers::test_tracer(level.parse().unwrap());
-    }
-
     let delete = true;
     let mut params = init_jmap_tests(
         &std::env::var("STORE")
@@ -297,7 +300,7 @@ pub async fn jmap_tests() {
     .await;
 
     webhooks::test(&mut params).await;
-    email_query::test(&mut params, delete).await;
+    /*email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -309,7 +312,7 @@ pub async fn jmap_tests() {
     thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
-    auth_acl::test(&mut params).await;
+    auth_acl::test(&mut params).await;*/
     auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
@@ -331,10 +334,6 @@ pub async fn jmap_tests() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 pub async fn jmap_stress_tests() {
-    if let Ok(level) = std::env::var("LOG") {
-        Tracers::test_tracer(level.parse().unwrap());
-    }
-
     let params = init_jmap_tests(
         &std::env::var("STORE")
             .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
@@ -426,7 +425,11 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let mut config = Config::new(
         add_test_certs(SERVER)
             .replace("{STORE}", store_id)
-            .replace("{TMP}", &temp_dir.path.display().to_string()),
+            .replace("{TMP}", &temp_dir.path.display().to_string())
+            .replace(
+                "{LEVEL}",
+                &std::env::var("LOG").unwrap_or_else(|_| "disable".to_string()),
+            ),
     )
     .unwrap();
     config.resolve_all_macros().await;

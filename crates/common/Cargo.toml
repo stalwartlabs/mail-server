@@ -38,10 +38,10 @@ x509-parser = "0.16.0"
 pem = "3.0"
 chrono = { version = "0.4", features = ["serde"] }
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
-#opentelemetry = { version = "0.22.0" }
-#opentelemetry_sdk = { version = "0.22.1", features = ["rt-tokio"] }
-#opentelemetry-otlp = { version = "0.15.0", features = ["http-proto", "reqwest-client"] }
-#opentelemetry-semantic-conventions = { version = "0.14.0" }
+opentelemetry = { version = "0.24" }
+opentelemetry_sdk = { version = "0.24" }
+opentelemetry-otlp = { version = "0.17", features = ["http-proto", "reqwest-client"] }
+opentelemetry-semantic-conventions = { version = "0.16.0" }
 imagesize = "0.13"
 sha1 = "0.10"
 sha2 = "0.10.6"

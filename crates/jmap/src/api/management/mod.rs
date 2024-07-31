@@ -39,6 +39,7 @@ pub enum ManagementApiError<'x> {
 }
 
 impl JMAP {
+    #[allow(unused_variables)]
     pub async fn handle_api_manage_request(
         &self,
         req: &HttpRequest,

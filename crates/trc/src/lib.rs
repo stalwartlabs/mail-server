@@ -27,7 +27,7 @@ pub type Error = Event<EventType>;
 #[derive(Debug, Clone)]
 pub struct Event<T> {
     pub inner: T,
-    keys: Vec<(Key, Value)>,
+    pub keys: Vec<(Key, Value)>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,12 +41,12 @@ pub struct EventDetails {
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 #[repr(usize)]
 pub enum Level {
-    Disable = 0,
-    Trace = 1,
-    Debug = 2,
-    Info = 3,
-    Warn = 4,
-    Error = 5,
+    Trace = 0,
+    Debug = 1,
+    Info = 2,
+    Warn = 3,
+    Error = 4,
+    Disable = 5,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -439,7 +439,7 @@ pub enum DeliveryEvent {
     AttemptEnd,
     Completed,
     Failed,
-    AttemptCount,
+    DomainDeliveryStart,
     MxLookup,
     MxLookupFailed,
     IpLookup,

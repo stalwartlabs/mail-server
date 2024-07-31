@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{str::FromStr, time::Duration};
+use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -12,6 +12,8 @@ use hyper::{
     header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
     HeaderMap,
 };
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::export::{logs::LogExporter, trace::SpanExporter};
 use trc::{subscriber::Interests, EventType, Level, TracingEvent};
 use utils::config::{utils::ParseValue, Config};
 
@@ -33,6 +35,15 @@ pub enum TracerType {
 }
 
 #[derive(Debug)]
+pub struct OtelTracer {
+    pub span_exporter: Box<dyn SpanExporter>,
+    pub span_exporter_enable: bool,
+    pub log_exporter: Box<dyn LogExporter>,
+    pub log_exporter_enable: bool,
+    pub throttle: Duration,
+}
+
+#[derive(Debug)]
 pub struct ConsoleTracer {
     pub ansi: bool,
     pub multiline: bool,
@@ -46,13 +57,6 @@ pub struct LogTracer {
     pub rotate: RotationStrategy,
     pub ansi: bool,
     pub multiline: bool,
-}
-
-#[derive(Debug)]
-pub struct OtelTracer {
-    pub endpoint: String,
-    pub headers: AHashMap<String, String>,
-    pub is_http: bool,
 }
 
 #[derive(Debug)]
@@ -100,6 +104,17 @@ impl Tracers {
                 }
             }
         }
+
+        let event_names = EventType::variants()
+            .into_iter()
+            .filter_map(|e| {
+                if e != EventType::Tracing(TracingEvent::WebhookError) {
+                    Some((e, e.name()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
 
         // Parse tracers
         let mut tracers: Vec<Tracer> = Vec::new();
@@ -172,24 +187,78 @@ impl Tracers {
                         .unwrap_or(true),
                 }),
                 "otel" | "open-telemetry" => {
+                    let timeout = config
+                        .property::<Duration>(("tracer", id, "timeout"))
+                        .unwrap_or(Duration::from_secs(
+                            opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT,
+                        ));
+                    let throttle = config
+                        .property_or_default(("tracer", id, "throttle"), "1s")
+                        .unwrap_or_else(|| Duration::from_secs(1));
+                    let log_exporter_enable = config
+                        .property_or_default(("tracer", id, "enable.log-exporter"), "true")
+                        .unwrap_or(true);
+                    let span_exporter_enable = config
+                        .property_or_default(("tracer", id, "enable.span-exporter"), "true")
+                        .unwrap_or(true);
+
                     match config
                         .value_require(("tracer", id, "transport"))
                         .unwrap_or_default()
                     {
-                        "gprc" => TracerType::Otel(OtelTracer {
-                            endpoint: config
-                                .value(("tracer", id, "endpoint"))
-                                .unwrap_or_default()
-                                .to_string(),
-                            headers: Default::default(),
-                            is_http: false,
-                        }),
+                        "grpc" => {
+                            let mut span_exporter = opentelemetry_otlp::new_exporter()
+                                .tonic()
+                                .with_protocol(opentelemetry_otlp::Protocol::Grpc)
+                                .with_timeout(timeout);
+                            let mut log_exporter = opentelemetry_otlp::new_exporter()
+                                .tonic()
+                                .with_protocol(opentelemetry_otlp::Protocol::Grpc)
+                                .with_timeout(timeout);
+                            if let Some(endpoint) = config.value(("tracer", id, "endpoint")) {
+                                span_exporter = span_exporter.with_endpoint(endpoint);
+                                log_exporter = log_exporter.with_endpoint(endpoint);
+                            }
+
+                            match (
+                                span_exporter.build_span_exporter(),
+                                log_exporter.build_log_exporter(),
+                            ) {
+                                (Ok(span_exporter), Ok(log_exporter)) => {
+                                    TracerType::Otel(OtelTracer {
+                                        span_exporter: Box::new(span_exporter),
+                                        log_exporter: Box::new(log_exporter),
+                                        throttle,
+                                        span_exporter_enable,
+                                        log_exporter_enable,
+                                    })
+                                }
+                                (Err(err), _) => {
+                                    config.new_build_error(
+                                        ("tracer", id),
+                                        format!(
+                                            "Failed to build OpenTelemetry span exporter: {err}"
+                                        ),
+                                    );
+                                    continue;
+                                }
+                                (_, Err(err)) => {
+                                    config.new_build_error(
+                                        ("tracer", id),
+                                        format!(
+                                            "Failed to build OpenTelemetry log exporter: {err}"
+                                        ),
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
                         "http" => {
                             if let Some(endpoint) = config
                                 .value_require(("tracer", id, "endpoint"))
                                 .map(|s| s.to_string())
                             {
-                                let mut headers = AHashMap::new();
+                                let mut headers = HashMap::new();
                                 let mut err = None;
                                 for (_, value) in config.values(("tracer", id, "headers")) {
                                     if let Some((key, value)) = value.split_once(':') {
@@ -207,11 +276,51 @@ impl Tracers {
                                     config.new_parse_error(("tracer", id, "headers"), err);
                                 }
 
-                                TracerType::Otel(OtelTracer {
-                                    endpoint,
-                                    headers,
-                                    is_http: true,
-                                })
+                                let mut span_exporter = opentelemetry_otlp::new_exporter()
+                                    .http()
+                                    .with_endpoint(&endpoint)
+                                    .with_timeout(timeout);
+                                let mut log_exporter = opentelemetry_otlp::new_exporter()
+                                    .http()
+                                    .with_endpoint(&endpoint)
+                                    .with_timeout(timeout);
+                                if !headers.is_empty() {
+                                    span_exporter = span_exporter.with_headers(headers.clone());
+                                    log_exporter = log_exporter.with_headers(headers);
+                                }
+
+                                match (
+                                    span_exporter.build_span_exporter(),
+                                    log_exporter.build_log_exporter(),
+                                ) {
+                                    (Ok(span_exporter), Ok(log_exporter)) => {
+                                        TracerType::Otel(OtelTracer {
+                                            span_exporter: Box::new(span_exporter),
+                                            log_exporter: Box::new(log_exporter),
+                                            throttle,
+                                            span_exporter_enable,
+                                            log_exporter_enable,
+                                        })
+                                    }
+                                    (Err(err), _) => {
+                                        config.new_build_error(
+                                            ("tracer", id),
+                                            format!(
+                                                "Failed to build OpenTelemetry span exporter: {err}"
+                                            ),
+                                        );
+                                        continue;
+                                    }
+                                    (_, Err(err)) => {
+                                        config.new_build_error(
+                                            ("tracer", id),
+                                            format!(
+                                                "Failed to build OpenTelemetry log exporter: {err}"
+                                            ),
+                                        );
+                                        continue;
+                                    }
+                                }
                             } else {
                                 continue;
                             }
@@ -280,9 +389,34 @@ impl Tracers {
                     disabled_events.insert(EventType::Tracing(TracingEvent::JournalError));
                 }
             }
-            for (_, event_type) in config.properties::<EventType>(("tracer", id, "disabled-events"))
+            for (_, event_type) in
+                config.properties::<EventOrMany>(("tracer", id, "disabled-events"))
             {
-                disabled_events.insert(event_type);
+                match event_type {
+                    EventOrMany::Event(event_type) => {
+                        disabled_events.insert(event_type);
+                    }
+                    EventOrMany::StartsWith(value) => {
+                        for (event_type, name) in event_names.iter() {
+                            if name.starts_with(&value) {
+                                disabled_events.insert(*event_type);
+                            }
+                        }
+                    }
+                    EventOrMany::EndsWith(value) => {
+                        for (event_type, name) in event_names.iter() {
+                            if name.ends_with(&value) {
+                                disabled_events.insert(*event_type);
+                            }
+                        }
+                    }
+                    EventOrMany::All => {
+                        for (event_type, _) in event_names.iter() {
+                            disabled_events.insert(*event_type);
+                        }
+                        break;
+                    }
+                }
             }
 
             // Build interests lists
@@ -292,7 +426,7 @@ impl Tracers {
                         .get(&event_type)
                         .copied()
                         .unwrap_or(event_type.level());
-                    if event_level <= level {
+                    if level.is_contained(event_level) {
                         tracer.interests.set(event_type);
                         global_interests.set(event_type);
                     }
@@ -323,7 +457,7 @@ impl Tracers {
                     .get(&event_type)
                     .copied()
                     .unwrap_or(event_type.level());
-                if event_level <= Level::Info {
+                if Level::Info.is_contained(event_level) {
                     global_interests.set(event_type);
                 }
             }
