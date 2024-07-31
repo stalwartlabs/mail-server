@@ -232,9 +232,13 @@ impl<T: SessionStream> Session<T> {
                 .mail_from(
                     &format!("<{addr}>"),
                     None::<&[&str]>,
-                    Macros::new()
-                        .with_mail_address(addr)
-                        .with_sasl_login_name(&self.data.authenticated_as),
+                    if !self.data.authenticated_as.is_empty() {
+                        Macros::new()
+                            .with_mail_address(addr)
+                            .with_sasl_login_name(&self.data.authenticated_as)
+                    } else {
+                        Macros::new().with_mail_address(addr)
+                    },
                 )
                 .await?
                 .assert_continue()?;
