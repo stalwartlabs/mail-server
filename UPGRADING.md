@@ -1,4 +1,4 @@
-Upgrading from `v0.8.3` to `v0.9.0`
+Upgrading from `v0.8.x` to `v0.9.0`
 -----------------------------------
 
 Version `0.9.0` introduces significant internal improvements while maintaining compatibility with existing database layouts and configuration file formats from version `0.8.0`. As a result, no data or configuration migration is necessary. This release focuses on enhancing performance and functionality, particularly in logging and tracing capabilities.
