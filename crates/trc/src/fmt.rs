@@ -333,9 +333,18 @@ mod tests {
         assert!(!Level::Error.is_contained(Level::Trace));
         assert!(!Level::Debug.is_contained(Level::Trace));
 
+        let mut names = Vec::with_capacity(100);
+
         for event in EventType::variants() {
-            println!("{}", event.name());
+            names.push(event.name());
             assert_eq!(EventType::try_parse(event.name()).unwrap(), event);
+        }
+
+        // sort
+        names.sort();
+
+        for name in names {
+            println!("{:?},", name);
         }
     }
 }

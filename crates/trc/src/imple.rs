@@ -146,7 +146,7 @@ impl Event<EventType> {
         !matches!(
             self.inner,
             EventType::Jmap(
-                JmapEvent::UnknownCapability | JmapEvent::NotJSON | JmapEvent::NotRequest
+                JmapEvent::UnknownCapability | JmapEvent::NotJson | JmapEvent::NotRequest
             )
         )
     }
@@ -256,13 +256,13 @@ impl StoreEvent {
         match self {
             Self::AssertValueFailed => "Another process has modified the value",
             Self::BlobMissingMarker => "Blob is missing marker",
-            Self::FoundationDBError => "FoundationDB error",
-            Self::MySQLError => "MySQL error",
-            Self::PostgreSQLError => "PostgreSQL error",
-            Self::RocksDBError => "RocksDB error",
-            Self::SQLiteError => "SQLite error",
+            Self::FoundationdbError => "FoundationDB error",
+            Self::MysqlError => "MySQL error",
+            Self::PostgresqlError => "PostgreSQL error",
+            Self::RocksdbError => "RocksDB error",
+            Self::SqliteError => "SQLite error",
             Self::LdapError => "LDAP error",
-            Self::ElasticSearchError => "ElasticSearch error",
+            Self::ElasticsearchError => "ElasticSearch error",
             Self::RedisError => "Redis error",
             Self::S3Error => "S3 error",
             Self::FilesystemError => "Filesystem error",
@@ -388,7 +388,7 @@ impl JmapEvent {
             Self::CannotCalculateChanges => "Cannot calculate changes",
             Self::UnknownDataType => "Unknown data type",
             Self::UnknownCapability => "Unknown capability",
-            Self::NotJSON => "Not JSON",
+            Self::NotJson => "Not JSON",
             Self::NotRequest => "Not a request",
             _ => "Other message",
         }
@@ -858,13 +858,13 @@ impl EventType {
                 StoreEvent::Ingest | StoreEvent::IngestDuplicate => Level::Info,
                 StoreEvent::IngestError
                 | StoreEvent::AssertValueFailed
-                | StoreEvent::FoundationDBError
-                | StoreEvent::MySQLError
-                | StoreEvent::PostgreSQLError
-                | StoreEvent::RocksDBError
-                | StoreEvent::SQLiteError
+                | StoreEvent::FoundationdbError
+                | StoreEvent::MysqlError
+                | StoreEvent::PostgresqlError
+                | StoreEvent::RocksdbError
+                | StoreEvent::SqliteError
                 | StoreEvent::LdapError
-                | StoreEvent::ElasticSearchError
+                | StoreEvent::ElasticsearchError
                 | StoreEvent::RedisError
                 | StoreEvent::S3Error
                 | StoreEvent::FilesystemError
@@ -1089,7 +1089,7 @@ impl EventType {
             EventType::Arc(event) => match event {
                 ArcEvent::ChainTooLong
                 | ArcEvent::InvalidInstance
-                | ArcEvent::InvalidCV
+                | ArcEvent::InvalidCv
                 | ArcEvent::HasHeaderTag
                 | ArcEvent::BrokenChain => Level::Debug,
                 ArcEvent::SealerNotFound => Level::Warn,
@@ -1109,10 +1109,9 @@ impl EventType {
                 | PurgeEvent::TombstoneCleanup => Level::Debug,
             },
             EventType::Eval(event) => match event {
+                EvalEvent::Error => Level::Debug,
                 EvalEvent::Result => Level::Trace,
-                EvalEvent::Error | EvalEvent::DirectoryNotFound | EvalEvent::StoreNotFound => {
-                    Level::Warn
-                }
+                EvalEvent::DirectoryNotFound | EvalEvent::StoreNotFound => Level::Warn,
             },
             EventType::Server(event) => match event {
                 ServerEvent::Startup | ServerEvent::Shutdown | ServerEvent::Licensing => {
@@ -1144,18 +1143,18 @@ impl EventType {
                 | AcmeEvent::DnsRecordCreationFailed => Level::Warn,
                 AcmeEvent::RenewBackoff
                 | AcmeEvent::DnsRecordDeletionFailed
-                | AcmeEvent::ClientSuppliedSNI
-                | AcmeEvent::ClientMissingSNI
+                | AcmeEvent::ClientSuppliedSni
+                | AcmeEvent::ClientMissingSni
                 | AcmeEvent::DnsRecordNotPropagated
                 | AcmeEvent::DnsRecordLookupFailed => Level::Debug,
             },
             EventType::Tls(event) => match event {
                 TlsEvent::Handshake => Level::Info,
-                TlsEvent::HandshakeError => Level::Debug,
+                TlsEvent::HandshakeError | TlsEvent::CertificateNotFound => Level::Debug,
                 TlsEvent::NotConfigured => Level::Error,
-                TlsEvent::CertificateNotFound
-                | TlsEvent::NoCertificatesAvailable
-                | TlsEvent::MultipleCertificatesAvailable => Level::Warn,
+                TlsEvent::NoCertificatesAvailable | TlsEvent::MultipleCertificatesAvailable => {
+                    Level::Warn
+                }
             },
             EventType::Sieve(event) => match event {
                 SieveEvent::NotSupported
@@ -1182,8 +1181,8 @@ impl EventType {
                 SpamEvent::ListUpdated => Level::Info,
             },
             EventType::Http(event) => match event {
-                HttpEvent::Error | HttpEvent::XForwardedMissing => Level::Warn,
-                HttpEvent::RequestUrl => Level::Debug,
+                HttpEvent::XForwardedMissing => Level::Warn,
+                HttpEvent::Error | HttpEvent::RequestUrl => Level::Debug,
                 HttpEvent::RequestBody | HttpEvent::ResponseBody => Level::Trace,
             },
             EventType::PushSubscription(event) => match event {
@@ -1269,7 +1268,7 @@ impl EventType {
                 | DeliveryEvent::DomainDeliveryStart
                 | DeliveryEvent::MxLookupFailed
                 | DeliveryEvent::IpLookupFailed
-                | DeliveryEvent::NullMX
+                | DeliveryEvent::NullMx
                 | DeliveryEvent::Connect
                 | DeliveryEvent::ConnectError
                 | DeliveryEvent::GreetingFailed
@@ -1616,7 +1615,7 @@ impl DeliveryEvent {
             DeliveryEvent::MxLookupFailed => "MX record lookup failed",
             DeliveryEvent::IpLookup => "IP address lookup",
             DeliveryEvent::IpLookupFailed => "IP address lookup failed",
-            DeliveryEvent::NullMX => "Null MX record found",
+            DeliveryEvent::NullMx => "Null MX record found",
             DeliveryEvent::Connect => "Connecting to remote server",
             DeliveryEvent::ConnectError => "Connection error",
             DeliveryEvent::MissingOutboundHostname => "Missing outbound hostname in configuration",
@@ -1849,9 +1848,9 @@ impl NetworkEvent {
         match self {
             NetworkEvent::ConnectionStart => "Network connection started",
             NetworkEvent::ConnectionEnd => "Network connection ended",
-            NetworkEvent::ListenStart => "Network listening started",
-            NetworkEvent::ListenStop => "Network listening stopped",
-            NetworkEvent::ListenError => "Network listening error",
+            NetworkEvent::ListenStart => "Network listener started",
+            NetworkEvent::ListenStop => "Network listener stopped",
+            NetworkEvent::ListenError => "Network listener error",
             NetworkEvent::BindError => "Network bind error",
             NetworkEvent::ReadError => "Network read error",
             NetworkEvent::WriteError => "Network write error",
@@ -1920,8 +1919,8 @@ impl AcmeEvent {
             AcmeEvent::DnsRecordLookupFailed => "ACME DNS record lookup failed",
             AcmeEvent::DnsRecordPropagated => "ACME DNS record propagated",
             AcmeEvent::DnsRecordPropagationTimeout => "ACME DNS record propagation timeout",
-            AcmeEvent::ClientSuppliedSNI => "ACME client supplied SNI",
-            AcmeEvent::ClientMissingSNI => "ACME client missing SNI",
+            AcmeEvent::ClientSuppliedSni => "ACME client supplied SNI",
+            AcmeEvent::ClientMissingSni => "ACME client missing SNI",
             AcmeEvent::TlsAlpnReceived => "ACME TLS ALPN received",
             AcmeEvent::TlsAlpnError => "ACME TLS ALPN error",
             AcmeEvent::TokenNotFound => "ACME token not found",
@@ -1980,7 +1979,7 @@ impl ArcEvent {
         match self {
             ArcEvent::ChainTooLong => "ARC chain too long",
             ArcEvent::InvalidInstance => "Invalid ARC instance",
-            ArcEvent::InvalidCV => "Invalid ARC CV",
+            ArcEvent::InvalidCv => "Invalid ARC CV",
             ArcEvent::HasHeaderTag => "ARC has header tag",
             ArcEvent::BrokenChain => "Broken ARC chain",
             ArcEvent::SealerNotFound => "ARC sealer not found",
@@ -2073,13 +2072,13 @@ impl StoreEvent {
         match self {
             StoreEvent::IngestError => "Message ingestion error",
             StoreEvent::AssertValueFailed => "Another process modified the record",
-            StoreEvent::FoundationDBError => "FoundationDB error",
-            StoreEvent::MySQLError => "MySQL error",
-            StoreEvent::PostgreSQLError => "PostgreSQL error",
-            StoreEvent::RocksDBError => "RocksDB error",
-            StoreEvent::SQLiteError => "SQLite error",
+            StoreEvent::FoundationdbError => "FoundationDB error",
+            StoreEvent::MysqlError => "MySQL error",
+            StoreEvent::PostgresqlError => "PostgreSQL error",
+            StoreEvent::RocksdbError => "RocksDB error",
+            StoreEvent::SqliteError => "SQLite error",
             StoreEvent::LdapError => "LDAP error",
-            StoreEvent::ElasticSearchError => "ElasticSearch error",
+            StoreEvent::ElasticsearchError => "ElasticSearch error",
             StoreEvent::RedisError => "Redis error",
             StoreEvent::S3Error => "S3 error",
             StoreEvent::FilesystemError => "Filesystem error",
@@ -2122,7 +2121,7 @@ impl JmapEvent {
             JmapEvent::CannotCalculateChanges => "Cannot calculate JMAP changes",
             JmapEvent::UnknownDataType => "Unknown JMAP data type",
             JmapEvent::UnknownCapability => "Unknown JMAP capability",
-            JmapEvent::NotJSON => "JMAP request is not JSON",
+            JmapEvent::NotJson => "JMAP request is not JSON",
             JmapEvent::NotRequest => "JMAP input is not a request",
             JmapEvent::WebsocketStart => "JMAP WebSocket connection started",
             JmapEvent::WebsocketStop => "JMAP WebSocket connection stopped",

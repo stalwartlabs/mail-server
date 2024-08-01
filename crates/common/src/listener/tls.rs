@@ -133,7 +133,7 @@ impl TcpAcceptor {
                                         let key = core.build_acme_certificate(domain).await;
 
                                         trc::event!(
-                                            Acme(trc::AcmeEvent::ClientSuppliedSNI),
+                                            Acme(trc::AcmeEvent::ClientSuppliedSni),
                                             ListenerId = instance.id.clone(),
                                             Protocol = instance.protocol,
                                             Name = domain.to_string(),
@@ -144,7 +144,7 @@ impl TcpAcceptor {
                                     }
                                     None => {
                                         trc::event!(
-                                            Acme(trc::AcmeEvent::ClientMissingSNI),
+                                            Acme(trc::AcmeEvent::ClientMissingSni),
                                             ListenerId = instance.id.clone(),
                                             Protocol = instance.protocol,
                                         );

@@ -418,7 +418,11 @@ impl JMAP {
         };
 
         Err(manage::unsupported(format!(
-            "Requested action is unsupported for {class} directories.",
+            concat!(
+                "{} directory cannot be managed. ",
+                "Only internal directories support inserts and update operations."
+            ),
+            class
         )))
     }
 }

@@ -38,5 +38,5 @@ pub struct RocksDbStore {
 
 #[inline(always)]
 fn into_error(err: rocksdb::Error) -> trc::Error {
-    trc::StoreEvent::RocksDBError.reason(err)
+    trc::StoreEvent::RocksdbError.reason(err)
 }

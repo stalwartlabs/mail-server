@@ -107,14 +107,14 @@ impl ElasticSearchStore {
         let json: Value = response
             .json()
             .await
-            .map_err(|err| trc::StoreEvent::ElasticSearchError.reason(err))?;
+            .map_err(|err| trc::StoreEvent::ElasticsearchError.reason(err))?;
         let mut results = RoaringBitmap::new();
 
         for hit in json["hits"]["hits"].as_array().ok_or_else(|| {
-            trc::StoreEvent::ElasticSearchError.reason("Invalid response from ElasticSearch")
+            trc::StoreEvent::ElasticsearchError.reason("Invalid response from ElasticSearch")
         })? {
             results.insert(hit["_source"]["document_id"].as_u64().ok_or_else(|| {
-                trc::StoreEvent::ElasticSearchError.reason("Invalid response from ElasticSearch")
+                trc::StoreEvent::ElasticsearchError.reason("Invalid response from ElasticSearch")
             })? as u32);
         }
 

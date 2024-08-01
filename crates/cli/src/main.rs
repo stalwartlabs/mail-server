@@ -174,6 +174,7 @@ pub enum Response<T> {
 
 #[derive(Deserialize)]
 #[serde(tag = "error")]
+#[serde(rename_all = "camelCase")]
 pub enum ManagementApiError {
     FieldAlreadyExists { field: String, value: String },
     FieldMissing { field: String },
@@ -181,7 +182,6 @@ pub enum ManagementApiError {
     Unsupported { details: String },
     AssertFailed,
     Other { details: String },
-    UnsupportedDirectoryOperation { class: String },
 }
 
 impl Client {
@@ -300,9 +300,6 @@ impl Display for ManagementApiError {
             }
             ManagementApiError::Other { details } => {
                 write!(f, "{}", details)
-            }
-            ManagementApiError::UnsupportedDirectoryOperation { class } => {
-                write!(f, "This operation is only available on internal directories. Your current directory is {class}.")
             }
         }
     }

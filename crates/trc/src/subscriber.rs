@@ -45,7 +45,10 @@ impl Subscriber {
 
     pub fn send_batch(&mut self) -> Result<(), ChannelError> {
         if !self.batch.is_empty() {
-            match self.tx.try_send(std::mem::take(&mut self.batch)) {
+            match self
+                .tx
+                .try_send(std::mem::replace(&mut self.batch, Vec::with_capacity(128)))
+            {
                 Ok(_) => Ok(()),
                 Err(TrySendError::Full(mut events)) => {
                     if self.lossy && events.len() > MAX_BATCH_SIZE {

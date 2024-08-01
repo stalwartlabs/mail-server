@@ -444,7 +444,7 @@ pub enum DeliveryEvent {
     MxLookupFailed,
     IpLookup,
     IpLookupFailed,
-    NullMX,
+    NullMx,
     Connect,
     ConnectError,
     MissingOutboundHostname,
@@ -693,8 +693,8 @@ pub enum AcmeEvent {
     DnsRecordLookupFailed,
     DnsRecordPropagated,
     DnsRecordPropagationTimeout,
-    ClientSuppliedSNI,
-    ClientMissingSNI,
+    ClientSuppliedSni,
+    ClientMissingSni,
     TlsAlpnReceived,
     TlsAlpnError,
     TokenNotFound,
@@ -741,7 +741,7 @@ pub enum ConfigEvent {
 pub enum ArcEvent {
     ChainTooLong,
     InvalidInstance,
-    InvalidCV,
+    InvalidCv,
     HasHeaderTag,
     BrokenChain,
     SealerNotFound,
@@ -817,13 +817,13 @@ pub enum StoreEvent {
     // Errors
     IngestError,
     AssertValueFailed,
-    FoundationDBError,
-    MySQLError,
-    PostgreSQLError,
-    RocksDBError,
-    SQLiteError,
+    FoundationdbError,
+    MysqlError,
+    PostgresqlError,
+    RocksdbError,
+    SqliteError,
     LdapError,
-    ElasticSearchError,
+    ElasticsearchError,
     RedisError,
     S3Error,
     FilesystemError,
@@ -874,7 +874,7 @@ pub enum JmapEvent {
 
     // Request errors
     UnknownCapability,
-    NotJSON,
+    NotJson,
     NotRequest,
 
     // Not JMAP standard

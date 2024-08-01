@@ -152,7 +152,7 @@ impl Serialize for MethodErrorWrapper {
                     ),
                 ),
                 trc::JmapEvent::UnknownCapability
-                | trc::JmapEvent::NotJSON
+                | trc::JmapEvent::NotJson
                 | trc::JmapEvent::NotRequest => (
                     "serverUnavailable",
                     concat!(

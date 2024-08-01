@@ -1,3 +1,14 @@
+Upgrading from `v0.8.3` to `v0.9.0`
+-----------------------------------
+
+Version `0.9.0` introduces significant internal improvements while maintaining compatibility with existing database layouts and configuration file formats from version `0.8.0`. As a result, no data or configuration migration is necessary. This release focuses on enhancing performance and functionality, particularly in logging and tracing capabilities.
+
+To upgrade to Stalwart Mail Server version `0.9.0` from `0.8.x`, begin by downloading the latest version of the `stalwart-mail` binary. Once downloaded, replace the existing binary with the new version. Additionally, it's important to update the WebAdmin interface to the latest version to ensure compatibility and to access new features introduced in this release.
+
+In terms of breaking changes, this release brings significant updates to webhooks. All webhook event names have been modified, requiring a thorough review and adjustment of existing webhook configurations. Furthermore, the update introduces hundreds of new event types, enhancing the granularity and specificity of event handling capabilities. Users should familiarize themselves with these changes to effectively integrate them into their systems.
+
+The reason for this release being classified as a major version, despite the absence of changes to the database or configuration formats, is the complete rewrite of the logging and tracing layer. This overhaul substantially improves the efficiency and speed of generating detailed tracing and logging events, making the system more robust and facilitating easier debugging and monitoring.
+
 Upgrading from `v0.7.3` to `v0.8.0`
 -----------------------------------
 

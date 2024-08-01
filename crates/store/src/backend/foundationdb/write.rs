@@ -94,7 +94,7 @@ impl FdbStore {
                                                     *key.last_mut().unwrap() += 1;
                                                 } else {
                                                     trx.cancel();
-                                                    return Err(trc::StoreEvent::FoundationDBError
+                                                    return Err(trc::StoreEvent::FoundationdbError
                                                         .ctx(
                                                             trc::Key::Reason,
                                                             "Value is too large",

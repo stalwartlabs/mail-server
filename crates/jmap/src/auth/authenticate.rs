@@ -160,25 +160,29 @@ impl JMAP {
     }
 
     pub async fn get_access_token(&self, account_id: u32) -> trc::Result<AccessToken> {
-        match self
+        let err = match self
             .core
             .storage
             .directory
             .query(QueryBy::Id(account_id), true)
             .await
         {
-            Ok(Some(principal)) => self.update_access_token(AccessToken::new(principal)).await,
+            Ok(Some(principal)) => {
+                return self.update_access_token(AccessToken::new(principal)).await
+            }
             Ok(None) => Err(trc::AuthEvent::Error
                 .into_err()
                 .details("Account not found.")
                 .caused_by(trc::location!())),
-            Err(err) => match &self.core.jmap.fallback_admin {
-                Some((_, secret)) if account_id == u32::MAX => {
-                    self.update_access_token(AccessToken::new(Principal::fallback_admin(secret)))
-                        .await
-                }
-                _ => Err(err),
-            },
+            Err(err) => Err(err),
+        };
+
+        match &self.core.jmap.fallback_admin {
+            Some((_, secret)) if account_id == u32::MAX => {
+                self.update_access_token(AccessToken::new(Principal::fallback_admin(secret)))
+                    .await
+            }
+            _ => err,
         }
     }
 }

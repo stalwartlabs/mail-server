@@ -707,7 +707,7 @@ impl ToRequestError for trc::Error {
         match self.as_ref() {
             trc::EventType::Jmap(cause) => match cause {
                 trc::JmapEvent::UnknownCapability => RequestError::unknown_capability(details),
-                trc::JmapEvent::NotJSON => RequestError::not_json(details),
+                trc::JmapEvent::NotJson => RequestError::not_json(details),
                 trc::JmapEvent::NotRequest => RequestError::not_request(details),
                 _ => RequestError::invalid_parameters(),
             },

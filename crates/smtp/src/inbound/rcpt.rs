@@ -280,7 +280,7 @@ impl<T: SessionStream> Session<T> {
 
         if self.is_allowed().await {
             trc::event!(
-                Smtp(SmtpEvent::RelayNotAllowed),
+                Smtp(SmtpEvent::RcptTo),
                 SpanId = self.data.session_id,
                 To = self.data.rcpt_to.last().unwrap().address_lcase.clone(),
             );

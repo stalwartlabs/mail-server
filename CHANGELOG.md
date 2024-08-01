@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.9.0] - 2024-08-01
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin. This version includes breaking changes to the Webhooks configuration and produces a slightly different log output, read [UPGRADING.md](UPGRADING.md) for details.
+
+## Added
+- Improved and faster tracing and logging.
+- Customizable event logging levels.
+
+### Changed
+
+### Fixed
+- ManageSieve: Return capabilities after successful `STARTTLS`
+- Do not provide `{auth_authen}` Milter macro unless the user is authenticated
+
 ## [0.8.5] - 2024-07-07
 
 To upgrade replace the `stalwart-mail` binary.

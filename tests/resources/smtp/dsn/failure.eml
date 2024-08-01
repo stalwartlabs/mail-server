@@ -2,6 +2,7 @@ From: "Mail Delivery Subsystem" <MAILER-DAEMON@example.org>
 To: sender@foobar.org
 Auto-Submitted: auto-generated
 Subject: Failed to deliver message
+MIME-Version: 1.0
 Content-Type: multipart/report; report-type="delivery-status"; 
 	boundary="mime_boundary"
 

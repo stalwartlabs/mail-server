@@ -500,7 +500,7 @@ impl DeliveryAttempt {
                     remote_hosts = remote_hosts_;
                 } else {
                     trc::event!(
-                        Delivery(DeliveryEvent::NullMX),
+                        Delivery(DeliveryEvent::NullMx),
                         SpanId = message.span_id,
                         Domain = domain.domain.clone(),
                         Elapsed = time.elapsed(),

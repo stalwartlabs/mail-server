@@ -130,6 +130,13 @@ impl Config {
         })
     }
 
+    pub fn prefix<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &str> + 'x {
+        let prefix = prefix.as_prefix();
+        self.keys
+            .keys()
+            .filter_map(move |key| key.strip_prefix(&prefix))
+    }
+
     pub fn set_values<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &str> + 'x {
         let prefix = prefix.as_prefix();
 

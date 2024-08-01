@@ -91,7 +91,7 @@ impl Tracers {
         // Parse custom logging levels
         let mut custom_levels = AHashMap::new();
         for event_name in config
-            .sub_keys("tracing.level", "")
+            .prefix("tracing.level")
             .map(|s| s.to_string())
             .collect::<Vec<_>>()
         {
@@ -176,17 +176,30 @@ impl Tracers {
                         continue;
                     }
                 }
-                "console" | "stdout" | "stderr" => TracerType::Console(ConsoleTracer {
-                    ansi: config
-                        .property_or_default(("tracer", id, "ansi"), "true")
-                        .unwrap_or(true),
-                    multiline: config
-                        .property_or_default(("tracer", id, "multiline"), "false")
-                        .unwrap_or(false),
-                    buffered: config
-                        .property_or_default(("tracer", id, "buffered"), "true")
-                        .unwrap_or(true),
-                }),
+                "console" | "stdout" | "stderr" => {
+                    if !tracers
+                        .iter()
+                        .any(|t| matches!(t.typ, TracerType::Console(_)))
+                    {
+                        TracerType::Console(ConsoleTracer {
+                            ansi: config
+                                .property_or_default(("tracer", id, "ansi"), "true")
+                                .unwrap_or(true),
+                            multiline: config
+                                .property_or_default(("tracer", id, "multiline"), "false")
+                                .unwrap_or(false),
+                            buffered: config
+                                .property_or_default(("tracer", id, "buffered"), "true")
+                                .unwrap_or(true),
+                        })
+                    } else {
+                        config.new_build_error(
+                            ("tracer", id, "type"),
+                            "Only one console tracer is allowed".to_string(),
+                        );
+                        continue;
+                    }
+                }
                 "otel" | "open-telemetry" => {
                     let timeout = config
                         .property::<Duration>(("tracer", id, "timeout"))
@@ -477,6 +490,7 @@ impl Tracers {
         }
 
         // Add default tracer if none were found
+        #[cfg(not(feature = "test_mode"))]
         if tracers.is_empty() {
             for event_type in EventType::variants() {
                 let event_level = custom_levels
@@ -493,7 +507,7 @@ impl Tracers {
                 interests: global_interests.clone(),
                 typ: TracerType::Console(ConsoleTracer {
                     ansi: true,
-                    multiline: true,
+                    multiline: false,
                     buffered: true,
                 }),
                 lossy: false,

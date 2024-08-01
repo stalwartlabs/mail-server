@@ -275,7 +275,7 @@ impl From<mail_auth::Error> for Event<EventType> {
             mail_auth::Error::ArcInvalidInstance(instance) => {
                 EventType::Arc(ArcEvent::InvalidInstance).ctx(Key::Id, instance)
             }
-            mail_auth::Error::ArcInvalidCV => EventType::Arc(ArcEvent::InvalidCV).into_err(),
+            mail_auth::Error::ArcInvalidCV => EventType::Arc(ArcEvent::InvalidCv).into_err(),
             mail_auth::Error::ArcHasHeaderTag => EventType::Arc(ArcEvent::HasHeaderTag).into_err(),
             mail_auth::Error::ArcBrokenChain => EventType::Arc(ArcEvent::BrokenChain).into_err(),
             mail_auth::Error::NotAligned => {

@@ -299,12 +299,12 @@ impl Subscriber {
         // https://systemd.io/JOURNAL_NATIVE_PROTOCOL/
         use std::os::unix::prelude::AsRawFd;
         // Write the whole payload to a memfd
-        let mut mem = memfd::create_sealable()?;
+        let mut mem = create_sealable()?;
         mem.write_all(payload)?;
         // Fully seal the memfd to signal journald that its backing data won't resize anymore
         // and so is safe to mmap.
-        memfd::seal_fully(mem.as_raw_fd())?;
-        socket::send_one_fd_to(&self.socket, mem.as_raw_fd(), JOURNALD_PATH)
+        seal_fully(mem.as_raw_fd())?;
+        send_one_fd_to(&self.socket, mem.as_raw_fd(), JOURNALD_PATH)
     }
 }
 
