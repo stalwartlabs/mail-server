@@ -31,7 +31,8 @@ pub enum TracerType {
     Log(LogTracer),
     Otel(OtelTracer),
     Webhook(WebhookTracer),
-    Journal,
+    #[cfg(unix)]
+    Journal(crate::tracing::journald::Subscriber),
 }
 
 #[derive(Debug)]
@@ -180,8 +181,8 @@ impl Tracers {
                         .property_or_default(("tracer", id, "ansi"), "true")
                         .unwrap_or(true),
                     multiline: config
-                        .property_or_default(("tracer", id, "multiline"), "true")
-                        .unwrap_or(true),
+                        .property_or_default(("tracer", id, "multiline"), "false")
+                        .unwrap_or(false),
                     buffered: config
                         .property_or_default(("tracer", id, "buffered"), "true")
                         .unwrap_or(true),
@@ -333,12 +334,36 @@ impl Tracers {
                     }
                 }
                 "journal" => {
-                    if !tracers.iter().any(|t| matches!(t.typ, TracerType::Journal)) {
-                        TracerType::Journal
-                    } else {
+                    #[cfg(unix)]
+                    {
+                        if !tracers
+                            .iter()
+                            .any(|t| matches!(t.typ, TracerType::Journal(_)))
+                        {
+                            match crate::tracing::journald::Subscriber::new() {
+                                Ok(subscriber) => TracerType::Journal(subscriber),
+                                Err(e) => {
+                                    config.new_build_error(
+                                        ("tracer", id, "type"),
+                                        format!("Failed to create journald subscriber: {e}"),
+                                    );
+                                    continue;
+                                }
+                            }
+                        } else {
+                            config.new_build_error(
+                                ("tracer", id, "type"),
+                                "Only one journal tracer is allowed".to_string(),
+                            );
+                            continue;
+                        }
+                    }
+
+                    #[cfg(not(unix))]
+                    {
                         config.new_build_error(
                             ("tracer", id, "type"),
-                            "Only one journal tracer is allowed".to_string(),
+                            "Journald is only available on Unix systems.",
                         );
                         continue;
                     }
@@ -385,7 +410,8 @@ impl Tracers {
                 TracerType::Webhook(_) => {
                     disabled_events.insert(EventType::Tracing(TracingEvent::WebhookError));
                 }
-                TracerType::Journal => {
+                #[cfg(unix)]
+                TracerType::Journal(_) => {
                     disabled_events.insert(EventType::Tracing(TracingEvent::JournalError));
                 }
             }

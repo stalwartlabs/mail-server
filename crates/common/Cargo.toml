@@ -1,6 +1,6 @@
 [package]
 name = "common"
-version = "0.8.5"
+version = "0.9.0"
 edition = "2021"
 resolver = "2"
 
@@ -57,10 +57,9 @@ zip = "2.1"
 pwhash = "1.0.0"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 
-
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"
-tracing-journald = "0.3"
+libc = "0.2.126"
 
 [features]
 test_mode = []

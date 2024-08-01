@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, cmp::Ordering, fmt::Display, str::FromStr};
-
 use crate::*;
+use base64::{engine::general_purpose::STANDARD, Engine};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display, str::FromStr};
 
 impl<T> Event<T> {
     pub fn with_capacity(inner: T, capacity: usize) -> Self {
@@ -611,12 +611,60 @@ impl<T> AddContext<T> for Result<T> {
     }
 }
 
-impl Display for Error {
+impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.inner)?;
-        for (key, value) in self.keys.iter() {
-            write!(f, "\n  {:?} = {:?}", key, value)?;
+        match self {
+            Value::Static(value) => value.fmt(f),
+            Value::String(value) => value.fmt(f),
+            Value::UInt(value) => value.fmt(f),
+            Value::Int(value) => value.fmt(f),
+            Value::Float(value) => value.fmt(f),
+            Value::Timestamp(value) => value.fmt(f),
+            Value::Duration(value) => value.fmt(f),
+            Value::Bytes(value) => STANDARD.encode(value).fmt(f),
+            Value::Bool(value) => value.fmt(f),
+            Value::Ipv4(value) => value.fmt(f),
+            Value::Ipv6(value) => value.fmt(f),
+            Value::Protocol(value) => value.name().fmt(f),
+            Value::Event(value) => {
+                "{".fmt(f)?;
+                value.fmt(f)?;
+                "}".fmt(f)
+            }
+            Value::Array(value) => {
+                f.write_str("[")?;
+                for (i, value) in value.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    value.fmt(f)?;
+                }
+                f.write_str("]")
+            }
+            Value::None => "(null)".fmt(f),
         }
+    }
+}
+
+impl Display for Event<EventType> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.description().fmt(f)?;
+        " (".fmt(f)?;
+        self.inner.name().fmt(f)?;
+        ")".fmt(f)?;
+
+        if !self.keys.is_empty() {
+            f.write_str(": ")?;
+            for (i, (key, value)) in self.keys.iter().enumerate() {
+                if i > 0 {
+                    f.write_str(", ")?;
+                }
+                key.name().fmt(f)?;
+                f.write_str(" = ")?;
+                value.fmt(f)?;
+            }
+        }
+
         Ok(())
     }
 }

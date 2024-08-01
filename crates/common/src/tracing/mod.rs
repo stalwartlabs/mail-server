@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+#[cfg(unix)]
+pub mod journald;
 pub mod log;
 pub mod otel;
 pub mod stdout;
@@ -97,13 +99,13 @@ impl Tracers {
 
 impl TracerType {
     pub fn spawn(self, builder: SubscriberBuilder) {
-        let todo = "journal";
         match self {
             TracerType::Console(settings) => spawn_console_tracer(builder, settings),
             TracerType::Log(settings) => spawn_log_tracer(builder, settings),
             TracerType::Webhook(settings) => spawn_webhook_tracer(builder, settings),
             TracerType::Otel(settings) => spawn_otel_tracer(builder, settings),
-            TracerType::Journal => todo!(),
+            #[cfg(unix)]
+            TracerType::Journal(subscriber) => journald::spawn_journald_tracer(builder, subscriber),
         }
     }
 }

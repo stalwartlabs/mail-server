@@ -1,6 +1,6 @@
 [package]
 name = "store"
-version = "0.8.5"
+version = "0.9.0"
 edition = "2021"
 resolver = "2"
 
