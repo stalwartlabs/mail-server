@@ -336,15 +336,16 @@ mod tests {
         let mut names = Vec::with_capacity(100);
 
         for event in EventType::variants() {
-            names.push(event.name());
+            names.push((event.name(), event.description(), event.level().as_str()));
             assert_eq!(EventType::try_parse(event.name()).unwrap(), event);
         }
 
-        // sort
-        names.sort();
+        // sort by name
+        names.sort_by(|a, b| a.0.cmp(b.0));
 
-        for name in names {
-            println!("{:?},", name);
+        for (name, description, level) in names {
+            //println!("{:?},", name);
+            println!("|`{name}`|{description}|`{level}`|")
         }
     }
 }

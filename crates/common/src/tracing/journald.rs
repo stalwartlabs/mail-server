@@ -204,34 +204,6 @@ impl Subscriber {
 
     /// Sets how [`tracing_core::Level`]s are mapped to [journald priorities](Priority).
     ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use tracing_journald::{Priority, PriorityMappings};
-    /// use tracing_subscriber::prelude::*;
-    /// use tracing::error;
-    ///
-    /// let registry = tracing_subscriber::registry();
-    /// match tracing_journald::subscriber() {
-    ///     Ok(subscriber) => {
-    ///         registry.with(
-    ///             subscriber
-    ///                 // We can tweak the mappings between the trace level and
-    ///                 // the journal priorities.
-    ///                 .with_priority_mappings(PriorityMappings {
-    ///                     info: Priority::Informational,
-    ///                     ..PriorityMappings::new()
-    ///                 }),
-    ///         );
-    ///     }
-    ///     // journald is typically available on Linux systems, but nowhere else. Portable software
-    ///     // should handle its absence gracefully.
-    ///     Err(e) => {
-    ///         registry.init();
-    ///         error!("couldn't connect to journald: {}", e);
-    ///     }
-    /// }
-    /// ```
     pub fn with_priority_mappings(mut self, mappings: PriorityMappings) -> Self {
         self.priority_mappings = mappings;
         self
@@ -311,11 +283,6 @@ impl Subscriber {
 impl PriorityMappings {
     /// Returns the default priority mappings:
     ///
-    /// - [`tracing::Level::ERROR`]: [`Priority::Error`] (3)
-    /// - [`tracing::Level::WARN`]: [`Priority::Warning`] (4)
-    /// - [`tracing::Level::INFO`]: [`Priority::Notice`] (5)
-    /// - [`tracing::Level::DEBUG`]: [`Priority::Informational`] (6)
-    /// - [`tracing::Level::TRACE`]: [`Priority::Debug`] (7)
     pub fn new() -> PriorityMappings {
         Self {
             error: Priority::Error,

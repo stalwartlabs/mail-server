@@ -37,7 +37,6 @@ form_urlencoded = "1.1.0"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"
-tracing-journald = "0.3"
 
 [features]
 test_mode = []

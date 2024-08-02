@@ -694,10 +694,11 @@ mod tests {
                 ),
                 Err(err) => {
                     assert_eq!(test_num, 3);
-                    assert!(matches!(
-                        err.value(trc::Key::Type).and_then(|v| v.as_str()).unwrap(),
-                        "invalidArguments"
-                    ));
+                    assert!(
+                        err.matches(trc::EventType::Jmap(trc::JmapEvent::InvalidArguments)),
+                        "{:?}",
+                        err
+                    );
                     continue;
                 }
             }
