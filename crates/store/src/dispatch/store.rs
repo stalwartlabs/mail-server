@@ -43,6 +43,8 @@ impl Store {
             Self::MySQL(store) => store.get_value(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_value(key).await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.get_value(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -63,6 +65,8 @@ impl Store {
             Self::MySQL(store) => store.get_bitmap(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_bitmap(key).await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.get_bitmap(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -106,6 +110,8 @@ impl Store {
             Self::MySQL(store) => store.iterate(params, cb).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.iterate(params, cb).await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.iterate(params, cb).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -126,6 +132,8 @@ impl Store {
             Self::MySQL(store) => store.get_counter(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_counter(key).await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.get_counter(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -189,6 +197,8 @@ impl Store {
                 Self::MySQL(store) => store.write(batch).await,
                 #[cfg(feature = "rocks")]
                 Self::RocksDb(store) => store.write(batch).await,
+                #[cfg(feature = "tikv")]
+                Self::TiKV(store) => store.write(batch).await,
                 Self::None => Err(trc::StoreEvent::NotConfigured.into()),
             }
             .caused_by(trc::location!())?;
@@ -231,6 +241,8 @@ impl Store {
             Self::MySQL(store) => store.write(batch).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.write(batch).await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.write(batch).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
     }
@@ -277,6 +289,8 @@ impl Store {
             Self::MySQL(store) => store.purge_store().await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.purge_store().await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.purge_store().await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -294,6 +308,8 @@ impl Store {
             Self::MySQL(store) => store.delete_range(from, to).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_range(from, to).await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.delete_range(from, to).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -447,6 +463,8 @@ impl Store {
             Self::MySQL(store) => store.get_blob(key, range).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.get_blob(key, range).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -464,6 +482,8 @@ impl Store {
             Self::MySQL(store) => store.put_blob(key, data).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.put_blob(key, data).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -481,6 +501,8 @@ impl Store {
             Self::MySQL(store) => store.delete_blob(key).await,
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_blob(key).await,
+            #[cfg(feature = "tikv")]
+            Self::TiKV(store) => store.delete_blob(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())

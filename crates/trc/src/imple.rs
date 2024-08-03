@@ -863,6 +863,7 @@ impl EventType {
                 | StoreEvent::PostgresqlError
                 | StoreEvent::RocksdbError
                 | StoreEvent::SqliteError
+                | StoreEvent::TikvError
                 | StoreEvent::LdapError
                 | StoreEvent::ElasticsearchError
                 | StoreEvent::RedisError
@@ -2077,6 +2078,7 @@ impl StoreEvent {
             StoreEvent::PostgresqlError => "PostgreSQL error",
             StoreEvent::RocksdbError => "RocksDB error",
             StoreEvent::SqliteError => "SQLite error",
+            StoreEvent::TikvError => "TiKV error",
             StoreEvent::LdapError => "LDAP error",
             StoreEvent::ElasticsearchError => "ElasticSearch error",
             StoreEvent::RedisError => "Redis error",

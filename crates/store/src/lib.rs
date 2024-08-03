@@ -46,6 +46,9 @@ use backend::elastic::ElasticSearchStore;
 #[cfg(feature = "redis")]
 use backend::redis::RedisStore;
 
+#[cfg(feature = "tikv")]
+use backend::tikv::TikvStore;
+
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self>;
 }
@@ -183,6 +186,8 @@ pub enum Store {
     MySQL(Arc<MysqlStore>),
     #[cfg(feature = "rocks")]
     RocksDb(Arc<RocksDbStore>),
+    #[cfg(feature = "tikv")]
+    TiKV(Arc<TikvStore>),
     #[default]
     None,
 }
@@ -260,6 +265,13 @@ impl From<MysqlStore> for Store {
 impl From<RocksDbStore> for Store {
     fn from(store: RocksDbStore) -> Self {
         Self::RocksDb(Arc::new(store))
+    }
+}
+
+#[cfg(feature = "tikv")]
+impl From<TikvStore> for Store {
+    fn from(store: TikvStore) -> Self {
+        Self::TiKV(Arc::new(store))
     }
 }
 
@@ -682,6 +694,8 @@ impl std::fmt::Debug for Store {
             Self::MySQL(_) => f.debug_tuple("MySQL").finish(),
             #[cfg(feature = "rocks")]
             Self::RocksDb(_) => f.debug_tuple("RocksDb").finish(),
+            #[cfg(feature = "tikv")]
+            Self::TiKV(_) => f.debug_tuple("TiKV").finish(),
             Self::None => f.debug_tuple("None").finish(),
         }
     }

@@ -22,6 +22,8 @@ pub mod rocksdb;
 pub mod s3;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
+#[cfg(feature = "tikv")]
+pub mod tikv;
 
 pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 1) as usize;
 pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;
