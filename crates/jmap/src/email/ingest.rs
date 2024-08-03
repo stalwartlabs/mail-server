@@ -158,7 +158,13 @@ impl JMAP {
                     .filter(
                         params.account_id,
                         Collection::Email,
-                        vec![Filter::eq(Property::MessageId, message_id)],
+                        vec![
+                            Filter::eq(Property::MessageId, message_id),
+                            Filter::is_in_bitmap(
+                                Property::MailboxIds,
+                                params.mailbox_ids.first().copied().unwrap_or(INBOX_ID),
+                            ),
+                        ],
                     )
                     .await
                     .caused_by(trc::location!())?
