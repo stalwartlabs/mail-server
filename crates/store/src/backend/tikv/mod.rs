@@ -5,15 +5,17 @@
  */
 
 use std::time::{Duration, Instant};
-
-//use foundationdb::{api::NetworkAutoStop, Database, FdbError, Transaction};
-use tikv_client::{TransactionClient, Transaction, Error as TikvError};
+use tikv_client::{TransactionClient, Transaction, Error as TikvError, Snapshot, Value, Key};
 
 pub mod blob;
 pub mod main;
 pub mod read;
 pub mod write;
 
+
+// https://github.com/tikv/tikv/issues/7272#issuecomment-604841372
+
+const MAX_KEY_SIZE: usize = 4 * 1024;
 const MAX_VALUE_SIZE: usize = 100000;
 const MAX_KEYS: u32 = 100000;
 const MAX_KV_PAIRS: u32 = 50000;
@@ -24,6 +26,36 @@ pub const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(4);
 pub struct TikvStore {
     client: TransactionClient,
     version: parking_lot::Mutex<ReadVersion>,
+}
+
+pub(crate) enum ReadTransaction {
+    Transaction(Transaction),
+    Snapshot(Snapshot)
+}
+
+impl ReadTransaction {
+    pub(crate) async fn get(&mut self, key: impl Into<Key>) -> trc::Result<Option<Value>> {
+        match self {
+            ReadTransaction::Transaction(trx) => {
+                trx.get(key).await.map_err(into_error)
+            }
+            ReadTransaction::Snapshot(ss) => {
+                ss.get(key).await.map_err(into_error)
+            }
+        }
+    }
+}
+
+impl From<Transaction> for ReadTransaction {
+    fn from(value: Transaction) -> Self {
+        Self::Transaction(value)
+    }
+}
+
+impl From<Snapshot> for ReadTransaction {
+    fn from(value: Snapshot) -> Self {
+        Self::Snapshot(value)
+    }
 }
 
 pub(crate) struct TimedTransaction {

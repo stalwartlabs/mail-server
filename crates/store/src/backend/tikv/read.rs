@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
-
-use tikv_client::{Transaction, Value};
+use bincode::Options;
+use tikv_client::{Key as TikvKey, Snapshot, Transaction, TransactionOptions, Value};
 use futures::TryStreamExt;
 use roaring::RoaringBitmap;
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE,
 };
 
-use super::{into_error, TikvStore};
+use super::{into_error, MAX_KEYS, MAX_KV_PAIRS, MAX_VALUE_SIZE, ReadTransaction, TikvStore};
 
 #[allow(dead_code)]
 pub(crate) enum ChunkedValue {
@@ -30,7 +30,14 @@ impl TikvStore {
     where
         U: Deserialize,
     {
-        todo!()
+        let key = key.serialize(WITH_SUBSPACE);
+        let read_trx = ReadTransaction::Snapshot(self.snapshot_trx().await?);
+
+        match read_chunked_value(&key, read_trx).await? {
+            ChunkedValue::Single(bytes) => U::deserialize(&bytes).map(Some),
+            ChunkedValue::Chunked { bytes, .. } => U::deserialize(&bytes).map(Some),
+            ChunkedValue::None => Ok(None),
+        }
     }
 
     pub(crate) async fn get_bitmap(
@@ -45,7 +52,52 @@ impl TikvStore {
         params: IterateParams<T>,
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
     ) -> trc::Result<()> {
-        todo!()
+        let mut begin: TikvKey = params.begin.serialize(WITH_SUBSPACE).into();
+        let end: TikvKey = params.end.serialize(WITH_SUBSPACE).into();
+
+        if !params.first {
+            let mut trx = self.snapshot_trx().await?;
+            loop {
+                let mut values = trx
+                    .scan((begin.clone(), end.clone()), MAX_KV_PAIRS)
+                    .await
+                    .map_err(into_error)?;
+
+                let mut last_key: TikvKey = begin.clone();
+
+                let mut total_kv_pairs = 0;
+
+                while let Some(kv_pair) = values.next() {
+                    total_kv_pairs += 1;
+                    // Costly
+                    last_key = kv_pair.key().clone();
+                    let key: &[u8] = kv_pair.key().into();
+                    let value: &[u8] = kv_pair.key().into();
+
+                    cb(key.get(1..).unwrap_or_default(), value)?;
+                }
+
+                if total_kv_pairs != MAX_KV_PAIRS {
+                    begin = last_key;
+                    break;
+                }
+            }
+        } else {
+            let mut trx = self.snapshot_trx().await?;
+            let mut values = trx
+                .scan((begin, end), 1)
+                .await
+                .map_err(into_error)?;
+
+            if let Some(kv_pair) = values.next() {
+                let key: &[u8] = kv_pair.key().into();
+                let value: &[u8] = kv_pair.key().into();
+
+                cb(key.get(1..).unwrap_or_default(), value)?;
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn get_counter(
@@ -56,18 +108,50 @@ impl TikvStore {
     }
 
     pub(crate) async fn read_trx(&self) -> trc::Result<Transaction> {
-        todo!()
+        self.client
+            .begin_optimistic()
+            .await
+            .map_err(into_error)
     }
 
-    pub(crate) async fn timed_read_trx(&self) -> trc::Result<Transaction> {
-        todo!()
+    pub(crate) async fn snapshot_trx(&self) -> trc::Result<Snapshot> {
+        let timestamp = self.client
+            .current_timestamp()
+            .await
+            .map_err(into_error)?;
+
+        Ok(self.client.snapshot(timestamp, TransactionOptions::new_optimistic()))
     }
 }
 
 pub(crate) async fn read_chunked_value(
     key: &[u8],
-    trx: &Transaction,
-    snapshot: bool,
+    mut read_trx: ReadTransaction
 ) -> trc::Result<ChunkedValue> {
-    todo!()
+    // TODO: Costly, redo
+    if let Some(bytes) = read_trx.get(key.to_vec()).await? {
+        if bytes.len() < MAX_VALUE_SIZE {
+            Ok(ChunkedValue::Single(bytes))
+        } else {
+            let mut value = Vec::with_capacity(bytes.len() * 2);
+            value.extend_from_slice(&bytes);
+            let mut key = KeySerializer::new(key.len() + 1)
+                .write(key)
+                .write(0u8)
+                .finalize();
+
+            // TODO: Costly, redo
+            while let Some(bytes) = read_trx.get(key.clone()).await? {
+                value.extend_from_slice(&bytes);
+                *key.last_mut().unwrap() += 1;
+            }
+
+            Ok(ChunkedValue::Chunked {
+                bytes: value,
+                n_chunks: *key.last().unwrap(),
+            })
+        }
+    } else {
+        Ok(ChunkedValue::None)
+    }
 }

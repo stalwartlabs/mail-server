@@ -13,13 +13,12 @@ use super::TikvStore;
 
 impl TikvStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
-
         let prefix = prefix.as_key();
 
         // Parse as SocketAddr but don't use it. TransactionClient takes only a String vector
-        let pd_endpoints = config.properties::<SocketAddr>((&prefix, "pd-endpoints"))
+        let pd_endpoints = config.properties::<String>((&prefix, "pd-endpoints"))
             .into_iter()
-            .map(|(addr_str, _socket_addr)| addr_str)
+            .map(|(_key, addr_str)| addr_str)
             .collect();
 
         let client = TransactionClient::new(pd_endpoints)
