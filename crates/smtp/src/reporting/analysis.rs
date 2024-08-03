@@ -395,7 +395,7 @@ impl LogReport for Report {
             }
         }
 
-        trc::eventd!(
+        trc::event!(
             IncomingReport(
                 if (dmarc_reject + dmarc_quarantine + dkim_fail + spf_fail) > 0 {
                     IncomingReportEvent::DmarcReportWithWarnings
@@ -438,7 +438,7 @@ impl LogReport for TlsReport {
                 }
             }
 
-            trc::eventd!(
+            trc::event!(
                 IncomingReport(if policy.summary.total_failure > 0 {
                     IncomingReportEvent::TlsReportWithWarnings
                 } else {
@@ -450,7 +450,7 @@ impl LogReport for TlsReport {
                 Domain = policy.policy.policy_domain.clone(),
                 From = self.contact_info.as_deref().unwrap_or_default().to_string(),
                 Id = self.report_id.clone(),
-                PolicyType = format!("{:?}", policy.policy.policy_type),
+                Policy = format!("{:?}", policy.policy.policy_type),
                 TotalSuccesses = policy.summary.total_success,
                 TotalFailures = policy.summary.total_failure,
                 Details = format!("{details:?}"),
@@ -472,7 +472,7 @@ impl LogReport for Feedback<'_> {
 
         */
 
-        trc::eventd!(
+        trc::event!(
             IncomingReport(match self.feedback_type() {
                 mail_auth::report::FeedbackType::Abuse => IncomingReportEvent::AbuseReport,
                 mail_auth::report::FeedbackType::AuthFailure =>
@@ -501,7 +501,7 @@ impl LogReport for Feedback<'_> {
                 .map(|d| trc::Value::String(d.to_string()))
                 .collect::<Vec<_>>(),
             RemoteIp = self.source_ip(),
-            Count = self.incidents(),
+            Total = self.incidents(),
             Result = format!("{:?}", self.delivery_result()),
             Details = self
                 .authentication_results()

@@ -96,6 +96,7 @@ impl JMAP {
         })?;
 
         // Check for Spam headers
+        let mut is_spam = false;
         if let Some((header_name, header_value)) = &self.core.jmap.spam_header {
             if params.mailbox_ids == [INBOX_ID]
                 && message.root_part().headers().iter().any(|header| {
@@ -107,6 +108,7 @@ impl JMAP {
                 })
             {
                 params.mailbox_ids[0] = JUNK_ID;
+                is_spam = true;
             }
         }
 
@@ -344,6 +346,7 @@ impl JMAP {
             BlobId = blob_id.hash.to_hex(),
             ChangeId = change_id,
             Size = raw_message_len as u64,
+            Spam = is_spam,
             Elapsed = start_time.elapsed(),
         );
 

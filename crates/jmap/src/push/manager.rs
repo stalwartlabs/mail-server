@@ -327,7 +327,7 @@ async fn http_request(
                     PushSubscription(PushSubscriptionEvent::Error),
                     Details = "HTTP POST failed",
                     Url = url,
-                    Status = response.status().as_u16(),
+                    Code = response.status().as_u16(),
                 );
 
                 false

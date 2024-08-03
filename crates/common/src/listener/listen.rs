@@ -359,7 +359,7 @@ impl ServerInstance {
                                 .protocol_version()
                                 .unwrap_or(rustls::ProtocolVersion::TLSv1_3)
                         ),
-                        Cipher = format!(
+                        Details = format!(
                             "{:?}",
                             stream
                                 .get_ref()

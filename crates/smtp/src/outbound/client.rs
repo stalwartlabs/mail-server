@@ -189,7 +189,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
                     trc::event!(
                         Delivery(DeliveryEvent::RawOutput),
                         SpanId = self.session_id,
-                        Contents = bdat_cmd.clone()
+                        Contents = bdat_cmd.clone(),
+                        Size = bdat_cmd.len()
                     );
 
                     self.write_chunks(&[bdat_cmd.as_bytes(), &raw_message])
@@ -198,7 +199,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
                     trc::event!(
                         Delivery(DeliveryEvent::RawOutput),
                         SpanId = self.session_id,
-                        Contents = "DATA\r\n"
+                        Contents = "DATA\r\n",
+                        Size = 6
                     );
 
                     self.write_chunks(&[b"DATA\r\n"]).await?;
@@ -250,7 +252,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
         trc::event!(
             Delivery(DeliveryEvent::RawOutput),
             SpanId = self.session_id,
-            Contents = cmd.clone()
+            Contents = cmd.clone(),
+            Size = cmd.len()
         );
 
         tokio::time::timeout(params.timeout_ehlo, async {
@@ -267,7 +270,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
         trc::event!(
             Delivery(DeliveryEvent::RawOutput),
             SpanId = self.session_id,
-            Contents = "QUIT\r\n"
+            Contents = "QUIT\r\n",
+            Size = 6
         );
 
         let _ = tokio::time::timeout(Duration::from_secs(10), async {
@@ -294,7 +298,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
             trc::event!(
                 Delivery(DeliveryEvent::RawInput),
                 SpanId = self.session_id,
-                Contents = trc::Value::from_maybe_string(&buf[..br])
+                Contents = trc::Value::from_maybe_string(&buf[..br]),
+                Size = br,
             );
 
             let mut iter = if buf_concat.is_empty() {
@@ -346,7 +351,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
                 trc::event!(
                     Delivery(DeliveryEvent::RawInput),
                     SpanId = self.session_id,
-                    Contents = trc::Value::from_maybe_string(&buf[..br])
+                    Contents = trc::Value::from_maybe_string(&buf[..br]),
+                    Size = br
                 );
 
                 match parser.parse(&mut buf[..br].iter()) {
@@ -378,7 +384,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
                 trc::event!(
                     Delivery(DeliveryEvent::RawInput),
                     SpanId = self.session_id,
-                    Contents = trc::Value::from_maybe_string(&buf[..br])
+                    Contents = trc::Value::from_maybe_string(&buf[..br]),
+                    Size = br
                 );
 
                 loop {
@@ -415,7 +422,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
             trc::event!(
                 Delivery(DeliveryEvent::RawOutput),
                 SpanId = self.session_id,
-                Contents = trc::Value::from_maybe_string(cmd)
+                Contents = trc::Value::from_maybe_string(cmd),
+                Size = cmd.len()
             );
 
             self.stream.write_all(cmd).await?;
@@ -440,7 +448,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
             Delivery(DeliveryEvent::RawOutput),
             SpanId = self.session_id,
             Contents = "[message]",
-            Size = message.len()
+            Size = message.len() + 5
         );
 
         let mut last_pos = 0;

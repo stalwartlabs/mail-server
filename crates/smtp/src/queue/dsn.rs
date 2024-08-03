@@ -85,7 +85,7 @@ impl SMTP {
                         Details = response.response.to_string(),
                         NextRetry = trc::Value::Timestamp(domain.retry.due),
                         Expires = trc::Value::Timestamp(domain.expires),
-                        Count = domain.retry.inner,
+                        Total = domain.retry.inner,
                     );
                 }
                 Status::PermanentFailure(response) => {
@@ -95,7 +95,7 @@ impl SMTP {
                         To = rcpt.address_lcase.clone(),
                         Hostname = response.hostname.entity.clone(),
                         Details = response.response.to_string(),
-                        Count = domain.retry.inner,
+                        Total = domain.retry.inner,
                     );
                 }
                 Status::Scheduled => {
@@ -107,7 +107,7 @@ impl SMTP {
                                 SpanId = message.span_id,
                                 To = rcpt.address_lcase.clone(),
                                 Details = err.to_string(),
-                                Count = domain.retry.inner,
+                                Total = domain.retry.inner,
                             );
                         }
                         Status::TemporaryFailure(err) if domain.notify.due <= now => {
@@ -118,7 +118,7 @@ impl SMTP {
                                 Details = err.to_string(),
                                 NextRetry = trc::Value::Timestamp(domain.retry.due),
                                 Expires = trc::Value::Timestamp(domain.expires),
-                                Count = domain.retry.inner,
+                                Total = domain.retry.inner,
                             );
                         }
                         Status::Scheduled if domain.notify.due <= now => {
@@ -129,7 +129,7 @@ impl SMTP {
                                 Details = "Concurrency limited",
                                 NextRetry = trc::Value::Timestamp(domain.retry.due),
                                 Expires = trc::Value::Timestamp(domain.expires),
-                                Count = domain.retry.inner,
+                                Total = domain.retry.inner,
                             );
                         }
                         _ => continue,

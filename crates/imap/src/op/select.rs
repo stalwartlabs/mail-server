@@ -130,7 +130,7 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Imap(trc::ImapEvent::Select),
                 SpanId = self.session_id,
-                Name = arguments.mailbox_name.clone(),
+                MailboxName = arguments.mailbox_name.clone(),
                 AccountId = mailbox.id.account_id,
                 MailboxId = mailbox.id.mailbox_id,
                 Total = total_messages,

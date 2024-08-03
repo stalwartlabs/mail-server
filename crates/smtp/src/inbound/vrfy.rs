@@ -44,7 +44,7 @@ impl<T: SessionStream> Session<T> {
                         trc::event!(
                             Smtp(SmtpEvent::Vrfy),
                             SpanId = self.data.session_id,
-                            Name = address,
+                            To = address,
                             Result = values,
                         );
 
@@ -54,7 +54,7 @@ impl<T: SessionStream> Session<T> {
                         trc::event!(
                             Smtp(SmtpEvent::VrfyNotFound),
                             SpanId = self.data.session_id,
-                            Name = address,
+                            To = address,
                         );
 
                         self.write(b"550 5.1.2 Address not found.\r\n").await
@@ -78,7 +78,7 @@ impl<T: SessionStream> Session<T> {
                 trc::event!(
                     Smtp(SmtpEvent::VrfyDisabled),
                     SpanId = self.data.session_id,
-                    Name = address,
+                    To = address,
                 );
 
                 self.write(b"252 2.5.1 VRFY is disabled.\r\n").await
@@ -119,7 +119,7 @@ impl<T: SessionStream> Session<T> {
                         trc::event!(
                             Smtp(SmtpEvent::Expn),
                             SpanId = self.data.session_id,
-                            Name = address,
+                            To = address,
                             Result = values,
                         );
 
@@ -129,7 +129,7 @@ impl<T: SessionStream> Session<T> {
                         trc::event!(
                             Smtp(SmtpEvent::ExpnNotFound),
                             SpanId = self.data.session_id,
-                            Name = address,
+                            To = address,
                         );
 
                         self.write(b"550 5.1.2 Mailing list not found.\r\n").await
@@ -153,7 +153,7 @@ impl<T: SessionStream> Session<T> {
                 trc::event!(
                     Smtp(SmtpEvent::ExpnDisabled),
                     SpanId = self.data.session_id,
-                    Name = address,
+                    To = address,
                 );
 
                 self.write(b"252 2.5.1 EXPN is disabled.\r\n").await

@@ -118,7 +118,7 @@ impl<T: SessionStream> SessionData<T> {
         trc::event!(
             Imap(trc::ImapEvent::DeleteMailbox),
             SpanId = self.session_id,
-            Name = arguments.mailbox_name,
+            MailboxName = arguments.mailbox_name,
             AccountId = account_id,
             MailboxId = mailbox_id,
             Elapsed = op_start.elapsed()

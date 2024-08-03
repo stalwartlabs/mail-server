@@ -241,8 +241,10 @@ impl<T: SessionStream> Session<T> {
                 trc::event!(
                     OutgoingReport(OutgoingReportEvent::DmarcRateLimited),
                     SpanId = self.data.session_id,
-                    Limit = failure_rate.requests,
-                    Interval = failure_rate.period
+                    Limit = vec![
+                        trc::Value::from(failure_rate.requests),
+                        trc::Value::from(failure_rate.period)
+                    ],
                 );
             }
         }

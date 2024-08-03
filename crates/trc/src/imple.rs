@@ -16,6 +16,10 @@ impl<T> Event<T> {
         }
     }
 
+    pub fn with_keys(inner: T, keys: Vec<(Key, Value)>) -> Self {
+        Self { inner, keys }
+    }
+
     pub fn new(inner: T) -> Self {
         Self {
             inner,
@@ -124,11 +128,6 @@ impl Event<EventType> {
     #[inline(always)]
     pub fn collection(self, id: impl Into<u8>) -> Self {
         self.ctx(Key::Collection, id.into() as u64)
-    }
-
-    #[inline(always)]
-    pub fn property(self, id: impl Into<u8>) -> Self {
-        self.ctx(Key::Property, id.into() as u64)
     }
 
     #[inline(always)]

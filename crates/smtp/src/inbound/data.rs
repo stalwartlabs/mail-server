@@ -72,7 +72,7 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Smtp(SmtpEvent::LoopDetected),
                 SpanId = self.data.session_id,
-                Count = auth_message.received_headers_count(),
+                Total = auth_message.received_headers_count(),
             );
 
             return (&b"450 4.4.6 Too many Received headers. Possible loop detected.\r\n"[..])
@@ -123,7 +123,7 @@ impl<T: SessionStream> Session<T> {
                 }
             }
 
-            trc::eventd!(
+            trc::event!(
                 Smtp(if pass {
                     SmtpEvent::DkimPass
                 } else {
@@ -179,7 +179,7 @@ impl<T: SessionStream> Session<T> {
             let strict = arc.is_strict();
             let pass = matches!(arc_output.result(), DkimResult::Pass | DkimResult::None);
 
-            trc::eventd!(
+            trc::event!(
                 Smtp(if pass {
                     SmtpEvent::ArcPass
                 } else {
@@ -273,7 +273,7 @@ impl<T: SessionStream> Session<T> {
                 };
                 let dmarc_policy = dmarc_output.policy();
 
-                trc::eventd!(
+                trc::event!(
                     Smtp(if pass {
                         SmtpEvent::DmarcPass
                     } else {
@@ -474,7 +474,7 @@ impl<T: SessionStream> Session<T> {
                                                 Smtp(SmtpEvent::PipeSuccess),
                                                 SpanId = self.data.session_id,
                                                 Path = command_,
-                                                Status = output.status.to_string(),
+                                                Result = output.status.to_string(),
                                             );
                                         }
                                         Ok(Err(err)) => {
@@ -882,6 +882,7 @@ impl<T: SessionStream> Session<T> {
                 trc::event!(
                     Smtp(SmtpEvent::TooManyMessages),
                     SpanId = self.data.session_id,
+                    Limit = self.data.messages_sent
                 );
 
                 self.write(b"451 4.4.5 Maximum number of messages per session exceeded.\r\n")

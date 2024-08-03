@@ -319,7 +319,7 @@ async fn exec_remote_(ctx: &PluginContext<'_>) -> trc::Result<Variable> {
         trc::event!(
             Spam(trc::SpamEvent::ListUpdated),
             Url = resource.as_ref().to_string(),
-            Count = list.entries.len(),
+            Total = list.entries.len(),
         );
 
         // Update expiration
@@ -328,7 +328,7 @@ async fn exec_remote_(ctx: &PluginContext<'_>) -> trc::Result<Variable> {
     } else {
         trc::bail!(trc::SieveEvent::RuntimeError
             .into_err()
-            .ctx(trc::Key::Status, response.status().as_u16())
+            .ctx(trc::Key::Code, response.status().as_u16())
             .ctx(trc::Key::Url, resource.to_string())
             .details("Failed to fetch remote list"));
     }

@@ -58,7 +58,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         trc::event!(
             ManageSieve(trc::ManageSieveEvent::SetActive),
             SpanId = self.session_id,
-            Name = name,
+            Id = name,
             Elapsed = op_start.elapsed()
         );
 

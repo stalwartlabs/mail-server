@@ -416,7 +416,7 @@ impl JmapInstance {
                                 HttpResponseBody::Stream(_) => trc::Value::Static("[stream]"),
                                 _ => trc::Value::None,
                             },
-                            Status = response.status.as_u16(),
+                            Code = response.status.as_u16(),
                             Size = response.size(),
                         );
 

@@ -152,8 +152,8 @@ impl<T: SessionStream> Session<T> {
                 trc::event!(
                     Smtp(SmtpEvent::RcptToRewritten),
                     SpanId = self.data.session_id,
-                    OldName = rcpt.address_lcase.clone(),
-                    Name = new_address.clone(),
+                    Details = rcpt.address_lcase.clone(),
+                    To = new_address.clone(),
                 );
 
                 if new_address.contains('@') {
@@ -310,6 +310,7 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Smtp(SmtpEvent::TooManyInvalidRcpt),
                 SpanId = self.data.session_id,
+                Limit = self.params.rcpt_errors_max,
             );
 
             self.write(b"421 4.3.0 Too many errors, disconnecting.\r\n")

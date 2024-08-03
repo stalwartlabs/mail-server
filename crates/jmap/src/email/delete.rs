@@ -241,7 +241,7 @@ impl JMAP {
                 trc::event!(
                     Purge(trc::PurgeEvent::PurgeActive),
                     AccountId = account_id,
-                    Count = count,
+                    Total = count,
                 );
                 return;
             }
@@ -343,7 +343,7 @@ impl JMAP {
         trc::event!(
             Purge(trc::PurgeEvent::AutoExpunge),
             AccountId = account_id,
-            Count = destroy_ids.len(),
+            Total = destroy_ids.len(),
         );
 
         // Tombstone messages
@@ -389,7 +389,7 @@ impl JMAP {
         trc::event!(
             Purge(trc::PurgeEvent::TombstoneCleanup),
             AccountId = account_id,
-            Count = tombstoned_ids.len(),
+            Total = tombstoned_ids.len(),
         );
 
         // Delete full-text index

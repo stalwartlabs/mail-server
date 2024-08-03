@@ -214,6 +214,7 @@ fn build_signature(config: &mut Config, id: &str) -> Option<(DkimSigner, ArcSeal
         Algorithm::RsaSha256 => {
             let pk = config
                 .value_require(("signature", id, "private-key"))?
+                .trim()
                 .to_string();
             let key = RsaKey::<Sha256>::from_rsa_pem(&pk)
                 .or_else(|_| RsaKey::<Sha256>::from_pkcs8_pem(&pk))

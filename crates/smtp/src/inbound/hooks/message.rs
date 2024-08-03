@@ -52,7 +52,7 @@ impl<T: SessionStream> Session<T> {
 
             match self.run_mta_hook(stage, mta_hook, message).await {
                 Ok(response) => {
-                    trc::eventd!(
+                    trc::event!(
                         MtaHook(match response.action {
                             Action::Accept => MtaHookEvent::ActionAccept,
                             Action::Discard => MtaHookEvent::ActionDiscard,

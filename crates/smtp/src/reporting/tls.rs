@@ -154,7 +154,7 @@ impl SMTP {
                                         OutgoingReport(OutgoingReportEvent::HttpSubmission),
                                         SpanId = span_id,
                                         Url = uri.to_string(),
-                                        Status = response.status().as_u16(),
+                                        Code = response.status().as_u16(),
                                     );
 
                                     self.delete_tls_report(events).await;
@@ -164,7 +164,7 @@ impl SMTP {
                                         OutgoingReport(OutgoingReportEvent::SubmissionError),
                                         SpanId = span_id,
                                         Url = uri.to_string(),
-                                        Status = response.status().as_u16(),
+                                        Code = response.status().as_u16(),
                                         Details = "Invalid HTTP response"
                                     );
                                 }

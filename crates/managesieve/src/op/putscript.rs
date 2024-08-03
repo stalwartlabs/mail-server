@@ -183,11 +183,10 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             trc::event!(
                 ManageSieve(trc::ManageSieveEvent::UpdateScript),
                 SpanId = self.session_id,
-                Name = name.to_string(),
+                Id = name.to_string(),
                 DocumentId = document_id,
                 Size = script_size,
                 Elapsed = op_start.elapsed(),
-
             );
         } else {
             // Write script blob
@@ -235,7 +234,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             trc::event!(
                 ManageSieve(trc::ManageSieveEvent::CreateScript),
                 SpanId = self.session_id,
-                Name = name,
+                Id = name,
                 DocumentId = assigned_ids.last_document_id().ok(),
                 Elapsed = op_start.elapsed()
             );

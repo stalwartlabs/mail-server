@@ -336,7 +336,7 @@ impl JMAP {
 
         trc::event!(
             Jmap(JmapEvent::MethodCall),
-            Name = method_name,
+            Id = method_name,
             SpanId = session.session_id,
             AccountId = access_token.primary_id(),
             Elapsed = op_start.elapsed(),

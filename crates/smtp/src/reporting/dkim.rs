@@ -35,8 +35,10 @@ impl<T: SessionStream> Session<T> {
                 OutgoingReport(OutgoingReportEvent::DkimRateLimited),
                 SpanId = self.data.session_id,
                 To = rcpt.to_string(),
-                Limit = rate.requests,
-                Interval = rate.period
+                Limit = vec![
+                    trc::Value::from(rate.requests),
+                    trc::Value::from(rate.period)
+                ],
             );
 
             return;

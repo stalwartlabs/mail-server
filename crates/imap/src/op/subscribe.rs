@@ -162,7 +162,7 @@ impl<T: SessionStream> SessionData<T> {
             }
         }
 
-        trc::eventd!(
+        trc::event!(
             Imap(if subscribe {
                 trc::ImapEvent::Subscribe
             } else {
@@ -171,7 +171,7 @@ impl<T: SessionStream> SessionData<T> {
             SpanId = self.session_id,
             AccountId = account_id,
             MailboxId = mailbox_id,
-            Name = mailbox_name,
+            MailboxName = mailbox_name,
             Elapsed = op_start.elapsed()
         );
 

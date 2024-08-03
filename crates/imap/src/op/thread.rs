@@ -104,7 +104,7 @@ impl<T: SessionStream> SessionData<T> {
             SpanId = self.session_id,
             AccountId = mailbox.id.account_id,
             MailboxId = mailbox.id.mailbox_id,
-            Count = threads.len(),
+            Total = threads.len(),
             Elapsed = op_start.elapsed()
         );
 

@@ -103,8 +103,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         trc::event!(
             ManageSieve(trc::ManageSieveEvent::RenameScript),
             SpanId = self.session_id,
-            OldName = name,
-            Name = new_name,
+            Id = new_name,
             DocumentId = document_id,
             Elapsed = op_start.elapsed()
         );

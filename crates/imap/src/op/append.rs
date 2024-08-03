@@ -147,7 +147,7 @@ impl<T: SessionStream> SessionData<T> {
         trc::event!(
             Imap(trc::ImapEvent::Append),
             SpanId = self.session_id,
-            Name = arguments.mailbox_name.clone(),
+            MailboxName = arguments.mailbox_name.clone(),
             AccountId = account_id,
             MailboxId = mailbox_id,
             DocumentId = created_ids

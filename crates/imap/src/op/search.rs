@@ -208,7 +208,7 @@ impl<T: SessionStream> SessionData<T> {
             results_tx.send(saved_results).ok();
         }
 
-        trc::eventd!(
+        trc::event!(
             Imap(if !is_sort {
                 trc::ImapEvent::Search
             } else {

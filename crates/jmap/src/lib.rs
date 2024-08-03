@@ -190,7 +190,7 @@ impl JMAP {
                     .account_id(account_id)
                     .collection(collection)
                     .document_id(document_id)
-                    .property(property)
+                    .id(property.to_string())
             })
     }
 
@@ -244,7 +244,7 @@ impl JMAP {
                 err.caused_by(trc::location!())
                     .account_id(account_id)
                     .collection(collection)
-                    .property(property)
+                    .id(property.to_string())
             })
             .map(|_| results)
     }
@@ -291,7 +291,7 @@ impl JMAP {
                 err.caused_by(trc::location!())
                     .account_id(account_id)
                     .collection(collection)
-                    .property(property)
+                    .id(property.to_string())
             })
     }
 
@@ -354,7 +354,7 @@ impl JMAP {
                     Err(trc::LimitEvent::Quota
                         .into_err()
                         .ctx(trc::Key::Limit, account_quota as u64)
-                        .ctx(trc::Key::Used, used_quota as u64))
+                        .ctx(trc::Key::Size, used_quota as u64))
                 }
             })
     }

@@ -55,7 +55,7 @@ pub(crate) fn spawn_webhook_tracer(builder: SubscriberBuilder, settings: Webhook
                         trc::event!(
                             Tracing(TracingEvent::WebhookError),
                             Details = "Discarded stale events",
-                            Count = discard_count
+                            Total = discard_count
                         );
                     }
                 }

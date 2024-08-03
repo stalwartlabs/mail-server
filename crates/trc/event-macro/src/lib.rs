@@ -6,7 +6,9 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields};
+use syn::{
+    parse::Parse, parse_macro_input, Data, DeriveInput, Expr, ExprPath, Fields, Ident, Token,
+};
 
 static mut GLOBAL_ID_COUNTER: usize = 0;
 
@@ -224,4 +226,116 @@ fn to_snake_case(name: &str) -> String {
         }
     }
     out
+}
+
+struct EventMacroInput {
+    event: Ident,
+    param: Expr,
+    key_values: Vec<(Ident, Expr)>,
+}
+
+impl Parse for EventMacroInput {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let event: Ident = input.parse()?;
+        let content;
+        syn::parenthesized!(content in input);
+        let param: Expr = content.parse()?;
+
+        let mut key_values = Vec::new();
+        while !input.is_empty() {
+            input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                break;
+            }
+            let key: Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+            let value: Expr = input.parse()?;
+            key_values.push((key, value));
+        }
+
+        Ok(EventMacroInput {
+            event,
+            param,
+            key_values,
+        })
+    }
+}
+
+#[proc_macro]
+pub fn event(input: TokenStream) -> TokenStream {
+    let EventMacroInput {
+        event,
+        param,
+        key_values,
+    } = parse_macro_input!(input as EventMacroInput);
+
+    let key_value_tokens = key_values.iter().map(|(key, value)| {
+        quote! {
+            (trc::Key::#key, trc::Value::from(#value))
+        }
+    });
+    // This avoid having to evaluate expensive values when we know we are not interested in the event
+    let key_value_metric_tokens = key_values.iter().filter_map(|(key, value)| {
+        if key.is_metric_key() {
+            Some(quote! {
+                (trc::Key::#key, trc::Value::from(#value))
+            })
+        } else {
+            None
+        }
+    });
+
+    let expanded = if matches!(&param, Expr::Path(ExprPath { path, .. })  if path.segments.len() > 1 && path.segments.last().unwrap().arguments.is_empty() )
+    {
+        quote! {{
+            const ET: trc::EventType = trc::EventType::#event(#param);
+            const ET_ID: usize = ET.id();
+            if trc::collector::Collector::has_interest(ET_ID) {
+                trc::Event::with_keys(ET, vec![#(#key_value_tokens),*]).send();
+            } else if trc::collector::Collector::is_metric(ET_ID) {
+                trc::Event::with_keys(ET, vec![#(#key_value_metric_tokens),*]).send();
+            }
+        }}
+    } else {
+        quote! {{
+            let et = trc::EventType::#event(#param);
+            let et_id = et.id();
+            if trc::collector::Collector::has_interest(et_id) {
+                trc::Event::with_keys(et, vec![#(#key_value_tokens),*]).send();
+            } else if trc::collector::Collector::is_metric(et_id) {
+                trc::Event::with_keys(et, vec![#(#key_value_metric_tokens),*]).send();
+            }
+        }}
+    };
+
+    TokenStream::from(expanded)
+}
+
+trait IsMetricKey {
+    fn is_metric_key(&self) -> bool;
+}
+
+impl IsMetricKey for Ident {
+    fn is_metric_key(&self) -> bool {
+        matches!(
+            self.to_string().as_ref(),
+            "Total"
+                | "Elapsed"
+                | "Size"
+                | "TotalSuccesses"
+                | "TotalFailures"
+                | "DmarcPass"
+                | "DmarcQuarantine"
+                | "DmarcReject"
+                | "DmarcNone"
+                | "DkimPass"
+                | "DkimFail"
+                | "DkimNone"
+                | "SpfPass"
+                | "SpfFail"
+                | "SpfNone"
+                | "Protocol"
+                | "Code"
+        )
+    }
 }

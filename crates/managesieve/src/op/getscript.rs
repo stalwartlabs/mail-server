@@ -79,7 +79,7 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         trc::event!(
             ManageSieve(trc::ManageSieveEvent::GetScript),
             SpanId = self.session_id,
-            Name = name,
+            Id = name,
             DocumentId = document_id,
             Elapsed = op_start.elapsed()
         );

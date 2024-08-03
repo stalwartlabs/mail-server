@@ -255,8 +255,7 @@ impl<T: SessionStream> SessionData<T> {
             Imap(trc::ImapEvent::RenameMailbox),
             SpanId = self.session_id,
             AccountId = params.account_id,
-            OldName = arguments.mailbox_name,
-            Name = arguments.new_mailbox_name,
+            MailboxName = arguments.new_mailbox_name,
             MailboxId = mailbox_id,
             Elapsed = op_start.elapsed()
         );

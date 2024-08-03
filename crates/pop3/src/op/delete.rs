@@ -37,7 +37,7 @@ impl<T: SessionStream> Session<T> {
         trc::event!(
             Pop3(trc::Pop3Event::Delete),
             SpanId = self.session_id,
-            Id = msgs,
+            Total = msgs.len(),
             Elapsed = op_start.elapsed()
         );
 
@@ -58,7 +58,7 @@ impl<T: SessionStream> Session<T> {
         trc::event!(
             Pop3(trc::Pop3Event::Reset),
             SpanId = self.session_id,
-            Count = count as u64,
+            Total = count as u64,
             Elapsed = op_start.elapsed()
         );
 

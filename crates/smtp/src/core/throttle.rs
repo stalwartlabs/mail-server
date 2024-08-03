@@ -274,8 +274,10 @@ impl<T: SessionStream> Session<T> {
                             Smtp(SmtpEvent::RateLimitExceeded),
                             SpanId = self.data.session_id,
                             Id = t.id.clone(),
-                            Limit = rate.requests,
-                            Interval = rate.period.as_secs()
+                            Limit = vec![
+                                trc::Value::from(rate.requests),
+                                trc::Value::from(rate.period)
+                            ],
                         );
 
                         return false;

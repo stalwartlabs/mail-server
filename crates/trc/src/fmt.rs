@@ -325,6 +325,65 @@ impl Color {
 mod tests {
     use crate::{EventType, Level};
 
+    /*fn pepe() -> crate::Pop3Event {
+        crate::Pop3Event::Fetch
+    }
+
+    #[test]
+    fn macro_test() {
+        let c = 1;
+
+        crate::collector::Collector::collect_metrics(
+            EventType::Pop3(crate::Pop3Event::Quit),
+            &[(Key::AccountId, 1u32.into()), (Key::SpanId, 2u32.into())],
+        );
+
+        event_macro::event!(
+            Pop3(crate::Pop3Event::Quit),
+            SpanId = "const",
+            Size = 1234,
+            Contents = {
+                if true {
+                    1
+                } else {
+                    0
+                }
+            },
+        );
+
+        event_macro::event!(
+            Pop3(if c == 1 {
+                crate::Pop3Event::RawInput
+            } else {
+                crate::Pop3Event::RawOutput
+            }),
+            SpanId = "abc",
+            Size = 1234,
+            Contents = {
+                if true {
+                    1
+                } else {
+                    0
+                }
+            },
+        );
+
+        let tutu = pepe();
+
+        event_macro::event!(
+            Pop3(tutu),
+            SpanId = "tutu",
+            Size = 1234,
+            Contents = {
+                if true {
+                    1
+                } else {
+                    0
+                }
+            },
+        );
+    }*/
+
     #[test]
     fn print_all_events() {
         assert!(!Level::Disable.is_contained(Level::Warn));

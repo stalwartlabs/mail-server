@@ -78,7 +78,7 @@ impl Core {
                     .or_else(|| {
                         trc::event!(
                             Tls(trc::TlsEvent::CertificateNotFound),
-                            Name = name.to_string(),
+                            Hostname = name.to_string(),
                         );
                         certs.get("*")
                     })
@@ -89,14 +89,14 @@ impl Core {
             Ordering::Greater => {
                 trc::event!(
                     Tls(trc::TlsEvent::MultipleCertificatesAvailable),
-                    Count = certs.len(),
+                    Total = certs.len(),
                 );
                 certs.values().next()
             }
             Ordering::Less => {
                 trc::event!(
                     Tls(trc::TlsEvent::NoCertificatesAvailable),
-                    Count = certs.len(),
+                    Total = certs.len(),
                 );
                 self.tls.self_signed_cert.as_ref()
             }
@@ -136,8 +136,8 @@ impl TcpAcceptor {
                                             Acme(trc::AcmeEvent::ClientSuppliedSni),
                                             ListenerId = instance.id.clone(),
                                             Protocol = instance.protocol,
-                                            Name = domain.to_string(),
-                                            Key = key.is_some(),
+                                            Domain = domain.to_string(),
+                                            Result = key.is_some(),
                                         );
 
                                         key
