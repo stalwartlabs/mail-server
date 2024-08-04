@@ -66,6 +66,15 @@ impl<const N: usize> AtomicBitset<N> {
             self.0[i].store(0, Ordering::Relaxed);
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        for i in 0..N {
+            if self.0[i].load(Ordering::Relaxed) != 0 {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl<const N: usize> Bitset<N> {

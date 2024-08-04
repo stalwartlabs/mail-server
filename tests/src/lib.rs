@@ -8,6 +8,8 @@ use std::path::PathBuf;
 
 #[cfg(not(target_env = "msvc"))]
 use jemallocator::Jemalloc;
+#[cfg(test)]
+use trc::collector::Collector;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -57,5 +59,16 @@ impl AssertConfig for utils::config::Config {
             panic!("Warnings: {:#?}", self.warnings);
         }
         self
+    }
+}
+
+#[cfg(test)]
+pub fn enable_logging() {
+    use common::config::tracers::Tracers;
+
+    if let Ok(level) = std::env::var("LOG") {
+        if !Collector::is_enabled() {
+            Tracers::test_tracer(level.parse().expect("Invalid log level"));
+        }
     }
 }
