@@ -91,7 +91,10 @@ impl TikvStore {
             },
             1,
         ) - 1;
-        let mut trx = self.trx_client.begin_pessimistic().await.map_err(into_error)?;
+        let mut trx = self.trx_client
+            .begin_with_options(self.write_trx_options.clone())
+            .await
+            .map_err(into_error)?;
 
         for (chunk_pos, chunk_bytes) in data.chunks(MAX_VALUE_SIZE).enumerate() {
             trx.put(
@@ -105,7 +108,10 @@ impl TikvStore {
             if chunk_pos == last_chunk || (chunk_pos > 0 && chunk_pos % N_CHUNKS == 0) {
                 self.commit(trx, false).await?;
                 if chunk_pos < last_chunk {
-                    trx = self.trx_client.begin_pessimistic().await.map_err(into_error)?;
+                    trx = self.trx_client
+                        .begin_with_options(self.write_trx_options.clone())
+                        .await
+                        .map_err(into_error)?;
                 } else {
                     break;
                 }
@@ -121,7 +127,10 @@ impl TikvStore {
         }
         // Shouldn't grab millions of keys anyways but
         // TODO: Optimise
-        let mut trx = self.trx_client.begin_pessimistic().await.map_err(into_error)?;
+        let mut trx = self.trx_client
+            .begin_with_options(self.write_trx_options.clone())
+            .await
+            .map_err(into_error)?;
 
         let begin = KeySerializer::new(key.len() + 3)
             .write(SUBSPACE_BLOBS)

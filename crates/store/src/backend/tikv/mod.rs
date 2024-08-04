@@ -5,7 +5,7 @@
  */
 
 use std::time::{Duration, Instant};
-use tikv_client::{TransactionClient, Transaction, Error as TikvError, Snapshot, Value, Key, Timestamp, RawClient};
+use tikv_client::{TransactionClient, Transaction, Error as TikvError, Snapshot, Value, Key, Timestamp, RawClient, TransactionOptions, Backoff};
 use tikv_client::proto::kvrpcpb;
 use tikv_client::proto::kvrpcpb::Mutation;
 use crate::write::{AssignedIds, ValueOp};
@@ -28,7 +28,9 @@ pub const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(4);
 #[allow(dead_code)]
 pub struct TikvStore {
     trx_client: TransactionClient,
+    write_trx_options: TransactionOptions,
     raw_client: RawClient,
+    raw_backoff: Backoff,
     version: parking_lot::Mutex<ReadVersion>,
 }
 

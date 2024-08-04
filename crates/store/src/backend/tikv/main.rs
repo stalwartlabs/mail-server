@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
-
-use tikv_client::{RawClient, TransactionClient};
+use std::time::Duration;
+use tikv_client::{Backoff, CheckLevel, RawClient, RetryOptions, TransactionClient, TransactionOptions};
 use utils::config::{utils::AsKey, Config};
 use super::TikvStore;
 
@@ -39,9 +39,66 @@ impl TikvStore {
             .ok()?
             .with_atomic_for_cas();
 
+        let backoff_min_delay = config
+            .property::<Duration>((&prefix, "transaction.backoff-min-delay"))
+            .unwrap_or_else(|| Duration::from_millis(2));
+
+        let backoff_max_delay = config
+            .property::<Duration>((&prefix, "transaction.backoff-max-delay"))
+            .unwrap_or_else(|| Duration::from_millis(500));
+
+        let max_attempts = config
+            .property::<u32>((&prefix, "transaction.backoff-retry-limit"))
+            .unwrap_or_else(|| 10);
+
+        let backoff = if let Some(backoff_type) = config
+            .property::<String>((&prefix, "transaction.backoff-type")) {
+            match backoff_type.as_str() {
+                "expo-jitter" => Backoff::no_jitter_backoff(
+                    backoff_min_delay.as_millis() as u64,
+                    backoff_max_delay.as_millis() as u64,
+                    max_attempts
+                ),
+                "equal-jitter" => Backoff::equal_jitter_backoff(
+                    backoff_min_delay.as_millis() as u64,
+                    backoff_max_delay.as_millis() as u64,
+                    max_attempts
+                ),
+                "decor-jitter" => Backoff::decorrelated_jitter_backoff(
+                    backoff_min_delay.as_millis() as u64,
+                    backoff_max_delay.as_millis() as u64,
+                    max_attempts
+                ),
+                "none" => Backoff::no_backoff(),
+                // Default
+                "full-jitter" | &_ => Backoff::full_jitter_backoff(
+                    backoff_min_delay.as_millis() as u64,
+                    backoff_max_delay.as_millis() as u64,
+                    max_attempts
+                ),
+            }
+        } else {
+            // Default
+            Backoff::full_jitter_backoff(
+                backoff_min_delay.as_millis() as u64,
+                backoff_max_delay.as_millis() as u64,
+                max_attempts
+            )
+        };
+
+        let raw_client_retries = backoff.is_none().then(|| 0).unwrap_or_else(|| max_attempts);
+
+        let write_trx_options = TransactionOptions::new_pessimistic()
+            .drop_check(CheckLevel::Warn)
+            .retry_options(RetryOptions::new(backoff.clone(), backoff.clone()));
+
+        let raw_backoff = backoff;
+
         let store = Self {
             trx_client,
+            write_trx_options,
             raw_client,
+            raw_backoff,
             version: Default::default(),
         };
 
