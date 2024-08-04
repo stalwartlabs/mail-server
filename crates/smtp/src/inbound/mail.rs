@@ -110,34 +110,6 @@ impl<T: SessionStream> Session<T> {
             (String::new(), String::new(), String::new())
         };
 
-        // Make sure that the authenticated user is allowed to send from this address
-        if !self.data.authenticated_as.is_empty()
-            && self.params.auth_match_sender
-            && (self.data.authenticated_as != address_lcase
-                && !self.data.authenticated_emails.iter().any(|e| {
-                    e == &address_lcase || (e.starts_with('@') && address_lcase.ends_with(e))
-                }))
-        {
-            trc::event!(
-                Smtp(SmtpEvent::MailFromUnauthorized),
-                SpanId = self.data.session_id,
-                From = address_lcase,
-                Details = [trc::Value::String(self.data.authenticated_as.to_string())]
-                    .into_iter()
-                    .chain(
-                        self.data
-                            .authenticated_emails
-                            .iter()
-                            .map(|e| trc::Value::String(e.to_string()))
-                    )
-                    .collect::<Vec<_>>()
-            );
-
-            return self
-                .write(b"501 5.5.4 You are not allowed to send from this address.\r\n")
-                .await;
-        }
-
         let has_dsn = from.env_id.is_some();
         self.data.mail_from = SessionAddress {
             address,
@@ -221,6 +193,35 @@ impl<T: SessionStream> Session<T> {
                 mail_from.address_lcase.clear();
                 mail_from.domain.clear();
                 mail_from.address.clear();
+            }
+        }
+
+        // Make sure that the authenticated user is allowed to send from this address
+        if !self.data.authenticated_as.is_empty() && self.params.auth_match_sender {
+            let address_lcase = self.data.mail_from.as_ref().unwrap().address_lcase.as_str();
+            if self.data.authenticated_as != address_lcase
+                && !self.data.authenticated_emails.iter().any(|e| {
+                    e == address_lcase || (e.starts_with('@') && address_lcase.ends_with(e))
+                })
+            {
+                trc::event!(
+                    Smtp(SmtpEvent::MailFromUnauthorized),
+                    SpanId = self.data.session_id,
+                    From = address_lcase.to_string(),
+                    Details = [trc::Value::String(self.data.authenticated_as.to_string())]
+                        .into_iter()
+                        .chain(
+                            self.data
+                                .authenticated_emails
+                                .iter()
+                                .map(|e| trc::Value::String(e.to_string()))
+                        )
+                        .collect::<Vec<_>>()
+                );
+                self.data.mail_from = None;
+                return self
+                    .write(b"501 5.5.4 You are not allowed to send from this address.\r\n")
+                    .await;
             }
         }
 
