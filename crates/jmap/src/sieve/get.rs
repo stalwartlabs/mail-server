@@ -28,8 +28,12 @@ impl JMAP {
         mut request: GetRequest<RequestArguments>,
     ) -> trc::Result<GetResponse> {
         let ids = request.unwrap_ids(self.core.jmap.get_max_objects)?;
-        let properties =
-            request.unwrap_properties(&[Property::Id, Property::Name, Property::BlobId]);
+        let properties = request.unwrap_properties(&[
+            Property::Id,
+            Property::Name,
+            Property::BlobId,
+            Property::IsActive,
+        ]);
         let account_id = request.account_id.document_id();
         let push_ids = self
             .get_document_ids(account_id, Collection::SieveScript)
