@@ -4,11 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::net::SocketAddr;
-
 use tikv_client::{RawClient, TransactionClient};
 use utils::config::{utils::AsKey, Config};
-
 use super::TikvStore;
 
 impl TikvStore {
@@ -42,10 +39,13 @@ impl TikvStore {
             .ok()?
             .with_atomic_for_cas();
 
-        Some(Self {
+        let store = Self {
             trx_client,
             raw_client,
             version: Default::default(),
-        })
+        };
+
+        Some(store)
     }
 }
+

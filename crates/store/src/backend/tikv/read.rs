@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
-use bincode::Options;
+
 use tikv_client::{Key as TikvKey, Snapshot, Transaction, TransactionOptions, Value};
 use futures::TryStreamExt;
 use roaring::RoaringBitmap;
@@ -34,9 +34,14 @@ impl TikvStore {
         let mut ss = self.snapshot_trx().await?;
 
         match read_chunked_value_snapshot(&key, &mut ss).await? {
-            ChunkedValue::Single(bytes) => U::deserialize(&bytes).map(Some),
-            ChunkedValue::Chunked { bytes, .. } => U::deserialize(&bytes).map(Some),
-            ChunkedValue::None => Ok(None),
+            ChunkedValue::Single(bytes) => {
+                U::deserialize(&bytes).map(Some)
+            },
+            ChunkedValue::Chunked { bytes, .. } => {
+                U::deserialize(&bytes).map(Some) },
+            ChunkedValue::None => {
+                Ok(None)
+            },
         }
     }
 
@@ -44,7 +49,26 @@ impl TikvStore {
         &self,
         mut key: BitmapKey<BitmapClass<u32>>,
     ) -> trc::Result<Option<RoaringBitmap>> {
-        todo!()
+        let mut bm = RoaringBitmap::new();
+        let begin = key.serialize(WITH_SUBSPACE);
+        key.document_id = u32::MAX;
+        let end = key.serialize(WITH_SUBSPACE);
+        let key_len = begin.len();
+        // Maybe use transaction client?
+        let mut trx = self.snapshot_trx().await?;
+        let mut keys = trx.scan_keys(
+            (begin, end),
+            MAX_KEYS
+        ).await.map_err(into_error)?;
+
+        for key in keys {
+            let key: Vec<u8> = key.into();
+            if key.len() == key_len {
+                bm.insert(key.as_slice().deserialize_be_u32(key.len() - U32_LEN)?);
+            }
+        }
+
+        Ok(if !bm.is_empty() { Some(bm) } else { None })
     }
 
     pub(crate) async fn iterate<T: Key>(
@@ -55,35 +79,27 @@ impl TikvStore {
         let mut begin: TikvKey = params.begin.serialize(WITH_SUBSPACE).into();
         let end: TikvKey = params.end.serialize(WITH_SUBSPACE).into();
 
+        let mut trx = self.snapshot_trx().await?;
         if !params.first {
-            let mut trx = self.snapshot_trx().await?;
-            loop {
-                let mut values = trx
-                    .scan((begin.clone(), end.clone()), MAX_KV_PAIRS)
-                    .await
-                    .map_err(into_error)?;
-
-                let mut last_key: TikvKey = begin.clone();
-
-                let mut total_kv_pairs = 0;
-
+            // TODO: Limit by max_keys
+            if params.ascending {
+                let mut values = trx.scan((begin, end), u32::MAX).await.map_err(into_error)?;
                 while let Some(kv_pair) = values.next() {
-                    total_kv_pairs += 1;
-                    // Costly
-                    last_key = kv_pair.key().clone();
                     let key: &[u8] = kv_pair.key().into();
-                    let value: &[u8] = kv_pair.key().into();
-
+                    let value: &[u8] = kv_pair.value().as_slice();
                     cb(key.get(1..).unwrap_or_default(), value)?;
                 }
-
-                if total_kv_pairs != MAX_KV_PAIRS {
-                    begin = last_key;
-                    break;
+            } else {
+                let mut values = trx.scan_reverse((begin, end), u32::MAX).await.map_err(into_error)?;
+                while let Some(kv_pair) = values.next() {
+                    let mut last_key = &[] as &[u8];
+                    let key: &[u8] = kv_pair.key().into();
+                    let value: &[u8] = kv_pair.value().as_slice();
+                    cb(key.get(1..).unwrap_or_default(), value)?;
                 }
-            }
+            };
+
         } else {
-            let mut trx = self.snapshot_trx().await?;
             let mut values = trx
                 .scan((begin, end), 1)
                 .await
@@ -104,7 +120,18 @@ impl TikvStore {
         &self,
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> trc::Result<i64> {
-        todo!()
+        let key = key.into().serialize(WITH_SUBSPACE);
+        // TODO: Expensive clone
+        if let Some(bytes) = self
+            .raw_client
+            .get(key.clone())
+            .await
+            .map_err(into_error)?
+        {
+            deserialize_i64_le(&key, &bytes)
+        } else {
+            Ok(0)
+        }
     }
 
     pub(crate) async fn read_trx(&self) -> trc::Result<Transaction> {
@@ -174,8 +201,9 @@ pub(crate) async fn read_chunked_value_transaction(
                 .write(0u8)
                 .finalize();
 
+
             // TODO: Costly, redo
-            while let Some(bytes) = trx.get(key.to_vec()).await.map_err(into_error)? {
+            while let Some(bytes) = trx.get(key.clone()).await.map_err(into_error)? {
                 value.extend_from_slice(&bytes);
                 *key.last_mut().unwrap() += 1;
             }

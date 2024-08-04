@@ -12,7 +12,7 @@ use std::collections::Bound;
 use tikv_client::{BoundRange, TimestampExt, Transaction, Value};
 use rand::Rng;
 use roaring::RoaringBitmap;
-
+use tikv_client::proto::kvrpcpb::{Assertion, Mutation, Op};
 use crate::{
     backend::deserialize_i64_le,
     write::{
@@ -36,7 +36,10 @@ impl TikvStore {
             let mut document_id = u32::MAX;
             let mut change_id = u64::MAX;
             let mut result = AssignedIds::default();
+
             let mut atomic_adds = vec![];
+            let mut batch_mutate = vec![];
+
             let mut trx = self.trx_client.begin_optimistic().await.map_err(into_error)?;
 
             for op in &batch.ops {
@@ -62,6 +65,7 @@ impl TikvStore {
                         change_id = *change_id_;
                     }
                     Operation::Value { class, op } => {
+                        //println!("{:?}", class);
                         let mut key = class.serialize(
                             account_id,
                             collection,
@@ -95,11 +99,24 @@ impl TikvStore {
                                             }
                                         }
                                         // TODO: Costly clone
-                                        trx.put(key.clone(), chunk).await.map_err(into_error)?;
+                                        let mutation = Mutation {
+                                            op: Op::Put.into(),
+                                            key: key.to_vec(),
+                                            value: chunk.to_vec(),
+                                            assertion: Assertion::None.into(),
+                                        };
+                                        batch_mutate.push(mutation);
                                     }
                                 } else {
                                     // TODO: Costly clone
-                                    trx.put(key.clone(), value.as_ref()).await.map_err(into_error)?;
+                                    let mutation = Mutation {
+                                        op: Op::Put.into(),
+                                        key: key.to_vec(),
+                                        value: value.to_vec(),
+                                        assertion: Assertion::None.into(),
+                                    };
+                                    batch_mutate.push(mutation);
+                                    //trx.put(key.clone(), value.as_ref()).await.map_err(into_error)?;
                                 }
                             }
                             ValueOp::AtomicAdd(by) => {
@@ -118,7 +135,14 @@ impl TikvStore {
                                     *by
                                 };
                                 // TODO: Costly clone
-                                trx.put(key.clone(), &num.to_le_bytes()[..]).await.map_err(into_error)?;
+                                //trx.put(key.clone(), &num.to_le_bytes()[..]).await.map_err(into_error)?;
+                                let mutation = Mutation {
+                                    op: Op::Put.into(),
+                                    key: key.to_vec(),
+                                    value: num.to_le_bytes().to_vec(),
+                                    assertion: Assertion::None.into(),
+                                };
+                                batch_mutate.push(mutation);
                                 result.push_counter_id(num);
                             }
                             ValueOp::Clear => {
@@ -132,14 +156,29 @@ impl TikvStore {
                                             .finalize().into()),
                                     );
                                     // TODO: Repeat after reaching max keys
-                                    let mut keys = trx.scan_keys(range, MAX_KEYS).await.map_err(into_error)?;
+                                    let mut keys = trx.scan_keys(range, u32::MAX).await.map_err(into_error)?;
+
 
                                     while let Some(key) = keys.next() {
-                                        trx.delete(key).await.map_err(into_error)?;
+                                        //trx.delete(key).await.map_err(into_error)?;
+                                        let mutation = Mutation {
+                                            op: Op::Del.into(),
+                                            key: key.into(),
+                                            value: Default::default(),
+                                            assertion: Assertion::None.into(),
+                                        };
+                                        batch_mutate.push(mutation);
                                     }
                                 } else {
                                     // TODO: Costly clone
-                                    trx.delete(key).await.map_err(into_error)?;
+                                    //trx.delete(key).await.map_err(into_error)?;
+                                    let mutation = Mutation {
+                                        op: Op::Del.into(),
+                                        key: key.into(),
+                                        value: Default::default(),
+                                        assertion: Assertion::None.into(),
+                                    };
+                                    batch_mutate.push(mutation);
                                 }
                             }
                         }
@@ -155,9 +194,23 @@ impl TikvStore {
                             .serialize(WITH_SUBSPACE);
 
                         if *set {
-                            trx.put(key, &[]).await.map_err(into_error)?;
+                            //trx.put(key, &[]).await.map_err(into_error)?;
+                            let mutation = Mutation {
+                                op: Op::Put.into(),
+                                key,
+                                value: vec![],
+                                assertion: Assertion::None.into(),
+                            };
+                            batch_mutate.push(mutation);
                         } else {
-                            trx.delete(key).await.map_err(into_error)?;
+                            //trx.delete(key).await.map_err(into_error)?;
+                            let mutation = Mutation {
+                                op: Op::Del.into(),
+                                key,
+                                value: Default::default(),
+                                assertion: Assertion::None.into(),
+                            };
+                            batch_mutate.push(mutation);
                         }
                     }
                     Operation::Bitmap { class, set } => {
@@ -212,13 +265,26 @@ impl TikvStore {
                                     document_id + 1,
                                     WITH_SUBSPACE,
                                     (&result).into(),
-                                )), MAX_KEYS).await.map_err(into_error)?;
+                                )), u32::MAX).await.map_err(into_error)?;
                                 trx.lock_keys(keys_iter).await.map_err(into_error)?;
                             }
-
-                            trx.put(key, &[]).await.map_err(into_error)?;
+                            let mutation = Mutation {
+                                op: Op::Put.into(),
+                                key,
+                                value: vec![],
+                                assertion: Assertion::None.into(),
+                            };
+                            batch_mutate.push(mutation);
+                            //trx.put(key, &[]).await.map_err(into_error)?;
                         } else {
-                            trx.delete(key).await.map_err(into_error)?;
+                            let mutation = Mutation {
+                                op: Op::Del.into(),
+                                key,
+                                value: Default::default(),
+                                assertion: Assertion::None.into(),
+                            };
+                            batch_mutate.push(mutation);
+                            //trx.delete(key).await.map_err(into_error)?;
                         }
                     }
                     Operation::Log { set } => {
@@ -228,7 +294,14 @@ impl TikvStore {
                             change_id,
                         }
                             .serialize(WITH_SUBSPACE);
-                        trx.put(key, set.resolve(&result)?.as_ref()).await.map_err(into_error)?;
+                        let mutation = Mutation {
+                            op: Op::Put.into(),
+                            key,
+                            value: set.resolve(&result)?.into_owned(),
+                            assertion: Assertion::None.into(),
+                        };
+                        batch_mutate.push(mutation);
+                        //trx.put(key, set.resolve(&result)?.as_ref()).await.map_err(into_error)?;
                     }
                     Operation::AssertValue {
                         class,
@@ -258,6 +331,9 @@ impl TikvStore {
                     }
                 }
             }
+
+            batch_mutate.reverse();
+            trx.batch_mutate(batch_mutate).await.map_err(into_error)?;
 
             if self
                 .commit(

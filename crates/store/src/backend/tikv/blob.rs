@@ -33,7 +33,7 @@ impl TikvStore {
         let key_len = begin.len();
         let mut trx = self.snapshot_trx().await?;
         // TODO: Create repeat logic for over max
-        let mut values = trx.scan((begin, end), MAX_KV_PAIRS).await.map_err(into_error)?;
+        let mut values = trx.scan((begin, end), u32::MAX).await.map_err(into_error)?;
         let mut blob_data: Option<Vec<u8>> = None;
         let blob_range = range.end - range.start;
 
