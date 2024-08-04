@@ -79,7 +79,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> trc::Result<Variable> 
         Spam(trc::SpamEvent::Train),
         SpanId = ctx.session_id,
         Spam = is_spam,
-        Size = model.weights.len(),
+        Total = model.weights.len(),
     );
 
     // Update weight and invalidate cache
@@ -176,9 +176,11 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         trc::event!(
             Spam(trc::SpamEvent::NotEnoughTrainingData),
             SpanId = ctx.session_id,
-            MinLearns = classifier.min_learns,
-            SpamLearns = spam_learns,
-            HamLearns = ham_learns
+            Details = vec![
+                trc::Value::from(spam_learns),
+                trc::Value::from(ham_learns),
+                trc::Value::from(classifier.min_learns)
+            ],
         );
         return Ok(Variable::default());
     }
@@ -200,9 +202,11 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     trc::event!(
         Spam(trc::SpamEvent::Classify),
         SpanId = ctx.session_id,
-        MinLearns = classifier.min_learns,
-        SpamLearns = spam_learns,
-        HamLearns = ham_learns,
+        Details = vec![
+            trc::Value::from(spam_learns),
+            trc::Value::from(ham_learns),
+            trc::Value::from(classifier.min_learns)
+        ],
         Result = result.unwrap_or_default()
     );
 
@@ -253,9 +257,11 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         Spam(trc::SpamEvent::TrainBalance),
         SpanId = ctx.session_id,
         Spam = learn_spam,
-        MinBalance = min_balance,
-        SpamLearns = spam_learns,
-        HamLearns = ham_learns,
+        Details = vec![
+            trc::Value::from(min_balance),
+            trc::Value::from(spam_learns),
+            trc::Value::from(ham_learns),
+        ],
         Result = result
     );
 

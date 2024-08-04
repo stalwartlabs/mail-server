@@ -62,7 +62,7 @@ impl<T: SessionStream> Session<T> {
                 .verify_iprev(self.data.remote_ip)
                 .await;
 
-            trc::eventd!(
+            trc::event!(
                 Smtp(if matches!(iprev.result(), IprevResult::Pass) {
                     SmtpEvent::IprevPass
                 } else {
@@ -209,8 +209,8 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Smtp(SmtpEvent::MailFromRewritten),
                 SpanId = self.data.session_id,
-                OldName = mail_from.address_lcase.clone(),
-                Name = new_address.clone(),
+                Details = mail_from.address_lcase.clone(),
+                From = new_address.clone(),
             );
 
             if new_address.contains('@') {
@@ -434,7 +434,7 @@ impl<T: SessionStream> Session<T> {
                         .await
                 };
 
-                trc::eventd!(
+                trc::event!(
                     Smtp(if matches!(spf_output.result(), SpfResult::Pass) {
                         SmtpEvent::SpfFromPass
                     } else {

@@ -176,7 +176,6 @@ impl<T: SessionStream> Session<T> {
                                         trc::event!(
                                             Smtp(SmtpEvent::TransferLimitExceeded),
                                             SpanId = self.data.session_id,
-                                            Size = bytes_read,
                                         );
 
                                         break;

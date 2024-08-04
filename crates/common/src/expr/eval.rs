@@ -27,7 +27,7 @@ impl Core {
             trc::event!(
                 Eval(EvalEvent::Result),
                 SpanId = session_id,
-                Property = if_block.key.clone(),
+                Id = if_block.key.clone(),
                 Result = ""
             );
 
@@ -39,7 +39,7 @@ impl Core {
                 trc::event!(
                     Eval(EvalEvent::Result),
                     SpanId = session_id,
-                    Property = if_block.key.clone(),
+                    Id = if_block.key.clone(),
                     Result = format!("{result:?}"),
                 );
 
@@ -47,10 +47,10 @@ impl Core {
                     Ok(value) => Some(value),
                     Err(_) => {
                         trc::event!(
-                            Eval(EvalEvent::Error),
+                            Eval(EvalEvent::Result),
                             SpanId = session_id,
-                            Property = if_block.key.clone(),
-                            Details = "Failed to convert result",
+                            Id = if_block.key.clone(),
+                            Result = "",
                         );
 
                         None
@@ -61,7 +61,7 @@ impl Core {
                 trc::event!(
                     Eval(EvalEvent::Error),
                     SpanId = session_id,
-                    Property = if_block.key.clone(),
+                    Id = if_block.key.clone(),
                     CausedBy = err,
                 );
 
@@ -86,7 +86,7 @@ impl Core {
                 trc::event!(
                     Eval(EvalEvent::Result),
                     SpanId = session_id,
-                    Property = expr_id.to_string(),
+                    Id = expr_id.to_string(),
                     Result = format!("{result:?}"),
                 );
 
@@ -96,7 +96,7 @@ impl Core {
                         trc::event!(
                             Eval(EvalEvent::Error),
                             SpanId = session_id,
-                            Property = expr_id.to_string(),
+                            Id = expr_id.to_string(),
                             Details = "Failed to convert result",
                         );
 
@@ -108,7 +108,7 @@ impl Core {
                 trc::event!(
                     Eval(EvalEvent::Error),
                     SpanId = session_id,
-                    Property = expr_id.to_string(),
+                    Id = expr_id.to_string(),
                     CausedBy = err,
                 );
 

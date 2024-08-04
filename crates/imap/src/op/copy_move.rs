@@ -353,7 +353,7 @@ impl<T: SessionStream> SessionData<T> {
         src_uids.sort_unstable();
         dest_uids.sort_unstable();
 
-        trc::eventd!(
+        trc::event!(
             Imap(if is_move {
                 trc::ImapEvent::Move
             } else {
@@ -362,7 +362,7 @@ impl<T: SessionStream> SessionData<T> {
             SpanId = self.session_id,
             SourceAccountId = src_mailbox.id.account_id,
             SourceMailboxId = src_mailbox.id.mailbox_id,
-            SourceUid = src_uids
+            Details = src_uids
                 .iter()
                 .map(|r| trc::Value::from(*r))
                 .collect::<Vec<_>>(),

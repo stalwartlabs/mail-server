@@ -50,7 +50,7 @@ impl<T: SessionStream> Session<T> {
                     .verify_spf_helo(self.data.remote_ip, &self.data.helo_domain, &self.hostname)
                     .await;
 
-                trc::eventd!(
+                trc::event!(
                     Smtp(if matches!(spf_output.result(), SpfResult::Pass) {
                         SmtpEvent::SpfEhloPass
                     } else {

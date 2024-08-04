@@ -59,7 +59,7 @@ impl SMTP {
                             trc::event!(
                                 Sieve(SieveEvent::ScriptNotFound),
                                 SpanId = session_id,
-                                Name = name.as_str().to_string(),
+                                Id = name.as_str().to_string(),
                             );
                             break;
                         }
@@ -92,7 +92,7 @@ impl SMTP {
                                 trc::event!(
                                     Sieve(SieveEvent::ListNotFound),
                                     SpanId = session_id,
-                                    Name = list,
+                                    Id = list,
                                 );
                             }
                         }
@@ -154,7 +154,7 @@ impl SMTP {
                                 trc::event!(
                                     Sieve(SieveEvent::NotSupported),
                                     SpanId = session_id,
-                                    Name = list,
+                                    Id = list,
                                     Reason = "Sending to lists is not supported.",
                                 );
                             }

@@ -5,51 +5,6 @@
  */
 
 #[macro_export]
-macro_rules! event {
-    ($event:ident($($param:expr),* $(,)?) $(, $key:ident = $value:expr)* $(,)?) => {
-        {
-            const ET : $crate::EventType = $crate::EventType::$event($($param),*);
-            const ET_ID : usize = ET.id();
-            if $crate::collector::Collector::has_interest(ET_ID) {
-                $crate::Event::with_capacity(
-                    ET,
-                    trc::__count!($($key)*)
-                )
-                $(
-                    .ctx($crate::Key::$key, $crate::Value::from($value))
-                )*
-                .send();
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! eventd {
-    ($event:ident($($param:expr),* $(,)?) $(, $key:ident = $value:expr)* $(,)?) => {
-        {
-            let et = $crate::EventType::$event($($param),*);
-            if $crate::collector::Collector::has_interest(et) {
-                $crate::Event::with_capacity(
-                    et,
-                    trc::__count!($($key)*)
-                )
-                $(
-                    .ctx($crate::Key::$key, $crate::Value::from($value))
-                )*
-                .send();
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! __count {
-    () => (0usize);
-    ($head:tt $($tail:tt)*) => (1usize + trc::__count!($($tail)*));
-}
-
-#[macro_export]
 macro_rules! location {
     () => {{
         concat!(file!(), ":", line!())
@@ -67,8 +22,11 @@ macro_rules! bail {
 macro_rules! error {
     ($err:expr $(,)?) => {
         let err = $err;
+        let event_id = err.as_ref().id();
 
-        if $crate::collector::Collector::has_interest(err.as_ref().id()) {
+        if $crate::collector::Collector::has_interest(event_id)
+            || $crate::collector::Collector::is_metric(event_id)
+        {
             err.send();
         }
     };

@@ -39,10 +39,10 @@ impl Core {
         trc::event!(
             Acme(trc::AcmeEvent::ProcessCert),
             Id = provider.id.to_string(),
-            Name = provider.domains.as_slice(),
+            Hostname = provider.domains.as_slice(),
             ValidFrom = trc::Value::Timestamp(validity[0].timestamp() as u64),
             ValidTo = trc::Value::Timestamp(validity[1].timestamp() as u64),
-            Renewal = trc::Value::Timestamp(renewal_date.timestamp() as u64),
+            Due = trc::Value::Timestamp(renewal_date.timestamp() as u64),
         );
 
         if !cached {
@@ -61,8 +61,8 @@ impl Core {
                     trc::event!(
                         Acme(trc::AcmeEvent::RenewBackoff),
                         Id = provider.id.to_string(),
-                        Name = provider.domains.as_slice(),
-                        Attempt = backoff,
+                        Hostname = provider.domains.as_slice(),
+                        Total = backoff,
                         NextRetry = 1 << backoff,
                         CausedBy = err,
                     );
@@ -73,7 +73,7 @@ impl Core {
                     return Err(err
                         .details("Failed to renew certificate")
                         .ctx_unique(trc::Key::Id, provider.id.to_string())
-                        .ctx_unique(trc::Key::Name, provider.domains.as_slice()))
+                        .ctx_unique(trc::Key::Hostname, provider.domains.as_slice()))
                 }
             }
         }
@@ -109,7 +109,7 @@ impl Core {
                     trc::event!(
                         Acme(trc::AcmeEvent::AuthCompleted),
                         Id = provider.id.to_string(),
-                        Name = provider.domains.as_slice(),
+                        Hostname = provider.domains.as_slice(),
                     );
                     order = account.order(&order_url).await?;
                 }
@@ -118,8 +118,8 @@ impl Core {
                         trc::event!(
                             Acme(trc::AcmeEvent::OrderProcessing),
                             Id = provider.id.to_string(),
-                            Name = provider.domains.as_slice(),
-                            Attempt = i,
+                            Hostname = provider.domains.as_slice(),
+                            Total = i,
                         );
 
                         tokio::time::sleep(Duration::from_secs(1u64 << i)).await;
@@ -138,7 +138,7 @@ impl Core {
                     trc::event!(
                         Acme(trc::AcmeEvent::OrderReady),
                         Id = provider.id.to_string(),
-                        Name = provider.domains.as_slice(),
+                        Hostname = provider.domains.as_slice(),
                     );
 
                     let csr = cert.serialize_request_der().map_err(|err| {
@@ -152,7 +152,7 @@ impl Core {
                     trc::event!(
                         Acme(trc::AcmeEvent::OrderValid),
                         Id = provider.id.to_string(),
-                        Name = provider.domains.as_slice(),
+                        Hostname = provider.domains.as_slice(),
                     );
 
                     let pem = [
@@ -167,7 +167,7 @@ impl Core {
                     trc::event!(
                         Acme(trc::AcmeEvent::OrderInvalid),
                         Id = provider.id.to_string(),
-                        Name = provider.domains.as_slice(),
+                        Hostname = provider.domains.as_slice(),
                     );
 
                     return Err(trc::EventType::Acme(trc::AcmeEvent::Error)
@@ -192,7 +192,7 @@ impl Core {
 
                 trc::event!(
                     Acme(trc::AcmeEvent::AuthStart),
-                    Name = domain.to_string(),
+                    Hostname = domain.to_string(),
                     Type = challenge_type.as_str(),
                     Id = provider.id.to_string(),
                 );
@@ -252,9 +252,9 @@ impl Core {
                             // Errors are expected if the record does not exist
                             trc::event!(
                                 Acme(trc::AcmeEvent::DnsRecordDeletionFailed),
-                                Name = name.to_string(),
+                                Hostname = name.to_string(),
                                 Reason = err.to_string(),
-                                Origin = origin.to_string(),
+                                Details = origin.to_string(),
                                 Id = provider.id.to_string(),
                             );
                         }
@@ -275,15 +275,15 @@ impl Core {
                                 trc::AcmeEvent::DnsRecordCreationFailed,
                             )
                             .ctx(trc::Key::Id, provider.id.to_string())
-                            .ctx(trc::Key::Name, name)
-                            .ctx(trc::Key::Origin, origin)
+                            .ctx(trc::Key::Hostname, name)
+                            .ctx(trc::Key::Details, origin)
                             .reason(err));
                         }
 
                         trc::event!(
                             Acme(trc::AcmeEvent::DnsRecordCreated),
-                            Name = name.to_string(),
-                            Origin = origin.to_string(),
+                            Hostname = name.to_string(),
+                            Details = origin.to_string(),
                             Id = provider.id.to_string(),
                         );
 
@@ -301,10 +301,10 @@ impl Core {
                                         trc::event!(
                                             Acme(trc::AcmeEvent::DnsRecordNotPropagated),
                                             Id = provider.id.to_string(),
-                                            Name = name.to_string(),
-                                            Origin = origin.to_string(),
+                                            Hostname = name.to_string(),
+                                            Details = origin.to_string(),
                                             Result = result.to_string(),
-                                            Expected = dns_proof.to_string(),
+                                            Value = dns_proof.to_string(),
                                         );
                                     }
                                 }
@@ -312,8 +312,8 @@ impl Core {
                                     trc::event!(
                                         Acme(trc::AcmeEvent::DnsRecordLookupFailed),
                                         Id = provider.id.to_string(),
-                                        Name = name.to_string(),
-                                        Origin = origin.to_string(),
+                                        Hostname = name.to_string(),
+                                        Details = origin.to_string(),
                                         Reason = err.to_string(),
                                     );
                                 }
@@ -326,15 +326,15 @@ impl Core {
                             trc::event!(
                                 Acme(trc::AcmeEvent::DnsRecordPropagated),
                                 Id = provider.id.to_string(),
-                                Name = name.to_string(),
-                                Origin = origin.to_string(),
+                                Hostname = name.to_string(),
+                                Details = origin.to_string(),
                             );
                         } else {
                             trc::event!(
                                 Acme(trc::AcmeEvent::DnsRecordPropagationTimeout),
                                 Id = provider.id.to_string(),
-                                Name = name.to_string(),
-                                Origin = origin.to_string(),
+                                Hostname = name.to_string(),
+                                Details = origin.to_string(),
                             );
                         }
                     }
@@ -348,7 +348,7 @@ impl Core {
                 return Err(trc::EventType::Acme(trc::AcmeEvent::AuthError)
                     .into_err()
                     .ctx(trc::Key::Id, provider.id.to_string())
-                    .ctx(trc::Key::Status, auth.status.as_str()))
+                    .ctx(trc::Key::Details, auth.status.as_str()))
             }
         };
 
@@ -359,9 +359,9 @@ impl Core {
                 AuthStatus::Pending => {
                     trc::event!(
                         Acme(trc::AcmeEvent::AuthPending),
-                        Name = domain.to_string(),
+                        Hostname = domain.to_string(),
                         Id = provider.id.to_string(),
-                        Attempt = i,
+                        Total = i,
                     );
 
                     account.challenge(&challenge_url).await?
@@ -369,7 +369,7 @@ impl Core {
                 AuthStatus::Valid => {
                     trc::event!(
                         Acme(trc::AcmeEvent::AuthValid),
-                        Name = domain.to_string(),
+                        Hostname = domain.to_string(),
                         Id = provider.id.to_string(),
                     );
 
@@ -379,14 +379,14 @@ impl Core {
                     return Err(trc::EventType::Acme(trc::AcmeEvent::AuthError)
                         .into_err()
                         .ctx(trc::Key::Id, provider.id.to_string())
-                        .ctx(trc::Key::Status, auth.status.as_str()))
+                        .ctx(trc::Key::Details, auth.status.as_str()))
                 }
             }
         }
         Err(trc::EventType::Acme(trc::AcmeEvent::AuthTooManyAttempts)
             .into_err()
             .ctx(trc::Key::Id, provider.id.to_string())
-            .ctx(trc::Key::Name, domain))
+            .ctx(trc::Key::Hostname, domain))
     }
 }
 

@@ -157,7 +157,6 @@ impl GossiperBuilder {
                                 match quidnunc.encryptor.decrypt(&buf[..size], &quidnunc.nonce) {
                                     Ok(bytes) => {
                                         if let Some(request) = Request::from_bytes(&bytes) {
-                                            //trc::event!("Received packet from {}", addr);
                                             match request {
                                                 Request::Ping(peers) => {
                                                     gossiper.handle_ping(peers, true).await;

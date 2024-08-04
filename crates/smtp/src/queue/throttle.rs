@@ -51,8 +51,10 @@ impl SMTP {
                         Queue(trc::QueueEvent::RateLimitExceeded),
                         SpanId = session_id,
                         Id = throttle.id.clone(),
-                        Limit = rate.requests,
-                        Interval = rate.period.as_secs()
+                        Limit = vec![
+                            trc::Value::from(rate.requests),
+                            trc::Value::from(rate.period)
+                        ],
                     );
 
                     return Err(Error::Rate {

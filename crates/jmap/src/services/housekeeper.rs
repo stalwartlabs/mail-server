@@ -252,15 +252,15 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     {
                                         trc::event!(
                                             Acme(trc::AcmeEvent::OrderStart),
-                                            Name = provider.domains.as_slice()
+                                            Hostname = provider.domains.as_slice()
                                         );
 
                                         let renew_at = match core.renew(provider).await {
                                             Ok(renew_at) => {
                                                 trc::event!(
                                                     Acme(trc::AcmeEvent::OrderCompleted),
-                                                    Name = provider.domains.as_slice(),
-                                                    NextRenewal = trc::Value::Timestamp(
+                                                    Domain = provider.domains.as_slice(),
+                                                    Expires = trc::Value::Timestamp(
                                                         now() + renew_at.as_secs()
                                                     )
                                                 );

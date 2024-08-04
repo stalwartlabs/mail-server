@@ -119,10 +119,10 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Imap(trc::ImapEvent::GetAcl),
                 SpanId = data.session_id,
-                Name = arguments.mailbox_name.clone(),
+                MailboxName = arguments.mailbox_name.clone(),
                 AccountId = mailbox.account_id,
                 MailboxId = mailbox.mailbox_id,
-                Count = permissions.len(),
+                Total = permissions.len(),
                 Elapsed = op_start.elapsed()
             );
 
@@ -198,7 +198,7 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Imap(trc::ImapEvent::MyRights),
                 SpanId = data.session_id,
-                Name = arguments.mailbox_name.clone(),
+                MailboxName = arguments.mailbox_name.clone(),
                 AccountId = mailbox.account_id,
                 MailboxId = mailbox.mailbox_id,
                 Details = rights
@@ -364,7 +364,7 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Imap(trc::ImapEvent::SetAcl),
                 SpanId = data.session_id,
-                Name = arguments.mailbox_name.clone(),
+                MailboxName = arguments.mailbox_name.clone(),
                 AccountId = mailbox.account_id,
                 MailboxId = mailbox.mailbox_id,
                 Details = grants,
@@ -387,7 +387,7 @@ impl<T: SessionStream> Session<T> {
         trc::event!(
             Imap(trc::ImapEvent::ListRights),
             SpanId = self.session_id,
-            Name = arguments.mailbox_name.clone(),
+            MailboxName = arguments.mailbox_name.clone(),
             Elapsed = op_start.elapsed()
         );
 

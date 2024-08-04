@@ -76,7 +76,7 @@ impl Core {
                     Err(err) => {
                         trc::event!(
                             Acme(AcmeEvent::Error),
-                            Name = domain.to_string(),
+                            Domain = domain.to_string(),
                             Reason = err.to_string(),
                             Details = "Failed to parse private key"
                         );
@@ -87,13 +87,13 @@ impl Core {
             Err(err) => {
                 trc::event!(
                     Acme(AcmeEvent::Error),
-                    Name = domain.to_string(),
+                    Domain = domain.to_string(),
                     CausedBy = err
                 );
                 None
             }
             Ok(None) => {
-                trc::event!(Acme(AcmeEvent::TokenNotFound), Name = domain.to_string());
+                trc::event!(Acme(AcmeEvent::TokenNotFound), Domain = domain.to_string());
                 None
             }
         }

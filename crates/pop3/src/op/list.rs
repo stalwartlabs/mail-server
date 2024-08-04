@@ -35,7 +35,7 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Pop3(trc::Pop3Event::List),
                 SpanId = self.session_id,
-                Count = mailbox.messages.len(),
+                Total = mailbox.messages.len(),
                 Elapsed = op_start.elapsed()
             );
 
@@ -73,7 +73,7 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Pop3(trc::Pop3Event::Uidl),
                 SpanId = self.session_id,
-                Count = mailbox.messages.len(),
+                Total = mailbox.messages.len(),
                 Elapsed = op_start.elapsed()
             );
 
@@ -98,7 +98,7 @@ impl<T: SessionStream> Session<T> {
         trc::event!(
             Pop3(trc::Pop3Event::Stat),
             SpanId = self.session_id,
-            Count = mailbox.total,
+            Total = mailbox.total,
             Size = mailbox.size,
             Elapsed = op_start.elapsed()
         );

@@ -56,8 +56,22 @@ impl DeliveryAttempt {
                         } else {
                             trc::Value::Static("<>")
                         },
+                        To = message
+                            .recipients
+                            .iter()
+                            .filter_map(|r| {
+                                if matches!(
+                                    r.status,
+                                    Status::Scheduled | Status::TemporaryFailure(_)
+                                ) {
+                                    Some(trc::Value::String(r.address_lcase.to_string()))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Vec<_>>(),
                         Size = message.size,
-                        Count = message.recipients.len(),
+                        Total = message.recipients.len(),
                     );
 
                     // Attempt delivery
@@ -114,6 +128,12 @@ impl DeliveryAttempt {
                 return;
             }
         } else {
+            trc::event!(
+                Delivery(DeliveryEvent::Completed),
+                SpanId = span_id,
+                Elapsed = trc::Value::Duration((now() - message.created) * 1000)
+            );
+
             // All message recipients expired, do not re-queue. (DSN has been already sent)
             message.remove(&core, self.event.due).await;
             if core.inner.queue_tx.send(Event::Reload).await.is_err() {
@@ -203,7 +223,7 @@ impl DeliveryAttempt {
                 Delivery(DeliveryEvent::DomainDeliveryStart),
                 SpanId = message.span_id,
                 Domain = domain.domain.clone(),
-                Count = domain.retry.inner,
+                Total = domain.retry.inner,
             );
 
             // Build envelope
@@ -558,6 +578,11 @@ impl DeliveryAttempt {
                             SpanId = message.span_id,
                             Domain = domain.domain.clone(),
                             Hostname = envelope.mx.to_string(),
+                            Details = mta_sts_policy
+                                .mx
+                                .iter()
+                                .map(|mx| trc::Value::String(mx.to_string()))
+                                .collect::<Vec<_>>(),
                             Strict = strict,
                         );
 
@@ -574,6 +599,11 @@ impl DeliveryAttempt {
                             SpanId = message.span_id,
                             Domain = domain.domain.clone(),
                             Hostname = envelope.mx.to_string(),
+                            Details = mta_sts_policy
+                                .mx
+                                .iter()
+                                .map(|mx| trc::Value::String(mx.to_string()))
+                                .collect::<Vec<_>>(),
                             Strict = strict,
                         );
                     }
@@ -852,7 +882,7 @@ impl DeliveryAttempt {
                                 SpanId = message.span_id,
                                 Domain = domain.domain.clone(),
                                 Hostname = envelope.mx.to_string(),
-                                LocalIp = source_ip.unwrap_or(no_ip),
+                                LocalIp = source_ip,
                                 RemoteIp = remote_ip,
                                 RemotePort = remote_host.port(),
                                 Reason = err.to_string(),
@@ -986,11 +1016,11 @@ impl DeliveryAttempt {
                                         SpanId = message.span_id,
                                         Domain = domain.domain.clone(),
                                         Hostname = envelope.mx.to_string(),
-                                        Protocol = format!(
+                                        Version = format!(
                                             "{:?}",
                                             smtp_client.tls_connection().protocol_version()
                                         ),
-                                        Cipher = format!(
+                                        Details = format!(
                                             "{:?}",
                                             smtp_client.tls_connection().negotiated_cipher_suite()
                                         ),
@@ -1273,10 +1303,14 @@ impl DeliveryAttempt {
 
             Event::Reload
         } else {
+            trc::event!(
+                Delivery(DeliveryEvent::Completed),
+                SpanId = span_id,
+                Elapsed = trc::Value::Duration((now() - message.created) * 1000)
+            );
+
             // Delete message from queue
             message.remove(&core, self.event.due).await;
-
-            trc::event!(Delivery(DeliveryEvent::Completed), SpanId = span_id,);
 
             Event::Reload
         };

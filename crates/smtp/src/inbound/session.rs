@@ -105,7 +105,7 @@ impl<T: SessionStream> Session<T> {
                                     trc::event!(
                                         Smtp(SmtpEvent::AlreadyAuthenticated),
                                         SpanId = self.data.session_id,
-                                        Details = self.data.authenticated_as.clone(),
+                                        AccountName = self.data.authenticated_as.clone(),
                                     );
 
                                     self.write(b"503 5.5.1 Already authenticated.\r\n").await?;
@@ -135,7 +135,7 @@ impl<T: SessionStream> Session<T> {
                                 }
                             }
                             Request::Noop { .. } => {
-                                trc::event!(Smtp(SmtpEvent::Vrfy), SpanId = self.data.session_id,);
+                                trc::event!(Smtp(SmtpEvent::Noop), SpanId = self.data.session_id,);
 
                                 self.write(b"250 2.0.0 OK\r\n").await?;
                             }
@@ -380,6 +380,7 @@ impl<T: SessionStream> Session<T> {
                             trc::event!(
                                 Smtp(SmtpEvent::AuthExchangeTooLong),
                                 SpanId = self.data.session_id,
+                                Limit = MAX_LINE_LENGTH,
                             );
 
                             self.auth_error(

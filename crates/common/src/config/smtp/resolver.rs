@@ -376,18 +376,23 @@ impl Display for Policy {
 
         for mx in &self.mx {
             f.write_str("mx: ")?;
-            let mx = match mx {
-                MxPattern::StartsWith(mx) => {
-                    f.write_str("*.")?;
-                    mx
-                }
-                MxPattern::Equals(mx) => mx,
-            };
-            f.write_str(mx)?;
+            mx.fmt(f)?;
             f.write_str("\r\n")?;
         }
 
         Ok(())
+    }
+}
+
+impl Display for MxPattern {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MxPattern::Equals(mx) => f.write_str(mx),
+            MxPattern::StartsWith(mx) => {
+                f.write_str("*.")?;
+                f.write_str(mx)
+            }
+        }
     }
 }
 

@@ -37,8 +37,8 @@ impl LookupStore {
 
         trc::event!(
             Store(trc::StoreEvent::SqlQuery),
-            Query = query.to_string(),
-            Parameters = params.as_slice(),
+            Details = query.to_string(),
+            Value = params.as_slice(),
             Result = &result,
         );
 

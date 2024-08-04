@@ -24,6 +24,7 @@ use crate::{
 type GlobalInterests = AtomicBitset<{ (TOTAL_EVENT_COUNT + USIZE_BITS - 1) / USIZE_BITS }>;
 
 pub(crate) static INTERESTS: GlobalInterests = GlobalInterests::new();
+pub(crate) static METRIC_INTERESTS: GlobalInterests = GlobalInterests::new();
 pub(crate) type CollectorThread = JoinHandle<()>;
 pub(crate) static ACTIVE_SUBSCRIBERS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 pub(crate) static COLLECTOR_UPDATES: Mutex<Vec<Update>> = Mutex::new(Vec::new());
@@ -256,6 +257,11 @@ impl Collector {
     #[inline(always)]
     pub fn has_interest(event: impl Into<usize>) -> bool {
         INTERESTS.get(event)
+    }
+
+    #[inline(always)]
+    pub fn is_metric(event: impl Into<usize>) -> bool {
+        METRIC_INTERESTS.get(event)
     }
 
     pub fn get_subscribers() -> Vec<String> {

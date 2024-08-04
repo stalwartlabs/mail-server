@@ -216,7 +216,7 @@ impl Core {
             Ok(Some(principal)) => {
                 trc::event!(
                     Auth(trc::AuthEvent::Success),
-                    Name = credentials.login().to_string(),
+                    AccountName = credentials.login().to_string(),
                     AccountId = principal.id,
                     SpanId = session_id,
                     Type = principal.typ.as_str(),
@@ -246,7 +246,7 @@ impl Core {
                 if verify_secret_hash(fallback_pass, secret).await? {
                     trc::event!(
                         Auth(trc::AuthEvent::Success),
-                        Name = username.clone(),
+                        AccountName = username.clone(),
                         SpanId = session_id,
                         Type = Type::Superuser.as_str(),
                     );
@@ -267,7 +267,7 @@ impl Core {
                     {
                         trc::event!(
                             Auth(trc::AuthEvent::Success),
-                            Name = username.to_string(),
+                            AccountName = username.to_string(),
                             SpanId = session_id,
                             AccountId = principal.id,
                             Type = principal.typ.as_str(),
@@ -288,16 +288,16 @@ impl Core {
                 Err(trc::AuthEvent::Banned
                     .into_err()
                     .ctx(trc::Key::RemoteIp, remote_ip)
-                    .ctx(trc::Key::Name, login.to_string()))
+                    .ctx(trc::Key::AccountName, login.to_string()))
             } else {
                 Err(trc::AuthEvent::Failed
                     .ctx(trc::Key::RemoteIp, remote_ip)
-                    .ctx(trc::Key::Name, login.to_string()))
+                    .ctx(trc::Key::AccountName, login.to_string()))
             }
         } else {
             Err(trc::AuthEvent::Failed
                 .ctx(trc::Key::RemoteIp, remote_ip)
-                .ctx(trc::Key::Name, credentials.login().to_string()))
+                .ctx(trc::Key::AccountName, credentials.login().to_string()))
         }
     }
 }

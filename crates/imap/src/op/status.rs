@@ -54,7 +54,7 @@ impl<T: SessionStream> Session<T> {
             trc::event!(
                 Imap(trc::ImapEvent::Status),
                 SpanId = data.session_id,
-                Name = status.mailbox_name.clone(),
+                MailboxName = status.mailbox_name.clone(),
                 Details = arguments
                     .items
                     .iter()
