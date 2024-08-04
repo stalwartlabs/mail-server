@@ -7,11 +7,15 @@
 use core::panic;
 use std::{fmt::Write, fs, path::PathBuf};
 
-use crate::smtp::{
-    build_smtp,
-    inbound::{sign::SIGNATURES, TestMessage, TestQueueEvent},
-    session::{TestSession, VerifyResponse},
-    TempDir, TestSMTP,
+use crate::{
+    enable_logging,
+    smtp::{
+        build_smtp,
+        inbound::{sign::SIGNATURES, TestMessage, TestQueueEvent},
+        session::{TestSession, VerifyResponse},
+        TempDir, TestSMTP,
+    },
+    AssertConfig,
 };
 use common::Core;
 
@@ -28,6 +32,7 @@ data = "sql"
 lookup = "sql"
 blob = "sql"
 fts = "sql"
+directory = "local"
 
 [store."sql"]
 type = "sqlite"
@@ -84,17 +89,24 @@ message-id = true
 date = true
 return-path = false
 
+[directory."local"]
+type = "memory"
+
+[[directory."local".principals]]
+name = "john"
+description = "John Doe"
+secret = "secret"
+email = ["john@localdomain.org", "jdoe@localdomain.org", "john.doe@localdomain.org"]
+email-list = ["info@localdomain.org"]
+member-of = ["sales"]
+
+
 "#;
 
 #[tokio::test]
 async fn sieve_scripts() {
-    /*let disable = 1;
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    enable_logging();
 
     // Add test scripts
     let mut config = CONFIG.to_string() + SIGNATURES;
@@ -144,6 +156,7 @@ async fn sieve_scripts() {
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let mut qr = inner.init_test_queue(&core);
+    config.assert_no_errors();
 
     // Build session
     let core = build_smtp(core, inner);

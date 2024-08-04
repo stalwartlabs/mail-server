@@ -88,7 +88,7 @@ impl Tracers {
             crate::config::tracers::ConsoleTracer {
                 ansi: true,
                 multiline: false,
-                buffered: true,
+                buffered: false,
             },
         );
 

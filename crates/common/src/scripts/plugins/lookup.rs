@@ -335,7 +335,7 @@ async fn exec_remote_(ctx: &PluginContext<'_>) -> trc::Result<Variable> {
 }
 
 pub async fn exec_local_domain(ctx: PluginContext<'_>) -> trc::Result<Variable> {
-    let domain = ctx.arguments[0].to_string();
+    let domain = ctx.arguments[1].to_string();
 
     if !domain.is_empty() {
         return match &ctx.arguments[0] {

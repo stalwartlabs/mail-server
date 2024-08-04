@@ -291,6 +291,10 @@ impl Collector {
         Collector::reload();
     }
 
+    pub fn is_enabled() -> bool {
+        !INTERESTS.is_empty()
+    }
+
     pub fn reload() {
         Event::new(EventType::Tracing(TracingEvent::Update)).send()
     }

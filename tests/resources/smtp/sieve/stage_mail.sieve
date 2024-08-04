@@ -10,3 +10,8 @@ eval "query('sql', 'INSERT OR IGNORE INTO blocked_senders (addr) VALUES (?)', 'm
 if eval "query('sql', 'SELECT 1 FROM blocked_senders WHERE addr=? LIMIT 1', [envelope.from])" {
     reject "Your address has been blocked.";
 }
+
+if eval "!is_local_domain('', 'localdomain.org') || is_local_domain('', 'other.org')" {
+    let "reason" "'result: ' + is_local_domain('', 'localdomain.org') + ' ' + is_local_domain('', 'other.org')";
+    reject "is_local_domain function failed: ${reason}";
+}
