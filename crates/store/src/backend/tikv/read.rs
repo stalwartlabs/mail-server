@@ -31,9 +31,9 @@ impl TikvStore {
         U: Deserialize,
     {
         let key = key.serialize(WITH_SUBSPACE);
-        let read_trx = ReadTransaction::Snapshot(self.snapshot_trx().await?);
+        let mut ss = self.snapshot_trx().await?;
 
-        match read_chunked_value(&key, read_trx).await? {
+        match read_chunked_value_snapshot(&key, &mut ss).await? {
             ChunkedValue::Single(bytes) => U::deserialize(&bytes).map(Some),
             ChunkedValue::Chunked { bytes, .. } => U::deserialize(&bytes).map(Some),
             ChunkedValue::None => Ok(None),
@@ -108,28 +108,29 @@ impl TikvStore {
     }
 
     pub(crate) async fn read_trx(&self) -> trc::Result<Transaction> {
-        self.client
+        self.trx_client
             .begin_optimistic()
             .await
             .map_err(into_error)
     }
 
     pub(crate) async fn snapshot_trx(&self) -> trc::Result<Snapshot> {
-        let timestamp = self.client
+        let timestamp = self.trx_client
             .current_timestamp()
             .await
             .map_err(into_error)?;
 
-        Ok(self.client.snapshot(timestamp, TransactionOptions::new_optimistic()))
+        Ok(self.trx_client.snapshot(timestamp, TransactionOptions::new_optimistic()))
     }
 }
 
-pub(crate) async fn read_chunked_value(
+// TODO: Figure out a way to deduplicate the code
+pub(crate) async fn read_chunked_value_snapshot(
     key: &[u8],
-    mut read_trx: ReadTransaction
+    ss: &mut Snapshot
 ) -> trc::Result<ChunkedValue> {
     // TODO: Costly, redo
-    if let Some(bytes) = read_trx.get(key.to_vec()).await? {
+    if let Some(bytes) = ss.get(key.to_vec()).await.map_err(into_error)? {
         if bytes.len() < MAX_VALUE_SIZE {
             Ok(ChunkedValue::Single(bytes))
         } else {
@@ -141,7 +142,40 @@ pub(crate) async fn read_chunked_value(
                 .finalize();
 
             // TODO: Costly, redo
-            while let Some(bytes) = read_trx.get(key.clone()).await? {
+            while let Some(bytes) = ss.get(key.to_vec()).await.map_err(into_error)? {
+                value.extend_from_slice(&bytes);
+                *key.last_mut().unwrap() += 1;
+            }
+
+            Ok(ChunkedValue::Chunked {
+                bytes: value,
+                n_chunks: *key.last().unwrap(),
+            })
+        }
+    } else {
+        Ok(ChunkedValue::None)
+    }
+}
+
+// TODO: Figure out a way to deduplicate the code
+pub(crate) async fn read_chunked_value_transaction(
+    key: &[u8],
+    trx: &mut Transaction
+) -> trc::Result<ChunkedValue> {
+    // TODO: Costly, redo
+    if let Some(bytes) = trx.get(key.to_vec()).await.map_err(into_error)? {
+        if bytes.len() < MAX_VALUE_SIZE {
+            Ok(ChunkedValue::Single(bytes))
+        } else {
+            let mut value = Vec::with_capacity(bytes.len() * 2);
+            value.extend_from_slice(&bytes);
+            let mut key = KeySerializer::new(key.len() + 1)
+                .write(key)
+                .write(0u8)
+                .finalize();
+
+            // TODO: Costly, redo
+            while let Some(bytes) = trx.get(key.to_vec()).await.map_err(into_error)? {
                 value.extend_from_slice(&bytes);
                 *key.last_mut().unwrap() += 1;
             }

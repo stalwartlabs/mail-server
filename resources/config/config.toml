@@ -42,44 +42,25 @@ protocol = "http"
 bind = ["[::]:443"]
 tls.implicit = true
 
-# Uncomment after testing
-#[storage]
-#data = "rocksdb"
-#fts = "rocksdb"
-#blob = "rocksdb"
-#lookup = "rocksdb"
-#directory = "internal"
-#
-#[store."rocksdb"]
-#type = "rocksdb"
-#path = "%{env:STALWART_PATH}%/data"
-#compression = "lz4"
-#
-#[directory."internal"]
-#type = "internal"
-#store = "rocksdb"
-# Uncomment after testing
-
-# Delete after testing
 [storage]
-data = "tikv"
-fts = "tikv"
-blob = "tikv"
-lookup = "tikv"
+data = "rocksdb"
+fts = "rocksdb"
+blob = "rocksdb"
+lookup = "rocksdb"
 directory = "internal"
 
-[store."tikv"]
-type = "tikv"
-pd-endpoints = ["127.0.0.1:2379"]
+[store."rocksdb"]
+type = "rocksdb"
+path = "%{env:STALWART_PATH}%/data"
+compression = "lz4"
 
 [directory."internal"]
 type = "internal"
-store = "tikv"
-# Delete after testing
+store = "rocksdb"
 
 [tracer."stdout"]
 type = "stdout"
-level = "trace" # switch back to info after debugging
+level = "info"
 ansi = false
 enable = true
 

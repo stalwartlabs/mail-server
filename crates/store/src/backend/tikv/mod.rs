@@ -5,7 +5,10 @@
  */
 
 use std::time::{Duration, Instant};
-use tikv_client::{TransactionClient, Transaction, Error as TikvError, Snapshot, Value, Key};
+use tikv_client::{TransactionClient, Transaction, Error as TikvError, Snapshot, Value, Key, Timestamp, RawClient};
+use tikv_client::proto::kvrpcpb;
+use tikv_client::proto::kvrpcpb::Mutation;
+use crate::write::{AssignedIds, ValueOp};
 
 pub mod blob;
 pub mod main;
@@ -24,17 +27,19 @@ pub const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[allow(dead_code)]
 pub struct TikvStore {
-    client: TransactionClient,
+    trx_client: TransactionClient,
+    raw_client: RawClient,
     version: parking_lot::Mutex<ReadVersion>,
 }
 
-pub(crate) enum ReadTransaction {
-    Transaction(Transaction),
-    Snapshot(Snapshot)
+// TODO: Remove
+pub(crate) enum ReadTransaction<'db> {
+    Transaction(&'db mut Transaction),
+    Snapshot(&'db mut Snapshot)
 }
 
-impl ReadTransaction {
-    pub(crate) async fn get(&mut self, key: impl Into<Key>) -> trc::Result<Option<Value>> {
+impl<'a> ReadTransaction<'a> {
+    pub(crate) async fn get(&'a mut self, key: impl Into<Key>) -> trc::Result<Option<Value>> {
         match self {
             ReadTransaction::Transaction(trx) => {
                 trx.get(key).await.map_err(into_error)
@@ -46,30 +51,18 @@ impl ReadTransaction {
     }
 }
 
-impl From<Transaction> for ReadTransaction {
-    fn from(value: Transaction) -> Self {
-        Self::Transaction(value)
-    }
-}
-
-impl From<Snapshot> for ReadTransaction {
-    fn from(value: Snapshot) -> Self {
-        Self::Snapshot(value)
-    }
-}
-
 pub(crate) struct TimedTransaction {
     trx: Transaction,
     expires: Instant,
 }
 
 pub(crate) struct ReadVersion {
-    version: i64,
+    version: Timestamp,
     expires: Instant,
 }
 
 impl ReadVersion {
-    pub fn new(version: i64) -> Self {
+    pub fn new(version: Timestamp) -> Self {
         Self {
             version,
             expires: Instant::now() + TRANSACTION_EXPIRY,
@@ -84,7 +77,7 @@ impl ReadVersion {
 impl Default for ReadVersion {
     fn default() -> Self {
         Self {
-            version: 0,
+            version: Timestamp::default(),
             expires: Instant::now(),
         }
     }
@@ -111,6 +104,6 @@ impl TimedTransaction {
 
 #[inline(always)]
 fn into_error(error: TikvError) -> trc::Error {
-    trc::StoreEvent::FoundationdbError
+    trc::StoreEvent::TikvError
         .reason(error.to_string())
 }

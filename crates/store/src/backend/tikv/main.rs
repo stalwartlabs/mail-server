@@ -6,7 +6,7 @@
 
 use std::net::SocketAddr;
 
-use tikv_client::TransactionClient;
+use tikv_client::{RawClient, TransactionClient};
 use utils::config::{utils::AsKey, Config};
 
 use super::TikvStore;
@@ -16,12 +16,12 @@ impl TikvStore {
         let prefix = prefix.as_key();
 
         // Parse as SocketAddr but don't use it. TransactionClient takes only a String vector
-        let pd_endpoints = config.properties::<String>((&prefix, "pd-endpoints"))
+        let pd_endpoints= config.properties::<String>((&prefix, "pd-endpoints"))
             .into_iter()
             .map(|(_key, addr_str)| addr_str)
-            .collect();
+            .collect::<Vec<String>>();
 
-        let client = TransactionClient::new(pd_endpoints)
+        let trx_client = TransactionClient::new(pd_endpoints.clone())
             .await
             .map_err(|err| {
                 config.new_build_error(
@@ -31,8 +31,20 @@ impl TikvStore {
             })
             .ok()?;
 
+        let raw_client = RawClient::new(pd_endpoints)
+            .await
+            .map_err(|err| {
+                config.new_build_error(
+                    prefix.as_str(),
+                    format!("Failed to create TiKV database: {err:?}"),
+                )
+            })
+            .ok()?
+            .with_atomic_for_cas();
+
         Some(Self {
-            client,
+            trx_client,
+            raw_client,
             version: Default::default(),
         })
     }

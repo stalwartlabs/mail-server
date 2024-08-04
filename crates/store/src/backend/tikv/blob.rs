@@ -5,9 +5,10 @@
  */
 
 use std::ops::Range;
+use utils::BLOB_HASH_LEN;
 use crate::SUBSPACE_BLOBS;
 use crate::write::key::KeySerializer;
-use super::{into_error, MAX_KV_PAIRS, MAX_VALUE_SIZE, TikvStore};
+use super::{into_error, MAX_KEYS, MAX_KV_PAIRS, MAX_VALUE_SIZE, TikvStore};
 
 impl TikvStore {
     pub(crate) async fn get_blob(
@@ -80,10 +81,70 @@ impl TikvStore {
     }
 
     pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
-        todo!()
+        const N_CHUNKS: usize = (1 << 5) - 1;
+        let last_chunk = std::cmp::max(
+            (data.len() / MAX_VALUE_SIZE)
+                + if data.len() % MAX_VALUE_SIZE > 0 {
+                1
+            } else {
+                0
+            },
+            1,
+        ) - 1;
+        let mut trx = self.trx_client.begin_pessimistic().await.map_err(into_error)?;
+
+        for (chunk_pos, chunk_bytes) in data.chunks(MAX_VALUE_SIZE).enumerate() {
+            trx.put(
+                KeySerializer::new(key.len() + 3)
+                    .write(SUBSPACE_BLOBS)
+                    .write(key)
+                    .write(chunk_pos as u16)
+                    .finalize(),
+                chunk_bytes,
+            ).await.map_err(into_error)?;
+            if chunk_pos == last_chunk || (chunk_pos > 0 && chunk_pos % N_CHUNKS == 0) {
+                self.commit(trx, false).await?;
+                if chunk_pos < last_chunk {
+                    trx = self.trx_client.begin_pessimistic().await.map_err(into_error)?;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
-        todo!()
+        if key.len() < BLOB_HASH_LEN {
+            return Ok(false);
+        }
+        // Shouldn't grab millions of keys anyways but
+        // TODO: Optimise
+        let mut trx = self.trx_client.begin_pessimistic().await.map_err(into_error)?;
+
+        let begin = KeySerializer::new(key.len() + 3)
+            .write(SUBSPACE_BLOBS)
+            .write(key)
+            .write(0u16)
+            .finalize();
+        let end = KeySerializer::new(key.len() + 3)
+            .write(SUBSPACE_BLOBS)
+            .write(key)
+            .write(u16::MAX)
+            .finalize();
+        let keys = trx.scan_keys((begin, end), MAX_KEYS).await.map_err(into_error)?;
+
+        let mut key_count = 0;
+        for key in keys {
+            key_count += 1;
+            trx.delete(key).await.map_err(into_error)?;
+        }
+        if key_count == 0 {
+            trx.rollback().await.map_err(into_error)?;
+            return Ok(false);
+        }
+
+        self.commit(trx, false).await
     }
 }
