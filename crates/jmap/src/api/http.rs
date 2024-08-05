@@ -370,9 +370,39 @@ impl JmapInstance {
                         } else if let Some(forwarded_for) = req
                             .headers()
                             .get(header::FORWARDED)
-                            .or_else(|| req.headers().get("X-Forwarded-For"))
                             .and_then(|h| h.to_str().ok())
-                            .and_then(|h| h.parse::<IpAddr>().ok())
+                            .and_then(|h| {
+                                let h = h.to_ascii_lowercase();
+                                h.split_once("for=").and_then(|(_, rest)| {
+                                    let mut start_ip = usize::MAX;
+                                    let mut end_ip = usize::MAX;
+
+                                    for (pos, ch) in rest.char_indices() {
+                                        match ch {
+                                            '0'..='9' | 'a'..='f' | ':' | '.' => {
+                                                if start_ip == usize::MAX {
+                                                    start_ip = pos;
+                                                }
+                                                end_ip = pos;
+                                            }
+                                            '"' | '[' | ' ' if start_ip == usize::MAX => {}
+                                            _ => {
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    rest.get(start_ip..=end_ip)
+                                        .and_then(|h| h.parse::<IpAddr>().ok())
+                                })
+                            })
+                            .or_else(|| {
+                                req.headers()
+                                    .get("X-Forwarded-For")
+                                    .and_then(|h| h.to_str().ok())
+                                    .map(|h| h.split_once(',').map_or(h, |(ip, _)| ip).trim())
+                                    .and_then(|h| h.parse::<IpAddr>().ok())
+                            })
                         {
                             forwarded_for
                         } else {
