@@ -10,8 +10,7 @@ use hyper::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha1::Digest;
-use store::ahash::AHashMap;
-use utils::url_params::UrlParams;
+use utils::{config::Config, url_params::UrlParams};
 use x509_parser::parse_x509_certificate;
 
 use crate::{
@@ -134,8 +133,9 @@ impl JMAP {
         let mut records = Vec::new();
 
         // Obtain DKIM keys
-        let mut keys = AHashMap::new();
+        let mut keys = Config::default();
         let mut signature_ids = Vec::new();
+        let mut has_macros = false;
         for (key, value) in self.core.storage.config.list("signature.", true).await? {
             match key.strip_suffix(".domain") {
                 Some(key_id) if value == domain_name => {
@@ -143,7 +143,10 @@ impl JMAP {
                 }
                 _ => (),
             }
-            keys.insert(key, value);
+            if !has_macros && value.contains("%%{") {
+                has_macros = true;
+            }
+            keys.keys.insert(key, value);
         }
 
         // Add MX and CNAME records
@@ -164,12 +167,16 @@ impl JMAP {
         }
 
         // Process DKIM keys
+        if has_macros {
+            keys.resolve_macros(&["env", "file", "cfg"]).await;
+            keys.log_errors();
+        }
         for signature_id in signature_ids {
             if let (Some(algo), Some(pk), Some(selector)) = (
-                keys.get(&format!("{signature_id}.algorithm"))
+                keys.value(&format!("{signature_id}.algorithm"))
                     .and_then(|algo| algo.parse::<Algorithm>().ok()),
-                keys.get(&format!("{signature_id}.private-key")),
-                keys.get(&format!("{signature_id}.selector")),
+                keys.value(&format!("{signature_id}.private-key")),
+                keys.value(&format!("{signature_id}.selector")),
             ) {
                 match obtain_dkim_public_key(algo, pk) {
                     Ok(public) => {
