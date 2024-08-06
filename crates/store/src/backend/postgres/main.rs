@@ -29,6 +29,7 @@ impl PostgresStore {
         cfg.connect_timeout = config
             .property::<Option<Duration>>((&prefix, "timeout"))
             .unwrap_or_default();
+        cfg.options = config.value((&prefix, "options")).map(|s| s.to_string());
         cfg.manager = Some(ManagerConfig {
             recycling_method: RecyclingMethod::Fast,
         });
