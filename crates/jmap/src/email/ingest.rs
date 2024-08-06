@@ -31,7 +31,7 @@ use store::{
     },
     BitmapKey, BlobClass, Serialize,
 };
-use trc::AddContext;
+use trc::{AddContext, MessageIngestEvent};
 use utils::map::vec_map::VecMap;
 
 use crate::{
@@ -90,7 +90,7 @@ impl JMAP {
         // Parse message
         let mut raw_message = Cow::from(params.raw_message);
         let mut message = params.message.ok_or_else(|| {
-            trc::EventType::Store(trc::StoreEvent::IngestError)
+            trc::EventType::MessageIngest(trc::MessageIngestEvent::Error)
                 .ctx(trc::Key::Code, 550)
                 .ctx(trc::Key::Reason, "Failed to parse e-mail message.")
         })?;
@@ -174,7 +174,7 @@ impl JMAP {
                     .is_empty()
             {
                 trc::event!(
-                    Store(trc::StoreEvent::IngestDuplicate),
+                    MessageIngest(MessageIngestEvent::Duplicate),
                     SpanId = params.session_id,
                     AccountId = params.account_id,
                     MessageId = message_id.to_string(),
@@ -216,7 +216,7 @@ impl JMAP {
                         message = MessageParser::default()
                             .parse(raw_message.as_ref())
                             .ok_or_else(|| {
-                                trc::EventType::Store(trc::StoreEvent::IngestError)
+                                trc::EventType::MessageIngest(trc::MessageIngestEvent::Error)
                                     .ctx(trc::Key::Code, 550)
                                     .ctx(
                                         trc::Key::Reason,
@@ -338,7 +338,16 @@ impl JMAP {
         let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;
 
         trc::event!(
-            Store(trc::StoreEvent::Ingest),
+            MessageIngest(match params.source {
+                IngestSource::Smtp =>
+                    if !is_spam {
+                        MessageIngestEvent::Ham
+                    } else {
+                        MessageIngestEvent::Spam
+                    },
+                IngestSource::Jmap => MessageIngestEvent::JmapAppend,
+                IngestSource::Imap => MessageIngestEvent::ImapAppend,
+            }),
             SpanId = params.session_id,
             AccountId = params.account_id,
             DocumentId = document_id,
@@ -346,7 +355,6 @@ impl JMAP {
             BlobId = blob_id.hash.to_hex(),
             ChangeId = change_id,
             Size = raw_message_len as u64,
-            Spam = is_spam,
             Elapsed = start_time.elapsed(),
         );
 

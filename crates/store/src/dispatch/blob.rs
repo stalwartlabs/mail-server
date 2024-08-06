@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, ops::Range};
+use std::{borrow::Cow, ops::Range, time::Instant};
 
 use trc::{AddContext, StoreEvent};
 use utils::config::utils::ParseValue;
@@ -17,7 +17,7 @@ impl BlobStore {
             CompressionAlgo::None => range.clone(),
             CompressionAlgo::Lz4 => 0..usize::MAX,
         };
-
+        let start_time = Instant::now();
         let result = match &self.backend {
             BlobBackend::Store(store) => match store {
                 #[cfg(feature = "sqlite")]
@@ -36,6 +36,15 @@ impl BlobStore {
             #[cfg(feature = "s3")]
             BlobBackend::S3(store) => store.get_blob(key, read_range).await,
         };
+
+        trc::event!(
+            Store(StoreEvent::BlobRead),
+            Key = key,
+            Elapsed = start_time.elapsed(),
+            Size = result
+                .as_ref()
+                .map_or(0, |data| data.as_ref().map_or(0, |data| data.len())),
+        );
 
         let decompressed = match self.compression {
             CompressionAlgo::Lz4 => match result.caused_by(trc::location!())? {
@@ -84,7 +93,8 @@ impl BlobStore {
             }
         };
 
-        match &self.backend {
+        let start_time = Instant::now();
+        let result = match &self.backend {
             BlobBackend::Store(store) => match store {
                 #[cfg(feature = "sqlite")]
                 Store::SQLite(store) => store.put_blob(key, data.as_ref()).await,
@@ -102,11 +112,21 @@ impl BlobStore {
             #[cfg(feature = "s3")]
             BlobBackend::S3(store) => store.put_blob(key, data.as_ref()).await,
         }
-        .caused_by(trc::location!())
+        .caused_by(trc::location!());
+
+        trc::event!(
+            Store(StoreEvent::BlobWrite),
+            Key = key,
+            Elapsed = start_time.elapsed(),
+            Size = data.len(),
+        );
+
+        result
     }
 
     pub async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
-        match &self.backend {
+        let start_time = Instant::now();
+        let result = match &self.backend {
             BlobBackend::Store(store) => match store {
                 #[cfg(feature = "sqlite")]
                 Store::SQLite(store) => store.delete_blob(key).await,
@@ -124,7 +144,15 @@ impl BlobStore {
             #[cfg(feature = "s3")]
             BlobBackend::S3(store) => store.delete_blob(key).await,
         }
-        .caused_by(trc::location!())
+        .caused_by(trc::location!());
+
+        trc::event!(
+            Store(StoreEvent::BlobWrite),
+            Key = key,
+            Elapsed = start_time.elapsed(),
+        );
+
+        result
     }
 
     pub fn with_compression(self, compression: CompressionAlgo) -> Self {

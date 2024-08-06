@@ -4,10 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::ops::{BitAndAssign, Range};
+use std::{
+    ops::{BitAndAssign, Range},
+    time::Instant,
+};
 
 use roaring::RoaringBitmap;
-use trc::AddContext;
+use trc::{AddContext, StoreEvent};
 
 use crate::{
     write::{
@@ -95,7 +98,8 @@ impl Store {
         params: IterateParams<T>,
         cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
     ) -> trc::Result<()> {
-        match self {
+        let start_time = Instant::now();
+        let result = match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.iterate(params, cb).await,
             #[cfg(feature = "foundation")]
@@ -108,7 +112,14 @@ impl Store {
             Self::RocksDb(store) => store.iterate(params, cb).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
-        .caused_by(trc::location!())
+        .caused_by(trc::location!());
+
+        trc::event!(
+            Store(StoreEvent::DataIterate),
+            Elapsed = start_time.elapsed(),
+        );
+
+        result
     }
 
     pub async fn get_counter(
@@ -220,7 +231,10 @@ impl Store {
             return Ok(AssignedIds::default());
         }
 
-        match self {
+        let start_time = Instant::now();
+        let ops = batch.ops.len();
+
+        let result = match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.write(batch).await,
             #[cfg(feature = "foundation")]
@@ -232,7 +246,15 @@ impl Store {
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.write(batch).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
-        }
+        };
+
+        trc::event!(
+            Store(StoreEvent::DataWrite),
+            Elapsed = start_time.elapsed(),
+            Total = ops,
+        );
+
+        result
     }
 
     pub async fn purge_store(&self) -> trc::Result<()> {

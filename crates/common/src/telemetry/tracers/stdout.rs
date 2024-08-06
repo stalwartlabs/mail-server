@@ -10,7 +10,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::config::tracers::ConsoleTracer;
+use crate::config::telemetry::ConsoleTracer;
 use std::io::Write;
 use tokio::io::AsyncWrite;
 use trc::{fmt::FmtWriter, subscriber::SubscriberBuilder};

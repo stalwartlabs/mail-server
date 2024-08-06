@@ -17,17 +17,19 @@ use crate::{
     bitset::{AtomicBitset, USIZE_BITS},
     channel::{EVENT_COUNT, EVENT_RXS},
     subscriber::{Interests, Subscriber},
-    DeliveryEvent, Event, EventDetails, EventType, Level, NetworkEvent, TracingEvent,
+    DeliveryEvent, Event, EventDetails, EventType, Level, NetworkEvent, TelemetryEvent,
     TOTAL_EVENT_COUNT,
 };
 
-type GlobalInterests = AtomicBitset<{ (TOTAL_EVENT_COUNT + USIZE_BITS - 1) / USIZE_BITS }>;
+pub(crate) type GlobalInterests =
+    AtomicBitset<{ (TOTAL_EVENT_COUNT + USIZE_BITS - 1) / USIZE_BITS }>;
 
-pub(crate) static INTERESTS: GlobalInterests = GlobalInterests::new();
-pub(crate) static METRIC_INTERESTS: GlobalInterests = GlobalInterests::new();
+pub(crate) static TRACE_INTERESTS: GlobalInterests = GlobalInterests::new();
 pub(crate) type CollectorThread = JoinHandle<()>;
 pub(crate) static ACTIVE_SUBSCRIBERS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 pub(crate) static COLLECTOR_UPDATES: Mutex<Vec<Update>> = Mutex::new(Vec::new());
+
+pub(crate) const EVENT_TYPES: [EventType; TOTAL_EVENT_COUNT] = EventType::variants();
 
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum Update {
@@ -43,15 +45,14 @@ pub(crate) enum Update {
         lossy: bool,
     },
     UpdateLevels {
-        custom_levels: AHashMap<EventType, Level>,
+        levels: AHashMap<EventType, Level>,
     },
     Shutdown,
 }
 
-#[derive(Default)]
 pub struct Collector {
     subscribers: Vec<Subscriber>,
-    custom_levels: AHashMap<EventType, Level>,
+    levels: [Level; TOTAL_EVENT_COUNT],
     active_spans: AHashMap<u64, Arc<Event<EventDetails>>>,
 }
 
@@ -59,7 +60,7 @@ const EV_CONN_START: usize = EventType::Network(NetworkEvent::ConnectionStart).i
 const EV_CONN_END: usize = EventType::Network(NetworkEvent::ConnectionEnd).id();
 const EV_ATTEMPT_START: usize = EventType::Delivery(DeliveryEvent::AttemptStart).id();
 const EV_ATTEMPT_END: usize = EventType::Delivery(DeliveryEvent::AttemptEnd).id();
-const EV_COLLECTOR_UPDATE: usize = EventType::Tracing(TracingEvent::Update).id();
+const EV_COLLECTOR_UPDATE: usize = EventType::Telemetry(TelemetryEvent::Update).id();
 
 const STALE_SPAN_CHECK_WATERMARK: usize = 8000;
 const SPAN_MAX_HOLD: u64 = 86400;
@@ -81,13 +82,10 @@ impl Collector {
                 match rx.try_recv() {
                     Ok(Some(event)) => {
                         // Build event
+                        let event_id = event.inner.id();
                         let mut event = Event {
                             inner: EventDetails {
-                                level: self
-                                    .custom_levels
-                                    .get(&event.inner)
-                                    .copied()
-                                    .unwrap_or_else(|| event.inner.level()),
+                                level: self.levels[event_id],
                                 typ: event.inner,
                                 timestamp,
                                 span: None,
@@ -96,7 +94,6 @@ impl Collector {
                         };
 
                         // Track spans
-                        let event_id = event.inner.typ.id();
                         let event = match event_id {
                             EV_CONN_START | EV_ATTEMPT_START => {
                                 let event = Arc::new(event);
@@ -213,8 +210,15 @@ impl Collector {
                         }
                     }
                 }
-                Update::UpdateLevels { custom_levels } => {
-                    self.custom_levels = custom_levels;
+                Update::UpdateLevels { levels } => {
+                    for event in EVENT_TYPES.iter() {
+                        let event_id = event.id();
+                        if let Some(level) = levels.get(event) {
+                            self.levels[event_id] = *level;
+                        } else {
+                            self.levels[event_id] = event.level();
+                        }
+                    }
                 }
                 Update::Shutdown => return false,
             }
@@ -235,43 +239,26 @@ impl Collector {
             }
         }
 
-        INTERESTS.update(interests);
+        TRACE_INTERESTS.update(interests);
     }
 
     pub fn union_interests(interests: Interests) {
-        INTERESTS.union(interests);
-    }
-
-    pub fn enable_event(event: impl Into<usize>) {
-        INTERESTS.set(event);
-    }
-
-    pub fn disable_event(event: impl Into<usize>) {
-        INTERESTS.clear(event);
-    }
-
-    pub fn disable_all_events() {
-        INTERESTS.clear_all();
+        TRACE_INTERESTS.union(interests);
     }
 
     #[inline(always)]
     pub fn has_interest(event: impl Into<usize>) -> bool {
-        INTERESTS.get(event)
-    }
-
-    #[inline(always)]
-    pub fn is_metric(event: impl Into<usize>) -> bool {
-        METRIC_INTERESTS.get(event)
+        TRACE_INTERESTS.get(event)
     }
 
     pub fn get_subscribers() -> Vec<String> {
         ACTIVE_SUBSCRIBERS.lock().clone()
     }
 
-    pub fn update_custom_levels(custom_levels: AHashMap<EventType, Level>) {
+    pub fn update_custom_levels(levels: AHashMap<EventType, Level>) {
         COLLECTOR_UPDATES
             .lock()
-            .push(Update::UpdateLevels { custom_levels });
+            .push(Update::UpdateLevels { levels });
     }
 
     pub fn update_subscriber(id: String, interests: Interests, lossy: bool) {
@@ -292,11 +279,11 @@ impl Collector {
     }
 
     pub fn is_enabled() -> bool {
-        !INTERESTS.is_empty()
+        !TRACE_INTERESTS.is_empty()
     }
 
     pub fn reload() {
-        Event::new(EventType::Tracing(TracingEvent::Update)).send()
+        Event::new(EventType::Telemetry(TelemetryEvent::Update)).send()
     }
 }
 
@@ -314,4 +301,21 @@ pub(crate) fn spawn_collector() -> &'static Arc<CollectorThread> {
                 .expect("Failed to start event collector"),
         )
     })
+}
+
+impl Default for Collector {
+    fn default() -> Self {
+        let mut c = Collector {
+            subscribers: Vec::new(),
+            levels: [Level::Disable; TOTAL_EVENT_COUNT],
+            active_spans: AHashMap::new(),
+        };
+
+        for event in EVENT_TYPES.iter() {
+            let event_id = event.id();
+            c.levels[event_id] = event.level();
+        }
+
+        c
+    }
 }

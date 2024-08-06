@@ -22,11 +22,9 @@ use opentelemetry_sdk::{
     Resource,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
-use trc::{subscriber::SubscriberBuilder, Event, EventDetails, Level, TracingEvent};
+use trc::{subscriber::SubscriberBuilder, Event, EventDetails, Level, TelemetryEvent};
 
-use crate::config::tracers::OtelTracer;
-
-use super::LONG_SLUMBER;
+use crate::{config::telemetry::OtelTracer, telemetry::LONG_SLUMBER};
 
 pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer) {
     let (_, mut rx) = builder.register();
@@ -91,7 +89,7 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                             .await
                         {
                             trc::event!(
-                                Tracing(TracingEvent::OtelError),
+                                Telemetry(TelemetryEvent::OtelError),
                                 Details = "Failed to export spans",
                                 Reason = err.to_string()
                             );
@@ -105,7 +103,7 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                             .await
                         {
                             trc::event!(
-                                Tracing(TracingEvent::OtelError),
+                                Telemetry(TelemetryEvent::OtelError),
                                 Details = "Failed to export logs",
                                 Reason = err.to_string()
                             );

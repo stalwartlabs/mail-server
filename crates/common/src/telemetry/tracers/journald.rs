@@ -7,7 +7,7 @@
 use ahash::AHashSet;
 use std::io::Write;
 use trc::subscriber::SubscriberBuilder;
-use trc::{Event, EventDetails, Level, TracingEvent};
+use trc::{Event, EventDetails, Level, TelemetryEvent};
 
 pub(crate) fn spawn_journald_tracer(builder: SubscriberBuilder, subscriber: Subscriber) {
     let (_, mut rx) = builder.register();
@@ -52,7 +52,7 @@ impl Subscriber {
 
         if let Err(err) = self.send_payload(&buf) {
             trc::event!(
-                Tracing(TracingEvent::JournalError),
+                Telemetry(TelemetryEvent::JournalError),
                 Details = "Failed to send event to journald",
                 Reason = err.to_string()
             );

@@ -4,26 +4,23 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-#[cfg(unix)]
-pub mod journald;
-pub mod log;
-pub mod otel;
-pub mod stdout;
-pub mod webhook;
+pub mod metrics;
+pub mod tracers;
+pub mod webhooks;
 
 use std::time::Duration;
 
-use log::spawn_log_tracer;
-use otel::spawn_otel_tracer;
-use stdout::spawn_console_tracer;
+use tracers::log::spawn_log_tracer;
+use tracers::otel::spawn_otel_tracer;
+use tracers::stdout::spawn_console_tracer;
 use trc::{collector::Collector, subscriber::SubscriberBuilder};
-use webhook::spawn_webhook_tracer;
+use webhooks::spawn_webhook_tracer;
 
-use crate::config::tracers::{TracerType, Tracers};
+use crate::config::telemetry::{Telemetry, TelemetrySubscriberType};
 
 pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);
 
-impl Tracers {
+impl Telemetry {
     pub fn enable(self) {
         // Spawn tracers
         for tracer in self.tracers {
@@ -85,7 +82,7 @@ impl Tracers {
             SubscriberBuilder::new("stderr".to_string())
                 .with_interests(interests.clone())
                 .with_lossy(false),
-            crate::config::tracers::ConsoleTracer {
+            crate::config::telemetry::ConsoleTracer {
                 ansi: true,
                 multiline: false,
                 buffered: false,
@@ -97,15 +94,20 @@ impl Tracers {
     }
 }
 
-impl TracerType {
+impl TelemetrySubscriberType {
     pub fn spawn(self, builder: SubscriberBuilder) {
         match self {
-            TracerType::Console(settings) => spawn_console_tracer(builder, settings),
-            TracerType::Log(settings) => spawn_log_tracer(builder, settings),
-            TracerType::Webhook(settings) => spawn_webhook_tracer(builder, settings),
-            TracerType::Otel(settings) => spawn_otel_tracer(builder, settings),
+            TelemetrySubscriberType::ConsoleTracer(settings) => {
+                spawn_console_tracer(builder, settings)
+            }
+            TelemetrySubscriberType::LogTracer(settings) => spawn_log_tracer(builder, settings),
+            TelemetrySubscriberType::Webhook(settings) => spawn_webhook_tracer(builder, settings),
+            TelemetrySubscriberType::OtelTracer(settings) => spawn_otel_tracer(builder, settings),
             #[cfg(unix)]
-            TracerType::Journal(subscriber) => journald::spawn_journald_tracer(builder, subscriber),
+            TelemetrySubscriberType::JournalTracer(subscriber) => {
+                tracers::journald::spawn_journald_tracer(builder, subscriber)
+            }
+            TelemetrySubscriberType::OtelMetrics(_) => todo!(),
         }
     }
 }

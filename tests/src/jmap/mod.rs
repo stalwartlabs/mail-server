@@ -13,7 +13,7 @@ use base64::{
 use common::{
     config::{
         server::{ServerProtocol, Servers},
-        tracers::Tracers,
+        telemetry::Telemetry,
     },
     manager::config::{ConfigManager, Patterns},
     Core, Ipc, IPC_CHANNEL_BUFFER,
@@ -454,7 +454,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             .cloned()
             .unwrap_or_default(),
     };
-    let tracers = Tracers::parse(&mut config);
+    let tracers = Telemetry::parse(&mut config);
     let core = Core::parse(&mut config, stores, config_manager).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();

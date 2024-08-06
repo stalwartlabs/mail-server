@@ -64,11 +64,11 @@ impl AssertConfig for utils::config::Config {
 
 #[cfg(test)]
 pub fn enable_logging() {
-    use common::config::tracers::Tracers;
+    use common::config::telemetry::Telemetry;
 
     if let Ok(level) = std::env::var("LOG") {
         if !Collector::is_enabled() {
-            Tracers::test_tracer(level.parse().expect("Invalid log level"));
+            Telemetry::test_tracer(level.parse().expect("Invalid log level"));
         }
     }
 }

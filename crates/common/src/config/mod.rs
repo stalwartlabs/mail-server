@@ -25,7 +25,7 @@ pub mod scripts;
 pub mod server;
 pub mod smtp;
 pub mod storage;
-pub mod tracers;
+pub mod telemetry;
 
 pub(crate) const CONNECTION_VARS: &[u32; 7] = &[
     V_LISTENER,

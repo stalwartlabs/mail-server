@@ -12,7 +12,7 @@ use utils::config::{ipmask::IpAddrOrMask, utils::ParseValue, Config};
 use crate::{
     config::{
         server::{tls::parse_certificates, Servers},
-        tracers::Tracers,
+        telemetry::Telemetry,
     },
     listener::blocked::BLOCKED_IP_KEY,
     Core,
@@ -23,7 +23,7 @@ use super::config::{ConfigManager, Patterns};
 pub struct ReloadResult {
     pub config: Config,
     pub new_core: Option<Core>,
-    pub tracers: Option<Tracers>,
+    pub tracers: Option<Telemetry>,
 }
 
 impl Core {
@@ -84,7 +84,7 @@ impl Core {
         let mut config = self.storage.config.build_config("").await?;
 
         // Parse tracers
-        let tracers = Tracers::parse(&mut config);
+        let tracers = Telemetry::parse(&mut config);
 
         // Load stores
         let mut stores = Stores {

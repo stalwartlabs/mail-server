@@ -18,7 +18,7 @@ use utils::{
 };
 
 use crate::{
-    config::{server::Servers, tracers::Tracers},
+    config::{server::Servers, telemetry::Telemetry},
     Core, SharedCore,
 };
 
@@ -162,7 +162,7 @@ impl BootManager {
         }
 
         // Enable tracing
-        Tracers::parse(&mut config).enable();
+        Telemetry::parse(&mut config).enable();
 
         match import_export {
             ImportExport::None => {

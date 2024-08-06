@@ -39,7 +39,7 @@ pub mod expr;
 pub mod listener;
 pub mod manager;
 pub mod scripts;
-pub mod tracing;
+pub mod telemetry;
 
 pub static USER_AGENT: &str = concat!("Stalwart/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);

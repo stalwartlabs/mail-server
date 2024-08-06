@@ -48,9 +48,11 @@ impl JMAP {
         let message = if let Some(message) = MessageParser::new().parse(raw_message) {
             message
         } else {
-            return Err(trc::EventType::Store(trc::StoreEvent::IngestError)
-                .ctx(trc::Key::Code, 550)
-                .ctx(trc::Key::Reason, "Failed to parse e-mail message."));
+            return Err(
+                trc::EventType::MessageIngest(trc::MessageIngestEvent::Error)
+                    .ctx(trc::Key::Code, 550)
+                    .ctx(trc::Key::Reason, "Failed to parse e-mail message."),
+            );
         };
 
         // Obtain mailboxIds
@@ -478,9 +480,11 @@ impl JMAP {
         }
 
         if let Some(reject_reason) = reject_reason {
-            Err(trc::EventType::Store(trc::StoreEvent::IngestError)
-                .ctx(trc::Key::Code, 571)
-                .ctx(trc::Key::Reason, reject_reason))
+            Err(
+                trc::EventType::MessageIngest(trc::MessageIngestEvent::Error)
+                    .ctx(trc::Key::Code, 571)
+                    .ctx(trc::Key::Reason, reject_reason),
+            )
         } else if has_delivered || last_temp_error.is_none() {
             Ok(ingested_message)
         } else {

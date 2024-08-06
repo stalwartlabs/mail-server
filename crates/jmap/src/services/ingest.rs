@@ -29,7 +29,7 @@ impl JMAP {
             Ok(Some(raw_message)) => raw_message,
             Ok(None) => {
                 trc::event!(
-                    Store(trc::StoreEvent::IngestError),
+                    MessageIngest(trc::MessageIngestEvent::Error),
                     Reason = "Blob not found.",
                     SpanId = message.session_id,
                     CausedBy = trc::location!()
@@ -168,7 +168,7 @@ impl JMAP {
                                 reason: "Mailbox over quota.".into(),
                             }
                         }
-                        trc::EventType::Store(trc::StoreEvent::IngestError) => {
+                        trc::EventType::MessageIngest(trc::MessageIngestEvent::Error) => {
                             *status = DeliveryResult::PermanentFailure {
                                 code: err
                                     .value(trc::Key::Code)

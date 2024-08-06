@@ -30,7 +30,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{
     core::{Session, SMTP},
     inbound::DkimSign,
-    queue::{DomainPart, Message},
+    queue::{DomainPart, Message, MessageSource},
 };
 
 pub mod analysis;
@@ -153,7 +153,13 @@ impl SMTP {
 
         // Queue message
         message
-            .queue(signature.as_deref(), &report, parent_session_id, self)
+            .queue(
+                signature.as_deref(),
+                &report,
+                parent_session_id,
+                self,
+                MessageSource::Report,
+            )
             .await;
     }
 

@@ -6,14 +6,14 @@
 
 use std::{path::PathBuf, time::SystemTime};
 
-use crate::config::tracers::{LogTracer, RotationStrategy};
+use crate::config::telemetry::{LogTracer, RotationStrategy};
 
 use mail_parser::DateTime;
 use tokio::{
     fs::{File, OpenOptions},
     io::BufWriter,
 };
-use trc::{fmt::FmtWriter, subscriber::SubscriberBuilder, TracingEvent};
+use trc::{fmt::FmtWriter, subscriber::SubscriberBuilder, TelemetryEvent};
 
 pub(crate) fn spawn_log_tracer(builder: SubscriberBuilder, settings: LogTracer) {
     let (_, mut rx) = builder.register();
@@ -30,7 +30,7 @@ pub(crate) fn spawn_log_tracer(builder: SubscriberBuilder, settings: LogTracer) 
                     if roatation_timestamp != 0 && event.inner.timestamp > roatation_timestamp {
                         if let Err(err) = buf.flush().await {
                             trc::event!(
-                                Tracing(TracingEvent::LogError),
+                                Telemetry(TelemetryEvent::LogError),
                                 Reason = err.to_string(),
                                 Details = "Failed to flush log buffer"
                             );
@@ -46,7 +46,7 @@ pub(crate) fn spawn_log_tracer(builder: SubscriberBuilder, settings: LogTracer) 
 
                     if let Err(err) = buf.write(&event).await {
                         trc::event!(
-                            Tracing(TracingEvent::LogError),
+                            Telemetry(TelemetryEvent::LogError),
                             Reason = err.to_string(),
                             Details = "Failed to write event to log"
                         );
@@ -56,7 +56,7 @@ pub(crate) fn spawn_log_tracer(builder: SubscriberBuilder, settings: LogTracer) 
 
                 if let Err(err) = buf.flush().await {
                     trc::event!(
-                        Tracing(TracingEvent::LogError),
+                        Telemetry(TelemetryEvent::LogError),
                         Reason = err.to_string(),
                         Details = "Failed to flush log buffer"
                     );
@@ -105,7 +105,7 @@ impl LogTracer {
             Ok(writer) => Some(BufWriter::new(writer)),
             Err(err) => {
                 trc::event!(
-                    Tracing(TracingEvent::LogError),
+                    Telemetry(TelemetryEvent::LogError),
                     Details = "Failed to create log file",
                     Path = path.to_string_lossy().into_owned(),
                     Reason = err.to_string(),

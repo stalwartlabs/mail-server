@@ -205,8 +205,8 @@ impl JMAP {
                                             }
                                         }
                                         Err(mut err)
-                                            if err.matches(trc::EventType::Store(
-                                                trc::StoreEvent::IngestError,
+                                            if err.matches(trc::EventType::MessageIngest(
+                                                trc::MessageIngestEvent::Error,
                                             )) =>
                                         {
                                             results.push(UndeleteResponse::Error {

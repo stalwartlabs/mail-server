@@ -461,17 +461,6 @@ impl LogReport for TlsReport {
 
 impl LogReport for Feedback<'_> {
     fn log(&self) {
-        /*
-
-           user_agent = self.user_agent().unwrap_or_default(),
-           auth_failure = ?self.auth_failure(),
-           dkim_domain = self.dkim_domain().unwrap_or_default(),
-           dkim_identity = self.dkim_identity().unwrap_or_default(),
-           dkim_selector = self.dkim_selector().unwrap_or_default(),
-           identity_alignment = ?self.identity_alignment(),
-
-        */
-
         trc::event!(
             IncomingReport(match self.feedback_type() {
                 mail_auth::report::FeedbackType::Abuse => IncomingReportEvent::AbuseReport,
@@ -482,7 +471,7 @@ impl LogReport for Feedback<'_> {
                 mail_auth::report::FeedbackType::Other => IncomingReportEvent::OtherReport,
                 mail_auth::report::FeedbackType::Virus => IncomingReportEvent::VirusReport,
             }),
-            Date = trc::Value::Timestamp(
+            RangeFrom = trc::Value::Timestamp(
                 self.arrival_date()
                     .map(|d| d as u64)
                     .unwrap_or_else(|| { now() })

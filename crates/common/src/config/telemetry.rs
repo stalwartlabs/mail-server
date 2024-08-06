@@ -13,26 +13,30 @@ use hyper::{
     HeaderMap,
 };
 use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::export::{logs::LogExporter, trace::SpanExporter};
-use trc::{subscriber::Interests, EventType, Level, TracingEvent};
+use opentelemetry_sdk::{
+    export::{logs::LogExporter, trace::SpanExporter},
+    metrics::exporter::PushMetricsExporter,
+};
+use trc::{subscriber::Interests, EventType, Level, TelemetryEvent};
 use utils::config::{utils::ParseValue, Config};
 
 #[derive(Debug)]
-pub struct Tracer {
+pub struct TelemetrySubscriber {
     pub id: String,
     pub interests: Interests,
-    pub typ: TracerType,
+    pub typ: TelemetrySubscriberType,
     pub lossy: bool,
 }
 
 #[derive(Debug)]
-pub enum TracerType {
-    Console(ConsoleTracer),
-    Log(LogTracer),
-    Otel(OtelTracer),
+pub enum TelemetrySubscriberType {
+    ConsoleTracer(ConsoleTracer),
+    LogTracer(LogTracer),
+    OtelTracer(OtelTracer),
+    OtelMetrics(OtelMetrics),
     Webhook(WebhookTracer),
     #[cfg(unix)]
-    Journal(crate::tracing::journald::Subscriber),
+    JournalTracer(crate::telemetry::tracers::journald::Subscriber),
 }
 
 #[derive(Debug)]
@@ -41,6 +45,11 @@ pub struct OtelTracer {
     pub span_exporter_enable: bool,
     pub log_exporter: Box<dyn LogExporter>,
     pub log_exporter_enable: bool,
+    pub throttle: Duration,
+}
+
+pub struct OtelMetrics {
+    pub exporter: Box<dyn PushMetricsExporter>,
     pub throttle: Duration,
 }
 
@@ -80,13 +89,13 @@ pub enum RotationStrategy {
 }
 
 #[derive(Debug)]
-pub struct Tracers {
+pub struct Telemetry {
     pub global_interests: Interests,
     pub custom_levels: AHashMap<EventType, Level>,
-    pub tracers: Vec<Tracer>,
+    pub tracers: Vec<TelemetrySubscriber>,
 }
 
-impl Tracers {
+impl Telemetry {
     pub fn parse(config: &mut Config) -> Self {
         // Parse custom logging levels
         let mut custom_levels = AHashMap::new();
@@ -109,7 +118,7 @@ impl Tracers {
         let event_names = EventType::variants()
             .into_iter()
             .filter_map(|e| {
-                if e != EventType::Tracing(TracingEvent::WebhookError) {
+                if e != EventType::Telemetry(TelemetryEvent::WebhookError) {
                     Some((e, e.name()))
                 } else {
                     None
@@ -118,7 +127,7 @@ impl Tracers {
             .collect::<Vec<_>>();
 
         // Parse tracers
-        let mut tracers: Vec<Tracer> = Vec::new();
+        let mut tracers: Vec<TelemetrySubscriber> = Vec::new();
         let mut global_interests = Interests::default();
         for tracer_id in config
             .sub_keys("tracer", ".type")
@@ -147,7 +156,7 @@ impl Tracers {
                         .value_require(("tracer", id, "path"))
                         .map(|s| s.to_string())
                     {
-                        TracerType::Log(LogTracer {
+                        TelemetrySubscriberType::LogTracer(LogTracer {
                             path,
                             prefix: config
                                 .value(("tracer", id, "prefix"))
@@ -179,9 +188,9 @@ impl Tracers {
                 "console" | "stdout" | "stderr" => {
                     if !tracers
                         .iter()
-                        .any(|t| matches!(t.typ, TracerType::Console(_)))
+                        .any(|t| matches!(t.typ, TelemetrySubscriberType::ConsoleTracer(_)))
                     {
-                        TracerType::Console(ConsoleTracer {
+                        TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
                             ansi: config
                                 .property_or_default(("tracer", id, "ansi"), "true")
                                 .unwrap_or(true),
@@ -239,7 +248,7 @@ impl Tracers {
                                 log_exporter.build_log_exporter(),
                             ) {
                                 (Ok(span_exporter), Ok(log_exporter)) => {
-                                    TracerType::Otel(OtelTracer {
+                                    TelemetrySubscriberType::OtelTracer(OtelTracer {
                                         span_exporter: Box::new(span_exporter),
                                         log_exporter: Box::new(log_exporter),
                                         throttle,
@@ -308,7 +317,7 @@ impl Tracers {
                                     log_exporter.build_log_exporter(),
                                 ) {
                                     (Ok(span_exporter), Ok(log_exporter)) => {
-                                        TracerType::Otel(OtelTracer {
+                                        TelemetrySubscriberType::OtelTracer(OtelTracer {
                                             span_exporter: Box::new(span_exporter),
                                             log_exporter: Box::new(log_exporter),
                                             throttle,
@@ -351,10 +360,12 @@ impl Tracers {
                     {
                         if !tracers
                             .iter()
-                            .any(|t| matches!(t.typ, TracerType::Journal(_)))
+                            .any(|t| matches!(t.typ, TelemetrySubscriberType::JournalTracer(_)))
                         {
-                            match crate::tracing::journald::Subscriber::new() {
-                                Ok(subscriber) => TracerType::Journal(subscriber),
+                            match crate::telemetry::tracers::journald::Subscriber::new() {
+                                Ok(subscriber) => {
+                                    TelemetrySubscriberType::JournalTracer(subscriber)
+                                }
                                 Err(e) => {
                                     config.new_build_error(
                                         ("tracer", id, "type"),
@@ -391,7 +402,7 @@ impl Tracers {
             };
 
             // Create tracer
-            let mut tracer = Tracer {
+            let mut tracer = TelemetrySubscriber {
                 id: format!("t_{id}"),
                 interests: Default::default(),
                 lossy: config
@@ -413,20 +424,21 @@ impl Tracers {
             // Parse disabled events
             let mut disabled_events = AHashSet::new();
             match &tracer.typ {
-                TracerType::Console(_) => (),
-                TracerType::Log(_) => {
-                    disabled_events.insert(EventType::Tracing(TracingEvent::LogError));
+                TelemetrySubscriberType::ConsoleTracer(_) => (),
+                TelemetrySubscriberType::LogTracer(_) => {
+                    disabled_events.insert(EventType::Telemetry(TelemetryEvent::LogError));
                 }
-                TracerType::Otel(_) => {
-                    disabled_events.insert(EventType::Tracing(TracingEvent::OtelError));
+                TelemetrySubscriberType::OtelTracer(_) => {
+                    disabled_events.insert(EventType::Telemetry(TelemetryEvent::OtelError));
                 }
-                TracerType::Webhook(_) => {
-                    disabled_events.insert(EventType::Tracing(TracingEvent::WebhookError));
+                TelemetrySubscriberType::Webhook(_) => {
+                    disabled_events.insert(EventType::Telemetry(TelemetryEvent::WebhookError));
                 }
                 #[cfg(unix)]
-                TracerType::Journal(_) => {
-                    disabled_events.insert(EventType::Tracing(TracingEvent::JournalError));
+                TelemetrySubscriberType::JournalTracer(_) => {
+                    disabled_events.insert(EventType::Telemetry(TelemetryEvent::JournalError));
                 }
+                TelemetrySubscriberType::OtelMetrics(_) => todo!(),
             }
             for (_, event_type) in
                 config.properties::<EventOrMany>(("tracer", id, "disabled-events"))
@@ -502,10 +514,10 @@ impl Tracers {
                 }
             }
 
-            tracers.push(Tracer {
+            tracers.push(TelemetrySubscriber {
                 id: "default".to_string(),
                 interests: global_interests.clone(),
-                typ: TracerType::Console(ConsoleTracer {
+                typ: TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
                     ansi: true,
                     multiline: false,
                     buffered: true,
@@ -514,7 +526,7 @@ impl Tracers {
             });
         }
 
-        Tracers {
+        Telemetry {
             tracers,
             global_interests,
             custom_levels,
@@ -526,7 +538,7 @@ fn parse_webhook(
     config: &mut Config,
     id: &str,
     global_interests: &mut Interests,
-) -> Option<Tracer> {
+) -> Option<TelemetrySubscriber> {
     let mut headers = HeaderMap::new();
 
     for (header, value) in config
@@ -568,13 +580,13 @@ fn parse_webhook(
     }
 
     // Build tracer
-    let mut tracer = Tracer {
+    let mut tracer = TelemetrySubscriber {
         id: format!("w_{id}"),
         interests: Default::default(),
         lossy: config
             .property_or_default(("webhook", id, "lossy"), "false")
             .unwrap_or(false),
-        typ: TracerType::Webhook(WebhookTracer {
+        typ: TelemetrySubscriberType::Webhook(WebhookTracer {
             url: config.value_require(("webhook", id, "url"))?.to_string(),
             timeout: config
                 .property_or_default(("webhook", id, "timeout"), "30s")
@@ -600,7 +612,7 @@ fn parse_webhook(
     let event_names = EventType::variants()
         .into_iter()
         .filter_map(|e| {
-            if e != EventType::Tracing(TracingEvent::WebhookError) {
+            if e != EventType::Telemetry(TelemetryEvent::WebhookError) {
                 Some((e, e.name()))
             } else {
                 None
@@ -610,7 +622,7 @@ fn parse_webhook(
     for (_, event_type) in config.properties::<EventOrMany>(("webhook", id, "events")) {
         match event_type {
             EventOrMany::Event(event_type) => {
-                if event_type != EventType::Tracing(TracingEvent::WebhookError) {
+                if event_type != EventType::Telemetry(TelemetryEvent::WebhookError) {
                     tracer.interests.set(event_type);
                     global_interests.set(event_type);
                 }
@@ -668,5 +680,13 @@ impl ParseValue for EventOrMany {
         } else {
             EventType::parse_value(value).map(EventOrMany::Event)
         }
+    }
+}
+
+impl std::fmt::Debug for OtelMetrics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OtelMetrics")
+            .field("throttle", &self.throttle)
+            .finish()
     }
 }
