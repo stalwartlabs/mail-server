@@ -37,7 +37,6 @@ use utils::map::vec_map::VecMap;
 use crate::{
     email::index::{IndexMessage, VisitValues, MAX_ID_LENGTH},
     mailbox::{UidMailbox, INBOX_ID, JUNK_ID},
-    services::housekeeper::Event,
     JMAP,
 };
 
@@ -335,7 +334,7 @@ impl JMAP {
         let id = Id::from_parts(thread_id, document_id);
 
         // Request FTS index
-        let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;
+        self.inner.request_fts_index();
 
         trc::event!(
             MessageIngest(match params.source {

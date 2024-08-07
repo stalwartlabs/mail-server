@@ -16,6 +16,8 @@ pub struct AtomicHistogram<const N: usize> {
     upper_bounds: [u64; N],
     sum: AtomicU64,
     count: AtomicU64,
+    min: AtomicU64,
+    max: AtomicU64,
 }
 pub struct AtomicGauge {
     id: &'static str,
@@ -115,6 +117,8 @@ impl<const N: usize> AtomicHistogram<N> {
             upper_bounds,
             sum: AtomicU64::new(0),
             count: AtomicU64::new(0),
+            min: AtomicU64::new(u64::MAX),
+            max: AtomicU64::new(0),
             id,
             description,
             unit,
@@ -124,6 +128,8 @@ impl<const N: usize> AtomicHistogram<N> {
     pub fn observe(&self, value: u64) {
         self.sum.fetch_add(value, Ordering::Relaxed);
         self.count.fetch_add(1, Ordering::Relaxed);
+        self.min.fetch_min(value, Ordering::Relaxed);
+        self.max.fetch_max(value, Ordering::Relaxed);
 
         for (idx, upper_bound) in self.upper_bounds.iter().enumerate() {
             if value < *upper_bound {
@@ -145,6 +151,63 @@ impl<const N: usize> AtomicHistogram<N> {
 
     pub fn unit(&self) -> &'static str {
         self.unit
+    }
+
+    pub fn sum(&self) -> u64 {
+        self.sum.load(Ordering::Relaxed)
+    }
+
+    pub fn count(&self) -> u64 {
+        self.count.load(Ordering::Relaxed)
+    }
+
+    pub fn min(&self) -> Option<u64> {
+        let min = self.min.load(Ordering::Relaxed);
+        if min != u64::MAX {
+            Some(min)
+        } else {
+            None
+        }
+    }
+
+    pub fn max(&self) -> Option<u64> {
+        let max = self.max.load(Ordering::Relaxed);
+        if max != 0 {
+            Some(max)
+        } else {
+            None
+        }
+    }
+
+    pub fn buckets_iter(&self) -> impl IntoIterator<Item = u64> + '_ {
+        self.buckets
+            .inner()
+            .iter()
+            .map(|bucket| bucket.load(Ordering::Relaxed))
+    }
+
+    pub fn buckets_vec(&self) -> Vec<u64> {
+        let mut vec = Vec::with_capacity(N);
+        for bucket in self.buckets.inner().iter() {
+            vec.push(bucket.load(Ordering::Relaxed));
+        }
+        vec
+    }
+
+    pub fn upper_bounds_iter(&self) -> impl IntoIterator<Item = u64> + '_ {
+        self.upper_bounds.iter().copied()
+    }
+
+    pub fn upper_bounds_vec(&self) -> Vec<f64> {
+        let mut vec = Vec::with_capacity(N - 1);
+        for upper_bound in self.upper_bounds.iter().take(N - 1) {
+            vec.push(*upper_bound as f64);
+        }
+        vec
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.count.load(Ordering::Relaxed) > 0
     }
 
     pub const fn new_message_sizes(
@@ -293,6 +356,10 @@ impl AtomicCounter {
 
     pub fn unit(&self) -> &'static str {
         self.unit
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.value.load(Ordering::Relaxed) > 0
     }
 }
 

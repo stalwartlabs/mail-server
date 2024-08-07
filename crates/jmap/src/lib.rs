@@ -26,6 +26,7 @@ use jmap_proto::{
 use services::{
     delivery::spawn_delivery_manager,
     housekeeper::{self, init_housekeeper, spawn_housekeeper},
+    index::spawn_index_task,
     state::{self, init_state_manager, spawn_state_manager},
 };
 
@@ -41,7 +42,7 @@ use store::{
     },
     BitmapKey, Deserialize, IterateParams, ValueKey, U32_LEN,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 use trc::AddContext;
 use utils::{
     config::Config,
@@ -95,6 +96,7 @@ pub struct Inner {
 
     pub state_tx: mpsc::Sender<state::Event>,
     pub housekeeper_tx: mpsc::Sender<housekeeper::Event>,
+    pub index_tx: Arc<Notify>,
 
     pub cache_threads: LruCache<u32, Arc<Threads>>,
 }
@@ -109,6 +111,7 @@ impl JMAP {
         // Init state manager and housekeeper
         let (state_tx, state_rx) = init_state_manager();
         let (housekeeper_tx, housekeeper_rx) = init_housekeeper();
+        let index_tx = Arc::new(Notify::new());
         let shard_amount = config
             .property::<u64>("cache.shard")
             .unwrap_or(32)
@@ -130,6 +133,7 @@ impl JMAP {
             ),
             state_tx,
             housekeeper_tx,
+            index_tx: index_tx.clone(),
             cache_threads: LruCache::with_capacity(
                 config.property("cache.thread.size").unwrap_or(2048),
             ),
@@ -159,6 +163,9 @@ impl JMAP {
 
         // Spawn housekeeper
         spawn_housekeeper(jmap_instance.clone(), housekeeper_rx);
+
+        // Spawn index task
+        spawn_index_task(jmap_instance.clone(), index_tx);
 
         jmap_instance
     }

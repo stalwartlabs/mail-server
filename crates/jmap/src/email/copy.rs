@@ -41,10 +41,7 @@ use store::{
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
-use crate::{
-    api::http::HttpSessionData, auth::AccessToken, mailbox::UidMailbox,
-    services::housekeeper::Event, JMAP,
-};
+use crate::{api::http::HttpSessionData, auth::AccessToken, mailbox::UidMailbox, JMAP};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
@@ -432,7 +429,7 @@ impl JMAP {
         let document_id = ids.last_document_id().caused_by(trc::location!())?;
 
         // Request FTS index
-        let _ = self.inner.housekeeper_tx.send(Event::IndexStart).await;
+        self.inner.request_fts_index();
 
         // Update response
         email.id = Id::from_parts(thread_id, document_id);

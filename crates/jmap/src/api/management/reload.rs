@@ -63,15 +63,15 @@ impl JMAP {
                         tracers.update();
                     }
 
-                    // Reload ACME
+                    // Reload settings
                     self.inner
                         .housekeeper_tx
-                        .send(Event::AcmeReload)
+                        .send(Event::ReloadSettings)
                         .await
                         .map_err(|err| {
                             trc::EventType::Server(trc::ServerEvent::ThreadError)
                                 .reason(err)
-                                .details("Failed to send ACME reload event to housekeeper")
+                                .details("Failed to send settings reload event to housekeeper")
                                 .caused_by(trc::location!())
                         })?;
                 }

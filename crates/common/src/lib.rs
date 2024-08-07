@@ -17,6 +17,7 @@ use config::{
         SmtpConfig,
     },
     storage::Storage,
+    telemetry::Metrics,
 };
 use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy, Type};
 use expr::if_block::IfBlock;
@@ -57,6 +58,7 @@ pub struct Core {
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
     pub imap: ImapConfig,
+    pub metrics: Metrics,
     #[cfg(feature = "enterprise")]
     pub enterprise: Option<enterprise::Enterprise>,
 }

@@ -226,7 +226,7 @@ impl Collector {
         METRIC_INTERESTS.update(interests);
     }
 
-    pub fn collect_event_counters() -> impl Iterator<Item = EventCounter> {
+    pub fn collect_event_counters(_is_enterprise: bool) -> impl Iterator<Item = EventCounter> {
         EVENT_COUNTERS
             .inner()
             .iter()
@@ -247,18 +247,21 @@ impl Collector {
             })
     }
 
-    pub fn collect_counters() -> impl Iterator<Item = &'static AtomicCounter> {
+    pub fn collect_counters(_is_enterprise: bool) -> impl Iterator<Item = &'static AtomicCounter> {
         CONNECTION_METRICS
             .iter()
             .flat_map(|m| [&m.total_connections, &m.bytes_sent, &m.bytes_received])
+            .filter(|c| c.is_active())
     }
 
-    pub fn collect_gauges() -> impl Iterator<Item = &'static AtomicGauge> {
+    pub fn collect_gauges(_is_enterprise: bool) -> impl Iterator<Item = &'static AtomicGauge> {
         CONNECTION_METRICS.iter().map(|m| &m.active_connections)
     }
 
-    pub fn collect_histograms() -> impl Iterator<Item = &'static AtomicHistogram<12>> {
-        [
+    pub fn collect_histograms(
+        is_enterprise: bool,
+    ) -> impl Iterator<Item = &'static AtomicHistogram<12>> {
+        static E_HISTOGRAMS: &[&AtomicHistogram<12>] = &[
             &MESSAGE_INGESTION_TIME,
             &MESSAGE_INDEX_TIME,
             &MESSAGE_DELIVERY_TIME,
@@ -270,9 +273,22 @@ impl Collector {
             &STORE_BLOB_READ_TIME,
             &STORE_BLOB_WRITE_TIME,
             &DNS_LOOKUP_TIME,
-        ]
-        .into_iter()
+        ];
+        static C_HISTOGRAMS: &[&AtomicHistogram<12>] = &[
+            &MESSAGE_DELIVERY_TIME,
+            &MESSAGE_INCOMING_SIZE,
+            &MESSAGE_SUBMISSION_SIZE,
+        ];
+
+        if is_enterprise {
+            E_HISTOGRAMS
+        } else {
+            C_HISTOGRAMS
+        }
+        .iter()
+        .copied()
         .chain(CONNECTION_METRICS.iter().map(|m| &m.elapsed))
+        .filter(|h| h.is_active())
     }
 }
 
@@ -285,8 +301,8 @@ impl EventCounter {
         self.description
     }
 
-    pub fn value(&self) -> u32 {
-        self.value
+    pub fn value(&self) -> u64 {
+        self.value as u64
     }
 }
 

@@ -20,7 +20,7 @@ use common::{
 };
 use hyper::{header::AUTHORIZATION, Method};
 use imap::core::{ImapSessionManager, IMAP};
-use jmap::{api::JmapSessionManager, services::housekeeper::Event, JMAP};
+use jmap::{api::JmapSessionManager, JMAP};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::{error::request::RequestError, types::id::Id};
 use managesieve::core::ManageSieveSessionManager;
@@ -31,11 +31,11 @@ use smtp::core::{SmtpSessionManager, SMTP};
 
 use store::{
     roaring::RoaringBitmap,
-    write::{key::DeserializeBigEndian, AnyKey},
-    IterateParams, Stores, SUBSPACE_PROPERTY,
+    write::{key::DeserializeBigEndian, AnyKey, FtsQueueClass, ValueClass},
+    IterateParams, Stores, ValueKey, SUBSPACE_PROPERTY,
 };
 use tokio::sync::{mpsc, watch};
-use utils::config::Config;
+use utils::{config::Config, BlobHash};
 use webhooks::{spawn_mock_webhook_endpoint, MockWebhookEndpoint};
 
 use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
@@ -283,7 +283,7 @@ disabled-events = ["network.*"]
 
 [webhook."test"]
 url = "http://127.0.0.1:8821/hook"
-events = ["auth.*", "delivery.dsn*", "store.ingest"]
+events = ["auth.*", "delivery.dsn*", "message-ingest.*"]
 signature-key = "ovos-moles"
 throttle = "100ms"
 
@@ -356,15 +356,44 @@ pub struct JMAPTest {
 
 pub async fn wait_for_index(server: &JMAP) {
     loop {
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut has_index_tasks = false;
         server
-            .inner
-            .housekeeper_tx
-            .send(Event::IndexIsActive(tx))
+            .core
+            .storage
+            .data
+            .iterate(
+                IterateParams::new(
+                    ValueKey::<ValueClass<u32>> {
+                        account_id: 0,
+                        collection: 0,
+                        document_id: 0,
+                        class: ValueClass::FtsQueue(FtsQueueClass {
+                            seq: 0,
+                            hash: BlobHash::default(),
+                        }),
+                    },
+                    ValueKey::<ValueClass<u32>> {
+                        account_id: u32::MAX,
+                        collection: u8::MAX,
+                        document_id: u32::MAX,
+                        class: ValueClass::FtsQueue(FtsQueueClass {
+                            seq: u64::MAX,
+                            hash: BlobHash::default(),
+                        }),
+                    },
+                )
+                .ascending(),
+                |_, _| {
+                    has_index_tasks = true;
+
+                    Ok(false)
+                },
+            )
             .await
             .unwrap();
-        if rx.await.unwrap() {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+
+        if has_index_tasks {
+            tokio::time::sleep(Duration::from_millis(300)).await;
         } else {
             break;
         }

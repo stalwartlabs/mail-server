@@ -652,9 +652,9 @@ pub enum TelemetryEvent {
     Update,
     LogError,
     WebhookError,
-    OtelError,
+    OtelExpoterError,
+    OtelMetricsExporterError,
     JournalError,
-    MetricsError,
 }
 
 #[event_type]

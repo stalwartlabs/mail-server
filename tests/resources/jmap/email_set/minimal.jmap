@@ -22,6 +22,10 @@
         "value": " <my-message-id>"
       },
       {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
         "name": "Content-Type",
         "value": " text/plain; charset=\"utf-8\""
       },
@@ -55,6 +59,10 @@
           "value": " <my-message-id>"
         },
         {
+          "name": "MIME-Version",
+          "value": " 1.0"
+        },
+        {
           "name": "Content-Type",
           "value": " text/plain; charset=\"utf-8\""
         },
@@ -80,6 +88,10 @@
         {
           "name": "Message-ID",
           "value": " <my-message-id>"
+        },
+        {
+          "name": "MIME-Version",
+          "value": " 1.0"
         },
         {
           "name": "Content-Type",

@@ -1214,8 +1214,8 @@ impl EventType {
                 | HousekeeperEvent::PurgeAccounts
                 | HousekeeperEvent::PurgeSessions
                 | HousekeeperEvent::PurgeStore
-                | HousekeeperEvent::Schedule
                 | HousekeeperEvent::Stop => Level::Info,
+                HousekeeperEvent::Schedule => Level::Debug,
             },
             EventType::FtsIndex(event) => match event {
                 FtsIndexEvent::Index => Level::Info,
@@ -1909,9 +1909,9 @@ impl TelemetryEvent {
             TelemetryEvent::Update => "Tracing update",
             TelemetryEvent::LogError => "Log collector error",
             TelemetryEvent::WebhookError => "Webhook collector error",
-            TelemetryEvent::OtelError => "OpenTelemetry collector error",
             TelemetryEvent::JournalError => "Journal collector error",
-            TelemetryEvent::MetricsError => "Metrics collector error",
+            TelemetryEvent::OtelExpoterError => "OpenTelemetry exporter error",
+            TelemetryEvent::OtelMetricsExporterError => "OpenTelemetry metrics exporter error",
         }
     }
 }

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use directory::{Directories, Directory};
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
+use telemetry::Metrics;
 use utils::config::Config;
 
 use crate::{expr::*, listener::tls::TlsManager, manager::config::ConfigManager, Core, Network};
@@ -138,6 +139,7 @@ impl Core {
             jmap: JmapConfig::parse(config),
             imap: ImapConfig::parse(config),
             tls: TlsManager::parse(config),
+            metrics: Metrics::parse(config),
             storage: Storage {
                 data,
                 blob,

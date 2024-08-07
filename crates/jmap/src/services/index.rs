@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
@@ -16,15 +16,14 @@ use store::{
     Deserialize, IterateParams, Serialize, ValueKey, U32_LEN, U64_LEN,
 };
 
+use tokio::sync::Notify;
 use trc::FtsIndexEvent;
 use utils::{BlobHash, BLOB_HASH_LEN};
 
 use crate::{
     email::{index::IndexMessageText, metadata::MessageMetadata},
-    JMAP,
+    Inner, JmapInstance, JMAP,
 };
-
-use super::housekeeper::Event;
 
 #[derive(Debug)]
 struct IndexEmail {
@@ -36,6 +35,18 @@ struct IndexEmail {
 }
 
 const INDEX_LOCK_EXPIRY: u64 = 60 * 5;
+
+pub fn spawn_index_task(core: JmapInstance, rx: Arc<Notify>) {
+    tokio::spawn(async move {
+        loop {
+            // Index any queued messages
+            JMAP::from(core.clone()).fts_index_queued().await;
+
+            // Wait for a signal to index more messages
+            rx.notified().await;
+        }
+    });
+}
 
 impl JMAP {
     pub async fn fts_index_queued(&self) {
@@ -193,20 +204,6 @@ impl JMAP {
                 break;
             }
         }
-
-        if self
-            .inner
-            .housekeeper_tx
-            .send(Event::IndexDone)
-            .await
-            .is_err()
-        {
-            trc::event!(
-                Server(trc::ServerEvent::ThreadError),
-                Details = "Failed to send event to Housekeeper",
-                CausedBy = trc::location!()
-            );
-        }
     }
 
     async fn try_lock_index(&self, event: &IndexEmail) -> bool {
@@ -238,6 +235,16 @@ impl JMAP {
                 false
             }
         }
+    }
+
+    pub fn request_fts_index(&self) {
+        self.inner.request_fts_index();
+    }
+}
+
+impl Inner {
+    pub fn request_fts_index(&self) {
+        self.index_tx.notify_one();
     }
 }
 

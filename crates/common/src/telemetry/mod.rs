@@ -23,7 +23,7 @@ pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);
 impl Telemetry {
     pub fn enable(self) {
         // Spawn tracers
-        for tracer in self.tracers {
+        for tracer in self.tracers.subscribers {
             tracer.typ.spawn(
                 SubscriberBuilder::new(tracer.id)
                     .with_interests(tracer.interests)
@@ -32,8 +32,9 @@ impl Telemetry {
         }
 
         // Update global collector
-        Collector::set_interests(self.global_interests);
-        Collector::update_custom_levels(self.custom_levels);
+        Collector::set_interests(self.tracers.interests);
+        Collector::update_custom_levels(self.tracers.levels);
+        Collector::set_metrics(self.metrics);
         Collector::reload();
     }
 
@@ -43,6 +44,7 @@ impl Telemetry {
         for subscribed_id in &active_subscribers {
             if !self
                 .tracers
+                .subscribers
                 .iter()
                 .any(|tracer| tracer.id == *subscribed_id)
             {
@@ -51,7 +53,7 @@ impl Telemetry {
         }
 
         // Activate new tracers or update existing ones
-        for tracer in self.tracers {
+        for tracer in self.tracers.subscribers {
             if active_subscribers.contains(&tracer.id) {
                 Collector::update_subscriber(tracer.id, tracer.interests, tracer.lossy);
             } else {
@@ -64,8 +66,9 @@ impl Telemetry {
         }
 
         // Update global collector
-        Collector::set_interests(self.global_interests);
-        Collector::update_custom_levels(self.custom_levels);
+        Collector::set_interests(self.tracers.interests);
+        Collector::update_custom_levels(self.tracers.levels);
+        Collector::set_metrics(self.metrics);
         Collector::reload();
     }
 
@@ -107,7 +110,6 @@ impl TelemetrySubscriberType {
             TelemetrySubscriberType::JournalTracer(subscriber) => {
                 tracers::journald::spawn_journald_tracer(builder, subscriber)
             }
-            TelemetrySubscriberType::OtelMetrics(_) => todo!(),
         }
     }
 }

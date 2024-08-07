@@ -161,7 +161,7 @@ impl BootManager {
                 .failed("Failed to read configuration");
         }
 
-        // Enable tracing
+        // Enable telemetry
         Telemetry::parse(&mut config).enable();
 
         match import_export {

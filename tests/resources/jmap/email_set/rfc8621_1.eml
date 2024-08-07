@@ -2,6 +2,7 @@ Date: Tue, 10 Jul 2018 01:03:11 +0000
 From: "Joe Bloggs" <joe@example.com>
 Message-ID: <my-message-id>
 Subject: World domination
+MIME-Version: 1.0
 Content-Language: en
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 7bit
