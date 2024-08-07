@@ -67,6 +67,10 @@ type = "redis"
 urls = "redis://127.0.0.1"
 redis-type = "single"
 
+[store."tikv"]
+type = "tikv"
+pd-endpoints = ["localhost:2379"]
+
 "#;
 
 #[tokio::test(flavor = "multi_thread")]
