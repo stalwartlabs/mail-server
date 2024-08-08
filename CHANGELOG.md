@@ -15,11 +15,11 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 - Add `isActive` property to defaults on Sieve/get JMAP method (closes #624)
 
 ### Changed
-- Perform must-match-sender checks after sender rewriting (closes #394)
-- Only perform email ingest duplicate check on the target mailbox (#632)
+- Perform `must-match-sender` checks after sender rewriting (closes #394)
+- Only perform email ingest duplicate check on the target mailbox (closes #632)
 
 ### Fixed
-- Properly parse Forwarded and X-Forwarded for headers (fixes #669)
+- Properly parse `Forwarded` and `X-Forwarded-For` headers (fixes #669)
 - Resolve DKIM macros when generating DNS records (fixes #666)
 - Fixed `is_local_domain` Sieve function (fixes #622)
 
