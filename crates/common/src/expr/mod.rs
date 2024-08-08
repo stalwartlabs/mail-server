@@ -31,6 +31,10 @@ pub const V_QUEUE_NOTIFY_NUM: u32 = 17;
 pub const V_QUEUE_EXPIRES_IN: u32 = 18;
 pub const V_QUEUE_LAST_STATUS: u32 = 19;
 pub const V_QUEUE_LAST_ERROR: u32 = 20;
+pub const V_URL: u32 = 21;
+pub const V_URL_PATH: u32 = 22;
+pub const V_HEADERS: u32 = 23;
+pub const V_METHOD: u32 = 24;
 
 pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("rcpt", V_RECIPIENT),
@@ -54,6 +58,10 @@ pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("expires_in", V_QUEUE_EXPIRES_IN),
     ("last_status", V_QUEUE_LAST_STATUS),
     ("last_error", V_QUEUE_LAST_ERROR),
+    ("url", V_URL),
+    ("url_path", V_URL_PATH),
+    ("headers", V_HEADERS),
+    ("method", V_METHOD),
 ];
 
 use regex::Regex;

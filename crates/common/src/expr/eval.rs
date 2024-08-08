@@ -6,6 +6,7 @@
 
 use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 
+use hyper::StatusCode;
 use trc::EvalEvent;
 
 use crate::Core;
@@ -663,5 +664,19 @@ impl<'x> TryFrom<Variable<'x>> for usize {
 
     fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
         value.to_usize().ok_or(())
+    }
+}
+
+impl<'x> TryFrom<Variable<'x>> for StatusCode {
+    type Error = ();
+
+    fn try_from(value: Variable<'x>) -> Result<Self, Self::Error> {
+        match value.to_integer() {
+            Some(v) => match StatusCode::from_u16(v as u16) {
+                Ok(status) => Ok(status),
+                Err(_) => Err(()),
+            },
+            None => Err(()),
+        }
     }
 }

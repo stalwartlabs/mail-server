@@ -67,7 +67,8 @@ pub struct Core {
 pub struct Network {
     pub blocked_ips: BlockedIps,
     pub allowed_ips: AllowedIps,
-    pub url: IfBlock,
+    pub http_response_url: IfBlock,
+    pub http_allowed_endpoint: IfBlock,
 }
 
 #[derive(Debug)]

@@ -13,14 +13,17 @@ use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use utils::map::ttl_dashmap::TtlMap;
 
-use crate::{api::http::HttpSessionData, JMAP};
+use crate::{
+    api::{http::HttpSessionData, HttpRequest},
+    JMAP,
+};
 
 use super::AccessToken;
 
 impl JMAP {
     pub async fn authenticate_headers(
         &self,
-        req: &hyper::Request<hyper::body::Incoming>,
+        req: &HttpRequest,
         session: &HttpSessionData,
     ) -> trc::Result<(InFlight, Arc<AccessToken>)> {
         if let Some((mechanism, token)) = req.authorization() {
@@ -187,7 +190,7 @@ pub trait HttpHeaders {
     fn authorization_basic(&self) -> Option<&str>;
 }
 
-impl HttpHeaders for hyper::Request<hyper::body::Incoming> {
+impl HttpHeaders for HttpRequest {
     fn authorization(&self) -> Option<(&str, &str)> {
         self.headers()
             .get(header::AUTHORIZATION)
