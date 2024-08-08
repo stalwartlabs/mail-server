@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.9.1] - 2024-08-08
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+## Added
+- Metrics support (closes #478)
+  - OpenTelemetry Push Exporter
+  - Prometheus Pull Exporter (closes #275)
+- HTTP endpoint access controls (closes #266 #329 #542)
+- Add `options` setting to PostgreSQL driver (closes #662)
+- Add `isActive` property to defaults on Sieve/get JMAP method (closes #624)
+
+### Changed
+- Perform must-match-sender checks after sender rewriting (closes #394)
+- Only perform email ingest duplicate check on the target mailbox (#632)
+
+### Fixed
+- Properly parse Forwarded and X-Forwarded for headers (fixes #669)
+- Resolve DKIM macros when generating DNS records (fixes #666)
+- Fixed `is_local_domain` Sieve function (fixes #622)
+
 ## [0.9.0] - 2024-08-01
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin. This version includes breaking changes to the Webhooks configuration and produces a slightly different log output, read [UPGRADING.md](UPGRADING.md) for details.

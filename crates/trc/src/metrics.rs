@@ -10,9 +10,7 @@ use crate::{
     atomic::{AtomicCounter, AtomicGauge, AtomicHistogram, AtomicU32Array},
     collector::{Collector, GlobalInterests, EVENT_TYPES},
     subscriber::Interests,
-    DeliveryEvent, EventType, FtsIndexEvent, HttpEvent, ImapEvent, Key, ManageSieveEvent,
-    MessageIngestEvent, NetworkEvent, Pop3Event, Protocol, QueueEvent, SmtpEvent, StoreEvent,
-    Value, TOTAL_EVENT_COUNT,
+    *,
 };
 
 pub(crate) static METRIC_INTERESTS: GlobalInterests = GlobalInterests::new();
@@ -466,6 +464,183 @@ impl Protocol {
             Protocol::Pop3 => CONN_POP3,
             Protocol::Http => CONN_HTTP,
             _ => unreachable!(),
+        }
+    }
+}
+
+impl EventType {
+    pub fn is_metric(&self) -> bool {
+        match self {
+            EventType::Server(ServerEvent::ThreadError) => true,
+            EventType::Purge(
+                PurgeEvent::Started
+                | PurgeEvent::Error
+                | PurgeEvent::AutoExpunge
+                | PurgeEvent::TombstoneCleanup,
+            ) => true,
+            EventType::Eval(
+                EvalEvent::Error | EvalEvent::StoreNotFound | EvalEvent::DirectoryNotFound,
+            ) => true,
+            EventType::Acme(
+                AcmeEvent::TlsAlpnError
+                | AcmeEvent::OrderStart
+                | AcmeEvent::OrderCompleted
+                | AcmeEvent::AuthError
+                | AcmeEvent::AuthCompleted
+                | AcmeEvent::AuthTooManyAttempts
+                | AcmeEvent::DnsRecordCreated
+                | AcmeEvent::DnsRecordCreationFailed
+                | AcmeEvent::DnsRecordDeletionFailed
+                | AcmeEvent::DnsRecordPropagationTimeout
+                | AcmeEvent::ClientMissingSni
+                | AcmeEvent::TokenNotFound
+                | AcmeEvent::DnsRecordLookupFailed
+                | AcmeEvent::OrderInvalid
+                | AcmeEvent::Error,
+            ) => true,
+            EventType::Store(
+                StoreEvent::AssertValueFailed
+                | StoreEvent::FoundationdbError
+                | StoreEvent::MysqlError
+                | StoreEvent::PostgresqlError
+                | StoreEvent::RocksdbError
+                | StoreEvent::SqliteError
+                | StoreEvent::LdapError
+                | StoreEvent::ElasticsearchError
+                | StoreEvent::RedisError
+                | StoreEvent::S3Error
+                | StoreEvent::FilesystemError
+                | StoreEvent::PoolError
+                | StoreEvent::DataCorruption
+                | StoreEvent::DecompressError
+                | StoreEvent::DeserializeError
+                | StoreEvent::NotFound
+                | StoreEvent::NotConfigured
+                | StoreEvent::NotSupported
+                | StoreEvent::UnexpectedError
+                | StoreEvent::CryptoError
+                | StoreEvent::BlobMissingMarker
+                | StoreEvent::DataWrite
+                | StoreEvent::DataIterate
+                | StoreEvent::BlobRead
+                | StoreEvent::BlobWrite
+                | StoreEvent::BlobDelete,
+            ) => true,
+            EventType::MessageIngest(_) => true,
+            EventType::Jmap(
+                JmapEvent::MethodCall
+                | JmapEvent::WebsocketStart
+                | JmapEvent::WebsocketError
+                | JmapEvent::UnsupportedFilter
+                | JmapEvent::UnsupportedSort
+                | JmapEvent::Forbidden
+                | JmapEvent::NotJson
+                | JmapEvent::NotRequest
+                | JmapEvent::InvalidArguments
+                | JmapEvent::RequestTooLarge
+                | JmapEvent::UnknownMethod,
+            ) => true,
+            EventType::Imap(_) => true,
+            EventType::ManageSieve(_) => true,
+            EventType::Pop3(_) => true,
+            EventType::Smtp(_) => true,
+            EventType::Http(
+                HttpEvent::Error
+                | HttpEvent::RequestBody
+                | HttpEvent::ResponseBody
+                | HttpEvent::XForwardedMissing,
+            ) => true,
+            EventType::Network(_) => true,
+            EventType::Limit(_) => true,
+            EventType::Manage(_) => false,
+            EventType::Auth(
+                AuthEvent::Success
+                | AuthEvent::Failed
+                | AuthEvent::TooManyAttempts
+                | AuthEvent::Banned
+                | AuthEvent::Error,
+            ) => true,
+            EventType::Config(_) => false,
+            EventType::Resource(
+                ResourceEvent::NotFound | ResourceEvent::BadParameters | ResourceEvent::Error,
+            ) => true,
+            EventType::Arc(_) => true,
+            EventType::Dkim(_) => true,
+            EventType::Dmarc(_) => true,
+            EventType::Iprev(_) => true,
+            EventType::Dane(_) => true,
+            EventType::Spf(_) => true,
+            EventType::MailAuth(_) => true,
+            EventType::Tls(_) => true,
+            EventType::Sieve(_) => true,
+            EventType::Spam(
+                SpamEvent::PyzorError
+                | SpamEvent::ListUpdated
+                | SpamEvent::Train
+                | SpamEvent::TrainError
+                | SpamEvent::Classify
+                | SpamEvent::ClassifyError
+                | SpamEvent::NotEnoughTrainingData,
+            ) => true,
+            EventType::PushSubscription(_) => true,
+            EventType::Cluster(
+                ClusterEvent::PeerOffline
+                | ClusterEvent::PeerSuspected
+                | ClusterEvent::PeerSuspectedIsAlive
+                | ClusterEvent::EmptyPacket
+                | ClusterEvent::InvalidPacket
+                | ClusterEvent::DecryptionError
+                | ClusterEvent::Error,
+            ) => true,
+            EventType::Housekeeper(_) => false,
+            EventType::FtsIndex(
+                FtsIndexEvent::Index
+                | FtsIndexEvent::BlobNotFound
+                | FtsIndexEvent::MetadataNotFound,
+            ) => true,
+            EventType::Milter(_) => true,
+            EventType::MtaHook(_) => true,
+            EventType::Delivery(_) => true,
+            EventType::Queue(
+                QueueEvent::QueueMessage
+                | QueueEvent::QueueMessageSubmission
+                | QueueEvent::QueueReport
+                | QueueEvent::QueueDsn
+                | QueueEvent::QueueAutogenerated
+                | QueueEvent::Rescheduled
+                | QueueEvent::BlobNotFound
+                | QueueEvent::RateLimitExceeded
+                | QueueEvent::ConcurrencyLimitExceeded
+                | QueueEvent::QuotaExceeded,
+            ) => true,
+            EventType::TlsRpt(_) => true,
+            EventType::MtaSts(_) => true,
+            EventType::IncomingReport(_) => true,
+            EventType::OutgoingReport(
+                OutgoingReportEvent::SpfReport
+                | OutgoingReportEvent::SpfRateLimited
+                | OutgoingReportEvent::DkimReport
+                | OutgoingReportEvent::DkimRateLimited
+                | OutgoingReportEvent::DmarcReport
+                | OutgoingReportEvent::DmarcRateLimited
+                | OutgoingReportEvent::DmarcAggregateReport
+                | OutgoingReportEvent::TlsAggregate
+                | OutgoingReportEvent::HttpSubmission
+                | OutgoingReportEvent::UnauthorizedReportingAddress
+                | OutgoingReportEvent::ReportingAddressValidationError
+                | OutgoingReportEvent::NotFound
+                | OutgoingReportEvent::SubmissionError
+                | OutgoingReportEvent::NoRecipientsFound,
+            ) => true,
+            EventType::Telemetry(
+                TelemetryEvent::LogError
+                | TelemetryEvent::WebhookError
+                | TelemetryEvent::OtelExpoterError
+                | TelemetryEvent::OtelMetricsExporterError
+                | TelemetryEvent::PrometheusExporterError
+                | TelemetryEvent::JournalError,
+            ) => true,
+            _ => false,
         }
     }
 }
