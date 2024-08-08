@@ -810,7 +810,11 @@ fn apply_events(
     for event_or_many in event_types {
         match event_or_many {
             EventOrMany::Event(event_type) => {
-                apply_fn(event_type);
+                if inclusive {
+                    apply_fn(event_type);
+                } else {
+                    exclude_events.insert(event_type);
+                }
             }
             EventOrMany::StartsWith(value) => {
                 for (event_type, name) in event_names.iter() {
