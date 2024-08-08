@@ -110,8 +110,13 @@ pub struct Tracers {
 
 #[derive(Debug, Clone, Default)]
 pub struct Metrics {
-    pub prometheus: bool,
+    pub prometheus: Option<PrometheusMetrics>,
     pub otel: Option<Arc<OtelMetrics>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PrometheusMetrics {
+    pub auth: Option<String>,
 }
 
 impl Telemetry {
@@ -553,11 +558,24 @@ impl Tracers {
 impl Metrics {
     pub fn parse(config: &mut Config) -> Self {
         let mut metrics = Metrics {
-            prometheus: config
-                .property_or_default("metrics.prometheus.enable", "true")
-                .unwrap_or(true),
+            prometheus: None,
             otel: None,
         };
+
+        if config
+            .property_or_default("metrics.prometheus.enable", "false")
+            .unwrap_or(false)
+        {
+            metrics.prometheus = Some(PrometheusMetrics {
+                auth: config
+                    .value("metrics.prometheus.auth.username")
+                    .and_then(|user| {
+                        config
+                            .value("metrics.prometheus.auth.secret")
+                            .map(|secret| STANDARD.encode(format!("{user}:{secret}")))
+                    }),
+            });
+        }
 
         if config
             .property_or_default("metrics.open-telemetry.enable", "false")

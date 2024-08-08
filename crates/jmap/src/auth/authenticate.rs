@@ -23,13 +23,8 @@ impl JMAP {
         req: &hyper::Request<hyper::body::Incoming>,
         session: &HttpSessionData,
     ) -> trc::Result<(InFlight, Arc<AccessToken>)> {
-        if let Some((mechanism, token)) = req
-            .headers()
-            .get(header::AUTHORIZATION)
-            .and_then(|h| h.to_str().ok())
-            .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim().to_string())))
-        {
-            let access_token = if let Some(account_id) = self.inner.sessions.get_with_ttl(&token) {
+        if let Some((mechanism, token)) = req.authorization() {
+            let access_token = if let Some(account_id) = self.inner.sessions.get_with_ttl(token) {
                 self.get_cached_access_token(account_id).await?
             } else {
                 let access_token = if mechanism.eq_ignore_ascii_case("basic") {
@@ -56,7 +51,7 @@ impl JMAP {
                         return Err(trc::AuthEvent::Error
                             .into_err()
                             .details("Failed to decode Basic auth request.")
-                            .id(token)
+                            .id(token.to_string())
                             .caused_by(trc::location!()));
                     }
                 } else if mechanism.eq_ignore_ascii_case("bearer") {
@@ -64,7 +59,7 @@ impl JMAP {
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
                     let (account_id, _, _) =
-                        self.validate_access_token("access_token", &token).await?;
+                        self.validate_access_token("access_token", token).await?;
 
                     self.get_access_token(account_id).await?
                 } else {
@@ -73,13 +68,13 @@ impl JMAP {
                     return Err(trc::AuthEvent::Error
                         .into_err()
                         .reason("Unsupported authentication mechanism.")
-                        .details(token)
+                        .details(token.to_string())
                         .caused_by(trc::location!()));
                 };
 
                 // Cache session
                 let access_token = Arc::new(access_token);
-                self.cache_session(token, &access_token);
+                self.cache_session(token.to_string(), &access_token);
                 self.cache_access_token(access_token.clone());
                 access_token
             };
@@ -184,5 +179,29 @@ impl JMAP {
             }
             _ => err,
         }
+    }
+}
+
+pub trait HttpHeaders {
+    fn authorization(&self) -> Option<(&str, &str)>;
+    fn authorization_basic(&self) -> Option<&str>;
+}
+
+impl HttpHeaders for hyper::Request<hyper::body::Incoming> {
+    fn authorization(&self) -> Option<(&str, &str)> {
+        self.headers()
+            .get(header::AUTHORIZATION)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|h| h.split_once(' ').map(|(l, t)| (l, t.trim())))
+    }
+
+    fn authorization_basic(&self) -> Option<&str> {
+        self.authorization().and_then(|(l, t)| {
+            if l.eq_ignore_ascii_case("basic") {
+                Some(t)
+            } else {
+                None
+            }
+        })
     }
 }

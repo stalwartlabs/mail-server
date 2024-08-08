@@ -29,7 +29,7 @@ use jmap_proto::{
 };
 
 use crate::{
-    auth::oauth::OAuthMetadata,
+    auth::{authenticate::HttpHeaders, oauth::OAuthMetadata},
     blob::{DownloadResponse, UploadResponse},
     services::state,
     JmapInstance, JMAP,
@@ -319,6 +319,33 @@ impl JMAP {
                         }
                     }
                     .into_http_response());
+                }
+                _ => (),
+            },
+            "metrics" => match path.next().unwrap_or_default() {
+                "prometheus" => {
+                    if let Some(prometheus) = &self.core.metrics.prometheus {
+                        if let Some(auth) = &prometheus.auth {
+                            if req
+                                .authorization_basic()
+                                .map_or(true, |secret| secret != auth)
+                            {
+                                return Err(trc::AuthEvent::Failed
+                                    .into_err()
+                                    .details("Invalid or missing credentials.")
+                                    .caused_by(trc::location!()));
+                            }
+                        }
+
+                        return Ok(Resource {
+                            content_type: "text/plain; version=0.0.4",
+                            contents: self.core.export_prometheus_metrics().await?.into_bytes(),
+                        }
+                        .into_http_response());
+                    }
+                }
+                "otel" => {
+                    // Reserved for future use
                 }
                 _ => (),
             },

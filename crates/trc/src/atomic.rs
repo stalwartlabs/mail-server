@@ -194,6 +194,10 @@ impl<const N: usize> AtomicHistogram<N> {
         vec
     }
 
+    pub fn buckets_len(&self) -> usize {
+        N
+    }
+
     pub fn upper_bounds_iter(&self) -> impl IntoIterator<Item = u64> + '_ {
         self.upper_bounds.iter().copied()
     }
