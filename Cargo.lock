@@ -3614,6 +3614,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "maildirpp"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b5a570f7363b6df6b132c2b39f730d7e259bc9ac6247f4ab020fedf49cea36c"
+dependencies = [
+ "gethostname",
+]
+
+[[package]]
 name = "managesieve"
 version = "0.9.1"
 dependencies = [
@@ -6118,6 +6127,7 @@ dependencies = [
  "jmap-client",
  "mail-auth",
  "mail-parser",
+ "maildirpp",
  "num_cpus",
  "prettytable-rs",
  "pwhash",

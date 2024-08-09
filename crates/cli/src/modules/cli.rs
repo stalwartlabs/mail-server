@@ -371,6 +371,13 @@ pub enum ImportCommands {
     },
 }
 
+#[derive(clap::ValueEnum, Clone)]
+pub enum ExportAccountFormat {
+    Blobs,
+    #[cfg(feature = "maildir")]
+    Maildir,
+}
+
 #[derive(Subcommand)]
 pub enum ExportCommands {
     /// Export a JMAP account
@@ -384,6 +391,10 @@ pub enum ExportCommands {
 
         /// Path to export the account to
         path: String,
+
+        /// The format to export the emails
+        #[clap(value_enum, long, default_value = "blobs")]
+        format: ExportAccountFormat,
     },
 }
 

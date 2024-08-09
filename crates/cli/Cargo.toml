@@ -11,8 +11,8 @@ readme = "README.md"
 resolver = "2"
 
 [dependencies]
-jmap-client = { version = "0.3", features = ["async"] } 
-mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
+jmap-client = { version = "0.3", features = ["async"] }
+mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2"]}
 tokio = { version = "1.23", features = ["full"] }
 num_cpus = "1.13.1"
@@ -30,3 +30,8 @@ futures = "0.3.28"
 pwhash = "1.0.0"
 rand = "0.8.5"
 mail-auth = { version = "0.4" }
+maildirpp = { version = "0.3.0", default-features = false, optional = true }
+
+[features]
+default = ["maildir"]
+maildir = ["dep:maildirpp"]
