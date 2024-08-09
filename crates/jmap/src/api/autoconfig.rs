@@ -255,6 +255,7 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
                         ));
                     }
                 }
+                Ok(Event::Decl(_) | Event::Text(_)) => (),
                 Err(e) => {
                     return Err(format!(
                         "Error at position {}: {:?}",
@@ -262,9 +263,9 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
                         e
                     ))
                 }
-                _ => {
+                Ok(event) => {
                     return Err(format!(
-                        "Expected tag {}, found unexpected EOF at position {}.",
+                        "Expected tag {}, found unexpected event {event:?} at position {}.",
                         tag_name,
                         reader.buffer_position()
                     ))
@@ -285,4 +286,24 @@ fn parse_autodiscover_request(bytes: &[u8]) -> Result<String, String> {
         "Expected email address, found unexpected value at position {}.",
         reader.buffer_position()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn parse_autodiscover() {
+        let r = r#"<?xml version="1.0" encoding="utf-8"?>
+            <Autodiscover xmlns="http://schemas.microsoft.com/exchange/autodiscover/outlook/requestschema/2006">
+                <Request>
+                        <EMailAddress>email@example.com</EMailAddress>
+                        <AcceptableResponseSchema>http://schemas.microsoft.com/exchange/autodiscover/outlook/responseschema/2006a</AcceptableResponseSchema>
+                </Request>
+            </Autodiscover>"#;
+
+        assert_eq!(
+            super::parse_autodiscover_request(r.as_bytes()).unwrap(),
+            "email@example.com"
+        );
+    }
 }
