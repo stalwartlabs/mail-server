@@ -7,30 +7,39 @@
 use std::{
     cell::UnsafeCell,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
 
-use parking_lot::Mutex;
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 use crate::{
-    collector::{spawn_collector, CollectorThread},
+    collector::{spawn_collector, CollectorThread, Update, COLLECTOR_UPDATES},
     Event, EventType,
 };
 
-pub(crate) static EVENT_RXS: Mutex<Vec<Receiver>> = Mutex::new(Vec::new());
-pub(crate) static EVENT_COUNT: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static CHANNEL_FLAGS: AtomicU64 = AtomicU64::new(0);
 pub(crate) const CHANNEL_SIZE: usize = 10240;
+pub(crate) const CHANNEL_UPDATE_MARKER: u64 = 1 << 63;
 
 thread_local! {
     static EVENT_TX: UnsafeCell<Sender> = {
+        // Create channel.
         let (tx, rx) = RingBuffer::new(CHANNEL_SIZE);
-        EVENT_RXS.lock().push(Receiver { rx });
+
+        // Register receiver with collector.
+        COLLECTOR_UPDATES.lock().push(Update::RegisterReceiver { receiver: Receiver { rx } });
+
+        // Spawn collector thread.
+        let collector = spawn_collector().clone();
+        CHANNEL_FLAGS.fetch_or(CHANNEL_UPDATE_MARKER, Ordering::Relaxed);
+        collector.thread().unpark();
+
+        // Return sender.
         UnsafeCell::new(Sender {
             tx,
-            collector: spawn_collector().clone(),
+            collector,
             overflow: Vec::with_capacity(0),
         })
     };
@@ -91,7 +100,7 @@ impl Event<EventType> {
         let _ = EVENT_TX.try_with(|tx| unsafe {
             let tx = &mut *tx.get();
             if tx.send(self).is_ok() {
-                EVENT_COUNT.fetch_add(1, Ordering::Relaxed);
+                CHANNEL_FLAGS.fetch_add(1, Ordering::Relaxed);
                 tx.collector.thread().unpark();
             }
         });

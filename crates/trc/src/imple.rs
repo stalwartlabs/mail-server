@@ -1364,10 +1364,7 @@ impl EventType {
                 | OutgoingReportEvent::SubmissionError
                 | OutgoingReportEvent::NoRecipientsFound => Level::Info,
             },
-            EventType::Telemetry(event) => match event {
-                TelemetryEvent::Update => Level::Disable,
-                _ => Level::Warn,
-            },
+            EventType::Telemetry(_) => Level::Warn,
             EventType::MessageIngest(event) => match event {
                 MessageIngestEvent::Ham
                 | MessageIngestEvent::Spam
@@ -1906,7 +1903,6 @@ impl ServerEvent {
 impl TelemetryEvent {
     pub fn description(&self) -> &'static str {
         match self {
-            TelemetryEvent::Update => "Tracing update",
             TelemetryEvent::LogError => "Log collector error",
             TelemetryEvent::WebhookError => "Webhook collector error",
             TelemetryEvent::JournalError => "Journal collector error",

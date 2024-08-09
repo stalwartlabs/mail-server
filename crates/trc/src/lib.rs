@@ -649,7 +649,6 @@ pub enum ServerEvent {
 
 #[event_type]
 pub enum TelemetryEvent {
-    Update,
     LogError,
     WebhookError,
     OtelExpoterError,
