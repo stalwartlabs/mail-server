@@ -5,7 +5,7 @@
  */
 
 use std::{
-    sync::{atomic::Ordering, Arc, OnceLock},
+    sync::{atomic::Ordering, Arc, LazyLock},
     thread::{park, Builder, JoinHandle},
     time::SystemTime,
 };
@@ -67,134 +67,148 @@ const EV_ATTEMPT_END: usize = EventType::Delivery(DeliveryEvent::AttemptEnd).id(
 const STALE_SPAN_CHECK_WATERMARK: usize = 8000;
 const SPAN_MAX_HOLD: u64 = 86400;
 
+pub(crate) static COLLECTOR_THREAD: LazyLock<Arc<CollectorThread>> = LazyLock::new(|| {
+    Arc::new(
+        Builder::new()
+            .name("stalwart-collector".to_string())
+            .spawn(move || {
+                Collector::default().collect();
+            })
+            .expect("Failed to start event collector"),
+    )
+});
+
 impl Collector {
-    fn collect(&mut self) -> bool {
+    fn collect(&mut self) {
         let mut do_continue = true;
-        match CHANNEL_FLAGS.swap(0, Ordering::Relaxed) {
-            0 => {
-                park();
+
+        // Update
+        self.update();
+
+        while do_continue {
+            match CHANNEL_FLAGS.swap(0, Ordering::Relaxed) {
+                0 => {
+                    park();
+                }
+                CHANNEL_UPDATE_MARKER..=u64::MAX => {
+                    do_continue = self.update();
+                }
+                _ => {}
             }
-            CHANNEL_UPDATE_MARKER..=u64::MAX => {
-                do_continue = self.update();
-            }
-            _ => {}
-        }
 
-        // Collect all events
-        let mut closed_rxs = Vec::new();
-        for (rx_idx, rx) in self.receivers.iter_mut().enumerate() {
-            let timestamp = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs());
+            // Collect all events
+            let mut closed_rxs = Vec::new();
+            for (rx_idx, rx) in self.receivers.iter_mut().enumerate() {
+                let timestamp = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs());
 
-            loop {
-                match rx.try_recv() {
-                    Ok(Some(event)) => {
-                        // Build event
-                        let event_id = event.inner.id();
-                        let mut event = Event {
-                            inner: EventDetails {
-                                level: self.levels[event_id],
-                                typ: event.inner,
-                                timestamp,
-                                span: None,
-                            },
-                            keys: event.keys,
-                        };
+                loop {
+                    match rx.try_recv() {
+                        Ok(Some(event)) => {
+                            // Build event
+                            let event_id = event.inner.id();
+                            let mut event = Event {
+                                inner: EventDetails {
+                                    level: self.levels[event_id],
+                                    typ: event.inner,
+                                    timestamp,
+                                    span: None,
+                                },
+                                keys: event.keys,
+                            };
 
-                        // Track spans
-                        let event = match event_id {
-                            EV_CONN_START | EV_ATTEMPT_START => {
-                                let event = Arc::new(event);
-                                self.active_spans.insert(
-                                    event
-                                        .span_id()
-                                        .unwrap_or_else(|| panic!("Missing span ID: {event:?}")),
-                                    event.clone(),
-                                );
-                                if self.active_spans.len() > STALE_SPAN_CHECK_WATERMARK {
-                                    self.active_spans.retain(|_, span| {
-                                        timestamp.saturating_sub(span.inner.timestamp)
-                                            < SPAN_MAX_HOLD
-                                    });
-                                }
-                                event
-                            }
-                            EV_CONN_END | EV_ATTEMPT_END => {
-                                if let Some(span) = self
-                                    .active_spans
-                                    .remove(&event.span_id().expect("Missing span ID"))
-                                {
-                                    event.inner.span = Some(span.clone());
-                                } else {
-                                    #[cfg(debug_assertions)]
-                                    {
-                                        if event.span_id().unwrap() != 0 {
-                                            panic!("Unregistered span ID: {event:?}");
-                                        }
+                            // Track spans
+                            let event = match event_id {
+                                EV_CONN_START | EV_ATTEMPT_START => {
+                                    let event = Arc::new(event);
+                                    self.active_spans.insert(
+                                        event.span_id().unwrap_or_else(|| {
+                                            panic!("Missing span ID: {event:?}")
+                                        }),
+                                        event.clone(),
+                                    );
+                                    if self.active_spans.len() > STALE_SPAN_CHECK_WATERMARK {
+                                        self.active_spans.retain(|_, span| {
+                                            timestamp.saturating_sub(span.inner.timestamp)
+                                                < SPAN_MAX_HOLD
+                                        });
                                     }
+                                    event
                                 }
-                                Arc::new(event)
-                            }
-                            _ => {
-                                if let Some(span_id) = event.span_id() {
-                                    if let Some(span) = self.active_spans.get(&span_id) {
+                                EV_CONN_END | EV_ATTEMPT_END => {
+                                    if let Some(span) = self
+                                        .active_spans
+                                        .remove(&event.span_id().expect("Missing span ID"))
+                                    {
                                         event.inner.span = Some(span.clone());
                                     } else {
                                         #[cfg(debug_assertions)]
                                         {
-                                            if span_id != 0 {
+                                            if event.span_id().unwrap() != 0 {
                                                 panic!("Unregistered span ID: {event:?}");
                                             }
                                         }
                                     }
+                                    Arc::new(event)
                                 }
+                                _ => {
+                                    if let Some(span_id) = event.span_id() {
+                                        if let Some(span) = self.active_spans.get(&span_id) {
+                                            event.inner.span = Some(span.clone());
+                                        } else {
+                                            #[cfg(debug_assertions)]
+                                            {
+                                                if span_id != 0 {
+                                                    panic!("Unregistered span ID: {event:?}");
+                                                }
+                                            }
+                                        }
+                                    }
 
-                                Arc::new(event)
+                                    Arc::new(event)
+                                }
+                            };
+
+                            // Send to subscribers
+                            for subscriber in self.subscribers.iter_mut() {
+                                subscriber.push_event(event_id, event.clone());
                             }
-                        };
-
-                        // Send to subscribers
-                        for subscriber in self.subscribers.iter_mut() {
-                            subscriber.push_event(event_id, event.clone());
+                        }
+                        Ok(None) => {
+                            break;
+                        }
+                        Err(_) => {
+                            closed_rxs.push(rx_idx); // Channel is closed, remove.
+                            break;
                         }
                     }
-                    Ok(None) => {
-                        break;
+                }
+            }
+
+            if do_continue {
+                // Remove closed receivers (should be rare in Tokio)
+                if !closed_rxs.is_empty() {
+                    let mut receivers = Vec::with_capacity(self.receivers.len() - closed_rxs.len());
+                    for (rx_idx, rx) in self.receivers.drain(..).enumerate() {
+                        if !closed_rxs.contains(&rx_idx) {
+                            receivers.push(rx);
+                        }
                     }
-                    Err(_) => {
-                        closed_rxs.push(rx_idx); // Channel is closed, remove.
-                        break;
-                    }
+                    self.receivers = receivers;
+                }
+
+                // Send batched events
+                if !self.subscribers.is_empty() {
+                    self.subscribers
+                        .retain_mut(|subscriber| subscriber.send_batch().is_ok());
                 }
             }
         }
 
-        if do_continue {
-            // Remove closed receivers (should be rare in Tokio)
-            if !closed_rxs.is_empty() {
-                let mut receivers = Vec::with_capacity(self.receivers.len() - closed_rxs.len());
-                for (rx_idx, rx) in self.receivers.drain(..).enumerate() {
-                    if !closed_rxs.contains(&rx_idx) {
-                        receivers.push(rx);
-                    }
-                }
-                self.receivers = receivers;
-            }
-
-            // Send batched events
-            if !self.subscribers.is_empty() {
-                self.subscribers
-                    .retain_mut(|subscriber| subscriber.send_batch().is_ok());
-            }
-            true
-        } else {
-            // Send remaining events
-            for mut subscriber in self.subscribers.drain(..) {
-                let _ = subscriber.send_batch();
-            }
-
-            false
+        // Send remaining events
+        for mut subscriber in self.subscribers.drain(..) {
+            let _ = subscriber.send_batch();
         }
     }
 
@@ -301,29 +315,8 @@ impl Collector {
 
     pub fn reload() {
         CHANNEL_FLAGS.fetch_or(CHANNEL_UPDATE_MARKER, Ordering::Relaxed);
-        spawn_collector().thread().unpark();
+        COLLECTOR_THREAD.thread().unpark();
     }
-}
-
-pub(crate) fn spawn_collector() -> &'static Arc<CollectorThread> {
-    static COLLECTOR: OnceLock<Arc<CollectorThread>> = OnceLock::new();
-    COLLECTOR.get_or_init(|| {
-        Arc::new(
-            Builder::new()
-                .name("stalwart-collector".to_string())
-                .spawn(move || {
-                    // Create collector
-                    let mut collector = Collector::default();
-
-                    // Update
-                    collector.update();
-
-                    // Collect events
-                    while collector.collect() {}
-                })
-                .expect("Failed to start event collector"),
-        )
-    })
 }
 
 impl Default for Collector {

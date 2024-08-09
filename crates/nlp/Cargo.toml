@@ -13,7 +13,6 @@ serde = { version = "1.0", features = ["derive"]}
 bincode = "1.3.3"
 nohash = "0.2.0"
 ahash = "0.8.3"
-lazy_static = "1.4"
 whatlang = "0.16" # Language detection
 rust-stemmers = "1.2" # Stemmers
 tinysegmenter = "0.1" # Japanese tokenizer

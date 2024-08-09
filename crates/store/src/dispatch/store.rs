@@ -25,10 +25,14 @@ use crate::{
 use super::DocumentSet;
 
 #[cfg(feature = "test_mode")]
-lazy_static::lazy_static! {
-pub static ref BITMAPS: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<Vec<u8>, std::collections::HashSet<u32>>>> =
-                    std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
-}
+#[allow(clippy::type_complexity)]
+static BITMAPS: std::sync::LazyLock<
+    std::sync::Arc<
+        parking_lot::Mutex<std::collections::HashMap<Vec<u8>, std::collections::HashSet<u32>>>,
+    >,
+> = std::sync::LazyLock::new(|| {
+    std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()))
+});
 
 impl Store {
     pub async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>

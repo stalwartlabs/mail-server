@@ -4,16 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, vec::IntoIter};
+use std::{borrow::Cow, sync::LazyLock, vec::IntoIter};
 
 use jieba_rs::Jieba;
 
 use super::{InnerToken, Token};
-use lazy_static::lazy_static;
 
-lazy_static! {
-    pub static ref JIEBA: Jieba = Jieba::new();
-}
+pub(crate) static JIEBA: LazyLock<Jieba> = LazyLock::new(Jieba::new);
 
 pub struct ChineseTokenizer<'x, T, I>
 where

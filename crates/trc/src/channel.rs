@@ -15,7 +15,7 @@ use std::{
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 use crate::{
-    collector::{spawn_collector, CollectorThread, Update, COLLECTOR_UPDATES},
+    collector::{CollectorThread, Update, COLLECTOR_THREAD, COLLECTOR_UPDATES},
     Event, EventType,
 };
 
@@ -32,7 +32,7 @@ thread_local! {
         COLLECTOR_UPDATES.lock().push(Update::RegisterReceiver { receiver: Receiver { rx } });
 
         // Spawn collector thread.
-        let collector = spawn_collector().clone();
+        let collector = COLLECTOR_THREAD.clone();
         CHANNEL_FLAGS.fetch_or(CHANNEL_UPDATE_MARKER, Ordering::Relaxed);
         collector.thread().unpark();
 
