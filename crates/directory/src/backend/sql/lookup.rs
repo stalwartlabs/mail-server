@@ -209,7 +209,11 @@ impl SqlMappings {
 
         if let Some(row) = rows.rows.into_iter().next() {
             for (name, value) in rows.names.into_iter().zip(row.values) {
-                if name.eq_ignore_ascii_case(&self.column_secret) {
+                if self
+                    .column_secret
+                    .iter()
+                    .any(|c| name.eq_ignore_ascii_case(c))
+                {
                     if let Value::Text(secret) = value {
                         principal.secrets.push(secret.into_owned());
                     }

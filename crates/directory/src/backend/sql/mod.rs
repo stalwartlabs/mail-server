@@ -25,7 +25,7 @@ pub(crate) struct SqlMappings {
     query_verify: String,
     query_expand: String,
     column_description: String,
-    column_secret: String,
+    column_secret: Vec<String>,
     column_quota: String,
     column_type: String,
 }
