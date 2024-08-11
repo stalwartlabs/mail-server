@@ -28,6 +28,8 @@ impl Store {
             Self::RocksDb(_) => "rocksdb",
             #[cfg(feature = "tikv")]
             Self::TiKV(_) => "tikv",
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(_) => "read_replica",
             Self::None => "none",
         }
     }

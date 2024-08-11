@@ -31,9 +31,9 @@ body:
       label: Version
       description: What version of our software are you running?
       options:
+        - v0.9.x
         - v0.8.x
-        - v0.7.x
-        - v0.6.x or lower
+        - v0.7.x or lower
     validations:
       required: true
   - type: dropdown
@@ -74,6 +74,7 @@ body:
         - Linux
         - Docker
         - MacOS
+        - FreeBSD
         - Windows
   - type: textarea
     id: logs

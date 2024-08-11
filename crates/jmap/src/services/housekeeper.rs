@@ -6,10 +6,10 @@
 
 use std::{
     collections::BinaryHeap,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
-use common::IPC_CHANNEL_BUFFER;
+use common::{config::telemetry::OtelMetrics, IPC_CHANNEL_BUFFER};
 use store::{
     write::{now, purge::PurgeStore},
     BlobStore, LookupStore, Store,
@@ -21,16 +21,12 @@ use utils::map::ttl_dashmap::TtlMap;
 use crate::{Inner, JmapInstance, JMAP, LONG_SLUMBER};
 
 pub enum Event {
-    IndexStart,
-    IndexDone,
-    AcmeReload,
     AcmeReschedule {
         provider_id: String,
         renew_at: Instant,
     },
     Purge(PurgeType),
-    #[cfg(feature = "test_mode")]
-    IndexIsActive(tokio::sync::oneshot::Sender<bool>),
+    ReloadSettings,
     Exit,
 }
 
@@ -53,8 +49,9 @@ enum ActionClass {
     Account,
     Store(usize),
     Acme(String),
+    OtelMetrics,
     #[cfg(feature = "enterprise")]
-    ReloadLicense,
+    ReloadSettings,
 }
 
 #[derive(Default)]
@@ -65,33 +62,37 @@ struct Queue {
 pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
     tokio::spawn(async move {
         trc::event!(Housekeeper(HousekeeperEvent::Start));
-
-        let mut index_busy = true;
-        let mut index_pending = false;
-
-        // Index any queued messages
-        let jmap = JMAP::from(core.clone());
-        tokio::spawn(async move {
-            jmap.fts_index_queued().await;
-        });
+        let start_time = SystemTime::now();
 
         // Add all events to queue
         let mut queue = Queue::default();
         {
             let core_ = core.core.load_full();
+
+            // Session purge
             queue.schedule(
                 Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
                 ActionClass::Session,
             );
+
+            // Account purge
             queue.schedule(
                 Instant::now() + core_.jmap.account_purge_frequency.time_to_next(),
                 ActionClass::Account,
             );
+
+            // Store purges
             for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
                 queue.schedule(
                     Instant::now() + schedule.cron.time_to_next(),
                     ActionClass::Store(idx),
                 );
+            }
+
+            // OTEL Push Metrics
+            if let Some(otel) = &core_.metrics.otel {
+                OtelMetrics::enable_errors();
+                queue.schedule(Instant::now() + otel.interval, ActionClass::OtelMetrics);
             }
 
             // Add all ACME renewals to heap
@@ -118,7 +119,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
             if let Some(enterprise) = &core_.enterprise {
                 queue.schedule(
                     Instant::now() + enterprise.license.expires_in(),
-                    ActionClass::ReloadLicense,
+                    ActionClass::ReloadSettings,
                 );
             }
             // SPDX-SnippetEnd
@@ -127,10 +128,24 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         loop {
             match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
                 Ok(Some(event)) => match event {
-                    Event::AcmeReload => {
+                    Event::ReloadSettings => {
                         let core_ = core.core.load_full();
                         let inner = core.jmap_inner.clone();
 
+                        // Reload OTEL push metrics
+                        match &core_.metrics.otel {
+                            Some(otel) if !queue.has_action(&ActionClass::OtelMetrics) => {
+                                OtelMetrics::enable_errors();
+
+                                queue.schedule(
+                                    Instant::now() + otel.interval,
+                                    ActionClass::OtelMetrics,
+                                );
+                            }
+                            _ => {}
+                        }
+
+                        // Reload ACME certificates
                         tokio::spawn(async move {
                             for provider in core_.tls.acme_providers.values() {
                                 match core_.init_acme(provider).await {
@@ -159,28 +174,6 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                         let action = ActionClass::Acme(provider_id);
                         queue.remove_action(&action);
                         queue.schedule(renew_at, action);
-                    }
-                    Event::IndexStart => {
-                        if !index_busy {
-                            index_busy = true;
-                            let jmap = JMAP::from(core.clone());
-                            tokio::spawn(async move {
-                                jmap.fts_index_queued().await;
-                            });
-                        } else {
-                            index_pending = true;
-                        }
-                    }
-                    Event::IndexDone => {
-                        if index_pending {
-                            index_pending = false;
-                            let jmap = JMAP::from(core.clone());
-                            tokio::spawn(async move {
-                                jmap.fts_index_queued().await;
-                            });
-                        } else {
-                            index_busy = false;
-                        }
                     }
                     Event::Purge(purge) => match purge {
                         PurgeType::Data(store) => {
@@ -225,10 +218,6 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             });
                         }
                     },
-                    #[cfg(feature = "test_mode")]
-                    Event::IndexIsActive(tx) => {
-                        tx.send(index_busy).ok();
-                    }
                     Event::Exit => {
                         trc::event!(Housekeeper(HousekeeperEvent::Stop));
 
@@ -352,12 +341,26 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     });
                                 }
                             }
+                            ActionClass::OtelMetrics => {
+                                if let Some(otel) = &core_.metrics.otel {
+                                    queue.schedule(
+                                        Instant::now() + otel.interval,
+                                        ActionClass::OtelMetrics,
+                                    );
+
+                                    let otel = otel.clone();
+                                    let core = core_.clone();
+                                    tokio::spawn(async move {
+                                        otel.push_metrics(core, start_time).await;
+                                    });
+                                }
+                            }
 
                             // SPDX-SnippetBegin
                             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                             // SPDX-License-Identifier: LicenseRef-SEL
                             #[cfg(feature = "enterprise")]
-                            ActionClass::ReloadLicense => {
+                            ActionClass::ReloadSettings => {
                                 match core_.reload().await {
                                     Ok(result) => {
                                         if let Some(new_core) = result.new_core {
@@ -365,7 +368,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                                 queue.schedule(
                                                     Instant::now()
                                                         + enterprise.license.expires_in(),
-                                                    ActionClass::ReloadLicense,
+                                                    ActionClass::ReloadSettings,
                                                 );
                                             }
 
@@ -419,6 +422,10 @@ impl Queue {
         } else {
             None
         }
+    }
+
+    pub fn has_action(&self, event: &ActionClass) -> bool {
+        self.heap.iter().any(|e| &e.event == event)
     }
 }
 

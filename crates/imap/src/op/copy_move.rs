@@ -360,8 +360,7 @@ impl<T: SessionStream> SessionData<T> {
                 trc::ImapEvent::Copy
             }),
             SpanId = self.session_id,
-            SourceAccountId = src_mailbox.id.account_id,
-            SourceMailboxId = src_mailbox.id.mailbox_id,
+            Source = src_mailbox.id.account_id,
             Details = src_uids
                 .iter()
                 .map(|r| trc::Value::from(*r))

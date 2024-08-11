@@ -33,7 +33,7 @@ use utils::config::Rate;
 use crate::{
     core::{Session, SessionAddress, State},
     inbound::milter::Modification,
-    queue::{self, Message, QueueEnvelope, Schedule},
+    queue::{self, Message, MessageSource, QueueEnvelope, Schedule},
     scripts::ScriptResult,
 };
 
@@ -703,12 +703,18 @@ impl<T: SessionStream> Session<T> {
             let queue_id = message.queue_id;
 
             // Queue message
+            let source = if self.data.authenticated_as.is_empty() {
+                MessageSource::Unauthenticated
+            } else {
+                MessageSource::Authenticated
+            };
             if message
                 .queue(
                     Some(&headers),
                     raw_message,
                     self.data.session_id,
                     &self.core,
+                    source,
                 )
                 .await
             {

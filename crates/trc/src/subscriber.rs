@@ -106,7 +106,7 @@ impl SubscriberBuilder {
     pub fn register(self) -> (mpsc::Sender<EventBatch>, mpsc::Receiver<EventBatch>) {
         let (tx, rx) = mpsc::channel(8192);
 
-        COLLECTOR_UPDATES.lock().push(Update::Register {
+        COLLECTOR_UPDATES.lock().push(Update::RegisterSubscriber {
             subscriber: Subscriber {
                 id: self.id,
                 interests: self.interests,

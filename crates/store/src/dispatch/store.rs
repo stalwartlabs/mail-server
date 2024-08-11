@@ -4,10 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::ops::{BitAndAssign, Range};
+use std::{
+    ops::{BitAndAssign, Range},
+    time::Instant,
+};
 
 use roaring::RoaringBitmap;
-use trc::AddContext;
+use trc::{AddContext, StoreEvent};
 
 use crate::{
     write::{
@@ -22,10 +25,14 @@ use crate::{
 use super::DocumentSet;
 
 #[cfg(feature = "test_mode")]
-lazy_static::lazy_static! {
-pub static ref BITMAPS: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<Vec<u8>, std::collections::HashSet<u32>>>> =
-                    std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
-}
+#[allow(clippy::type_complexity)]
+static BITMAPS: std::sync::LazyLock<
+    std::sync::Arc<
+        parking_lot::Mutex<std::collections::HashMap<Vec<u8>, std::collections::HashSet<u32>>>,
+    >,
+> = std::sync::LazyLock::new(|| {
+    std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()))
+});
 
 impl Store {
     pub async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
@@ -45,6 +52,8 @@ impl Store {
             Self::RocksDb(store) => store.get_value(key).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.get_value(key).await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.get_value(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -67,6 +76,8 @@ impl Store {
             Self::RocksDb(store) => store.get_bitmap(key).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.get_bitmap(key).await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.get_bitmap(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -99,7 +110,8 @@ impl Store {
         params: IterateParams<T>,
         cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
     ) -> trc::Result<()> {
-        match self {
+        let start_time = Instant::now();
+        let result = match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.iterate(params, cb).await,
             #[cfg(feature = "foundation")]
@@ -112,9 +124,18 @@ impl Store {
             Self::RocksDb(store) => store.iterate(params, cb).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.iterate(params, cb).await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.iterate(params, cb).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
-        .caused_by(trc::location!())
+        .caused_by(trc::location!());
+
+        trc::event!(
+            Store(StoreEvent::DataIterate),
+            Elapsed = start_time.elapsed(),
+        );
+
+        result
     }
 
     pub async fn get_counter(
@@ -134,6 +155,8 @@ impl Store {
             Self::RocksDb(store) => store.get_counter(key).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.get_counter(key).await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.get_counter(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -199,6 +222,8 @@ impl Store {
                 Self::RocksDb(store) => store.write(batch).await,
                 #[cfg(feature = "tikv")]
                 Self::TiKV(store) => store.write(batch).await,
+                #[cfg(feature = "enterprise")]
+                Self::SQLReadReplica(store) => store.write(batch).await,
                 Self::None => Err(trc::StoreEvent::NotConfigured.into()),
             }
             .caused_by(trc::location!())?;
@@ -230,7 +255,10 @@ impl Store {
             return Ok(AssignedIds::default());
         }
 
-        match self {
+        let start_time = Instant::now();
+        let ops = batch.ops.len();
+
+        let result = match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.write(batch).await,
             #[cfg(feature = "foundation")]
@@ -243,8 +271,18 @@ impl Store {
             Self::RocksDb(store) => store.write(batch).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.write(batch).await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.write(batch).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
-        }
+        };
+
+        trc::event!(
+            Store(StoreEvent::DataWrite),
+            Elapsed = start_time.elapsed(),
+            Total = ops,
+        );
+
+        result
     }
 
     pub async fn purge_store(&self) -> trc::Result<()> {
@@ -291,6 +329,8 @@ impl Store {
             Self::RocksDb(store) => store.purge_store().await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.purge_store().await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.purge_store().await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -310,6 +350,8 @@ impl Store {
             Self::RocksDb(store) => store.delete_range(from, to).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.delete_range(from, to).await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.delete_range(from, to).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -465,6 +507,8 @@ impl Store {
             Self::RocksDb(store) => store.get_blob(key, range).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.get_blob(key, range).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -484,6 +528,8 @@ impl Store {
             Self::RocksDb(store) => store.put_blob(key, data).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.put_blob(key, data).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
@@ -503,6 +549,8 @@ impl Store {
             Self::RocksDb(store) => store.delete_blob(key).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.delete_blob(key).await,
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(store) => store.delete_blob(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())

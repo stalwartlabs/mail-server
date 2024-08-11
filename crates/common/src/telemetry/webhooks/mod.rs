@@ -12,7 +12,7 @@ use std::{
     time::Instant,
 };
 
-use crate::config::tracers::WebhookTracer;
+use crate::config::telemetry::WebhookTracer;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ring::hmac;
 use serde::Serialize;
@@ -20,7 +20,7 @@ use store::write::now;
 use tokio::sync::mpsc;
 use trc::{
     subscriber::{EventBatch, SubscriberBuilder},
-    ServerEvent, TracingEvent,
+    ServerEvent, TelemetryEvent,
 };
 
 use super::LONG_SLUMBER;
@@ -53,7 +53,7 @@ pub(crate) fn spawn_webhook_tracer(builder: SubscriberBuilder, settings: Webhook
 
                     if discard_count > 0 {
                         trc::event!(
-                            Tracing(TracingEvent::WebhookError),
+                            Telemetry(TelemetryEvent::WebhookError),
                             Details = "Discarded stale events",
                             Total = discard_count
                         );
@@ -111,7 +111,7 @@ fn spawn_webhook_handler(
         let wrapper = EventWrapper { events };
 
         if let Err(err) = post_webhook_events(&settings, &wrapper).await {
-            trc::event!(Tracing(TracingEvent::WebhookError), Details = err);
+            trc::event!(Telemetry(TelemetryEvent::WebhookError), Details = err);
 
             if webhook_tx.send(wrapper.events).await.is_err() {
                 trc::event!(

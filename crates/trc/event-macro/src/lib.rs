@@ -67,11 +67,10 @@ pub fn event_type(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let variants_fn = quote! {
-        pub fn variants() -> &'static [Self] {
-            static VARIANTS: &'static [#name] = &[
+        pub const fn variants() -> &'static [Self] {
+            &[
                 #(#name::#variant_names,)*
-            ];
-            VARIANTS
+            ]
         }
     };
 
@@ -148,10 +147,18 @@ pub fn event_family(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
 
-            pub fn variants() -> Vec<#name> {
-                let mut variants = Vec::new();
+            pub const fn variants() -> [#name; crate::TOTAL_EVENT_COUNT] {
+                let mut variants = [crate::EventType::Eval(crate::EvalEvent::Error); crate::TOTAL_EVENT_COUNT];
                 #(
-                    variants.extend(<#event_types>::variants().iter().copied().map(#name::#variant_idents));
+                    {
+                        let sub_variants = <#event_types>::variants();
+                        let mut i = 0;
+                        while i < sub_variants.len() {
+                            variants[sub_variants[i].id()] = #name::#variant_idents(sub_variants[i]);
+                            i += 1;
+                        }
+
+                    }
                 )*
                 variants
             }
@@ -291,9 +298,13 @@ pub fn event(input: TokenStream) -> TokenStream {
             const ET: trc::EventType = trc::EventType::#event(#param);
             const ET_ID: usize = ET.id();
             if trc::collector::Collector::has_interest(ET_ID) {
-                trc::Event::with_keys(ET, vec![#(#key_value_tokens),*]).send();
+                let keys = vec![#(#key_value_tokens),*];
+                if trc::collector::Collector::is_metric(ET_ID) {
+                    trc::collector::Collector::record_metric(ET, ET_ID, &keys);
+                }
+                trc::Event::with_keys(ET, keys).send();
             } else if trc::collector::Collector::is_metric(ET_ID) {
-                trc::Event::with_keys(ET, vec![#(#key_value_metric_tokens),*]).send();
+                trc::collector::Collector::record_metric(ET, ET_ID, &[#(#key_value_metric_tokens),*]);
             }
         }}
     } else {
@@ -301,9 +312,13 @@ pub fn event(input: TokenStream) -> TokenStream {
             let et = trc::EventType::#event(#param);
             let et_id = et.id();
             if trc::collector::Collector::has_interest(et_id) {
-                trc::Event::with_keys(et, vec![#(#key_value_tokens),*]).send();
+                let keys = vec![#(#key_value_tokens),*];
+                if trc::collector::Collector::is_metric(et_id) {
+                    trc::collector::Collector::record_metric(et, et_id, &keys);
+                }
+                trc::Event::with_keys(et, keys).send();
             } else if trc::collector::Collector::is_metric(et_id) {
-                trc::Event::with_keys(et, vec![#(#key_value_metric_tokens),*]).send();
+                trc::collector::Collector::record_metric(et, et_id, &[#(#key_value_metric_tokens),*]);
             }
         }}
     };

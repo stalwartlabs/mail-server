@@ -96,6 +96,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
 
         tokio::spawn(async move {
             let start_time = Instant::now();
+            let protocol = session.instance.protocol;
             let session_id;
 
             if is_tls {
@@ -189,6 +190,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                 Network(trc::NetworkEvent::ConnectionEnd),
                 SpanId = session_id,
                 Elapsed = start_time.elapsed(),
+                Protocol = protocol,
             );
         });
     }

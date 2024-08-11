@@ -19,8 +19,8 @@ use store::write::now;
 use crate::core::SMTP;
 
 use super::{
-    Domain, Error, ErrorDetails, HostResponse, Message, QueueEnvelope, Recipient, Status,
-    RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
+    Domain, Error, ErrorDetails, HostResponse, Message, MessageSource, QueueEnvelope, Recipient,
+    Status, RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
 };
 
 impl SMTP {
@@ -48,7 +48,13 @@ impl SMTP {
 
                 // Queue DSN
                 dsn_message
-                    .queue(signature.as_deref(), &dsn, message.span_id, self)
+                    .queue(
+                        signature.as_deref(),
+                        &dsn,
+                        message.span_id,
+                        self,
+                        MessageSource::Dsn,
+                    )
                     .await;
             }
         } else {

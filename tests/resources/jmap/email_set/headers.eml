@@ -30,6 +30,7 @@ X-References: <1234@local.machine.example> <3456@example.net>
 X-References: <789@local.machine.example> <abcd@example.net>
 X-Text: a b
 X-Text: this is some text
+MIME-Version: 1.0
 Content-Type: multipart/alternative; 
 	boundary="boundary_0"
 

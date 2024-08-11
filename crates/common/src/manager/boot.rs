@@ -18,7 +18,7 @@ use utils::{
 };
 
 use crate::{
-    config::{server::Servers, tracers::Tracers},
+    config::{server::Servers, telemetry::Telemetry},
     Core, SharedCore,
 };
 
@@ -161,8 +161,8 @@ impl BootManager {
                 .failed("Failed to read configuration");
         }
 
-        // Enable tracing
-        Tracers::parse(&mut config).enable();
+        // Enable telemetry
+        Telemetry::parse(&mut config).enable();
 
         match import_export {
             ImportExport::None => {

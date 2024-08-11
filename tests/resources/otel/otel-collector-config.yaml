@@ -1,4 +1,4 @@
-# docker run -p 4317:4317 --network host --rm -v $(pwd)/otel-collector-config.yaml:/etc/otelcol/config.yaml otel/opentelemetry-collector
+# docker run -p 4317:4317 --network host --rm -v $(pwd)/tests/resources/otel/otel-collector-config.yaml:/etc/otelcol/config.yaml otel/opentelemetry-collector
 
 receivers:
   otlp:
@@ -35,6 +35,10 @@ service:
       processors: [batch]
       exporters: [zipkin, otlp]
     logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
       receivers: [otlp]
       processors: [batch]
       exporters: [debug]

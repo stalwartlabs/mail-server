@@ -71,11 +71,7 @@ impl Gossiper {
         tokio::spawn(async move {
             trc::event!(Cluster(ClusterEvent::OneOrMorePeersOffline));
 
-            let _ = core
-                .jmap_inner
-                .housekeeper_tx
-                .send(housekeeper::Event::IndexStart)
-                .await;
+            core.jmap_inner.request_fts_index();
             let _ = core.smtp_inner.queue_tx.send(queue::Event::Reload).await;
         });
     }
@@ -181,13 +177,13 @@ impl Gossiper {
                             // Reload ACME
                             if inner
                                 .housekeeper_tx
-                                .send(housekeeper::Event::AcmeReload)
+                                .send(housekeeper::Event::ReloadSettings)
                                 .await
                                 .is_err()
                             {
                                 trc::event!(
                                     Server(trc::ServerEvent::ThreadError),
-                                    Details = "Failed to send ACME reload event to housekeeper",
+                                    Details = "Failed to send setting reload event to housekeeper",
                                     CausedBy = trc::location!(),
                                 );
                             }

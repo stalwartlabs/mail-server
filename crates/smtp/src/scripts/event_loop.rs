@@ -18,7 +18,11 @@ use smtp_proto::{
 };
 use trc::SieveEvent;
 
-use crate::{core::SMTP, inbound::DkimSign, queue::DomainPart};
+use crate::{
+    core::SMTP,
+    inbound::DkimSign,
+    queue::{DomainPart, MessageSource},
+};
 
 use super::{ScriptModification, ScriptParameters, ScriptResult};
 
@@ -284,7 +288,13 @@ impl SMTP {
 
                             if self.has_quota(&mut message).await {
                                 message
-                                    .queue(headers.as_deref(), raw_message, session_id, self)
+                                    .queue(
+                                        headers.as_deref(),
+                                        raw_message,
+                                        session_id,
+                                        self,
+                                        MessageSource::Sieve,
+                                    )
                                     .await;
                             } else {
                                 trc::event!(

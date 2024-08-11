@@ -3,6 +3,7 @@ From: "Joe Bloggs" <joe@example.com>
 Message-ID: <my-message-id>
 Subject: World domination
 To: "John" <john@example.com>
+MIME-Version: 1.0
 Content-Type: multipart/alternative; 
 	boundary="boundary_0"
 

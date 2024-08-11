@@ -32,9 +32,9 @@ impl SqlDirectory {
                 .unwrap_or_default()
                 .to_string(),
             column_secret: config
-                .value((&prefix, "columns.secret"))
-                .unwrap_or_default()
-                .to_string(),
+                .values((&prefix, "columns.secret"))
+                .map(|(_, v)| v.to_string())
+                .collect(),
             column_quota: config
                 .value((&prefix, "columns.quota"))
                 .unwrap_or_default()

@@ -7,7 +7,7 @@
 use std::{
     hash::Hash,
     net::IpAddr,
-    sync::Arc,
+    sync::{Arc, LazyLock},
     time::{Duration, Instant},
 };
 
@@ -269,17 +269,17 @@ impl From<SmtpInstance> for SMTP {
     }
 }
 
-lazy_static::lazy_static! {
-static ref SIEVE: Arc<ServerInstance> = Arc::new(ServerInstance {
-    id: "sieve".to_string(),
-    protocol: common::config::server::ServerProtocol::Lmtp,
-    acceptor: common::listener::TcpAcceptor::Plain,
-    limiter: ConcurrencyLimiter::new(0),
-    shutdown_rx: tokio::sync::watch::channel(false).1,
-    proxy_networks: vec![],
-    span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
+static SIEVE: LazyLock<Arc<ServerInstance>> = LazyLock::new(|| {
+    Arc::new(ServerInstance {
+        id: "sieve".to_string(),
+        protocol: common::config::server::ServerProtocol::Lmtp,
+        acceptor: common::listener::TcpAcceptor::Plain,
+        limiter: ConcurrencyLimiter::new(0),
+        shutdown_rx: tokio::sync::watch::channel(false).1,
+        proxy_networks: vec![],
+        span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
+    })
 });
-}
 
 impl Session<common::listener::stream::NullIo> {
     pub fn local(core: SMTP, instance: std::sync::Arc<ServerInstance>, data: SessionData) -> Self {

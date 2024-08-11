@@ -29,7 +29,7 @@ use jmap_proto::{
 };
 
 use crate::{
-    auth::oauth::OAuthMetadata,
+    auth::{authenticate::HttpHeaders, oauth::OAuthMetadata},
     blob::{DownloadResponse, UploadResponse},
     services::state,
     JmapInstance, JMAP,
@@ -58,6 +58,13 @@ impl JMAP {
     ) -> trc::Result<HttpResponse> {
         let mut path = req.uri().path().split('/');
         path.next();
+
+        // Validate endpoint access
+        let ctx = HttpContext::new(&session, &req);
+        match ctx.has_endpoint_access(&self.core).await {
+            StatusCode::OK => (),
+            status => return Ok(status.into_http_response()),
+        }
 
         match path.next().unwrap_or_default() {
             "jmap" => {
@@ -185,7 +192,7 @@ impl JMAP {
 
                     return Ok(self
                         .handle_session_resource(
-                            session.resolve_url(&self.core).await,
+                            ctx.resolve_response_url(&self.core).await,
                             access_token,
                         )
                         .await?
@@ -196,7 +203,7 @@ impl JMAP {
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
                     return Ok(JsonResponse::new(OAuthMetadata::new(
-                        session.resolve_url(&self.core).await,
+                        ctx.resolve_response_url(&self.core).await,
                     ))
                     .into_http_response());
                 }
@@ -248,12 +255,9 @@ impl JMAP {
                 ("device", &Method::POST) => {
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
+                    let url = ctx.resolve_response_url(&self.core).await;
                     return self
-                        .handle_device_auth(
-                            &mut req,
-                            session.resolve_url(&self.core).await,
-                            session.session_id,
-                        )
+                        .handle_device_auth(&mut req, url, session.session_id)
                         .await;
                 }
                 ("token", &Method::POST) => {
@@ -322,6 +326,33 @@ impl JMAP {
                 }
                 _ => (),
             },
+            "metrics" => match path.next().unwrap_or_default() {
+                "prometheus" => {
+                    if let Some(prometheus) = &self.core.metrics.prometheus {
+                        if let Some(auth) = &prometheus.auth {
+                            if req
+                                .authorization_basic()
+                                .map_or(true, |secret| secret != auth)
+                            {
+                                return Err(trc::AuthEvent::Failed
+                                    .into_err()
+                                    .details("Invalid or missing credentials.")
+                                    .caused_by(trc::location!()));
+                            }
+                        }
+
+                        return Ok(Resource {
+                            content_type: "text/plain; version=0.0.4",
+                            contents: self.core.export_prometheus_metrics().await?.into_bytes(),
+                        }
+                        .into_http_response());
+                    }
+                }
+                "otel" => {
+                    // Reserved for future use
+                }
+                _ => (),
+            },
             _ => {
                 let path = req.uri().path();
                 let resource = self
@@ -370,9 +401,39 @@ impl JmapInstance {
                         } else if let Some(forwarded_for) = req
                             .headers()
                             .get(header::FORWARDED)
-                            .or_else(|| req.headers().get("X-Forwarded-For"))
                             .and_then(|h| h.to_str().ok())
-                            .and_then(|h| h.parse::<IpAddr>().ok())
+                            .and_then(|h| {
+                                let h = h.to_ascii_lowercase();
+                                h.split_once("for=").and_then(|(_, rest)| {
+                                    let mut start_ip = usize::MAX;
+                                    let mut end_ip = usize::MAX;
+
+                                    for (pos, ch) in rest.char_indices() {
+                                        match ch {
+                                            '0'..='9' | 'a'..='f' | ':' | '.' => {
+                                                if start_ip == usize::MAX {
+                                                    start_ip = pos;
+                                                }
+                                                end_ip = pos;
+                                            }
+                                            '"' | '[' | ' ' if start_ip == usize::MAX => {}
+                                            _ => {
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    rest.get(start_ip..=end_ip)
+                                        .and_then(|h| h.parse::<IpAddr>().ok())
+                                })
+                            })
+                            .or_else(|| {
+                                req.headers()
+                                    .get("X-Forwarded-For")
+                                    .and_then(|h| h.to_str().ok())
+                                    .map(|h| h.split_once(',').map_or(h, |(ip, _)| ip).trim())
+                                    .and_then(|h| h.parse::<IpAddr>().ok())
+                            })
                         {
                             forwarded_for
                         } else {
@@ -469,33 +530,70 @@ impl SessionManager for JmapSessionManager {
     }
 }
 
-impl ResolveVariable for HttpSessionData {
-    fn resolve_variable(&self, variable: u32) -> common::expr::Variable<'_> {
-        match variable {
-            V_REMOTE_IP => self.remote_ip.to_string().into(),
-            V_REMOTE_PORT => self.remote_port.into(),
-            V_LOCAL_IP => self.local_ip.to_string().into(),
-            V_LOCAL_PORT => self.local_port.into(),
-            V_TLS => self.is_tls.into(),
-            V_PROTOCOL => if self.is_tls { "https" } else { "http" }.into(),
-            V_LISTENER => self.instance.id.as_str().into(),
-            _ => common::expr::Variable::default(),
-        }
+struct HttpContext<'x> {
+    session: &'x HttpSessionData,
+    req: &'x HttpRequest,
+}
+
+impl<'x> HttpContext<'x> {
+    fn new(session: &'x HttpSessionData, req: &'x HttpRequest) -> Self {
+        Self { session, req }
+    }
+
+    pub async fn resolve_response_url(&self, core: &Core) -> String {
+        core.eval_if(
+            &core.network.http_response_url,
+            self,
+            self.session.session_id,
+        )
+        .await
+        .unwrap_or_else(|| {
+            format!(
+                "http{}://{}:{}",
+                if self.session.is_tls { "s" } else { "" },
+                self.session.local_ip,
+                self.session.local_port
+            )
+        })
+    }
+
+    pub async fn has_endpoint_access(&self, core: &Core) -> StatusCode {
+        core.eval_if(
+            &core.network.http_allowed_endpoint,
+            self,
+            self.session.session_id,
+        )
+        .await
+        .unwrap_or(StatusCode::OK)
     }
 }
 
-impl HttpSessionData {
-    pub async fn resolve_url(&self, core: &Core) -> String {
-        core.eval_if(&core.network.url, self, self.session_id)
-            .await
-            .unwrap_or_else(|| {
-                format!(
-                    "http{}://{}:{}",
-                    if self.is_tls { "s" } else { "" },
-                    self.local_ip,
-                    self.local_port
-                )
-            })
+impl<'x> ResolveVariable for HttpContext<'x> {
+    fn resolve_variable(&self, variable: u32) -> Variable<'_> {
+        match variable {
+            V_REMOTE_IP => self.session.remote_ip.to_string().into(),
+            V_REMOTE_PORT => self.session.remote_port.into(),
+            V_LOCAL_IP => self.session.local_ip.to_string().into(),
+            V_LOCAL_PORT => self.session.local_port.into(),
+            V_TLS => self.session.is_tls.into(),
+            V_PROTOCOL => if self.session.is_tls { "https" } else { "http" }.into(),
+            V_LISTENER => self.session.instance.id.as_str().into(),
+            V_URL => self.req.uri().to_string().into(),
+            V_URL_PATH => self.req.uri().path().into(),
+            V_METHOD => self.req.method().as_str().into(),
+            V_HEADERS => self
+                .req
+                .headers()
+                .iter()
+                .map(|(h, v)| {
+                    Variable::String(
+                        format!("{}: {}", h.as_str(), v.to_str().unwrap_or_default()).into(),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .into(),
+            _ => Variable::default(),
+        }
     }
 }
 
@@ -846,6 +944,17 @@ impl ToHttpResponse for HtmlResponse {
 
 impl ToHttpResponse for StatusCode {
     fn into_http_response(self) -> HttpResponse {
-        HttpResponse::new_empty(self)
+        HttpResponse::new_text(
+            self,
+            "application/problem+json",
+            serde_json::to_string(&RequestError {
+                p_type: jmap_proto::error::request::RequestErrorType::Other,
+                status: self.as_u16(),
+                title: None,
+                detail: self.canonical_reason().unwrap_or_default().into(),
+                limit: None,
+            })
+            .unwrap_or_default(),
+        )
     }
 }

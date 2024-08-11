@@ -24,9 +24,10 @@ macro_rules! error {
         let err = $err;
         let event_id = err.as_ref().id();
 
-        if $crate::collector::Collector::has_interest(event_id)
-            || $crate::collector::Collector::is_metric(event_id)
-        {
+        if $crate::collector::Collector::is_metric(event_id) {
+            $crate::collector::Collector::record_metric(*err.as_ref(), event_id, &err.keys);
+        }
+        if $crate::collector::Collector::has_interest(event_id) {
             err.send();
         }
     };

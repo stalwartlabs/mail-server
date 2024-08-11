@@ -105,7 +105,7 @@ main() {
             ensure dscl /Local/Default -delete /Users/_stalwart-mail AuthenticationAuthority
             ensure dscl /Local/Default -delete /Users/_stalwart-mail PasswordPolicyOptions
         else
-            ensure useradd ${_account} -s /sbin/nologin -M
+            ensure useradd ${_account} -s /usr/sbin/nologin -M -r -U
         fi
     fi
 

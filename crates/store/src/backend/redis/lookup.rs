@@ -127,8 +127,9 @@ impl RedisStore {
         conn: &mut impl AsyncCommands,
         key: Vec<u8>,
     ) -> trc::Result<Option<T>> {
-        if let Some(value) = conn
-            .get::<_, Option<Vec<u8>>>(key)
+        if let Some(value) = redis::cmd("GET")
+            .arg(key)
+            .query_async::<Option<Vec<u8>>>(conn)
             .await
             .map_err(into_error)?
         {
@@ -139,7 +140,9 @@ impl RedisStore {
     }
 
     async fn counter_get_(&self, conn: &mut impl AsyncCommands, key: Vec<u8>) -> trc::Result<i64> {
-        conn.get::<_, Option<i64>>(key)
+        redis::cmd("GET")
+            .arg(key)
+            .query_async::<Option<i64>>(conn)
             .await
             .map(|x| x.unwrap_or(0))
             .map_err(into_error)
@@ -176,7 +179,7 @@ impl RedisStore {
                 .incr(&key, value)
                 .expire(&key, expires as i64)
                 .ignore()
-                .query_async::<_, Vec<i64>>(conn)
+                .query_async::<Vec<i64>>(conn)
                 .await
                 .map_err(into_error)
                 .map(|v| v.first().copied().unwrap_or(0))

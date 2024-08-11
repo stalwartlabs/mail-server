@@ -37,6 +37,10 @@
         "value": " RFC 8621 Section 4.1.4 test"
       },
       {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
         "name": "Content-Type",
         "value": " multipart/mixed; \r\n\tboundary=\"boundary_0\""
       }

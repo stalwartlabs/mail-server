@@ -29,7 +29,7 @@ use ::managesieve::core::ManageSieveSessionManager;
 use common::{
     config::{
         server::{ServerProtocol, Servers},
-        tracers::Tracers,
+        telemetry::Telemetry,
     },
     Core, Ipc, IPC_CHANNEL_BUFFER,
 };
@@ -312,7 +312,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let stores = Stores::parse_all(&mut config).await;
 
     // Parse core
-    let tracers = Tracers::parse(&mut config);
+    let tracers = Telemetry::parse(&mut config);
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();

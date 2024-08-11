@@ -80,7 +80,7 @@ Key features:
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
   - Automatic account configuration and discovery with [autoconfig](https://www.ietf.org/id/draft-bucksch-autoconfig-02.html) and [autodiscover](https://learn.microsoft.com/en-us/exchange/architecture/client-access/autodiscover?view=exchserver-2019). 
-  - Integration with **OpenTelemetry** to enable monitoring, tracing, and performance analysis.
+  - Metrics, tracing, logging and alerts with **OpenTelemetry** and **Prometheus** integration.
   - Webhooks for event-driven automation.
   - Disk quotas.
 - **Web-based administration**:

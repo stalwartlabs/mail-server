@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -12,27 +12,36 @@ use hyper::{
     header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
     HeaderMap,
 };
+use opentelemetry::{InstrumentationLibrary, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::export::{logs::LogExporter, trace::SpanExporter};
-use trc::{subscriber::Interests, EventType, Level, TracingEvent};
+use opentelemetry_sdk::{
+    export::{logs::LogExporter, trace::SpanExporter},
+    metrics::{
+        exporter::PushMetricsExporter,
+        reader::{DefaultAggregationSelector, DefaultTemporalitySelector},
+    },
+    Resource,
+};
+use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
+use trc::{subscriber::Interests, EventType, Level, TelemetryEvent};
 use utils::config::{utils::ParseValue, Config};
 
 #[derive(Debug)]
-pub struct Tracer {
+pub struct TelemetrySubscriber {
     pub id: String,
     pub interests: Interests,
-    pub typ: TracerType,
+    pub typ: TelemetrySubscriberType,
     pub lossy: bool,
 }
 
 #[derive(Debug)]
-pub enum TracerType {
-    Console(ConsoleTracer),
-    Log(LogTracer),
-    Otel(OtelTracer),
+pub enum TelemetrySubscriberType {
+    ConsoleTracer(ConsoleTracer),
+    LogTracer(LogTracer),
+    OtelTracer(OtelTracer),
     Webhook(WebhookTracer),
     #[cfg(unix)]
-    Journal(crate::tracing::journald::Subscriber),
+    JournalTracer(crate::telemetry::tracers::journald::Subscriber),
 }
 
 #[derive(Debug)]
@@ -42,6 +51,13 @@ pub struct OtelTracer {
     pub log_exporter: Box<dyn LogExporter>,
     pub log_exporter_enable: bool,
     pub throttle: Duration,
+}
+
+pub struct OtelMetrics {
+    pub resource: Resource,
+    pub instrumentation: InstrumentationLibrary,
+    pub exporter: Box<dyn PushMetricsExporter>,
+    pub interval: Duration,
 }
 
 #[derive(Debug)]
@@ -80,10 +96,62 @@ pub enum RotationStrategy {
 }
 
 #[derive(Debug)]
+pub struct Telemetry {
+    pub tracers: Tracers,
+    pub metrics: Interests,
+}
+
+#[derive(Debug)]
 pub struct Tracers {
-    pub global_interests: Interests,
-    pub custom_levels: AHashMap<EventType, Level>,
-    pub tracers: Vec<Tracer>,
+    pub interests: Interests,
+    pub levels: AHashMap<EventType, Level>,
+    pub subscribers: Vec<TelemetrySubscriber>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Metrics {
+    pub prometheus: Option<PrometheusMetrics>,
+    pub otel: Option<Arc<OtelMetrics>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PrometheusMetrics {
+    pub auth: Option<String>,
+}
+
+impl Telemetry {
+    pub fn parse(config: &mut Config) -> Self {
+        let mut telemetry = Telemetry {
+            tracers: Tracers::parse(config),
+            metrics: Interests::default(),
+        };
+
+        // Parse metrics
+        if config
+            .property_or_default("metrics.prometheus.enable", "false")
+            .unwrap_or(false)
+            || ["http", "grpc"].contains(
+                &config
+                    .value("metrics.open-telemetry.transport")
+                    .unwrap_or("disabled"),
+            )
+        {
+            apply_events(
+                config
+                    .properties::<EventOrMany>("metrics.disabled-events")
+                    .into_iter()
+                    .map(|(_, e)| e),
+                false,
+                |event_type| {
+                    if event_type.is_metric() {
+                        telemetry.metrics.set(event_type);
+                    }
+                },
+            );
+        }
+
+        telemetry
+    }
 }
 
 impl Tracers {
@@ -106,19 +174,8 @@ impl Tracers {
             }
         }
 
-        let event_names = EventType::variants()
-            .into_iter()
-            .filter_map(|e| {
-                if e != EventType::Tracing(TracingEvent::WebhookError) {
-                    Some((e, e.name()))
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
         // Parse tracers
-        let mut tracers: Vec<Tracer> = Vec::new();
+        let mut tracers: Vec<TelemetrySubscriber> = Vec::new();
         let mut global_interests = Interests::default();
         for tracer_id in config
             .sub_keys("tracer", ".type")
@@ -147,7 +204,7 @@ impl Tracers {
                         .value_require(("tracer", id, "path"))
                         .map(|s| s.to_string())
                     {
-                        TracerType::Log(LogTracer {
+                        TelemetrySubscriberType::LogTracer(LogTracer {
                             path,
                             prefix: config
                                 .value(("tracer", id, "prefix"))
@@ -179,9 +236,9 @@ impl Tracers {
                 "console" | "stdout" | "stderr" => {
                     if !tracers
                         .iter()
-                        .any(|t| matches!(t.typ, TracerType::Console(_)))
+                        .any(|t| matches!(t.typ, TelemetrySubscriberType::ConsoleTracer(_)))
                     {
-                        TracerType::Console(ConsoleTracer {
+                        TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
                             ansi: config
                                 .property_or_default(("tracer", id, "ansi"), "true")
                                 .unwrap_or(true),
@@ -239,7 +296,7 @@ impl Tracers {
                                 log_exporter.build_log_exporter(),
                             ) {
                                 (Ok(span_exporter), Ok(log_exporter)) => {
-                                    TracerType::Otel(OtelTracer {
+                                    TelemetrySubscriberType::OtelTracer(OtelTracer {
                                         span_exporter: Box::new(span_exporter),
                                         log_exporter: Box::new(log_exporter),
                                         throttle,
@@ -308,7 +365,7 @@ impl Tracers {
                                     log_exporter.build_log_exporter(),
                                 ) {
                                     (Ok(span_exporter), Ok(log_exporter)) => {
-                                        TracerType::Otel(OtelTracer {
+                                        TelemetrySubscriberType::OtelTracer(OtelTracer {
                                             span_exporter: Box::new(span_exporter),
                                             log_exporter: Box::new(log_exporter),
                                             throttle,
@@ -351,10 +408,12 @@ impl Tracers {
                     {
                         if !tracers
                             .iter()
-                            .any(|t| matches!(t.typ, TracerType::Journal(_)))
+                            .any(|t| matches!(t.typ, TelemetrySubscriberType::JournalTracer(_)))
                         {
-                            match crate::tracing::journald::Subscriber::new() {
-                                Ok(subscriber) => TracerType::Journal(subscriber),
+                            match crate::telemetry::tracers::journald::Subscriber::new() {
+                                Ok(subscriber) => {
+                                    TelemetrySubscriberType::JournalTracer(subscriber)
+                                }
                                 Err(e) => {
                                     config.new_build_error(
                                         ("tracer", id, "type"),
@@ -391,7 +450,7 @@ impl Tracers {
             };
 
             // Create tracer
-            let mut tracer = Tracer {
+            let mut tracer = TelemetrySubscriber {
                 id: format!("t_{id}"),
                 interests: Default::default(),
                 lossy: config
@@ -411,66 +470,44 @@ impl Tracers {
                 .unwrap_or(Level::Info);
 
             // Parse disabled events
-            let mut disabled_events = AHashSet::new();
-            match &tracer.typ {
-                TracerType::Console(_) => (),
-                TracerType::Log(_) => {
-                    disabled_events.insert(EventType::Tracing(TracingEvent::LogError));
+            let exclude_event = match &tracer.typ {
+                TelemetrySubscriberType::ConsoleTracer(_) => None,
+                TelemetrySubscriberType::LogTracer(_) => {
+                    EventType::Telemetry(TelemetryEvent::LogError).into()
                 }
-                TracerType::Otel(_) => {
-                    disabled_events.insert(EventType::Tracing(TracingEvent::OtelError));
+                TelemetrySubscriberType::OtelTracer(_) => {
+                    EventType::Telemetry(TelemetryEvent::OtelExpoterError).into()
                 }
-                TracerType::Webhook(_) => {
-                    disabled_events.insert(EventType::Tracing(TracingEvent::WebhookError));
+                TelemetrySubscriberType::Webhook(_) => {
+                    EventType::Telemetry(TelemetryEvent::WebhookError).into()
                 }
                 #[cfg(unix)]
-                TracerType::Journal(_) => {
-                    disabled_events.insert(EventType::Tracing(TracingEvent::JournalError));
+                TelemetrySubscriberType::JournalTracer(_) => {
+                    EventType::Telemetry(TelemetryEvent::JournalError).into()
                 }
-            }
-            for (_, event_type) in
-                config.properties::<EventOrMany>(("tracer", id, "disabled-events"))
-            {
-                match event_type {
-                    EventOrMany::Event(event_type) => {
-                        disabled_events.insert(event_type);
-                    }
-                    EventOrMany::StartsWith(value) => {
-                        for (event_type, name) in event_names.iter() {
-                            if name.starts_with(&value) {
-                                disabled_events.insert(*event_type);
-                            }
-                        }
-                    }
-                    EventOrMany::EndsWith(value) => {
-                        for (event_type, name) in event_names.iter() {
-                            if name.ends_with(&value) {
-                                disabled_events.insert(*event_type);
-                            }
-                        }
-                    }
-                    EventOrMany::All => {
-                        for (event_type, _) in event_names.iter() {
-                            disabled_events.insert(*event_type);
-                        }
-                        break;
-                    }
-                }
-            }
+            };
 
-            // Build interests lists
-            for event_type in EventType::variants() {
-                if !disabled_events.contains(&event_type) {
-                    let event_level = custom_levels
-                        .get(&event_type)
-                        .copied()
-                        .unwrap_or(event_type.level());
-                    if level.is_contained(event_level) {
-                        tracer.interests.set(event_type);
-                        global_interests.set(event_type);
+            // Parse disabled events
+            apply_events(
+                config
+                    .properties::<EventOrMany>(("tracer", id, "disabled-events"))
+                    .into_iter()
+                    .map(|(_, e)| e),
+                false,
+                |event_type| {
+                    if exclude_event != Some(event_type) {
+                        let event_level = custom_levels
+                            .get(&event_type)
+                            .copied()
+                            .unwrap_or(event_type.level());
+                        if level.is_contained(event_level) {
+                            tracer.interests.set(event_type);
+                            global_interests.set(event_type);
+                        }
                     }
-                }
-            }
+                },
+            );
+
             if !tracer.interests.is_empty() {
                 tracers.push(tracer);
             } else {
@@ -502,10 +539,10 @@ impl Tracers {
                 }
             }
 
-            tracers.push(Tracer {
+            tracers.push(TelemetrySubscriber {
                 id: "default".to_string(),
                 interests: global_interests.clone(),
-                typ: TracerType::Console(ConsoleTracer {
+                typ: TelemetrySubscriberType::ConsoleTracer(ConsoleTracer {
                     ansi: true,
                     multiline: false,
                     buffered: true,
@@ -515,10 +552,143 @@ impl Tracers {
         }
 
         Tracers {
-            tracers,
-            global_interests,
-            custom_levels,
+            subscribers: tracers,
+            interests: global_interests,
+            levels: custom_levels,
         }
+    }
+}
+
+impl Metrics {
+    pub fn parse(config: &mut Config) -> Self {
+        let mut metrics = Metrics {
+            prometheus: None,
+            otel: None,
+        };
+
+        if config
+            .property_or_default("metrics.prometheus.enable", "false")
+            .unwrap_or(false)
+        {
+            metrics.prometheus = Some(PrometheusMetrics {
+                auth: config
+                    .value("metrics.prometheus.auth.username")
+                    .and_then(|user| {
+                        config
+                            .value("metrics.prometheus.auth.secret")
+                            .map(|secret| STANDARD.encode(format!("{user}:{secret}")))
+                    }),
+            });
+        }
+
+        let otel_enabled = match config
+            .value("metrics.open-telemetry.transport")
+            .unwrap_or("disable")
+        {
+            "grpc" => true.into(),
+            "http" | "https" => false.into(),
+            "disable" | "disabled" => None,
+            transport => {
+                let err = format!("Invalid transport: {transport}");
+                config.new_parse_error("metrics.open-telemetry.transport", err);
+                None
+            }
+        };
+
+        if let Some(is_grpc) = otel_enabled {
+            let timeout = config
+                .property::<Duration>("metrics.open-telemetry.timeout")
+                .unwrap_or(Duration::from_secs(
+                    opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT,
+                ));
+            let interval = config
+                .property_or_default("metrics.open-telemetry.interval", "1m")
+                .unwrap_or_else(|| Duration::from_secs(60));
+            let resource = Resource::new([
+                KeyValue::new(SERVICE_NAME, "stalwart-mail"),
+                KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+            ]);
+            let instrumentation = InstrumentationLibrary::builder("stalwart-mail")
+                .with_version(env!("CARGO_PKG_VERSION"))
+                .build();
+
+            if is_grpc {
+                let mut exporter = opentelemetry_otlp::new_exporter()
+                    .tonic()
+                    .with_protocol(opentelemetry_otlp::Protocol::Grpc)
+                    .with_timeout(timeout);
+                if let Some(endpoint) = config.value("metrics.open-telemetry.endpoint") {
+                    exporter = exporter.with_endpoint(endpoint);
+                }
+
+                match exporter.build_metrics_exporter(
+                    Box::new(DefaultAggregationSelector::new()),
+                    Box::new(DefaultTemporalitySelector::new()),
+                ) {
+                    Ok(exporter) => {
+                        metrics.otel = Some(Arc::new(OtelMetrics {
+                            exporter: Box::new(exporter),
+                            interval,
+                            resource,
+                            instrumentation,
+                        }));
+                    }
+                    Err(err) => {
+                        config.new_build_error(
+                            "metrics.open-telemetry",
+                            format!("Failed to build OpenTelemetry metrics exporter: {err}"),
+                        );
+                    }
+                }
+            } else if let Some(endpoint) = config
+                .value_require("metrics.open-telemetry.endpoint")
+                .map(|s| s.to_string())
+            {
+                let mut headers = HashMap::new();
+                let mut err = None;
+                for (_, value) in config.values("metrics.open-telemetry.headers") {
+                    if let Some((key, value)) = value.split_once(':') {
+                        headers.insert(key.trim().to_string(), value.trim().to_string());
+                    } else {
+                        err = format!("Invalid open-telemetry header {value:?}").into();
+                        break;
+                    }
+                }
+                if let Some(err) = err {
+                    config.new_parse_error("metrics.open-telemetry.headers", err);
+                }
+
+                let mut exporter = opentelemetry_otlp::new_exporter()
+                    .http()
+                    .with_endpoint(&endpoint)
+                    .with_timeout(timeout);
+                if !headers.is_empty() {
+                    exporter = exporter.with_headers(headers);
+                }
+
+                match exporter.build_metrics_exporter(
+                    Box::new(DefaultAggregationSelector::new()),
+                    Box::new(DefaultTemporalitySelector::new()),
+                ) {
+                    Ok(exporter) => {
+                        metrics.otel = Some(Arc::new(OtelMetrics {
+                            exporter: Box::new(exporter),
+                            interval,
+                            resource,
+                            instrumentation,
+                        }));
+                    }
+                    Err(err) => {
+                        config.new_build_error(
+                            "metrics.open-telemetry",
+                            format!("Failed to build OpenTelemetry metrics exporter: {err}"),
+                        );
+                    }
+                }
+            }
+        }
+
+        metrics
     }
 }
 
@@ -526,7 +696,7 @@ fn parse_webhook(
     config: &mut Config,
     id: &str,
     global_interests: &mut Interests,
-) -> Option<Tracer> {
+) -> Option<TelemetrySubscriber> {
     let mut headers = HeaderMap::new();
 
     for (header, value) in config
@@ -568,13 +738,13 @@ fn parse_webhook(
     }
 
     // Build tracer
-    let mut tracer = Tracer {
+    let mut tracer = TelemetrySubscriber {
         id: format!("w_{id}"),
         interests: Default::default(),
         lossy: config
             .property_or_default(("webhook", id, "lossy"), "false")
             .unwrap_or(false),
-        typ: TracerType::Webhook(WebhookTracer {
+        typ: TelemetrySubscriberType::Webhook(WebhookTracer {
             url: config.value_require(("webhook", id, "url"))?.to_string(),
             timeout: config
                 .property_or_default(("webhook", id, "timeout"), "30s")
@@ -597,49 +767,19 @@ fn parse_webhook(
     };
 
     // Parse webhook events
-    let event_names = EventType::variants()
-        .into_iter()
-        .filter_map(|e| {
-            if e != EventType::Tracing(TracingEvent::WebhookError) {
-                Some((e, e.name()))
-            } else {
-                None
+    apply_events(
+        config
+            .properties::<EventOrMany>(("webhook", id, "events"))
+            .into_iter()
+            .map(|(_, e)| e),
+        true,
+        |event_type| {
+            if event_type != EventType::Telemetry(TelemetryEvent::WebhookError) {
+                tracer.interests.set(event_type);
+                global_interests.set(event_type);
             }
-        })
-        .collect::<Vec<_>>();
-    for (_, event_type) in config.properties::<EventOrMany>(("webhook", id, "events")) {
-        match event_type {
-            EventOrMany::Event(event_type) => {
-                if event_type != EventType::Tracing(TracingEvent::WebhookError) {
-                    tracer.interests.set(event_type);
-                    global_interests.set(event_type);
-                }
-            }
-            EventOrMany::StartsWith(value) => {
-                for (event_type, name) in event_names.iter() {
-                    if name.starts_with(&value) {
-                        tracer.interests.set(*event_type);
-                        global_interests.set(*event_type);
-                    }
-                }
-            }
-            EventOrMany::EndsWith(value) => {
-                for (event_type, name) in event_names.iter() {
-                    if name.ends_with(&value) {
-                        tracer.interests.set(*event_type);
-                        global_interests.set(*event_type);
-                    }
-                }
-            }
-            EventOrMany::All => {
-                for (event_type, _) in event_names.iter() {
-                    tracer.interests.set(*event_type);
-                    global_interests.set(*event_type);
-                }
-                break;
-            }
-        }
-    }
+        },
+    );
 
     if !tracer.interests.is_empty() {
         Some(tracer)
@@ -656,6 +796,70 @@ enum EventOrMany {
     All,
 }
 
+fn apply_events(
+    event_types: impl IntoIterator<Item = EventOrMany>,
+    inclusive: bool,
+    mut apply_fn: impl FnMut(EventType),
+) {
+    let event_names = EventType::variants()
+        .into_iter()
+        .map(|e| (e, e.name()))
+        .collect::<Vec<_>>();
+    let mut exclude_events = AHashSet::new();
+
+    for event_or_many in event_types {
+        match event_or_many {
+            EventOrMany::Event(event_type) => {
+                if inclusive {
+                    apply_fn(event_type);
+                } else {
+                    exclude_events.insert(event_type);
+                }
+            }
+            EventOrMany::StartsWith(value) => {
+                for (event_type, name) in event_names.iter() {
+                    if name.starts_with(&value) {
+                        if inclusive {
+                            apply_fn(*event_type);
+                        } else {
+                            exclude_events.insert(*event_type);
+                        }
+                    }
+                }
+            }
+            EventOrMany::EndsWith(value) => {
+                for (event_type, name) in event_names.iter() {
+                    if name.ends_with(&value) {
+                        if inclusive {
+                            apply_fn(*event_type);
+                        } else {
+                            exclude_events.insert(*event_type);
+                        }
+                    }
+                }
+            }
+            EventOrMany::All => {
+                for (event_type, _) in event_names.iter() {
+                    if inclusive {
+                        apply_fn(*event_type);
+                    } else {
+                        exclude_events.insert(*event_type);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    if !inclusive {
+        for (event_type, _) in event_names.iter() {
+            if !exclude_events.contains(event_type) {
+                apply_fn(*event_type);
+            }
+        }
+    }
+}
+
 impl ParseValue for EventOrMany {
     fn parse_value(value: &str) -> Result<Self, String> {
         let value = value.trim();
@@ -668,5 +872,13 @@ impl ParseValue for EventOrMany {
         } else {
             EventType::parse_value(value).map(EventOrMany::Event)
         }
+    }
+}
+
+impl std::fmt::Debug for OtelMetrics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OtelMetrics")
+            .field("interval", &self.interval)
+            .finish()
     }
 }

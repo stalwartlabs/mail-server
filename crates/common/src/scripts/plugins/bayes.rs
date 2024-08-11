@@ -78,7 +78,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> trc::Result<Variable> 
     trc::event!(
         Spam(trc::SpamEvent::Train),
         SpanId = ctx.session_id,
-        Spam = is_spam,
+        Details = is_spam,
         Total = model.weights.len(),
     );
 
@@ -256,8 +256,8 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     trc::event!(
         Spam(trc::SpamEvent::TrainBalance),
         SpanId = ctx.session_id,
-        Spam = learn_spam,
         Details = vec![
+            trc::Value::from(learn_spam),
             trc::Value::from(min_balance),
             trc::Value::from(spam_learns),
             trc::Value::from(ham_learns),

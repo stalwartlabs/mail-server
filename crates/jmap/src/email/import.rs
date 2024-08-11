@@ -138,7 +138,7 @@ impl JMAP {
                                 .with_description("You have exceeded your disk quota."),
                         );
                     }
-                    trc::EventType::Store(trc::StoreEvent::IngestError) => {
+                    trc::EventType::MessageIngest(trc::MessageIngestEvent::Error) => {
                         response.not_created.append(
                             id,
                             SetError::new(SetErrorType::InvalidEmail).with_description(

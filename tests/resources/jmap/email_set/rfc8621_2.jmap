@@ -47,6 +47,10 @@
         "value": " \"John\" <john@example.com>"
       },
       {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
         "name": "Content-Type",
         "value": " multipart/alternative; \r\n\tboundary=\"boundary_0\""
       }

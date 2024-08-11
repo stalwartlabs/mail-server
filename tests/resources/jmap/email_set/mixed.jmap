@@ -56,6 +56,10 @@
         "value": " \"Colleagues\": \"James Smythe\" <james@vandelay.com>; \r\n\t\"Friends\": <jane@example.com>, \r\n\t\"=?utf-8?Q?John_Sm=C3=AEth?=\" <john@example.com>"
       },
       {
+        "name": "MIME-Version",
+        "value": " 1.0"
+      },
+      {
         "name": "Content-Type",
         "value": " multipart/mixed; \r\n\tboundary=\"boundary_0\""
       }

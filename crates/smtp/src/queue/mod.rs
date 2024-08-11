@@ -49,6 +49,15 @@ pub struct Schedule<T> {
     pub inner: T,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum MessageSource {
+    Authenticated,
+    Unauthenticated,
+    Dsn,
+    Report,
+    Sieve,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Message {
     pub queue_id: QueueId,

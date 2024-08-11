@@ -17,6 +17,7 @@ use config::{
         SmtpConfig,
     },
     storage::Storage,
+    telemetry::Metrics,
 };
 use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy, Type};
 use expr::if_block::IfBlock;
@@ -39,7 +40,7 @@ pub mod expr;
 pub mod listener;
 pub mod manager;
 pub mod scripts;
-pub mod tracing;
+pub mod telemetry;
 
 pub static USER_AGENT: &str = concat!("Stalwart/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);
@@ -57,6 +58,7 @@ pub struct Core {
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
     pub imap: ImapConfig,
+    pub metrics: Metrics,
     #[cfg(feature = "enterprise")]
     pub enterprise: Option<enterprise::Enterprise>,
 }
@@ -65,7 +67,8 @@ pub struct Core {
 pub struct Network {
     pub blocked_ips: BlockedIps,
     pub allowed_ips: AllowedIps,
-    pub url: IfBlock,
+    pub http_response_url: IfBlock,
+    pub http_allowed_endpoint: IfBlock,
 }
 
 #[derive(Debug)]
