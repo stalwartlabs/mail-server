@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
-
-use tikv_client::{Key as TikvKey, Snapshot, Transaction, TransactionOptions, Value};
+use std::ops::Bound;
+use tikv_client::{BoundRange, Key as TikvKey, KvPair, Snapshot, Transaction, TransactionOptions, Value};
 use futures::TryStreamExt;
 use roaring::RoaringBitmap;
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE,
 };
 
-use super::{into_error, MAX_KEYS, MAX_KV_PAIRS, MAX_VALUE_SIZE, ReadTransaction, TikvStore};
+use super::{into_error, MAX_KEY_SIZE, MAX_SCAN_KEYS_SIZE, MAX_SCAN_VALUES_SIZE, MAX_VALUE_SIZE, TikvStore};
 
 #[allow(dead_code)]
 pub(crate) enum ChunkedValue {
@@ -30,45 +30,14 @@ impl TikvStore {
     where
         U: Deserialize,
     {
-        let key = key.serialize(WITH_SUBSPACE);
-        let mut ss = self.snapshot_trx().await?;
-
-        match read_chunked_value_snapshot(&key, &mut ss).await? {
-            ChunkedValue::Single(bytes) => {
-                U::deserialize(&bytes).map(Some)
-            },
-            ChunkedValue::Chunked { bytes, .. } => {
-                U::deserialize(&bytes).map(Some) },
-            ChunkedValue::None => {
-                Ok(None)
-            },
-        }
+        todo!()
     }
 
     pub(crate) async fn get_bitmap(
         &self,
         mut key: BitmapKey<BitmapClass<u32>>,
     ) -> trc::Result<Option<RoaringBitmap>> {
-        let mut bm = RoaringBitmap::new();
-        let begin = key.serialize(WITH_SUBSPACE);
-        key.document_id = u32::MAX;
-        let end = key.serialize(WITH_SUBSPACE);
-        let key_len = begin.len();
-        // Maybe use transaction client?
-        let mut trx = self.snapshot_trx().await?;
-        let mut keys = trx.scan_keys(
-            (begin, end),
-            MAX_KEYS
-        ).await.map_err(into_error)?;
-
-        for key in keys {
-            let key: Vec<u8> = key.into();
-            if key.len() == key_len {
-                bm.insert(key.as_slice().deserialize_be_u32(key.len() - U32_LEN)?);
-            }
-        }
-
-        Ok(if !bm.is_empty() { Some(bm) } else { None })
+        todo!()
     }
 
     pub(crate) async fn iterate<T: Key>(
@@ -76,44 +45,7 @@ impl TikvStore {
         params: IterateParams<T>,
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
     ) -> trc::Result<()> {
-        let mut begin: TikvKey = params.begin.serialize(WITH_SUBSPACE).into();
-        let end: TikvKey = params.end.serialize(WITH_SUBSPACE).into();
-
-        let mut trx = self.snapshot_trx().await?;
-        if !params.first {
-            // TODO: Limit by max_keys
-            if params.ascending {
-                let mut values = trx.scan((begin, end), u32::MAX).await.map_err(into_error)?;
-                while let Some(kv_pair) = values.next() {
-                    let key: &[u8] = kv_pair.key().into();
-                    let value: &[u8] = kv_pair.value().as_slice();
-                    cb(key.get(1..).unwrap_or_default(), value)?;
-                }
-            } else {
-                let mut values = trx.scan_reverse((begin, end), u32::MAX).await.map_err(into_error)?;
-                while let Some(kv_pair) = values.next() {
-                    let mut last_key = &[] as &[u8];
-                    let key: &[u8] = kv_pair.key().into();
-                    let value: &[u8] = kv_pair.value().as_slice();
-                    cb(key.get(1..).unwrap_or_default(), value)?;
-                }
-            };
-
-        } else {
-            let mut values = trx
-                .scan((begin, end), 1)
-                .await
-                .map_err(into_error)?;
-
-            if let Some(kv_pair) = values.next() {
-                let key: &[u8] = kv_pair.key().into();
-                let value: &[u8] = kv_pair.key().into();
-
-                cb(key.get(1..).unwrap_or_default(), value)?;
-            }
-        }
-
-        Ok(())
+        todo!()
     }
 
     pub(crate) async fn get_counter(
@@ -121,9 +53,10 @@ impl TikvStore {
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> trc::Result<i64> {
         let key = key.into().serialize(WITH_SUBSPACE);
-        // TODO: Expensive clone
+
         if let Some(bytes) = self
-            .raw_client
+            .snapshot_trx()
+            .await?
             .get(key.clone())
             .await
             .map_err(into_error)?
@@ -136,84 +69,165 @@ impl TikvStore {
 
     pub(crate) async fn read_trx(&self) -> trc::Result<Transaction> {
         self.trx_client
-            .begin_optimistic()
+            .begin_pessimistic()
             .await
             .map_err(into_error)
     }
 
     pub(crate) async fn snapshot_trx(&self) -> trc::Result<Snapshot> {
-        let timestamp = self.trx_client
-            .current_timestamp()
-            .await
-            .map_err(into_error)?;
+        let read_trx = self.read_trx().await?;
 
-        Ok(self.trx_client.snapshot(timestamp, TransactionOptions::new_optimistic()))
+        Ok(Snapshot::new(read_trx))
+    }
+
+    pub(super) async fn read_chunked_value<ReadTrx: ReadTransaction>(
+        &self,
+        key: &[u8],
+        trx: &mut ReadTrx
+    ) -> trc::Result<ChunkedValue> {
+        if let Some(mut bytes) = trx.get(key.to_vec()).await? {
+            if bytes.len() < MAX_VALUE_SIZE as usize {
+                Ok(ChunkedValue::Single(bytes))
+            } else {
+                let mut value = Vec::with_capacity(bytes.len() * 2);
+                value.append(&mut bytes);
+                let mut n_chunks = 1;
+
+                let mut first = Bound::Included(TikvKey::from(self.new_key_serializer(key.len() + 1, false)
+                    .write(key)
+                    .write(0u8)
+                    .finalize()));
+
+                'outer: loop {
+                    // Maybe use the last byte of the last key?
+                    let mut count = 0;
+
+                    let last = Bound::Included(TikvKey::from(self.new_key_serializer(key.len() + 1, false)
+                        .write(key)
+                        .write(u8::MAX)
+                        .finalize()));
+
+                    let bound_range = BoundRange::new(first, last);
+
+                    let mut kv_pair_iter = trx.scan(bound_range, MAX_SCAN_VALUES_SIZE)
+                        .await?
+                        .peekable();
+
+                    while let Some(kv_pair) = kv_pair_iter.next() {
+                        let (key, mut kv_value) = kv_pair.into();
+                        value.append(&mut kv_value);
+                        count += 1;
+                        if kv_pair_iter.peek().is_none() {
+                            n_chunks += count;
+                            if count < MAX_KEY_SIZE {
+                                break 'outer;
+                            }
+                            first = Bound::Excluded(key);
+                            continue 'outer;
+                        }
+                    }
+
+                    // Empty
+                    break;
+                }
+
+                Ok(ChunkedValue::Chunked {
+                    bytes: value,
+                    n_chunks: *key.last().unwrap(),
+                })
+            }
+        } else {
+            Ok(ChunkedValue::None)
+        }
+    }
+
+}
+
+pub(crate) trait ReadTransaction {
+    async fn get(&mut self, key: impl Into<tikv_client::Key>) -> trc::Result<Option<Value>>;
+    async fn key_exists(&mut self, key: impl Into<tikv_client::Key>) -> trc::Result<bool>;
+    async fn batch_get(
+        &mut self,
+        keys: impl IntoIterator<Item = impl Into<tikv_client::Key>>
+    ) -> trc::Result<impl Iterator<Item = KvPair>>;
+    async fn scan(
+        &mut self,
+        range: impl Into<BoundRange>,
+        limit: u32
+    ) -> trc::Result<impl Iterator<Item = KvPair>>;
+    async fn scan_keys(
+        &mut self,
+        range: impl Into<BoundRange>,
+        limit: u32
+    ) -> trc::Result<impl Iterator<Item =tikv_client::Key>>;
+    async fn scan_reverse(
+        &mut self,
+        range: impl Into<BoundRange>,
+        limit: u32
+    ) -> trc::Result<impl Iterator<Item = KvPair>>;
+    async fn scan_keys_reverse(
+        &mut self,
+        range: impl Into<BoundRange>,
+        limit: u32
+    ) -> trc::Result<impl Iterator<Item =tikv_client::Key>>;
+}
+
+impl ReadTransaction for Transaction {
+    async fn get(&mut self, key: impl Into<tikv_client::Key>) -> trc::Result<Option<Value>> {
+        self.get(key).await.map_err(into_error)
+    }
+
+    async fn key_exists(&mut self, key: impl Into<tikv_client::Key>) -> trc::Result<bool> {
+        self.key_exists(key).await.map_err(into_error)
+    }
+
+    async fn batch_get(&mut self, keys: impl IntoIterator<Item=impl Into<tikv_client::Key>>) -> trc::Result<impl Iterator<Item=KvPair>> {
+        self.batch_get(keys).await.map_err(into_error)
+    }
+
+    async fn scan(&mut self, range: impl Into<BoundRange>, limit: u32) -> trc::Result<impl Iterator<Item=KvPair>> {
+        self.scan(range, limit).await.map_err(into_error)
+    }
+
+    async fn scan_keys(&mut self, range: impl Into<BoundRange>, limit: u32) -> trc::Result<impl Iterator<Item=tikv_client::Key>> {
+        self.scan_keys(range, limit).await.map_err(into_error)
+    }
+
+    async fn scan_reverse(&mut self, range: impl Into<BoundRange>, limit: u32) -> trc::Result<impl Iterator<Item=KvPair>> {
+        self.scan_reverse(range, limit).await.map_err(into_error)
+    }
+
+    async fn scan_keys_reverse(&mut self, range: impl Into<BoundRange>, limit: u32) -> trc::Result<impl Iterator<Item=tikv_client::Key>> {
+        self.scan_keys_reverse(range, limit).await.map_err(into_error)
     }
 }
 
-// TODO: Figure out a way to deduplicate the code
-pub(crate) async fn read_chunked_value_snapshot(
-    key: &[u8],
-    ss: &mut Snapshot
-) -> trc::Result<ChunkedValue> {
-    // TODO: Costly, redo
-    if let Some(bytes) = ss.get(key.to_vec()).await.map_err(into_error)? {
-        if bytes.len() < MAX_VALUE_SIZE {
-            Ok(ChunkedValue::Single(bytes))
-        } else {
-            let mut value = Vec::with_capacity(bytes.len() * 2);
-            value.extend_from_slice(&bytes);
-            let mut key = KeySerializer::new(key.len() + 1)
-                .write(key)
-                .write(0u8)
-                .finalize();
-
-            // TODO: Costly, redo
-            while let Some(bytes) = ss.get(key.to_vec()).await.map_err(into_error)? {
-                value.extend_from_slice(&bytes);
-                *key.last_mut().unwrap() += 1;
-            }
-
-            Ok(ChunkedValue::Chunked {
-                bytes: value,
-                n_chunks: *key.last().unwrap(),
-            })
-        }
-    } else {
-        Ok(ChunkedValue::None)
+impl ReadTransaction for Snapshot {
+    async fn get(&mut self, key: impl Into<tikv_client::Key>) -> trc::Result<Option<Value>> {
+        self.get(key).await.map_err(into_error)
     }
-}
 
-// TODO: Figure out a way to deduplicate the code
-pub(crate) async fn read_chunked_value_transaction(
-    key: &[u8],
-    trx: &mut Transaction
-) -> trc::Result<ChunkedValue> {
-    // TODO: Costly, redo
-    if let Some(bytes) = trx.get(key.to_vec()).await.map_err(into_error)? {
-        if bytes.len() < MAX_VALUE_SIZE {
-            Ok(ChunkedValue::Single(bytes))
-        } else {
-            let mut value = Vec::with_capacity(bytes.len() * 2);
-            value.extend_from_slice(&bytes);
-            let mut key = KeySerializer::new(key.len() + 1)
-                .write(key)
-                .write(0u8)
-                .finalize();
+    async fn key_exists(&mut self, key: impl Into<tikv_client::Key>) -> trc::Result<bool> {
+        self.key_exists(key).await.map_err(into_error)
+    }
 
+    async fn batch_get(&mut self, keys: impl IntoIterator<Item=impl Into<tikv_client::Key>>) -> trc::Result<impl Iterator<Item=KvPair>> {
+        self.batch_get(keys).await.map_err(into_error)
+    }
 
-            // TODO: Costly, redo
-            while let Some(bytes) = trx.get(key.clone()).await.map_err(into_error)? {
-                value.extend_from_slice(&bytes);
-                *key.last_mut().unwrap() += 1;
-            }
+    async fn scan(&mut self, range: impl Into<BoundRange>, limit: u32) -> trc::Result<impl Iterator<Item=KvPair>> {
+        self.scan(range, limit).await.map_err(into_error)
+    }
 
-            Ok(ChunkedValue::Chunked {
-                bytes: value,
-                n_chunks: *key.last().unwrap(),
-            })
-        }
-    } else {
-        Ok(ChunkedValue::None)
+    async fn scan_keys(&mut self, range: impl Into<BoundRange>, limit: u32) -> trc::Result<impl Iterator<Item=tikv_client::Key>> {
+        self.scan_keys(range, limit).await.map_err(into_error)
+    }
+
+    async fn scan_reverse(&mut self, range: impl Into<BoundRange>, limit: u32) -> trc::Result<impl Iterator<Item=KvPair>> {
+        self.scan_reverse(range, limit).await.map_err(into_error)
+    }
+
+    async fn scan_keys_reverse(&mut self, range: impl Into<BoundRange>, limit: u32) -> trc::Result<impl Iterator<Item=tikv_client::Key>> {
+        self.scan_keys_reverse(range, limit).await.map_err(into_error)
     }
 }

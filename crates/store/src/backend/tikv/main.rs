@@ -86,8 +86,6 @@ impl TikvStore {
             )
         };
 
-        let raw_client_retries = backoff.is_none().then(|| 0).unwrap_or_else(|| max_attempts);
-
         let write_trx_options = TransactionOptions::new_pessimistic()
             .drop_check(CheckLevel::Warn)
             .retry_options(RetryOptions::new(backoff.clone(), backoff.clone()));
@@ -99,6 +97,8 @@ impl TikvStore {
             write_trx_options,
             raw_client,
             raw_backoff,
+            api_v2: false,
+            keyspace: [0, 0, b's'], // Temporary
             version: Default::default(),
         };
 

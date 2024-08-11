@@ -5,10 +5,11 @@
  */
 
 use std::time::{Duration, Instant};
-use tikv_client::{TransactionClient, Transaction, Error as TikvError, Snapshot, Value, Key, Timestamp, RawClient, TransactionOptions, Backoff};
+use tikv_client::{TransactionClient, Transaction, Error as TikvError, Snapshot, Value, Key, Timestamp, RawClient, TransactionOptions, Backoff, KvPair, BoundRange};
 use tikv_client::proto::kvrpcpb;
 use tikv_client::proto::kvrpcpb::Mutation;
 use crate::write::{AssignedIds, ValueOp};
+use crate::write::key::KeySerializer;
 
 pub mod blob;
 pub mod main;
@@ -18,10 +19,21 @@ pub mod write;
 
 // https://github.com/tikv/tikv/issues/7272#issuecomment-604841372
 
-const MAX_KEY_SIZE: usize = 4 * 1024;
-const MAX_VALUE_SIZE: usize = 100000;
-const MAX_KEYS: u32 = 100000;
-const MAX_KV_PAIRS: u32 = 50000;
+// Default limit is 4194304 bytes
+const MAX_KEY_SIZE: u32 = 4 * 1024;
+// Default limit is 4194304 bytes. Let's use half of that as a base to be safe (2097152 bytes).
+// Then, 2097152
+const MAX_GRPC_MESSAGE_SIZE: u32 = 2097152;
+const MAX_ASSUMED_KEY_SIZE: u32 = 256;
+const MAX_VALUE_SIZE: u32 = 131072;
+const MAX_SCAN_KEYS_SIZE: u32 = MAX_GRPC_MESSAGE_SIZE / MAX_ASSUMED_KEY_SIZE; // 8192
+const MAX_SCAN_VALUES_SIZE: u32 = MAX_GRPC_MESSAGE_SIZE / MAX_VALUE_SIZE; // 16
+
+// Preparation for API v2
+// RFC: https://github.com/tikv/rfcs/blob/master/text/0069-api-v2.md
+const MODE_PREFIX_TXN_KV: u8 = b'x';
+const MODE_PREFIX_RAW_KV: u8 = b'x';
+
 pub const TRANSACTION_EXPIRY: Duration = Duration::from_secs(1);
 pub const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(4);
 
@@ -31,24 +43,30 @@ pub struct TikvStore {
     write_trx_options: TransactionOptions,
     raw_client: RawClient,
     raw_backoff: Backoff,
+    api_v2: bool,
+    keyspace: [u8; 3], // Keyspace is fixed-length of 3 bytes in network byte order.
     version: parking_lot::Mutex<ReadVersion>,
 }
 
-// TODO: Remove
-pub(crate) enum ReadTransaction<'db> {
-    Transaction(&'db mut Transaction),
-    Snapshot(&'db mut Snapshot)
-}
+impl TikvStore {
+    fn new_key_serializer(&self, capacity: usize, raw: bool) -> KeySerializer {
+        if self.api_v2 {
+            // We don't care about compatibility anymore
+            KeySerializer::new(capacity)
+        } else {
+            let mode_prefix = raw.then(|| MODE_PREFIX_RAW_KV).unwrap_or_else(|| MODE_PREFIX_TXN_KV);
+            // Capacity = mode_prefix length + keyspace length + capacity
+            KeySerializer::new(1 + 3 + capacity)
+                .write(mode_prefix)
+                .write(self.keyspace.as_slice())
+        }
+    }
 
-impl<'a> ReadTransaction<'a> {
-    pub(crate) async fn get(&'a mut self, key: impl Into<Key>) -> trc::Result<Option<Value>> {
-        match self {
-            ReadTransaction::Transaction(trx) => {
-                trx.get(key).await.map_err(into_error)
-            }
-            ReadTransaction::Snapshot(ss) => {
-                ss.get(key).await.map_err(into_error)
-            }
+    fn remove_prefix<'a>(&self, key: &'a [u8]) -> &'a [u8] {
+        if self.api_v2 {
+            key
+        } else {
+            &key[4..]
         }
     }
 }
