@@ -59,6 +59,7 @@ s3 = ["rust-s3"]
 foundation = ["foundationdb", "futures"]
 fdb-chunked-bm = []
 redis = ["dep:redis", "deadpool"]
+enterprise = []
 
 test_mode = []
 

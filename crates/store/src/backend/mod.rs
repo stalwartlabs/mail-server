@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+#[cfg(feature = "enterprise")]
+pub mod composite;
 #[cfg(feature = "elastic")]
 pub mod elastic;
 #[cfg(feature = "foundation")]

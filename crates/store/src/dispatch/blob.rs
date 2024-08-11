@@ -30,11 +30,15 @@ impl BlobStore {
                 Store::MySQL(store) => store.get_blob(key, read_range).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.get_blob(key, read_range).await,
+                #[cfg(feature = "enterprise")]
+                Store::SQLReadReplica(store) => store.get_blob(key, read_range).await,
                 Store::None => Err(trc::StoreEvent::NotConfigured.into()),
             },
             BlobBackend::Fs(store) => store.get_blob(key, read_range).await,
             #[cfg(feature = "s3")]
             BlobBackend::S3(store) => store.get_blob(key, read_range).await,
+            #[cfg(feature = "enterprise")]
+            BlobBackend::Composite(store) => store.get_blob(key, read_range).await,
         };
 
         trc::event!(
@@ -106,11 +110,15 @@ impl BlobStore {
                 Store::MySQL(store) => store.put_blob(key, data.as_ref()).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.put_blob(key, data.as_ref()).await,
+                #[cfg(feature = "enterprise")]
+                Store::SQLReadReplica(store) => store.put_blob(key, data.as_ref()).await,
                 Store::None => Err(trc::StoreEvent::NotConfigured.into()),
             },
             BlobBackend::Fs(store) => store.put_blob(key, data.as_ref()).await,
             #[cfg(feature = "s3")]
             BlobBackend::S3(store) => store.put_blob(key, data.as_ref()).await,
+            #[cfg(feature = "enterprise")]
+            BlobBackend::Composite(store) => store.put_blob(key, data.as_ref()).await,
         }
         .caused_by(trc::location!());
 
@@ -138,11 +146,15 @@ impl BlobStore {
                 Store::MySQL(store) => store.delete_blob(key).await,
                 #[cfg(feature = "rocks")]
                 Store::RocksDb(store) => store.delete_blob(key).await,
+                #[cfg(feature = "enterprise")]
+                Store::SQLReadReplica(store) => store.delete_blob(key).await,
                 Store::None => Err(trc::StoreEvent::NotConfigured.into()),
             },
             BlobBackend::Fs(store) => store.delete_blob(key).await,
             #[cfg(feature = "s3")]
             BlobBackend::S3(store) => store.delete_blob(key).await,
+            #[cfg(feature = "enterprise")]
+            BlobBackend::Composite(store) => store.delete_blob(key).await,
         }
         .caused_by(trc::location!());
 

@@ -183,6 +183,8 @@ pub enum Store {
     MySQL(Arc<MysqlStore>),
     #[cfg(feature = "rocks")]
     RocksDb(Arc<RocksDbStore>),
+    #[cfg(feature = "enterprise")]
+    SQLReadReplica(Arc<backend::composite::read_replica::SQLReadReplica>),
     #[default]
     None,
 }
@@ -205,6 +207,8 @@ pub enum BlobBackend {
     Fs(Arc<FsStore>),
     #[cfg(feature = "s3")]
     S3(Arc<S3Store>),
+    #[cfg(feature = "enterprise")]
+    Composite(Arc<backend::composite::distributed_blob::CompositeBlob>),
 }
 
 #[derive(Clone)]
@@ -664,6 +668,8 @@ impl Store {
             Store::PostgreSQL(_) => true,
             #[cfg(feature = "mysql")]
             Store::MySQL(_) => true,
+            #[cfg(feature = "enterprise")]
+            Store::SQLReadReplica(_) => true,
             _ => false,
         }
     }
@@ -682,6 +688,8 @@ impl std::fmt::Debug for Store {
             Self::MySQL(_) => f.debug_tuple("MySQL").finish(),
             #[cfg(feature = "rocks")]
             Self::RocksDb(_) => f.debug_tuple("RocksDb").finish(),
+            #[cfg(feature = "enterprise")]
+            Self::SQLReadReplica(_) => f.debug_tuple("SQLReadReplica").finish(),
             Self::None => f.debug_tuple("None").finish(),
         }
     }

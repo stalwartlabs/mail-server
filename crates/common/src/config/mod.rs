@@ -39,7 +39,11 @@ pub(crate) const CONNECTION_VARS: &[u32; 7] = &[
 ];
 
 impl Core {
-    pub async fn parse(config: &mut Config, stores: Stores, config_manager: ConfigManager) -> Self {
+    pub async fn parse(
+        config: &mut Config,
+        mut stores: Stores,
+        config_manager: ConfigManager,
+    ) -> Self {
         let mut data = config
             .value_require("storage.data")
             .map(|id| id.to_string())
@@ -52,6 +56,29 @@ impl Core {
                 }
             })
             .unwrap_or_default();
+
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+        #[cfg(feature = "enterprise")]
+        let enterprise = crate::enterprise::Enterprise::parse(config, &data).await;
+
+        #[cfg(feature = "enterprise")]
+        if enterprise.is_none() {
+            if matches!(data, Store::SQLReadReplica(_)) {
+                config
+                    .new_build_error("storage.data", "SQL read replicas is an Enterprise feature");
+                data = Store::None;
+            }
+            stores
+                .stores
+                .retain(|_, store| !matches!(store, Store::SQLReadReplica(_)));
+            stores
+                .blob_stores
+                .retain(|_, store| !matches!(store.backend, BlobBackend::Composite(_)));
+        }
+        // SPDX-SnippetEnd
+
         let mut blob = config
             .value_require("storage.blob")
             .map(|id| id.to_string())
@@ -132,7 +159,7 @@ impl Core {
 
         Self {
             #[cfg(feature = "enterprise")]
-            enterprise: crate::enterprise::Enterprise::parse(config, &data).await,
+            enterprise,
             sieve: Scripting::parse(config, &stores).await,
             network: Network::parse(config),
             smtp: SmtpConfig::parse(config).await,

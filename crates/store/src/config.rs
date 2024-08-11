@@ -53,12 +53,14 @@ impl Stores {
 
     pub async fn parse_stores(&mut self, config: &mut Config) {
         let is_reload = !self.stores.is_empty();
-
-        for id in config
+        #[cfg(feature = "enterprise")]
+        let mut composite_stores = Vec::new();
+        let store_ids = config
             .sub_keys("store", ".type")
             .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-        {
+            .collect::<Vec<_>>();
+
+        for id in store_ids {
             let id = id.as_str();
             // Parse store
             #[cfg(feature = "test_mode")]
@@ -203,12 +205,49 @@ impl Stores {
                         self.lookup_stores.insert(store_id, db);
                     }
                 }
+                #[cfg(feature = "enterprise")]
+                "composite-read" | "composite-blob" => {
+                    composite_stores.push((store_id, protocol));
+                }
                 unknown => {
                     config.new_parse_warning(
                         ("store", id, "type"),
                         format!("Unknown directory type: {unknown:?}"),
                     );
                 }
+            }
+        }
+
+        #[cfg(feature = "enterprise")]
+        for (id, protocol) in composite_stores {
+            let prefix = ("store", id.as_str());
+            match protocol.as_str() {
+                "composite-read" => {
+                    if let Some(db) = crate::backend::composite::read_replica::SQLReadReplica::open(
+                        config, prefix, self,
+                    ) {
+                        self.stores.insert(id, Store::SQLReadReplica(db.into()));
+                    }
+                }
+                "composite-blob" => {
+                    if let Some(db) =
+                        crate::backend::composite::distributed_blob::CompositeBlob::open(
+                            config, prefix, self,
+                        )
+                    {
+                        let store = BlobStore {
+                            backend: crate::BlobBackend::Composite(db.into()),
+                            compression: config
+                                .property_or_default::<CompressionAlgo>(
+                                    ("store", id.as_str(), "compression"),
+                                    "none",
+                                )
+                                .unwrap_or(CompressionAlgo::None),
+                        };
+                        self.blob_stores.insert(id, store);
+                    }
+                }
+                _ => (),
             }
         }
     }
