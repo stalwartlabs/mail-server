@@ -6,9 +6,6 @@
 
 use std::time::{Duration, Instant};
 use tikv_client::{TransactionClient, Transaction, Error as TikvError, Snapshot, Value, Key, Timestamp, RawClient, TransactionOptions, Backoff, KvPair, BoundRange};
-use tikv_client::proto::kvrpcpb;
-use tikv_client::proto::kvrpcpb::Mutation;
-use crate::write::{AssignedIds, ValueOp};
 use crate::write::key::KeySerializer;
 
 pub mod blob;

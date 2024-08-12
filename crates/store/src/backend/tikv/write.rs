@@ -20,6 +20,7 @@ use crate::{
     },
     BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN, WITH_SUBSPACE,
 };
+use crate::backend::tikv::read::read_helpers::read_chunked_value;
 use crate::write::key;
 use super::{into_error, read::{ChunkedValue}, TikvStore, ReadVersion, MAX_VALUE_SIZE, MAX_SCAN_KEYS_SIZE};
 
@@ -244,20 +245,20 @@ impl TikvStore {
                             result.push_document_id(document_id);
                         }
 
-                        let key_vec = class.serialize(
+                        let key_base = class.serialize(
                             account_id,
                             collection,
                             document_id,
                             WITH_SUBSPACE,
                             (&result).into(),
                         );
-                        let key = self.new_key_serializer(key_vec.len(), false)
-                            .write(key_vec.as_slice())
+                        let key = self.new_key_serializer(key_base.len(), false)
+                            .write(key_base.as_slice())
                             .finalize();
 
                         if *set {
                             let mut begin = Bound::Included(TikvKey::from(key));
-                            let end_vec = class.serialize(
+                            let end_base = class.serialize(
                                 account_id,
                                 collection,
                                 document_id + 1,
@@ -266,8 +267,8 @@ impl TikvStore {
                             );
 
                             loop {
-                                let end_key = TikvKey::from(self.new_key_serializer(end_vec.len(), false)
-                                    .write(end_vec.as_slice())
+                                let end_key = TikvKey::from(self.new_key_serializer(end_base.len(), false)
+                                    .write(end_base.as_slice())
                                     .finalize());
                                 let end = Bound::Included(end_key);
 
@@ -292,33 +293,31 @@ impl TikvStore {
                         }
                     }
                     Operation::Log { set } => {
-                        let key = LogKey {
+                        let key_base = LogKey {
                             account_id,
                             collection,
                             change_id,
                         }.serialize(WITH_SUBSPACE);
-                        let key_vec = self.new_key_serializer(key.len(), false)
-                            .write(key.as_slice())
+                        let key = self.new_key_serializer(key_base.len(), false)
+                            .write(key_base.as_slice())
                             .finalize();
 
-                        trx.put(key_vec, set.resolve(&result)?.as_ref()).await.map_err(into_error)?;
+                        trx.put(key, set.resolve(&result)?.as_ref()).await.map_err(into_error)?;
                     }
                     Operation::AssertValue {
                         class,
                         assert_value,
                     } => {
-                        let key_vec = class.serialize(
+                        // Don't prepend with API v2 compatibility prefix
+                        let key_base = class.serialize(
                             account_id,
                             collection,
                             document_id,
                             WITH_SUBSPACE,
                             (&result).into(),
                         );
-                        let key = self.new_key_serializer(key_vec.len(), false)
-                            .write(key_vec.as_slice())
-                            .finalize();
 
-                        let matches = match self.read_chunked_value(&key, &mut trx).await {
+                        let matches = match read_chunked_value(&self, &key_base, &mut trx).await {
                             Ok(ChunkedValue::Single(bytes)) => assert_value.matches(bytes.as_slice()),
                             Ok(ChunkedValue::Chunked { bytes, .. }) => {
                                 assert_value.matches(bytes.as_ref())
@@ -496,7 +495,7 @@ impl TikvStore {
     //     }
     // }
 
-    async fn commit(&self, mut trx: Transaction, ext_backoff: Option<&mut Backoff>) -> trc::Result<bool> {
+    pub(crate) async fn commit(&self, mut trx: Transaction, ext_backoff: Option<&mut Backoff>) -> trc::Result<bool> {
         if let Err(e) = trx.commit().await {
             if let Some(backoff) = ext_backoff {
                 let Some(backoff_duration) = backoff.next_delay_duration() else {

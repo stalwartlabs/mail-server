@@ -105,4 +105,3 @@ impl TikvStore {
         Some(store)
     }
 }
-
