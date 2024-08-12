@@ -476,7 +476,7 @@ impl Tracers {
                     EventType::Telemetry(TelemetryEvent::LogError).into()
                 }
                 TelemetrySubscriberType::OtelTracer(_) => {
-                    EventType::Telemetry(TelemetryEvent::OtelExpoterError).into()
+                    EventType::Telemetry(TelemetryEvent::OtelExporterError).into()
                 }
                 TelemetrySubscriberType::Webhook(_) => {
                     EventType::Telemetry(TelemetryEvent::WebhookError).into()

@@ -89,7 +89,7 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                             .await
                         {
                             trc::event!(
-                                Telemetry(TelemetryEvent::OtelExpoterError),
+                                Telemetry(TelemetryEvent::OtelExporterError),
                                 Details = "Failed to export spans",
                                 Reason = err.to_string()
                             );
@@ -103,7 +103,7 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                             .await
                         {
                             trc::event!(
-                                Telemetry(TelemetryEvent::OtelExpoterError),
+                                Telemetry(TelemetryEvent::OtelExporterError),
                                 Details = "Failed to export logs",
                                 Reason = err.to_string()
                             );

@@ -64,7 +64,7 @@ impl Core {
 
         TextEncoder::new()
             .encode_to_string(&metrics)
-            .map_err(|e| trc::EventType::Telemetry(trc::TelemetryEvent::OtelExpoterError).reason(e))
+            .map_err(|e| trc::EventType::Telemetry(trc::TelemetryEvent::OtelExporterError).reason(e))
     }
 }
 

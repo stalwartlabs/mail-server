@@ -635,7 +635,7 @@ impl EventType {
             EventType::Telemetry(
                 TelemetryEvent::LogError
                 | TelemetryEvent::WebhookError
-                | TelemetryEvent::OtelExpoterError
+                | TelemetryEvent::OtelExporterError
                 | TelemetryEvent::OtelMetricsExporterError
                 | TelemetryEvent::PrometheusExporterError
                 | TelemetryEvent::JournalError,

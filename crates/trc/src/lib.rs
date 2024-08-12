@@ -651,7 +651,7 @@ pub enum ServerEvent {
 pub enum TelemetryEvent {
     LogError,
     WebhookError,
-    OtelExpoterError,
+    OtelExporterError,
     OtelMetricsExporterError,
     PrometheusExporterError,
     JournalError,
