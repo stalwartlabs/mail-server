@@ -208,7 +208,7 @@ impl Key for LogKey {
     }
 }
 
-impl<T: AsRef<ValueClass<u32>> + Sync + Send> Key for ValueKey<T> {
+impl<T: AsRef<ValueClass<u32>> + Sync + Send + Clone> Key for ValueKey<T> {
     fn subspace(&self) -> u8 {
         self.class.as_ref().subspace(self.collection)
     }
@@ -371,7 +371,7 @@ impl<T: ResolveId> ValueClass<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + Sync + Send> Key for IndexKey<T> {
+impl<T: AsRef<[u8]> + Sync + Send + Clone> Key for IndexKey<T> {
     fn subspace(&self) -> u8 {
         SUBSPACE_INDEXES
     }
@@ -395,7 +395,7 @@ impl<T: AsRef<[u8]> + Sync + Send> Key for IndexKey<T> {
     }
 }
 
-impl<T: AsRef<BitmapClass<u32>> + Sync + Send> Key for BitmapKey<T> {
+impl<T: AsRef<BitmapClass<u32>> + Sync + Send + Clone> Key for BitmapKey<T> {
     fn subspace(&self) -> u8 {
         self.class.as_ref().subspace()
     }
@@ -486,7 +486,7 @@ impl<T: ResolveId> BitmapClass<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + Sync + Send> Key for AnyKey<T> {
+impl<T: AsRef<[u8]> + Sync + Send + Clone> Key for AnyKey<T> {
     fn serialize(&self, flags: u32) -> Vec<u8> {
         let key = self.key.as_ref();
         if (flags & WITH_SUBSPACE) != 0 {

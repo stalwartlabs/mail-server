@@ -57,7 +57,7 @@ pub trait Serialize {
 // Key serialization flags
 pub(crate) const WITH_SUBSPACE: u32 = 1;
 
-pub trait Key: Sync + Send {
+pub trait Key: Sync + Send + Clone {
     fn serialize(&self, flags: u32) -> Vec<u8>;
     fn subspace(&self) -> u8;
 }
@@ -154,6 +154,7 @@ pub const SUBSPACE_RESERVED_3: u8 = b'x';
 pub const SUBSPACE_RESERVED_4: u8 = b'y';
 pub const SUBSPACE_RESERVED_5: u8 = b'z';
 
+#[derive(Clone)]
 pub struct IterateParams<T: Key> {
     begin: T,
     end: T,
@@ -670,6 +671,16 @@ impl Store {
             Store::MySQL(_) => true,
             #[cfg(feature = "enterprise")]
             Store::SQLReadReplica(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_pg_or_mysql(&self) -> bool {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Store::SQLite(_) => true,
+            #[cfg(feature = "postgres")]
+            Store::PostgreSQL(_) => true,
             _ => false,
         }
     }
