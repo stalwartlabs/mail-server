@@ -29,7 +29,12 @@ pub struct SQLReadReplica {
 }
 
 impl SQLReadReplica {
-    pub fn open(config: &mut Config, prefix: impl AsKey, stores: &Stores) -> Option<Self> {
+    pub async fn open(
+        config: &mut Config,
+        prefix: impl AsKey,
+        stores: &Stores,
+        create_tables: bool,
+    ) -> Option<Self> {
         let prefix = prefix.as_key();
         let primary_id = config.value_require((&prefix, "primary"))?.to_string();
         let replica_ids = config
@@ -75,6 +80,30 @@ impl SQLReadReplica {
             }
         }
         if !replicas.is_empty() {
+            if create_tables {
+                match &primary {
+                    #[cfg(feature = "postgres")]
+                    Store::PostgreSQL(store) => {
+                        if let Err(err) = store.create_tables().await {
+                            config.new_build_error(
+                                (&prefix, "primary"),
+                                format!("Failed to create tables: {err}"),
+                            );
+                        }
+                    }
+                    #[cfg(feature = "mysql")]
+                    Store::MySQL(store) => {
+                        if let Err(err) = store.create_tables().await {
+                            config.new_build_error(
+                                (&prefix, "primary"),
+                                format!("Failed to create tables: {err}"),
+                            );
+                        }
+                    }
+                    _ => panic!("Invalid store type"),
+                }
+            }
+
             Some(Self {
                 primary,
                 replicas,

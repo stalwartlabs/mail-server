@@ -15,7 +15,11 @@ use tokio_postgres::NoTls;
 use utils::{config::utils::AsKey, rustls_client_config};
 
 impl PostgresStore {
-    pub async fn open(config: &mut utils::config::Config, prefix: impl AsKey) -> Option<Self> {
+    pub async fn open(
+        config: &mut utils::config::Config,
+        prefix: impl AsKey,
+        create_tables: bool,
+    ) -> Option<Self> {
         let prefix = prefix.as_key();
         let mut cfg = Config::new();
         cfg.dbname = config
@@ -61,14 +65,16 @@ impl PostgresStore {
             .ok()?,
         };
 
-        if let Err(err) = db.create_tables().await {
-            config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
+        if create_tables {
+            if let Err(err) = db.create_tables().await {
+                config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
+            }
         }
 
         Some(db)
     }
 
-    pub(super) async fn create_tables(&self) -> trc::Result<()> {
+    pub(crate) async fn create_tables(&self) -> trc::Result<()> {
         let conn = self.conn_pool.get().await.map_err(into_error)?;
 
         for table in [

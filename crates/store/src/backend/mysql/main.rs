@@ -14,7 +14,11 @@ use crate::*;
 use super::{into_error, MysqlStore};
 
 impl MysqlStore {
-    pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
+    pub async fn open(
+        config: &mut Config,
+        prefix: impl AsKey,
+        create_tables: bool,
+    ) -> Option<Self> {
         let prefix = prefix.as_key();
         let mut opts = OptsBuilder::default()
             .ip_or_hostname(config.value_require((&prefix, "host"))?.to_string())
@@ -74,14 +78,16 @@ impl MysqlStore {
             conn_pool: Pool::new(opts),
         };
 
-        if let Err(err) = db.create_tables().await {
-            config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
+        if create_tables {
+            if let Err(err) = db.create_tables().await {
+                config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
+            }
         }
 
         Some(db)
     }
 
-    pub(super) async fn create_tables(&self) -> trc::Result<()> {
+    pub(crate) async fn create_tables(&self) -> trc::Result<()> {
         let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
 
         for table in [
