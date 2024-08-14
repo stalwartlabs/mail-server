@@ -52,8 +52,8 @@ use utils::config::Config;
 use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
 
 const SERVER: &str = r#"
-[server]
-hostname = "'imap.example.org'"
+[lookup.default]
+hostname = "imap.example.org"
 
 [server.listener.imap]
 bind = ["127.0.0.1:9991"]
@@ -151,6 +151,11 @@ port = 5432
 database = "stalwart"
 user = "postgres"
 password = "mysecretpassword"
+
+[store."psql-replica"]
+type = "sql-read-replica"
+primary = "postgresql"
+replicas = "postgresql"
 
 [store."mysql"]
 type = "mysql"

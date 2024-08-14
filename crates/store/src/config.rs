@@ -213,7 +213,7 @@ impl Stores {
                     }
                 }
                 #[cfg(feature = "enterprise")]
-                "composite-read" | "composite-blob" => {
+                "sql-read-replica" | "composite-blob" => {
                     composite_stores.push((store_id, protocol));
                 }
                 unknown => {
