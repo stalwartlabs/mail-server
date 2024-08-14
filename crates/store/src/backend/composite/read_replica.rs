@@ -81,26 +81,19 @@ impl SQLReadReplica {
         }
         if !replicas.is_empty() {
             if create_tables {
-                match &primary {
+                let result = match &primary {
                     #[cfg(feature = "postgres")]
-                    Store::PostgreSQL(store) => {
-                        if let Err(err) = store.create_tables().await {
-                            config.new_build_error(
-                                (&prefix, "primary"),
-                                format!("Failed to create tables: {err}"),
-                            );
-                        }
-                    }
+                    Store::PostgreSQL(store) => store.create_tables().await,
                     #[cfg(feature = "mysql")]
-                    Store::MySQL(store) => {
-                        if let Err(err) = store.create_tables().await {
-                            config.new_build_error(
-                                (&prefix, "primary"),
-                                format!("Failed to create tables: {err}"),
-                            );
-                        }
-                    }
+                    Store::MySQL(store) => store.create_tables().await,
                     _ => panic!("Invalid store type"),
+                };
+
+                if let Err(err) = result {
+                    config.new_build_error(
+                        (&prefix, "primary"),
+                        format!("Failed to create tables: {err}"),
+                    );
                 }
             }
 
