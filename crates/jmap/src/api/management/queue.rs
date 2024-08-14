@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::str::FromStr;
-
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use hyper::Method;
 use mail_auth::{
@@ -28,7 +26,7 @@ use crate::{
     JMAP,
 };
 
-use super::decode_path_element;
+use super::{decode_path_element, Timestamp};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Message {
@@ -613,29 +611,6 @@ fn parse_queued_report_id(id: &str) -> Option<QueueClass> {
         "d" => Some(QueueClass::DmarcReportHeader(event)),
         "t" => Some(QueueClass::TlsReportHeader(event)),
         _ => None,
-    }
-}
-
-struct Timestamp(u64);
-
-impl FromStr for Timestamp {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(dt) = DateTime::parse_rfc3339(s) {
-            let instant = dt.to_timestamp() as u64;
-            if instant >= now() {
-                return Ok(Timestamp(instant));
-            }
-        }
-
-        Err(())
-    }
-}
-
-impl Timestamp {
-    pub fn into_inner(self) -> u64 {
-        self.0
     }
 }
 

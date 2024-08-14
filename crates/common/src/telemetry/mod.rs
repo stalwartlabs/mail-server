@@ -13,7 +13,7 @@ use std::time::Duration;
 use tracers::log::spawn_log_tracer;
 use tracers::otel::spawn_otel_tracer;
 use tracers::stdout::spawn_console_tracer;
-use trc::{collector::Collector, subscriber::SubscriberBuilder};
+use trc::{ipc::subscriber::SubscriberBuilder, Collector};
 use webhooks::spawn_webhook_tracer;
 
 use crate::config::telemetry::{Telemetry, TelemetrySubscriberType};
@@ -21,13 +21,14 @@ use crate::config::telemetry::{Telemetry, TelemetrySubscriberType};
 pub const LONG_SLUMBER: Duration = Duration::from_secs(60 * 60 * 24 * 365);
 
 impl Telemetry {
-    pub fn enable(self) {
+    pub fn enable(self, is_enterprise: bool) {
         // Spawn tracers
         for tracer in self.tracers.subscribers {
             tracer.typ.spawn(
                 SubscriberBuilder::new(tracer.id)
                     .with_interests(tracer.interests)
                     .with_lossy(tracer.lossy),
+                is_enterprise,
             );
         }
 
@@ -38,7 +39,7 @@ impl Telemetry {
         Collector::reload();
     }
 
-    pub fn update(self) {
+    pub fn update(self, is_enterprise: bool) {
         // Remove tracers that are no longer active
         let active_subscribers = Collector::get_subscribers();
         for subscribed_id in &active_subscribers {
@@ -61,6 +62,7 @@ impl Telemetry {
                     SubscriberBuilder::new(tracer.id)
                         .with_interests(tracer.interests)
                         .with_lossy(tracer.lossy),
+                    is_enterprise,
                 );
             }
         }
@@ -74,7 +76,7 @@ impl Telemetry {
 
     #[cfg(feature = "test_mode")]
     pub fn test_tracer(level: trc::Level) {
-        let mut interests = trc::subscriber::Interests::default();
+        let mut interests = trc::ipc::subscriber::Interests::default();
         for event in trc::EventType::variants() {
             if level.is_contained(event.level()) {
                 interests.set(event);
@@ -98,7 +100,7 @@ impl Telemetry {
 }
 
 impl TelemetrySubscriberType {
-    pub fn spawn(self, builder: SubscriberBuilder) {
+    pub fn spawn(self, builder: SubscriberBuilder, is_enterprise: bool) {
         match self {
             TelemetrySubscriberType::ConsoleTracer(settings) => {
                 spawn_console_tracer(builder, settings)
@@ -109,6 +111,12 @@ impl TelemetrySubscriberType {
             #[cfg(unix)]
             TelemetrySubscriberType::JournalTracer(subscriber) => {
                 tracers::journald::spawn_journald_tracer(builder, subscriber)
+            }
+            #[cfg(feature = "enterprise")]
+            TelemetrySubscriberType::StoreTracer(subscriber) => {
+                if is_enterprise {
+                    tracers::store::spawn_store_tracer(builder, subscriber)
+                }
             }
         }
     }

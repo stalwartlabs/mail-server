@@ -4,26 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod atomic;
-pub mod bitset;
-pub mod channel;
-pub mod collector;
-pub mod conv;
-pub mod fmt;
-pub mod imple;
+pub mod atomics;
+pub mod event;
+pub mod ipc;
 pub mod macros;
-pub mod metrics;
-pub mod serializer;
-pub mod subscriber;
+pub mod serializers;
 
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::Arc,
 };
 
+pub use crate::ipc::collector::Collector;
 pub use event_macro::event;
 
-use event_macro::{camel_names, event_family, event_type, total_event_count};
+use event_macro::{event_family, event_type, key_names, total_event_count};
 
 pub type Result<T> = std::result::Result<T, Error>;
 pub type Error = Event<EventType>;
@@ -66,7 +61,6 @@ pub enum Value {
     Bool(bool),
     Ipv4(Ipv4Addr),
     Ipv6(Ipv6Addr),
-    Protocol(Protocol),
     Event(Event<EventType>),
     Array(Vec<Value>),
     #[default]
@@ -74,7 +68,7 @@ pub enum Value {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-#[camel_names]
+#[key_names]
 pub enum Key {
     AccountName,
     AccountId,
@@ -113,7 +107,6 @@ pub enum Key {
     NextRetry,
     Path,
     Policy,
-    Protocol,
     QueueId,
     RangeFrom,
     RangeTo,
@@ -193,6 +186,8 @@ pub enum EventType {
 
 #[event_type]
 pub enum HttpEvent {
+    ConnectionStart,
+    ConnectionEnd,
     Error,
     RequestUrl,
     RequestBody,
@@ -239,6 +234,9 @@ pub enum FtsIndexEvent {
 
 #[event_type]
 pub enum ImapEvent {
+    ConnectionStart,
+    ConnectionEnd,
+
     // Commands
     GetAcl,
     SetAcl,
@@ -282,6 +280,9 @@ pub enum ImapEvent {
 
 #[event_type]
 pub enum Pop3Event {
+    ConnectionStart,
+    ConnectionEnd,
+
     // Commands
     Delete,
     Reset,
@@ -307,6 +308,9 @@ pub enum Pop3Event {
 
 #[event_type]
 pub enum ManageSieveEvent {
+    ConnectionStart,
+    ConnectionEnd,
+
     // Commands
     CreateScript,
     UpdateScript,
@@ -333,6 +337,8 @@ pub enum ManageSieveEvent {
 
 #[event_type]
 pub enum SmtpEvent {
+    ConnectionStart,
+    ConnectionEnd,
     Error,
     RemoteIdNotFound,
     ConcurrencyLimitExceeded,
@@ -620,8 +626,6 @@ pub enum TlsEvent {
 
 #[event_type]
 pub enum NetworkEvent {
-    ConnectionStart,
-    ConnectionEnd,
     ListenStart,
     ListenStop,
     ListenError,
@@ -921,21 +925,6 @@ pub enum ResourceEvent {
     Error,
     DownloadExternal,
     WebadminUnpacked,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[camel_names]
-pub enum Protocol {
-    Jmap,
-    Imap,
-    Lmtp,
-    Smtp,
-    ManageSieve,
-    Ldap,
-    Sql,
-    Pop3,
-    Http,
-    Gossip,
 }
 
 pub const TOTAL_EVENT_COUNT: usize = total_event_count!();

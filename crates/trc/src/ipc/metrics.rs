@@ -6,12 +6,15 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::{
-    atomic::{AtomicCounter, AtomicGauge, AtomicHistogram, AtomicU32Array},
+use atomics::{
+    array::AtomicU32Array, counter::AtomicCounter, gauge::AtomicGauge, histogram::AtomicHistogram,
+};
+use ipc::{
     collector::{Collector, GlobalInterests, EVENT_TYPES},
     subscriber::Interests,
-    *,
 };
+
+use crate::*;
 
 pub(crate) static METRIC_INTERESTS: GlobalInterests = GlobalInterests::new();
 
@@ -77,29 +80,69 @@ pub struct EventCounter {
 impl Collector {
     pub fn record_metric(event: EventType, event_id: usize, keys: &[(Key, Value)]) {
         // Increment the event counter
-        EVENT_COUNTERS.add(event_id, 1);
+        if !event.is_span_end() && !event.is_raw_io() {
+            EVENT_COUNTERS.add(event_id, 1);
+        }
 
         // Extract variables
         let mut elapsed = 0;
         let mut size = 0;
-        let mut protocol = Protocol::Gossip;
         for (key, value) in keys {
             match (key, value) {
                 (Key::Elapsed, Value::Duration(d)) => elapsed = *d,
                 (Key::Size, Value::UInt(s)) => size = *s,
-                (Key::Protocol, Value::Protocol(p)) => protocol = *p,
                 _ => {}
             }
         }
 
         match event {
-            EventType::Network(NetworkEvent::ConnectionStart) => {
-                let conn = &CONNECTION_METRICS[protocol.idx()];
+            EventType::Smtp(SmtpEvent::ConnectionStart) => {
+                let conn = &CONNECTION_METRICS[CONN_SMTP_IN];
                 conn.total_connections.increment();
                 conn.active_connections.increment();
             }
-            EventType::Network(NetworkEvent::ConnectionEnd) => {
-                let conn = &CONNECTION_METRICS[protocol.idx()];
+            EventType::Smtp(SmtpEvent::ConnectionEnd) => {
+                let conn = &CONNECTION_METRICS[CONN_SMTP_IN];
+                conn.active_connections.decrement();
+                conn.elapsed.observe(elapsed);
+            }
+            EventType::Imap(ImapEvent::ConnectionStart) => {
+                let conn = &CONNECTION_METRICS[CONN_IMAP];
+                conn.total_connections.increment();
+                conn.active_connections.increment();
+            }
+            EventType::Imap(ImapEvent::ConnectionEnd) => {
+                let conn = &CONNECTION_METRICS[CONN_IMAP];
+                conn.active_connections.decrement();
+                conn.elapsed.observe(elapsed);
+            }
+            EventType::Pop3(Pop3Event::ConnectionStart) => {
+                let conn = &CONNECTION_METRICS[CONN_POP3];
+                conn.total_connections.increment();
+                conn.active_connections.increment();
+            }
+            EventType::Pop3(Pop3Event::ConnectionEnd) => {
+                let conn = &CONNECTION_METRICS[CONN_POP3];
+                conn.active_connections.decrement();
+                conn.elapsed.observe(elapsed);
+            }
+            EventType::Http(HttpEvent::ConnectionStart) => {
+                let conn = &CONNECTION_METRICS[CONN_HTTP];
+                conn.total_connections.increment();
+                conn.active_connections.increment();
+            }
+            EventType::Http(HttpEvent::ConnectionEnd) => {
+                let conn = &CONNECTION_METRICS[CONN_HTTP];
+                conn.active_connections.decrement();
+                conn.elapsed.observe(elapsed);
+            }
+            EventType::ManageSieve(ManageSieveEvent::ConnectionStart) => {
+                let conn = &CONNECTION_METRICS[CONN_SIEVE];
+                conn.total_connections.increment();
+                conn.active_connections.increment();
+            }
+            EventType::ManageSieve(ManageSieveEvent::ConnectionEnd) => {
+                let conn = &CONNECTION_METRICS[CONN_SIEVE];
                 conn.active_connections.decrement();
                 conn.elapsed.observe(elapsed);
             }
@@ -452,20 +495,6 @@ const fn init_conn_metrics() -> [ConnectionMetrics; TOTAL_CONN_TYPES] {
         i += 1;
     }
     array
-}
-
-impl Protocol {
-    fn idx(&self) -> usize {
-        match self {
-            Protocol::Jmap => CONN_IMAP,
-            Protocol::Imap => CONN_IMAP,
-            Protocol::Lmtp | Protocol::Smtp => CONN_SMTP_IN,
-            Protocol::ManageSieve => CONN_SIEVE,
-            Protocol::Pop3 => CONN_POP3,
-            Protocol::Http => CONN_HTTP,
-            _ => unreachable!(),
-        }
-    }
 }
 
 impl EventType {

@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::json;
 use store::write::Bincode;
 use store::Serialize;
-use trc::conv::AssertSuccess;
+use trc::event::conv::AssertSuccess;
 
 use super::jose::{
     key_authorization, key_authorization_sha256, key_authorization_sha256_base64, sign,

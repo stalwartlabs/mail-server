@@ -52,23 +52,7 @@ enum UndeleteResponse {
 }
 
 impl JMAP {
-    pub async fn handle_enterprise_api_request(
-        &self,
-        req: &HttpRequest,
-        path: Vec<&str>,
-        body: Option<Vec<u8>>,
-        session: &HttpSessionData,
-    ) -> trc::Result<HttpResponse> {
-        match path.get(1).copied().unwrap_or_default() {
-            "undelete" => {
-                self.handle_undelete_api_request(req, path, body, session)
-                    .await
-            }
-            _ => Err(trc::ResourceEvent::NotFound.into_err()),
-        }
-    }
-
-    async fn handle_undelete_api_request(
+    pub async fn handle_undelete_api_request(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,

@@ -19,7 +19,7 @@ use serde::Serialize;
 use store::write::now;
 use tokio::sync::mpsc;
 use trc::{
-    subscriber::{EventBatch, SubscriberBuilder},
+    ipc::subscriber::{EventBatch, SubscriberBuilder},
     ServerEvent, TelemetryEvent,
 };
 

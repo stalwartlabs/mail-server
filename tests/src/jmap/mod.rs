@@ -483,7 +483,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             .cloned()
             .unwrap_or_default(),
     };
-    let tracers = Telemetry::parse(&mut config);
+    let tracers = Telemetry::parse(&mut config, &stores);
     let core = Core::parse(&mut config, stores, config_manager).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
@@ -492,7 +492,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     servers.parse_tcp_acceptors(&mut config, shared_core.clone());
 
     // Enable tracing
-    tracers.enable();
+    tracers.enable(true);
 
     // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);

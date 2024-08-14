@@ -169,7 +169,7 @@ pub fn event_family(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn camel_names(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn key_names(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     let name = &input.ident;
 
@@ -180,17 +180,28 @@ pub fn camel_names(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let mut variant_names = Vec::new();
     let mut camel_case_names = Vec::new();
+    let mut snake_case_names = Vec::new();
 
     for variant in enum_variants.iter() {
         let variant_name = &variant.ident;
         variant_names.push(variant_name);
-        let camel_case_name = variant_name
-            .to_string()
-            .char_indices()
-            .map(|(i, c)| if i == 0 { c.to_ascii_lowercase() } else { c })
-            .collect::<String>();
-        camel_case_names.push(camel_case_name);
+        snake_case_names.push(to_snake_case(&variant_name.to_string()));
+        camel_case_names.push(
+            variant_name
+                .to_string()
+                .char_indices()
+                .map(|(i, c)| if i == 0 { c.to_ascii_lowercase() } else { c })
+                .collect::<String>(),
+        );
     }
+
+    let id_fn = quote! {
+        pub fn id(&self) -> &'static str {
+            match self {
+                #(Self::#variant_names => #snake_case_names,)*
+            }
+        }
+    };
 
     let name_fn = quote! {
         pub fn name(&self) -> &'static str {
@@ -200,11 +211,22 @@ pub fn camel_names(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
+    let parse_fn = quote! {
+        pub fn try_parse(name: &str) -> Option<Self> {
+            match name {
+                #(#snake_case_names => Some(Self::#variant_names),)*
+                _ => None,
+            }
+        }
+    };
+
     let expanded = quote! {
         #input
 
         impl #name {
             #name_fn
+            #id_fn
+            #parse_fn
         }
     };
 
@@ -297,28 +319,28 @@ pub fn event(input: TokenStream) -> TokenStream {
         quote! {{
             const ET: trc::EventType = trc::EventType::#event(#param);
             const ET_ID: usize = ET.id();
-            if trc::collector::Collector::has_interest(ET_ID) {
+            if trc::Collector::has_interest(ET_ID) {
                 let keys = vec![#(#key_value_tokens),*];
-                if trc::collector::Collector::is_metric(ET_ID) {
-                    trc::collector::Collector::record_metric(ET, ET_ID, &keys);
+                if trc::Collector::is_metric(ET_ID) {
+                    trc::Collector::record_metric(ET, ET_ID, &keys);
                 }
                 trc::Event::with_keys(ET, keys).send();
-            } else if trc::collector::Collector::is_metric(ET_ID) {
-                trc::collector::Collector::record_metric(ET, ET_ID, &[#(#key_value_metric_tokens),*]);
+            } else if trc::Collector::is_metric(ET_ID) {
+                trc::Collector::record_metric(ET, ET_ID, &[#(#key_value_metric_tokens),*]);
             }
         }}
     } else {
         quote! {{
             let et = trc::EventType::#event(#param);
             let et_id = et.id();
-            if trc::collector::Collector::has_interest(et_id) {
+            if trc::Collector::has_interest(et_id) {
                 let keys = vec![#(#key_value_tokens),*];
-                if trc::collector::Collector::is_metric(et_id) {
-                    trc::collector::Collector::record_metric(et, et_id, &keys);
+                if trc::Collector::is_metric(et_id) {
+                    trc::Collector::record_metric(et, et_id, &keys);
                 }
                 trc::Event::with_keys(et, keys).send();
-            } else if trc::collector::Collector::is_metric(et_id) {
-                trc::collector::Collector::record_metric(et, et_id, &[#(#key_value_metric_tokens),*]);
+            } else if trc::Collector::is_metric(et_id) {
+                trc::Collector::record_metric(et, et_id, &[#(#key_value_metric_tokens),*]);
             }
         }}
     };

@@ -87,6 +87,7 @@ impl PostgresStore {
             SUBSPACE_FTS_INDEX,
             SUBSPACE_LOGS,
             SUBSPACE_BLOBS,
+            SUBSPACE_TRACE,
         ] {
             let table = char::from(table);
             conn.execute(
@@ -107,6 +108,7 @@ impl PostgresStore {
             SUBSPACE_BITMAP_ID,
             SUBSPACE_BITMAP_TAG,
             SUBSPACE_BITMAP_TEXT,
+            SUBSPACE_TRACE_INDEX,
         ] {
             let table = char::from(table);
             conn.execute(

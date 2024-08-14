@@ -61,7 +61,7 @@ impl Core {
         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
         #[cfg(feature = "enterprise")]
-        let enterprise = crate::enterprise::Enterprise::parse(config, &data).await;
+        let enterprise = crate::enterprise::Enterprise::parse(config, &stores, &data).await;
 
         #[cfg(feature = "enterprise")]
         if enterprise.is_none() {

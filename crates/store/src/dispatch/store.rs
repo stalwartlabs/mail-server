@@ -560,6 +560,8 @@ impl Store {
             SUBSPACE_REPORT_OUT,
             SUBSPACE_REPORT_IN,
             SUBSPACE_FTS_INDEX,
+            SUBSPACE_TRACE,
+            SUBSPACE_TRACE_INDEX,
         ] {
             self.delete_range(
                 AnyKey {
@@ -743,6 +745,8 @@ impl Store {
             (SUBSPACE_BITMAP_TAG, false),
             (SUBSPACE_BITMAP_TEXT, false),
             (SUBSPACE_INDEXES, false),
+            (SUBSPACE_TRACE, true),
+            (SUBSPACE_TRACE_INDEX, false),
         ] {
             let from_key = crate::write::AnyKey {
                 subspace,

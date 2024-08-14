@@ -90,7 +90,6 @@ impl GossiperBuilder {
             Network(trc::NetworkEvent::ListenStart),
             LocalIp = self.bind_addr,
             LocalPort = self.port,
-            Protocol = trc::Protocol::Gossip,
         );
 
         // Create gossiper
@@ -123,7 +122,8 @@ impl GossiperBuilder {
                                 Network(trc::NetworkEvent::WriteError),
                                 RemoteIp = target_addr.ip(),
                                 RemotePort = target_addr.port(),
-                                Protocol = trc::Protocol::Gossip,
+                                LocalIp = bind_addr,
+                                LocalPort = bind_port,
                                 Reason = err.to_string()
                             );
                         }
@@ -191,8 +191,9 @@ impl GossiperBuilder {
                             Err(err) => {
                                 trc::event!(
                                     Network(trc::NetworkEvent::ReadError),
-                                    Protocol = trc::Protocol::Gossip,
-                                    Reason = err.to_string()
+                                    LocalIp = bind_addr,
+                                    LocalPort = bind_port,
+                                            Reason = err.to_string()
                                 );
                             }
                         }
@@ -207,7 +208,6 @@ impl GossiperBuilder {
                             Network(trc::NetworkEvent::ListenStop),
                             LocalIp = bind_addr,
                             LocalPort = bind_port,
-                            Protocol = trc::Protocol::Gossip,
                         );
 
                         // Broadcast leave message

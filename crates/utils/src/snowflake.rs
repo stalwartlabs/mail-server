@@ -37,6 +37,22 @@ impl SnowflakeIdGenerator {
         Self::with_node_id(rand::random::<u64>())
     }
 
+    pub fn from_duration(period: Duration) -> Option<u64> {
+        (SystemTime::UNIX_EPOCH + Duration::from_secs(1632280000))
+            .elapsed()
+            .ok()
+            .and_then(|elapsed| elapsed.checked_sub(period))
+            .map(|elapsed| (elapsed.as_millis() as u64) << (SEQUENCE_LEN + NODE_ID_LEN))
+    }
+
+    pub fn from_timestamp(timestamp: u64) -> Option<u64> {
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .ok()
+            .and_then(|now| now.as_secs().checked_sub(timestamp))
+            .and_then(|diff| Self::from_duration(Duration::from_secs(diff)))
+    }
+
     pub fn with_node_id(node_id: u64) -> Self {
         Self {
             epoch: SystemTime::UNIX_EPOCH + Duration::from_secs(1632280000), // 52 years after UNIX_EPOCH

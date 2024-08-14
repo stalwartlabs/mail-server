@@ -23,7 +23,8 @@ use opentelemetry_sdk::{
     Resource,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
-use trc::{subscriber::Interests, EventType, Level, TelemetryEvent};
+use store::Stores;
+use trc::{ipc::subscriber::Interests, EventType, Level, TelemetryEvent};
 use utils::config::{utils::ParseValue, Config};
 
 #[derive(Debug)]
@@ -42,6 +43,8 @@ pub enum TelemetrySubscriberType {
     Webhook(WebhookTracer),
     #[cfg(unix)]
     JournalTracer(crate::telemetry::tracers::journald::Subscriber),
+    #[cfg(feature = "enterprise")]
+    StoreTracer(StoreTracer),
 }
 
 #[derive(Debug)]
@@ -88,6 +91,12 @@ pub struct WebhookTracer {
 }
 
 #[derive(Debug)]
+#[cfg(feature = "enterprise")]
+pub struct StoreTracer {
+    pub store: store::Store,
+}
+
+#[derive(Debug)]
 pub enum RotationStrategy {
     Daily,
     Hourly,
@@ -120,9 +129,9 @@ pub struct PrometheusMetrics {
 }
 
 impl Telemetry {
-    pub fn parse(config: &mut Config) -> Self {
+    pub fn parse(config: &mut Config, stores: &Stores) -> Self {
         let mut telemetry = Telemetry {
-            tracers: Tracers::parse(config),
+            tracers: Tracers::parse(config, stores),
             metrics: Interests::default(),
         };
 
@@ -155,7 +164,7 @@ impl Telemetry {
 }
 
 impl Tracers {
-    pub fn parse(config: &mut Config) -> Self {
+    pub fn parse(config: &mut Config, stores: &Stores) -> Self {
         // Parse custom logging levels
         let mut custom_levels = AHashMap::new();
         for event_name in config
@@ -485,6 +494,8 @@ impl Tracers {
                 TelemetrySubscriberType::JournalTracer(_) => {
                     EventType::Telemetry(TelemetryEvent::JournalError).into()
                 }
+                #[cfg(feature = "enterprise")]
+                TelemetrySubscriberType::StoreTracer(_) => None,
             };
 
             // Parse disabled events
@@ -512,6 +523,38 @@ impl Tracers {
                 tracers.push(tracer);
             } else {
                 config.new_build_warning(("tracer", "id"), "No events enabled for tracer");
+            }
+        }
+
+        // Parse tracing history
+        #[cfg(feature = "enterprise")]
+        {
+            if config
+                .property_or_default("tracing.history.enable", "false")
+                .unwrap_or(false)
+            {
+                if let Some(store_id) = config.value_require("tracing.history.store") {
+                    if let Some(store) = stores.stores.get(store_id) {
+                        let mut tracer = TelemetrySubscriber {
+                            id: "history".to_string(),
+                            interests: Default::default(),
+                            lossy: false,
+                            typ: TelemetrySubscriberType::StoreTracer(StoreTracer {
+                                store: store.clone(),
+                            }),
+                        };
+
+                        for event_type in StoreTracer::default_events() {
+                            tracer.interests.set(event_type);
+                            global_interests.set(event_type);
+                        }
+
+                        tracers.push(tracer);
+                    } else {
+                        let err = format!("Store {store_id} not found");
+                        config.new_build_error("tracing.history.store", err);
+                    }
+                }
             }
         }
 

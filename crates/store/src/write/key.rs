@@ -13,12 +13,13 @@ use crate::{
     SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_FTS_INDEX,
     SUBSPACE_FTS_QUEUE, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_VALUE, SUBSPACE_PROPERTY,
     SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_IN,
-    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, U32_LEN, U64_LEN, WITH_SUBSPACE,
+    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TRACE, SUBSPACE_TRACE_INDEX, U32_LEN, U64_LEN,
+    WITH_SUBSPACE,
 };
 
 use super::{
     AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportClass,
-    ReportEvent, ResolveId, TagValue, ValueClass,
+    ReportEvent, ResolveId, TagValue, TraceClass, ValueClass,
 };
 
 pub struct KeySerializer {
@@ -365,6 +366,12 @@ impl<T: ResolveId> ValueClass<T> {
                     serializer.write(2u8).write(*expires).write(*id)
                 }
             },
+            ValueClass::Trace(trace) => match trace {
+                TraceClass::Span { span_id } => serializer.write(*span_id),
+                TraceClass::Index { span_id, value } => {
+                    serializer.write(value.as_slice()).write(*span_id)
+                }
+            },
             ValueClass::Any(any) => serializer.write(any.key.as_slice()),
         }
         .finalize()
@@ -543,6 +550,10 @@ impl<T> ValueClass<T> {
                 QueueClass::QuotaCount(v) | QueueClass::QuotaSize(v) => v.len(),
             },
             ValueClass::Report(_) => U64_LEN * 2 + 1,
+            ValueClass::Trace(trace) => match trace {
+                TraceClass::Span { .. } => U64_LEN + 1,
+                TraceClass::Index { value, .. } => U64_LEN + value.len() + 1,
+            },
             ValueClass::Any(v) => v.key.len(),
         }
     }
@@ -584,6 +595,10 @@ impl<T> ValueClass<T> {
                 QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_) => SUBSPACE_QUOTA,
             },
             ValueClass::Report(_) => SUBSPACE_REPORT_IN,
+            ValueClass::Trace(trace) => match trace {
+                TraceClass::Span { .. } => SUBSPACE_TRACE,
+                TraceClass::Index { .. } => SUBSPACE_TRACE_INDEX,
+            },
             ValueClass::Any(any) => any.subspace,
         }
     }

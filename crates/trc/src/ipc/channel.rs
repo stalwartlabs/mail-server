@@ -15,9 +15,11 @@ use std::{
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 use crate::{
-    collector::{CollectorThread, Update, COLLECTOR_THREAD, COLLECTOR_UPDATES},
+    ipc::collector::{Update, COLLECTOR_THREAD, COLLECTOR_UPDATES},
     Event, EventType,
 };
+
+use super::collector::{Collector, CollectorThread};
 
 pub(crate) static CHANNEL_FLAGS: AtomicU64 = AtomicU64::new(0);
 pub(crate) const CHANNEL_SIZE: usize = 10240;
@@ -104,5 +106,10 @@ impl Event<EventType> {
                 tx.collector.thread().unpark();
             }
         });
+    }
+
+    pub fn send_with_metrics(self) {
+        Collector::record_metric(self.inner, self.inner.id(), &self.keys);
+        self.send();
     }
 }

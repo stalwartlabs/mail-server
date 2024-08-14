@@ -12,7 +12,10 @@ use serde_json::json;
 use utils::url_params::UrlParams;
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
+    api::{
+        http::{HttpSessionData, ToHttpResponse},
+        HttpRequest, HttpResponse, JsonResponse,
+    },
     services::housekeeper::{Event, PurgeType},
     JMAP,
 };
@@ -24,6 +27,8 @@ impl JMAP {
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
+        body: Option<Vec<u8>>,
+        session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         match (
             path.get(1).copied(),
@@ -114,6 +119,24 @@ impl JMAP {
                 self.housekeeper_request(Event::Purge(PurgeType::Account(account_id)))
                     .await
             }
+            // SPDX-SnippetBegin
+            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+            // SPDX-License-Identifier: LicenseRef-SEL
+            #[cfg(feature = "enterprise")]
+            (Some("undelete"), _, _, _) if self.core.is_enterprise_edition() => {
+                // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
+                // Any attempt to modify, bypass, or disable this license validation mechanism
+                // constitutes a severe violation of the Stalwart Enterprise License Agreement.
+                // Such actions may result in immediate termination of your license, legal action,
+                // and substantial financial penalties. Stalwart Labs Ltd. actively monitors for
+                // unauthorized modifications and will pursue all available legal remedies against
+                // violators to the fullest extent of the law, including but not limited to claims
+                // for copyright infringement, breach of contract, and fraud.
+
+                self.handle_undelete_api_request(req, path, body, session)
+                    .await
+            }
+            // SPDX-SnippetEnd
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }

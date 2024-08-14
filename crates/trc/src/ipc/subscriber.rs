@@ -8,11 +8,13 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc::{self, error::TrySendError};
 
-use crate::{
-    bitset::{Bitset, USIZE_BITS},
+use crate::{Event, EventDetails, EventType, Level, TOTAL_EVENT_COUNT};
+
+use super::{
+    bitset::Bitset,
     channel::ChannelError,
     collector::{Collector, Update, COLLECTOR_UPDATES},
-    Event, EventDetails, EventType, Level, TOTAL_EVENT_COUNT,
+    USIZE_BITS,
 };
 
 const MAX_BATCH_SIZE: usize = 32768;

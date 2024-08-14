@@ -17,11 +17,13 @@ pub mod settings;
 pub mod sieve;
 pub mod stores;
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, str::FromStr, sync::Arc};
 
 use directory::backend::internal::manage;
 use hyper::Method;
+use mail_parser::DateTime;
 use serde::Serialize;
+use store::write::now;
 
 use super::{http::HttpSessionData, HttpRequest, HttpResponse};
 use crate::{auth::AccessToken, JMAP};
@@ -56,7 +58,7 @@ impl JMAP {
             "reports" if is_superuser => self.handle_manage_reports(req, path).await,
             "principal" if is_superuser => self.handle_manage_principal(req, path, body).await,
             "domain" if is_superuser => self.handle_manage_domain(req, path).await,
-            "store" if is_superuser => self.handle_manage_store(req, path).await,
+            "store" if is_superuser => self.handle_manage_store(req, path, body, session).await,
             "reload" if is_superuser => self.handle_manage_reload(req, path).await,
             "dkim" if is_superuser => self.handle_manage_dkim(req, path, body).await,
             "update" if is_superuser => self.handle_manage_update(req, path).await,
@@ -77,12 +79,11 @@ impl JMAP {
                 }
                 _ => Err(trc::ResourceEvent::NotFound.into_err()),
             },
-
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
             #[cfg(feature = "enterprise")]
-            "pro" if is_superuser => {
+            "tracing" if is_superuser && self.core.is_enterprise_edition() => {
                 // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
                 // Any attempt to modify, bypass, or disable this license validation mechanism
                 // constitutes a severe violation of the Stalwart Enterprise License Agreement.
@@ -92,14 +93,7 @@ impl JMAP {
                 // violators to the fullest extent of the law, including but not limited to claims
                 // for copyright infringement, breach of contract, and fraud.
 
-                if self.core.is_enterprise_edition() {
-                    self.handle_enterprise_api_request(req, path, body, session)
-                        .await
-                } else {
-                    Err(manage::unsupported(
-                        "This feature is only available in the Enterprise version",
-                    ))
-                }
+                self.handle_tracing_api_request(req, path).await
             }
             // SPDX-SnippetEnd
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
@@ -114,4 +108,27 @@ pub fn decode_path_element(item: &str) -> Cow<'_, str> {
         .next()
         .map(|(k, _)| k)
         .unwrap_or_else(|| item.into())
+}
+
+pub(super) struct Timestamp(u64);
+
+impl FromStr for Timestamp {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(dt) = DateTime::parse_rfc3339(s) {
+            let instant = dt.to_timestamp() as u64;
+            if instant >= now() {
+                return Ok(Timestamp(instant));
+            }
+        }
+
+        Err(())
+    }
+}
+
+impl Timestamp {
+    pub fn into_inner(self) -> u64 {
+        self.0
+    }
 }

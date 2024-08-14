@@ -13,6 +13,7 @@ use tokio::{
     sync::watch,
 };
 use tokio_rustls::{Accept, TlsAcceptor};
+use trc::{Event, EventType, Key};
 use utils::{config::ipmask::IpAddrMask, snowflake::SnowflakeIdGenerator};
 
 use crate::{
@@ -91,12 +92,14 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
         mut session: SessionData<T>,
         is_tls: bool,
         acme_core: Option<Arc<Core>>,
+        span_start: EventType,
+        span_end: EventType,
     ) {
         let manager = self.clone();
 
         tokio::spawn(async move {
             let start_time = Instant::now();
-            let protocol = session.instance.protocol;
+            let local_port = session.local_port;
             let session_id;
 
             if is_tls {
@@ -113,14 +116,18 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                                 session.instance.span_id_gen.generate().unwrap_or_default();
                             session_id = session.session_id;
 
-                            trc::event!(
-                                Network(trc::NetworkEvent::ConnectionStart),
-                                ListenerId = session.instance.id.clone(),
-                                Protocol = session.instance.protocol,
-                                RemoteIp = session.remote_ip,
-                                RemotePort = session.remote_port,
-                                SpanId = session.session_id,
-                            );
+                            // Send span
+                            Event::with_keys(
+                                span_start,
+                                vec![
+                                    (Key::ListenerId, session.instance.id.clone().into()),
+                                    (Key::LocalPort, session.local_port.into()),
+                                    (Key::RemoteIp, session.remote_ip.into()),
+                                    (Key::RemotePort, session.remote_port.into()),
+                                    (Key::SpanId, session.session_id.into()),
+                                ],
+                            )
+                            .send_with_metrics();
 
                             manager
                                 .handle(SessionData {
@@ -140,7 +147,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                             trc::event!(
                                 Tls(trc::TlsEvent::HandshakeError),
                                 ListenerId = session.instance.id.clone(),
-                                Protocol = session.instance.protocol,
+                                LocalPort = local_port,
                                 RemoteIp = session.remote_ip,
                                 RemotePort = session.remote_port,
                                 Reason = err.to_string(),
@@ -155,14 +162,18 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                             session.instance.span_id_gen.generate().unwrap_or_default();
                         session_id = session.session_id;
 
-                        trc::event!(
-                            Network(trc::NetworkEvent::ConnectionStart),
-                            ListenerId = session.instance.id.clone(),
-                            Protocol = session.instance.protocol,
-                            RemoteIp = session.remote_ip,
-                            RemotePort = session.remote_port,
-                            SpanId = session.session_id,
-                        );
+                        // Send span
+                        Event::with_keys(
+                            span_start,
+                            vec![
+                                (Key::ListenerId, session.instance.id.clone().into()),
+                                (Key::LocalPort, session.local_port.into()),
+                                (Key::RemoteIp, session.remote_ip.into()),
+                                (Key::RemotePort, session.remote_port.into()),
+                                (Key::SpanId, session.session_id.into()),
+                            ],
+                        )
+                        .send_with_metrics();
 
                         session.stream = stream;
                         manager.handle(session).await;
@@ -174,24 +185,31 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
                 session.session_id = session.instance.span_id_gen.generate().unwrap_or_default();
                 session_id = session.session_id;
 
-                trc::event!(
-                    Network(trc::NetworkEvent::ConnectionStart),
-                    ListenerId = session.instance.id.clone(),
-                    Protocol = session.instance.protocol,
-                    RemoteIp = session.remote_ip,
-                    RemotePort = session.remote_port,
-                    SpanId = session.session_id,
-                );
+                // Send span
+                Event::with_keys(
+                    span_start,
+                    vec![
+                        (Key::ListenerId, session.instance.id.clone().into()),
+                        (Key::LocalPort, session.local_port.into()),
+                        (Key::RemoteIp, session.remote_ip.into()),
+                        (Key::RemotePort, session.remote_port.into()),
+                        (Key::SpanId, session.session_id.into()),
+                    ],
+                )
+                .send_with_metrics();
 
                 manager.handle(session).await;
             }
 
-            trc::event!(
-                Network(trc::NetworkEvent::ConnectionEnd),
-                SpanId = session_id,
-                Elapsed = start_time.elapsed(),
-                Protocol = protocol,
-            );
+            // End span
+            Event::with_keys(
+                span_end,
+                vec![
+                    (Key::SpanId, session_id.into()),
+                    (Key::Elapsed, start_time.elapsed().into()),
+                ],
+            )
+            .send_with_metrics();
         });
     }
 

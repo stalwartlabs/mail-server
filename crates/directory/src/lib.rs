@@ -171,11 +171,9 @@ impl IntoError for PoolError<LdapError> {
         match self {
             PoolError::Backend(error) => error.into_error(),
             PoolError::Timeout(_) => trc::StoreEvent::PoolError
-                .ctx(trc::Key::Protocol, trc::Protocol::Ldap)
+                .into_err()
                 .details("Connection timed out"),
-            err => trc::StoreEvent::PoolError
-                .ctx(trc::Key::Protocol, trc::Protocol::Ldap)
-                .reason(err),
+            err => trc::StoreEvent::PoolError.reason(err),
         }
     }
 }
@@ -185,11 +183,9 @@ impl IntoError for PoolError<ImapError> {
         match self {
             PoolError::Backend(error) => error.into_error(),
             PoolError::Timeout(_) => trc::StoreEvent::PoolError
-                .ctx(trc::Key::Protocol, trc::Protocol::Imap)
+                .into_err()
                 .details("Connection timed out"),
-            err => trc::StoreEvent::PoolError
-                .ctx(trc::Key::Protocol, trc::Protocol::Imap)
-                .reason(err),
+            err => trc::StoreEvent::PoolError.reason(err),
         }
     }
 }
@@ -199,11 +195,9 @@ impl IntoError for PoolError<mail_send::Error> {
         match self {
             PoolError::Backend(error) => error.into_error(),
             PoolError::Timeout(_) => trc::StoreEvent::PoolError
-                .ctx(trc::Key::Protocol, trc::Protocol::Smtp)
+                .into_err()
                 .details("Connection timed out"),
-            err => trc::StoreEvent::PoolError
-                .ctx(trc::Key::Protocol, trc::Protocol::Smtp)
-                .reason(err),
+            err => trc::StoreEvent::PoolError.reason(err),
         }
     }
 }

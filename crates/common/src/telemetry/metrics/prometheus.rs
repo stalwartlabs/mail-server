@@ -8,7 +8,7 @@ use prometheus::{
     proto::{Bucket, Counter, Gauge, Histogram, Metric, MetricFamily, MetricType},
     TextEncoder,
 };
-use trc::{atomic::AtomicHistogram, collector::Collector};
+use trc::{atomics::histogram::AtomicHistogram, Collector};
 
 use crate::Core;
 

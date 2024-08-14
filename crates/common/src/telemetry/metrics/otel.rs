@@ -11,7 +11,7 @@ use opentelemetry_sdk::metrics::data::{
     DataPoint, Gauge, Histogram, HistogramDataPoint, Metric, ResourceMetrics, ScopeMetrics, Sum,
     Temporality,
 };
-use trc::{collector::Collector, TelemetryEvent};
+use trc::{Collector, TelemetryEvent};
 
 use crate::{config::telemetry::OtelMetrics, Core};
 

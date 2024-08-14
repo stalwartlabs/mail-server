@@ -17,7 +17,7 @@ s3 = ["store/s3"]
 redis = ["store/redis"]
 
 [dev-dependencies]
-store = { path = "../crates/store", features = ["test_mode"] }
+store = { path = "../crates/store", features = ["test_mode", "enterprise"] }
 nlp = { path = "../crates/nlp" }
 directory = { path = "../crates/directory", features = ["test_mode"] }
 jmap = { path = "../crates/jmap", features = ["test_mode"] }
@@ -26,7 +26,7 @@ imap = { path = "../crates/imap", features = ["test_mode"] }
 imap_proto = { path = "../crates/imap-proto" }
 pop3 = { path = "../crates/pop3", features = ["test_mode"] }
 smtp = { path = "../crates/smtp", features = ["test_mode"] }
-common = { path = "../crates/common", features = ["test_mode"] }
+common = { path = "../crates/common", features = ["test_mode", "enterprise"] }
 trc = { path = "../crates/trc" }
 managesieve = { path = "../crates/managesieve", features = ["test_mode"] }
 smtp-proto = { version = "0.1" }

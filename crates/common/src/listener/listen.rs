@@ -18,6 +18,7 @@ use tokio::{
     sync::watch,
 };
 use tokio_rustls::server::TlsStream;
+use trc::{EventType, HttpEvent, ImapEvent, ManageSieveEvent, Pop3Event, SmtpEvent};
 use utils::{config::Config, UnwrapFailure};
 
 use crate::{
@@ -69,7 +70,6 @@ impl Server {
                     trc::event!(
                         Network(trc::NetworkEvent::ListenStart),
                         ListenerId = instance.id.clone(),
-                        Protocol = instance.protocol,
                         LocalIp = local_addr.ip(),
                         LocalPort = local_addr.port(),
                         Tls = is_tls,
@@ -81,7 +81,6 @@ impl Server {
                     trc::event!(
                         Network(trc::NetworkEvent::ListenError),
                         ListenerId = instance.id.clone(),
-                        Protocol = instance.protocol,
                         LocalIp = local_addr.ip(),
                         LocalPort = local_addr.port(),
                         Tls = is_tls,
@@ -98,6 +97,29 @@ impl Server {
             let instance = instance.clone();
             let core = core.clone();
             tokio::spawn(async move {
+                let (span_start, span_end) = match self.protocol {
+                    ServerProtocol::Smtp | ServerProtocol::Lmtp => (
+                        EventType::Smtp(SmtpEvent::ConnectionStart),
+                        EventType::Smtp(SmtpEvent::ConnectionEnd),
+                    ),
+                    ServerProtocol::Imap => (
+                        EventType::Imap(ImapEvent::ConnectionStart),
+                        EventType::Imap(ImapEvent::ConnectionEnd),
+                    ),
+                    ServerProtocol::Pop3 => (
+                        EventType::Pop3(Pop3Event::ConnectionStart),
+                        EventType::Pop3(Pop3Event::ConnectionEnd),
+                    ),
+                    ServerProtocol::Http => (
+                        EventType::Http(HttpEvent::ConnectionStart),
+                        EventType::Http(HttpEvent::ConnectionEnd),
+                    ),
+                    ServerProtocol::ManageSieve => (
+                        EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
+                        EventType::ManageSieve(ManageSieveEvent::ConnectionEnd),
+                    ),
+                };
+
                 loop {
                     tokio::select! {
                         stream = listener.accept() => {
@@ -122,14 +144,13 @@ impl Server {
                                                                             .unwrap_or(remote_addr);
                                                     if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &core) {
                                                         // Spawn session
-                                                        manager.spawn(session, is_tls, enable_acme);
+                                                        manager.spawn(session, is_tls, enable_acme, span_start, span_end);
                                                     }
                                                 }
                                                 Err(err) => {
                                                     trc::event!(
                                                         Network(trc::NetworkEvent::ProxyError),
                                                         ListenerId = instance.id.clone(),
-                                                        Protocol = instance.protocol,
                                                         LocalIp = local_addr.ip(),
                                                         LocalPort = local_addr.port(),
                                                         Tls = is_tls,
@@ -143,14 +164,13 @@ impl Server {
                                         opts.apply(&session.stream);
 
                                         // Spawn session
-                                        manager.spawn(session, is_tls, enable_acme);
+                                        manager.spawn(session, is_tls, enable_acme, span_start, span_end);
                                     }
                                 }
                                 Err(err) => {
                                     trc::event!(
                                         Network(trc::NetworkEvent::AcceptError),
                                         ListenerId = instance.id.clone(),
-                                        Protocol = instance.protocol,
                                         LocalIp = local_addr.ip(),
                                         LocalPort = local_addr.port(),
                                         Tls = is_tls,
@@ -164,7 +184,6 @@ impl Server {
                             trc::event!(
                                 Network(trc::NetworkEvent::ListenStop),
                                 ListenerId = instance.id.clone(),
-                                Protocol = instance.protocol,
                                 LocalIp = local_addr.ip(),
                                 Tls = is_tls,
                                 LocalPort = local_addr.port(),
@@ -213,7 +232,7 @@ impl BuildSession for Arc<ServerInstance> {
             trc::event!(
                 Network(trc::NetworkEvent::DropBlocked),
                 ListenerId = self.id.clone(),
-                Protocol = self.protocol,
+                LocalPort = local_addr.port(),
                 RemoteIp = remote_ip,
                 RemotePort = remote_port,
             );
@@ -236,7 +255,7 @@ impl BuildSession for Arc<ServerInstance> {
             trc::event!(
                 Limit(trc::LimitEvent::ConcurrentConnection),
                 ListenerId = self.id.clone(),
-                Protocol = self.protocol,
+                LocalPort = local_addr.port(),
                 RemoteIp = remote_ip,
                 RemotePort = remote_port,
                 Limit = self.limiter.max_concurrent,
@@ -349,7 +368,6 @@ impl ServerInstance {
                     trc::event!(
                         Tls(trc::TlsEvent::Handshake),
                         ListenerId = self.id.clone(),
-                        Protocol = self.protocol,
                         SpanId = session_id,
                         Version = format!(
                             "{:?}",
@@ -374,7 +392,6 @@ impl ServerInstance {
                     trc::event!(
                         Tls(trc::TlsEvent::HandshakeError),
                         ListenerId = self.id.clone(),
-                        Protocol = self.protocol,
                         SpanId = session_id,
                         Reason = err.to_string(),
                     );
@@ -385,7 +402,6 @@ impl ServerInstance {
                 trc::event!(
                     Tls(trc::TlsEvent::NotConfigured),
                     ListenerId = self.id.clone(),
-                    Protocol = self.protocol,
                     SpanId = session_id,
                 );
                 Err(())

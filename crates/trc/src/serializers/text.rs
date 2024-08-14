@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::fmt::Display;
+
 use mail_parser::DateTime;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::{Event, EventDetails, Key, Level, Value};
+use crate::{Event, EventDetails, EventType, Key, Level, Value};
 use base64::{engine::general_purpose::STANDARD, Engine};
 
 pub struct FmtWriter<T: AsyncWrite + Unpin> {
@@ -236,9 +238,6 @@ impl<T: AsyncWrite + Unpin> FmtWriter<T> {
                 Value::Ipv6(v) => {
                     self.writer.write_all(v.to_string().as_bytes()).await?;
                 }
-                Value::Protocol(v) => {
-                    self.writer.write_all(v.name().as_bytes()).await?;
-                }
                 Value::Event(e) => {
                     self.writer
                         .write_all(e.inner.description().as_bytes())
@@ -321,9 +320,95 @@ impl Color {
     }
 }
 
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Static(value) => value.fmt(f),
+            Value::String(value) => value.fmt(f),
+            Value::UInt(value) => value.fmt(f),
+            Value::Int(value) => value.fmt(f),
+            Value::Float(value) => value.fmt(f),
+            Value::Timestamp(value) => value.fmt(f),
+            Value::Duration(value) => value.fmt(f),
+            Value::Bytes(value) => STANDARD.encode(value).fmt(f),
+            Value::Bool(value) => value.fmt(f),
+            Value::Ipv4(value) => value.fmt(f),
+            Value::Ipv6(value) => value.fmt(f),
+            Value::Event(value) => {
+                "{".fmt(f)?;
+                value.fmt(f)?;
+                "}".fmt(f)
+            }
+            Value::Array(value) => {
+                f.write_str("[")?;
+                for (i, value) in value.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    value.fmt(f)?;
+                }
+                f.write_str("]")
+            }
+            Value::None => "(null)".fmt(f),
+        }
+    }
+}
+
+impl Display for Event<EventType> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.inner.description().fmt(f)?;
+        " (".fmt(f)?;
+        self.inner.name().fmt(f)?;
+        ")".fmt(f)?;
+
+        if !self.keys.is_empty() {
+            f.write_str(": ")?;
+            for (i, (key, value)) in self.keys.iter().enumerate() {
+                if i > 0 {
+                    f.write_str(", ")?;
+                }
+                key.name().fmt(f)?;
+                f.write_str(" = ")?;
+                value.fmt(f)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{EventType, Level};
+
+    fn to_camel_case(name: &str) -> String {
+        let mut out = String::with_capacity(name.len());
+        let mut upper = true;
+        for ch in name.chars() {
+            if ch.is_alphanumeric() {
+                if upper {
+                    out.push(ch.to_ascii_uppercase());
+                    upper = false;
+                } else {
+                    out.push(ch);
+                }
+            } else {
+                upper = true;
+            }
+        }
+        out
+    }
+
+    fn event_to_class(name: &str) -> String {
+        let (group, name) = name.split_once('.').unwrap();
+        let group = to_camel_case(group);
+        format!(
+            "EventType::{}({}Event::{})",
+            group,
+            group,
+            to_camel_case(name)
+        )
+    }
 
     #[test]
     fn print_all_events() {
@@ -343,9 +428,15 @@ mod tests {
         // sort by name
         names.sort_by(|a, b| a.0.cmp(b.0));
 
-        for (name, description, level) in names {
+        /*for (name, description, level) in names {
             //println!("{:?},", name);
             println!("|`{name}`|{description}|`{level}`|")
+        }*/
+
+        for (pos, (name, _, _)) in names.iter().enumerate() {
+            //println!("{:?},", name);
+            //println!("{} => Some({}),", pos, event_to_class(name));
+            println!("{} => {},", event_to_class(name), pos);
         }
     }
 }

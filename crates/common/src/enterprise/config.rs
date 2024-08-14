@@ -11,13 +11,13 @@
 use std::time::Duration;
 
 use jmap_proto::types::collection::Collection;
-use store::{BitmapKey, Store};
+use store::{BitmapKey, Store, Stores};
 use utils::config::Config;
 
 use super::{license::LicenseValidator, Enterprise};
 
 impl Enterprise {
-    pub async fn parse(config: &mut Config, data: &Store) -> Option<Self> {
+    pub async fn parse(config: &mut Config, stores: &Stores, data: &Store) -> Option<Self> {
         let license = match LicenseValidator::new()
             .try_parse(config.value("enterprise.license-key")?)
             .and_then(|key| {
@@ -57,8 +57,15 @@ impl Enterprise {
         Some(Enterprise {
             license,
             undelete_period: config
-                .property_or_default::<Option<Duration>>("enterprise.undelete-period", "false")
+                .property_or_default::<Option<Duration>>("storage.undelete.hold-for", "false")
                 .unwrap_or_default(),
+            trace_hold_period: config
+                .property_or_default::<Option<Duration>>("tracing.history.hold-for", "90d")
+                .unwrap_or(Some(Duration::from_secs(90 * 24 * 60 * 60))),
+            trace_store: config
+                .value("tracing.history.store")
+                .and_then(|name| stores.stores.get(name))
+                .cloned(),
         })
     }
 }

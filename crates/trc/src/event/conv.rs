@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Debug, time::Duration};
+use std::{borrow::Cow, fmt::Debug, str::FromStr, time::Duration};
 
 use mail_auth::common::headers::HeaderWriter;
 
@@ -121,12 +121,6 @@ impl From<StoreEvent> for Error {
 impl From<AuthEvent> for Error {
     fn from(value: AuthEvent) -> Self {
         Error::new(EventType::Auth(value))
-    }
-}
-
-impl From<Protocol> for Value {
-    fn from(value: Protocol) -> Self {
-        Self::Protocol(value)
     }
 }
 
@@ -405,5 +399,21 @@ impl AssertSuccess for reqwest::Response {
                 .details("HTTP request failed")
                 .ctx_opt(Key::Reason, self.text().await.ok()))
         }
+    }
+}
+
+impl FromStr for EventType {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        EventType::try_parse(s).ok_or(())
+    }
+}
+
+impl FromStr for Key {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Key::try_parse(s).ok_or(())
     }
 }

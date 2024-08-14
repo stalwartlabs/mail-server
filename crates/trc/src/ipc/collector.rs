@@ -11,14 +11,15 @@ use std::{
 };
 
 use ahash::AHashMap;
-use parking_lot::Mutex;
-
-use crate::{
-    bitset::{AtomicBitset, USIZE_BITS},
+use atomics::bitset::AtomicBitset;
+use ipc::{
     channel::{Receiver, CHANNEL_FLAGS, CHANNEL_UPDATE_MARKER},
     subscriber::{Interests, Subscriber},
-    DeliveryEvent, Event, EventDetails, EventType, Level, NetworkEvent, TOTAL_EVENT_COUNT,
+    USIZE_BITS,
 };
+use parking_lot::Mutex;
+
+use crate::*;
 
 pub(crate) type GlobalInterests =
     AtomicBitset<{ (TOTAL_EVENT_COUNT + USIZE_BITS - 1) / USIZE_BITS }>;
@@ -59,13 +60,22 @@ pub struct Collector {
     active_spans: AHashMap<u64, Arc<Event<EventDetails>>>,
 }
 
-const EV_CONN_START: usize = EventType::Network(NetworkEvent::ConnectionStart).id();
-const EV_CONN_END: usize = EventType::Network(NetworkEvent::ConnectionEnd).id();
+const HTTP_CONN_START: usize = EventType::Http(HttpEvent::ConnectionStart).id();
+const HTTP_CONN_END: usize = EventType::Http(HttpEvent::ConnectionEnd).id();
+const IMAP_CONN_START: usize = EventType::Imap(ImapEvent::ConnectionStart).id();
+const IMAP_CONN_END: usize = EventType::Imap(ImapEvent::ConnectionEnd).id();
+const POP3_CONN_START: usize = EventType::Pop3(Pop3Event::ConnectionStart).id();
+const POP3_CONN_END: usize = EventType::Pop3(Pop3Event::ConnectionEnd).id();
+const SMTP_CONN_START: usize = EventType::Smtp(SmtpEvent::ConnectionStart).id();
+const SMTP_CONN_END: usize = EventType::Smtp(SmtpEvent::ConnectionEnd).id();
+const MANAGE_SIEVE_CONN_START: usize =
+    EventType::ManageSieve(ManageSieveEvent::ConnectionStart).id();
+const MANAGE_SIEVE_CONN_END: usize = EventType::ManageSieve(ManageSieveEvent::ConnectionEnd).id();
 const EV_ATTEMPT_START: usize = EventType::Delivery(DeliveryEvent::AttemptStart).id();
 const EV_ATTEMPT_END: usize = EventType::Delivery(DeliveryEvent::AttemptEnd).id();
 
 const STALE_SPAN_CHECK_WATERMARK: usize = 8000;
-const SPAN_MAX_HOLD: u64 = 86400;
+const SPAN_MAX_HOLD: u64 = 60 * 60 * 24; // 1 day
 
 pub(crate) static COLLECTOR_THREAD: LazyLock<Arc<CollectorThread>> = LazyLock::new(|| {
     Arc::new(
@@ -120,7 +130,12 @@ impl Collector {
 
                             // Track spans
                             let event = match event_id {
-                                EV_CONN_START | EV_ATTEMPT_START => {
+                                HTTP_CONN_START
+                                | IMAP_CONN_START
+                                | POP3_CONN_START
+                                | SMTP_CONN_START
+                                | MANAGE_SIEVE_CONN_START
+                                | EV_ATTEMPT_START => {
                                     let event = Arc::new(event);
                                     self.active_spans.insert(
                                         event.span_id().unwrap_or_else(|| {
@@ -128,6 +143,7 @@ impl Collector {
                                         }),
                                         event.clone(),
                                     );
+
                                     if self.active_spans.len() > STALE_SPAN_CHECK_WATERMARK {
                                         self.active_spans.retain(|_, span| {
                                             timestamp.saturating_sub(span.inner.timestamp)
@@ -136,7 +152,13 @@ impl Collector {
                                     }
                                     event
                                 }
-                                EV_CONN_END | EV_ATTEMPT_END => {
+
+                                HTTP_CONN_END
+                                | IMAP_CONN_END
+                                | POP3_CONN_END
+                                | SMTP_CONN_END
+                                | MANAGE_SIEVE_CONN_END
+                                | EV_ATTEMPT_END => {
                                     if let Some(span) = self
                                         .active_spans
                                         .remove(&event.span_id().expect("Missing span ID"))
@@ -258,13 +280,10 @@ impl Collector {
 
     pub fn set_interests(mut interests: Interests) {
         if !interests.is_empty() {
-            for event_type in [
-                EventType::Network(NetworkEvent::ConnectionStart),
-                EventType::Network(NetworkEvent::ConnectionEnd),
-                EventType::Delivery(DeliveryEvent::AttemptStart),
-                EventType::Delivery(DeliveryEvent::AttemptEnd),
-            ] {
-                interests.set(event_type);
+            for event_type in EVENT_TYPES.iter() {
+                if event_type.is_span_start() || event_type.is_span_end() {
+                    interests.set(*event_type);
+                }
             }
         }
 
