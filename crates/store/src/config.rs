@@ -228,6 +228,12 @@ impl Stores {
         #[cfg(feature = "enterprise")]
         for (id, protocol) in composite_stores {
             let prefix = ("store", id.as_str());
+            let compression = config
+                .property_or_default::<CompressionAlgo>(
+                    ("store", id.as_str(), "compression"),
+                    "none",
+                )
+                .unwrap_or(CompressionAlgo::None);
             match protocol.as_str() {
                 "sql-read-replica" => {
                     if let Some(db) = crate::backend::composite::read_replica::SQLReadReplica::open(
@@ -238,7 +244,14 @@ impl Stores {
                     )
                     .await
                     {
-                        self.stores.insert(id, Store::SQLReadReplica(db.into()));
+                        let db = Store::SQLReadReplica(db.into());
+                        self.stores.insert(id.to_string(), db.clone());
+                        self.fts_stores.insert(id.to_string(), db.clone().into());
+                        self.blob_stores.insert(
+                            id.to_string(),
+                            BlobStore::from(db.clone()).with_compression(compression),
+                        );
+                        self.lookup_stores.insert(id.to_string(), db.into());
                     }
                 }
                 "composite-blob" => {
@@ -249,12 +262,7 @@ impl Stores {
                     {
                         let store = BlobStore {
                             backend: crate::BlobBackend::Composite(db.into()),
-                            compression: config
-                                .property_or_default::<CompressionAlgo>(
-                                    ("store", id.as_str(), "compression"),
-                                    "none",
-                                )
-                                .unwrap_or(CompressionAlgo::None),
+                            compression,
                         };
                         self.blob_stores.insert(id, store);
                     }
