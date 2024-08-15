@@ -585,7 +585,7 @@ impl TelemetryEvent {
             TelemetryEvent::LogError => "Log collector error",
             TelemetryEvent::WebhookError => "Webhook collector error",
             TelemetryEvent::JournalError => "Journal collector error",
-            TelemetryEvent::OtelExpoterError => "OpenTelemetry exporter error",
+            TelemetryEvent::OtelExporterError => "OpenTelemetry exporter error",
             TelemetryEvent::OtelMetricsExporterError => "OpenTelemetry metrics exporter error",
             TelemetryEvent::PrometheusExporterError => "Prometheus exporter error",
         }

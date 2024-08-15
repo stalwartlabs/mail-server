@@ -90,7 +90,7 @@ impl JMAP {
             // Enforce anonymous rate limit
             self.is_anonymous_allowed(&session.remote_ip).await?;
 
-            Err(trc::AuthEvent::Error
+            Err(trc::AuthEvent::Failed
                 .into_err()
                 .details("Missing Authorization header.")
                 .caused_by(trc::location!()))

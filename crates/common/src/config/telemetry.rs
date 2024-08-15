@@ -121,6 +121,7 @@ pub struct Tracers {
 pub struct Metrics {
     pub prometheus: Option<PrometheusMetrics>,
     pub otel: Option<Arc<OtelMetrics>>,
+    pub log_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -485,7 +486,7 @@ impl Tracers {
                     EventType::Telemetry(TelemetryEvent::LogError).into()
                 }
                 TelemetrySubscriberType::OtelTracer(_) => {
-                    EventType::Telemetry(TelemetryEvent::OtelExpoterError).into()
+                    EventType::Telemetry(TelemetryEvent::OtelExporterError).into()
                 }
                 TelemetrySubscriberType::Webhook(_) => {
                     EventType::Telemetry(TelemetryEvent::WebhookError).into()
@@ -607,7 +608,29 @@ impl Metrics {
         let mut metrics = Metrics {
             prometheus: None,
             otel: None,
+            log_path: None,
         };
+
+        // Obtain log path
+        for tracer_id in config.sub_keys("tracer", ".type") {
+            if config
+                .value(("tracer", tracer_id, "enable"))
+                .unwrap_or("true")
+                == "true"
+                && config
+                    .value(("tracer", tracer_id, "type"))
+                    .unwrap_or_default()
+                    == "log"
+            {
+                if let Some(path) = config
+                    .value(("tracer", tracer_id, "path"))
+                    .map(|s| s.to_string())
+                {
+                    metrics.log_path = Some(path);
+                    break;
+                }
+            }
+        }
 
         if config
             .property_or_default("metrics.prometheus.enable", "false")

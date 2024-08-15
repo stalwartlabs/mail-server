@@ -26,13 +26,11 @@ struct LogEntry {
 
 impl JMAP {
     pub async fn handle_view_logs(&self, req: &HttpRequest) -> trc::Result<HttpResponse> {
-        // Obtain log file path
         let path = self
             .core
-            .storage
-            .config
-            .get("tracer.log.path")
-            .await?
+            .metrics
+            .log_path
+            .clone()
             .ok_or_else(|| manage::unsupported("Tracer log path not configured"))?;
 
         let params = UrlParams::new(req.uri().query());

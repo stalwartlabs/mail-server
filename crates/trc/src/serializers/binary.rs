@@ -842,7 +842,7 @@ impl EventType {
             EventType::Store(StoreEvent::UnexpectedError) => 533,
             EventType::Telemetry(TelemetryEvent::JournalError) => 534,
             EventType::Telemetry(TelemetryEvent::LogError) => 535,
-            EventType::Telemetry(TelemetryEvent::OtelExpoterError) => 536,
+            EventType::Telemetry(TelemetryEvent::OtelExporterError) => 536,
             EventType::Telemetry(TelemetryEvent::OtelMetricsExporterError) => 537,
             EventType::Telemetry(TelemetryEvent::PrometheusExporterError) => 538,
             EventType::Telemetry(TelemetryEvent::WebhookError) => 539,
@@ -1431,7 +1431,7 @@ impl EventType {
             533 => Some(EventType::Store(StoreEvent::UnexpectedError)),
             534 => Some(EventType::Telemetry(TelemetryEvent::JournalError)),
             535 => Some(EventType::Telemetry(TelemetryEvent::LogError)),
-            536 => Some(EventType::Telemetry(TelemetryEvent::OtelExpoterError)),
+            536 => Some(EventType::Telemetry(TelemetryEvent::OtelExporterError)),
             537 => Some(EventType::Telemetry(
                 TelemetryEvent::OtelMetricsExporterError,
             )),
