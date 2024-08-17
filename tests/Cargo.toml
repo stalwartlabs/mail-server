@@ -20,7 +20,7 @@ redis = ["store/redis"]
 store = { path = "../crates/store", features = ["test_mode", "enterprise"] }
 nlp = { path = "../crates/nlp" }
 directory = { path = "../crates/directory", features = ["test_mode"] }
-jmap = { path = "../crates/jmap", features = ["test_mode"] }
+jmap = { path = "../crates/jmap", features = ["test_mode", "enterprise"] }
 jmap_proto = { path = "../crates/jmap-proto" }
 imap = { path = "../crates/imap", features = ["test_mode"] }
 imap_proto = { path = "../crates/imap-proto" }

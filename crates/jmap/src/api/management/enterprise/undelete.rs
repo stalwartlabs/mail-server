@@ -31,21 +31,21 @@ use crate::{
     JMAP,
 };
 
-#[derive(serde::Deserialize)]
-struct UndeleteRequest<H, C, T> {
-    hash: H,
-    collection: C,
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct UndeleteRequest<H, C, T> {
+    pub hash: H,
+    pub collection: C,
     #[serde(rename = "restoreTime")]
-    time: T,
+    pub time: T,
     #[serde(rename = "cancelDeletion")]
     #[serde(default)]
-    cancel_deletion: Option<T>,
+    pub cancel_deletion: Option<T>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Debug)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
-enum UndeleteResponse {
+pub enum UndeleteResponse {
     Success,
     NotFound,
     Error { reason: String },

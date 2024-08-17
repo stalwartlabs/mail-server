@@ -55,6 +55,7 @@ pub mod email_query_changes;
 pub mod email_search_snippet;
 pub mod email_set;
 pub mod email_submission;
+pub mod enterprise;
 pub mod event_source;
 pub mod mailbox;
 pub mod purge;
@@ -325,6 +326,7 @@ pub async fn jmap_tests() {
     crypto::test(&mut params).await;
     blob::test(&mut params).await;
     purge::test(&mut params).await;
+    enterprise::test(&mut params).await;
 
     if delete {
         params.temp_dir.delete();
@@ -752,6 +754,14 @@ impl ManagementApi {
         })
     }
 
+    pub async fn get<T: DeserializeOwned>(&self, query: &str) -> Result<Response<T>, String> {
+        self.request_raw(Method::GET, query, None)
+            .await
+            .map(|result| {
+                serde_json::from_str::<Response<T>>(&result)
+                    .unwrap_or_else(|err| panic!("{err}: {result}"))
+            })
+    }
     pub async fn request<T: DeserializeOwned>(
         &self,
         method: Method,
