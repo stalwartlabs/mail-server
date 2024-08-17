@@ -14,11 +14,11 @@ use utils::config::{utils::AsKey, Config};
 
 use crate::{BlobBackend, Store, Stores};
 
-pub struct CompositeBlob {
+pub struct DistributedBlob {
     pub stores: Vec<BlobBackend>,
 }
 
-impl CompositeBlob {
+impl DistributedBlob {
     pub fn open(config: &mut Config, prefix: impl AsKey, stores: &Stores) -> Option<Self> {
         let prefix = prefix.as_key();
         let store_ids = config

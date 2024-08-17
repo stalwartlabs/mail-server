@@ -387,16 +387,16 @@ impl JmapInstance {
                     let instance = session.instance.clone();
 
                     async move {
-                        trc::event!(
-                            Http(trc::HttpEvent::RequestUrl),
-                            SpanId = session.session_id,
-                            Url = req.uri().to_string(),
-                        );
-
                         let jmap = JMAP::from(jmap_instance);
 
                         // Obtain remote IP
                         let remote_ip = if !jmap.core.jmap.http_use_forwarded {
+                            trc::event!(
+                                Http(trc::HttpEvent::RequestUrl),
+                                SpanId = session.session_id,
+                                Url = req.uri().to_string(),
+                            );
+
                             session.remote_ip
                         } else if let Some(forwarded_for) = req
                             .headers()
@@ -435,6 +435,13 @@ impl JmapInstance {
                                     .and_then(|h| h.parse::<IpAddr>().ok())
                             })
                         {
+                            trc::event!(
+                                Http(trc::HttpEvent::RequestUrl),
+                                SpanId = session.session_id,
+                                RemoteIp = forwarded_for,
+                                Url = req.uri().to_string(),
+                            );
+
                             forwarded_for
                         } else {
                             trc::event!(

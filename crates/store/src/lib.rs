@@ -209,7 +209,7 @@ pub enum BlobBackend {
     #[cfg(feature = "s3")]
     S3(Arc<S3Store>),
     #[cfg(feature = "enterprise")]
-    Composite(Arc<backend::composite::distributed_blob::CompositeBlob>),
+    Composite(Arc<backend::composite::distributed_blob::DistributedBlob>),
 }
 
 #[derive(Clone)]

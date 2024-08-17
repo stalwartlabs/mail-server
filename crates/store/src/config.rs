@@ -213,7 +213,7 @@ impl Stores {
                     }
                 }
                 #[cfg(feature = "enterprise")]
-                "sql-read-replica" | "composite-blob" => {
+                "sql-read-replica" | "distributed-blob" => {
                     composite_stores.push((store_id, protocol));
                 }
                 unknown => {
@@ -254,9 +254,9 @@ impl Stores {
                         self.lookup_stores.insert(id.to_string(), db.into());
                     }
                 }
-                "composite-blob" => {
+                "distributed-blob" => {
                     if let Some(db) =
-                        crate::backend::composite::distributed_blob::CompositeBlob::open(
+                        crate::backend::composite::distributed_blob::DistributedBlob::open(
                             config, prefix, self,
                         )
                     {

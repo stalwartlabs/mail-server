@@ -183,7 +183,11 @@ impl Servers {
 
         // Parse proxy networks
         let mut proxy_networks = Vec::new();
-        let proxy_keys = if config.has_prefix(("server.listener", id, "proxy.trusted-networks")) {
+        let proxy_keys = if config
+            .value(("server.listener", id, "proxy.trusted-networks"))
+            .is_some()
+            || config.has_prefix(("server.listener", id, "proxy.trusted-networks"))
+        {
             ("server.listener", id, "proxy.trusted-networks").as_key()
         } else {
             "server.proxy.trusted-networks".as_key()
