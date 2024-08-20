@@ -65,17 +65,12 @@ impl Core {
 
         #[cfg(feature = "enterprise")]
         if enterprise.is_none() {
-            if matches!(data, Store::SQLReadReplica(_)) {
+            if data.is_enterprise_store() {
                 config
                     .new_build_error("storage.data", "SQL read replicas is an Enterprise feature");
                 data = Store::None;
             }
-            stores
-                .stores
-                .retain(|_, store| !matches!(store, Store::SQLReadReplica(_)));
-            stores
-                .blob_stores
-                .retain(|_, store| !matches!(store.backend, BlobBackend::Composite(_)));
+            stores.disable_enterprise_only();
         }
         // SPDX-SnippetEnd
 

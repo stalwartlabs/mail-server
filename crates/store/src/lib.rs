@@ -184,7 +184,7 @@ pub enum Store {
     MySQL(Arc<MysqlStore>),
     #[cfg(feature = "rocks")]
     RocksDb(Arc<RocksDbStore>),
-    #[cfg(feature = "enterprise")]
+    #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
     SQLReadReplica(Arc<backend::composite::read_replica::SQLReadReplica>),
     #[default]
     None,
@@ -669,7 +669,7 @@ impl Store {
             Store::PostgreSQL(_) => true,
             #[cfg(feature = "mysql")]
             Store::MySQL(_) => true,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Store::SQLReadReplica(_) => true,
             _ => false,
         }
@@ -683,6 +683,20 @@ impl Store {
             Store::PostgreSQL(_) => true,
             _ => false,
         }
+    }
+
+    #[cfg(feature = "enterprise")]
+    pub fn is_enterprise_store(&self) -> bool {
+        match self {
+            #[cfg(any(feature = "postgres", feature = "mysql"))]
+            Store::SQLReadReplica(_) => true,
+            _ => false,
+        }
+    }
+
+    #[cfg(not(feature = "enterprise"))]
+    pub fn is_enterprise_store(&self) -> bool {
+        false
     }
 }
 
@@ -699,7 +713,7 @@ impl std::fmt::Debug for Store {
             Self::MySQL(_) => f.debug_tuple("MySQL").finish(),
             #[cfg(feature = "rocks")]
             Self::RocksDb(_) => f.debug_tuple("RocksDb").finish(),
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(_) => f.debug_tuple("SQLReadReplica").finish(),
             Self::None => f.debug_tuple("None").finish(),
         }
@@ -715,6 +729,19 @@ impl From<Value<'_>> for trc::Value {
             Value::Text(v) => trc::Value::String(v.into_owned()),
             Value::Blob(v) => trc::Value::Bytes(v.into_owned()),
             Value::Null => trc::Value::None,
+        }
+    }
+}
+
+impl Stores {
+    pub fn disable_enterprise_only(&mut self) {
+        #[cfg(feature = "enterprise")]
+        {
+            #[cfg(any(feature = "postgres", feature = "mysql"))]
+            self.stores
+                .retain(|_, store| !matches!(store, Store::SQLReadReplica(_)));
+            self.blob_stores
+                .retain(|_, store| !matches!(store.backend, BlobBackend::Composite(_)));
         }
     }
 }

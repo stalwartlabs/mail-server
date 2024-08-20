@@ -235,6 +235,7 @@ impl Stores {
                 )
                 .unwrap_or(CompressionAlgo::None);
             match protocol.as_str() {
+                #[cfg(any(feature = "postgres", feature = "mysql"))]
                 "sql-read-replica" => {
                     if let Some(db) = crate::backend::composite::read_replica::SQLReadReplica::open(
                         config,

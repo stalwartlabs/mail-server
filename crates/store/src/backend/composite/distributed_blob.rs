@@ -71,6 +71,10 @@ impl DistributedBlob {
                     Store::MySQL(store) => store.get_blob(key, read_range).await,
                     #[cfg(feature = "rocks")]
                     Store::RocksDb(store) => store.get_blob(key, read_range).await,
+                    #[cfg(all(
+                        feature = "enterprise",
+                        any(feature = "postgres", feature = "mysql")
+                    ))]
                     Store::SQLReadReplica(store) => store.get_blob(key, read_range).await,
                     Store::None => Err(trc::StoreEvent::NotConfigured.into()),
                 },
@@ -97,6 +101,10 @@ impl DistributedBlob {
                     Store::MySQL(store) => store.put_blob(key, data).await,
                     #[cfg(feature = "rocks")]
                     Store::RocksDb(store) => store.put_blob(key, data).await,
+                    #[cfg(all(
+                        feature = "enterprise",
+                        any(feature = "postgres", feature = "mysql")
+                    ))]
                     Store::SQLReadReplica(store) => store.put_blob(key, data).await,
                     Store::None => Err(trc::StoreEvent::NotConfigured.into()),
                 },
@@ -123,6 +131,10 @@ impl DistributedBlob {
                     Store::MySQL(store) => store.delete_blob(key).await,
                     #[cfg(feature = "rocks")]
                     Store::RocksDb(store) => store.delete_blob(key).await,
+                    #[cfg(all(
+                        feature = "enterprise",
+                        any(feature = "postgres", feature = "mysql")
+                    ))]
                     Store::SQLReadReplica(store) => store.delete_blob(key).await,
                     Store::None => Err(trc::StoreEvent::NotConfigured.into()),
                 },

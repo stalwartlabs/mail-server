@@ -9,4 +9,5 @@
  */
 
 pub mod distributed_blob;
+#[cfg(any(feature = "postgres", feature = "mysql"))]
 pub mod read_replica;
