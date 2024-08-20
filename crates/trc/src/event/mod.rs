@@ -692,3 +692,9 @@ impl From<EventType> for usize {
         value.id()
     }
 }
+
+impl AsRef<Event<EventDetails>> for Event<EventDetails> {
+    fn as_ref(&self) -> &Event<EventDetails> {
+        self
+    }
+}

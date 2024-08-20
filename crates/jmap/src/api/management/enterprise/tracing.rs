@@ -22,7 +22,8 @@ use serde_json::json;
 use store::ahash::{AHashMap, AHashSet};
 use trc::{
     ipc::{bitset::Bitset, subscriber::SubscriberBuilder},
-    Key, Value,
+    serializers::json::JsonEventSerializer,
+    DeliveryEvent, EventType, Key, QueueEvent, Value,
 };
 use utils::{snowflake::SnowflakeIdGenerator, url_params::UrlParams};
 
@@ -39,12 +40,13 @@ impl JMAP {
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
+        account_id: u32,
     ) -> trc::Result<HttpResponse> {
         let params = UrlParams::new(req.uri().query());
 
         match (
-            path.get(2).copied().unwrap(),
-            path.get(3).copied(),
+            path.get(1).copied().unwrap_or_default(),
+            path.get(2).copied(),
             req.method(),
         ) {
             ("spans", None, &Method::GET) => {
@@ -97,16 +99,14 @@ impl JMAP {
                     .map(|t| t.into_inner())
                     .and_then(SnowflakeIdGenerator::from_timestamp)
                     .unwrap_or(0);
-                let span_ids = self
+                let values = params.get("values").is_some();
+                let store = self
                     .core
                     .enterprise
                     .as_ref()
                     .and_then(|e| e.trace_store.as_ref())
-                    .ok_or_else(|| {
-                        manage::error("Unavailable", "No tracing store has been configured".into())
-                    })?
-                    .query_spans(&tracing_query, after, before)
-                    .await?;
+                    .ok_or_else(|| manage::unsupported("No tracing store has been configured"))?;
+                let span_ids = store.query_spans(&tracing_query, after, before).await?;
 
                 let (total, span_ids) = if limit > 0 {
                     let offset = page.saturating_sub(1) * limit;
@@ -118,13 +118,41 @@ impl JMAP {
                     (span_ids.len(), span_ids)
                 };
 
-                Ok(JsonResponse::new(json!({
-                        "data": {
-                            "items": span_ids,
-                            "total": total,
-                        },
-                }))
-                .into_http_response())
+                if values && !span_ids.is_empty() {
+                    let mut values = Vec::with_capacity(span_ids.len());
+
+                    for span_id in span_ids {
+                        for event in store.get_span(span_id).await? {
+                            if matches!(
+                                event.inner.typ,
+                                EventType::Delivery(DeliveryEvent::AttemptStart)
+                                    | EventType::Queue(
+                                        QueueEvent::QueueMessage
+                                            | QueueEvent::QueueMessageAuthenticated
+                                    )
+                            ) {
+                                values.push(event);
+                                break;
+                            }
+                        }
+                    }
+
+                    Ok(JsonResponse::new(json!({
+                            "data": {
+                                "items": JsonEventSerializer::new(values).with_spans(),
+                                "total": total,
+                            },
+                    }))
+                    .into_http_response())
+                } else {
+                    Ok(JsonResponse::new(json!({
+                            "data": {
+                                "items": span_ids,
+                                "total": total,
+                            },
+                    }))
+                    .into_http_response())
+                }
             }
             ("span", id, &Method::GET) => {
                 let store = self
@@ -132,9 +160,7 @@ impl JMAP {
                     .enterprise
                     .as_ref()
                     .and_then(|e| e.trace_store.as_ref())
-                    .ok_or_else(|| {
-                        manage::error("Unavailable", "No tracing store has been configured".into())
-                    })?;
+                    .ok_or_else(|| manage::unsupported("No tracing store has been configured"))?;
 
                 let mut events = Vec::new();
                 for span_id in id
@@ -143,21 +169,45 @@ impl JMAP {
                     .split(',')
                 {
                     if let Ok(span_id) = span_id.parse::<u64>() {
-                        events.push(store.get_span(span_id).await?);
+                        events.push(
+                            JsonEventSerializer::new(store.get_span(span_id).await?)
+                                .with_description()
+                                .with_explanation(),
+                        );
+                    } else {
+                        events.push(JsonEventSerializer::new(Vec::new()));
                     }
                 }
 
-                Ok(JsonResponse::new(json!({
-                        "data": events,
-                }))
-                .into_http_response())
+                if events.len() == 1 && id.is_some() {
+                    Ok(JsonResponse::new(json!({
+                            "data": events.into_iter().next().unwrap(),
+                    }))
+                    .into_http_response())
+                } else {
+                    Ok(JsonResponse::new(json!({
+                            "data": events,
+                    }))
+                    .into_http_response())
+                }
             }
-            ("live", None, &Method::GET) => {
-                let mut filters = AHashMap::new();
+            ("live", Some("token"), &Method::GET) => {
+                // Issue a live tracing token valid for 60 seconds
+
+                Ok(JsonResponse::new(json!({
+                    "data": self.issue_custom_token(account_id, "live_tracing", "web", 60).await?,
+            }))
+            .into_http_response())
+            }
+            ("live", _, &Method::GET) => {
+                let mut key_filters = AHashMap::new();
+                let mut filter = None;
 
                 for (key, value) in params.into_inner() {
-                    if let Some(key) = Key::try_parse(key.as_ref()) {
-                        filters.insert(key, value.into_owned());
+                    if key == "filter" {
+                        filter = value.into_owned().into();
+                    } else if let Some(key) = Key::try_parse(key.to_ascii_lowercase().as_str()) {
+                        key_filters.insert(key, value.into_owned());
                     }
                 }
 
@@ -189,7 +239,7 @@ impl JMAP {
                                 match tokio::time::timeout(timeout, rx.recv()).await {
                                     Ok(Some(event_batch)) => {
                                         for event in event_batch {
-                                            if filters.is_empty()
+                                            if (filter.is_none() && key_filters.is_empty())
                                                 || event
                                                     .span_id()
                                                     .map_or(false, |span_id| active_span_ids.contains(&span_id))
@@ -202,34 +252,32 @@ impl JMAP {
                                                     .iter()
                                                     .chain(event.inner.span.as_ref().map_or(([]).iter(), |s| s.keys.iter()))
                                                 {
-                                                    if let Some(needle) = filters.get(key) {
+                                                    if let Some(needle) = key_filters.get(key).or(filter.as_ref()) {
                                                         let matches = match value {
                                                             Value::Static(haystack) => haystack.contains(needle),
                                                             Value::String(haystack) => haystack.contains(needle),
-                                                            Value::UInt(haystack) => haystack.to_string().contains(needle),
-                                                            Value::Int(haystack) => haystack.to_string().contains(needle),
-                                                            Value::Float(haystack) => haystack.to_string().contains(needle),
                                                             Value::Timestamp(haystack) => {
                                                                 DateTime::from_timestamp(*haystack as i64)
                                                                     .to_rfc3339()
                                                                     .contains(needle)
                                                             }
-                                                            Value::Duration(haystack) => {
-                                                                haystack.to_string().contains(needle)
-                                                            }
-                                                            Value::Bytes(haystack) => std::str::from_utf8(haystack)
-                                                                .unwrap_or_default()
-                                                                .contains(needle),
                                                             Value::Bool(true) => needle == "true",
                                                             Value::Bool(false) => needle == "false",
                                                             Value::Ipv4(haystack) => haystack.to_string().contains(needle),
                                                             Value::Ipv6(haystack) => haystack.to_string().contains(needle),
-                                                            Value::Event(_) | Value::Array(_) | Value::None => false,
+                                                            Value::Event(_) |
+                                                            Value::Array(_) |
+                                                            Value::UInt(_) |
+                                                            Value::Int(_) |
+                                                            Value::Float(_) |
+                                                            Value::Duration(_) |
+                                                            Value::Bytes(_) |
+                                                            Value::None => false,
                                                         };
 
                                                         if matches {
                                                             matched_keys.insert(*key);
-                                                            if matched_keys.len() == filters.len() {
+                                                            if filter.is_some() || matched_keys.len() == key_filters.len() {
                                                                 if let Some(span_id) = event.span_id() {
                                                                     active_span_ids.insert(span_id);
                                                                 }
@@ -254,10 +302,12 @@ impl JMAP {
                                         last_message = Instant::now();
                                         yield Ok(Frame::data(Bytes::from(format!(
                                             "event: state\ndata: {}\n\n",
-                                            serde_json::to_string(&events).unwrap()
+                                            serde_json::to_string(
+                                                &JsonEventSerializer::new(std::mem::take(&mut events))
+                                                .with_description()
+                                                .with_explanation()).unwrap_or_default()
                                         ))));
 
-                                        events.clear();
                                         ping_interval
                                     } else {
                                         throttle - elapsed

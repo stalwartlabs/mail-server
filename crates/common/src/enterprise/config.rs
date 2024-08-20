@@ -57,10 +57,10 @@ impl Enterprise {
         Some(Enterprise {
             license,
             undelete_period: config
-                .property_or_default::<Option<Duration>>("storage.undelete.hold-for", "false")
+                .property_or_default::<Option<Duration>>("storage.undelete.retention", "false")
                 .unwrap_or_default(),
             trace_hold_period: config
-                .property_or_default::<Option<Duration>>("tracing.history.hold-for", "90d")
+                .property_or_default::<Option<Duration>>("tracing.history.retention", "90d")
                 .unwrap_or(Some(Duration::from_secs(90 * 24 * 60 * 60))),
             trace_store: config
                 .value("tracing.history.store")

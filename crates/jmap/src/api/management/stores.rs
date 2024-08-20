@@ -6,7 +6,7 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use common::manager::webadmin::Resource;
-use directory::backend::internal::manage::ManageDirectory;
+use directory::backend::internal::manage::{self, ManageDirectory};
 use hyper::Method;
 use serde_json::json;
 use utils::url_params::UrlParams;
@@ -123,7 +123,7 @@ impl JMAP {
             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
             #[cfg(feature = "enterprise")]
-            (Some("undelete"), _, _, _) if self.core.is_enterprise_edition() => {
+            (Some("undelete"), _, _, _) => {
                 // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
                 // Any attempt to modify, bypass, or disable this license validation mechanism
                 // constitutes a severe violation of the Stalwart Enterprise License Agreement.
@@ -133,8 +133,12 @@ impl JMAP {
                 // violators to the fullest extent of the law, including but not limited to claims
                 // for copyright infringement, breach of contract, and fraud.
 
-                self.handle_undelete_api_request(req, path, body, session)
-                    .await
+                if self.core.is_enterprise_edition() {
+                    self.handle_undelete_api_request(req, path, body, session)
+                        .await
+                } else {
+                    Err(manage::enterprise())
+                }
             }
             // SPDX-SnippetEnd
             _ => Err(trc::ResourceEvent::NotFound.into_err()),

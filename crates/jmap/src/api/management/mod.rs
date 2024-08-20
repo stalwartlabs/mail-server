@@ -83,7 +83,7 @@ impl JMAP {
             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
             #[cfg(feature = "enterprise")]
-            "tracing" if is_superuser && self.core.is_enterprise_edition() => {
+            "tracing" if is_superuser => {
                 // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
                 // Any attempt to modify, bypass, or disable this license validation mechanism
                 // constitutes a severe violation of the Stalwart Enterprise License Agreement.
@@ -93,7 +93,12 @@ impl JMAP {
                 // violators to the fullest extent of the law, including but not limited to claims
                 // for copyright infringement, breach of contract, and fraud.
 
-                self.handle_tracing_api_request(req, path).await
+                if self.core.is_enterprise_edition() {
+                    self.handle_tracing_api_request(req, path, access_token.primary_id())
+                        .await
+                } else {
+                    Err(manage::enterprise())
+                }
             }
             // SPDX-SnippetEnd
             _ => Err(trc::ResourceEvent::NotFound.into_err()),

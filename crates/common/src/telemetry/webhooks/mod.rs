@@ -20,7 +20,8 @@ use store::write::now;
 use tokio::sync::mpsc;
 use trc::{
     ipc::subscriber::{EventBatch, SubscriberBuilder},
-    ServerEvent, TelemetryEvent,
+    serializers::json::JsonEventSerializer,
+    Event, EventDetails, ServerEvent, TelemetryEvent,
 };
 
 use super::LONG_SLUMBER;
@@ -97,7 +98,7 @@ pub(crate) fn spawn_webhook_tracer(builder: SubscriberBuilder, settings: Webhook
 
 #[derive(Serialize)]
 struct EventWrapper {
-    events: EventBatch,
+    events: JsonEventSerializer<Vec<Arc<Event<EventDetails>>>>,
 }
 
 fn spawn_webhook_handler(
@@ -108,12 +109,14 @@ fn spawn_webhook_handler(
 ) {
     tokio::spawn(async move {
         in_flight.store(true, Ordering::Relaxed);
-        let wrapper = EventWrapper { events };
+        let wrapper = EventWrapper {
+            events: JsonEventSerializer::new(events).with_id(),
+        };
 
         if let Err(err) = post_webhook_events(&settings, &wrapper).await {
             trc::event!(Telemetry(TelemetryEvent::WebhookError), Details = err);
 
-            if webhook_tx.send(wrapper.events).await.is_err() {
+            if webhook_tx.send(wrapper.events.into_inner()).await.is_err() {
                 trc::event!(
                     Server(ServerEvent::ThreadError),
                     Details = "Failed to send failed webhook events back to main thread",

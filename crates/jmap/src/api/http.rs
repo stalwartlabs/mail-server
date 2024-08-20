@@ -279,11 +279,45 @@ impl JMAP {
                 }
 
                 // Authenticate user
-                let (_, access_token) = self.authenticate_headers(&req, &session).await?;
-                let body = fetch_body(&mut req, 1024 * 1024, session.session_id).await;
-                return self
-                    .handle_api_manage_request(&req, body, access_token, &session)
-                    .await;
+                match self.authenticate_headers(&req, &session).await {
+                    Ok((_, access_token)) => {
+                        let body = fetch_body(&mut req, 1024 * 1024, session.session_id).await;
+                        return self
+                            .handle_api_manage_request(&req, body, access_token, &session)
+                            .await;
+                    }
+                    Err(err) => {
+                        #[cfg(feature = "enterprise")]
+                        {
+                            // SPDX-SnippetBegin
+                            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                            // SPDX-License-Identifier: LicenseRef-SEL
+
+                            // Eventsource does not support authentication, validate the token instead
+                            if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed))
+                                && self.core.is_enterprise_edition()
+                            {
+                                if let Some(token) =
+                                    req.uri().path().strip_prefix("/api/tracing/live/")
+                                {
+                                    let (account_id, _, _) =
+                                        self.validate_access_token("live_tracing", token).await?;
+
+                                    return self
+                                        .handle_tracing_api_request(
+                                            &req,
+                                            vec!["", "live"],
+                                            account_id,
+                                        )
+                                        .await;
+                                }
+                            }
+                            // SPDX-SnippetEnd
+                        }
+
+                        return Err(err);
+                    }
+                }
             }
             "mail" => {
                 if req.method() == Method::GET

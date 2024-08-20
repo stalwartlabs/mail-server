@@ -232,6 +232,26 @@ impl JMAP {
         })
     }
 
+    pub async fn issue_custom_token(
+        &self,
+        account_id: u32,
+        grant_type: &str,
+        client_id: &str,
+        expiry_in: u64,
+    ) -> trc::Result<String> {
+        self.encode_access_token(
+            grant_type,
+            account_id,
+            &self
+                .password_hash(account_id)
+                .await
+                .map_err(|err| trc::StoreEvent::UnexpectedError.into_err().details(err))?,
+            client_id,
+            expiry_in,
+        )
+        .map_err(|err| trc::StoreEvent::UnexpectedError.into_err().details(err))
+    }
+
     fn encode_access_token(
         &self,
         grant_type: &str,

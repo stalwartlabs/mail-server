@@ -381,6 +381,7 @@ impl Display for Event<EventType> {
 mod tests {
     use crate::{EventType, Level};
 
+    #[allow(dead_code)]
     fn to_camel_case(name: &str) -> String {
         let mut out = String::with_capacity(name.len());
         let mut upper = true;
@@ -399,6 +400,7 @@ mod tests {
         out
     }
 
+    #[allow(dead_code)]
     fn event_to_class(name: &str) -> String {
         let (group, name) = name.split_once('.').unwrap();
         let group = to_camel_case(group);
@@ -408,6 +410,12 @@ mod tests {
             group,
             to_camel_case(name)
         )
+    }
+
+    #[allow(dead_code)]
+    fn event_to_webadmin_class(name: &str) -> String {
+        let (group, name) = name.split_once('.').unwrap();
+        format!("{}{}", to_camel_case(group), to_camel_case(name))
     }
 
     #[test]
@@ -435,8 +443,12 @@ mod tests {
 
         for (pos, (name, _, _)) in names.iter().enumerate() {
             //println!("{:?},", name);
-            //println!("{} => Some({}),", pos, event_to_class(name));
-            println!("{} => {},", event_to_class(name), pos);
+            println!("{} => Some({}),", pos, event_to_class(name));
+            //println!("{} => {},", event_to_class(name), pos);
+            /*println!(
+                "#[serde(rename = \"{name}\")]\n{},",
+                event_to_webadmin_class(name)
+            );*/
         }
     }
 }
