@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.9.2] - 2024-08-21
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+## Added
+- Message delivery history (Enterprise feature)
+- Live tracing and logging (Enterprise feature)
+- SQL Read Replicas (Enterprise feature)
+- Distributed S3 Blob Store (Enterprise feature)
+
+### Changed
+
+### Fixed
+- Autodiscover request parser issues.
+- Do not create tables when using SQL as an external directory (fixes #291)
+- Do not hardcode logger id (fixes #348)
+- Include `Forwarded-For IP` address in `http.request-url` event (fixes #682)
+
 ## [0.9.1] - 2024-08-08
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.

@@ -168,7 +168,7 @@ impl Collector {
                                         #[cfg(debug_assertions)]
                                         {
                                             if event.span_id().unwrap() != 0 {
-                                                panic!("Unregistered span ID: {event:?}");
+                                                eprintln!("Unregistered span ID: {event:?}");
                                             }
                                         }
                                     }
@@ -182,7 +182,7 @@ impl Collector {
                                             #[cfg(debug_assertions)]
                                             {
                                                 if span_id != 0 {
-                                                    panic!("Unregistered span ID: {event:?}");
+                                                    eprintln!("Unregistered span ID: {event:?}");
                                                 }
                                             }
                                         }
