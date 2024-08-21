@@ -219,6 +219,7 @@ async fn undelete(_params: &mut JMAPTest) {
     api.get::<serde_json::Value>("/api/store/purge/account/jdoe@example.com")
         .await
         .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
     let deleted = api
         .get::<List<DeletedBlob<String, String, String>>>("/api/store/undelete/jdoe@example.com")
         .await

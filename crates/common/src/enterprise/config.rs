@@ -60,8 +60,8 @@ impl Enterprise {
                 .property_or_default::<Option<Duration>>("storage.undelete.retention", "false")
                 .unwrap_or_default(),
             trace_hold_period: config
-                .property_or_default::<Option<Duration>>("tracing.history.retention", "90d")
-                .unwrap_or(Some(Duration::from_secs(90 * 24 * 60 * 60))),
+                .property_or_default::<Option<Duration>>("tracing.history.retention", "30d")
+                .unwrap_or(Some(Duration::from_secs(30 * 24 * 60 * 60))),
             trace_store: config
                 .value("tracing.history.store")
                 .and_then(|name| stores.stores.get(name))

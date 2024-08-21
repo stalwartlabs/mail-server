@@ -746,7 +746,7 @@ impl Store {
             (SUBSPACE_BITMAP_TEXT, false),
             (SUBSPACE_INDEXES, false),
             (SUBSPACE_TRACE, true),
-            (SUBSPACE_TRACE_INDEX, false),
+            (SUBSPACE_TRACE_INDEX, true),
         ] {
             let from_key = crate::write::AnyKey {
                 subspace,
