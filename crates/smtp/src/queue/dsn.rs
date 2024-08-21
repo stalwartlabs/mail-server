@@ -17,6 +17,7 @@ use std::time::Duration;
 use store::write::now;
 
 use crate::core::SMTP;
+use crate::outbound::client::from_error_status;
 
 use super::{
     Domain, Error, ErrorDetails, HostResponse, Message, MessageSource, QueueEnvelope, Recipient,
@@ -79,7 +80,8 @@ impl SMTP {
                         SpanId = message.span_id,
                         To = rcpt.address_lcase.clone(),
                         Hostname = response.hostname.clone(),
-                        Details = response.response.to_string(),
+                        Code = response.response.code,
+                        Details = response.response.message.to_string(),
                     );
                 }
                 Status::TemporaryFailure(response) if domain.notify.due <= now => {
@@ -88,7 +90,8 @@ impl SMTP {
                         SpanId = message.span_id,
                         To = rcpt.address_lcase.clone(),
                         Hostname = response.hostname.entity.clone(),
-                        Details = response.response.to_string(),
+                        Code = response.response.code,
+                        Details = response.response.message.to_string(),
                         NextRetry = trc::Value::Timestamp(domain.retry.due),
                         Expires = trc::Value::Timestamp(domain.expires),
                         Total = domain.retry.inner,
@@ -100,28 +103,29 @@ impl SMTP {
                         SpanId = message.span_id,
                         To = rcpt.address_lcase.clone(),
                         Hostname = response.hostname.entity.clone(),
-                        Details = response.response.to_string(),
+                        Code = response.response.code,
+                        Details = response.response.message.to_string(),
                         Total = domain.retry.inner,
                     );
                 }
                 Status::Scheduled => {
                     // There is no status for this address, use the domain's status.
                     match &domain.status {
-                        Status::PermanentFailure(err) => {
+                        Status::PermanentFailure(_) => {
                             trc::event!(
                                 Delivery(trc::DeliveryEvent::DsnPermFail),
                                 SpanId = message.span_id,
                                 To = rcpt.address_lcase.clone(),
-                                Details = err.to_string(),
+                                Details = from_error_status(&domain.status),
                                 Total = domain.retry.inner,
                             );
                         }
-                        Status::TemporaryFailure(err) if domain.notify.due <= now => {
+                        Status::TemporaryFailure(_) if domain.notify.due <= now => {
                             trc::event!(
                                 Delivery(trc::DeliveryEvent::DsnTempFail),
                                 SpanId = message.span_id,
                                 To = rcpt.address_lcase.clone(),
-                                Details = err.to_string(),
+                                Details = from_error_status(&domain.status),
                                 NextRetry = trc::Value::Timestamp(domain.retry.due),
                                 Expires = trc::Value::Timestamp(domain.expires),
                                 Total = domain.retry.inner,

@@ -33,12 +33,8 @@ send = "daily"
 
 #[tokio::test]
 async fn report_scheduler() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
 
     // Create scheduler
     let local = TestServer::new("smtp_report_queue_test", CONFIG, true).await;

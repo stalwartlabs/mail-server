@@ -617,3 +617,60 @@ pub enum StartTlsResult {
         smtp_client: SmtpClient<TcpStream>,
     },
 }
+
+pub(crate) fn from_mail_send_error(error: &mail_send::Error) -> trc::Error {
+    let event = trc::EventType::Smtp(trc::SmtpEvent::Error).into_err();
+    match error {
+        mail_send::Error::Io(err) => event.details("I/O Error").reason(err),
+        mail_send::Error::Tls(err) => event.details("TLS Error").reason(err),
+        mail_send::Error::Base64(err) => event.details("Base64 Error").reason(err),
+        mail_send::Error::Auth(err) => event.details("SMTP Authentication Error").reason(err),
+        mail_send::Error::UnparseableReply => event.details("Unparseable SMTP Reply"),
+        mail_send::Error::UnexpectedReply(reply) => event
+            .details("Unexpected SMTP Response")
+            .ctx(trc::Key::Code, reply.code)
+            .ctx(trc::Key::Reason, reply.message.clone()),
+        mail_send::Error::AuthenticationFailed(reply) => event
+            .details("SMTP Authentication Failed")
+            .ctx(trc::Key::Code, reply.code)
+            .ctx(trc::Key::Reason, reply.message.clone()),
+        mail_send::Error::InvalidTLSName => event.details("Invalid TLS Name"),
+        mail_send::Error::MissingCredentials => event.details("Missing Authentication Credentials"),
+        mail_send::Error::MissingMailFrom => event.details("Missing Message Sender"),
+        mail_send::Error::MissingRcptTo => event.details("Missing Message Recipients"),
+        mail_send::Error::UnsupportedAuthMechanism => {
+            event.details("Unsupported Authentication Mechanism")
+        }
+        mail_send::Error::Timeout => event.details("Connection Timeout"),
+        mail_send::Error::MissingStartTls => event.details("STARTTLS not available"),
+    }
+}
+
+pub(crate) fn from_error_status(status: &Status<(), Error>) -> trc::Error {
+    let event = trc::EventType::Smtp(trc::SmtpEvent::Error).into_err();
+    let err = match status {
+        Status::TemporaryFailure(err) | Status::PermanentFailure(err) => err,
+        Status::Scheduled | Status::Completed(_) => return event, // This should not happen
+    };
+
+    match err {
+        Error::DnsError(err) => event.details("DNS Error").reason(err),
+        Error::UnexpectedResponse(reply) => event
+            .details("Unexpected SMTP Response")
+            .ctx(trc::Key::Code, reply.response.code)
+            .ctx(trc::Key::Reason, reply.response.message.clone()),
+        Error::ConnectionError(err) => event
+            .details("Connection Error")
+            .ctx(trc::Key::Reason, err.details.clone()),
+        Error::TlsError(err) => event
+            .details("TLS Error")
+            .ctx(trc::Key::Reason, err.details.clone()),
+        Error::DaneError(err) => event
+            .details("DANE Error")
+            .ctx(trc::Key::Reason, err.details.clone()),
+        Error::MtaStsError(err) => event.details("MTA-STS Error").reason(err),
+        Error::RateLimited => todo!(),
+        Error::ConcurrencyLimited => todo!(),
+        Error::Io(err) => event.details("I/O Error").reason(err),
+    }
+}

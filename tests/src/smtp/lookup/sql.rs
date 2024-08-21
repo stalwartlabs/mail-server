@@ -99,13 +99,7 @@ expect = "0-1-2-2"
 #[tokio::test]
 async fn lookup_sql() {
     // Enable logging
-    /*let disable = true;
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    crate::enable_logging();
 
     // Parse settings
     let temp_dir = TempDir::new("smtp_lookup_tests", true);

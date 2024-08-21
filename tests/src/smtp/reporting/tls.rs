@@ -42,13 +42,8 @@ sign = "['rsa']"
 
 #[tokio::test]
 async fn report_tls() {
-    /*let disable = "true";
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
 
     // Create scheduler
     let mut local = TestServer::new(

@@ -66,12 +66,9 @@ if allof( envelope :localpart :contains "to" ".",
 
 #[tokio::test]
 async fn address_rewrite() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
+
 
     // Prepare config
     let mut config = Config::new(CONFIG).unwrap();

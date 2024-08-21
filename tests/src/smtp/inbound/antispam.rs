@@ -100,18 +100,8 @@ public-suffix = "file://{LIST_PATH}/public-suffix.dat"
 
 #[tokio::test(flavor = "multi_thread")]
 async fn antispam() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::builder()
-                    .parse(
-                        "smtp=debug,imap=debug,jmap=debug,store=debug,utils=debug,directory=debug,common=trace",
-                    )
-                    .unwrap(),
-            )
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
 
     // Prepare config
     let tests = [

@@ -66,12 +66,9 @@ enable = true
 
 #[tokio::test]
 async fn throttle_outbound() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
+
 
     // Build test message
     let mut test_message = new_message(0);

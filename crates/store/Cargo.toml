@@ -34,7 +34,7 @@ rustls = { version = "0.23.5", optional = true, default-features = false, featur
 rustls-pki-types = { version = "1", optional = true }
 ring = { version = "0.17", optional = true }
 bytes = { version = "1.0", optional = true }
-mysql_async = { version = "0.34", default-features = false, features = ["default-rustls"], optional = true }
+mysql_async = { version = "=0.34.1", default-features = false, features = ["default-rustls"], optional = true }
 elasticsearch = { version = "8.5.0-alpha.1", default-features = false, features = ["rustls-tls"], optional = true }
 serde_json = {version = "1.0.64", optional = true }
 regex = "1.7.0"

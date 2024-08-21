@@ -34,6 +34,9 @@ sign = "['rsa']"
 
 #[tokio::test]
 async fn generate_dsn() {
+        // Enable logging
+        crate::enable_logging();
+
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("resources");
     path.push("smtp");

@@ -6,7 +6,7 @@
 
 use std::{borrow::Cow, fmt::Debug, str::FromStr, time::Duration};
 
-use mail_auth::common::headers::HeaderWriter;
+use mail_auth::common::verify::VerifySignature;
 
 use crate::*;
 
@@ -324,15 +324,8 @@ impl From<&mail_auth::DmarcResult> for Event<EventType> {
 impl From<&mail_auth::DkimOutput<'_>> for Event<EventType> {
     fn from(value: &mail_auth::DkimOutput<'_>) -> Self {
         Event::from(value.result()).ctx_opt(
-            Key::Contents,
-            value.signature().map(|s| {
-                let mut buf = Vec::new();
-                s.write_header(&mut buf);
-
-                String::from_utf8(buf)
-                    .map(Value::String)
-                    .unwrap_or_else(|err| Value::Bytes(err.into_bytes()))
-            }),
+            Key::Domain,
+            value.signature().map(|s| s.domain().to_string()),
         )
     }
 }

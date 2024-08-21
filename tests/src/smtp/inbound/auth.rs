@@ -68,12 +68,7 @@ future-release = [{if = '!is_empty(authenticated_as)', then = '1d'},
 #[tokio::test]
 async fn auth() {
     // Enable logging
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    crate::enable_logging();
 
     let tmp_dir = TempDir::new("smtp_auth_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();

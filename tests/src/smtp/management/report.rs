@@ -54,12 +54,9 @@ max-size = 1024
 #[tokio::test]
 #[serial_test::serial]
 async fn manage_reports() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
+
 
     // Start reporting service
     let local = TestServer::new("smtp_manage_reports", CONFIG, true).await;

@@ -86,13 +86,8 @@ enable = true
 #[tokio::test]
 async fn rcpt() {
     // Enable logging
-    /*
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    crate::enable_logging();
+
     let tmp_dir = TempDir::new("smtp_rcpt_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
     let stores = Stores::parse_all(&mut config).await;

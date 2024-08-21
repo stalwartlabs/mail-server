@@ -49,6 +49,9 @@ ip-strategy = "ipv6_then_ipv4"
 
 #[tokio::test]
 async fn lookup_ip() {
+        // Enable logging
+        crate::enable_logging();
+
     let ipv6 = [
         "a:b::1".parse().unwrap(),
         "a:b::2".parse().unwrap(),

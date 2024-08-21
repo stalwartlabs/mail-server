@@ -102,13 +102,7 @@ enable = true
 #[tokio::test]
 async fn data() {
     // Enable logging
-    /*let disable = 1;
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    crate::enable_logging();
 
     // Create temp dir for queue
     let mut inner = Inner::default();

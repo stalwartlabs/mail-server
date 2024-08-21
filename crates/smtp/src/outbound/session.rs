@@ -5,7 +5,7 @@
  */
 
 use common::config::smtp::queue::RequireOptional;
-use mail_send::{smtp::AssertReply, Credentials};
+use mail_send::Credentials;
 use smtp_proto::{
     EhloResponse, Severity, EXT_CHUNKING, EXT_DSN, EXT_REQUIRE_TLS, EXT_SIZE, EXT_SMTP_UTF8,
     MAIL_REQUIRETLS, MAIL_RET_FULL, MAIL_RET_HDRS, MAIL_SMTPUTF8, RCPT_NOTIFY_DELAY,
@@ -16,6 +16,7 @@ use std::{fmt::Write, time::Instant};
 use tokio::io::{AsyncRead, AsyncWrite};
 use trc::DeliveryEvent;
 
+use crate::outbound::client::{from_error_status, from_mail_send_error};
 use crate::{
     core::SMTP,
     queue::{ErrorDetails, HostResponse, RCPT_STATUS_CHANGED},
@@ -64,7 +65,7 @@ impl Message {
                     Delivery(DeliveryEvent::EhloRejected),
                     SpanId = params.session_id,
                     Hostname = params.hostname.to_string(),
-                    Reason = status.to_string(),
+                    CausedBy = from_error_status(&status),
                     Elapsed = time.elapsed(),
                 );
                 smtp_client.quit().await;
@@ -80,7 +81,7 @@ impl Message {
                     Delivery(DeliveryEvent::AuthFailed),
                     SpanId = params.session_id,
                     Hostname = params.hostname.to_string(),
-                    Reason = err.to_string(),
+                    CausedBy = from_mail_send_error(&err),
                     Elapsed = time.elapsed(),
                 );
 
@@ -117,30 +118,37 @@ impl Message {
         let time = Instant::now();
         smtp_client.timeout = params.timeout_mail;
         let cmd = self.build_mail_from(&capabilities);
-        if let Err(err) = smtp_client
-            .cmd(cmd.as_bytes())
-            .await
-            .and_then(|r| r.assert_positive_completion())
-        {
-            trc::event!(
-                Delivery(DeliveryEvent::MailFromRejected),
-                SpanId = params.session_id,
-                Hostname = params.hostname.to_string(),
-                Reason = err.to_string(),
-                Elapsed = time.elapsed(),
-            );
+        match smtp_client.cmd(cmd.as_bytes()).await.and_then(|r| {
+            if r.is_positive_completion() {
+                Ok(r)
+            } else {
+                Err(mail_send::Error::UnexpectedReply(r))
+            }
+        }) {
+            Ok(response) => {
+                trc::event!(
+                    Delivery(DeliveryEvent::MailFrom),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    From = self.return_path.to_string(),
+                    Code = response.code,
+                    Details = response.message.to_string(),
+                    Elapsed = time.elapsed(),
+                );
+            }
+            Err(err) => {
+                trc::event!(
+                    Delivery(DeliveryEvent::MailFromRejected),
+                    SpanId = params.session_id,
+                    Hostname = params.hostname.to_string(),
+                    CausedBy = from_mail_send_error(&err),
+                    Elapsed = time.elapsed(),
+                );
 
-            smtp_client.quit().await;
-            return Status::from_smtp_error(params.hostname, &cmd, err);
+                smtp_client.quit().await;
+                return Status::from_smtp_error(params.hostname, &cmd, err);
+            }
         }
-
-        trc::event!(
-            Delivery(DeliveryEvent::MailFrom),
-            SpanId = params.session_id,
-            Hostname = params.hostname.to_string(),
-            From = self.return_path.to_string(),
-            Elapsed = time.elapsed(),
-        );
 
         // RCPT TO
         let mut total_rcpt = 0;
@@ -167,7 +175,8 @@ impl Message {
                             SpanId = params.session_id,
                             Hostname = params.hostname.to_string(),
                             To = rcpt.address.to_string(),
-                            Details = response.to_string(),
+                            Code = response.code,
+                            Details = response.message.to_string(),
                             Elapsed = time.elapsed(),
                         );
 
@@ -185,7 +194,8 @@ impl Message {
                             SpanId = params.session_id,
                             Hostname = params.hostname.to_string(),
                             To = rcpt.address.to_string(),
-                            Reason = response.to_string(),
+                            Code = response.code,
+                            Details = response.message.to_string(),
                             Elapsed = time.elapsed(),
                         );
 
@@ -211,7 +221,7 @@ impl Message {
                         SpanId = params.session_id,
                         Hostname = params.hostname.to_string(),
                         To = rcpt.address.to_string(),
-                        Reason = err.to_string(),
+                        CausedBy = from_mail_send_error(&err),
                         Elapsed = time.elapsed(),
                     );
 
@@ -234,7 +244,7 @@ impl Message {
                     Delivery(DeliveryEvent::MessageRejected),
                     SpanId = params.session_id,
                     Hostname = params.hostname.to_string(),
-                    Reason = status.to_string(),
+                    CausedBy = from_error_status(&status),
                     Elapsed = time.elapsed(),
                 );
 
@@ -257,7 +267,8 @@ impl Message {
                                     SpanId = params.session_id,
                                     Hostname = params.hostname.to_string(),
                                     To = rcpt.address.to_string(),
-                                    Details = status.to_string(),
+                                    Code = response.code,
+                                    Details = response.message.to_string(),
                                     Elapsed = time.elapsed(),
                                 );
 
@@ -270,7 +281,8 @@ impl Message {
                                 Delivery(DeliveryEvent::MessageRejected),
                                 SpanId = params.session_id,
                                 Hostname = params.hostname.to_string(),
-                                Reason = response.to_string(),
+                                Code = response.code,
+                                Details = response.message.to_string(),
                                 Elapsed = time.elapsed(),
                             );
 
@@ -287,7 +299,7 @@ impl Message {
                             Delivery(DeliveryEvent::MessageRejected),
                             SpanId = params.session_id,
                             Hostname = params.hostname.to_string(),
-                            Reason = status.to_string(),
+                            CausedBy = from_error_status(&status),
                             Elapsed = time.elapsed(),
                         );
 
@@ -311,7 +323,8 @@ impl Message {
                                         SpanId = params.session_id,
                                         Hostname = params.hostname.to_string(),
                                         To = rcpt.address.to_string(),
-                                        Details = response.to_string(),
+                                        Code = response.code,
+                                        Details = response.message.to_string(),
                                         Elapsed = time.elapsed(),
                                     );
 
@@ -327,7 +340,8 @@ impl Message {
                                         SpanId = params.session_id,
                                         Hostname = params.hostname.to_string(),
                                         To = rcpt.address.to_string(),
-                                        Reason = response.to_string(),
+                                        Code = response.code,
+                                        Details = response.message.to_string(),
                                         Elapsed = time.elapsed(),
                                     );
 
@@ -356,7 +370,7 @@ impl Message {
                             Delivery(DeliveryEvent::MessageRejected),
                             SpanId = params.session_id,
                             Hostname = params.hostname.to_string(),
-                            Reason = status.to_string(),
+                            CausedBy = from_error_status(&status),
                             Elapsed = time.elapsed(),
                         );
 

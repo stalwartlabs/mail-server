@@ -340,12 +340,12 @@ impl SpanCollector {
     fn into_vec(self) -> Vec<u64> {
         match self {
             Self::Vec(mut vec) => {
-                vec.sort_unstable();
+                vec.sort_unstable_by(|a, b| b.cmp(a));
                 vec
             }
             Self::HashSet(set) => {
                 let mut vec: Vec<u64> = set.into_iter().collect();
-                vec.sort_unstable();
+                vec.sort_unstable_by(|a, b| b.cmp(a));
                 vec
             }
             Self::Empty => Vec::new(),
