@@ -21,16 +21,12 @@ impl SmtpDirectory {
                 .authenticate(credentials)
                 .await
         } else {
-            Err(trc::StoreEvent::NotSupported
-                .caused_by(trc::location!())
-                .protocol(trc::Protocol::Smtp))
+            Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
         }
     }
 
     pub async fn email_to_ids(&self, _address: &str) -> trc::Result<Vec<u32>> {
-        Err(trc::StoreEvent::NotSupported
-            .caused_by(trc::location!())
-            .protocol(trc::Protocol::Smtp))
+        Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
     pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
@@ -65,7 +61,6 @@ impl SmtpDirectory {
             }
             Severity::PermanentNegativeCompletion => Ok(false),
             _ => Err(trc::StoreEvent::UnexpectedError
-                .ctx(trc::Key::Protocol, trc::Protocol::Smtp)
                 .ctx(trc::Key::Code, reply.code())
                 .ctx(trc::Key::Details, reply.message)),
         }
@@ -127,11 +122,10 @@ impl SmtpClient {
                 .split('\n')
                 .map(|p| p.to_string())
                 .collect::<Vec<String>>()),
-            code @ (550 | 551 | 553 | 500 | 502) => Err(trc::StoreEvent::NotSupported
-                .ctx(trc::Key::Protocol, trc::Protocol::Smtp)
-                .ctx(trc::Key::Code, code)),
+            code @ (550 | 551 | 553 | 500 | 502) => {
+                Err(trc::StoreEvent::NotSupported.ctx(trc::Key::Code, code))
+            }
             code => Err(trc::StoreEvent::UnexpectedError
-                .ctx(trc::Key::Protocol, trc::Protocol::Smtp)
                 .ctx(trc::Key::Code, code)
                 .ctx(trc::Key::Details, reply.message)),
         }

@@ -38,12 +38,10 @@ impl ImapDirectory {
                     AUTH_XOAUTH2
                 }
                 _ => {
-                    trc::bail!(trc::StoreEvent::NotSupported
-                        .ctx(
-                            trc::Key::Reason,
-                            "IMAP server does not offer any supported auth mechanisms."
-                        )
-                        .protocol(trc::Protocol::Imap));
+                    trc::bail!(trc::StoreEvent::NotSupported.ctx(
+                        trc::Key::Reason,
+                        "IMAP server does not offer any supported auth mechanisms."
+                    ));
                 }
             };
 
@@ -58,34 +56,24 @@ impl ImapDirectory {
                 },
             }
         } else {
-            Err(trc::StoreEvent::NotSupported
-                .caused_by(trc::location!())
-                .protocol(trc::Protocol::Imap))
+            Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
         }
     }
 
     pub async fn email_to_ids(&self, _address: &str) -> trc::Result<Vec<u32>> {
-        Err(trc::StoreEvent::NotSupported
-            .caused_by(trc::location!())
-            .protocol(trc::Protocol::Imap))
+        Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
     pub async fn rcpt(&self, _address: &str) -> trc::Result<bool> {
-        Err(trc::StoreEvent::NotSupported
-            .caused_by(trc::location!())
-            .protocol(trc::Protocol::Imap))
+        Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
     pub async fn vrfy(&self, _address: &str) -> trc::Result<Vec<String>> {
-        Err(trc::StoreEvent::NotSupported
-            .caused_by(trc::location!())
-            .protocol(trc::Protocol::Imap))
+        Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
     pub async fn expn(&self, _address: &str) -> trc::Result<Vec<String>> {
-        Err(trc::StoreEvent::NotSupported
-            .caused_by(trc::location!())
-            .protocol(trc::Protocol::Imap))
+        Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
     pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {

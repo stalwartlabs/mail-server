@@ -83,9 +83,6 @@ impl Core {
     pub async fn reload(&self) -> trc::Result<ReloadResult> {
         let mut config = self.storage.config.build_config("").await?;
 
-        // Parse tracers
-        let tracers = Telemetry::parse(&mut config);
-
         // Load stores
         let mut stores = Stores {
             stores: self.storage.stores.clone(),
@@ -96,6 +93,10 @@ impl Core {
         };
         stores.parse_stores(&mut config).await;
         stores.parse_lookups(&mut config).await;
+
+        // Parse tracers
+        let tracers = Telemetry::parse(&mut config, &stores);
+
         if !config.errors.is_empty() {
             return Ok(config.into());
         }

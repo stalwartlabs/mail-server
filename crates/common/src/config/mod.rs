@@ -61,21 +61,16 @@ impl Core {
         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
         #[cfg(feature = "enterprise")]
-        let enterprise = crate::enterprise::Enterprise::parse(config, &data).await;
+        let enterprise = crate::enterprise::Enterprise::parse(config, &stores, &data).await;
 
         #[cfg(feature = "enterprise")]
         if enterprise.is_none() {
-            if matches!(data, Store::SQLReadReplica(_)) {
+            if data.is_enterprise_store() {
                 config
                     .new_build_error("storage.data", "SQL read replicas is an Enterprise feature");
                 data = Store::None;
             }
-            stores
-                .stores
-                .retain(|_, store| !matches!(store, Store::SQLReadReplica(_)));
-            stores
-                .blob_stores
-                .retain(|_, store| !matches!(store.backend, BlobBackend::Composite(_)));
+            stores.disable_enterprise_only();
         }
         // SPDX-SnippetEnd
 

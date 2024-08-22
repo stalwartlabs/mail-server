@@ -33,13 +33,8 @@ relay = true
 #[tokio::test]
 #[serial_test::serial]
 async fn concurrent_queue() {
-    /*let disable = true;
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
 
     // Start test server
     let remote = TestServer::new("smtp_concurrent_queue_remote", REMOTE, true).await;

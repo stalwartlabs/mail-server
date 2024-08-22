@@ -228,7 +228,7 @@ impl Message {
 
         trc::event!(
             Queue(match source {
-                MessageSource::Authenticated => trc::QueueEvent::QueueMessageSubmission,
+                MessageSource::Authenticated => trc::QueueEvent::QueueMessageAuthenticated,
                 MessageSource::Unauthenticated => trc::QueueEvent::QueueMessage,
                 MessageSource::Dsn => trc::QueueEvent::QueueDsn,
                 MessageSource::Report => trc::QueueEvent::QueueReport,

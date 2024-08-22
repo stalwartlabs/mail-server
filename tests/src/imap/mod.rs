@@ -52,8 +52,8 @@ use utils::config::Config;
 use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
 
 const SERVER: &str = r#"
-[server]
-hostname = "'imap.example.org'"
+[lookup.default]
+hostname = "imap.example.org"
 
 [server.listener.imap]
 bind = ["127.0.0.1:9991"]
@@ -151,6 +151,11 @@ port = 5432
 database = "stalwart"
 user = "postgres"
 password = "mysecretpassword"
+
+[store."psql-replica"]
+type = "sql-read-replica"
+primary = "postgresql"
+replicas = "postgresql"
 
 [store."mysql"]
 type = "mysql"
@@ -312,7 +317,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let stores = Stores::parse_all(&mut config).await;
 
     // Parse core
-    let tracers = Telemetry::parse(&mut config);
+    let tracers = Telemetry::parse(&mut config, &stores);
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
@@ -321,7 +326,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     servers.parse_tcp_acceptors(&mut config, shared_core.clone());
 
     // Enable tracing
-    tracers.enable();
+    tracers.enable(true);
 
     // Setup IPC channels
     let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);

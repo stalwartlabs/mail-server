@@ -13,7 +13,7 @@ use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use smtp::core::{SmtpSessionManager, SMTP};
 use tokio::sync::mpsc;
-use trc::collector::Collector;
+use trc::Collector;
 use utils::wait_for_shutdown;
 
 #[cfg(not(target_env = "msvc"))]

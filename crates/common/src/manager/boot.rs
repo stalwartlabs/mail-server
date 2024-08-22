@@ -161,16 +161,11 @@ impl BootManager {
                 .failed("Failed to read configuration");
         }
 
-        // Enable telemetry
-        Telemetry::parse(&mut config).enable();
+        // Parse telemetry
+        let telemetry = Telemetry::parse(&mut config, &stores);
 
         match import_export {
             ImportExport::None => {
-                trc::event!(
-                    Server(trc::ServerEvent::Startup),
-                    Version = env!("CARGO_PKG_VERSION"),
-                );
-
                 // Add hostname lookup if missing
                 let mut insert_keys = Vec::new();
                 if config
@@ -311,10 +306,22 @@ impl BootManager {
                 // Parse lookup stores
                 stores.parse_lookups(&mut config).await;
 
-                // Parse settings and build shared core
-                let core = Core::parse(&mut config, stores, manager)
-                    .await
-                    .into_shared();
+                // Parse settings
+                let core = Core::parse(&mut config, stores, manager).await;
+
+                // Enable telemetry
+                #[cfg(feature = "enterprise")]
+                telemetry.enable(core.is_enterprise_edition());
+                #[cfg(not(feature = "enterprise"))]
+                telemetry.enable(false);
+
+                trc::event!(
+                    Server(trc::ServerEvent::Startup),
+                    Version = env!("CARGO_PKG_VERSION"),
+                );
+
+                // Build shared core
+                let core = core.into_shared();
 
                 // Parse TCP acceptors
                 servers.parse_tcp_acceptors(&mut config, core.clone());
@@ -326,6 +333,10 @@ impl BootManager {
                 }
             }
             ImportExport::Export(path) => {
+                // Enable telemetry
+                telemetry.enable(false);
+
+                // Parse settings and backup
                 Core::parse(&mut config, stores, manager)
                     .await
                     .backup(path)
@@ -333,6 +344,10 @@ impl BootManager {
                 std::process::exit(0);
             }
             ImportExport::Import(path) => {
+                // Enable telemetry
+                telemetry.enable(false);
+
+                // Parse settings and restore
                 Core::parse(&mut config, stores, manager)
                     .await
                     .restore(path)

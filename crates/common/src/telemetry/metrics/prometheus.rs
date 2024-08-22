@@ -8,7 +8,7 @@ use prometheus::{
     proto::{Bucket, Counter, Gauge, Histogram, Metric, MetricFamily, MetricType},
     TextEncoder,
 };
-use trc::{atomic::AtomicHistogram, collector::Collector};
+use trc::{atomics::histogram::AtomicHistogram, Collector};
 
 use crate::Core;
 
@@ -62,9 +62,9 @@ impl Core {
             metrics.push(metric);
         }
 
-        TextEncoder::new()
-            .encode_to_string(&metrics)
-            .map_err(|e| trc::EventType::Telemetry(trc::TelemetryEvent::OtelExpoterError).reason(e))
+        TextEncoder::new().encode_to_string(&metrics).map_err(|e| {
+            trc::EventType::Telemetry(trc::TelemetryEvent::OtelExporterError).reason(e)
+        })
     }
 }
 

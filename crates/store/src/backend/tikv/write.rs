@@ -26,6 +26,7 @@ use super::{into_error, read::{ChunkedValue}, TikvStore, ReadVersion, MAX_VALUE_
 
 impl TikvStore {
     pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
+        println!("write");
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
@@ -61,16 +62,13 @@ impl TikvStore {
                         change_id = *change_id_;
                     }
                     Operation::Value { class, op } => {
-                        let mut key_vec = class.serialize(
+                        let mut key = class.serialize(
                             account_id,
                             collection,
                             document_id,
                             WITH_SUBSPACE,
                             (&result).into(),
                         );
-                        let mut key = self.new_key_serializer(key_vec.len(), false)
-                            .write(key_vec.as_slice())
-                            .finalize();
                         let do_chunk = !class.is_counter(collection);
 
                         match op {
@@ -112,12 +110,12 @@ impl TikvStore {
                             }
                             ValueOp::Clear => {
                                 if do_chunk {
-                                    let end_vec = self.new_key_serializer(key.len() + 1, false)
+                                    let end_key = KeySerializer::new(key.len() + 1)
                                         .write(key.as_slice())
                                         .write(u8::MAX)
                                         .finalize();
                                     let mut begin = Bound::Included(TikvKey::from(key));
-                                    let end = Bound::Included(TikvKey::from(end_vec));
+                                    let end = Bound::Included(TikvKey::from(end_key));
 
                                     'outer: loop {
                                         let range = BoundRange::new(begin, end.clone());
@@ -154,16 +152,13 @@ impl TikvStore {
                         }
                     }
                     Operation::Index {  field, key, set } => {
-                        let key_vec = IndexKey {
+                        let key = IndexKey {
                             account_id,
                             collection,
                             document_id,
                             field: *field,
                             key,
                         }.serialize(0);
-                        let key = self.new_key_serializer(key_vec.len(), false)
-                            .write(key_vec.as_slice())
-                            .finalize();
 
                         if *set {
                             trx.put(key, &[]).await.map_err(into_error)?;
@@ -177,24 +172,18 @@ impl TikvStore {
                             && document_id == u32::MAX;
 
                         if assign_id {
-                            let begin_vec = BitmapKey {
+                            let begin = BitmapKey {
                                 account_id,
                                 collection,
                                 class: BitmapClass::DocumentIds,
                                 document_id: 0,
                             }.serialize(WITH_SUBSPACE);
-                            let begin = self.new_key_serializer(begin_vec.len(), false)
-                                .write(begin_vec.as_slice())
-                                .finalize();
-                            let end_vec = BitmapKey {
+                            let end = BitmapKey {
                                 account_id,
                                 collection,
                                 class: BitmapClass::DocumentIds,
                                 document_id: u32::MAX,
                             }.serialize(WITH_SUBSPACE);
-                            let end = self.new_key_serializer(end_vec.len(), false)
-                                .write(end_vec.as_slice())
-                                .finalize();
 
                             let key_len = begin.len();
                             let mut begin_bound = Bound::Included(TikvKey::from(begin));
@@ -212,7 +201,8 @@ impl TikvStore {
                                 while let Some(key) = keys_iter.next() {
                                     count += 1;
                                     if key.len() == key_len {
-                                        let found_id = self.remove_prefix((&key).into())
+                                        let key_slice: &[u8] = key.as_ref().into();
+                                        let found_id = key_slice
                                             .deserialize_be_u32(key_len - U32_LEN)?;
                                         found_ids.insert(found_id);
                                     } else {
@@ -224,7 +214,7 @@ impl TikvStore {
                                             continue 'outer;
                                         }
                                     }
-                                    let key_slice = self.remove_prefix((&key).into());
+                                    let key_slice: &[u8] = key.as_ref().into();
                                     found_ids.insert(key_slice.deserialize_be_u32(key_len - U32_LEN)?);
                                     if keys_iter.peek().is_none() {
                                         if count < MAX_SCAN_KEYS_SIZE {
@@ -245,34 +235,26 @@ impl TikvStore {
                             result.push_document_id(document_id);
                         }
 
-                        let key_base = class.serialize(
+                        let key = class.serialize(
                             account_id,
                             collection,
                             document_id,
                             WITH_SUBSPACE,
                             (&result).into(),
                         );
-                        let key = self.new_key_serializer(key_base.len(), false)
-                            .write(key_base.as_slice())
-                            .finalize();
 
                         if *set {
                             let mut begin = Bound::Included(TikvKey::from(key));
-                            let end_base = class.serialize(
+                            let end = Bound::Included(TikvKey::from(class.serialize(
                                 account_id,
                                 collection,
                                 document_id + 1,
                                 WITH_SUBSPACE,
                                 (&result).into(),
-                            );
+                            )));
 
                             loop {
-                                let end_key = TikvKey::from(self.new_key_serializer(end_base.len(), false)
-                                    .write(end_base.as_slice())
-                                    .finalize());
-                                let end = Bound::Included(end_key);
-
-                                let range = BoundRange::new(begin, end);
+                                let range = BoundRange::new(begin, end.clone());
                                 let keys: Vec<TikvKey> = trx.scan_keys(range, MAX_SCAN_KEYS_SIZE)
                                     .await
                                     .map_err(into_error)?
@@ -293,14 +275,11 @@ impl TikvStore {
                         }
                     }
                     Operation::Log { set } => {
-                        let key_base = LogKey {
+                        let key = LogKey {
                             account_id,
                             collection,
                             change_id,
                         }.serialize(WITH_SUBSPACE);
-                        let key = self.new_key_serializer(key_base.len(), false)
-                            .write(key_base.as_slice())
-                            .finalize();
 
                         trx.put(key, set.resolve(&result)?.as_ref()).await.map_err(into_error)?;
                     }
@@ -308,7 +287,6 @@ impl TikvStore {
                         class,
                         assert_value,
                     } => {
-                        // Don't prepend with API v2 compatibility prefix
                         let key_base = class.serialize(
                             account_id,
                             collection,
@@ -352,24 +330,18 @@ impl TikvStore {
             let to_key = [subspace, u8::MAX, u8::MAX, u8::MAX, u8::MAX, u8::MAX];
 
             // Since we are deleting all of them anyways. No point moving the start bound
-            let begin = Bound::Included(TikvKey::from(self.new_key_serializer(from_key.len(), false)
-                .write(from_key.as_slice())
-                .finalize()));
-            let end = Bound::Included(TikvKey::from(self.new_key_serializer(to_key.len(), false)
-                .write(to_key.as_slice())
-                .finalize()));
-            let range = BoundRange::new(begin, end);
+            let mut begin = Bound::Included(TikvKey::from(from_key.to_vec()));
 
             let mut backoff = self.raw_backoff.clone();
 
-            // Might possibly cause infinite loop
-            // TODO: Check
             'outer: loop {
+                let end = Bound::Included(TikvKey::from(to_key.to_vec()));
+                let range = BoundRange::new(begin, end);
+
                 let mut trx = self.write_trx_no_backoff().await?;
                 let mut keys_iter = trx.scan_keys(range.clone(), MAX_SCAN_KEYS_SIZE)
                     .await
-                    .map_err(into_error)?
-                    .peekable();
+                    .map_err(into_error)?;
 
                 let mut count = 0;
                 let mut last_key = TikvKey::default();
@@ -380,21 +352,20 @@ impl TikvStore {
                             trx.delete(key.clone()).await.map_err(into_error)?;
                         }
                     }
-                    if keys_iter.peek().is_none() {
-                        last_key = key;
-                    }
+                    last_key = key;
                 }
 
-                if self.commit(trx, Some(&mut backoff)).await? {
-                } else {
+                if self.commit(trx, Some(&mut backoff)).await? {} else {
+                    begin = Bound::Excluded(last_key);
                     continue;
                 }
 
                 if count < MAX_SCAN_KEYS_SIZE {
                     break 'outer;
+                } else {
+                    begin = Bound::Excluded(last_key);
+                    continue;
                 }
-
-                break;
             }
         }
 
@@ -406,12 +377,12 @@ impl TikvStore {
         let to_vec = to.serialize(WITH_SUBSPACE);
         let mut trx = self.write_trx_with_backoff().await?;
 
-        let mut begin = Bound::Included(TikvKey::from(self.new_key_serializer(from_vec.len(), false)
+        let mut begin = Bound::Included(TikvKey::from(KeySerializer::new(from_vec.len())
             .write(from_vec.as_slice())
             .finalize()));
 
         'outer: loop {
-            let end = Bound::Included(TikvKey::from(self.new_key_serializer(to_vec.len(), false)
+            let end = Bound::Included(TikvKey::from(KeySerializer::new(to_vec.len())
                 .write(from_vec.as_slice())
                 .finalize()));
 

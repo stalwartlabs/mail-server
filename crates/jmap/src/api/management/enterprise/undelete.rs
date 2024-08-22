@@ -31,44 +31,28 @@ use crate::{
     JMAP,
 };
 
-#[derive(serde::Deserialize)]
-struct UndeleteRequest<H, C, T> {
-    hash: H,
-    collection: C,
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct UndeleteRequest<H, C, T> {
+    pub hash: H,
+    pub collection: C,
     #[serde(rename = "restoreTime")]
-    time: T,
+    pub time: T,
     #[serde(rename = "cancelDeletion")]
     #[serde(default)]
-    cancel_deletion: Option<T>,
+    pub cancel_deletion: Option<T>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Debug)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
-enum UndeleteResponse {
+pub enum UndeleteResponse {
     Success,
     NotFound,
     Error { reason: String },
 }
 
 impl JMAP {
-    pub async fn handle_enterprise_api_request(
-        &self,
-        req: &HttpRequest,
-        path: Vec<&str>,
-        body: Option<Vec<u8>>,
-        session: &HttpSessionData,
-    ) -> trc::Result<HttpResponse> {
-        match path.get(1).copied().unwrap_or_default() {
-            "undelete" => {
-                self.handle_undelete_api_request(req, path, body, session)
-                    .await
-            }
-            _ => Err(trc::ResourceEvent::NotFound.into_err()),
-        }
-    }
-
-    async fn handle_undelete_api_request(
+    pub async fn handle_undelete_api_request(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,

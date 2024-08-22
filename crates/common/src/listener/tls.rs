@@ -135,7 +135,6 @@ impl TcpAcceptor {
                                         trc::event!(
                                             Acme(trc::AcmeEvent::ClientSuppliedSni),
                                             ListenerId = instance.id.clone(),
-                                            Protocol = instance.protocol,
                                             Domain = domain.to_string(),
                                             Result = key.is_some(),
                                         );
@@ -146,7 +145,6 @@ impl TcpAcceptor {
                                         trc::event!(
                                             Acme(trc::AcmeEvent::ClientMissingSni),
                                             ListenerId = instance.id.clone(),
-                                            Protocol = instance.protocol,
                                         );
 
                                         None
@@ -161,7 +159,6 @@ impl TcpAcceptor {
                                         trc::event!(
                                             Acme(trc::AcmeEvent::TlsAlpnReceived),
                                             ListenerId = instance.id.clone(),
-                                            Protocol = instance.protocol,
                                         );
 
                                         let _ = tls.shutdown().await;
@@ -170,7 +167,6 @@ impl TcpAcceptor {
                                         trc::event!(
                                             Acme(trc::AcmeEvent::TlsAlpnError),
                                             ListenerId = instance.id.clone(),
-                                            Protocol = instance.protocol,
                                             Reason = err.to_string(),
                                         );
                                     }
@@ -185,7 +181,6 @@ impl TcpAcceptor {
                             trc::event!(
                                 Tls(trc::TlsEvent::HandshakeError),
                                 ListenerId = instance.id.clone(),
-                                Protocol = instance.protocol,
                                 Reason = err.to_string(),
                             );
                         }

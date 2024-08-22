@@ -32,7 +32,7 @@ impl BlobStore {
                 Store::RocksDb(store) => store.get_blob(key, read_range).await,
                 #[cfg(feature = "tikv")]
                 Store::TiKV(store) => store.get_blob(key, read_range).await,
-                #[cfg(feature = "enterprise")]
+                #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
                 Store::SQLReadReplica(store) => store.get_blob(key, read_range).await,
                 Store::None => Err(trc::StoreEvent::NotConfigured.into()),
             },
@@ -114,7 +114,7 @@ impl BlobStore {
                 Store::RocksDb(store) => store.put_blob(key, data.as_ref()).await,
                 #[cfg(feature = "tikv")]
                 Store::TiKV(store) => store.put_blob(key, data.as_ref()).await,
-                #[cfg(feature = "enterprise")]
+                #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
                 Store::SQLReadReplica(store) => store.put_blob(key, data.as_ref()).await,
                 Store::None => Err(trc::StoreEvent::NotConfigured.into()),
             },
@@ -152,7 +152,7 @@ impl BlobStore {
                 Store::RocksDb(store) => store.delete_blob(key).await,
                 #[cfg(feature = "tikv")]
                 Store::TiKV(store) => store.delete_blob(key).await,
-                #[cfg(feature = "enterprise")]
+                #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
                 Store::SQLReadReplica(store) => store.delete_blob(key).await,
                 Store::None => Err(trc::StoreEvent::NotConfigured.into()),
             },

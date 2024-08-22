@@ -38,6 +38,9 @@ ehlo = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},
 
 #[tokio::test]
 async fn ehlo() {
+        // Enable logging
+        crate::enable_logging();
+
     let mut config = Config::new(CONFIG).unwrap();
     let core = Core::parse(&mut config, Default::default(), Default::default()).await;
     core.smtp.resolvers.dns.txt_add(

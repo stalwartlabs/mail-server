@@ -9,7 +9,7 @@ use std::path::PathBuf;
 #[cfg(not(target_env = "msvc"))]
 use jemallocator::Jemalloc;
 #[cfg(test)]
-use trc::collector::Collector;
+use trc::Collector;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]

@@ -87,6 +87,8 @@ impl RocksDbStore {
             SUBSPACE_FTS_INDEX,
             SUBSPACE_LOGS,
             SUBSPACE_BLOBS,
+            SUBSPACE_TRACE,
+            SUBSPACE_TRACE_INDEX,
         ] {
             let cf_opts = Options::default();
             cfs.push(ColumnFamilyDescriptor::new(

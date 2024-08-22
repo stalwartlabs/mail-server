@@ -35,12 +35,9 @@ expire = [{if = "sender_domain = 'test.org'", then = "6s"},
 
 #[tokio::test]
 async fn queue_retry() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::DEBUG)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
+
 
     // Create temp dir for queue
     let mut local = TestServer::new("smtp_queue_retry_test", CONFIG, true).await;

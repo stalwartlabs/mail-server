@@ -6,7 +6,7 @@
 
 use ahash::AHashSet;
 use std::io::Write;
-use trc::subscriber::SubscriberBuilder;
+use trc::ipc::subscriber::SubscriberBuilder;
 use trc::{Event, EventDetails, Level, TelemetryEvent};
 
 pub(crate) fn spawn_journald_tracer(builder: SubscriberBuilder, subscriber: Subscriber) {

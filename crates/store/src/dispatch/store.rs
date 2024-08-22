@@ -52,7 +52,7 @@ impl Store {
             Self::RocksDb(store) => store.get_value(key).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.get_value(key).await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.get_value(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
@@ -76,7 +76,7 @@ impl Store {
             Self::RocksDb(store) => store.get_bitmap(key).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.get_bitmap(key).await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.get_bitmap(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
@@ -124,7 +124,7 @@ impl Store {
             Self::RocksDb(store) => store.iterate(params, cb).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.iterate(params, cb).await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.iterate(params, cb).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
@@ -155,7 +155,7 @@ impl Store {
             Self::RocksDb(store) => store.get_counter(key).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.get_counter(key).await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.get_counter(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
@@ -222,7 +222,7 @@ impl Store {
                 Self::RocksDb(store) => store.write(batch).await,
                 #[cfg(feature = "tikv")]
                 Self::TiKV(store) => store.write(batch).await,
-                #[cfg(feature = "enterprise")]
+                #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
                 Self::SQLReadReplica(store) => store.write(batch).await,
                 Self::None => Err(trc::StoreEvent::NotConfigured.into()),
             }
@@ -271,7 +271,7 @@ impl Store {
             Self::RocksDb(store) => store.write(batch).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.write(batch).await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.write(batch).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         };
@@ -329,7 +329,7 @@ impl Store {
             Self::RocksDb(store) => store.purge_store().await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.purge_store().await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.purge_store().await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
@@ -350,7 +350,7 @@ impl Store {
             Self::RocksDb(store) => store.delete_range(from, to).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.delete_range(from, to).await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.delete_range(from, to).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
@@ -507,7 +507,7 @@ impl Store {
             Self::RocksDb(store) => store.get_blob(key, range).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.get_blob(key, range).await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.get_blob(key, range).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
@@ -528,7 +528,7 @@ impl Store {
             Self::RocksDb(store) => store.put_blob(key, data).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.put_blob(key, data).await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.put_blob(key, data).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
@@ -549,7 +549,7 @@ impl Store {
             Self::RocksDb(store) => store.delete_blob(key).await,
             #[cfg(feature = "tikv")]
             Self::TiKV(store) => store.delete_blob(key).await,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.delete_blob(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
@@ -582,6 +582,8 @@ impl Store {
             SUBSPACE_REPORT_OUT,
             SUBSPACE_REPORT_IN,
             SUBSPACE_FTS_INDEX,
+            SUBSPACE_TRACE,
+            SUBSPACE_TRACE_INDEX,
         ] {
             self.delete_range(
                 AnyKey {
@@ -765,6 +767,8 @@ impl Store {
             (SUBSPACE_BITMAP_TAG, false),
             (SUBSPACE_BITMAP_TEXT, false),
             (SUBSPACE_INDEXES, false),
+            (SUBSPACE_TRACE, true),
+            (SUBSPACE_TRACE_INDEX, true),
         ] {
             let from_key = crate::write::AnyKey {
                 subspace,

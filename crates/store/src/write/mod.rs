@@ -153,6 +153,7 @@ pub enum ValueClass<T> {
     Config(Vec<u8>),
     Queue(QueueClass),
     Report(ReportClass),
+    Trace(TraceClass),
     Any(AnyClass),
 }
 
@@ -202,6 +203,12 @@ pub enum ReportClass {
     Tls { id: u64, expires: u64 },
     Dmarc { id: u64, expires: u64 },
     Arf { id: u64, expires: u64 },
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum TraceClass {
+    Span { span_id: u64 },
+    Index { span_id: u64, value: Vec<u8> },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

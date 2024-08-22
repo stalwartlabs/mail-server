@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-pub struct AtomicU32Array<const N: usize>([AtomicU32; N]);
-pub struct AtomicU64Array<const N: usize>([AtomicU64; N]);
+use super::array::AtomicU64Array;
+
 pub struct AtomicHistogram<const N: usize> {
     id: &'static str,
     description: &'static str,
@@ -18,91 +18,6 @@ pub struct AtomicHistogram<const N: usize> {
     count: AtomicU64,
     min: AtomicU64,
     max: AtomicU64,
-}
-pub struct AtomicGauge {
-    id: &'static str,
-    description: &'static str,
-    unit: &'static str,
-    value: AtomicU64,
-}
-
-pub struct AtomicCounter {
-    id: &'static str,
-    description: &'static str,
-    unit: &'static str,
-    value: AtomicU64,
-}
-
-impl<const N: usize> AtomicU32Array<N> {
-    #[allow(clippy::new_without_default)]
-    #[allow(clippy::declare_interior_mutable_const)]
-    pub const fn new() -> Self {
-        Self({
-            const INIT: AtomicU32 = AtomicU32::new(0);
-            let mut array = [INIT; N];
-            let mut i = 0;
-            while i < N {
-                array[i] = AtomicU32::new(0);
-                i += 1;
-            }
-            array
-        })
-    }
-
-    #[inline(always)]
-    pub fn get(&self, index: usize) -> u32 {
-        self.0[index].load(Ordering::Relaxed)
-    }
-
-    #[inline(always)]
-    pub fn set(&self, index: usize, value: u32) {
-        self.0[index].store(value, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn add(&self, index: usize, value: u32) {
-        self.0[index].fetch_add(value, Ordering::Relaxed);
-    }
-
-    pub fn inner(&self) -> &[AtomicU32; N] {
-        &self.0
-    }
-}
-
-impl<const N: usize> AtomicU64Array<N> {
-    #[allow(clippy::new_without_default)]
-    #[allow(clippy::declare_interior_mutable_const)]
-    pub const fn new() -> Self {
-        Self({
-            const INIT: AtomicU64 = AtomicU64::new(0);
-            let mut array = [INIT; N];
-            let mut i = 0;
-            while i < N {
-                array[i] = AtomicU64::new(0);
-                i += 1;
-            }
-            array
-        })
-    }
-
-    #[inline(always)]
-    pub fn get(&self, index: usize) -> u64 {
-        self.0[index].load(Ordering::Relaxed)
-    }
-
-    #[inline(always)]
-    pub fn set(&self, index: usize, value: u64) {
-        self.0[index].store(value, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn add(&self, index: usize, value: u64) {
-        self.0[index].fetch_add(value, Ordering::Relaxed);
-    }
-
-    pub fn inner(&self) -> &[AtomicU64; N] {
-        &self.0
-    }
 }
 
 impl<const N: usize> AtomicHistogram<N> {
@@ -312,110 +227,5 @@ impl<const N: usize> AtomicHistogram<N> {
                 u64::MAX,    // Catch-all for any longer durations
             ],
         )
-    }
-}
-
-impl AtomicCounter {
-    pub const fn new(id: &'static str, description: &'static str, unit: &'static str) -> Self {
-        Self {
-            id,
-            description,
-            unit,
-            value: AtomicU64::new(0),
-        }
-    }
-
-    #[inline(always)]
-    pub fn increment(&self) {
-        self.value.fetch_add(1, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn increment_by(&self, value: u64) {
-        self.value.fetch_add(value, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn decrement(&self) {
-        self.value.fetch_sub(1, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn decrement_by(&self, value: u64) {
-        self.value.fetch_sub(value, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn get(&self) -> u64 {
-        self.value.load(Ordering::Relaxed)
-    }
-
-    pub fn id(&self) -> &'static str {
-        self.id
-    }
-
-    pub fn description(&self) -> &'static str {
-        self.description
-    }
-
-    pub fn unit(&self) -> &'static str {
-        self.unit
-    }
-
-    pub fn is_active(&self) -> bool {
-        self.value.load(Ordering::Relaxed) > 0
-    }
-}
-
-impl AtomicGauge {
-    pub const fn new(id: &'static str, description: &'static str, unit: &'static str) -> Self {
-        Self {
-            id,
-            description,
-            unit,
-            value: AtomicU64::new(0),
-        }
-    }
-
-    #[inline(always)]
-    pub fn increment(&self) {
-        self.value.fetch_add(1, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn set(&self, value: u64) {
-        self.value.store(value, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn decrement(&self) {
-        self.value.fetch_sub(1, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn get(&self) -> u64 {
-        self.value.load(Ordering::Relaxed)
-    }
-
-    #[inline(always)]
-    pub fn add(&self, value: u64) {
-        self.value.fetch_add(value, Ordering::Relaxed);
-    }
-
-    #[inline(always)]
-    pub fn subtract(&self, value: u64) {
-        self.value.fetch_sub(value, Ordering::Relaxed);
-    }
-
-    pub fn id(&self) -> &'static str {
-        self.id
-    }
-
-    pub fn description(&self) -> &'static str {
-        self.description
-    }
-
-    pub fn unit(&self) -> &'static str {
-        self.unit
     }
 }

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 use std::ops::Bound;
-use tikv_client::{BoundRange, Key as TikvKey, KvPair, Snapshot, Transaction, TransactionOptions, Value};
+use tikv_client::{BoundRange, CheckLevel, Key as TikvKey, KvPair, Snapshot, Transaction, TransactionOptions, Value};
 use futures::TryStreamExt;
 use roaring::RoaringBitmap;
 use crate::{
@@ -31,7 +31,7 @@ impl TikvStore {
         U: Deserialize,
     {
         let key_base = key.serialize(WITH_SUBSPACE);
-        let mut trx = self.read_trx().await?;
+        let mut trx = self.snapshot_trx().await?;
 
         match read_chunked_value(&self, &key_base, &mut trx).await? {
             ChunkedValue::Single(bytes) => U::deserialize(&bytes).map(Some),
@@ -45,24 +45,15 @@ impl TikvStore {
         mut key: BitmapKey<BitmapClass<u32>>,
     ) -> trc::Result<Option<RoaringBitmap>> {
         let mut bm = RoaringBitmap::new();
-        let begin_base = key.serialize(WITH_SUBSPACE);
+        let begin = key.serialize(WITH_SUBSPACE);
         key.document_id = u32::MAX;
-        let end_base = key.serialize(WITH_SUBSPACE);
-        let key_len = begin_base.len();
-
-        let begin = self
-            .new_key_serializer(begin_base.len(), false)
-            .write(begin_base.as_slice())
-            .finalize();
+        let key_len = begin.len();
 
         let mut trx = self.snapshot_trx().await?;
 
         let mut begin_range = Bound::Included(TikvKey::from(begin));
         loop {
-            let end = self
-                .new_key_serializer(end_base.len(), false)
-                .write(end_base.as_slice())
-                .finalize();
+            let end = key.serialize(WITH_SUBSPACE);
             let end_range = Bound::Included(TikvKey::from(end));
             let range = BoundRange::new(begin_range, end_range);
 
@@ -75,10 +66,9 @@ impl TikvStore {
             let mut last_key = TikvKey::default();
             for key in keys {
                 count += 1;
-                let key_slice = key.as_ref().into();
-                let key_base = self.remove_prefix(key_slice);
-                if key_base.len() == key_len {
-                    bm.insert(key_base.deserialize_be_u32(key_base.len() - U32_LEN)?);
+                let key_slice: &[u8] = key.as_ref().into();
+                if key_slice.len() == key_len {
+                    bm.insert(key_slice.deserialize_be_u32(key_slice.len() - U32_LEN)?);
                 }
                 last_key = key;
             }
@@ -99,14 +89,8 @@ impl TikvStore {
         params: IterateParams<T>,
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
     ) -> trc::Result<()> {
-        let begin_base = params.begin.serialize(WITH_SUBSPACE);
-        let begin = self.new_key_serializer(begin_base.len(), false)
-            .write(begin_base.as_slice())
-            .finalize();
-        let end_base = params.end.serialize(WITH_SUBSPACE);
-        let end = self.new_key_serializer(end_base.len(), false)
-            .write(end_base.as_slice())
-            .finalize();
+        let begin = params.begin.serialize(WITH_SUBSPACE);
+        let end = params.end.serialize(WITH_SUBSPACE);
 
         let mut trx = self.snapshot_trx().await?;
 
@@ -126,8 +110,9 @@ impl TikvStore {
                     for kv_pair in kv_pairs {
                         count += 1;
                         let (key, value) = kv_pair.into();
-                        let key_base = self.remove_prefix(key.as_ref().into());
-                        if !cb(key_base.get(1..).unwrap_or_default(), &value)? {
+                        let key_slice: &[u8] = key.as_ref().into();
+                        println!("tf {:?}", &value);
+                        if !cb(key_slice.get(1..).unwrap_or_default(), &value)? {
                             return Ok(());
                         }
                         last_key = key;
@@ -144,7 +129,7 @@ impl TikvStore {
                 loop {
                     let begin_range = Bound::Included(TikvKey::from(begin.clone()));
                     let range = BoundRange::new(begin_range, end_range);
-                    let kv_pairs = trx.scan(range, MAX_SCAN_VALUES_SIZE)
+                    let kv_pairs = trx.scan_reverse(range, MAX_SCAN_VALUES_SIZE)
                         .await
                         .map_err(into_error)?;
 
@@ -153,8 +138,8 @@ impl TikvStore {
                     for kv_pair in kv_pairs {
                         count += 1;
                         let (key, value) = kv_pair.into();
-                        let key_base = self.remove_prefix(key.as_ref().into());
-                        if !cb(key_base.get(1..).unwrap_or_default(), &value)? {
+                        let key_slice: &[u8] = key.as_ref().into();
+                        if !cb(key_slice.get(1..).unwrap_or_default(), &value)? {
                             return Ok(());
                         }
                         last_key = key;
@@ -175,8 +160,8 @@ impl TikvStore {
 
             if let Some(kv_pair) = possible_kv_pair.next() {
                 let (key, value) = kv_pair.into();
-                let key_base = self.remove_prefix(key.as_ref().into());
-                cb(key_base.get(1..).unwrap_or_default(), &value)?;
+                let key_slice: &[u8] = key.as_ref().into();
+                cb(key_slice.get(1..).unwrap_or_default(), &value)?;
             }
         }
 
@@ -204,7 +189,11 @@ impl TikvStore {
 
     pub(crate) async fn read_trx(&self) -> trc::Result<Transaction> {
         self.trx_client
-            .begin_pessimistic()
+            .begin_with_options(
+                TransactionOptions::new_optimistic()
+                    .read_only()
+                    .drop_check(CheckLevel::None)
+            )
             .await
             .map_err(into_error)
     }
@@ -235,7 +224,7 @@ pub(crate) mod read_helpers {
                 value.append(&mut bytes);
                 let mut n_chunks = 1;
 
-                let mut first = Bound::Included(TikvKey::from(store.new_key_serializer(key.len() + 1, false)
+                let mut first = Bound::Included(TikvKey::from(KeySerializer::new(key.len() + 1)
                     .write(key)
                     .write(0u8)
                     .finalize()));
@@ -244,7 +233,7 @@ pub(crate) mod read_helpers {
                     // Maybe use the last byte of the last key?
                     let mut count = 0;
 
-                    let last = Bound::Included(TikvKey::from(store.new_key_serializer(key.len() + 1, false)
+                    let last = Bound::Included(TikvKey::from(KeySerializer::new(key.len() + 1)
                         .write(key)
                         .write(u8::MAX)
                         .finalize()));

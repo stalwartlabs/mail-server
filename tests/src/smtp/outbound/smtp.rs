@@ -70,12 +70,9 @@ This is a smuggled message
 #[tokio::test]
 #[serial_test::serial]
 async fn smtp_delivery() {
-    /*tracing::subscriber::set_global_default(
-        tracing_subscriber::FmtSubscriber::builder()
-            .with_max_level(tracing::Level::TRACE)
-            .finish(),
-    )
-    .unwrap();*/
+    // Enable logging
+    crate::enable_logging();
+
 
     // Start test server
     let mut remote = TestServer::new("smtp_delivery_remote", REMOTE, true).await;

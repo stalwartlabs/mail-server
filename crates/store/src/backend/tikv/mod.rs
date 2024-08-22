@@ -45,29 +45,6 @@ pub struct TikvStore {
     version: parking_lot::Mutex<ReadVersion>,
 }
 
-impl TikvStore {
-    fn new_key_serializer(&self, capacity: usize, raw: bool) -> KeySerializer {
-        if self.api_v2 {
-            // We don't care about compatibility anymore
-            KeySerializer::new(capacity)
-        } else {
-            let mode_prefix = raw.then(|| MODE_PREFIX_RAW_KV).unwrap_or_else(|| MODE_PREFIX_TXN_KV);
-            // Capacity = mode_prefix length + keyspace length + capacity
-            KeySerializer::new(1 + 3 + capacity)
-                .write(mode_prefix)
-                .write(self.keyspace.as_slice())
-        }
-    }
-
-    fn remove_prefix<'a>(&self, key: &'a [u8]) -> &'a [u8] {
-        if self.api_v2 {
-            key
-        } else {
-            &key[4..]
-        }
-    }
-}
-
 pub(crate) struct TimedTransaction {
     trx: Transaction,
     expires: Instant,

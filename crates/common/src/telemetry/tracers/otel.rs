@@ -22,7 +22,7 @@ use opentelemetry_sdk::{
     Resource,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
-use trc::{subscriber::SubscriberBuilder, Event, EventDetails, Level, TelemetryEvent};
+use trc::{ipc::subscriber::SubscriberBuilder, Event, EventDetails, Level, TelemetryEvent};
 
 use crate::{config::telemetry::OtelTracer, telemetry::LONG_SLUMBER};
 
@@ -89,7 +89,7 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                             .await
                         {
                             trc::event!(
-                                Telemetry(TelemetryEvent::OtelExpoterError),
+                                Telemetry(TelemetryEvent::OtelExporterError),
                                 Details = "Failed to export spans",
                                 Reason = err.to_string()
                             );
@@ -103,7 +103,7 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                             .await
                         {
                             trc::event!(
-                                Telemetry(TelemetryEvent::OtelExpoterError),
+                                Telemetry(TelemetryEvent::OtelExporterError),
                                 Details = "Failed to export logs",
                                 Reason = err.to_string()
                             );
@@ -224,7 +224,6 @@ fn build_key_value(key_value: &(trc::Key, trc::Value)) -> Option<KeyValue> {
             trc::Value::Bool(v) => Value::Bool(*v),
             trc::Value::Ipv4(v) => Value::String(v.to_string().into()),
             trc::Value::Ipv6(v) => Value::String(v.to_string().into()),
-            trc::Value::Protocol(v) => Value::String(v.name().into()),
             trc::Value::Event(_) => Value::String("[event data]".into()),
             trc::Value::Array(_) => Value::String("[array]".into()),
             trc::Value::None => Value::Bool(false),
@@ -251,7 +250,6 @@ fn build_any_value(value: &trc::Value) -> AnyValue {
         trc::Value::Bool(v) => AnyValue::Boolean(*v),
         trc::Value::Ipv4(v) => AnyValue::String(v.to_string().into()),
         trc::Value::Ipv6(v) => AnyValue::String(v.to_string().into()),
-        trc::Value::Protocol(v) => AnyValue::String(v.name().into()),
         trc::Value::Event(v) => AnyValue::Map(
             [(
                 Key::from_static_str("eventName"),

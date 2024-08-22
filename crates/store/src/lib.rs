@@ -60,7 +60,7 @@ pub trait Serialize {
 // Key serialization flags
 pub(crate) const WITH_SUBSPACE: u32 = 1;
 
-pub trait Key: Sync + Send {
+pub trait Key: Sync + Send + Clone {
     fn serialize(&self, flags: u32) -> Vec<u8>;
     fn subspace(&self) -> u8;
 }
@@ -150,13 +150,14 @@ pub const SUBSPACE_QUOTA: u8 = b'u';
 pub const SUBSPACE_REPORT_OUT: u8 = b'h';
 pub const SUBSPACE_REPORT_IN: u8 = b'r';
 pub const SUBSPACE_FTS_INDEX: u8 = b'g';
+pub const SUBSPACE_TRACE: u8 = b'o';
+pub const SUBSPACE_TRACE_INDEX: u8 = b'w';
 
-pub const SUBSPACE_RESERVED_1: u8 = b'o';
-pub const SUBSPACE_RESERVED_2: u8 = b'w';
-pub const SUBSPACE_RESERVED_3: u8 = b'x';
-pub const SUBSPACE_RESERVED_4: u8 = b'y';
-pub const SUBSPACE_RESERVED_5: u8 = b'z';
+pub const SUBSPACE_RESERVED_1: u8 = b'x';
+pub const SUBSPACE_RESERVED_2: u8 = b'y';
+pub const SUBSPACE_RESERVED_3: u8 = b'z';
 
+#[derive(Clone)]
 pub struct IterateParams<T: Key> {
     begin: T,
     end: T,
@@ -188,7 +189,7 @@ pub enum Store {
     RocksDb(Arc<RocksDbStore>),
     #[cfg(feature = "tikv")]
     TiKV(Arc<TikvStore>),
-    #[cfg(feature = "enterprise")]
+    #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
     SQLReadReplica(Arc<backend::composite::read_replica::SQLReadReplica>),
     #[default]
     None,
@@ -213,7 +214,7 @@ pub enum BlobBackend {
     #[cfg(feature = "s3")]
     S3(Arc<S3Store>),
     #[cfg(feature = "enterprise")]
-    Composite(Arc<backend::composite::distributed_blob::CompositeBlob>),
+    Composite(Arc<backend::composite::distributed_blob::DistributedBlob>),
 }
 
 #[derive(Clone)]
@@ -680,10 +681,34 @@ impl Store {
             Store::PostgreSQL(_) => true,
             #[cfg(feature = "mysql")]
             Store::MySQL(_) => true,
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Store::SQLReadReplica(_) => true,
             _ => false,
         }
+    }
+
+    pub fn is_pg_or_mysql(&self) -> bool {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Store::SQLite(_) => true,
+            #[cfg(feature = "postgres")]
+            Store::PostgreSQL(_) => true,
+            _ => false,
+        }
+    }
+
+    #[cfg(feature = "enterprise")]
+    pub fn is_enterprise_store(&self) -> bool {
+        match self {
+            #[cfg(any(feature = "postgres", feature = "mysql"))]
+            Store::SQLReadReplica(_) => true,
+            _ => false,
+        }
+    }
+
+    #[cfg(not(feature = "enterprise"))]
+    pub fn is_enterprise_store(&self) -> bool {
+        false
     }
 }
 
@@ -702,7 +727,7 @@ impl std::fmt::Debug for Store {
             Self::RocksDb(_) => f.debug_tuple("RocksDb").finish(),
             #[cfg(feature = "tikv")]
             Self::TiKV(_) => f.debug_tuple("TiKV").finish(),
-            #[cfg(feature = "enterprise")]
+            #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(_) => f.debug_tuple("SQLReadReplica").finish(),
             Self::None => f.debug_tuple("None").finish(),
         }
@@ -718,6 +743,19 @@ impl From<Value<'_>> for trc::Value {
             Value::Text(v) => trc::Value::String(v.into_owned()),
             Value::Blob(v) => trc::Value::Bytes(v.into_owned()),
             Value::Null => trc::Value::None,
+        }
+    }
+}
+
+impl Stores {
+    pub fn disable_enterprise_only(&mut self) {
+        #[cfg(feature = "enterprise")]
+        {
+            #[cfg(any(feature = "postgres", feature = "mysql"))]
+            self.stores
+                .retain(|_, store| !matches!(store, Store::SQLReadReplica(_)));
+            self.blob_stores
+                .retain(|_, store| !matches!(store.backend, BlobBackend::Composite(_)));
         }
     }
 }

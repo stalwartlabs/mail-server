@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::outbound::client::SmtpClient;
+use crate::outbound::client::{from_error_status, from_mail_send_error, SmtpClient};
 use crate::outbound::mta_sts::verify::VerifyPolicy;
 use crate::outbound::{client::StartTlsResult, dane::verify::TlsaVerify};
 use common::config::{
@@ -325,7 +325,15 @@ impl DeliveryAttempt {
                                 TlsRpt(TlsRptEvent::RecordFetch),
                                 SpanId = message.span_id,
                                 Domain = domain.domain.clone(),
-                                Details = format!("{record:?}"),
+                                Details = record
+                                    .rua
+                                    .iter()
+                                    .map(|uri| trc::Value::from(match uri {
+                                        mail_auth::mta_sts::ReportUri::Mail(uri)
+                                        | mail_auth::mta_sts::ReportUri::Http(uri) =>
+                                            uri.to_string(),
+                                    }))
+                                    .collect::<Vec<_>>(),
                                 Elapsed = time.elapsed(),
                             );
 
@@ -364,7 +372,12 @@ impl DeliveryAttempt {
                             MtaSts(MtaStsEvent::PolicyFetch),
                             SpanId = message.span_id,
                             Domain = domain.domain.clone(),
-                            Details = mta_sts_policy.to_string(),
+                            Strict = mta_sts_policy.enforce(),
+                            Details = mta_sts_policy
+                                .mx
+                                .iter()
+                                .map(|mx| trc::Value::String(mx.to_string()))
+                                .collect::<Vec<_>>(),
                             Elapsed = time.elapsed(),
                         );
 
@@ -885,7 +898,7 @@ impl DeliveryAttempt {
                                 LocalIp = source_ip,
                                 RemoteIp = remote_ip,
                                 RemotePort = remote_host.port(),
-                                Reason = err.to_string(),
+                                CausedBy = from_mail_send_error(&err),
                                 Elapsed = time.elapsed(),
                             );
 
@@ -1018,11 +1031,17 @@ impl DeliveryAttempt {
                                         Hostname = envelope.mx.to_string(),
                                         Version = format!(
                                             "{:?}",
-                                            smtp_client.tls_connection().protocol_version()
+                                            smtp_client
+                                                .tls_connection()
+                                                .protocol_version()
+                                                .unwrap()
                                         ),
                                         Details = format!(
                                             "{:?}",
-                                            smtp_client.tls_connection().negotiated_cipher_suite()
+                                            smtp_client
+                                                .tls_connection()
+                                                .negotiated_cipher_suite()
+                                                .unwrap()
                                         ),
                                         Elapsed = time.elapsed(),
                                     );
@@ -1097,7 +1116,12 @@ impl DeliveryAttempt {
                                         SpanId = message.span_id,
                                         Domain = domain.domain.clone(),
                                         Hostname = envelope.mx.to_string(),
-                                        Details = reason.clone(),
+                                        Code = response.as_ref().map(|r| r.code()),
+                                        Details = response
+                                            .as_ref()
+                                            .map(|r| r.message().as_str())
+                                            .unwrap_or("STARTTLS was not advertised by host")
+                                            .to_string(),
                                         Elapsed = time.elapsed(),
                                     );
 
@@ -1141,7 +1165,7 @@ impl DeliveryAttempt {
                                         SpanId = message.span_id,
                                         Domain = domain.domain.clone(),
                                         Hostname = envelope.mx.to_string(),
-                                        Reason = error.to_string(),
+                                        Reason = from_mail_send_error(&error),
                                         Elapsed = time.elapsed(),
                                     );
 
@@ -1206,7 +1230,7 @@ impl DeliveryAttempt {
                                         SpanId = message.span_id,
                                         Domain = domain.domain.clone(),
                                         Hostname = envelope.mx.to_string(),
-                                        Reason = format!("{error:?}"),
+                                        Reason = from_mail_send_error(&error),
                                     );
 
                                     last_status = Status::from_tls_error(envelope.mx, error);
@@ -1226,7 +1250,7 @@ impl DeliveryAttempt {
                                 SpanId = message.span_id,
                                 Domain = domain.domain.clone(),
                                 Hostname = envelope.mx.to_string(),
-                                Details = status.to_string(),
+                                Details = from_error_status(&status),
                             );
 
                             last_status = status;
@@ -1333,12 +1357,12 @@ impl Message {
 
         for (idx, domain) in self.domains.iter_mut().enumerate() {
             match &domain.status {
-                Status::TemporaryFailure(err) if domain.expires <= now => {
+                Status::TemporaryFailure(_) if domain.expires <= now => {
                     trc::event!(
                         Delivery(DeliveryEvent::Failed),
                         SpanId = self.span_id,
                         Domain = domain.domain.clone(),
-                        Reason = err.to_string(),
+                        Reason = from_error_status(&domain.status),
                     );
 
                     for rcpt in &mut self.recipients {

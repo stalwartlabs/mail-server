@@ -60,7 +60,10 @@ impl JMAP {
 
                     if let Some(tracers) = result.tracers {
                         // Update tracers
-                        tracers.update();
+                        #[cfg(feature = "enterprise")]
+                        tracers.update(self.shared_core.load().is_enterprise_edition());
+                        #[cfg(not(feature = "enterprise"))]
+                        tracers.update(false);
                     }
 
                     // Reload settings

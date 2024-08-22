@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use license::LicenseKey;
 use mail_parser::DateTime;
+use store::Store;
 
 use crate::Core;
 
@@ -23,6 +24,8 @@ use crate::Core;
 pub struct Enterprise {
     pub license: LicenseKey,
     pub undelete_period: Option<Duration>,
+    pub trace_hold_period: Option<Duration>,
+    pub trace_store: Option<Store>,
 }
 
 impl Core {

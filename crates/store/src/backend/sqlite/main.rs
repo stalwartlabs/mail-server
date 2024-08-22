@@ -104,6 +104,8 @@ impl SqliteStore {
             SUBSPACE_FTS_INDEX,
             SUBSPACE_LOGS,
             SUBSPACE_BLOBS,
+            SUBSPACE_TRACE,
+            SUBSPACE_TRACE_INDEX,
         ] {
             let table = char::from(table);
             conn.execute(

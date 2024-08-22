@@ -10,6 +10,10 @@ use std::{
 };
 
 use common::{config::telemetry::OtelMetrics, IPC_CHANNEL_BUFFER};
+
+#[cfg(feature = "enterprise")]
+use common::telemetry::tracers::store::TracingStore;
+
 use store::{
     write::{now, purge::PurgeStore},
     BlobStore, LookupStore, Store,
@@ -177,6 +181,18 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                     }
                     Event::Purge(purge) => match purge {
                         PurgeType::Data(store) => {
+                            // SPDX-SnippetBegin
+                            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                            // SPDX-License-Identifier: LicenseRef-SEL
+                            #[cfg(feature = "enterprise")]
+                            let trace_hold_period = core
+                                .core
+                                .load()
+                                .enterprise
+                                .as_ref()
+                                .and_then(|e| e.trace_hold_period);
+                            // SPDX-SnippetEnd
+
                             tokio::spawn(async move {
                                 trc::event!(
                                     Housekeeper(HousekeeperEvent::PurgeStore),
@@ -185,6 +201,17 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                 if let Err(err) = store.purge_store().await {
                                     trc::error!(err.details("Failed to purge data store"));
                                 }
+
+                                // SPDX-SnippetBegin
+                                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                                // SPDX-License-Identifier: LicenseRef-SEL
+                                #[cfg(feature = "enterprise")]
+                                if let Some(trace_hold_period) = trace_hold_period {
+                                    if let Err(err) = store.purge_spans(trace_hold_period).await {
+                                        trc::error!(err.details("Failed to purge tracing spans"));
+                                    }
+                                }
+                                // SPDX-SnippetEnd
                             });
                         }
                         PurgeType::Blobs { store, blob_store } => {

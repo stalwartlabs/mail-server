@@ -9,3 +9,6 @@ pub mod journald;
 pub mod log;
 pub mod otel;
 pub mod stdout;
+
+#[cfg(feature = "enterprise")]
+pub mod store;

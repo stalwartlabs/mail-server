@@ -21,18 +21,18 @@ use crate::{
 struct LogEntry {
     timestamp: String,
     level: String,
-    message: String,
+    event: String,
+    event_id: String,
+    details: String,
 }
 
 impl JMAP {
     pub async fn handle_view_logs(&self, req: &HttpRequest) -> trc::Result<HttpResponse> {
-        // Obtain log file path
         let path = self
             .core
-            .storage
-            .config
-            .get("tracer.log.path")
-            .await?
+            .metrics
+            .log_path
+            .clone()
             .ok_or_else(|| manage::unsupported("Tracer log path not configured"))?;
 
         let params = UrlParams::new(req.uri().query());
@@ -120,12 +120,15 @@ impl LogEntry {
     fn from_line(line: &str) -> Option<Self> {
         let (timestamp, rest) = line.split_once(' ')?;
         let timestamp = DateTime::parse_from_rfc3339(timestamp).ok()?;
-        let (level, message) = rest.trim().split_once(' ')?;
-        let message = message.split_once(": ").map_or(message, |(_, v)| v);
+        let (level, rest) = rest.trim().split_once(' ')?;
+        let (event, rest) = rest.trim().split_once(" (")?;
+        let (event_id, details) = rest.split_once(")")?;
         Some(Self {
             timestamp: timestamp.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             level: level.to_string(),
-            message: message.to_string(),
+            event: event.to_string(),
+            event_id: event_id.to_string(),
+            details: details.trim().to_string(),
         })
     }
 }

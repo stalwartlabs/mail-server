@@ -13,7 +13,7 @@ use tokio::{
     fs::{File, OpenOptions},
     io::BufWriter,
 };
-use trc::{fmt::FmtWriter, subscriber::SubscriberBuilder, TelemetryEvent};
+use trc::{ipc::subscriber::SubscriberBuilder, serializers::text::FmtWriter, TelemetryEvent};
 
 pub(crate) fn spawn_log_tracer(builder: SubscriberBuilder, settings: LogTracer) {
     let (_, mut rx) = builder.register();

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, fmt::Debug, time::Duration};
+use std::{borrow::Cow, fmt::Debug, str::FromStr, time::Duration};
 
-use mail_auth::common::headers::HeaderWriter;
+use mail_auth::common::verify::VerifySignature;
 
 use crate::*;
 
@@ -121,12 +121,6 @@ impl From<StoreEvent> for Error {
 impl From<AuthEvent> for Error {
     fn from(value: AuthEvent) -> Self {
         Error::new(EventType::Auth(value))
-    }
-}
-
-impl From<Protocol> for Value {
-    fn from(value: Protocol) -> Self {
-        Self::Protocol(value)
     }
 }
 
@@ -330,15 +324,8 @@ impl From<&mail_auth::DmarcResult> for Event<EventType> {
 impl From<&mail_auth::DkimOutput<'_>> for Event<EventType> {
     fn from(value: &mail_auth::DkimOutput<'_>) -> Self {
         Event::from(value.result()).ctx_opt(
-            Key::Contents,
-            value.signature().map(|s| {
-                let mut buf = Vec::new();
-                s.write_header(&mut buf);
-
-                String::from_utf8(buf)
-                    .map(Value::String)
-                    .unwrap_or_else(|err| Value::Bytes(err.into_bytes()))
-            }),
+            Key::Domain,
+            value.signature().map(|s| s.domain().to_string()),
         )
     }
 }
@@ -405,5 +392,21 @@ impl AssertSuccess for reqwest::Response {
                 .details("HTTP request failed")
                 .ctx_opt(Key::Reason, self.text().await.ok()))
         }
+    }
+}
+
+impl FromStr for EventType {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        EventType::try_parse(s).ok_or(())
+    }
+}
+
+impl FromStr for Key {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Key::try_parse(s).ok_or(())
     }
 }
