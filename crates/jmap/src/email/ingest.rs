@@ -112,16 +112,16 @@ impl JMAP {
         }
 
         // Obtain message references and thread name
+        let mut message_id = String::new();
         let thread_id = {
             let mut references = Vec::with_capacity(5);
             let mut subject = "";
-            let mut message_id = "";
             for header in message.root_part().headers().iter().rev() {
                 match &header.name {
                     HeaderName::MessageId => header.value.visit_text(|id| {
                         if !id.is_empty() && id.len() < MAX_ID_LENGTH {
                             if message_id.is_empty() {
-                                message_id = id;
+                                message_id = id.to_string();
                             }
                             references.push(id);
                         }
@@ -160,7 +160,7 @@ impl JMAP {
                         params.account_id,
                         Collection::Email,
                         vec![
-                            Filter::eq(Property::MessageId, message_id),
+                            Filter::eq(Property::MessageId, &message_id),
                             Filter::is_in_bitmap(
                                 Property::MailboxIds,
                                 params.mailbox_ids.first().copied().unwrap_or(INBOX_ID),
@@ -176,7 +176,7 @@ impl JMAP {
                     MessageIngest(MessageIngestEvent::Duplicate),
                     SpanId = params.session_id,
                     AccountId = params.account_id,
-                    MessageId = message_id.to_string(),
+                    MessageId = message_id,
                 );
 
                 return Ok(IngestedEmail {
@@ -353,6 +353,7 @@ impl JMAP {
             MailboxId = mailbox_ids_event,
             BlobId = blob_id.hash.to_hex(),
             ChangeId = change_id,
+            MessageId = message_id,
             Size = raw_message_len as u64,
             Elapsed = start_time.elapsed(),
         );
