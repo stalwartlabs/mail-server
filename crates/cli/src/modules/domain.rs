@@ -6,13 +6,22 @@
 
 use std::borrow::Cow;
 
-use prettytable::{Attr, Cell, Row, Table};
+use prettytable::{Attr, Cell, Row, Table, format};
 use reqwest::Method;
 use serde_json::Value;
 
 use crate::modules::List;
 
 use super::cli::{Client, DomainCommands};
+
+use serde::{Deserialize, Serialize};
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct DnsRecord {
+    #[serde(rename = "type")]
+    typ: String,
+    name: String,
+    content: String,
+}
 
 impl DomainCommands {
     pub async fn exec(self, client: Client) {
@@ -36,6 +45,39 @@ impl DomainCommands {
                     )
                     .await;
                 eprintln!("Successfully deleted domain {name:?}");
+            }
+            DomainCommands::DNSRecords { name } => {
+                let records = client
+                    .http_request::<Vec<DnsRecord>, String>(
+                        Method::GET,
+                        &format!("/api/domain/{name}"),
+                        None,
+                    )
+                    .await;
+
+                if !records.is_empty() {
+                    let mut table = Table::new();
+                    // no borderline separator separator, as long values will mess it up
+                    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
+
+                    table.add_row(Row::new(vec![
+                        Cell::new("Type").with_style(Attr::Bold),
+                        Cell::new("Name").with_style(Attr::Bold),
+                        Cell::new("Contents").with_style(Attr::Bold),
+                    ]));
+
+                    for record in &records {
+                        table.add_row(Row::new(vec![
+                            Cell::new(&record.typ),
+                            Cell::new(&record.name),
+                            Cell::new(&record.content),
+                        ]));
+                    }
+
+                    eprintln!();
+                    table.printstd();
+                    eprintln!();
+                }
             }
             DomainCommands::List { from, limit } => {
                 let query = if from.is_none() && limit.is_none() {

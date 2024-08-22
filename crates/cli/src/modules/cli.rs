@@ -330,6 +330,12 @@ pub enum DomainCommands {
         name: String,
     },
 
+    /// List DNS records for domain
+    DNSRecords {
+        /// Domain name to list DNS records for
+        name: String,
+    },
+
     /// List all domains
     List {
         /// Starting point for listing domains
