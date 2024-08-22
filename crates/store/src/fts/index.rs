@@ -95,11 +95,14 @@ impl<'x, T: Into<u8> + Display + Clone + std::fmt::Debug> FtsDocument<'x, T> {
     }
 
     pub fn index_keyword(&mut self, field: Field<T>, text: impl Into<Cow<'x, str>>) {
-        self.parts.push(Text {
-            field,
-            text: text.into(),
-            typ: Type::Keyword,
-        });
+        let text = text.into();
+        if !text.is_empty() {
+            self.parts.push(Text {
+                field,
+                text,
+                typ: Type::Keyword,
+            });
+        }
     }
 }
 
@@ -146,11 +149,14 @@ impl Store {
                     position += 10;
                 }
                 Type::Keyword => {
-                    let field = u8::from(text.field);
-                    tokens
-                        .entry(BitmapHash::new(text.text.as_ref()))
-                        .or_default()
-                        .insert_keyword(TokenType::word(field));
+                    let value = text.text.as_ref();
+                    if !value.is_empty() {
+                        let field = u8::from(text.field);
+                        tokens
+                            .entry(BitmapHash::new(value))
+                            .or_default()
+                            .insert_keyword(TokenType::word(field));
+                    }
                 }
             }
         }
@@ -267,6 +273,10 @@ impl Store {
                         len @ (1..=7) => {
                             hash[..len].copy_from_slice(&key[U32_LEN..U32_LEN + len]);
                             (hash, len as u8)
+                        }
+                        0 => {
+                            // Temporary fix for empty keywords
+                            (hash, 0)
                         }
                         invalid => {
                             return Err(trc::Error::corrupted_key(key, None, trc::location!())

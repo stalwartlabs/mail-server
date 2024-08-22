@@ -250,7 +250,7 @@ impl<T: ResolveId> ValueClass<T> {
                 let serializer = serializer.write(account_id).write(
                     hash.hash
                         .get(0..std::cmp::min(hash.len as usize, 8))
-                        .unwrap(),
+                        .unwrap_or_default(),
                 );
 
                 if hash.len >= 8 {
