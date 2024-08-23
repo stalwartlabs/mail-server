@@ -12,7 +12,7 @@ use std::{future::Future, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use store::{
-    write::{key::DeserializeBigEndian, BatchBuilder, MaybeDynamicId, TraceClass, ValueClass},
+    write::{key::DeserializeBigEndian, BatchBuilder, MaybeDynamicId, TelemetryClass, ValueClass},
     Deserialize, IterateParams, Store, ValueKey, U64_LEN,
 };
 use trc::{
@@ -81,7 +81,7 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                         if !queue_ids.is_empty() {
                             // Serialize events
                             batch.set(
-                                ValueClass::Trace(TraceClass::Span { span_id }),
+                                ValueClass::Telemetry(TelemetryClass::Span { span_id }),
                                 serialize_events(
                                     [span.as_ref()]
                                         .into_iter()
@@ -93,7 +93,7 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
 
                             // Build index
                             batch.set(
-                                ValueClass::Trace(TraceClass::Index {
+                                ValueClass::Telemetry(TelemetryClass::Index {
                                     span_id,
                                     value: (span.inner.typ.code() as u16).to_be_bytes().to_vec(),
                                 }),
@@ -101,7 +101,7 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                             );
                             for queue_id in queue_ids {
                                 batch.set(
-                                    ValueClass::Trace(TraceClass::Index {
+                                    ValueClass::Telemetry(TelemetryClass::Index {
                                         span_id,
                                         value: queue_id.to_be_bytes().to_vec(),
                                     }),
@@ -110,7 +110,7 @@ pub(crate) fn spawn_store_tracer(builder: SubscriberBuilder, settings: StoreTrac
                             }
                             for value in values {
                                 batch.set(
-                                    ValueClass::Trace(TraceClass::Index {
+                                    ValueClass::Telemetry(TelemetryClass::Index {
                                         span_id,
                                         value: value.into_bytes(),
                                     }),
@@ -158,18 +158,18 @@ pub trait TracingStore: Sync + Send {
 
 impl TracingStore for Store {
     async fn get_span(&self, span_id: u64) -> trc::Result<Vec<Event<EventDetails>>> {
-        self.get_value::<Span>(ValueKey::from(ValueClass::Trace(TraceClass::Span {
-            span_id,
-        })))
+        self.get_value::<Span>(ValueKey::from(ValueClass::Telemetry(
+            TelemetryClass::Span { span_id },
+        )))
         .await
         .caused_by(trc::location!())
         .map(|span| span.map(|span| span.0).unwrap_or_default())
     }
 
     async fn get_raw_span(&self, span_id: u64) -> trc::Result<Option<Vec<u8>>> {
-        self.get_value::<RawSpan>(ValueKey::from(ValueClass::Trace(TraceClass::Span {
-            span_id,
-        })))
+        self.get_value::<RawSpan>(ValueKey::from(ValueClass::Telemetry(
+            TelemetryClass::Span { span_id },
+        )))
         .await
         .caused_by(trc::location!())
         .map(|span| span.map(|span| span.0))
@@ -206,11 +206,11 @@ impl TracingStore for Store {
             let mut param_spans = SpanCollector::new(num_params);
             self.iterate(
                 IterateParams::new(
-                    ValueKey::from(ValueClass::Trace(TraceClass::Index {
+                    ValueKey::from(ValueClass::Telemetry(TelemetryClass::Index {
                         span_id: 0,
                         value: value.clone(),
                     })),
-                    ValueKey::from(ValueClass::Trace(TraceClass::Index {
+                    ValueKey::from(ValueClass::Telemetry(TelemetryClass::Index {
                         span_id: u64::MAX,
                         value,
                     })),
@@ -253,8 +253,8 @@ impl TracingStore for Store {
         })?;
 
         self.delete_range(
-            ValueKey::from(ValueClass::Trace(TraceClass::Span { span_id: 0 })),
-            ValueKey::from(ValueClass::Trace(TraceClass::Span {
+            ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span { span_id: 0 })),
+            ValueKey::from(ValueClass::Telemetry(TelemetryClass::Span {
                 span_id: until_span_id,
             })),
         )
@@ -264,11 +264,11 @@ impl TracingStore for Store {
         let mut delete_keys: Vec<ValueClass<MaybeDynamicId>> = Vec::new();
         self.iterate(
             IterateParams::new(
-                ValueKey::from(ValueClass::Trace(TraceClass::Index {
+                ValueKey::from(ValueClass::Telemetry(TelemetryClass::Index {
                     span_id: 0,
                     value: vec![],
                 })),
-                ValueKey::from(ValueClass::Trace(TraceClass::Index {
+                ValueKey::from(ValueClass::Telemetry(TelemetryClass::Index {
                     span_id: u64::MAX,
                     value: vec![u8::MAX; 16],
                 })),
@@ -279,7 +279,7 @@ impl TracingStore for Store {
                     .deserialize_be_u64(key.len() - U64_LEN)
                     .caused_by(trc::location!())?;
                 if span_id < until_span_id {
-                    delete_keys.push(ValueClass::Trace(TraceClass::Index {
+                    delete_keys.push(ValueClass::Telemetry(TelemetryClass::Index {
                         span_id,
                         value: key[0..key.len() - U64_LEN].to_vec(),
                     }));

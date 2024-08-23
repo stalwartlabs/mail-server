@@ -147,12 +147,12 @@ pub const SUBSPACE_QUOTA: u8 = b'u';
 pub const SUBSPACE_REPORT_OUT: u8 = b'h';
 pub const SUBSPACE_REPORT_IN: u8 = b'r';
 pub const SUBSPACE_FTS_INDEX: u8 = b'g';
-pub const SUBSPACE_TRACE: u8 = b'o';
-pub const SUBSPACE_TRACE_INDEX: u8 = b'w';
+pub const SUBSPACE_TELEMETRY_SPAN: u8 = b'o';
+pub const SUBSPACE_TELEMETRY_INDEX: u8 = b'w';
+pub const SUBSPACE_TELEMETRY_METRIC: u8 = b'x';
 
-pub const SUBSPACE_RESERVED_1: u8 = b'x';
-pub const SUBSPACE_RESERVED_2: u8 = b'y';
-pub const SUBSPACE_RESERVED_3: u8 = b'z';
+pub const SUBSPACE_RESERVED_1: u8 = b'y';
+pub const SUBSPACE_RESERVED_2: u8 = b'z';
 
 #[derive(Clone)]
 pub struct IterateParams<T: Key> {

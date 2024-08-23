@@ -7,6 +7,7 @@
 pub mod conv;
 pub mod description;
 pub mod level;
+pub mod metrics;
 
 use std::{borrow::Cow, fmt::Display};
 

@@ -297,16 +297,26 @@ impl JMAP {
                             if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed))
                                 && self.core.is_enterprise_edition()
                             {
-                                if let Some(token) =
-                                    req.uri().path().strip_prefix("/api/tracing/live/")
+                                if let Some((live_path, token)) = req
+                                    .uri()
+                                    .path()
+                                    .strip_prefix("/api/telemetry/")
+                                    .and_then(|p| {
+                                        p.strip_suffix("traces/live/")
+                                            .map(|t| ("traces", t))
+                                            .or_else(|| {
+                                                p.strip_suffix("metrics/live/")
+                                                    .map(|t| ("metrics", t))
+                                            })
+                                    })
                                 {
                                     let (account_id, _, _) =
-                                        self.validate_access_token("live_tracing", token).await?;
+                                        self.validate_access_token("live_telemetry", token).await?;
 
                                     return self
-                                        .handle_tracing_api_request(
+                                        .handle_telemetry_api_request(
                                             &req,
-                                            vec!["", "live"],
+                                            vec!["", live_path, "live"],
                                             account_id,
                                         )
                                         .await;

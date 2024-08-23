@@ -32,6 +32,7 @@ impl Default for Network {
         Self {
             blocked_ips: Default::default(),
             allowed_ips: Default::default(),
+            node_id: 0,
             http_response_url: IfBlock::new::<()>(
                 "server.http.url",
                 [],
@@ -45,6 +46,7 @@ impl Default for Network {
 impl Network {
     pub fn parse(config: &mut Config) -> Self {
         let mut network = Network {
+            node_id: config.property("cluster.node-id").unwrap_or_default(),
             blocked_ips: BlockedIps::parse(config),
             allowed_ips: AllowedIps::parse(config),
             ..Default::default()

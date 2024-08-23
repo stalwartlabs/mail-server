@@ -8,9 +8,15 @@
  *
  */
 
-use std::time::{Duration, Instant};
+use std::{
+    fmt::Write,
+    time::{Duration, Instant},
+};
 
-use common::telemetry::tracers::store::{TracingQuery, TracingStore};
+use common::telemetry::{
+    metrics::store::{Metric, MetricsStore},
+    tracers::store::{TracingQuery, TracingStore},
+};
 use directory::backend::internal::manage;
 use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::{
@@ -23,7 +29,7 @@ use store::ahash::{AHashMap, AHashSet};
 use trc::{
     ipc::{bitset::Bitset, subscriber::SubscriberBuilder},
     serializers::json::JsonEventSerializer,
-    DeliveryEvent, EventType, Key, QueueEvent, Value,
+    Collector, DeliveryEvent, EventType, Key, MetricType, QueueEvent, Value,
 };
 use utils::{snowflake::SnowflakeIdGenerator, url_params::UrlParams};
 
@@ -36,7 +42,7 @@ use crate::{
 };
 
 impl JMAP {
-    pub async fn handle_tracing_api_request(
+    pub async fn handle_telemetry_api_request(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
@@ -49,7 +55,7 @@ impl JMAP {
             path.get(2).copied(),
             req.method(),
         ) {
-            ("spans", None, &Method::GET) => {
+            ("traces", None, &Method::GET) => {
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
                 let mut tracing_query = Vec::new();
@@ -100,12 +106,13 @@ impl JMAP {
                     .and_then(SnowflakeIdGenerator::from_timestamp)
                     .unwrap_or(0);
                 let values = params.get("values").is_some();
-                let store = self
+                let store = &self
                     .core
                     .enterprise
                     .as_ref()
                     .and_then(|e| e.trace_store.as_ref())
-                    .ok_or_else(|| manage::unsupported("No tracing store has been configured"))?;
+                    .ok_or_else(|| manage::unsupported("No tracing store has been configured"))?
+                    .store;
                 let span_ids = store.query_spans(&tracing_query, after, before).await?;
 
                 let (total, span_ids) = if limit > 0 {
@@ -154,52 +161,7 @@ impl JMAP {
                     .into_http_response())
                 }
             }
-            ("span", id, &Method::GET) => {
-                let store = self
-                    .core
-                    .enterprise
-                    .as_ref()
-                    .and_then(|e| e.trace_store.as_ref())
-                    .ok_or_else(|| manage::unsupported("No tracing store has been configured"))?;
-
-                let mut events = Vec::new();
-                for span_id in id
-                    .or_else(|| params.get("id"))
-                    .unwrap_or_default()
-                    .split(',')
-                {
-                    if let Ok(span_id) = span_id.parse::<u64>() {
-                        events.push(
-                            JsonEventSerializer::new(store.get_span(span_id).await?)
-                                .with_description()
-                                .with_explanation(),
-                        );
-                    } else {
-                        events.push(JsonEventSerializer::new(Vec::new()));
-                    }
-                }
-
-                if events.len() == 1 && id.is_some() {
-                    Ok(JsonResponse::new(json!({
-                            "data": events.into_iter().next().unwrap(),
-                    }))
-                    .into_http_response())
-                } else {
-                    Ok(JsonResponse::new(json!({
-                            "data": events,
-                    }))
-                    .into_http_response())
-                }
-            }
-            ("live", Some("token"), &Method::GET) => {
-                // Issue a live tracing token valid for 60 seconds
-
-                Ok(JsonResponse::new(json!({
-                    "data": self.issue_custom_token(account_id, "live_tracing", "web", 60).await?,
-            }))
-            .into_http_response())
-            }
-            ("live", _, &Method::GET) => {
+            ("traces", Some("live"), &Method::GET) => {
                 let mut key_filters = AHashMap::new();
                 let mut filter = None;
 
@@ -322,6 +284,190 @@ impl JMAP {
                                         ping_interval - elapsed
                                     }
                                 };
+                            }
+                        },
+                    ))),
+                })
+            }
+            ("trace", id, &Method::GET) => {
+                let store = &self
+                    .core
+                    .enterprise
+                    .as_ref()
+                    .and_then(|e| e.trace_store.as_ref())
+                    .ok_or_else(|| manage::unsupported("No tracing store has been configured"))?
+                    .store;
+
+                let mut events = Vec::new();
+                for span_id in id
+                    .or_else(|| params.get("id"))
+                    .unwrap_or_default()
+                    .split(',')
+                {
+                    if let Ok(span_id) = span_id.parse::<u64>() {
+                        events.push(
+                            JsonEventSerializer::new(store.get_span(span_id).await?)
+                                .with_description()
+                                .with_explanation(),
+                        );
+                    } else {
+                        events.push(JsonEventSerializer::new(Vec::new()));
+                    }
+                }
+
+                if events.len() == 1 && id.is_some() {
+                    Ok(JsonResponse::new(json!({
+                            "data": events.into_iter().next().unwrap(),
+                    }))
+                    .into_http_response())
+                } else {
+                    Ok(JsonResponse::new(json!({
+                            "data": events,
+                    }))
+                    .into_http_response())
+                }
+            }
+            ("live", Some("token"), &Method::GET) => {
+                // Issue a live telemetry token valid for 60 seconds
+
+                Ok(JsonResponse::new(json!({
+                    "data": self.issue_custom_token(account_id, "live_telemetry", "web", 60).await?,
+            }))
+            .into_http_response())
+            }
+            ("metrics", None, &Method::GET) => {
+                let before = params
+                    .parse::<Timestamp>("before")
+                    .map(|t| t.into_inner())
+                    .unwrap_or(0);
+                let after = params
+                    .parse::<Timestamp>("after")
+                    .map(|t| t.into_inner())
+                    .unwrap_or(0);
+                let results = self
+                    .core
+                    .enterprise
+                    .as_ref()
+                    .and_then(|e| e.metrics_store.as_ref())
+                    .ok_or_else(|| manage::unsupported("No metrics store has been configured"))?
+                    .store
+                    .query_metrics(after, before)
+                    .await?;
+                let mut metrics = Vec::with_capacity(results.len());
+
+                for metric in results {
+                    metrics.push(match metric {
+                        Metric::Counter {
+                            id,
+                            timestamp,
+                            value,
+                        } => Metric::Counter {
+                            id: id.name(),
+                            timestamp: DateTime::from_timestamp(timestamp as i64).to_rfc3339(),
+                            value,
+                        },
+                        Metric::Histogram {
+                            id,
+                            timestamp,
+                            count,
+                            sum,
+                        } => Metric::Histogram {
+                            id: id.name(),
+                            timestamp: DateTime::from_timestamp(timestamp as i64).to_rfc3339(),
+                            count,
+                            sum,
+                        },
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                        "data": metrics,
+                }))
+                .into_http_response())
+            }
+            ("metrics", Some("live"), &Method::GET) => {
+                let interval = Duration::from_secs(
+                    params
+                        .parse::<u64>("interval")
+                        .filter(|interval| *interval >= 1)
+                        .unwrap_or(30),
+                );
+                let mut event_types = AHashSet::new();
+                let mut metric_types = AHashSet::new();
+                for metric_name in params.get("metrics").unwrap_or_default().split(',') {
+                    let metric_name = metric_name.trim();
+                    if !metric_name.is_empty() {
+                        if let Some(event_type) = EventType::try_parse(metric_name) {
+                            event_types.insert(event_type);
+                        } else if let Some(metric_type) = MetricType::try_parse(metric_name) {
+                            metric_types.insert(metric_type);
+                        }
+                    }
+                }
+
+                Ok(HttpResponse {
+                    status: StatusCode::OK,
+                    content_type: "text/event-stream".into(),
+                    content_disposition: "".into(),
+                    cache_control: "no-store".into(),
+                    body: HttpResponseBody::Stream(BoxBody::new(StreamBody::new(
+                        async_stream::stream! {
+
+                            loop {
+                                let mut metrics = String::with_capacity(512);
+                                metrics.push_str("event: metrics\ndata: [");
+                                let mut is_first = true;
+
+                                for counter in Collector::collect_counters(true) {
+                                    if event_types.is_empty() || event_types.contains(&counter.id()) {
+                                        if !is_first {
+                                            metrics.push(',');
+                                        } else {
+                                            is_first = false;
+                                        }
+                                        let _ = write!(
+                                            &mut metrics,
+                                            "{{\"id\":\"{}\",\"type\":\"counter\",\"value\":{}}}",
+                                            counter.id().name(),
+                                            counter.value()
+                                        );
+                                    }
+                                }
+                                for gauge in Collector::collect_gauges(true) {
+                                    if metric_types.is_empty() || metric_types.contains(&gauge.id()) {
+                                        if !is_first {
+                                            metrics.push(',');
+                                        } else {
+                                            is_first = false;
+                                        }
+                                        let _ = write!(
+                                            &mut metrics,
+                                            "{{\"id\":\"{}\",\"type\":\"gauge\",\"value\":{}}}",
+                                            gauge.id().name(),
+                                            gauge.get()
+                                        );
+                                    }
+                                }
+                                for histogram in Collector::collect_histograms(true) {
+                                    if metric_types.is_empty() || metric_types.contains(&histogram.id()) {
+                                        if !is_first {
+                                            metrics.push(',');
+                                        } else {
+                                            is_first = false;
+                                        }
+                                        let _ = write!(
+                                            &mut metrics,
+                                            "{{\"id\":\"{}\",\"type\":\"histogram\",\"count\":{},\"sum\":{}}}",
+                                            histogram.id().name(),
+                                            histogram.count(),
+                                            histogram.sum()
+                                        );
+                                    }
+                                }
+                                metrics.push_str("]\n\n");
+
+                                yield Ok(Frame::data(Bytes::from(metrics)));
+                                tokio::time::sleep(interval).await;
                             }
                         },
                     ))),

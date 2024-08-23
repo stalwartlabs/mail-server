@@ -29,28 +29,8 @@ impl OtelMetrics {
         // Add counters
         for counter in Collector::collect_counters(is_enterprise) {
             metrics.push(Metric {
-                name: counter.id().into(),
-                description: counter.description().into(),
-                unit: counter.unit().into(),
-                data: Box::new(Sum {
-                    data_points: vec![DataPoint {
-                        attributes: vec![],
-                        start_time: start_time.into(),
-                        time: now.into(),
-                        value: counter.get(),
-                        exemplars: vec![],
-                    }],
-                    temporality: Temporality::Cumulative,
-                    is_monotonic: true,
-                }),
-            });
-        }
-
-        // Add event counters
-        for counter in Collector::collect_event_counters(is_enterprise) {
-            metrics.push(Metric {
-                name: counter.id().into(),
-                description: counter.description().into(),
+                name: counter.id().name().into(),
+                description: counter.id().description().into(),
                 unit: "events".into(),
                 data: Box::new(Sum {
                     data_points: vec![DataPoint {
@@ -69,9 +49,9 @@ impl OtelMetrics {
         // Add gauges
         for gauge in Collector::collect_gauges(is_enterprise) {
             metrics.push(Metric {
-                name: gauge.id().into(),
-                description: gauge.description().into(),
-                unit: gauge.unit().into(),
+                name: gauge.id().name().into(),
+                description: gauge.id().description().into(),
+                unit: gauge.id().unit().into(),
                 data: Box::new(Gauge {
                     data_points: vec![DataPoint {
                         attributes: vec![],
@@ -87,9 +67,9 @@ impl OtelMetrics {
         // Add histograms
         for histogram in Collector::collect_histograms(is_enterprise) {
             metrics.push(Metric {
-                name: histogram.id().into(),
-                description: histogram.description().into(),
-                unit: histogram.unit().into(),
+                name: histogram.id().name().into(),
+                description: histogram.id().description().into(),
+                unit: histogram.id().unit().into(),
                 data: Box::new(Histogram {
                     data_points: vec![HistogramDataPoint {
                         attributes: vec![],

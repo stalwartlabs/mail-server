@@ -40,13 +40,13 @@ impl Core {
         blob_hash: &BlobHash,
         blob_size: usize,
     ) {
-        if let Some(hold_period) = self.enterprise.as_ref().and_then(|e| e.undelete_period) {
+        if let Some(undelete) = self.enterprise.as_ref().and_then(|e| e.undelete.as_ref()) {
             let now = now();
 
             batch.set(
                 BlobOp::Reserve {
                     hash: blob_hash.clone(),
-                    until: now + hold_period.as_secs(),
+                    until: now + undelete.retention.as_secs(),
                 },
                 KeySerializer::new(U64_LEN + U64_LEN)
                     .write(blob_size as u32)

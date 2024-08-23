@@ -13,13 +13,13 @@ use crate::{
     SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_FTS_INDEX,
     SUBSPACE_FTS_QUEUE, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_VALUE, SUBSPACE_PROPERTY,
     SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_IN,
-    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TRACE, SUBSPACE_TRACE_INDEX, U32_LEN, U64_LEN,
-    WITH_SUBSPACE,
+    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TELEMETRY_INDEX, SUBSPACE_TELEMETRY_METRIC,
+    SUBSPACE_TELEMETRY_SPAN, U32_LEN, U64_LEN, WITH_SUBSPACE,
 };
 
 use super::{
     AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportClass,
-    ReportEvent, ResolveId, TagValue, TraceClass, ValueClass,
+    ReportEvent, ResolveId, TagValue, TelemetryClass, ValueClass,
 };
 
 pub struct KeySerializer {
@@ -366,11 +366,19 @@ impl<T: ResolveId> ValueClass<T> {
                     serializer.write(2u8).write(*expires).write(*id)
                 }
             },
-            ValueClass::Trace(trace) => match trace {
-                TraceClass::Span { span_id } => serializer.write(*span_id),
-                TraceClass::Index { span_id, value } => {
+            ValueClass::Telemetry(telemetry) => match telemetry {
+                TelemetryClass::Span { span_id } => serializer.write(*span_id),
+                TelemetryClass::Index { span_id, value } => {
                     serializer.write(value.as_slice()).write(*span_id)
                 }
+                TelemetryClass::Metric {
+                    timestamp,
+                    metric_id,
+                    node_id,
+                } => serializer
+                    .write(*timestamp)
+                    .write_leb128(*metric_id)
+                    .write_leb128(*node_id),
             },
             ValueClass::Any(any) => serializer.write(any.key.as_slice()),
         }
@@ -550,9 +558,10 @@ impl<T> ValueClass<T> {
                 QueueClass::QuotaCount(v) | QueueClass::QuotaSize(v) => v.len(),
             },
             ValueClass::Report(_) => U64_LEN * 2 + 1,
-            ValueClass::Trace(trace) => match trace {
-                TraceClass::Span { .. } => U64_LEN + 1,
-                TraceClass::Index { value, .. } => U64_LEN + value.len() + 1,
+            ValueClass::Telemetry(telemetry) => match telemetry {
+                TelemetryClass::Span { .. } => U64_LEN + 1,
+                TelemetryClass::Index { value, .. } => U64_LEN + value.len() + 1,
+                TelemetryClass::Metric { .. } => U64_LEN * 2 + 1,
             },
             ValueClass::Any(v) => v.key.len(),
         }
@@ -595,9 +604,10 @@ impl<T> ValueClass<T> {
                 QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_) => SUBSPACE_QUOTA,
             },
             ValueClass::Report(_) => SUBSPACE_REPORT_IN,
-            ValueClass::Trace(trace) => match trace {
-                TraceClass::Span { .. } => SUBSPACE_TRACE,
-                TraceClass::Index { .. } => SUBSPACE_TRACE_INDEX,
+            ValueClass::Telemetry(telemetry) => match telemetry {
+                TelemetryClass::Span { .. } => SUBSPACE_TELEMETRY_SPAN,
+                TelemetryClass::Index { .. } => SUBSPACE_TELEMETRY_INDEX,
+                TelemetryClass::Metric { .. } => SUBSPACE_TELEMETRY_METRIC,
             },
             ValueClass::Any(any) => any.subspace,
         }

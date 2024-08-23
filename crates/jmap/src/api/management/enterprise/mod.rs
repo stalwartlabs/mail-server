@@ -8,5 +8,5 @@
  *
  */
 
-pub mod tracing;
+pub mod telemetry;
 pub mod undelete;

@@ -137,28 +137,18 @@ impl Telemetry {
         };
 
         // Parse metrics
-        if config
-            .property_or_default("metrics.prometheus.enable", "false")
-            .unwrap_or(false)
-            || ["http", "grpc"].contains(
-                &config
-                    .value("metrics.open-telemetry.transport")
-                    .unwrap_or("disabled"),
-            )
-        {
-            apply_events(
-                config
-                    .properties::<EventOrMany>("metrics.disabled-events")
-                    .into_iter()
-                    .map(|(_, e)| e),
-                false,
-                |event_type| {
-                    if event_type.is_metric() {
-                        telemetry.metrics.set(event_type);
-                    }
-                },
-            );
-        }
+        apply_events(
+            config
+                .properties::<EventOrMany>("metrics.disabled-events")
+                .into_iter()
+                .map(|(_, e)| e),
+            false,
+            |event_type| {
+                if event_type.is_metric() {
+                    telemetry.metrics.set(event_type);
+                }
+            },
+        );
 
         telemetry
     }

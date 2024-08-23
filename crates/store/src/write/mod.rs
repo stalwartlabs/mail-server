@@ -153,7 +153,7 @@ pub enum ValueClass<T> {
     Config(Vec<u8>),
     Queue(QueueClass),
     Report(ReportClass),
-    Trace(TraceClass),
+    Telemetry(TelemetryClass),
     Any(AnyClass),
 }
 
@@ -206,9 +206,19 @@ pub enum ReportClass {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum TraceClass {
-    Span { span_id: u64 },
-    Index { span_id: u64, value: Vec<u8> },
+pub enum TelemetryClass {
+    Span {
+        span_id: u64,
+    },
+    Metric {
+        timestamp: u64,
+        metric_id: u64,
+        node_id: u64,
+    },
+    Index {
+        span_id: u64,
+        value: Vec<u8>,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]

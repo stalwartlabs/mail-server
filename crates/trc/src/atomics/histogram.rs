@@ -6,12 +6,12 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::MetricType;
+
 use super::array::AtomicU64Array;
 
 pub struct AtomicHistogram<const N: usize> {
-    id: &'static str,
-    description: &'static str,
-    unit: &'static str,
+    id: MetricType,
     buckets: AtomicU64Array<N>,
     upper_bounds: [u64; N],
     sum: AtomicU64,
@@ -21,12 +21,7 @@ pub struct AtomicHistogram<const N: usize> {
 }
 
 impl<const N: usize> AtomicHistogram<N> {
-    pub const fn new(
-        id: &'static str,
-        description: &'static str,
-        unit: &'static str,
-        upper_bounds: [u64; N],
-    ) -> Self {
+    pub const fn new(id: MetricType, upper_bounds: [u64; N]) -> Self {
         Self {
             buckets: AtomicU64Array::new(),
             upper_bounds,
@@ -35,8 +30,6 @@ impl<const N: usize> AtomicHistogram<N> {
             min: AtomicU64::new(u64::MAX),
             max: AtomicU64::new(0),
             id,
-            description,
-            unit,
         }
     }
 
@@ -56,16 +49,8 @@ impl<const N: usize> AtomicHistogram<N> {
         unreachable!()
     }
 
-    pub fn id(&self) -> &'static str {
+    pub fn id(&self) -> MetricType {
         self.id
-    }
-
-    pub fn description(&self) -> &'static str {
-        self.description
-    }
-
-    pub fn unit(&self) -> &'static str {
-        self.unit
     }
 
     pub fn sum(&self) -> u64 {
@@ -129,14 +114,9 @@ impl<const N: usize> AtomicHistogram<N> {
         self.count.load(Ordering::Relaxed) > 0
     }
 
-    pub const fn new_message_sizes(
-        id: &'static str,
-        description: &'static str,
-    ) -> AtomicHistogram<12> {
+    pub const fn new_message_sizes(id: MetricType) -> AtomicHistogram<12> {
         AtomicHistogram::new(
             id,
-            description,
-            "bytes",
             [
                 500,         // 500 bytes
                 1_000,       // 1 KB
@@ -154,14 +134,9 @@ impl<const N: usize> AtomicHistogram<N> {
         )
     }
 
-    pub const fn new_short_durations(
-        id: &'static str,
-        description: &'static str,
-    ) -> AtomicHistogram<12> {
+    pub const fn new_short_durations(id: MetricType) -> AtomicHistogram<12> {
         AtomicHistogram::new(
             id,
-            description,
-            "milliseconds",
             [
                 5,        // 5 milliseconds
                 10,       // 10 milliseconds
@@ -179,14 +154,9 @@ impl<const N: usize> AtomicHistogram<N> {
         )
     }
 
-    pub const fn new_medium_durations(
-        id: &'static str,
-        description: &'static str,
-    ) -> AtomicHistogram<12> {
+    pub const fn new_medium_durations(id: MetricType) -> AtomicHistogram<12> {
         AtomicHistogram::new(
             id,
-            description,
-            "milliseconds",
             [
                 250,
                 500,
@@ -204,14 +174,9 @@ impl<const N: usize> AtomicHistogram<N> {
         )
     }
 
-    pub const fn new_long_durations(
-        id: &'static str,
-        description: &'static str,
-    ) -> AtomicHistogram<12> {
+    pub const fn new_long_durations(id: MetricType) -> AtomicHistogram<12> {
         AtomicHistogram::new(
             id,
-            description,
-            "milliseconds",
             [
                 1_000,       // 1 second
                 30_000,      // 30 seconds

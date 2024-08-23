@@ -25,18 +25,8 @@ impl Core {
         // Add counters
         for counter in Collector::collect_counters(is_enterprise) {
             let mut metric = MetricFamily::default();
-            metric.set_name(metric_name(counter.id()));
-            metric.set_help(counter.description().into());
-            metric.set_field_type(MetricType::COUNTER);
-            metric.set_metric(vec![new_counter(counter.get())]);
-            metrics.push(metric);
-        }
-
-        // Add event counters
-        for counter in Collector::collect_event_counters(is_enterprise) {
-            let mut metric = MetricFamily::default();
-            metric.set_name(metric_name(counter.id()));
-            metric.set_help(counter.description().into());
+            metric.set_name(metric_name(counter.id().name()));
+            metric.set_help(counter.id().description().into());
             metric.set_field_type(MetricType::COUNTER);
             metric.set_metric(vec![new_counter(counter.value())]);
             metrics.push(metric);
@@ -45,8 +35,8 @@ impl Core {
         // Add gauges
         for gauge in Collector::collect_gauges(is_enterprise) {
             let mut metric = MetricFamily::default();
-            metric.set_name(metric_name(gauge.id()));
-            metric.set_help(gauge.description().into());
+            metric.set_name(metric_name(gauge.id().name()));
+            metric.set_help(gauge.id().description().into());
             metric.set_field_type(MetricType::GAUGE);
             metric.set_metric(vec![new_gauge(gauge.get())]);
             metrics.push(metric);
@@ -55,8 +45,8 @@ impl Core {
         // Add histograms
         for histogram in Collector::collect_histograms(is_enterprise) {
             let mut metric = MetricFamily::default();
-            metric.set_name(metric_name(histogram.id()));
-            metric.set_help(histogram.description().into());
+            metric.set_name(metric_name(histogram.id().name()));
+            metric.set_help(histogram.id().description().into());
             metric.set_field_type(MetricType::HISTOGRAM);
             metric.set_metric(vec![new_histogram(histogram)]);
             metrics.push(metric);

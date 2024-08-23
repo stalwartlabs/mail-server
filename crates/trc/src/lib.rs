@@ -927,6 +927,35 @@ pub enum ResourceEvent {
     WebadminUnpacked,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MetricType {
+    ServerMemory,
+    MessageIngestionTime,
+    MessageFtsIndexTime,
+    MessageSize,
+    MessageAuthSize,
+    DeliveryTotalTime,
+    DeliveryTime,
+    DeliveryActiveConnections,
+    QueueCount,
+    ReportOutgoingSize,
+    StoreReadTime,
+    StoreWriteTime,
+    BlobReadTime,
+    BlobWriteTime,
+    DnsLookupTime,
+    HttpActiveConnections,
+    HttpRequestTime,
+    ImapActiveConnections,
+    ImapRequestTime,
+    Pop3ActiveConnections,
+    Pop3RequestTime,
+    SmtpActiveConnections,
+    SmtpRequestTime,
+    SieveActiveConnections,
+    SieveRequestTime,
+}
+
 pub const TOTAL_EVENT_COUNT: usize = total_event_count!();
 
 pub trait AddContext<T> {

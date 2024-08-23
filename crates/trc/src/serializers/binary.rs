@@ -857,7 +857,7 @@ impl EventType {
         }
     }
 
-    fn from_code(code: u64) -> Option<Self> {
+    pub fn from_code(code: u64) -> Option<Self> {
         match code {
             0 => Some(EventType::Acme(AcmeEvent::AuthCompleted)),
             1 => Some(EventType::Acme(AcmeEvent::AuthError)),
