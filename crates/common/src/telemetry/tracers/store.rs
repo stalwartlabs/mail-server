@@ -421,6 +421,9 @@ impl StoreTracer {
                                 | AuthEvent::Banned
                                 | AuthEvent::Error
                         )
+                        | EventType::Sieve(_)
+                        | EventType::Milter(_)
+                        | EventType::MtaHook(_)
                 )
         })
     }

@@ -42,10 +42,14 @@ impl JMAP {
         path: Vec<&str>,
         body: Option<Vec<u8>>,
     ) -> trc::Result<HttpResponse> {
-        let script = match (
-            path.get(1)
-                .and_then(|name| self.core.sieve.scripts.get(*name))
-                .cloned(),
+        let (script, script_id) = match (
+            path.get(1).and_then(|name| {
+                self.core
+                    .sieve
+                    .scripts
+                    .get(*name)
+                    .map(|s| (s.clone(), name.to_string()))
+            }),
             req.method(),
         ) {
             (Some(script), &Method::POST) => script,
@@ -94,7 +98,7 @@ impl JMAP {
         }
 
         // Run script
-        let result = match self.smtp.run_script(script, params, 0).await {
+        let result = match self.smtp.run_script(script_id, script, params, 0).await {
             ScriptResult::Accept { modifications } => Response::Accept { modifications },
             ScriptResult::Replace {
                 message,

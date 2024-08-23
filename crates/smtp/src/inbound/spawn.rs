@@ -84,15 +84,24 @@ impl<T: SessionStream> Session<T> {
         let config = &self.core.core.smtp.session.connect;
 
         // Sieve filtering
-        if let Some(script) = self
+        if let Some((script, script_id)) = self
             .core
             .core
             .eval_if::<String, _>(&config.script, self, self.data.session_id)
             .await
-            .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
+            .and_then(|name| {
+                self.core
+                    .core
+                    .get_sieve_script(&name, self.data.session_id)
+                    .map(|s| (s, name))
+            })
         {
             if let ScriptResult::Reject(message) = self
-                .run_script(script.clone(), self.build_script_parameters("connect"))
+                .run_script(
+                    script_id,
+                    script.clone(),
+                    self.build_script_parameters("connect"),
+                )
                 .await
             {
                 let _ = self.write(message.as_bytes()).await;

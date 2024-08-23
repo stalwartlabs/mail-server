@@ -446,6 +446,7 @@ impl<T: SessionStream> Session<T> {
                 {
                     command.arg(argument);
                 }
+                let time = Instant::now();
                 match command
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
@@ -475,6 +476,7 @@ impl<T: SessionStream> Session<T> {
                                                 SpanId = self.data.session_id,
                                                 Path = command_,
                                                 Result = output.status.to_string(),
+                                                Elapsed = time.elapsed(),
                                             );
                                         }
                                         Ok(Err(err)) => {
@@ -482,6 +484,7 @@ impl<T: SessionStream> Session<T> {
                                                 Smtp(SmtpEvent::PipeError),
                                                 SpanId = self.data.session_id,
                                                 Reason = err.to_string(),
+                                                Elapsed = time.elapsed(),
                                             );
                                         }
                                         Err(_) => {
@@ -489,6 +492,7 @@ impl<T: SessionStream> Session<T> {
                                                 Smtp(SmtpEvent::PipeError),
                                                 SpanId = self.data.session_id,
                                                 Reason = "Timeout",
+                                                Elapsed = time.elapsed(),
                                             );
                                         }
                                     }
@@ -498,6 +502,7 @@ impl<T: SessionStream> Session<T> {
                                         Smtp(SmtpEvent::PipeError),
                                         SpanId = self.data.session_id,
                                         Reason = err.to_string(),
+                                        Elapsed = time.elapsed(),
                                     );
                                 }
                                 Err(_) => {
@@ -505,6 +510,7 @@ impl<T: SessionStream> Session<T> {
                                         Smtp(SmtpEvent::PipeError),
                                         SpanId = self.data.session_id,
                                         Reason = "Stdin timeout",
+                                        Elapsed = time.elapsed(),
                                     );
                                 }
                             }
@@ -513,6 +519,7 @@ impl<T: SessionStream> Session<T> {
                                 Smtp(SmtpEvent::PipeError),
                                 SpanId = self.data.session_id,
                                 Reason = "Stdin not available",
+                                Elapsed = time.elapsed(),
                             );
                         }
                     }
@@ -528,12 +535,17 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Sieve filtering
-        if let Some(script) = self
+        if let Some((script, script_id)) = self
             .core
             .core
             .eval_if::<String, _>(&dc.script, self, self.data.session_id)
             .await
-            .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
+            .and_then(|name| {
+                self.core
+                    .core
+                    .get_sieve_script(&name, self.data.session_id)
+                    .map(|s| (s, name))
+            })
         {
             let params = self
                 .build_script_parameters("data")
@@ -584,7 +596,7 @@ impl<T: SessionStream> Session<T> {
                         .unwrap_or_default(),
                 );
 
-            let modifications = match self.run_script(script.clone(), params).await {
+            let modifications = match self.run_script(script_id, script.clone(), params).await {
                 ScriptResult::Accept { modifications } => modifications,
                 ScriptResult::Replace {
                     message,

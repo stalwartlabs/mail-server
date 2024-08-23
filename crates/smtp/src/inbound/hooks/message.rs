@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Instant;
+
 use ahash::AHashMap;
 use common::{
     config::smtp::session::{MTAHook, Stage},
@@ -50,6 +52,7 @@ impl<T: SessionStream> Session<T> {
                 continue;
             }
 
+            let time = Instant::now();
             match self.run_mta_hook(stage, mta_hook, message).await {
                 Ok(response) => {
                     trc::event!(
@@ -61,11 +64,7 @@ impl<T: SessionStream> Session<T> {
                         }),
                         SpanId = self.data.session_id,
                         Id = mta_hook.id.clone(),
-                        Contents = response
-                            .modifications
-                            .iter()
-                            .map(|m| format!("{m:?}"))
-                            .collect::<Vec<_>>()
+                        Elapsed = time.elapsed(),
                     );
 
                     let mut new_modifications = Vec::with_capacity(response.modifications.len());
@@ -157,6 +156,7 @@ impl<T: SessionStream> Session<T> {
                         SpanId = self.data.session_id,
                         Id = mta_hook.id.clone(),
                         Reason = err,
+                        Elapsed = time.elapsed(),
                     );
 
                     if mta_hook.tempfail_on_error {

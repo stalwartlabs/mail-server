@@ -121,7 +121,7 @@ impl<T: SessionStream> Session<T> {
         .into();
 
         // Sieve filtering
-        if let Some(script) = self
+        if let Some((script, script_id)) = self
             .core
             .core
             .eval_if::<String, _>(
@@ -130,10 +130,19 @@ impl<T: SessionStream> Session<T> {
                 self.data.session_id,
             )
             .await
-            .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
+            .and_then(|name| {
+                self.core
+                    .core
+                    .get_sieve_script(&name, self.data.session_id)
+                    .map(|s| (s, name))
+            })
         {
             match self
-                .run_script(script.clone(), self.build_script_parameters("mail"))
+                .run_script(
+                    script_id,
+                    script.clone(),
+                    self.build_script_parameters("mail"),
+                )
                 .await
             {
                 ScriptResult::Accept { modifications } => {

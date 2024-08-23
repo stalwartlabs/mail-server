@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
+use std::{borrow::Cow, time::Instant};
 
 use common::{
     config::smtp::session::{Milter, Stage},
@@ -53,16 +53,14 @@ impl<T: SessionStream> Session<T> {
                 continue;
             }
 
+            let time = Instant::now();
             match self.connect_and_run(milter, message).await {
                 Ok(new_modifications) => {
                     trc::event!(
                         Milter(MilterEvent::ActionAccept),
                         SpanId = self.data.session_id,
                         Id = milter.id.to_string(),
-                        Contents = new_modifications
-                            .iter()
-                            .map(|m| m.to_string())
-                            .collect::<Vec<_>>(),
+                        Elapsed = time.elapsed(),
                     );
 
                     if !modifications.is_empty() {
@@ -95,6 +93,7 @@ impl<T: SessionStream> Session<T> {
                         }),
                         SpanId = self.data.session_id,
                         Id = milter.id.to_string(),
+                        Elapsed = time.elapsed(),
                     );
 
                     return Err(match action {
@@ -144,6 +143,7 @@ impl<T: SessionStream> Session<T> {
                         SpanId = self.data.session_id,
                         Id = milter.id.to_string(),
                         Details = details,
+                        Elapsed = time.elapsed(),
                     );
 
                     if milter.tempfail_on_error {

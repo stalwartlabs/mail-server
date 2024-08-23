@@ -85,8 +85,12 @@ impl<T: SessionStream> Session<T> {
                 self.data.session_id,
             )
             .await
-            .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
-            .cloned();
+            .and_then(|name| {
+                self.core
+                    .core
+                    .get_sieve_script(&name, self.data.session_id)
+                    .map(|s| (s.clone(), name))
+            });
 
         if rcpt_script.is_some()
             || !self.core.core.smtp.session.rcpt.rewrite.is_empty()
@@ -100,9 +104,13 @@ impl<T: SessionStream> Session<T> {
                 .any(|m| m.run_on_stage.contains(&Stage::Rcpt))
         {
             // Sieve filtering
-            if let Some(script) = rcpt_script {
+            if let Some((script, script_id)) = rcpt_script {
                 match self
-                    .run_script(script.clone(), self.build_script_parameters("rcpt"))
+                    .run_script(
+                        script_id,
+                        script.clone(),
+                        self.build_script_parameters("rcpt"),
+                    )
                     .await
                 {
                     ScriptResult::Accept { modifications } => {
