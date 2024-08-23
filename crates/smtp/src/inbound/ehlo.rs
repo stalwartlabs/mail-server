@@ -115,7 +115,7 @@ impl<T: SessionStream> Session<T> {
             }
 
             // MTAHook filtering
-            if let Err(message) = self.run_mta_hooks(Stage::Ehlo, None).await {
+            if let Err(message) = self.run_mta_hooks(Stage::Ehlo, None, None).await {
                 self.data.mail_from = None;
                 self.data.helo_domain = prev_helo_domain;
                 self.data.spf_ehlo = None;

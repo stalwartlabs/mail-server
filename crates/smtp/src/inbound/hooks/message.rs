@@ -24,15 +24,17 @@ use crate::{
         milter::Modification,
         FilterResponse,
     },
+    queue::QueueId,
 };
 
-use super::{client::send_mta_hook_request, Action, Response};
+use super::{client::send_mta_hook_request, Action, Queue, Response};
 
 impl<T: SessionStream> Session<T> {
     pub async fn run_mta_hooks(
         &self,
         stage: Stage,
         message: Option<&AuthenticatedMessage<'_>>,
+        queue_id: Option<QueueId>,
     ) -> Result<Vec<Modification>, FilterResponse> {
         let mta_hooks = &self.core.core.smtp.session.hooks;
         if mta_hooks.is_empty() {
@@ -53,7 +55,7 @@ impl<T: SessionStream> Session<T> {
             }
 
             let time = Instant::now();
-            match self.run_mta_hook(stage, mta_hook, message).await {
+            match self.run_mta_hook(stage, mta_hook, message, queue_id).await {
                 Ok(response) => {
                     trc::event!(
                         MtaHook(match response.action {
@@ -174,6 +176,7 @@ impl<T: SessionStream> Session<T> {
         stage: Stage,
         mta_hook: &MTAHook,
         message: Option<&AuthenticatedMessage<'_>>,
+        queue_id: Option<QueueId>,
     ) -> Result<Response, String> {
         // Build request
         let (tls_version, tls_cipher) = self.stream.tls_version_and_cipher();
@@ -210,7 +213,9 @@ impl<T: SessionStream> Session<T> {
                     port: self.data.local_port,
                     ip: self.data.local_ip.to_string().into(),
                 },
-                queue: None,
+                queue: queue_id.map(|id| Queue {
+                    id: format!("{:x}", id),
+                }),
                 protocol: Protocol { version: 1 },
             },
             envelope: self.data.mail_from.as_ref().map(|from| Envelope {

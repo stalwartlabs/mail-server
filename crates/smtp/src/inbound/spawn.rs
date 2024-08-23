@@ -116,7 +116,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // MTAHook filtering
-        if let Err(message) = self.run_mta_hooks(Stage::Connect, None).await {
+        if let Err(message) = self.run_mta_hooks(Stage::Connect, None, None).await {
             let _ = self.write(message.message.as_bytes()).await;
             return false;
         }

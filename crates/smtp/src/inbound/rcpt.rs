@@ -139,7 +139,7 @@ impl<T: SessionStream> Session<T> {
             }
 
             // MTAHook filtering
-            if let Err(message) = self.run_mta_hooks(Stage::Rcpt, None).await {
+            if let Err(message) = self.run_mta_hooks(Stage::Rcpt, None, None).await {
                 self.data.rcpt_to.pop();
                 return self.write(message.message.as_bytes()).await;
             }

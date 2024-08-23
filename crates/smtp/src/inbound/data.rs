@@ -398,7 +398,7 @@ impl<T: SessionStream> Session<T> {
 
         // Run MTA Hooks
         match self
-            .run_mta_hooks(Stage::Data, (&auth_message).into())
+            .run_mta_hooks(Stage::Data, (&auth_message).into(), message_id.into())
             .await
         {
             Ok(modifications_) => {

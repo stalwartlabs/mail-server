@@ -177,7 +177,7 @@ async fn sieve_scripts() {
             .with_envelope(&core.core, &session, 0)
             .await;
         let core_ = core.clone();
-        match core_.run_script(script, params, 0).await {
+        match core_.run_script(name.to_string(), script, params, 0).await {
             ScriptResult::Accept { .. } => (),
             ScriptResult::Reject(message) => panic!("{}", message),
             err => {

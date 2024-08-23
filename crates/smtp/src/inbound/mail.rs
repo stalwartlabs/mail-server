@@ -169,7 +169,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // MTAHook filtering
-        if let Err(message) = self.run_mta_hooks(Stage::Mail, None).await {
+        if let Err(message) = self.run_mta_hooks(Stage::Mail, None, None).await {
             self.data.mail_from = None;
             return self.write(message.message.as_bytes()).await;
         }
