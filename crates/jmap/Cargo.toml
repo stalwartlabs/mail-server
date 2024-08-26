@@ -57,7 +57,7 @@ lz4_flex = { version = "0.11", default-features = false }
 rev_lines = "0.3.0"
 x509-parser = "0.16.0"
 quick-xml = "0.36"
-
+memory-stats = "1.2.0"
 
 [features]
 test_mode = []

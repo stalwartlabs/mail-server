@@ -6,3 +6,6 @@
 
 pub mod otel;
 pub mod prometheus;
+
+#[cfg(feature = "enterprise")]
+pub mod store;

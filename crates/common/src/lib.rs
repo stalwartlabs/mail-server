@@ -28,7 +28,10 @@ use listener::{
 use mail_send::Credentials;
 
 use sieve::Sieve;
-use store::LookupStore;
+use store::{
+    write::{QueueClass, ValueClass},
+    IterateParams, LookupStore, ValueKey,
+};
 use tokio::sync::{mpsc, oneshot};
 use utils::BlobHash;
 
@@ -65,6 +68,7 @@ pub struct Core {
 
 #[derive(Clone)]
 pub struct Network {
+    pub node_id: u64,
     pub blocked_ips: BlockedIps,
     pub allowed_ips: AllowedIps,
     pub http_response_url: IfBlock,
@@ -302,6 +306,26 @@ impl Core {
                 .ctx(trc::Key::RemoteIp, remote_ip)
                 .ctx(trc::Key::AccountName, credentials.login().to_string()))
         }
+    }
+
+    pub async fn message_queue_size(&self) -> trc::Result<u64> {
+        let mut total = 0;
+        self.storage
+            .data
+            .iterate(
+                IterateParams::new(
+                    ValueKey::from(ValueClass::Queue(QueueClass::Message(0))),
+                    ValueKey::from(ValueClass::Queue(QueueClass::Message(u64::MAX))),
+                )
+                .no_values(),
+                |_, _| {
+                    total += 1;
+
+                    Ok(true)
+                },
+            )
+            .await
+            .map(|_| total)
     }
 }
 

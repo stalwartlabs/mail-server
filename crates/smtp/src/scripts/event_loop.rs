@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, sync::Arc, time::Instant};
 
 use common::scripts::plugins::PluginContext;
 use mail_auth::common::headers::HeaderWriter;
@@ -29,11 +29,13 @@ use super::{ScriptModification, ScriptParameters, ScriptResult};
 impl SMTP {
     pub async fn run_script(
         &self,
+        script_id: String,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
         session_id: u64,
     ) -> ScriptResult {
         // Create filter instance
+        let time = Instant::now();
         let mut instance = self
             .core
             .sieve
@@ -62,8 +64,9 @@ impl SMTP {
                         } else {
                             trc::event!(
                                 Sieve(SieveEvent::ScriptNotFound),
+                                Id = script_id.clone(),
                                 SpanId = session_id,
-                                Id = name.as_str().to_string(),
+                                Details = name.as_str().to_string(),
                             );
                             break;
                         }
@@ -95,8 +98,9 @@ impl SMTP {
                             } else {
                                 trc::event!(
                                     Sieve(SieveEvent::ListNotFound),
+                                    Id = script_id.clone(),
                                     SpanId = session_id,
-                                    Id = list,
+                                    Details = list,
                                 );
                             }
                         }
@@ -157,8 +161,9 @@ impl SMTP {
                             Recipient::List(list) => {
                                 trc::event!(
                                     Sieve(SieveEvent::NotSupported),
+                                    Id = script_id.clone(),
                                     SpanId = session_id,
-                                    Id = list,
+                                    Details = list,
                                     Reason = "Sending to lists is not supported.",
                                 );
                             }
@@ -300,6 +305,7 @@ impl SMTP {
                                 trc::event!(
                                     Sieve(SieveEvent::QuotaExceeded),
                                     SpanId = session_id,
+                                    Id = script_id.clone(),
                                     From = message.return_path_lcase,
                                     To = message
                                         .recipients
@@ -326,6 +332,7 @@ impl SMTP {
                     unsupported => {
                         trc::event!(
                             Sieve(SieveEvent::NotSupported),
+                            Id = script_id.clone(),
                             SpanId = session_id,
                             Reason = "Unsupported event",
                             Details = format!("{unsupported:?}"),
@@ -336,6 +343,7 @@ impl SMTP {
                 Err(err) => {
                     trc::event!(
                         Sieve(SieveEvent::RuntimeError),
+                        Id = script_id.clone(),
                         SpanId = session_id,
                         Reason = err.to_string(),
                     );
@@ -380,18 +388,18 @@ impl SMTP {
             trc::event!(
                 Sieve(SieveEvent::ActionAccept),
                 SpanId = session_id,
-                Details = modifications
-                    .iter()
-                    .map(|m| trc::Value::from(format!("{m:?}")))
-                    .collect::<Vec<_>>(),
+                Id = script_id,
+                Elapsed = time.elapsed(),
             );
 
             ScriptResult::Accept { modifications }
         } else if let Some(mut reject_reason) = reject_reason {
             trc::event!(
                 Sieve(SieveEvent::ActionReject),
+                Id = script_id,
                 SpanId = session_id,
                 Details = reject_reason.clone(),
+                Elapsed = time.elapsed(),
             );
 
             if !reject_reason.ends_with('\n') {
@@ -412,10 +420,8 @@ impl SMTP {
                 trc::event!(
                     Sieve(SieveEvent::ActionAccept),
                     SpanId = session_id,
-                    Details = modifications
-                        .iter()
-                        .map(|m| trc::Value::from(format!("{m:?}")))
-                        .collect::<Vec<_>>(),
+                    Id = script_id,
+                    Elapsed = time.elapsed(),
                 );
 
                 ScriptResult::Replace {
@@ -426,16 +432,19 @@ impl SMTP {
                 trc::event!(
                     Sieve(SieveEvent::ActionAcceptReplace),
                     SpanId = session_id,
-                    Details = modifications
-                        .iter()
-                        .map(|m| trc::Value::from(format!("{m:?}")))
-                        .collect::<Vec<_>>(),
+                    Id = script_id,
+                    Elapsed = time.elapsed(),
                 );
 
                 ScriptResult::Accept { modifications }
             }
         } else {
-            trc::event!(Sieve(SieveEvent::ActionDiscard), SpanId = session_id,);
+            trc::event!(
+                Sieve(SieveEvent::ActionDiscard),
+                SpanId = session_id,
+                Id = script_id,
+                Elapsed = time.elapsed()
+            );
 
             ScriptResult::Discard
         }

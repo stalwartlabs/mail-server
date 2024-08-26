@@ -17,15 +17,34 @@ use std::time::Duration;
 use license::LicenseKey;
 use mail_parser::DateTime;
 use store::Store;
+use utils::config::cron::SimpleCron;
 
 use crate::Core;
 
 #[derive(Clone)]
 pub struct Enterprise {
     pub license: LicenseKey,
-    pub undelete_period: Option<Duration>,
-    pub trace_hold_period: Option<Duration>,
-    pub trace_store: Option<Store>,
+    pub undelete: Option<Undelete>,
+    pub trace_store: Option<TraceStore>,
+    pub metrics_store: Option<MetricsStore>,
+}
+
+#[derive(Clone)]
+pub struct Undelete {
+    pub retention: Duration,
+}
+
+#[derive(Clone)]
+pub struct TraceStore {
+    pub retention: Option<Duration>,
+    pub store: Store,
+}
+
+#[derive(Clone)]
+pub struct MetricsStore {
+    pub retention: Option<Duration>,
+    pub store: Store,
+    pub interval: SimpleCron,
 }
 
 impl Core {

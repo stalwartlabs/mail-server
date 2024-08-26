@@ -75,7 +75,7 @@ impl<T: SessionStream> Session<T> {
             }
 
             // Sieve filtering
-            if let Some(script) = self
+            if let Some((script, script_id)) = self
                 .core
                 .core
                 .eval_if::<String, _>(
@@ -84,10 +84,19 @@ impl<T: SessionStream> Session<T> {
                     self.data.session_id,
                 )
                 .await
-                .and_then(|name| self.core.core.get_sieve_script(&name, self.data.session_id))
+                .and_then(|name| {
+                    self.core
+                        .core
+                        .get_sieve_script(&name, self.data.session_id)
+                        .map(|s| (s, name))
+                })
             {
                 if let ScriptResult::Reject(message) = self
-                    .run_script(script.clone(), self.build_script_parameters("ehlo"))
+                    .run_script(
+                        script_id,
+                        script.clone(),
+                        self.build_script_parameters("ehlo"),
+                    )
                     .await
                 {
                     self.data.mail_from = None;
@@ -106,7 +115,7 @@ impl<T: SessionStream> Session<T> {
             }
 
             // MTAHook filtering
-            if let Err(message) = self.run_mta_hooks(Stage::Ehlo, None).await {
+            if let Err(message) = self.run_mta_hooks(Stage::Ehlo, None, None).await {
                 self.data.mail_from = None;
                 self.data.helo_domain = prev_helo_domain;
                 self.data.spf_ehlo = None;

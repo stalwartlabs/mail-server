@@ -12,14 +12,17 @@ use std::{
 use common::{config::telemetry::OtelMetrics, IPC_CHANNEL_BUFFER};
 
 #[cfg(feature = "enterprise")]
-use common::telemetry::tracers::store::TracingStore;
+use common::telemetry::{
+    metrics::store::{MetricsStore, SharedMetricHistory},
+    tracers::store::TracingStore,
+};
 
 use store::{
     write::{now, purge::PurgeStore},
     BlobStore, LookupStore, Store,
 };
 use tokio::sync::mpsc;
-use trc::HousekeeperEvent;
+use trc::{Collector, HousekeeperEvent, MetricType};
 use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{Inner, JmapInstance, JMAP, LONG_SLUMBER};
@@ -54,6 +57,9 @@ enum ActionClass {
     Store(usize),
     Acme(String),
     OtelMetrics,
+    #[cfg(feature = "enterprise")]
+    InternalMetrics,
+    CalculateMetrics,
     #[cfg(feature = "enterprise")]
     ReloadSettings,
 }
@@ -99,6 +105,9 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                 queue.schedule(Instant::now() + otel.interval, ActionClass::OtelMetrics);
             }
 
+            // Calculate expensive metrics
+            queue.schedule(Instant::now(), ActionClass::CalculateMetrics);
+
             // Add all ACME renewals to heap
             for provider in core_.tls.acme_providers.values() {
                 match core_.init_acme(provider).await {
@@ -125,9 +134,20 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                     Instant::now() + enterprise.license.expires_in(),
                     ActionClass::ReloadSettings,
                 );
+
+                if let Some(metrics_store) = enterprise.metrics_store.as_ref() {
+                    queue.schedule(
+                        Instant::now() + metrics_store.interval.time_to_next(),
+                        ActionClass::InternalMetrics,
+                    );
+                }
             }
             // SPDX-SnippetEnd
         }
+
+        // Metrics history
+        #[cfg(feature = "enterprise")]
+        let metrics_history = SharedMetricHistory::default();
 
         loop {
             match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
@@ -185,12 +205,21 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                             // SPDX-License-Identifier: LicenseRef-SEL
                             #[cfg(feature = "enterprise")]
-                            let trace_hold_period = core
+                            let trace_retention = core
                                 .core
                                 .load()
                                 .enterprise
                                 .as_ref()
-                                .and_then(|e| e.trace_hold_period);
+                                .and_then(|e| e.trace_store.as_ref())
+                                .and_then(|t| t.retention);
+                            #[cfg(feature = "enterprise")]
+                            let metrics_retention = core
+                                .core
+                                .load()
+                                .enterprise
+                                .as_ref()
+                                .and_then(|e| e.metrics_store.as_ref())
+                                .and_then(|m| m.retention);
                             // SPDX-SnippetEnd
 
                             tokio::spawn(async move {
@@ -206,9 +235,16 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                 // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                                 // SPDX-License-Identifier: LicenseRef-SEL
                                 #[cfg(feature = "enterprise")]
-                                if let Some(trace_hold_period) = trace_hold_period {
-                                    if let Err(err) = store.purge_spans(trace_hold_period).await {
+                                if let Some(trace_retention) = trace_retention {
+                                    if let Err(err) = store.purge_spans(trace_retention).await {
                                         trc::error!(err.details("Failed to purge tracing spans"));
+                                    }
+                                }
+
+                                #[cfg(feature = "enterprise")]
+                                if let Some(metrics_retention) = metrics_retention {
+                                    if let Err(err) = store.purge_metrics(metrics_retention).await {
+                                        trc::error!(err.details("Failed to purge metrics"));
                                     }
                                 }
                                 // SPDX-SnippetEnd
@@ -382,10 +418,83 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     });
                                 }
                             }
+                            ActionClass::CalculateMetrics => {
+                                // Calculate expensive metrics every 5 minutes
+                                queue.schedule(
+                                    Instant::now() + Duration::from_secs(5 * 60),
+                                    ActionClass::OtelMetrics,
+                                );
+
+                                let core = core_.clone();
+                                tokio::spawn(async move {
+                                    #[cfg(feature = "enterprise")]
+                                    if core.is_enterprise_edition() {
+                                        // Obtain queue size
+                                        match core.message_queue_size().await {
+                                            Ok(total) => {
+                                                Collector::update_gauge(
+                                                    MetricType::QueueCount,
+                                                    total,
+                                                );
+                                            }
+                                            Err(err) => {
+                                                trc::error!(
+                                                    err.details("Failed to obtain queue size")
+                                                );
+                                            }
+                                        }
+                                    }
+
+                                    match tokio::task::spawn_blocking(memory_stats::memory_stats)
+                                        .await
+                                    {
+                                        Ok(Some(stats)) => {
+                                            Collector::update_gauge(
+                                                MetricType::ServerMemory,
+                                                stats.physical_mem as u64,
+                                            );
+                                        }
+                                        Ok(None) => {}
+                                        Err(err) => {
+                                            trc::error!(trc::EventType::Server(
+                                                trc::ServerEvent::ThreadError,
+                                            )
+                                            .reason(err)
+                                            .caused_by(trc::location!())
+                                            .details("Join Error"));
+                                        }
+                                    }
+                                });
+                            }
 
                             // SPDX-SnippetBegin
                             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                             // SPDX-License-Identifier: LicenseRef-SEL
+                            #[cfg(feature = "enterprise")]
+                            ActionClass::InternalMetrics => {
+                                if let Some(metrics_store) = &core_
+                                    .enterprise
+                                    .as_ref()
+                                    .and_then(|e| e.metrics_store.as_ref())
+                                {
+                                    queue.schedule(
+                                        Instant::now() + metrics_store.interval.time_to_next(),
+                                        ActionClass::InternalMetrics,
+                                    );
+
+                                    let metrics_store = metrics_store.store.clone();
+                                    let metrics_history = metrics_history.clone();
+                                    let core = core_.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(err) =
+                                            metrics_store.write_metrics(core, metrics_history).await
+                                        {
+                                            trc::error!(err.details("Failed to write metrics"));
+                                        }
+                                    });
+                                }
+                            }
+
                             #[cfg(feature = "enterprise")]
                             ActionClass::ReloadSettings => {
                                 match core_.reload().await {

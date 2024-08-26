@@ -120,11 +120,13 @@ impl<T: SessionStream> Session<T> {
 
     pub async fn run_script(
         &self,
+        script_id: String,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
     ) -> ScriptResult {
         self.core
             .run_script(
+                script_id,
                 script,
                 params
                     .with_envelope(&self.core.core, self, self.data.session_id)

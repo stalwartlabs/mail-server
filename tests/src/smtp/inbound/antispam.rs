@@ -409,7 +409,10 @@ async fn antispam() {
             // Run script
             let core_ = core.clone();
             let script = script.clone();
-            match core_.run_script(script, params, 0).await {
+            match core_
+                .run_script("test".to_string(), script, params, 0)
+                .await
+            {
                 ScriptResult::Accept { modifications } => {
                     if modifications.len() != expected_headers.len() {
                         panic!(

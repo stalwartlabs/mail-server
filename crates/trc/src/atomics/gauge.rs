@@ -6,19 +6,17 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::MetricType;
+
 pub struct AtomicGauge {
-    id: &'static str,
-    description: &'static str,
-    unit: &'static str,
+    id: MetricType,
     value: AtomicU64,
 }
 
 impl AtomicGauge {
-    pub const fn new(id: &'static str, description: &'static str, unit: &'static str) -> Self {
+    pub const fn new(id: MetricType) -> Self {
         Self {
             id,
-            description,
-            unit,
             value: AtomicU64::new(0),
         }
     }
@@ -53,15 +51,7 @@ impl AtomicGauge {
         self.value.fetch_sub(value, Ordering::Relaxed);
     }
 
-    pub fn id(&self) -> &'static str {
+    pub fn id(&self) -> MetricType {
         self.id
-    }
-
-    pub fn description(&self) -> &'static str {
-        self.description
-    }
-
-    pub fn unit(&self) -> &'static str {
-        self.unit
     }
 }

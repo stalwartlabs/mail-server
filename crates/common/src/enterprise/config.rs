@@ -12,9 +12,9 @@ use std::time::Duration;
 
 use jmap_proto::types::collection::Collection;
 use store::{BitmapKey, Store, Stores};
-use utils::config::Config;
+use utils::config::{cron::SimpleCron, utils::ParseValue, Config};
 
-use super::{license::LicenseValidator, Enterprise};
+use super::{license::LicenseValidator, Enterprise, MetricsStore, TraceStore, Undelete};
 
 impl Enterprise {
     pub async fn parse(config: &mut Config, stores: &Stores, data: &Store) -> Option<Self> {
@@ -54,18 +54,62 @@ impl Enterprise {
             _ => (),
         }
 
-        Some(Enterprise {
-            license,
-            undelete_period: config
-                .property_or_default::<Option<Duration>>("storage.undelete.retention", "false")
-                .unwrap_or_default(),
-            trace_hold_period: config
-                .property_or_default::<Option<Duration>>("tracing.history.retention", "30d")
-                .unwrap_or(Some(Duration::from_secs(30 * 24 * 60 * 60))),
-            trace_store: config
+        let trace_store = if config
+            .property_or_default("tracing.history.enable", "false")
+            .unwrap_or(false)
+        {
+            if let Some(store) = config
                 .value("tracing.history.store")
                 .and_then(|name| stores.stores.get(name))
-                .cloned(),
+                .cloned()
+            {
+                TraceStore {
+                    retention: config
+                        .property_or_default::<Option<Duration>>("tracing.history.retention", "30d")
+                        .unwrap_or(Some(Duration::from_secs(30 * 24 * 60 * 60))),
+                    store,
+                }
+                .into()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let metrics_store = if config
+            .property_or_default("metrics.history.enable", "false")
+            .unwrap_or(false)
+        {
+            if let Some(store) = config
+                .value("metrics.history.store")
+                .and_then(|name| stores.stores.get(name))
+                .cloned()
+            {
+                MetricsStore {
+                    retention: config
+                        .property_or_default::<Option<Duration>>("metrics.history.retention", "30d")
+                        .unwrap_or(Some(Duration::from_secs(30 * 24 * 60 * 60))),
+                    store,
+                    interval: config
+                        .property_or_default::<SimpleCron>("metrics.history.interval", "0 * *")
+                        .unwrap_or_else(|| SimpleCron::parse_value("0 * *").unwrap()),
+                }
+                .into()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Some(Enterprise {
+            license,
+            undelete: config
+                .property_or_default::<Option<Duration>>("storage.undelete.retention", "false")
+                .unwrap_or_default()
+                .map(|retention| Undelete { retention }),
+            trace_store,
+            metrics_store,
         })
     }
 }

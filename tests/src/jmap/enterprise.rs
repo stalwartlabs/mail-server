@@ -12,7 +12,9 @@ use std::time::Duration;
 
 use common::{
     config::telemetry::{StoreTracer, TelemetrySubscriberType},
-    enterprise::{license::LicenseKey, undelete::DeletedBlob, Enterprise},
+    enterprise::{
+        license::LicenseKey, undelete::DeletedBlob, Enterprise, MetricsStore, TraceStore, Undelete,
+    },
     telemetry::tracers::store::{TracingQuery, TracingStore},
 };
 use imap_proto::ResponseType;
@@ -22,6 +24,7 @@ use trc::{
     ipc::{bitset::Bitset, subscriber::SubscriberBuilder},
     DeliveryEvent, EventType, SmtpEvent,
 };
+use utils::config::cron::SimpleCron;
 
 use crate::{
     imap::{ImapConnection, Type},
@@ -40,9 +43,21 @@ pub async fn test(params: &mut JMAPTest) {
             hostname: String::new(),
             accounts: 100,
         },
-        undelete_period: Duration::from_secs(2).into(),
-        trace_hold_period: Duration::from_secs(1).into(),
-        trace_store: core.storage.data.clone().into(),
+        undelete: Undelete {
+            retention: Duration::from_secs(2),
+        }
+        .into(),
+        trace_store: TraceStore {
+            retention: Some(Duration::from_secs(1)),
+            store: core.storage.data.clone(),
+        }
+        .into(),
+        metrics_store: MetricsStore {
+            retention: Some(Duration::from_secs(1)),
+            store: core.storage.data.clone(),
+            interval: SimpleCron::Day { hour: 0, minute: 0 },
+        }
+        .into(),
     }
     .into();
     params.server.shared_core.store(core.into());
