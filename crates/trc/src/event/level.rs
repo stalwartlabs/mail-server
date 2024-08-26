@@ -27,6 +27,7 @@ impl EventType {
                 | StoreEvent::PostgresqlError
                 | StoreEvent::RocksdbError
                 | StoreEvent::SqliteError
+                | StoreEvent::TikvError
                 | StoreEvent::LdapError
                 | StoreEvent::ElasticsearchError
                 | StoreEvent::RedisError

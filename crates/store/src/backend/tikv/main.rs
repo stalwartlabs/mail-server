@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 use std::time::Duration;
-use tikv_client::{Backoff, CheckLevel, RawClient, RetryOptions, TransactionClient, TransactionOptions};
+use tikv_client::{Backoff, CheckLevel, RetryOptions, TransactionClient, TransactionOptions};
 use utils::config::{utils::AsKey, Config};
 use super::TikvStore;
 
@@ -27,17 +27,6 @@ impl TikvStore {
                 )
             })
             .ok()?;
-
-        let raw_client = RawClient::new(pd_endpoints)
-            .await
-            .map_err(|err| {
-                config.new_build_error(
-                    prefix.as_str(),
-                    format!("Failed to create TiKV database: {err:?}"),
-                )
-            })
-            .ok()?
-            .with_atomic_for_cas();
 
         let backoff_min_delay = config
             .property::<Duration>((&prefix, "transaction.backoff-min-delay"))
@@ -90,16 +79,19 @@ impl TikvStore {
             .drop_check(CheckLevel::Warn)
             .retry_options(RetryOptions::new(backoff.clone(), backoff.clone()));
 
-        let raw_backoff = backoff;
+        let read_trx_options = TransactionOptions::new_optimistic()
+            .drop_check(CheckLevel::None)
+            .retry_options(RetryOptions::none())
+            .read_only();
+
+        // Used for write transactions
+        let backoff = backoff;
 
         let store = Self {
             trx_client,
             write_trx_options,
-            raw_client,
-            raw_backoff,
-            api_v2: false,
-            keyspace: [0, 0, b's'], // Temporary
-            version: Default::default(),
+            read_trx_options,
+            backoff,
         };
 
         Some(store)

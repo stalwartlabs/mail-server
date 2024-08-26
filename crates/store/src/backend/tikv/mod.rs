@@ -13,7 +13,6 @@ pub mod main;
 pub mod read;
 pub mod write;
 
-
 // https://github.com/tikv/tikv/issues/7272#issuecomment-604841372
 
 // Default limit is 4194304 bytes
@@ -22,9 +21,10 @@ const MAX_KEY_SIZE: u32 = 4 * 1024;
 // Then, 2097152
 const MAX_GRPC_MESSAGE_SIZE: u32 = 2097152;
 const MAX_ASSUMED_KEY_SIZE: u32 = 256;
-const MAX_VALUE_SIZE: u32 = 131072;
+const MAX_VALUE_SIZE: usize = 131072;
+const MAX_CHUNKED_SIZED: usize = MAX_VALUE_SIZE * (1 + 256);
 const MAX_SCAN_KEYS_SIZE: u32 = MAX_GRPC_MESSAGE_SIZE / MAX_ASSUMED_KEY_SIZE; // 8192
-const MAX_SCAN_VALUES_SIZE: u32 = MAX_GRPC_MESSAGE_SIZE / MAX_VALUE_SIZE; // 16
+const MAX_SCAN_VALUES_SIZE: u32 = MAX_GRPC_MESSAGE_SIZE / MAX_VALUE_SIZE as u32; // 16
 
 // Preparation for API v2
 // RFC: https://github.com/tikv/rfcs/blob/master/text/0069-api-v2.md
@@ -38,62 +38,13 @@ pub const TRANSACTION_TIMEOUT: Duration = Duration::from_secs(4);
 pub struct TikvStore {
     trx_client: TransactionClient,
     write_trx_options: TransactionOptions,
-    raw_client: RawClient,
-    raw_backoff: Backoff,
-    api_v2: bool,
-    keyspace: [u8; 3], // Keyspace is fixed-length of 3 bytes in network byte order.
-    version: parking_lot::Mutex<ReadVersion>,
+    read_trx_options: TransactionOptions,
+    backoff: Backoff,
 }
 
 pub(crate) struct TimedTransaction {
     trx: Transaction,
     expires: Instant,
-}
-
-pub(crate) struct ReadVersion {
-    version: Timestamp,
-    expires: Instant,
-}
-
-impl ReadVersion {
-    pub fn new(version: Timestamp) -> Self {
-        Self {
-            version,
-            expires: Instant::now() + TRANSACTION_EXPIRY,
-        }
-    }
-
-    pub fn is_expired(&self) -> bool {
-        self.expires < Instant::now()
-    }
-}
-
-impl Default for ReadVersion {
-    fn default() -> Self {
-        Self {
-            version: Timestamp::default(),
-            expires: Instant::now(),
-        }
-    }
-}
-
-impl AsRef<Transaction> for TimedTransaction {
-    fn as_ref(&self) -> &Transaction {
-        &self.trx
-    }
-}
-
-impl TimedTransaction {
-    pub fn new(trx: Transaction) -> Self {
-        Self {
-            trx,
-            expires: Instant::now() + TRANSACTION_TIMEOUT,
-        }
-    }
-
-    pub fn is_expired(&self) -> bool {
-        self.expires < Instant::now()
-    }
 }
 
 #[inline(always)]

@@ -20,19 +20,18 @@ use crate::{
     },
     BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN, WITH_SUBSPACE,
 };
-use crate::backend::tikv::read::read_helpers::read_chunked_value;
-use crate::write::key;
-use super::{into_error, read::{ChunkedValue}, TikvStore, ReadVersion, MAX_VALUE_SIZE, MAX_SCAN_KEYS_SIZE};
+use super::write::chunking::{put_chunked_value, delete_chunked_value};
+use super::read::chunking::get_chunked_value;
+use super::{into_error, TikvStore, MAX_VALUE_SIZE, MAX_SCAN_KEYS_SIZE};
 
 impl TikvStore {
     pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
-        println!("write");
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
         let mut change_id = u64::MAX;
 
-        let mut backoff = self.raw_backoff.clone();
+        let mut backoff = self.backoff.clone();
 
         loop {
             let mut result = AssignedIds::default();
@@ -62,44 +61,19 @@ impl TikvStore {
                         change_id = *change_id_;
                     }
                     Operation::Value { class, op } => {
-                        let mut key = class.serialize(
+                        let key = class.serialize(
                             account_id,
                             collection,
                             document_id,
                             WITH_SUBSPACE,
                             (&result).into(),
                         );
-                        let do_chunk = !class.is_counter(collection);
 
                         match op {
                             ValueOp::Set(value) => {
                                 let value = value.resolve(&result)?;
 
-                                if !value.is_empty() && do_chunk {
-                                    for (pos, chunk) in value.chunks(MAX_VALUE_SIZE as usize).enumerate() {
-                                        match pos.cmp(&1) {
-                                            Ordering::Less => {}
-                                            Ordering::Equal => {
-                                                key.push(0);
-                                            }
-                                            Ordering::Greater => {
-                                                if pos < u8::MAX as usize {
-                                                    *key.last_mut().unwrap() += 1;
-                                                } else {
-                                                    trx.rollback().await.map_err(into_error)?;
-                                                    return Err(trc::StoreEvent::TikvError
-                                                        .ctx(
-                                                            trc::Key::Reason,
-                                                            "Value is too large",
-                                                        ));
-                                                }
-                                            }
-                                        }
-                                        trx.put(key.clone(), chunk).await.map_err(into_error)?;
-                                    }
-                                } else {
-                                    trx.put(key, value.into_owned()).await.map_err(into_error)?;
-                                }
+                                put_chunked_value(&key, &value, &mut trx, false).await?;
                             }
                             ValueOp::AtomicAdd(by) => {
                                 get_and_add(&mut trx, key, *by).await?;
@@ -109,45 +83,7 @@ impl TikvStore {
                                 result.push_counter_id(num);
                             }
                             ValueOp::Clear => {
-                                if do_chunk {
-                                    let end_key = KeySerializer::new(key.len() + 1)
-                                        .write(key.as_slice())
-                                        .write(u8::MAX)
-                                        .finalize();
-                                    let mut begin = Bound::Included(TikvKey::from(key));
-                                    let end = Bound::Included(TikvKey::from(end_key));
-
-                                    'outer: loop {
-                                        let range = BoundRange::new(begin, end.clone());
-                                        let mut keys_iter = trx.scan_keys(range, MAX_SCAN_KEYS_SIZE)
-                                            .await
-                                            .map_err(into_error)?
-                                            .peekable();
-
-                                        let mut count = 0;
-                                        while let Some(key) = keys_iter.next() {
-                                            count += 1;
-                                            if keys_iter.peek().is_none() {
-                                                if count < MAX_SCAN_KEYS_SIZE {
-                                                    trx.delete(key).await.map_err(into_error)?;
-                                                    break 'outer;
-                                                } else {
-                                                    begin = Bound::Excluded(key.clone());
-                                                    trx.delete(key).await.map_err(into_error)?;
-                                                    continue 'outer;
-                                                }
-                                            } else {
-                                                trx.delete(key).await.map_err(into_error)?;
-                                            }
-                                        }
-
-                                        // Empty
-                                        break;
-                                    }
-
-                                } else {
-                                    trx.delete(key).await.map_err(into_error)?;
-                                }
+                                delete_chunked_value(&key, &mut trx, false).await?;
                             }
                         }
                     }
@@ -172,61 +108,51 @@ impl TikvStore {
                             && document_id == u32::MAX;
 
                         if assign_id {
-                            let begin = BitmapKey {
+                            let mut begin = BitmapKey {
                                 account_id,
                                 collection,
                                 class: BitmapClass::DocumentIds,
                                 document_id: 0,
                             }.serialize(WITH_SUBSPACE);
-                            let end = BitmapKey {
+                            let mut end = BitmapKey {
                                 account_id,
                                 collection,
                                 class: BitmapClass::DocumentIds,
                                 document_id: u32::MAX,
                             }.serialize(WITH_SUBSPACE);
+                            end.push(u8::MIN); // Null byte to make the end inclusive
+
 
                             let key_len = begin.len();
-                            let mut begin_bound = Bound::Included(TikvKey::from(begin));
-                            let end_bound = Bound::Included(TikvKey::from(end));
 
                             let mut found_ids = RoaringBitmap::new();
+
                             'outer: loop {
-                                let range = BoundRange::new(begin_bound, end_bound.clone());
-                                let mut keys_iter = trx.scan_keys(range, MAX_SCAN_KEYS_SIZE)
+                                let mut keys = trx.scan_keys((begin, end.clone()), MAX_SCAN_KEYS_SIZE)
                                     .await
                                     .map_err(into_error)?
                                     .peekable();
-                                let mut count = 0;
 
-                                while let Some(key) = keys_iter.next() {
+                                let mut count = 0;
+                                while let Some(key) = keys.next() {
                                     count += 1;
                                     if key.len() == key_len {
                                         let key_slice: &[u8] = key.as_ref().into();
-                                        let found_id = key_slice
-                                            .deserialize_be_u32(key_len - U32_LEN)?;
-                                        found_ids.insert(found_id);
+                                        found_ids.insert(key_slice.deserialize_be_u32(key_len - U32_LEN)?);
                                     } else {
-                                        if count < MAX_SCAN_KEYS_SIZE {
-
-                                            break 'outer;
-                                        } else {
-                                            begin_bound = Bound::Excluded(key);
-                                            continue 'outer;
-                                        }
+                                        break 'outer;
                                     }
-                                    let key_slice: &[u8] = key.as_ref().into();
-                                    found_ids.insert(key_slice.deserialize_be_u32(key_len - U32_LEN)?);
-                                    if keys_iter.peek().is_none() {
-                                        if count < MAX_SCAN_KEYS_SIZE {
 
+                                    if keys.peek().is_none() {
+                                        if count < MAX_SCAN_KEYS_SIZE {
                                             break 'outer;
                                         } else {
-                                            begin_bound = Bound::Excluded(key);
+                                            begin = key.into();
+                                            begin.push(u8::MIN); // Null byte to make the beginning exclusive
                                             continue 'outer;
                                         }
                                     }
                                 }
-
                                 // Empty
                                 break;
                             }
@@ -244,18 +170,18 @@ impl TikvStore {
                         );
 
                         if *set {
-                            let mut begin = Bound::Included(TikvKey::from(key));
-                            let end = Bound::Included(TikvKey::from(class.serialize(
+                            let mut begin = key;
+                            let mut end = class.serialize(
                                 account_id,
                                 collection,
                                 document_id + 1,
                                 WITH_SUBSPACE,
                                 (&result).into(),
-                            )));
+                            );
+                            end.push(u8::MIN);
 
                             loop {
-                                let range = BoundRange::new(begin, end.clone());
-                                let keys: Vec<TikvKey> = trx.scan_keys(range, MAX_SCAN_KEYS_SIZE)
+                                let keys: Vec<TikvKey> = trx.scan_keys((begin, end.clone()), MAX_SCAN_KEYS_SIZE)
                                     .await
                                     .map_err(into_error)?
                                     .collect();
@@ -265,7 +191,7 @@ impl TikvStore {
                                     break;
                                 } else {
                                     // Guaranteed to have the last value
-                                    begin = Bound::Excluded(keys.last().unwrap().clone());
+                                    begin = keys.last().unwrap().clone().into();
                                     trx.lock_keys(keys).await.map_err(into_error)?;
                                     continue;
                                 }
@@ -287,7 +213,7 @@ impl TikvStore {
                         class,
                         assert_value,
                     } => {
-                        let key_base = class.serialize(
+                        let key = class.serialize(
                             account_id,
                             collection,
                             document_id,
@@ -295,12 +221,9 @@ impl TikvStore {
                             (&result).into(),
                         );
 
-                        let matches = match read_chunked_value(&self, &key_base, &mut trx).await {
-                            Ok(ChunkedValue::Single(bytes)) => assert_value.matches(bytes.as_slice()),
-                            Ok(ChunkedValue::Chunked { bytes, .. }) => {
-                                assert_value.matches(bytes.as_ref())
-                            }
-                            Ok(ChunkedValue::None) => {
+                        let matches = match get_chunked_value(&key, &mut trx).await {
+                            Ok(Some(bytes)) => assert_value.matches(bytes.as_slice()),
+                            Ok(None) => {
                                 assert_value.is_none()
                             }
                             Err(_) => false,
@@ -332,7 +255,7 @@ impl TikvStore {
             // Since we are deleting all of them anyways. No point moving the start bound
             let mut begin = Bound::Included(TikvKey::from(from_key.to_vec()));
 
-            let mut backoff = self.raw_backoff.clone();
+            let mut backoff = self.backoff.clone();
 
             'outer: loop {
                 let end = Bound::Included(TikvKey::from(to_key.to_vec()));
@@ -373,98 +296,32 @@ impl TikvStore {
     }
 
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
-        let from_vec = from.serialize(WITH_SUBSPACE);
-        let to_vec = to.serialize(WITH_SUBSPACE);
+        let begin_range = Bound::Included(TikvKey::from(from.serialize(WITH_SUBSPACE)));
+        let end_range = Bound::Included(TikvKey::from(to.serialize(WITH_SUBSPACE)));
+        let range = BoundRange::new(begin_range, end_range);
+
         let mut trx = self.write_trx_with_backoff().await?;
 
-        let mut begin = Bound::Included(TikvKey::from(KeySerializer::new(from_vec.len())
-            .write(from_vec.as_slice())
-            .finalize()));
-
-        'outer: loop {
-            let end = Bound::Included(TikvKey::from(KeySerializer::new(to_vec.len())
-                .write(from_vec.as_slice())
-                .finalize()));
-
-            let range = BoundRange::new(begin, end);
-            let mut keys_iter = trx.scan_keys(range, MAX_SCAN_KEYS_SIZE)
+        loop {
+            let keys = trx
+                .scan_keys(range.clone(), MAX_SCAN_KEYS_SIZE)
                 .await
-                .map_err(into_error)?
-                .peekable();
+                .map_err(into_error)?;
 
             let mut count = 0;
-            while let Some(key) = keys_iter.next() {
+            for key in keys {
                 count += 1;
-                if keys_iter.peek().is_none() {
-                    if count < MAX_SCAN_KEYS_SIZE {
-                        trx.delete(key).await.map_err(into_error)?;
-                        break 'outer;
-                    } else {
-                        begin = Bound::Excluded(key.clone());
-                        trx.delete(key).await.map_err(into_error)?;
-                        continue 'outer;
-                    }
-                } else {
-                    trx.delete(key).await.map_err(into_error)?;
-                }
+                trx.delete(key).await.map_err(into_error)?;
             }
 
-            break;
+            if count != MAX_SCAN_KEYS_SIZE {
+                break;
+            }
         }
 
         trx.commit().await.map_err(into_error)?;
         Ok(())
     }
-
-    // async fn atomic_subtract(&self, key: impl Into<TikvKey> + Clone, by: i64) -> trc::Result<()> {
-    //     let mut backoff = self.raw_backoff.clone();
-    //
-    //     loop {
-    //         let key = key.clone().into();
-    //         let mut trx = self.write_trx_no_backoff().await?;
-    //         if let Some(previous) = trx.get_for_update(key.clone()).await.map_err(into_error)? {
-    //             let subtrahend = deserialize_i64_le((&key).into(), &previous)?;
-    //             let difference = subtrahend - by;
-    //
-    //             if difference == 0 {
-    //                 trx.delete(key).await.map_err(into_error)?;
-    //             } else {
-    //                 trx.put(key, difference.to_le_bytes().as_slice()).await.map_err(into_error)?;
-    //             }
-    //         } else {
-    //             trx.put(key, by.to_le_bytes().as_slice()).await.map_err(into_error)?;
-    //         }
-    //
-    //         if self.commit(trx, Some(&mut backoff)).await? {
-    //             return Ok(());
-    //         } else {
-    //             continue;
-    //         }
-    //     }
-    // }
-    //
-    // async fn atomic_add(&self, key: impl Into<TikvKey> + Clone, by: i64) -> trc::Result<()> {
-    //     let mut backoff = self.raw_backoff.clone();
-    //
-    //     loop {
-    //         let key = key.clone().into();
-    //         let mut trx = self.write_trx_no_backoff().await?;
-    //         if let Some(previous) = trx.get_for_update(key.clone()).await.map_err(into_error)? {
-    //             let addend = deserialize_i64_le((&key).into(), &previous)?;
-    //             let sum = addend + by;
-    //
-    //             trx.put(key, sum.to_le_bytes().as_slice()).await.map_err(into_error)?;
-    //         } else {
-    //             trx.put(key, by.to_le_bytes().as_slice()).await.map_err(into_error)?;
-    //         }
-    //
-    //         if self.commit(trx, Some(&mut backoff)).await? {
-    //             return Ok(());
-    //         } else {
-    //             continue;
-    //         }
-    //     }
-    // }
 
     pub(crate) async fn commit(&self, mut trx: Transaction, ext_backoff: Option<&mut Backoff>) -> trc::Result<bool> {
         if let Err(e) = trx.commit().await {
@@ -482,8 +339,7 @@ impl TikvStore {
         }
     }
 
-    async fn write_trx_no_backoff(&self) -> trc::Result<Transaction> {
-        // TODO: Put inside struct
+    pub(super) async fn write_trx_no_backoff(&self) -> trc::Result<Transaction> {
         let write_trx_options = TransactionOptions::new_pessimistic()
             .drop_check(CheckLevel::Warn)
             .use_async_commit()
@@ -495,7 +351,7 @@ impl TikvStore {
             .map_err(into_error)
     }
 
-    async fn write_trx_with_backoff(&self) -> trc::Result<Transaction> {
+    pub(super) async fn write_trx_with_backoff(&self) -> trc::Result<Transaction> {
         self.trx_client
             .begin_with_options(self.write_trx_options.clone())
             .await
@@ -513,5 +369,72 @@ async fn get_and_add(trx: &mut Transaction, key: impl Into<TikvKey>, by: i64) ->
     } else {
         trx.put(key, by.to_le_bytes().as_slice()).await.map_err(into_error)?;
         Ok(by)
+    }
+}
+
+pub(super) mod chunking {
+    use super::*;
+
+    pub(in super::super) async fn delete_chunked_value(
+        key: &[u8],
+        trx: &mut Transaction,
+        commit: bool,
+    ) -> trc::Result<()> {
+        let begin_key = key.to_vec();
+
+        let end_key = KeySerializer::new(key.len() + 1)
+            .write(key)
+            .write(u8::MAX)
+            .finalize();
+
+        let keys = trx.scan_keys((begin_key, end_key), 256)
+            .await
+            .map_err(into_error)?;
+
+        for chunk_key in keys {
+            trx.delete(chunk_key).await.map_err(into_error)?;
+        }
+
+        if commit {
+            trx.commit().await.map_err(into_error)?;
+        }
+
+        Ok(())
+    }
+
+    pub(in super::super) async fn put_chunked_value(
+        key: &[u8],
+        value: &[u8],
+        trx: &mut Transaction,
+        commit: bool
+    ) -> trc::Result<()> {
+        let mut chunk_iter = value.chunks(MAX_VALUE_SIZE);
+
+        if chunk_iter.len() > 1 + 256 {
+            // Expected to be thrown back so might as well roll it back.
+            trx.rollback().await.map_err(into_error)?;
+            return Err(trc::StoreEvent::TikvError
+                .ctx(
+                    trc::Key::Reason,
+                    "Value is too large",
+                ));
+        }
+
+        let first_chunk = chunk_iter.next().unwrap_or_else(|| &[]);
+        trx.put(key.to_vec(), first_chunk).await.map_err(into_error)?;
+
+        for (chunk_pos, value_chunk) in chunk_iter.enumerate() {
+            let chunk_key = KeySerializer::new(key.len() + 1)
+                .write(key)
+                .write(chunk_pos as u8)
+                .finalize();
+            trx.put(chunk_key, value_chunk).await.map_err(into_error)?;
+        }
+
+        if commit {
+            trx.commit().await.map_err(into_error)?;
+        }
+
+        Ok(())
     }
 }
