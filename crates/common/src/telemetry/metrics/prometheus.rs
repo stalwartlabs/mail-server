@@ -28,7 +28,7 @@ impl Core {
             metric.set_name(metric_name(counter.id().name()));
             metric.set_help(counter.id().description().into());
             metric.set_field_type(MetricType::COUNTER);
-            metric.set_metric(vec![new_counter(counter.value())]);
+            metric.set_metric(vec![new_counter(counter.value())].into());
             metrics.push(metric);
         }
 
@@ -38,7 +38,7 @@ impl Core {
             metric.set_name(metric_name(gauge.id().name()));
             metric.set_help(gauge.id().description().into());
             metric.set_field_type(MetricType::GAUGE);
-            metric.set_metric(vec![new_gauge(gauge.get())]);
+            metric.set_metric(vec![new_gauge(gauge.get())].into());
             metrics.push(metric);
         }
 
@@ -48,7 +48,7 @@ impl Core {
             metric.set_name(metric_name(histogram.id().name()));
             metric.set_help(histogram.id().description().into());
             metric.set_field_type(MetricType::HISTOGRAM);
-            metric.set_metric(vec![new_histogram(histogram)]);
+            metric.set_metric(vec![new_histogram(histogram)].into());
             metrics.push(metric);
         }
 
