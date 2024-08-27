@@ -109,7 +109,6 @@ impl FdbStore {
                                 }
                             }
                             ValueOp::AtomicAdd(by) => {
-                                println!("fdb atomic add key: {:?} val: {:?} ", key, by.to_le_bytes());
                                 trx.atomic_op(&key, &by.to_le_bytes()[..], MutationType::Add);
                             }
                             ValueOp::AddAndGet(by) => {
