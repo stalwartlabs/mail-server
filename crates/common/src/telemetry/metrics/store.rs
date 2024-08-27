@@ -29,6 +29,7 @@ pub trait MetricsStore: Sync + Send {
     fn write_metrics(
         &self,
         core: Arc<Core>,
+        timestamp: u64,
         history: SharedMetricHistory,
     ) -> impl Future<Output = trc::Result<()>> + Send;
     fn query_metrics(
@@ -51,14 +52,19 @@ struct HistogramHistory {
     count: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type")]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub enum Metric<CI, MI, T> {
     Counter {
         id: CI,
         timestamp: T,
-        value: u32,
+        value: u64,
+    },
+    Gauge {
+        id: MI,
+        timestamp: T,
+        value: u64,
     },
     Histogram {
         id: MI,
@@ -72,16 +78,17 @@ pub type SharedMetricHistory = Arc<Mutex<MetricsHistory>>;
 
 const TYPE_COUNTER: u64 = 0x00;
 const TYPE_HISTOGRAM: u64 = 0x01;
+const TYPE_GAUGE: u64 = 0x02;
 
 impl MetricsStore for Store {
     async fn write_metrics(
         &self,
         core: Arc<Core>,
+        timestamp: u64,
         history_: SharedMetricHistory,
     ) -> trc::Result<()> {
         let mut batch = BatchBuilder::new();
         {
-            let timestamp = now();
             let node_id = core.network.node_id;
             let mut history = history_.lock();
             for event in [
@@ -91,9 +98,14 @@ impl MetricsStore for Store {
                 EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
                 EventType::Http(HttpEvent::ConnectionStart),
                 EventType::Delivery(DeliveryEvent::AttemptStart),
-                EventType::Delivery(DeliveryEvent::Completed),
+                EventType::Queue(QueueEvent::QueueMessage),
+                EventType::Queue(QueueEvent::QueueMessageAuthenticated),
+                EventType::Queue(QueueEvent::QueueDsn),
+                EventType::Queue(QueueEvent::QueueReport),
                 EventType::MessageIngest(MessageIngestEvent::Ham),
                 EventType::MessageIngest(MessageIngestEvent::Spam),
+                EventType::Auth(AuthEvent::Failed),
+                EventType::Auth(AuthEvent::Banned),
                 EventType::Network(NetworkEvent::DropBlocked),
                 EventType::IncomingReport(IncomingReportEvent::DmarcReport),
                 EventType::IncomingReport(IncomingReportEvent::DmarcReportWithWarnings),
@@ -115,6 +127,23 @@ impl MetricsStore for Store {
                         );
                     }
                     *history = reading;
+                }
+            }
+
+            for gauge in Collector::collect_gauges(true) {
+                let gauge_id = gauge.id();
+                if matches!(gauge_id, MetricType::QueueCount | MetricType::ServerMemory) {
+                    let value = gauge.get();
+                    if value > 0 {
+                        batch.set(
+                            ValueClass::Telemetry(TelemetryClass::Metric {
+                                timestamp,
+                                metric_id: (gauge_id.code() << 2) | TYPE_GAUGE,
+                                node_id,
+                            }),
+                            KeySerializer::new(U32_LEN).write_leb128(value).finalize(),
+                        );
+                    }
                 }
             }
 
@@ -191,7 +220,7 @@ impl MetricsStore for Store {
                         let id = EventType::from_code(metric_type >> 2).ok_or_else(|| {
                             trc::Error::corrupted_key(key, None, trc::location!())
                         })?;
-                        let (value, _) = value.read_leb128::<u32>().ok_or_else(|| {
+                        let (value, _) = value.read_leb128::<u64>().ok_or_else(|| {
                             trc::Error::corrupted_key(key, value.into(), trc::location!())
                         })?;
                         metrics.push(Metric::Counter {
@@ -218,6 +247,19 @@ impl MetricsStore for Store {
                             timestamp,
                             count,
                             sum,
+                        });
+                    }
+                    TYPE_GAUGE => {
+                        let id = MetricType::from_code(metric_type >> 2).ok_or_else(|| {
+                            trc::Error::corrupted_key(key, None, trc::location!())
+                        })?;
+                        let (value, _) = value.read_leb128::<u64>().ok_or_else(|| {
+                            trc::Error::corrupted_key(key, value.into(), trc::location!())
+                        })?;
+                        metrics.push(Metric::Gauge {
+                            id,
+                            timestamp,
+                            value,
                         });
                     }
                     _ => return Err(trc::Error::corrupted_key(key, None, trc::location!())),

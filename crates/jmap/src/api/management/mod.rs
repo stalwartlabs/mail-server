@@ -115,6 +115,7 @@ pub fn decode_path_element(item: &str) -> Cow<'_, str> {
         .unwrap_or_else(|| item.into())
 }
 
+pub(super) struct FutureTimestamp(u64);
 pub(super) struct Timestamp(u64);
 
 impl FromStr for Timestamp {
@@ -122,13 +123,31 @@ impl FromStr for Timestamp {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(dt) = DateTime::parse_rfc3339(s) {
+            Ok(Timestamp(dt.to_timestamp() as u64))
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl FromStr for FutureTimestamp {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(dt) = DateTime::parse_rfc3339(s) {
             let instant = dt.to_timestamp() as u64;
             if instant >= now() {
-                return Ok(Timestamp(instant));
+                return Ok(FutureTimestamp(instant));
             }
         }
 
         Err(())
+    }
+}
+
+impl FutureTimestamp {
+    pub fn into_inner(self) -> u64 {
+        self.0
     }
 }
 

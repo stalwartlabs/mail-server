@@ -8,21 +8,28 @@
  *
  */
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use common::{
     config::telemetry::{StoreTracer, TelemetrySubscriberType},
     enterprise::{
-        license::LicenseKey, undelete::DeletedBlob, Enterprise, MetricsStore, TraceStore, Undelete,
+        license::LicenseKey, undelete::DeletedBlob, Enterprise, MetricStore, TraceStore, Undelete,
     },
-    telemetry::tracers::store::{TracingQuery, TracingStore},
+    telemetry::{
+        metrics::store::{Metric, MetricsStore, SharedMetricHistory},
+        tracers::store::{TracingQuery, TracingStore},
+    },
+    Core,
 };
 use imap_proto::ResponseType;
 use jmap::api::management::enterprise::undelete::{UndeleteRequest, UndeleteResponse};
-use store::write::now;
+use store::{
+    rand::{self, Rng},
+    write::now,
+};
 use trc::{
     ipc::{bitset::Bitset, subscriber::SubscriberBuilder},
-    DeliveryEvent, EventType, SmtpEvent,
+    *,
 };
 use utils::config::cron::SimpleCron;
 
@@ -52,7 +59,7 @@ pub async fn test(params: &mut JMAPTest) {
             store: core.storage.data.clone(),
         }
         .into(),
-        metrics_store: MetricsStore {
+        metrics_store: MetricStore {
             retention: Some(Duration::from_secs(1)),
             store: core.storage.data.clone(),
             interval: SimpleCron::Day { hour: 0, minute: 0 },
@@ -71,6 +78,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     undelete(params).await;
     tracing(params).await;
+    metrics(params).await;
 
     // Disable Enterprise
     let mut core = params.server.shared_core.load_full().as_ref().clone();
@@ -97,6 +105,7 @@ async fn tracing(params: &mut JMAPTest) {
     );
 
     // Make sure there are no span entries in the db
+    store.purge_spans(Duration::from_secs(0)).await.unwrap();
     assert_eq!(
         store
             .query_spans(
@@ -175,6 +184,26 @@ async fn tracing(params: &mut JMAPTest) {
             Vec::<u64>::new()
         );
     }
+}
+
+async fn metrics(params: &mut JMAPTest) {
+    // Make sure there are no span entries in the db
+    let store = params.server.core.storage.data.clone();
+    assert_eq!(
+        store.query_metrics(0, u64::MAX).await.unwrap(),
+        Vec::<Metric<EventType, MetricType, u64>>::new()
+    );
+
+    insert_test_metrics(params.server.core.clone()).await;
+
+    let total = store.query_metrics(0, u64::MAX).await.unwrap();
+    assert!(!total.is_empty(), "{total:?}");
+
+    store.purge_metrics(Duration::from_secs(0)).await.unwrap();
+    assert_eq!(
+        store.query_metrics(0, u64::MAX).await.unwrap(),
+        Vec::<Metric<EventType, MetricType, u64>>::new()
+    );
 }
 
 async fn undelete(_params: &mut JMAPTest) {
@@ -274,6 +303,69 @@ async fn undelete(_params: &mut JMAPTest) {
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains("Subject: undelete test");
+}
+
+pub async fn insert_test_metrics(core: Arc<Core>) {
+    let store = core.storage.data.clone();
+    store.purge_metrics(Duration::from_secs(0)).await.unwrap();
+    let mut start_time = now() - (90 * 24 * 60 * 60);
+    let timestamp = now();
+    let history = SharedMetricHistory::default();
+
+    while start_time < timestamp {
+        for event_type in [
+            EventType::Smtp(SmtpEvent::ConnectionStart),
+            EventType::Imap(ImapEvent::ConnectionStart),
+            EventType::Pop3(Pop3Event::ConnectionStart),
+            EventType::ManageSieve(ManageSieveEvent::ConnectionStart),
+            EventType::Http(HttpEvent::ConnectionStart),
+            EventType::Delivery(DeliveryEvent::AttemptStart),
+            EventType::Queue(QueueEvent::QueueMessage),
+            EventType::Queue(QueueEvent::QueueMessageAuthenticated),
+            EventType::Queue(QueueEvent::QueueDsn),
+            EventType::Queue(QueueEvent::QueueReport),
+            EventType::MessageIngest(MessageIngestEvent::Ham),
+            EventType::MessageIngest(MessageIngestEvent::Spam),
+            EventType::Auth(AuthEvent::Banned),
+            EventType::Auth(AuthEvent::Failed),
+            EventType::Network(NetworkEvent::DropBlocked),
+            EventType::IncomingReport(IncomingReportEvent::DmarcReport),
+            EventType::IncomingReport(IncomingReportEvent::DmarcReportWithWarnings),
+            EventType::IncomingReport(IncomingReportEvent::TlsReport),
+            EventType::IncomingReport(IncomingReportEvent::TlsReportWithWarnings),
+        ] {
+            // Generate a random value between 0 and 100
+            Collector::update_event_counter(event_type, rand::thread_rng().gen_range(0..=100))
+        }
+
+        Collector::update_gauge(
+            MetricType::QueueCount,
+            rand::thread_rng().gen_range(0..=1000),
+        );
+        Collector::update_gauge(
+            MetricType::ServerMemory,
+            rand::thread_rng().gen_range(100 * 1024 * 1024..=300 * 1024 * 1024),
+        );
+
+        for metric_type in [
+            MetricType::MessageIngestionTime,
+            MetricType::MessageFtsIndexTime,
+            MetricType::DeliveryTime,
+            MetricType::DnsLookupTime,
+        ] {
+            Collector::update_histogram(metric_type, rand::thread_rng().gen_range(2..=1000))
+        }
+        Collector::update_histogram(
+            MetricType::DeliveryTotalTime,
+            rand::thread_rng().gen_range(1000..=5000),
+        );
+
+        store
+            .write_metrics(core.clone(), start_time, history.clone())
+            .await
+            .unwrap();
+        start_time += 60 * 60;
+    }
 }
 
 #[derive(serde::Deserialize, Debug)]

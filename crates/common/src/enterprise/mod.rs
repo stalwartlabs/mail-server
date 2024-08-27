@@ -26,7 +26,7 @@ pub struct Enterprise {
     pub license: LicenseKey,
     pub undelete: Option<Undelete>,
     pub trace_store: Option<TraceStore>,
-    pub metrics_store: Option<MetricsStore>,
+    pub metrics_store: Option<MetricStore>,
 }
 
 #[derive(Clone)]
@@ -41,7 +41,7 @@ pub struct TraceStore {
 }
 
 #[derive(Clone)]
-pub struct MetricsStore {
+pub struct MetricStore {
     pub retention: Option<Duration>,
     pub store: Store,
     pub interval: SimpleCron,

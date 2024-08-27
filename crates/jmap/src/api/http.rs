@@ -302,10 +302,10 @@ impl JMAP {
                                     .path()
                                     .strip_prefix("/api/telemetry/")
                                     .and_then(|p| {
-                                        p.strip_suffix("traces/live/")
+                                        p.strip_prefix("traces/live/")
                                             .map(|t| ("traces", t))
                                             .or_else(|| {
-                                                p.strip_suffix("metrics/live/")
+                                                p.strip_prefix("metrics/live/")
                                                     .map(|t| ("metrics", t))
                                             })
                                     })

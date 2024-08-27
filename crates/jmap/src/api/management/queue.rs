@@ -26,7 +26,7 @@ use crate::{
     JMAP,
 };
 
-use super::{decode_path_element, Timestamp};
+use super::{decode_path_element, FutureTimestamp};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Message {
@@ -117,8 +117,12 @@ impl JMAP {
                 let text = params.get("text");
                 let from = params.get("from");
                 let to = params.get("to");
-                let before = params.parse::<Timestamp>("before").map(|t| t.into_inner());
-                let after = params.parse::<Timestamp>("after").map(|t| t.into_inner());
+                let before = params
+                    .parse::<FutureTimestamp>("before")
+                    .map(|t| t.into_inner());
+                let after = params
+                    .parse::<FutureTimestamp>("after")
+                    .map(|t| t.into_inner());
                 let page = params.parse::<usize>("page").unwrap_or_default();
                 let limit = params.parse::<usize>("limit").unwrap_or_default();
                 let values = params.has_key("values");
@@ -228,7 +232,7 @@ impl JMAP {
             }
             ("messages", Some(queue_id), &Method::PATCH) => {
                 let time = params
-                    .parse::<Timestamp>("at")
+                    .parse::<FutureTimestamp>("at")
                     .map(|t| t.into_inner())
                     .unwrap_or_else(now);
                 let item = params.get("filter");
