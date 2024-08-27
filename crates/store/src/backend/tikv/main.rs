@@ -84,9 +84,6 @@ impl TikvStore {
             .retry_options(RetryOptions::none())
             .read_only();
 
-        // Used for write transactions
-        let backoff = backoff;
-
         let store = Self {
             trx_client,
             write_trx_options,
