@@ -9,8 +9,8 @@ use super::MetricType;
 impl MetricType {
     pub fn name(&self) -> &'static str {
         match self {
-            Self::MessageIngestionTime => "message.ingestion-time",
-            Self::MessageFtsIndexTime => "message.fts-index-time",
+            Self::MessageIngestionTime => "message-ingest.time",
+            Self::MessageFtsIndexTime => "message-ingest.index-time",
             Self::DeliveryTotalTime => "delivery.total-time",
             Self::DeliveryTime => "delivery.attempt-time",
             Self::MessageSize => "message.size",
@@ -34,6 +34,8 @@ impl MetricType {
             Self::DeliveryActiveConnections => "delivery.active-connections",
             Self::ServerMemory => "server.memory",
             Self::QueueCount => "queue.count",
+            Self::UserCount => "user.count",
+            Self::DomainCount => "domain.count",
         }
     }
 
@@ -64,6 +66,8 @@ impl MetricType {
             Self::DeliveryActiveConnections => "Active delivery connections",
             Self::ServerMemory => "Server memory usage",
             Self::QueueCount => "Total number of messages in the queue",
+            Self::UserCount => "Total number of users",
+            Self::DomainCount => "Total number of domains",
         }
     }
 
@@ -94,6 +98,8 @@ impl MetricType {
             | Self::SieveActiveConnections
             | Self::DeliveryActiveConnections => "connections",
             Self::QueueCount => "messages",
+            Self::UserCount => "users",
+            Self::DomainCount => "domains",
         }
     }
 
@@ -124,6 +130,8 @@ impl MetricType {
             Self::DeliveryActiveConnections => 22,
             Self::ServerMemory => 23,
             Self::QueueCount => 24,
+            Self::UserCount => 25,
+            Self::DomainCount => 26,
         }
     }
 
@@ -154,14 +162,16 @@ impl MetricType {
             22 => Some(Self::DeliveryActiveConnections),
             23 => Some(Self::ServerMemory),
             24 => Some(Self::QueueCount),
+            25 => Some(Self::UserCount),
+            26 => Some(Self::DomainCount),
             _ => None,
         }
     }
 
     pub fn try_parse(name: &str) -> Option<Self> {
         match name {
-            "message.ingestion-time" => Some(Self::MessageIngestionTime),
-            "message.fts-index-time" => Some(Self::MessageFtsIndexTime),
+            "message-ingest.time" => Some(Self::MessageIngestionTime),
+            "message-ingest.index-time" => Some(Self::MessageFtsIndexTime),
             "delivery.total-time" => Some(Self::DeliveryTotalTime),
             "delivery.attempt-time" => Some(Self::DeliveryTime),
             "message.size" => Some(Self::MessageSize),
@@ -185,6 +195,8 @@ impl MetricType {
             "delivery.active-connections" => Some(Self::DeliveryActiveConnections),
             "server.memory" => Some(Self::ServerMemory),
             "queue.count" => Some(Self::QueueCount),
+            "user.count" => Some(Self::UserCount),
+            "domain.count" => Some(Self::DomainCount),
             _ => None,
         }
     }

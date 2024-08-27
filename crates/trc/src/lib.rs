@@ -955,6 +955,8 @@ pub enum MetricType {
     SmtpRequestTime,
     SieveActiveConnections,
     SieveRequestTime,
+    UserCount,
+    DomainCount,
 }
 
 pub const TOTAL_EVENT_COUNT: usize = total_event_count!();

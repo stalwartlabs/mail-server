@@ -21,6 +21,7 @@ use config::{
 };
 use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy, Type};
 use expr::if_block::IfBlock;
+use jmap_proto::types::collection::Collection;
 use listener::{
     blocked::{AllowedIps, BlockedIps},
     tls::TlsManager,
@@ -29,10 +30,11 @@ use mail_send::Credentials;
 
 use sieve::Sieve;
 use store::{
-    write::{QueueClass, ValueClass},
-    IterateParams, LookupStore, ValueKey,
+    write::{DirectoryClass, QueueClass, ValueClass},
+    BitmapKey, IterateParams, LookupStore, ValueKey,
 };
 use tokio::sync::{mpsc, oneshot};
+use trc::AddContext;
 use utils::BlobHash;
 
 pub mod addresses;
@@ -308,7 +310,7 @@ impl Core {
         }
     }
 
-    pub async fn message_queue_size(&self) -> trc::Result<u64> {
+    pub async fn total_queued_messages(&self) -> trc::Result<u64> {
         let mut total = 0;
         self.storage
             .data
@@ -325,6 +327,39 @@ impl Core {
                 },
             )
             .await
+            .map(|_| total)
+    }
+
+    pub async fn total_accounts(&self) -> trc::Result<u64> {
+        self.storage
+            .data
+            .get_bitmap(BitmapKey::document_ids(u32::MAX, Collection::Principal))
+            .await
+            .caused_by(trc::location!())
+            .map(|bitmap| bitmap.map_or(0, |b| b.len()))
+    }
+
+    pub async fn total_domains(&self) -> trc::Result<u64> {
+        let mut total = 0;
+        self.storage
+            .data
+            .iterate(
+                IterateParams::new(
+                    ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(vec![]))),
+                    ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(vec![
+                        u8::MAX;
+                        10
+                    ]))),
+                )
+                .no_values()
+                .ascending(),
+                |_, _| {
+                    total += 1;
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())
             .map(|_| total)
     }
 }

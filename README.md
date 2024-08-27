@@ -62,7 +62,7 @@ Key features:
   - Inbound throttling and filtering with granular configuration rules, sieve scripting, MTA hooks and milter integration.
   - Distributed virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
   - Envelope rewriting and message modification.
-- **Spam Phishing** filter:
+- **Spam and Phishing** filter:
   - Comprehensive set of filtering **rules** on par with popular solutions.
   - Statistical **spam classifier** with automatic training capabilities.
   - DNS Blocklists (**DNSBLs**) checking of IP addresses, domains, and hashes.

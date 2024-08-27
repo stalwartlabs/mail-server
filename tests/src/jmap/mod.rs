@@ -18,6 +18,7 @@ use common::{
     manager::config::{ConfigManager, Patterns},
     Core, Ipc, IPC_CHANNEL_BUFFER,
 };
+use enterprise::insert_test_metrics;
 use hyper::{header::AUTHORIZATION, Method};
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, JMAP};
@@ -344,6 +345,19 @@ pub async fn jmap_stress_tests() {
     .await;
     stress_test::test(params.server.clone(), params.client).await;
     params.temp_dir.delete();
+}
+
+#[ignore]
+#[tokio::test(flavor = "multi_thread")]
+pub async fn jmap_metric_tests() {
+    let params = init_jmap_tests(
+        &std::env::var("STORE")
+            .expect("Missing store type. Try running `STORE=<store_type> cargo test`"),
+        false,
+    )
+    .await;
+
+    insert_test_metrics(params.server.core.clone()).await;
 }
 
 #[allow(dead_code)]

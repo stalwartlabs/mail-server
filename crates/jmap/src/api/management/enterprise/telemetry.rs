@@ -263,7 +263,7 @@ impl JMAP {
                                     if elapsed >= throttle {
                                         last_message = Instant::now();
                                         yield Ok(Frame::data(Bytes::from(format!(
-                                            "event: state\ndata: {}\n\n",
+                                            "event: trace\ndata: {}\n\n",
                                             serde_json::to_string(
                                                 &JsonEventSerializer::new(std::mem::take(&mut events))
                                                 .with_description()
@@ -339,7 +339,7 @@ impl JMAP {
                 let before = params
                     .parse::<Timestamp>("before")
                     .map(|t| t.into_inner())
-                    .unwrap_or(0);
+                    .unwrap_or(u64::MAX);
                 let after = params
                     .parse::<Timestamp>("after")
                     .map(|t| t.into_inner())
@@ -377,6 +377,15 @@ impl JMAP {
                             count,
                             sum,
                         },
+                        Metric::Gauge {
+                            id,
+                            timestamp,
+                            value,
+                        } => Metric::Gauge {
+                            id: id.name(),
+                            timestamp: DateTime::from_timestamp(timestamp as i64).to_rfc3339(),
+                            value,
+                        },
                     });
                 }
 
@@ -402,6 +411,23 @@ impl JMAP {
                         } else if let Some(metric_type) = MetricType::try_parse(metric_name) {
                             metric_types.insert(metric_type);
                         }
+                    }
+                }
+
+                // Refresh expensive metrics
+                for metric_type in [
+                    MetricType::QueueCount,
+                    MetricType::UserCount,
+                    MetricType::DomainCount,
+                ] {
+                    if metric_types.contains(&metric_type) {
+                        let value = match metric_type {
+                            MetricType::QueueCount => self.core.total_queued_messages().await?,
+                            MetricType::UserCount => self.core.total_accounts().await?,
+                            MetricType::DomainCount => self.core.total_domains().await?,
+                            _ => unreachable!(),
+                        };
+                        Collector::update_gauge(metric_type, value);
                     }
                 }
 

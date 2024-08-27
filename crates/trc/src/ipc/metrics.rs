@@ -47,6 +47,8 @@ static DNS_LOOKUP_TIME: AtomicHistogram<12> =
 
 static SERVER_MEMORY: AtomicGauge = AtomicGauge::new(MetricType::ServerMemory);
 static QUEUE_COUNT: AtomicGauge = AtomicGauge::new(MetricType::QueueCount);
+static USER_COUNT: AtomicGauge = AtomicGauge::new(MetricType::UserCount);
+static DOMAIN_COUNT: AtomicGauge = AtomicGauge::new(MetricType::DomainCount);
 
 const CONN_SMTP_IN: usize = 0;
 const CONN_SMTP_OUT: usize = 1;
@@ -224,8 +226,9 @@ impl Collector {
     }
 
     pub fn collect_gauges(is_enterprise: bool) -> impl Iterator<Item = &'static AtomicGauge> {
-        static E_GAUGES: &[&AtomicGauge] = &[&SERVER_MEMORY, &QUEUE_COUNT];
-        static C_GAUGES: &[&AtomicGauge] = &[&SERVER_MEMORY];
+        static E_GAUGES: &[&AtomicGauge] =
+            &[&SERVER_MEMORY, &QUEUE_COUNT, &USER_COUNT, &DOMAIN_COUNT];
+        static C_GAUGES: &[&AtomicGauge] = &[&SERVER_MEMORY, &USER_COUNT, &DOMAIN_COUNT];
 
         if is_enterprise { E_GAUGES } else { C_GAUGES }
             .iter()
@@ -275,6 +278,23 @@ impl Collector {
         match metric_type {
             MetricType::ServerMemory => SERVER_MEMORY.set(value),
             MetricType::QueueCount => QUEUE_COUNT.set(value),
+            MetricType::UserCount => USER_COUNT.set(value),
+            MetricType::DomainCount => DOMAIN_COUNT.set(value),
+            _ => {}
+        }
+    }
+
+    pub fn update_event_counter(event_type: EventType, value: u32) {
+        EVENT_COUNTERS.add(event_type.into(), value);
+    }
+
+    pub fn update_histogram(metric_type: MetricType, value: u64) {
+        match metric_type {
+            MetricType::MessageIngestionTime => MESSAGE_INGESTION_TIME.observe(value),
+            MetricType::MessageFtsIndexTime => MESSAGE_INDEX_TIME.observe(value),
+            MetricType::DeliveryTotalTime => MESSAGE_DELIVERY_TIME.observe(value),
+            MetricType::DeliveryTime => CONNECTION_METRICS[CONN_SMTP_OUT].elapsed.observe(value),
+            MetricType::DnsLookupTime => DNS_LOOKUP_TIME.observe(value),
             _ => {}
         }
     }

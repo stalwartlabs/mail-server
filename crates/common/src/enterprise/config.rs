@@ -14,7 +14,7 @@ use jmap_proto::types::collection::Collection;
 use store::{BitmapKey, Store, Stores};
 use utils::config::{cron::SimpleCron, utils::ParseValue, Config};
 
-use super::{license::LicenseValidator, Enterprise, MetricsStore, TraceStore, Undelete};
+use super::{license::LicenseValidator, Enterprise, MetricStore, TraceStore, Undelete};
 
 impl Enterprise {
     pub async fn parse(config: &mut Config, stores: &Stores, data: &Store) -> Option<Self> {
@@ -85,10 +85,10 @@ impl Enterprise {
                 .and_then(|name| stores.stores.get(name))
                 .cloned()
             {
-                MetricsStore {
+                MetricStore {
                     retention: config
-                        .property_or_default::<Option<Duration>>("metrics.history.retention", "30d")
-                        .unwrap_or(Some(Duration::from_secs(30 * 24 * 60 * 60))),
+                        .property_or_default::<Option<Duration>>("metrics.history.retention", "90d")
+                        .unwrap_or(Some(Duration::from_secs(90 * 24 * 60 * 60))),
                     store,
                     interval: config
                         .property_or_default::<SimpleCron>("metrics.history.interval", "0 * *")

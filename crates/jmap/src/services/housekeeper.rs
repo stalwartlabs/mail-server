@@ -148,6 +148,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         // Metrics history
         #[cfg(feature = "enterprise")]
         let metrics_history = SharedMetricHistory::default();
+        let mut next_metric_update = Instant::now();
 
         loop {
             match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
@@ -425,12 +426,20 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     ActionClass::OtelMetrics,
                                 );
 
+                                let update_other_metrics = if Instant::now() >= next_metric_update {
+                                    next_metric_update =
+                                        Instant::now() + Duration::from_secs(86400);
+                                    true
+                                } else {
+                                    false
+                                };
+
                                 let core = core_.clone();
                                 tokio::spawn(async move {
                                     #[cfg(feature = "enterprise")]
                                     if core.is_enterprise_edition() {
                                         // Obtain queue size
-                                        match core.message_queue_size().await {
+                                        match core.total_queued_messages().await {
                                             Ok(total) => {
                                                 Collector::update_gauge(
                                                     MetricType::QueueCount,
@@ -440,6 +449,36 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             Err(err) => {
                                                 trc::error!(
                                                     err.details("Failed to obtain queue size")
+                                                );
+                                            }
+                                        }
+                                    }
+
+                                    if update_other_metrics {
+                                        match core.total_accounts().await {
+                                            Ok(total) => {
+                                                Collector::update_gauge(
+                                                    MetricType::UserCount,
+                                                    total,
+                                                );
+                                            }
+                                            Err(err) => {
+                                                trc::error!(
+                                                    err.details("Failed to obtain account count")
+                                                );
+                                            }
+                                        }
+
+                                        match core.total_domains().await {
+                                            Ok(total) => {
+                                                Collector::update_gauge(
+                                                    MetricType::DomainCount,
+                                                    total,
+                                                );
+                                            }
+                                            Err(err) => {
+                                                trc::error!(
+                                                    err.details("Failed to obtain domain count")
                                                 );
                                             }
                                         }
@@ -486,8 +525,9 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     let metrics_history = metrics_history.clone();
                                     let core = core_.clone();
                                     tokio::spawn(async move {
-                                        if let Err(err) =
-                                            metrics_store.write_metrics(core, metrics_history).await
+                                        if let Err(err) = metrics_store
+                                            .write_metrics(core, now(), metrics_history)
+                                            .await
                                         {
                                             trc::error!(err.details("Failed to write metrics"));
                                         }
