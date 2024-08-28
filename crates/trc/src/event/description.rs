@@ -1168,6 +1168,7 @@ impl ServerEvent {
 impl TelemetryEvent {
     pub fn description(&self) -> &'static str {
         match self {
+            TelemetryEvent::Alert => "Alert triggered",
             TelemetryEvent::LogError => "Log collector error",
             TelemetryEvent::WebhookError => "Webhook collector error",
             TelemetryEvent::JournalError => "Journal collector error",
@@ -1179,6 +1180,7 @@ impl TelemetryEvent {
 
     pub fn explain(&self) -> &'static str {
         match self {
+            TelemetryEvent::Alert => "An alert was triggered",
             TelemetryEvent::LogError => "An error occurred with the log collector",
             TelemetryEvent::WebhookError => "An error occurred with the webhook collector",
             TelemetryEvent::JournalError => "An error occurred with the journal collector",

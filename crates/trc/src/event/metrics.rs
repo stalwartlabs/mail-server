@@ -200,4 +200,36 @@ impl MetricType {
             _ => None,
         }
     }
+
+    pub fn variants() -> &'static [Self] {
+        &[
+            Self::MessageIngestionTime,
+            Self::MessageFtsIndexTime,
+            Self::DeliveryTotalTime,
+            Self::DeliveryTime,
+            Self::MessageSize,
+            Self::MessageAuthSize,
+            Self::ReportOutgoingSize,
+            Self::StoreReadTime,
+            Self::StoreWriteTime,
+            Self::BlobReadTime,
+            Self::BlobWriteTime,
+            Self::DnsLookupTime,
+            Self::HttpRequestTime,
+            Self::ImapRequestTime,
+            Self::Pop3RequestTime,
+            Self::SmtpRequestTime,
+            Self::SieveRequestTime,
+            Self::HttpActiveConnections,
+            Self::ImapActiveConnections,
+            Self::Pop3ActiveConnections,
+            Self::SmtpActiveConnections,
+            Self::SieveActiveConnections,
+            Self::DeliveryActiveConnections,
+            Self::ServerMemory,
+            Self::QueueCount,
+            Self::UserCount,
+            Self::DomainCount,
+        ]
+    }
 }

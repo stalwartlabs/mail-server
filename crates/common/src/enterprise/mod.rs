@@ -8,6 +8,7 @@
  *
  */
 
+pub mod alerts;
 pub mod config;
 pub mod license;
 pub mod undelete;
@@ -17,9 +18,10 @@ use std::time::Duration;
 use license::LicenseKey;
 use mail_parser::DateTime;
 use store::Store;
+use trc::{EventType, MetricType};
 use utils::config::cron::SimpleCron;
 
-use crate::Core;
+use crate::{expr::Expression, Core};
 
 #[derive(Clone)]
 pub struct Enterprise {
@@ -27,6 +29,7 @@ pub struct Enterprise {
     pub undelete: Option<Undelete>,
     pub trace_store: Option<TraceStore>,
     pub metrics_store: Option<MetricStore>,
+    pub metrics_alerts: Vec<MetricAlert>,
 }
 
 #[derive(Clone)]
@@ -45,6 +48,37 @@ pub struct MetricStore {
     pub retention: Option<Duration>,
     pub store: Store,
     pub interval: SimpleCron,
+}
+
+#[derive(Clone, Debug)]
+pub struct MetricAlert {
+    pub id: String,
+    pub condition: Expression,
+    pub method: Vec<AlertMethod>,
+}
+
+#[derive(Clone, Debug)]
+pub enum AlertMethod {
+    Email {
+        from_name: Option<String>,
+        from_addr: String,
+        to: Vec<String>,
+        subject: AlertContent,
+        body: AlertContent,
+    },
+    Event {
+        message: Option<AlertContent>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct AlertContent(pub Vec<AlertContentToken>);
+
+#[derive(Clone, Debug)]
+pub enum AlertContentToken {
+    Text(String),
+    Metric(MetricType),
+    Event(EventType),
 }
 
 impl Core {

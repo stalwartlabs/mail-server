@@ -274,6 +274,50 @@ impl Collector {
         EVENT_COUNTERS.get(metric_id)
     }
 
+    pub fn read_metric(metric_type: MetricType) -> f64 {
+        match metric_type {
+            MetricType::ServerMemory => SERVER_MEMORY.get() as f64,
+            MetricType::MessageIngestionTime => MESSAGE_INGESTION_TIME.average(),
+            MetricType::MessageFtsIndexTime => MESSAGE_INDEX_TIME.average(),
+            MetricType::MessageSize => MESSAGE_INCOMING_SIZE.average(),
+            MetricType::MessageAuthSize => MESSAGE_SUBMISSION_SIZE.average(),
+            MetricType::DeliveryTotalTime => MESSAGE_DELIVERY_TIME.average(),
+            MetricType::DeliveryTime => CONNECTION_METRICS[CONN_SMTP_OUT].elapsed.average(),
+            MetricType::DeliveryActiveConnections => {
+                CONNECTION_METRICS[CONN_SMTP_OUT].active_connections.get() as f64
+            }
+            MetricType::QueueCount => QUEUE_COUNT.get() as f64,
+            MetricType::ReportOutgoingSize => MESSAGE_OUT_REPORT_SIZE.average(),
+            MetricType::StoreReadTime => STORE_DATA_READ_TIME.average(),
+            MetricType::StoreWriteTime => STORE_DATA_WRITE_TIME.average(),
+            MetricType::BlobReadTime => STORE_BLOB_READ_TIME.average(),
+            MetricType::BlobWriteTime => STORE_BLOB_WRITE_TIME.average(),
+            MetricType::DnsLookupTime => DNS_LOOKUP_TIME.average(),
+            MetricType::HttpActiveConnections => {
+                CONNECTION_METRICS[CONN_HTTP].active_connections.get() as f64
+            }
+            MetricType::HttpRequestTime => CONNECTION_METRICS[CONN_HTTP].elapsed.average(),
+            MetricType::ImapActiveConnections => {
+                CONNECTION_METRICS[CONN_IMAP].active_connections.get() as f64
+            }
+            MetricType::ImapRequestTime => CONNECTION_METRICS[CONN_IMAP].elapsed.average(),
+            MetricType::Pop3ActiveConnections => {
+                CONNECTION_METRICS[CONN_POP3].active_connections.get() as f64
+            }
+            MetricType::Pop3RequestTime => CONNECTION_METRICS[CONN_POP3].elapsed.average(),
+            MetricType::SmtpActiveConnections => {
+                CONNECTION_METRICS[CONN_SMTP_IN].active_connections.get() as f64
+            }
+            MetricType::SmtpRequestTime => CONNECTION_METRICS[CONN_SMTP_IN].elapsed.average(),
+            MetricType::SieveActiveConnections => {
+                CONNECTION_METRICS[CONN_SIEVE].active_connections.get() as f64
+            }
+            MetricType::SieveRequestTime => CONNECTION_METRICS[CONN_SIEVE].elapsed.average(),
+            MetricType::UserCount => USER_COUNT.get() as f64,
+            MetricType::DomainCount => DOMAIN_COUNT.get() as f64,
+        }
+    }
+
     pub fn update_gauge(metric_type: MetricType, value: u64) {
         match metric_type {
             MetricType::ServerMemory => SERVER_MEMORY.set(value),

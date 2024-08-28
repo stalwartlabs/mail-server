@@ -30,7 +30,7 @@ pub struct Tokenizer<'x> {
 
 #[derive(Debug, Default, Clone)]
 pub struct TokenMap {
-    pub tokens: AHashMap<&'static str, Token>,
+    pub tokens: AHashMap<Cow<'static, str>, Token>,
 }
 
 impl<'x> Tokenizer<'x> {
@@ -359,19 +359,21 @@ impl TokenMap {
     pub fn with_variables(mut self, variables: &[u32]) -> Self {
         for (name, idx) in VARIABLES_MAP {
             if variables.contains(idx) {
-                self.tokens.insert(name, Token::Variable(*idx));
+                self.tokens
+                    .insert(Cow::Borrowed(name), Token::Variable(*idx));
             }
         }
 
         self
     }
 
-    pub fn with_variables_map<I>(mut self, vars: I) -> Self
+    pub fn with_variables_map<I, V>(mut self, vars: I) -> Self
     where
-        I: IntoIterator<Item = (&'static str, u32)>,
+        I: IntoIterator<Item = (V, u32)>,
+        V: Into<Cow<'static, str>>,
     {
         for (name, idx) in vars {
-            self.tokens.insert(name, Token::Variable(idx));
+            self.tokens.insert(name.into(), Token::Variable(idx));
         }
 
         self
@@ -383,7 +385,8 @@ impl TokenMap {
         T: Into<Constant>,
     {
         for (name, constant) in consts {
-            self.tokens.insert(name, Token::Constant(constant.into()));
+            self.tokens
+                .insert(Cow::Borrowed(name), Token::Constant(constant.into()));
         }
 
         self
@@ -395,7 +398,8 @@ impl TokenMap {
     }
 
     pub fn add_constant(&mut self, name: &'static str, constant: impl Into<Constant>) -> &mut Self {
-        self.tokens.insert(name, Token::Constant(constant.into()));
+        self.tokens
+            .insert(Cow::Borrowed(name), Token::Constant(constant.into()));
         self
     }
 }

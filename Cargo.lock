@@ -1061,6 +1061,7 @@ dependencies = [
  "jmap_proto",
  "libc",
  "mail-auth",
+ "mail-builder",
  "mail-parser",
  "mail-send",
  "md5",

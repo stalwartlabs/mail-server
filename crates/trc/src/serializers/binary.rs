@@ -854,6 +854,7 @@ impl EventType {
             EventType::Tls(TlsEvent::MultipleCertificatesAvailable) => 545,
             EventType::Tls(TlsEvent::NoCertificatesAvailable) => 546,
             EventType::Tls(TlsEvent::NotConfigured) => 547,
+            EventType::Telemetry(TelemetryEvent::Alert) => 548,
         }
     }
 
@@ -1447,6 +1448,7 @@ impl EventType {
             545 => Some(EventType::Tls(TlsEvent::MultipleCertificatesAvailable)),
             546 => Some(EventType::Tls(TlsEvent::NoCertificatesAvailable)),
             547 => Some(EventType::Tls(TlsEvent::NotConfigured)),
+            548 => Some(EventType::Telemetry(TelemetryEvent::Alert)),
             _ => None,
         }
     }

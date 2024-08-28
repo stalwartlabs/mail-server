@@ -653,6 +653,7 @@ pub enum ServerEvent {
 
 #[event_type]
 pub enum TelemetryEvent {
+    Alert,
     LogError,
     WebhookError,
     OtelExporterError,

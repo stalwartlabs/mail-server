@@ -13,6 +13,7 @@ directory = { path = "../directory" }
 jmap_proto = { path = "../jmap-proto" }
 sieve-rs = { version = "0.5" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
+mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
 mail-auth = { version = "0.4" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 smtp-proto = { version = "0.1", features = ["serde_support"] }

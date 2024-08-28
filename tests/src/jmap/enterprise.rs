@@ -13,7 +13,8 @@ use std::{sync::Arc, time::Duration};
 use common::{
     config::telemetry::{StoreTracer, TelemetrySubscriberType},
     enterprise::{
-        license::LicenseKey, undelete::DeletedBlob, Enterprise, MetricStore, TraceStore, Undelete,
+        config::parse_metric_alerts, license::LicenseKey, undelete::DeletedBlob, Enterprise,
+        MetricStore, TraceStore, Undelete,
     },
     telemetry::{
         metrics::store::{Metric, MetricsStore, SharedMetricHistory},
@@ -31,18 +32,54 @@ use trc::{
     ipc::{bitset::Bitset, subscriber::SubscriberBuilder},
     *,
 };
-use utils::config::cron::SimpleCron;
+use utils::config::{cron::SimpleCron, Config};
 
 use crate::{
     imap::{ImapConnection, Type},
     jmap::delivery::SmtpConnection,
+    AssertConfig,
 };
 
 use super::{delivery::AssertResult, JMAPTest, ManagementApi};
 
+const METRICS_CONFIG: &str = r#"
+[metrics.alerts.expected]
+enable = true
+condition = "domain_count > 1 && cluster_error > 3"
+
+[metrics.alerts.expected.notify.event]
+enable = true
+message = "Yikes! Found %{cluster.error}% cluster errors!"
+
+[metrics.alerts.expected.notify.email]
+enable = true
+from-name = "Alert Subsystem"
+from-addr = "alert@example.com"
+to = ["jdoe@example.com"]
+subject = "Found %{cluster.error}% cluster errors"
+body = "Sorry for the bad news, but we found %{domain.count}% domains and %{cluster.error}% cluster errors."
+
+[metrics.alerts.unexpected]
+enable = true
+condition = "domain_count < 1 || cluster_error < 3"
+
+[metrics.alerts.unexpected.notify.event]
+enable = true
+message = "this should not have happened"
+
+"#;
+
+const RAW_MESSAGE: &str = "From: john@example.com
+To: john@example.com
+Subject: undelete test
+
+test
+";
+
 pub async fn test(params: &mut JMAPTest) {
     // Enable Enterprise
     let mut core = params.server.shared_core.load_full().as_ref().clone();
+    let mut config = Config::new(METRICS_CONFIG).unwrap();
     core.enterprise = Enterprise {
         license: LicenseKey {
             valid_to: now() + 3600,
@@ -65,8 +102,11 @@ pub async fn test(params: &mut JMAPTest) {
             interval: SimpleCron::Day { hour: 0, minute: 0 },
         }
         .into(),
+        metrics_alerts: parse_metric_alerts(&mut config),
     }
     .into();
+    config.assert_no_errors();
+    assert_ne!(core.enterprise.as_ref().unwrap().metrics_alerts.len(), 0);
     params.server.shared_core.store(core.into());
     assert!(params.server.shared_core.load().is_enterprise_edition());
 
@@ -76,6 +116,7 @@ pub async fn test(params: &mut JMAPTest) {
         .create_test_user_with_email("jdoe@example.com", "secret", "John Doe")
         .await;
 
+    alerts(&params.server.shared_core.load()).await;
     undelete(params).await;
     tracing(params).await;
     metrics(params).await;
@@ -86,12 +127,51 @@ pub async fn test(params: &mut JMAPTest) {
     params.server.shared_core.store(core.into());
 }
 
-const RAW_MESSAGE: &str = "From: john@example.com
-To: john@example.com
-Subject: undelete test
+async fn alerts(core: &Core) {
+    // Make sure the required metrics are set to 0
+    assert_eq!(
+        Collector::read_event_metric(EventType::Cluster(ClusterEvent::Error).id()),
+        0
+    );
+    assert_eq!(Collector::read_metric(MetricType::DomainCount), 0.0);
+    assert_eq!(
+        Collector::read_event_metric(EventType::Telemetry(TelemetryEvent::Alert).id()),
+        0
+    );
 
-test
-";
+    // Increment metrics to trigger alerts
+    Collector::update_event_counter(EventType::Cluster(ClusterEvent::Error), 5);
+    Collector::update_gauge(MetricType::DomainCount, 3);
+
+    // Make sure the values were set
+    assert_eq!(
+        Collector::read_event_metric(EventType::Cluster(ClusterEvent::Error).id()),
+        5
+    );
+    assert_eq!(Collector::read_metric(MetricType::DomainCount), 3.0);
+
+    // Process alerts
+    let message = core.process_alerts().await.unwrap().pop().unwrap();
+    assert_eq!(message.from, "alert@example.com");
+    assert_eq!(message.to, vec!["jdoe@example.com".to_string()]);
+    let body = String::from_utf8(message.body).unwrap();
+    assert!(
+        body.contains("Sorry for the bad news, but we found 3 domains and 5 cluster errors."),
+        "{body:?}"
+    );
+    assert!(body.contains("Subject: Found 5 cluster errors"), "{body:?}");
+    assert!(
+        body.contains("From: \"Alert Subsystem\" <alert@example.com>"),
+        "{body:?}"
+    );
+    assert!(body.contains("To: <jdoe@example.com>"), "{body:?}");
+
+    // Make sure the event was triggered
+    assert_eq!(
+        Collector::read_event_metric(EventType::Telemetry(TelemetryEvent::Alert).id()),
+        1
+    );
+}
 
 async fn tracing(params: &mut JMAPTest) {
     // Enable tracing
