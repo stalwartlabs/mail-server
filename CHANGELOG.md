@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.9.3] - 2024-08-29
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+## Added
+- Dashboard (Enterprise feature)
+- Alerts (Enterprise feature)
+- SYN Flood (session "loitering") attack protection (#482)
+- Mailbox brute force protection (#688)
+- Mail from is allowed (`session.mail.is-allowed`) expression (#609)
+
+### Changed
+- `authentication.fail2ban` setting renamed to `server.fail2ban.authentication`.
+- Added elapsed times to message filtering events.
+
+### Fixed
+- Include queueId in MTA Hooks (#708)
+- Do not insert empty keywords in FTS index.
+
 ## [0.9.2] - 2024-08-21
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.

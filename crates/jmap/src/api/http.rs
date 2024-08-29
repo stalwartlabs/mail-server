@@ -885,11 +885,10 @@ impl ToRequestError for trc::Error {
                 trc::AuthEvent::MissingTotp => {
                     RequestError::blank(403, "TOTP code required", cause.message())
                 }
-                trc::AuthEvent::TooManyAttempts | trc::AuthEvent::Banned => {
-                    RequestError::too_many_auth_attempts()
-                }
+                trc::AuthEvent::TooManyAttempts => RequestError::too_many_auth_attempts(),
                 _ => RequestError::unauthorized(),
             },
+            trc::EventType::Security(_) => RequestError::too_many_auth_attempts(),
             trc::EventType::Resource(cause) => match cause {
                 trc::ResourceEvent::NotFound => RequestError::not_found(),
                 trc::ResourceEvent::BadParameters => RequestError::blank(

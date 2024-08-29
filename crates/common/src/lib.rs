@@ -291,10 +291,10 @@ impl Core {
 
         if let Err(err) = result {
             Err(err)
-        } else if self.has_fail2ban() {
+        } else if self.has_auth_fail2ban() {
             let login = credentials.login();
-            if self.is_fail2banned(remote_ip, login.to_string()).await? {
-                Err(trc::AuthEvent::Banned
+            if self.is_auth_fail2banned(remote_ip, login).await? {
+                Err(trc::SecurityEvent::AuthenticationBan
                     .into_err()
                     .ctx(trc::Key::RemoteIp, remote_ip)
                     .ctx(trc::Key::AccountName, login.to_string()))

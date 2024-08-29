@@ -47,11 +47,11 @@ impl TikvStore {
                     //self.trx_client.cleanup_locks(BoundRange::range_from(TikvKey::from(vec![0])), &version, ResolveLocksOptions::default()).await.map_err(into_error)?;
                     drop(version);
                     let Some(backoff_duration) = backoff.next_delay_duration() else {
-                        println!("giving up, error: {}", err);
+                        //println!("giving up, error: {}", err);
                         return Err(err);
 
                     };
-                    println!("backing off because of error: {}", err);
+                    //println!("backing off because of error: {}", err);
                     //println!("backoff for {} secs with {} attempts", backoff_duration.as_secs_f32(), backoff.current_attempts());
                     tokio::time::sleep(backoff_duration).await;
                     continue;

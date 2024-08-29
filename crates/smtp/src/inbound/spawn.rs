@@ -11,7 +11,7 @@ use common::{
     listener::{self, SessionManager, SessionStream},
 };
 use tokio_rustls::server::TlsStream;
-use trc::SmtpEvent;
+use trc::{SecurityEvent, SmtpEvent};
 
 use crate::{
     core::{Session, SessionData, SessionParameters, SmtpSessionManager, State},
@@ -194,10 +194,32 @@ impl<T: SessionStream> Session<T> {
                                             .await
                                             .ok();
 
-                                        trc::event!(
-                                            Smtp(SmtpEvent::TimeLimitExceeded),
-                                            SpanId = self.data.session_id,
-                                        );
+                                        match self
+                                            .core
+                                            .core
+                                            .is_loiter_fail2banned(self.data.remote_ip)
+                                            .await
+                                        {
+                                            Ok(true) => {
+                                                trc::event!(
+                                                    Security(SecurityEvent::LoiterBan),
+                                                    SpanId = self.data.session_id,
+                                                    RemoteIp = self.data.remote_ip,
+                                                );
+                                            }
+                                            Ok(false) => {
+                                                trc::event!(
+                                                    Smtp(SmtpEvent::TimeLimitExceeded),
+                                                    SpanId = self.data.session_id,
+                                                );
+                                            }
+                                            Err(err) => {
+                                                trc::error!(err
+                                                    .span_id(self.data.session_id)
+                                                    .caused_by(trc::location!())
+                                                    .details("Failed to check if IP should be banned."));
+                                            }
+                                        }
 
                                         break;
                                     }

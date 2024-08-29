@@ -100,8 +100,10 @@ enable = true
 implicit = false
 certificate = "default"
 
+[server.fail2ban]
+authentication = "101/5s"
+
 [authentication]
-fail2ban = "101/5s"
 rate-limit = "100/2s"
 
 [session.ehlo]

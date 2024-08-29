@@ -206,7 +206,7 @@ impl<T: SessionStream> Session<T> {
                             )
                             .await;
                         }
-                        trc::EventType::Auth(trc::AuthEvent::Banned) => {
+                        trc::EventType::Security(_) => {
                             return Err(());
                         }
                         _ => (),

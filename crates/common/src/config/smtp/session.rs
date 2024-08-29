@@ -97,6 +97,7 @@ pub struct Auth {
 pub struct Mail {
     pub script: IfBlock,
     pub rewrite: IfBlock,
+    pub is_allowed: IfBlock,
 }
 
 #[derive(Clone)]
@@ -364,6 +365,11 @@ impl SessionConfig {
             (
                 &mut session.mail.rewrite,
                 "session.mail.rewrite",
+                &has_sender_vars,
+            ),
+            (
+                &mut session.mail.is_allowed,
+                "session.mail.is-allowed",
                 &has_sender_vars,
             ),
             (
@@ -761,6 +767,11 @@ impl Default for SessionConfig {
             mail: Mail {
                 script: IfBlock::empty("session.mail.script"),
                 rewrite: IfBlock::empty("session.mail.rewrite"),
+                is_allowed: IfBlock::new::<()>(
+                    "session.mail.is-allowed",
+                    [],
+                    "!is_empty(authenticated_as) || !key_exists('spam-block', sender_domain)",
+                ),
             },
             rcpt: Rcpt {
                 script: IfBlock::empty("session.rcpt.script"),

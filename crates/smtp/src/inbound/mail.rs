@@ -120,6 +120,29 @@ impl<T: SessionStream> Session<T> {
         }
         .into();
 
+        // Check whether the address is allowed
+        if !self
+            .core
+            .core
+            .eval_if::<bool, _>(
+                &self.core.core.smtp.session.mail.is_allowed,
+                self,
+                self.data.session_id,
+            )
+            .await
+            .unwrap_or(true)
+        {
+            let mail_from = self.data.mail_from.take().unwrap();
+            trc::event!(
+                Smtp(SmtpEvent::MailFromNotAllowed),
+                From = mail_from.address_lcase,
+                SpanId = self.data.session_id,
+            );
+            return self
+                .write(b"550 5.7.1 Sender address not allowed.\r\n")
+                .await;
+        }
+
         // Sieve filtering
         if let Some((script, script_id)) = self
             .core

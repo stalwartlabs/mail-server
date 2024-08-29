@@ -61,6 +61,16 @@ impl<const N: usize> AtomicHistogram<N> {
         self.count.load(Ordering::Relaxed)
     }
 
+    pub fn average(&self) -> f64 {
+        let sum = self.sum();
+        let count = self.count();
+        if count > 0 {
+            sum as f64 / count as f64
+        } else {
+            0.0
+        }
+    }
+
     pub fn min(&self) -> Option<u64> {
         let min = self.min.load(Ordering::Relaxed);
         if min != u64::MAX {

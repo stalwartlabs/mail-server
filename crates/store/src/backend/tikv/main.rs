@@ -79,7 +79,7 @@ impl TikvStore {
             //     max_attempts
             // )
         };
-        println!("using backoff {:?}", backoff);
+        //println!("using backoff {:?}", backoff);
 
         let write_trx_options = TransactionOptions::new_pessimistic()
             .drop_check(CheckLevel::Warn)

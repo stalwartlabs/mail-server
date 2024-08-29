@@ -127,6 +127,7 @@ impl EventType {
                 | SmtpEvent::MailFromRewritten
                 | SmtpEvent::MailFromMissing
                 | SmtpEvent::MultipleMailFrom
+                | SmtpEvent::MailFromNotAllowed
                 | SmtpEvent::RcptToDuplicate
                 | SmtpEvent::RcptToRewritten
                 | SmtpEvent::RcptToMissing
@@ -204,9 +205,7 @@ impl EventType {
                 | NetworkEvent::FlushError
                 | NetworkEvent::Closed => Level::Trace,
                 NetworkEvent::Timeout | NetworkEvent::AcceptError => Level::Debug,
-                NetworkEvent::ListenStart
-                | NetworkEvent::ListenStop
-                | NetworkEvent::DropBlocked => Level::Info,
+                NetworkEvent::ListenStart | NetworkEvent::ListenStop => Level::Info,
                 NetworkEvent::ListenError
                 | NetworkEvent::BindError
                 | NetworkEvent::SetOptError
@@ -229,7 +228,6 @@ impl EventType {
                 AuthEvent::Failed => Level::Debug,
                 AuthEvent::MissingTotp => Level::Trace,
                 AuthEvent::TooManyAttempts => Level::Warn,
-                AuthEvent::Banned => Level::Warn,
                 AuthEvent::Error => Level::Error,
                 AuthEvent::Success => Level::Info,
             },
@@ -276,9 +274,9 @@ impl EventType {
                 | PurgeEvent::TombstoneCleanup => Level::Debug,
             },
             EventType::Eval(event) => match event {
-                EvalEvent::Error => Level::Debug,
+                EvalEvent::Error | EvalEvent::StoreNotFound => Level::Debug,
                 EvalEvent::Result => Level::Trace,
-                EvalEvent::DirectoryNotFound | EvalEvent::StoreNotFound => Level::Warn,
+                EvalEvent::DirectoryNotFound => Level::Warn,
             },
             EventType::Server(event) => match event {
                 ServerEvent::Startup | ServerEvent::Shutdown | ServerEvent::Licensing => {
@@ -537,6 +535,7 @@ impl EventType {
                 | MessageIngestEvent::Duplicate => Level::Info,
                 MessageIngestEvent::Error => Level::Error,
             },
+            EventType::Security(_) => Level::Info,
         }
     }
 }
