@@ -182,6 +182,7 @@ pub enum EventType {
     IncomingReport(IncomingReportEvent),
     OutgoingReport(OutgoingReportEvent),
     Telemetry(TelemetryEvent),
+    Security(SecurityEvent),
 }
 
 #[event_type]
@@ -193,6 +194,14 @@ pub enum HttpEvent {
     RequestBody,
     ResponseBody,
     XForwardedMissing,
+}
+
+#[event_type]
+pub enum SecurityEvent {
+    AuthenticationBan,
+    BruteForceBan,
+    LoiterBan,
+    IpBlocked,
 }
 
 #[event_type]
@@ -371,6 +380,7 @@ pub enum SmtpEvent {
     LhloExpected,
     MailFromUnauthenticated,
     MailFromUnauthorized,
+    MailFromNotAllowed,
     MailFromRewritten,
     MailFromMissing,
     MailFrom,
@@ -639,7 +649,6 @@ pub enum NetworkEvent {
     Closed,
     ProxyError,
     SetOptError,
-    DropBlocked,
 }
 
 #[event_type]
@@ -915,7 +924,6 @@ pub enum AuthEvent {
     Failed,
     MissingTotp,
     TooManyAttempts,
-    Banned,
     Error,
 }
 

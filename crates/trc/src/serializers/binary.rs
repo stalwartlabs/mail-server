@@ -339,7 +339,7 @@ impl EventType {
             EventType::Arc(ArcEvent::InvalidCv) => 30,
             EventType::Arc(ArcEvent::InvalidInstance) => 31,
             EventType::Arc(ArcEvent::SealerNotFound) => 32,
-            EventType::Auth(AuthEvent::Banned) => 33,
+            EventType::Security(SecurityEvent::AuthenticationBan) => 33,
             EventType::Auth(AuthEvent::Error) => 34,
             EventType::Auth(AuthEvent::Failed) => 35,
             EventType::Auth(AuthEvent::MissingTotp) => 36,
@@ -624,7 +624,7 @@ impl EventType {
             EventType::Network(NetworkEvent::AcceptError) => 315,
             EventType::Network(NetworkEvent::BindError) => 316,
             EventType::Network(NetworkEvent::Closed) => 317,
-            EventType::Network(NetworkEvent::DropBlocked) => 318,
+            EventType::Security(SecurityEvent::IpBlocked) => 318,
             EventType::Network(NetworkEvent::FlushError) => 319,
             EventType::Network(NetworkEvent::ListenError) => 320,
             EventType::Network(NetworkEvent::ListenStart) => 321,
@@ -855,6 +855,9 @@ impl EventType {
             EventType::Tls(TlsEvent::NoCertificatesAvailable) => 546,
             EventType::Tls(TlsEvent::NotConfigured) => 547,
             EventType::Telemetry(TelemetryEvent::Alert) => 548,
+            EventType::Security(SecurityEvent::BruteForceBan) => 549,
+            EventType::Security(SecurityEvent::LoiterBan) => 550,
+            EventType::Smtp(SmtpEvent::MailFromNotAllowed) => 551,
         }
     }
 
@@ -893,7 +896,7 @@ impl EventType {
             30 => Some(EventType::Arc(ArcEvent::InvalidCv)),
             31 => Some(EventType::Arc(ArcEvent::InvalidInstance)),
             32 => Some(EventType::Arc(ArcEvent::SealerNotFound)),
-            33 => Some(EventType::Auth(AuthEvent::Banned)),
+            33 => Some(EventType::Security(SecurityEvent::AuthenticationBan)),
             34 => Some(EventType::Auth(AuthEvent::Error)),
             35 => Some(EventType::Auth(AuthEvent::Failed)),
             36 => Some(EventType::Auth(AuthEvent::MissingTotp)),
@@ -1196,7 +1199,7 @@ impl EventType {
             315 => Some(EventType::Network(NetworkEvent::AcceptError)),
             316 => Some(EventType::Network(NetworkEvent::BindError)),
             317 => Some(EventType::Network(NetworkEvent::Closed)),
-            318 => Some(EventType::Network(NetworkEvent::DropBlocked)),
+            318 => Some(EventType::Security(SecurityEvent::IpBlocked)),
             319 => Some(EventType::Network(NetworkEvent::FlushError)),
             320 => Some(EventType::Network(NetworkEvent::ListenError)),
             321 => Some(EventType::Network(NetworkEvent::ListenStart)),
@@ -1449,6 +1452,9 @@ impl EventType {
             546 => Some(EventType::Tls(TlsEvent::NoCertificatesAvailable)),
             547 => Some(EventType::Tls(TlsEvent::NotConfigured)),
             548 => Some(EventType::Telemetry(TelemetryEvent::Alert)),
+            549 => Some(EventType::Security(SecurityEvent::BruteForceBan)),
+            550 => Some(EventType::Security(SecurityEvent::LoiterBan)),
+            551 => Some(EventType::Smtp(SmtpEvent::MailFromNotAllowed)),
             _ => None,
         }
     }

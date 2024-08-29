@@ -230,7 +230,7 @@ impl BuildSession for Arc<ServerInstance> {
         // Check if blocked
         if core.is_ip_blocked(&remote_ip) {
             trc::event!(
-                Network(trc::NetworkEvent::DropBlocked),
+                Security(trc::SecurityEvent::IpBlocked),
                 ListenerId = self.id.clone(),
                 LocalPort = local_addr.port(),
                 RemoteIp = remote_ip,

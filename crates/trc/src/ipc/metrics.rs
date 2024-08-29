@@ -525,14 +525,14 @@ impl EventType {
                 | HttpEvent::ResponseBody
                 | HttpEvent::XForwardedMissing,
             ) => true,
-            EventType::Network(NetworkEvent::Timeout | NetworkEvent::DropBlocked) => true,
+            EventType::Network(NetworkEvent::Timeout) => true,
+            EventType::Security(_) => true,
             EventType::Limit(_) => true,
             EventType::Manage(_) => false,
             EventType::Auth(
                 AuthEvent::Success
                 | AuthEvent::Failed
                 | AuthEvent::TooManyAttempts
-                | AuthEvent::Banned
                 | AuthEvent::Error,
             ) => true,
             EventType::Config(_) => false,

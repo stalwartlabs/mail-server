@@ -56,6 +56,9 @@ requiretls = [{if = "remote_ip = '10.0.0.2'", then = true},
 mt-priority = [{if = "remote_ip = '10.0.0.2'", then = 'nsep'},
                {else = false}]
 
+[session.mail]
+is-allowed = "sender_domain != 'blocked.com'"
+
 [session.data.limits]
 size = [{if = "remote_ip = '10.0.0.2'", then = 2048},
         {else = 1024}]
@@ -70,8 +73,8 @@ enable = true
 
 #[tokio::test]
 async fn mail() {
-        // Enable logging
-        crate::enable_logging();
+    // Enable logging
+    crate::enable_logging();
 
     let tmp_dir = TempDir::new("smtp_mail_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
@@ -115,9 +118,16 @@ async fn mail() {
         .unwrap();
     session.response().assert_code("503 5.5.1");
 
-    // Both IPREV and SPF should pass
+    // Test sender not allowed
     session.ingest(b"EHLO mx1.foobar.org\r\n").await.unwrap();
     session.response().assert_code("250");
+    session
+        .ingest(b"MAIL FROM:<bill@blocked.com>\r\n")
+        .await
+        .unwrap();
+    session.response().assert_code("550 5.7.1");
+
+    // Both IPREV and SPF should pass
     session
         .ingest(b"MAIL FROM:<bill@foobar.org>\r\n")
         .await

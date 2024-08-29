@@ -50,6 +50,7 @@ impl EventType {
             EventType::OutgoingReport(event) => event.description(),
             EventType::Telemetry(event) => event.description(),
             EventType::MessageIngest(event) => event.description(),
+            EventType::Security(event) => event.description(),
         }
     }
 
@@ -96,6 +97,7 @@ impl EventType {
             EventType::OutgoingReport(event) => event.explain(),
             EventType::Telemetry(event) => event.explain(),
             EventType::MessageIngest(event) => event.explain(),
+            EventType::Security(event) => event.explain(),
         }
     }
 }
@@ -431,6 +433,7 @@ impl SmtpEvent {
             SmtpEvent::MailFromUnauthorized => "MAIL FROM unauthorized",
             SmtpEvent::MailFromRewritten => "MAIL FROM address rewritten",
             SmtpEvent::MailFromMissing => "MAIL FROM address missing",
+            SmtpEvent::MailFromNotAllowed => "MAIL FROM not allowed",
             SmtpEvent::MailFrom => "SMTP MAIL FROM command",
             SmtpEvent::MultipleMailFrom => "Multiple MAIL FROM commands",
             SmtpEvent::MailboxDoesNotExist => "Mailbox does not exist",
@@ -535,6 +538,9 @@ impl SmtpEvent {
             SmtpEvent::MailFromRewritten => "The envelope sender address was rewritten",
             SmtpEvent::MailFromMissing => {
                 "The remote client issued an RCPT TO command before MAIL FROM"
+            }
+            SmtpEvent::MailFromNotAllowed => {
+                "The remote client is not allowed to send mail from this address"
             }
             SmtpEvent::MailFrom => "The remote client sent a MAIL FROM command",
             SmtpEvent::MultipleMailFrom => "The remote client already sent a MAIL FROM command",
@@ -1114,7 +1120,6 @@ impl NetworkEvent {
             NetworkEvent::Closed => "Network connection closed",
             NetworkEvent::ProxyError => "Proxy protocol error",
             NetworkEvent::SetOptError => "Network set option error",
-            NetworkEvent::DropBlocked => "Dropped connection from blocked IP address",
         }
     }
 
@@ -1133,7 +1138,6 @@ impl NetworkEvent {
             NetworkEvent::Closed => "The network connection was closed",
             NetworkEvent::ProxyError => "An error occurred with the proxy protocol",
             NetworkEvent::SetOptError => "An error occurred while setting network options",
-            NetworkEvent::DropBlocked => "The connection was dropped from a blocked IP address",
         }
     }
 }
@@ -1736,7 +1740,6 @@ impl AuthEvent {
             AuthEvent::Failed => "Authentication failed",
             AuthEvent::MissingTotp => "Missing TOTP for authentication",
             AuthEvent::TooManyAttempts => "Too many authentication attempts",
-            AuthEvent::Banned => "IP address banned after multiple authentication failures",
             AuthEvent::Error => "Authentication error",
         }
     }
@@ -1747,9 +1750,6 @@ impl AuthEvent {
             AuthEvent::Failed => "Failed authentication",
             AuthEvent::MissingTotp => "TOTP is missing for authentication",
             AuthEvent::TooManyAttempts => "Too many authentication attempts have been made",
-            AuthEvent::Banned => {
-                "The IP address has been banned after multiple authentication failures"
-            }
             AuthEvent::Error => "An error occurred with authentication",
         }
     }
@@ -1773,6 +1773,30 @@ impl ResourceEvent {
             ResourceEvent::Error => "An error occurred with the resource",
             ResourceEvent::DownloadExternal => "The external resource is being downloaded",
             ResourceEvent::WebadminUnpacked => "The webadmin resource has been unpacked",
+        }
+    }
+}
+
+impl SecurityEvent {
+    pub fn description(&self) -> &'static str {
+        match self {
+            SecurityEvent::AuthenticationBan => "Banned due to authentication errors",
+            SecurityEvent::BruteForceBan => "Banned due to brute force attack",
+            SecurityEvent::LoiterBan => "Banned due to loitering",
+            SecurityEvent::IpBlocked => "Blocked IP address",
+        }
+    }
+
+    pub fn explain(&self) -> &'static str {
+        match self {
+            SecurityEvent::AuthenticationBan => {
+                "IP address was banned due to multiple authentication errors"
+            }
+            SecurityEvent::BruteForceBan => {
+                "IP address was banned due to possible brute force attack"
+            }
+            SecurityEvent::LoiterBan => "IP address was banned due to multiple loitering events",
+            SecurityEvent::IpBlocked => "Rejected connection from blocked IP address",
         }
     }
 }

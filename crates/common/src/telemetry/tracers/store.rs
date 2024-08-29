@@ -418,12 +418,12 @@ impl StoreTracer {
                             AuthEvent::Success
                                 | AuthEvent::Failed
                                 | AuthEvent::TooManyAttempts
-                                | AuthEvent::Banned
                                 | AuthEvent::Error
                         )
                         | EventType::Sieve(_)
                         | EventType::Milter(_)
                         | EventType::MtaHook(_)
+                        | EventType::Security(_)
                 )
         })
     }

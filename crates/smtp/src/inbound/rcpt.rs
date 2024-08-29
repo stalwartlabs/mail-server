@@ -8,7 +8,7 @@ use common::{config::smtp::session::Stage, listener::SessionStream, scripts::Scr
 use smtp_proto::{
     RcptTo, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
-use trc::SmtpEvent;
+use trc::{SecurityEvent, SmtpEvent};
 
 use crate::{
     core::{Session, SessionAddress},
@@ -315,11 +315,33 @@ impl<T: SessionStream> Session<T> {
         if self.data.rcpt_errors < self.params.rcpt_errors_max {
             Ok(())
         } else {
-            trc::event!(
-                Smtp(SmtpEvent::TooManyInvalidRcpt),
-                SpanId = self.data.session_id,
-                Limit = self.params.rcpt_errors_max,
-            );
+            match self
+                .core
+                .core
+                .is_rcpt_fail2banned(self.data.remote_ip)
+                .await
+            {
+                Ok(true) => {
+                    trc::event!(
+                        Security(SecurityEvent::BruteForceBan),
+                        SpanId = self.data.session_id,
+                        RemoteIp = self.data.remote_ip,
+                    );
+                }
+                Ok(false) => {
+                    trc::event!(
+                        Smtp(SmtpEvent::TooManyInvalidRcpt),
+                        SpanId = self.data.session_id,
+                        Limit = self.params.rcpt_errors_max,
+                    );
+                }
+                Err(err) => {
+                    trc::error!(err
+                        .span_id(self.data.session_id)
+                        .caused_by(trc::location!())
+                        .details("Failed to check if IP should be banned."));
+                }
+            }
 
             self.write(b"421 4.3.0 Too many errors, disconnecting.\r\n")
                 .await?;

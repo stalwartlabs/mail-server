@@ -155,17 +155,15 @@ impl Event<EventType> {
         matches!(
             self.inner,
             EventType::Network(_)
-                | EventType::Auth(AuthEvent::TooManyAttempts | AuthEvent::Banned)
+                | EventType::Auth(AuthEvent::TooManyAttempts)
                 | EventType::Limit(LimitEvent::ConcurrentRequest | LimitEvent::TooManyRequests)
+                | EventType::Security(_)
         )
     }
 
     #[inline(always)]
     pub fn should_write_err(&self) -> bool {
-        !matches!(
-            self.inner,
-            EventType::Network(_) | EventType::Auth(AuthEvent::Banned)
-        )
+        !matches!(self.inner, EventType::Network(_) | EventType::Security(_))
     }
 
     pub fn corrupted_key(key: &[u8], value: Option<&[u8]>, caused_by: &'static str) -> Error {
@@ -317,6 +315,13 @@ impl StoreEvent {
     }
 }
 
+impl SecurityEvent {
+    #[inline(always)]
+    pub fn into_err(self) -> Error {
+        Error::new(EventType::Security(self))
+    }
+}
+
 impl AuthEvent {
     #[inline(always)]
     pub fn ctx(self, key: Key, value: impl Into<Value>) -> Error {
@@ -346,7 +351,6 @@ impl AuthEvent {
                 "Try authenticating again using 'secret$totp_token'."
             ),
             Self::TooManyAttempts => "Too many authentication attempts",
-            Self::Banned => "Banned",
             _ => "Authentication error",
         }
     }

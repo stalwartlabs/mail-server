@@ -21,7 +21,9 @@ pub struct BlockedIps {
     pub version: AtomicU8,
     ip_networks: Vec<IpAddrMask>,
     has_networks: bool,
-    limiter_rate: Option<Rate>,
+    auth_fail_rate: Option<Rate>,
+    rcpt_fail_rate: Option<Rate>,
+    loiter_fail_rate: Option<Rate>,
 }
 
 #[derive(Clone)]
@@ -63,7 +65,15 @@ impl BlockedIps {
             ip_addresses: RwLock::new(ip_addresses),
             has_networks: !ip_networks.is_empty(),
             ip_networks,
-            limiter_rate: config.property_or_default::<Rate>("authentication.fail2ban", "100/1d"),
+            auth_fail_rate: config
+                .property_or_default::<Option<Rate>>("server.fail2ban.authentication", "100/1d")
+                .unwrap_or_default(),
+            rcpt_fail_rate: config
+                .property_or_default::<Option<Rate>>("server.fail2ban.invalid-rcpt", "35/1d")
+                .unwrap_or_default(),
+            loiter_fail_rate: config
+                .property_or_default::<Option<Rate>>("server.fail2ban.loitering", "150/1d")
+                .unwrap_or_default(),
             version: 0.into(),
         }
     }
@@ -108,46 +118,86 @@ impl AllowedIps {
 }
 
 impl Core {
-    pub async fn is_fail2banned(&self, ip: IpAddr, login: String) -> trc::Result<bool> {
-        if let Some(rate) = &self.network.blocked_ips.limiter_rate {
+    pub async fn is_rcpt_fail2banned(&self, ip: IpAddr) -> trc::Result<bool> {
+        if let Some(rate) = &self.network.blocked_ips.rcpt_fail_rate {
             let is_allowed = self.is_ip_allowed(&ip)
-                || (self
+                || self
                     .storage
                     .lookup
-                    .is_rate_allowed(format!("b:{}", ip).as_bytes(), rate, false)
+                    .is_rate_allowed(format!("r:{ip}").as_bytes(), rate, false)
                     .await?
-                    .is_none()
-                    && self
-                        .storage
-                        .lookup
-                        .is_rate_allowed(format!("b:{}", login).as_bytes(), rate, false)
-                        .await?
-                        .is_none());
+                    .is_none();
+
             if !is_allowed {
-                // Add IP to blocked list
-                self.network.blocked_ips.ip_addresses.write().insert(ip);
-
-                // Write blocked IP to config
-                self.storage
-                    .config
-                    .set([ConfigKey {
-                        key: format!("{}.{}", BLOCKED_IP_KEY, ip),
-                        value: String::new(),
-                    }])
-                    .await?;
-
-                // Increment version
-                self.network.blocked_ips.increment_version();
-
-                return Ok(true);
+                return self.block_ip(ip).await.map(|_| true);
             }
         }
 
         Ok(false)
     }
 
-    pub fn has_fail2ban(&self) -> bool {
-        self.network.blocked_ips.limiter_rate.is_some()
+    pub async fn is_loiter_fail2banned(&self, ip: IpAddr) -> trc::Result<bool> {
+        if let Some(rate) = &self.network.blocked_ips.loiter_fail_rate {
+            let is_allowed = self.is_ip_allowed(&ip)
+                || self
+                    .storage
+                    .lookup
+                    .is_rate_allowed(format!("l:{ip}").as_bytes(), rate, false)
+                    .await?
+                    .is_none();
+
+            if !is_allowed {
+                return self.block_ip(ip).await.map(|_| true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub async fn is_auth_fail2banned(&self, ip: IpAddr, login: &str) -> trc::Result<bool> {
+        if let Some(rate) = &self.network.blocked_ips.auth_fail_rate {
+            let is_allowed = self.is_ip_allowed(&ip)
+                || (self
+                    .storage
+                    .lookup
+                    .is_rate_allowed(format!("b:{ip}").as_bytes(), rate, false)
+                    .await?
+                    .is_none()
+                    && self
+                        .storage
+                        .lookup
+                        .is_rate_allowed(format!("b:{login}").as_bytes(), rate, false)
+                        .await?
+                        .is_none());
+            if !is_allowed {
+                return self.block_ip(ip).await.map(|_| true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    async fn block_ip(&self, ip: IpAddr) -> trc::Result<()> {
+        // Add IP to blocked list
+        self.network.blocked_ips.ip_addresses.write().insert(ip);
+
+        // Write blocked IP to config
+        self.storage
+            .config
+            .set([ConfigKey {
+                key: format!("{}.{}", BLOCKED_IP_KEY, ip),
+                value: String::new(),
+            }])
+            .await?;
+
+        // Increment version
+        self.network.blocked_ips.increment_version();
+
+        Ok(())
+    }
+
+    pub fn has_auth_fail2ban(&self) -> bool {
+        self.network.blocked_ips.auth_fail_rate.is_some()
     }
 
     pub fn is_ip_blocked(&self, ip: &IpAddr) -> bool {
@@ -186,8 +236,10 @@ impl Default for BlockedIps {
             ip_addresses: RwLock::new(AHashSet::new()),
             ip_networks: Default::default(),
             has_networks: Default::default(),
-            limiter_rate: Default::default(),
             version: Default::default(),
+            auth_fail_rate: Default::default(),
+            rcpt_fail_rate: Default::default(),
+            loiter_fail_rate: Default::default(),
         }
     }
 }
@@ -216,11 +268,13 @@ impl Clone for BlockedIps {
             ip_addresses: RwLock::new(self.ip_addresses.read().clone()),
             ip_networks: self.ip_networks.clone(),
             has_networks: self.has_networks,
-            limiter_rate: self.limiter_rate.clone(),
             version: self
                 .version
                 .load(std::sync::atomic::Ordering::Relaxed)
                 .into(),
+            auth_fail_rate: self.auth_fail_rate.clone(),
+            rcpt_fail_rate: self.rcpt_fail_rate.clone(),
+            loiter_fail_rate: self.loiter_fail_rate.clone(),
         }
     }
 }
@@ -230,7 +284,11 @@ impl Debug for BlockedIps {
         f.debug_struct("BlockedIps")
             .field("ip_addresses", &self.ip_addresses)
             .field("ip_networks", &self.ip_networks)
-            .field("limiter_rate", &self.limiter_rate)
+            .field("has_networks", &self.has_networks)
+            .field("version", &self.version)
+            .field("auth_fail_rate", &self.auth_fail_rate)
+            .field("rcpt_fail_rate", &self.rcpt_fail_rate)
+            .field("loiter_fail_rate", &self.loiter_fail_rate)
             .finish()
     }
 }
