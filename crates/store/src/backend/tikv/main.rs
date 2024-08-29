@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ * SPDX-FileCopyrightText: 2024 Stalwart Labs Ltd <hello@stalw.art>
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
@@ -34,7 +34,7 @@ impl TikvStore {
 
         let backoff_max_delay = config
             .property::<Duration>((&prefix, "transaction.backoff-max-delay"))
-            .unwrap_or_else(|| Duration::from_millis(30000));
+            .unwrap_or_else(|| Duration::from_millis(2000));
 
         let max_attempts = config
             .property::<u32>((&prefix, "transaction.backoff-retry-limit"))
@@ -87,7 +87,7 @@ impl TikvStore {
 
         let read_trx_options = TransactionOptions::new_optimistic()
             .drop_check(CheckLevel::None)
-            .retry_options(RetryOptions::none())
+            .retry_options(RetryOptions::new(backoff.clone(), backoff.clone()))
             .read_only();
 
         let current_timestamp = trx_client.current_timestamp().await.map_err(|err| {

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ * SPDX-FileCopyrightText: 2024 Stalwart Labs Ltd <hello@stalw.art>
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
@@ -13,6 +13,7 @@ use roaring::RoaringBitmap;
 use tikv_client::TransactionOptions;
 use tikv_client::proto::kvrpcpb::{Assertion, Mutation, Op};
 use tikv_client::transaction::ResolveLocksOptions;
+use trc::Error;
 use crate::{
     backend::deserialize_i64_le,
     write::{
@@ -39,12 +40,19 @@ impl TikvStore {
                 Err(err) => {
                     let _ = trx.rollback().await;
                     let version = self.version.lock().clone();
-                    self.trx_client.gc(version).await.map_err(into_error)?;
-                    //self.trx_client.cleanup_locks(BoundRange::range_from(TikvKey::from(vec![])), &ts, ResolveLocksOptions::default()).await.map_err(into_error)?;
+                    // match self.trx_client.gc(version).await.map_err(into_error) {
+                    //     Ok(a) => {}
+                    //     Err(_) => {}
+                    // }
+                    //self.trx_client.cleanup_locks(BoundRange::range_from(TikvKey::from(vec![0])), &version, ResolveLocksOptions::default()).await.map_err(into_error)?;
+                    drop(version);
                     let Some(backoff_duration) = backoff.next_delay_duration() else {
+                        println!("giving up, error: {}", err);
                         return Err(err);
+
                     };
-                    println!("backoff for {} secs with {} attempts", backoff_duration.as_secs_f32(), backoff.current_attempts());
+                    println!("backing off because of error: {}", err);
+                    //println!("backoff for {} secs with {} attempts", backoff_duration.as_secs_f32(), backoff.current_attempts());
                     tokio::time::sleep(backoff_duration).await;
                     continue;
                 }
@@ -91,7 +99,7 @@ impl TikvStore {
                         WITH_SUBSPACE,
                         (&result).into(),
                     );
-                    println!("writing key: {:?}", key);
+                    //println!("writing key: {:?}", key);
                     let do_chunk = !class.is_counter(collection);
 
                     match op {
@@ -127,7 +135,7 @@ impl TikvStore {
                         field: *field,
                         key,
                     }.serialize(0);
-                    println!("writing index key: {:?}", key);
+                    //println!("writing index key: {:?}", key);
 
                     if *set {
                         trx.put(key, &[]).await.map_err(into_error)?;
@@ -161,7 +169,7 @@ impl TikvStore {
                         let mut found_ids = RoaringBitmap::new();
 
                         'outer: loop {
-                            println!("scanning keys {:?} and {:?}", begin, end);
+                            //println!("scanning keys {:?} and {:?}", begin, end);
                             let mut keys = trx.scan_keys((begin, end.clone()), MAX_SCAN_KEYS_SIZE)
                                 .await
                                 .map_err(into_error)?
@@ -171,7 +179,7 @@ impl TikvStore {
                             while let Some(key) = keys.next() {
                                 count += 1;
                                 let key_slice: &[u8] = key.as_ref().into();
-                                println!("found key {:?}", key_slice);
+                                //println!("found key {:?}", key_slice);
                                 if key_slice.len() == key_len {
                                     found_ids.insert(key_slice.deserialize_be_u32(key_len - U32_LEN)?);
                                 } else {
@@ -193,7 +201,7 @@ impl TikvStore {
                         }
 
                         document_id = found_ids.random_available_id();
-                        println!("using document id: {} from found IDs: {:?}", document_id, found_ids);
+                        //println!("using document id: {} from found IDs: {:?}", document_id, found_ids);
                         result.push_document_id(document_id);
                     }
 
@@ -206,7 +214,15 @@ impl TikvStore {
                     );
 
                     if *set {
-                        trx.lock_keys([key.clone()]).await.map_err(into_error)?;
+                        let first = key.clone();
+                        let second = class.serialize(
+                            account_id,
+                            collection,
+                            document_id + 1,
+                            WITH_SUBSPACE,
+                            (&result).into(),
+                        );
+                        trx.lock_keys([first, second]).await.map_err(into_error)?;
                         trx.put(key, &[]).await.map_err(into_error)?;
                     } else {
                         trx.delete(key).await.map_err(into_error)?;
@@ -249,13 +265,15 @@ impl TikvStore {
             }
         }
 
-        if let Some(ts) = trx.commit().await.map_err(into_error)? {
-            let mut previous = self.version.lock();
-            *previous = ts;
+        if let Some(current_ts) = trx.commit().await.map_err(into_error)? {
+            let mut previous_ts = self.version.lock();
+            if previous_ts.version() < current_ts.version() {
+                *previous_ts = current_ts;
+            }
         }
-        if ! result.counter_ids.is_empty() || ! result.document_ids.is_empty() {
-            println!("success with counters: [{:?}] and doc ids: [{:?}]", result.counter_ids, result.document_ids);
-        }
+        // if ! result.counter_ids.is_empty() || ! result.document_ids.is_empty() {
+        //     println!("success with counters: [{:?}] and doc ids: [{:?}]", result.counter_ids, result.document_ids);
+        // }
         Ok(result)
     }
 
