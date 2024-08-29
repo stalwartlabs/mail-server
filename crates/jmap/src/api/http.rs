@@ -37,7 +37,7 @@ use crate::{
 
 use super::{
     management::ManagementApiError, HtmlResponse, HttpRequest, HttpResponse, HttpResponseBody,
-    JmapSessionManager, JsonResponse,
+    JmapSessionManager, JsonResponse, PlainResponse,
 };
 
 pub struct HttpSessionData {
@@ -929,6 +929,14 @@ impl HtmlResponse {
         HtmlResponse { body, status }
     }
 }
+impl PlainResponse {
+    pub fn new(body: String) -> Self {
+        PlainResponse {
+            body,
+            status: StatusCode::OK,
+        }
+    }
+}
 
 impl ToHttpResponse for Response {
     fn into_http_response(self) -> HttpResponse {
@@ -989,6 +997,12 @@ impl ToHttpResponse for RequestError<'_> {
 impl ToHttpResponse for HtmlResponse {
     fn into_http_response(self) -> HttpResponse {
         HttpResponse::new_text(self.status, "text/html; charset=utf-8", self.body)
+    }
+}
+
+impl ToHttpResponse for PlainResponse {
+    fn into_http_response(self) -> HttpResponse {
+        HttpResponse::new_text(self.status, "text/plain; charset=utf-8", self.body)
     }
 }
 

@@ -21,7 +21,7 @@ use crate::{
     },
     JMAP,
 };
-
+use crate::api::PlainResponse;
 use super::decode_path_element;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -38,8 +38,8 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
     ) -> trc::Result<HttpResponse> {
-        match (path.get(1), req.method()) {
-            (None, &Method::GET) => {
+        match (path.get(1), path.get(2).copied(), req.method()) {
+            (None, None, &Method::GET) => {
                 // List domains
                 let params = UrlParams::new(req.uri().query());
                 let filter = params.get("filter");
@@ -65,7 +65,7 @@ impl JMAP {
                 }))
                 .into_http_response())
             }
-            (Some(domain), &Method::GET) => {
+            (Some(domain), None, &Method::GET) => {
                 // Obtain DNS records
                 let domain = decode_path_element(domain);
                 Ok(JsonResponse::new(json!({
@@ -73,7 +73,13 @@ impl JMAP {
                 }))
                 .into_http_response())
             }
-            (Some(domain), &Method::POST) => {
+            (Some(domain), Some("zonefile.txt"), &Method::GET) => {
+                // Obtain Zone File
+                let domain = decode_path_element(domain);
+                Ok(PlainResponse::new(self.build_zone_file(domain.as_ref()).await?)
+                    .into_http_response())
+            }
+            (Some(domain), None, &Method::POST) => {
                 // Create domain
                 let domain = decode_path_element(domain);
                 self.core
@@ -102,7 +108,7 @@ impl JMAP {
                 }))
                 .into_http_response())
             }
-            (Some(domain), &Method::DELETE) => {
+            (Some(domain), None, &Method::DELETE) => {
                 // Delete domain
                 let domain = decode_path_element(domain);
                 self.core
@@ -345,4 +351,179 @@ impl JMAP {
 
         Ok(records)
     }
+
+    async fn build_zone_file(&self, domain_name: &str) -> trc::Result<String> {
+        // Obtain server name
+        let server_name = self
+            .core
+            .storage
+            .config
+            .get("lookup.default.hostname")
+            .await?
+            .unwrap_or_else(|| "localhost".to_string());
+        let mut content = Vec::new();
+
+        // Obtain DKIM keys
+        let mut keys = Config::default();
+        let mut signature_ids = Vec::new();
+        let mut has_macros = false;
+        for (key, value) in self.core.storage.config.list("signature.", true).await? {
+            match key.strip_suffix(".domain") {
+                Some(key_id) if value == domain_name => {
+                    signature_ids.push(key_id.to_string());
+                }
+                _ => (),
+            }
+            if !has_macros && value.contains("%%{") {
+                has_macros = true;
+            }
+            keys.keys.insert(key, value);
+        }
+
+        // Add MX and CNAME records
+        content.push(("@".to_string(), format!("IN MX    10 {server_name}.\n")));
+        if server_name
+            .strip_prefix("mail.")
+            .map_or(true, |s| s != domain_name)
+        {
+            content.push(("mail".to_string(), format!("IN CNAME {server_name}.")));
+        }
+
+        // Process DKIM keys
+        if has_macros {
+            keys.resolve_macros(&["env", "file", "cfg"]).await;
+            keys.log_errors();
+        }
+        for signature_id in signature_ids {
+            if let (Some(algo), Some(pk), Some(selector)) = (
+                keys.value(&format!("{signature_id}.algorithm"))
+                    .and_then(|algo| algo.parse::<Algorithm>().ok()),
+                keys.value(&format!("{signature_id}.private-key")),
+                keys.value(&format!("{signature_id}.selector")),
+            ) {
+                match obtain_dkim_public_key(algo, pk) {
+                    Ok(public) => {
+                        content.push( (
+                            format!("{selector}._domainkey"),
+                            match algo {
+                                Algorithm::Rsa => format!("IN TXT   \"v=DKIM1; k=rsa; h=sha256; p={public}\""),
+                                Algorithm::Ed25519 => format!("IN TXT   \"v=DKIM1; k=ed25519; h=sha256; p={public}\""),
+                            }));
+                    }
+                    Err(err) => {
+                        trc::error!(err);
+                    }
+                }
+            }
+        }
+
+        // Add SPF records
+        match server_name.strip_suffix(&format!(".{domain_name}")) {
+            Some(server_name) if server_name != domain_name => {
+                content.push((server_name.to_string(), "IN TXT   \"v=spf1 a ra=postmaster -all\"".to_string()));
+            }
+            _ => (),
+        }
+        content.push((domain_name.to_string(), "IN TXT   \"v=spf1 mx ra=postmaster -all\"".to_string()));
+
+
+        let mut has_https = false;
+        for (protocol, port, is_tls) in self
+            .core
+            .storage
+            .config
+            .get_services()
+            .await
+            .unwrap_or_default()
+        {
+            match (protocol.as_str(), port) {
+                ("smtp", port @ 26..=u16::MAX) => {
+                    content.push((
+                        format!("_submission{}", if is_tls { "s" } else { "" }),
+                        format!("IN SRV   0 1 {port} {server_name}."),
+                    ));
+                }
+                ("imap" | "pop3", port @ 1..=u16::MAX) => {
+                    content.push((
+                        format!("_{}{}", protocol, if is_tls { "s" } else { "" }),
+                        format!("IN SRV   0 1 {port} {server_name}."),
+                    ));
+                }
+                ("http", _) if is_tls => {
+                    has_https = true;
+                    content.push((
+                        "_jmap".to_string(),
+                        format!("IN SRV   0 1 {port} {server_name}."),
+                    ));
+                }
+                _ => (),
+            }
+        }
+
+        if has_https {
+            // Add autoconfig and autodiscover records
+            content.push(("autoconfig".to_string(), format!("IN CNAME {server_name}.")));
+            content.push(("autodiscover".to_string(), format!("IN CNAME {server_name}.")));
+
+            // Add MTA-STS records
+            if let Some(policy) = self.core.build_mta_sts_policy() {
+                content.push(("mta-sts".to_string(), format!("IN CNAME {server_name}.")));
+                content.push(("_mta-sts".to_string(), format!("IN TXT   \"v=STSv1; id={}\"", policy.id)));
+            }
+        }
+
+        // Add DMARC record
+        content.push(("_dmarc".to_string(), format!("IN TXT   \"v=DMARC1; p=reject; rua=mailto:postmaster@{domain_name}; ruf=mailto:postmaster@{domain_name}\"")));
+
+        // Add TLS reporting record
+        content.push(("_smtp._tls".to_string(), format!("IN TXT   \"v=TLSRPTv1; rua=mailto:postmaster@{domain_name}\"")));
+
+        // Add TLSA records
+        for (name, key) in self.core.tls.certificates.load().iter() {
+            if !name.ends_with(domain_name)
+                || name.starts_with("mta-sts.")
+                || name.starts_with("autoconfig.")
+                || name.starts_with("autodiscover.")
+            {
+                continue;
+            }
+
+            for (cert_num, cert) in key.cert.iter().enumerate() {
+                let parsed_cert = match parse_x509_certificate(cert) {
+                    Ok((_, parsed_cert)) => parsed_cert,
+                    Err(err) => {
+                        trc::error!(manage::error(
+                            "Failed to parse certificate",
+                            err.to_string().into()
+                        ));
+                        continue;
+                    }
+                };
+
+                let name = if !name.starts_with('.') {
+                    format!("_25._tcp")
+                } else {
+                    format!("_25._tcp.mail")
+                };
+                let cu = if cert_num == 0 { 3 } else { 2 };
+
+                for (s, cert) in [cert, parsed_cert.subject_pki.raw].into_iter().enumerate() {
+                    for (m, hash) in [
+                        format!("{:x}", sha2::Sha256::digest(cert)),
+                        format!("{:x}", sha2::Sha512::digest(cert)),
+                    ]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        content.push((name.clone(), format!("IN TLSA  {} {} {} {}", cu, s, m + 1, hash)));
+                    }
+                }
+            }
+        }
+
+        let max_len = content.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
+        Ok(content.into_iter().map(|(name, record)| format!("{name:<max_len$} {record}")).collect::<Vec<_>>().join("\n"))
+    }
+
+
 }

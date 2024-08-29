@@ -41,6 +41,11 @@ pub struct HtmlResponse {
     body: String,
 }
 
+pub struct PlainResponse {
+    status: StatusCode,
+    body: String,
+}
+
 pub enum HttpResponseBody {
     Text(String),
     Binary(Vec<u8>),
