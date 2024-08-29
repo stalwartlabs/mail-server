@@ -6,7 +6,7 @@
 use std::time::Duration;
 use tikv_client::{Backoff, CheckLevel, RetryOptions, TransactionClient, TransactionOptions};
 use utils::config::{utils::AsKey, Config};
-use super::TikvStore;
+use super::{into_error, TikvStore};
 
 impl TikvStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
@@ -30,15 +30,15 @@ impl TikvStore {
 
         let backoff_min_delay = config
             .property::<Duration>((&prefix, "transaction.backoff-min-delay"))
-            .unwrap_or_else(|| Duration::from_millis(2));
+            .unwrap_or_else(|| Duration::from_millis(500));
 
         let backoff_max_delay = config
             .property::<Duration>((&prefix, "transaction.backoff-max-delay"))
-            .unwrap_or_else(|| Duration::from_millis(500));
+            .unwrap_or_else(|| Duration::from_millis(30000));
 
         let max_attempts = config
             .property::<u32>((&prefix, "transaction.backoff-retry-limit"))
-            .unwrap_or_else(|| 10);
+            .unwrap_or_else(|| 30);
 
         let backoff = if let Some(backoff_type) = config
             .property::<String>((&prefix, "transaction.backoff-type")) {
@@ -68,12 +68,18 @@ impl TikvStore {
             }
         } else {
             // Default
-            Backoff::full_jitter_backoff(
+            Backoff::decorrelated_jitter_backoff(
                 backoff_min_delay.as_millis() as u64,
                 backoff_max_delay.as_millis() as u64,
                 max_attempts
             )
+            // Backoff::full_jitter_backoff(
+            //     backoff_min_delay.as_millis() as u64,
+            //     backoff_max_delay.as_millis() as u64,
+            //     max_attempts
+            // )
         };
+        println!("using backoff {:?}", backoff);
 
         let write_trx_options = TransactionOptions::new_pessimistic()
             .drop_check(CheckLevel::Warn)
@@ -84,10 +90,17 @@ impl TikvStore {
             .retry_options(RetryOptions::none())
             .read_only();
 
+        let current_timestamp = trx_client.current_timestamp().await.map_err(|err| {
+            config.new_build_error(
+                prefix.as_str(),
+                format!("Failed to create TiKV database: {err:?}"),
+            )}).ok()?;
+
         let store = Self {
             trx_client,
             write_trx_options,
             read_trx_options,
+            version: parking_lot::Mutex::new(current_timestamp),
             backoff,
         };
 

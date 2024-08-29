@@ -39,6 +39,7 @@ pub struct TikvStore {
     trx_client: TransactionClient,
     write_trx_options: TransactionOptions,
     read_trx_options: TransactionOptions,
+    version: parking_lot::Mutex<Timestamp>,
     backoff: Backoff,
 }
 

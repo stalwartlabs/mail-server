@@ -6,11 +6,13 @@
 
 use std::{cmp::Ordering, iter, time::{Duration, Instant}};
 use std::collections::Bound;
+use std::ops::DerefMut;
 use tikv_client::{Backoff, BoundRange, CheckLevel, Key as TikvKey, RetryOptions, TimestampExt, Transaction, Value};
 use rand::Rng;
 use roaring::RoaringBitmap;
 use tikv_client::TransactionOptions;
 use tikv_client::proto::kvrpcpb::{Assertion, Mutation, Op};
+use tikv_client::transaction::ResolveLocksOptions;
 use crate::{
     backend::deserialize_i64_le,
     write::{
@@ -20,229 +22,241 @@ use crate::{
     },
     BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN, WITH_SUBSPACE,
 };
+use crate::write::key;
 use super::write::chunking::{put_chunked_value, delete_chunked_value};
 use super::read::chunking::get_chunked_value;
 use super::{into_error, TikvStore, MAX_VALUE_SIZE, MAX_SCAN_KEYS_SIZE};
 
 impl TikvStore {
     pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
+        let mut backoff = self.backoff.clone();
+
+        loop {
+            let mut trx = self.write_trx_no_backoff().await?;
+
+            match self.write_trx(&mut trx, &batch).await {
+                Ok(result) => return Ok(result),
+                Err(err) => {
+                    let _ = trx.rollback().await;
+                    let version = self.version.lock().clone();
+                    self.trx_client.gc(version).await.map_err(into_error)?;
+                    //self.trx_client.cleanup_locks(BoundRange::range_from(TikvKey::from(vec![])), &ts, ResolveLocksOptions::default()).await.map_err(into_error)?;
+                    let Some(backoff_duration) = backoff.next_delay_duration() else {
+                        return Err(err);
+                    };
+                    println!("backoff for {} secs with {} attempts", backoff_duration.as_secs_f32(), backoff.current_attempts());
+                    tokio::time::sleep(backoff_duration).await;
+                    continue;
+                }
+            }
+        }
+
+
+    }
+
+    async fn write_trx(&self, trx: &mut Transaction, batch: &Batch) -> trc::Result<AssignedIds> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;
         let mut document_id = u32::MAX;
         let mut change_id = u64::MAX;
+        let mut result = AssignedIds::default();
 
-        let mut backoff = self.backoff.clone();
+        for op in &batch.ops {
+            match op {
+                Operation::AccountId {
+                    account_id: account_id_,
+                } => {
+                    account_id = *account_id_;
+                }
+                Operation::Collection {
+                    collection: collection_,
+                } => {
+                    collection = *collection_;
+                }
+                Operation::DocumentId {
+                    document_id: document_id_,
+                } => {
+                    document_id = *document_id_;
+                }
+                Operation::ChangeId {
+                    change_id: change_id_,
+                } => {
+                    change_id = *change_id_;
+                }
+                Operation::Value { class, op } => {
+                    let key = class.serialize(
+                        account_id,
+                        collection,
+                        document_id,
+                        WITH_SUBSPACE,
+                        (&result).into(),
+                    );
+                    println!("writing key: {:?}", key);
+                    let do_chunk = !class.is_counter(collection);
 
-        loop {
-            let mut result = AssignedIds::default();
-
-            let mut trx = self.write_trx_no_backoff().await?;
-
-            for op in &batch.ops {
-                match op {
-                    Operation::AccountId {
-                        account_id: account_id_,
-                    } => {
-                        account_id = *account_id_;
-                    }
-                    Operation::Collection {
-                        collection: collection_,
-                    } => {
-                        collection = *collection_;
-                    }
-                    Operation::DocumentId {
-                        document_id: document_id_,
-                    } => {
-                        document_id = *document_id_;
-                    }
-                    Operation::ChangeId {
-                        change_id: change_id_,
-                    } => {
-                        change_id = *change_id_;
-                    }
-                    Operation::Value { class, op } => {
-                        let key = class.serialize(
-                            account_id,
-                            collection,
-                            document_id,
-                            WITH_SUBSPACE,
-                            (&result).into(),
-                        );
-
-                        match op {
-                            ValueOp::Set(value) => {
-                                let value = value.resolve(&result)?;
-
-                                put_chunked_value(&key, &value, &mut trx, false).await?;
-                            }
-                            ValueOp::AtomicAdd(by) => {
-                                get_and_add(&mut trx, key, *by).await?;
-                            }
-                            ValueOp::AddAndGet(by) => {
-                                let num = get_and_add(&mut trx, key, *by).await?;
-                                result.push_counter_id(num);
-                            }
-                            ValueOp::Clear => {
-                                delete_chunked_value(&key, &mut trx, false).await?;
+                    match op {
+                        ValueOp::Set(value) => {
+                            let value = value.resolve(&result)?;
+                            if do_chunk {
+                                put_chunked_value(&key, &value, trx, false).await?;
+                            } else {
+                                trx.put(key, value.as_ref()).await.map_err(into_error)?;
                             }
                         }
-                    }
-                    Operation::Index {  field, key, set } => {
-                        let key = IndexKey {
-                            account_id,
-                            collection,
-                            document_id,
-                            field: *field,
-                            key,
-                        }.serialize(0);
-
-                        if *set {
-                            trx.put(key, &[]).await.map_err(into_error)?;
-                        } else {
-                            trx.delete(key).await.map_err(into_error)?;
+                        ValueOp::AtomicAdd(by) => {
+                            get_and_add(trx, key, *by).await?;
                         }
-                    }
-                    Operation::Bitmap { class, set } => {
-                        let assign_id = *set
-                            && matches!(class, BitmapClass::DocumentIds)
-                            && document_id == u32::MAX;
-
-                        if assign_id {
-                            let mut begin = BitmapKey {
-                                account_id,
-                                collection,
-                                class: BitmapClass::DocumentIds,
-                                document_id: 0,
-                            }.serialize(WITH_SUBSPACE);
-                            let mut end = BitmapKey {
-                                account_id,
-                                collection,
-                                class: BitmapClass::DocumentIds,
-                                document_id: u32::MAX,
-                            }.serialize(WITH_SUBSPACE);
-                            end.push(u8::MIN); // Null byte to make the end inclusive
-
-
-                            let key_len = begin.len();
-
-                            let mut found_ids = RoaringBitmap::new();
-
-                            'outer: loop {
-                                let mut keys = trx.scan_keys((begin, end.clone()), MAX_SCAN_KEYS_SIZE)
-                                    .await
-                                    .map_err(into_error)?
-                                    .peekable();
-
-                                let mut count = 0;
-                                while let Some(key) = keys.next() {
-                                    count += 1;
-                                    if key.len() == key_len {
-                                        let key_slice: &[u8] = key.as_ref().into();
-                                        found_ids.insert(key_slice.deserialize_be_u32(key_len - U32_LEN)?);
-                                    } else {
-                                        break 'outer;
-                                    }
-
-                                    if keys.peek().is_none() {
-                                        if count < MAX_SCAN_KEYS_SIZE {
-                                            break 'outer;
-                                        } else {
-                                            begin = key.into();
-                                            begin.push(u8::MIN); // Null byte to make the beginning exclusive
-                                            continue 'outer;
-                                        }
-                                    }
-                                }
-                                // Empty
-                                break;
-                            }
-
-                            document_id = found_ids.random_available_id();
-                            result.push_document_id(document_id);
+                        ValueOp::AddAndGet(by) => {
+                            let num = get_and_add(trx, key, *by).await?;
+                            result.push_counter_id(num);
                         }
-
-                        let key = class.serialize(
-                            account_id,
-                            collection,
-                            document_id,
-                            WITH_SUBSPACE,
-                            (&result).into(),
-                        );
-
-                        if *set {
-                            let mut begin = key;
-                            let mut end = class.serialize(
-                                account_id,
-                                collection,
-                                document_id + 1,
-                                WITH_SUBSPACE,
-                                (&result).into(),
-                            );
-                            end.push(u8::MIN);
-
-                            loop {
-                                let keys: Vec<TikvKey> = trx.scan_keys((begin, end.clone()), MAX_SCAN_KEYS_SIZE)
-                                    .await
-                                    .map_err(into_error)?
-                                    .collect();
-
-                                if keys.len() < MAX_SCAN_KEYS_SIZE as usize {
-                                    trx.lock_keys(keys).await.map_err(into_error)?;
-                                    break;
-                                } else {
-                                    // Guaranteed to have the last value
-                                    begin = keys.last().unwrap().clone().into();
-                                    trx.lock_keys(keys).await.map_err(into_error)?;
-                                    continue;
-                                }
+                        ValueOp::Clear => {
+                            if do_chunk {
+                                delete_chunked_value(&key, trx, false).await?;
+                            } else {
+                                trx.delete(key).await.map_err(into_error)?;
                             }
-                        } else {
-                            trx.delete(key).await.map_err(into_error)?;
-                        }
-                    }
-                    Operation::Log { set } => {
-                        let key = LogKey {
-                            account_id,
-                            collection,
-                            change_id,
-                        }.serialize(WITH_SUBSPACE);
-
-                        trx.put(key, set.resolve(&result)?.as_ref()).await.map_err(into_error)?;
-                    }
-                    Operation::AssertValue {
-                        class,
-                        assert_value,
-                    } => {
-                        let key = class.serialize(
-                            account_id,
-                            collection,
-                            document_id,
-                            WITH_SUBSPACE,
-                            (&result).into(),
-                        );
-
-                        let matches = match get_chunked_value(&key, &mut trx).await {
-                            Ok(Some(bytes)) => assert_value.matches(bytes.as_slice()),
-                            Ok(None) => {
-                                assert_value.is_none()
-                            }
-                            Err(_) => false,
-                        };
-
-                        if !matches {
-                            trx.rollback().await.map_err(into_error)?;
-                            return Err(trc::StoreEvent::AssertValueFailed.into());
                         }
                     }
                 }
-            }
+                Operation::Index {  field, key, set } => {
+                    let key = IndexKey {
+                        account_id,
+                        collection,
+                        document_id,
+                        field: *field,
+                        key,
+                    }.serialize(0);
+                    println!("writing index key: {:?}", key);
 
-            if self.commit(trx, Some(&mut backoff)).await? {
-                return Ok(result)
-            } else {
-                continue;
+                    if *set {
+                        trx.put(key, &[]).await.map_err(into_error)?;
+                    } else {
+                        trx.delete(key).await.map_err(into_error)?;
+                    }
+                }
+                Operation::Bitmap { class, set } => {
+                    let assign_id = *set
+                        && matches!(class, BitmapClass::DocumentIds)
+                        && document_id == u32::MAX;
+
+                    if assign_id {
+                        let mut begin = BitmapKey {
+                            account_id,
+                            collection,
+                            class: BitmapClass::DocumentIds,
+                            document_id: 0,
+                        }.serialize(WITH_SUBSPACE);
+                        let mut end = BitmapKey {
+                            account_id,
+                            collection,
+                            class: BitmapClass::DocumentIds,
+                            document_id: u32::MAX,
+                        }.serialize(WITH_SUBSPACE);
+                        end.push(u8::MIN); // Null byte to make the end inclusive
+
+
+                        let key_len = begin.len();
+
+                        let mut found_ids = RoaringBitmap::new();
+
+                        'outer: loop {
+                            println!("scanning keys {:?} and {:?}", begin, end);
+                            let mut keys = trx.scan_keys((begin, end.clone()), MAX_SCAN_KEYS_SIZE)
+                                .await
+                                .map_err(into_error)?
+                                .peekable();
+
+                            let mut count = 0;
+                            while let Some(key) = keys.next() {
+                                count += 1;
+                                let key_slice: &[u8] = key.as_ref().into();
+                                println!("found key {:?}", key_slice);
+                                if key_slice.len() == key_len {
+                                    found_ids.insert(key_slice.deserialize_be_u32(key_len - U32_LEN)?);
+                                } else {
+                                    break 'outer;
+                                }
+
+                                if keys.peek().is_none() {
+                                    if count < MAX_SCAN_KEYS_SIZE {
+                                        break 'outer;
+                                    } else {
+                                        begin = key.into();
+                                        begin.push(u8::MIN); // Null byte to make the beginning exclusive
+                                        continue 'outer;
+                                    }
+                                }
+                            }
+                            // Empty
+                            break;
+                        }
+
+                        document_id = found_ids.random_available_id();
+                        println!("using document id: {} from found IDs: {:?}", document_id, found_ids);
+                        result.push_document_id(document_id);
+                    }
+
+                    let key = class.serialize(
+                        account_id,
+                        collection,
+                        document_id,
+                        WITH_SUBSPACE,
+                        (&result).into(),
+                    );
+
+                    if *set {
+                        trx.lock_keys([key.clone()]).await.map_err(into_error)?;
+                        trx.put(key, &[]).await.map_err(into_error)?;
+                    } else {
+                        trx.delete(key).await.map_err(into_error)?;
+                    }
+                }
+                Operation::Log { set } => {
+                    let key = LogKey {
+                        account_id,
+                        collection,
+                        change_id,
+                    }.serialize(WITH_SUBSPACE);
+
+                    trx.put(key, set.resolve(&result)?.as_ref()).await.map_err(into_error)?;
+                }
+                Operation::AssertValue {
+                    class,
+                    assert_value,
+                } => {
+                    let key = class.serialize(
+                        account_id,
+                        collection,
+                        document_id,
+                        WITH_SUBSPACE,
+                        (&result).into(),
+                    );
+
+                    let matches = match get_chunked_value(&key, trx).await {
+                        Ok(Some(bytes)) => assert_value.matches(bytes.as_slice()),
+                        Ok(None) => {
+                            assert_value.is_none()
+                        }
+                        Err(_) => false,
+                    };
+
+                    if !matches {
+                        trx.rollback().await.map_err(into_error)?;
+                        return Err(trc::StoreEvent::AssertValueFailed.into());
+                    }
+                }
             }
         }
+
+        if let Some(ts) = trx.commit().await.map_err(into_error)? {
+            let mut previous = self.version.lock();
+            *previous = ts;
+        }
+        if ! result.counter_ids.is_empty() || ! result.document_ids.is_empty() {
+            println!("success with counters: [{:?}] and doc ids: [{:?}]", result.counter_ids, result.document_ids);
+        }
+        Ok(result)
     }
 
     pub(crate) async fn purge_store(&self) -> trc::Result<()> {
@@ -340,7 +354,7 @@ impl TikvStore {
     }
 
     pub(super) async fn write_trx_no_backoff(&self) -> trc::Result<Transaction> {
-        let write_trx_options = TransactionOptions::new_pessimistic()
+        let write_trx_options = TransactionOptions::new_optimistic()
             .drop_check(CheckLevel::Warn)
             .use_async_commit()
             .retry_options(RetryOptions::none());
