@@ -368,11 +368,10 @@ impl JMAP {
         let mut signature_ids = Vec::new();
         let mut has_macros = false;
         for (key, value) in self.core.storage.config.list("signature.", true).await? {
-            match key.strip_suffix(".domain") {
-                Some(key_id) if value == domain_name => {
+            if let Some(key_id) = key.strip_suffix(".domain") {
+                if value == domain_name {
                     signature_ids.push(key_id.to_string());
                 }
-                _ => (),
             }
             if !has_macros && value.contains("%%{") {
                 has_macros = true;
@@ -381,7 +380,7 @@ impl JMAP {
         }
 
         // Add MX and CNAME records
-        content.push(("@".to_string(), format!("IN MX    10 {server_name}.\n")));
+        content.push(("@".to_string(), format!("IN MX    10 {server_name}.")));
         if server_name
             .strip_prefix("mail.")
             .map_or(true, |s| s != domain_name)
@@ -418,11 +417,10 @@ impl JMAP {
         }
 
         // Add SPF records
-        match server_name.strip_suffix(&format!(".{domain_name}")) {
-            Some(server_name) if server_name != domain_name => {
+        if let Some(server_name) = server_name.strip_suffix(&format!(".{domain_name}")) {
+            if server_name != domain_name {
                 content.push((server_name.to_string(), "IN TXT   \"v=spf1 a ra=postmaster -all\"".to_string()));
             }
-            _ => (),
         }
         content.push((domain_name.to_string(), "IN TXT   \"v=spf1 mx ra=postmaster -all\"".to_string()));
 
@@ -501,9 +499,9 @@ impl JMAP {
                 };
 
                 let name = if !name.starts_with('.') {
-                    format!("_25._tcp")
+                    "_25._tcp"
                 } else {
-                    format!("_25._tcp.mail")
+                    "_25._tcp.mail"
                 };
                 let cu = if cert_num == 0 { 3 } else { 2 };
 
@@ -521,8 +519,10 @@ impl JMAP {
             }
         }
 
-        let max_len = content.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
-        Ok(content.into_iter().map(|(name, record)| format!("{name:<max_len$} {record}")).collect::<Vec<_>>().join("\n"))
+        let width = content.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
+        let mut lines = content.into_iter().map(|(name, record)| format!("{name:<width$} {record}")).collect::<Vec<_>>();
+        lines.push("".to_string());
+        Ok(lines.join("\n"))
     }
 
 
