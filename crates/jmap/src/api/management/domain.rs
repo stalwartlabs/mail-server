@@ -425,15 +425,13 @@ impl JMAP {
 
         // Add SPF records
         if let Some(server_name) = server_name.strip_suffix(&format!(".{domain_name}")) {
-            if server_name != domain_name {
-                content.push((
-                    server_name.to_string(),
-                    "IN TXT   \"v=spf1 a ra=postmaster -all\"".to_string(),
-                ));
-            }
+            content.push((
+                server_name.to_string(),
+                "IN TXT   \"v=spf1 a ra=postmaster -all\"".to_string(),
+            ));
         }
         content.push((
-            domain_name.to_string(),
+            "@".to_string(),
             "IN TXT   \"v=spf1 mx ra=postmaster -all\"".to_string(),
         ));
 
@@ -535,7 +533,7 @@ impl JMAP {
                     .enumerate()
                     {
                         content.push((
-                            name.clone(),
+                            name.to_string(),
                             format!("IN TLSA  {} {} {} {}", cu, s, m + 1, hash),
                         ));
                     }
