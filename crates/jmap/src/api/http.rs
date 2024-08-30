@@ -63,7 +63,12 @@ impl JMAP {
         let ctx = HttpContext::new(&session, &req);
         match ctx.has_endpoint_access(&self.core).await {
             StatusCode::OK => (),
-            status => return Ok(status.into_http_response()),
+            status => {
+                // Allow lookup to avoid lockout
+                if !session.remote_ip.is_loopback() {
+                    return Ok(status.into_http_response());
+                }
+            }
         }
 
         match path.next().unwrap_or_default() {

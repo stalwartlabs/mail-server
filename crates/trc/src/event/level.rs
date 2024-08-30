@@ -325,11 +325,11 @@ impl EventType {
                 | SieveEvent::QuotaExceeded
                 | SieveEvent::ListNotFound
                 | SieveEvent::ScriptNotFound
-                | SieveEvent::RuntimeError
                 | SieveEvent::MessageTooLarge => Level::Warn,
                 SieveEvent::SendMessage => Level::Info,
                 SieveEvent::UnexpectedError => Level::Error,
                 SieveEvent::ActionAccept
+                | SieveEvent::RuntimeError
                 | SieveEvent::ActionAcceptReplace
                 | SieveEvent::ActionDiscard
                 | SieveEvent::ActionReject => Level::Debug,
