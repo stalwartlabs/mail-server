@@ -13,6 +13,8 @@ use sha1::Digest;
 use utils::{config::Config, url_params::UrlParams};
 use x509_parser::parse_x509_certificate;
 
+use super::decode_path_element;
+use crate::api::PlainResponse;
 use crate::{
     api::{
         http::ToHttpResponse,
@@ -21,8 +23,6 @@ use crate::{
     },
     JMAP,
 };
-use crate::api::PlainResponse;
-use super::decode_path_element;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DnsRecord {
@@ -76,8 +76,10 @@ impl JMAP {
             (Some(domain), Some("zonefile.txt"), &Method::GET) => {
                 // Obtain Zone File
                 let domain = decode_path_element(domain);
-                Ok(PlainResponse::new(self.build_zone_file(domain.as_ref()).await?)
-                    .into_http_response())
+                Ok(
+                    PlainResponse::new(self.build_zone_file(domain.as_ref()).await?)
+                        .into_http_response(),
+                )
             }
             (Some(domain), None, &Method::POST) => {
                 // Create domain
@@ -402,12 +404,17 @@ impl JMAP {
             ) {
                 match obtain_dkim_public_key(algo, pk) {
                     Ok(public) => {
-                        content.push( (
+                        content.push((
                             format!("{selector}._domainkey"),
                             match algo {
-                                Algorithm::Rsa => format!("IN TXT   \"v=DKIM1; k=rsa; h=sha256; p={public}\""),
-                                Algorithm::Ed25519 => format!("IN TXT   \"v=DKIM1; k=ed25519; h=sha256; p={public}\""),
-                            }));
+                                Algorithm::Rsa => {
+                                    format!("IN TXT   \"v=DKIM1; k=rsa; h=sha256; p={public}\"")
+                                }
+                                Algorithm::Ed25519 => {
+                                    format!("IN TXT   \"v=DKIM1; k=ed25519; h=sha256; p={public}\"")
+                                }
+                            },
+                        ));
                     }
                     Err(err) => {
                         trc::error!(err);
@@ -419,11 +426,16 @@ impl JMAP {
         // Add SPF records
         if let Some(server_name) = server_name.strip_suffix(&format!(".{domain_name}")) {
             if server_name != domain_name {
-                content.push((server_name.to_string(), "IN TXT   \"v=spf1 a ra=postmaster -all\"".to_string()));
+                content.push((
+                    server_name.to_string(),
+                    "IN TXT   \"v=spf1 a ra=postmaster -all\"".to_string(),
+                ));
             }
         }
-        content.push((domain_name.to_string(), "IN TXT   \"v=spf1 mx ra=postmaster -all\"".to_string()));
-
+        content.push((
+            domain_name.to_string(),
+            "IN TXT   \"v=spf1 mx ra=postmaster -all\"".to_string(),
+        ));
 
         let mut has_https = false;
         for (protocol, port, is_tls) in self
@@ -461,12 +473,18 @@ impl JMAP {
         if has_https {
             // Add autoconfig and autodiscover records
             content.push(("autoconfig".to_string(), format!("IN CNAME {server_name}.")));
-            content.push(("autodiscover".to_string(), format!("IN CNAME {server_name}.")));
+            content.push((
+                "autodiscover".to_string(),
+                format!("IN CNAME {server_name}."),
+            ));
 
             // Add MTA-STS records
             if let Some(policy) = self.core.build_mta_sts_policy() {
                 content.push(("mta-sts".to_string(), format!("IN CNAME {server_name}.")));
-                content.push(("_mta-sts".to_string(), format!("IN TXT   \"v=STSv1; id={}\"", policy.id)));
+                content.push((
+                    "_mta-sts".to_string(),
+                    format!("IN TXT   \"v=STSv1; id={}\"", policy.id),
+                ));
             }
         }
 
@@ -474,7 +492,10 @@ impl JMAP {
         content.push(("_dmarc".to_string(), format!("IN TXT   \"v=DMARC1; p=reject; rua=mailto:postmaster@{domain_name}; ruf=mailto:postmaster@{domain_name}\"")));
 
         // Add TLS reporting record
-        content.push(("_smtp._tls".to_string(), format!("IN TXT   \"v=TLSRPTv1; rua=mailto:postmaster@{domain_name}\"")));
+        content.push((
+            "_smtp._tls".to_string(),
+            format!("IN TXT   \"v=TLSRPTv1; rua=mailto:postmaster@{domain_name}\""),
+        ));
 
         // Add TLSA records
         for (name, key) in self.core.tls.certificates.load().iter() {
@@ -510,20 +531,28 @@ impl JMAP {
                         format!("{:x}", sha2::Sha256::digest(cert)),
                         format!("{:x}", sha2::Sha512::digest(cert)),
                     ]
-                        .into_iter()
-                        .enumerate()
+                    .into_iter()
+                    .enumerate()
                     {
-                        content.push((name.clone(), format!("IN TLSA  {} {} {} {}", cu, s, m + 1, hash)));
+                        content.push((
+                            name.clone(),
+                            format!("IN TLSA  {} {} {} {}", cu, s, m + 1, hash),
+                        ));
                     }
                 }
             }
         }
 
-        let width = content.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
-        let mut lines = content.into_iter().map(|(name, record)| format!("{name:<width$} {record}")).collect::<Vec<_>>();
+        let width = content
+            .iter()
+            .map(|(name, _)| name.len())
+            .max()
+            .unwrap_or(0);
+        let mut lines = content
+            .into_iter()
+            .map(|(name, record)| format!("{name:<width$} {record}"))
+            .collect::<Vec<_>>();
         lines.push("".to_string());
         Ok(lines.join("\n"))
     }
-
-
 }
