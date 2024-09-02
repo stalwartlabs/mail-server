@@ -260,7 +260,13 @@ async fn antispam() {
             continue;
         }*/
         println!("===== {test_name} =====");
-        let script = core.core.sieve.scripts.get(test_name).cloned().unwrap();
+        let script = core
+            .core
+            .sieve
+            .trusted_scripts
+            .get(test_name)
+            .cloned()
+            .unwrap();
 
         let contents = fs::read_to_string(base_path.join(format!("{test_name}.test"))).unwrap();
         let mut lines = contents.lines();

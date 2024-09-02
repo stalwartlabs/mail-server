@@ -185,8 +185,20 @@ impl Core {
             })
     }
 
-    pub fn get_sieve_script(&self, name: &str, session_id: u64) -> Option<&Arc<Sieve>> {
-        self.sieve.scripts.get(name).or_else(|| {
+    pub fn get_trusted_sieve_script(&self, name: &str, session_id: u64) -> Option<&Arc<Sieve>> {
+        self.sieve.trusted_scripts.get(name).or_else(|| {
+            trc::event!(
+                Sieve(trc::SieveEvent::ScriptNotFound),
+                Id = name.to_string(),
+                SpanId = session_id,
+            );
+
+            None
+        })
+    }
+
+    pub fn get_untrusted_sieve_script(&self, name: &str, session_id: u64) -> Option<&Arc<Sieve>> {
+        self.sieve.untrusted_scripts.get(name).or_else(|| {
             trc::event!(
                 Sieve(trc::SieveEvent::ScriptNotFound),
                 Id = name.to_string(),

@@ -347,6 +347,40 @@ pub async fn test(params: &mut JMAPTest) {
     )
     .await;
 
+    // Run include global tests
+    client
+        .sieve_script_create(
+            "test_include_global",
+            get_script("test_include_global"),
+            true,
+        )
+        .await
+        .unwrap();
+    lmtp.ingest(
+        "bill@remote.org",
+        &["jdoe@example.com"],
+        concat!(
+            "From: bill@remote.org\r\n",
+            "Bcc: Undisclosed recipients;\r\n",
+            "Message-ID: <1234@example.com>\r\n",
+            "Subject: Holidays\r\n",
+            "\r\n",
+            "Remember to file your T.P.S. reports before ",
+            "going on holidays."
+        ),
+    )
+    .await;
+
+    assert_message_delivery(
+        &mut smtp_rx,
+        MockMessage::new(
+            "<>",
+            ["<bill@remote.org>"],
+            "@Rejected from a global script",
+        ),
+    )
+    .await;
+
     // Run enclose + redirect tests
     client
         .sieve_script_create(

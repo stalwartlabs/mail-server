@@ -29,7 +29,8 @@ pub struct Scripting {
     pub from_name: IfBlock,
     pub return_path: IfBlock,
     pub sign: IfBlock,
-    pub scripts: AHashMap<String, Arc<Sieve>>,
+    pub trusted_scripts: AHashMap<String, Arc<Sieve>>,
+    pub untrusted_scripts: AHashMap<String, Arc<Sieve>>,
 }
 
 pub struct ScriptCache {
@@ -279,8 +280,8 @@ impl Scripting {
             .to_string();
         trusted_runtime.set_local_hostname(hostname.clone());
 
-        // Parse scripts
-        let mut scripts = AHashMap::new();
+        // Parse trusted scripts
+        let mut trusted_scripts = AHashMap::new();
         for id in config
             .sub_keys("sieve.trusted.scripts", ".contents")
             .map(|s| s.to_string())
@@ -293,11 +294,34 @@ impl Scripting {
                     .as_bytes(),
             ) {
                 Ok(compiled) => {
-                    scripts.insert(id, compiled.into());
+                    trusted_scripts.insert(id, compiled.into());
                 }
                 Err(err) => config.new_build_error(
                     ("sieve.trusted.scripts", id.as_str(), "contents"),
-                    format!("Failed to compile Sieve script: {err}"),
+                    format!("Failed to compile trusted Sieve script: {err}"),
+                ),
+            }
+        }
+
+        // Parse untrusted scripts
+        let mut untrusted_scripts = AHashMap::new();
+        for id in config
+            .sub_keys("sieve.untrusted.scripts", ".contents")
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+        {
+            match untrusted_compiler.compile(
+                config
+                    .value(("sieve.untrusted.scripts", id.as_str(), "contents"))
+                    .unwrap()
+                    .as_bytes(),
+            ) {
+                Ok(compiled) => {
+                    untrusted_scripts.insert(id, compiled.into());
+                }
+                Err(err) => config.new_build_error(
+                    ("sieve.untrusted.scripts", id.as_str(), "contents"),
+                    format!("Failed to compile untrusted Sieve script: {err}"),
                 ),
             }
         }
@@ -334,7 +358,8 @@ impl Scripting {
                     )
                 },
             ),
-            scripts,
+            untrusted_scripts,
+            trusted_scripts,
         }
     }
 }
@@ -379,7 +404,8 @@ impl Default for Scripting {
                     "'ed25519-' + key_get('default', 'domain')]"
                 ),
             ),
-            scripts: AHashMap::new(),
+            untrusted_scripts: AHashMap::new(),
+            trusted_scripts: AHashMap::new(),
         }
     }
 }
@@ -407,7 +433,8 @@ impl Clone for Scripting {
             from_name: self.from_name.clone(),
             return_path: self.return_path.clone(),
             sign: self.sign.clone(),
-            scripts: self.scripts.clone(),
+            trusted_scripts: self.trusted_scripts.clone(),
+            untrusted_scripts: self.untrusted_scripts.clone(),
         }
     }
 }

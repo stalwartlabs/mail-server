@@ -64,7 +64,7 @@ impl JMAP {
         match ctx.has_endpoint_access(&self.core).await {
             StatusCode::OK => (),
             status => {
-                // Allow lookup to avoid lockout
+                // Allow loopback address to avoid lockouts
                 if !session.remote_ip.is_loopback() {
                     return Ok(status.into_http_response());
                 }

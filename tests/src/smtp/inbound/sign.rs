@@ -127,7 +127,6 @@ async fn sign_and_seal() {
     // Enable logging
     crate::enable_logging();
 
-
     let tmp_dir = TempDir::new("smtp_sign_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
     let stores = Stores::parse_all(&mut config).await;

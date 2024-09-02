@@ -30,12 +30,15 @@ const CONFIG: &str = r#"
 [session.rcpt]
 relay = true
 
+[lookup.default]
+domain = "example.org"
+
 [report]
 submitter = "'mx.example.org'"
 
 [report.dmarc.aggregate]
 from-name = "'DMARC Report'"
-from-address = "'reports@example.org'"
+from-address = "'reports@' + key_get('default', 'domain')"
 org-name = "'Foobar, Inc.'"
 contact-info = "'https://foobar.org/contact'"
 send = "daily"
@@ -48,7 +51,6 @@ sign = "['rsa']"
 async fn report_dmarc() {
     // Enable logging
     crate::enable_logging();
-
 
     // Create scheduler
     let mut local = TestServer::new(

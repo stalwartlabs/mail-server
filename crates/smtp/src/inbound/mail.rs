@@ -156,7 +156,7 @@ impl<T: SessionStream> Session<T> {
             .and_then(|name| {
                 self.core
                     .core
-                    .get_sieve_script(&name, self.data.session_id)
+                    .get_trusted_sieve_script(&name, self.data.session_id)
                     .map(|s| (s, name))
             })
         {

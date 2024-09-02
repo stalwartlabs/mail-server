@@ -57,7 +57,7 @@ impl SMTP {
             match result {
                 Ok(event) => match event {
                     Event::IncludeScript { name, optional } => {
-                        if let Some(script) = self.core.sieve.scripts.get(name.as_str()) {
+                        if let Some(script) = self.core.sieve.trusted_scripts.get(name.as_str()) {
                             input = Input::script(name, script.clone());
                         } else if optional {
                             input = false.into();

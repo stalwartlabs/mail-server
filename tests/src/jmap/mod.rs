@@ -291,6 +291,13 @@ events = ["auth.*", "delivery.dsn*", "message-ingest.*"]
 signature-key = "ovos-moles"
 throttle = "100ms"
 
+[sieve.untrusted.scripts."common"]
+contents = '''
+require "reject";
+
+reject "Rejected from a global script.";
+stop;
+'''
 "#;
 
 #[tokio::test(flavor = "multi_thread")]

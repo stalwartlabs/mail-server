@@ -344,17 +344,25 @@ impl DirectoryStore {
                 if self.is_postgresql() {
                     concat!(
                         "INSERT INTO accounts (name, secret, description, ",
-                        "type, active) VALUES ($1, $2, $3, $4, true) ON CONFLICT (name) DO NOTHING"
+                        "type, active) VALUES ($1, $2, $3, $4, true) ",
+                        "ON CONFLICT (name) ",
+                        "DO UPDATE SET secret = $2, description = $3, type = $4, active = true"
                     )
                 } else if self.is_mysql() {
                     concat!(
-                        "INSERT IGNORE INTO accounts (name, secret, description, ",
-                        "type, active) VALUES (?, ?, ?, ?, true)"
+                        "INSERT INTO accounts (name, secret, description, ",
+                        "type, active) VALUES (?, ?, ?, ?, true) ",
+                        "ON DUPLICATE KEY UPDATE ",
+                        "secret = VALUES(secret), description = VALUES(description), ",
+                        "type = VALUES(type), active = true"
                     )
                 } else {
                     concat!(
-                        "INSERT OR IGNORE INTO accounts (name, secret, description, ",
-                        "type, active) VALUES (?, ?, ?, ?, true)"
+                        "INSERT INTO accounts (name, secret, description, ",
+                        "type, active) VALUES (?, ?, ?, ?, true) ",
+                        "ON CONFLICT(name) DO UPDATE SET ",
+                        "secret = excluded.secret, description = excluded.description, ",
+                        "type = excluded.type, active = true"
                     )
                 },
                 vec![

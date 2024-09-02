@@ -166,7 +166,7 @@ async fn sieve_scripts() {
     assert!(!session.init_conn().await);
 
     // Run tests
-    for (name, script) in &core.core.sieve.scripts {
+    for (name, script) in &core.core.sieve.trusted_scripts {
         if name.starts_with("stage_") || name.ends_with("_include") {
             continue;
         }

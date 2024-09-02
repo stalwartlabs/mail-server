@@ -46,7 +46,7 @@ impl JMAP {
             path.get(1).and_then(|name| {
                 self.core
                     .sieve
-                    .scripts
+                    .trusted_scripts
                     .get(*name)
                     .map(|s| (s.clone(), name.to_string()))
             }),

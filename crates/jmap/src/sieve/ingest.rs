@@ -114,15 +114,26 @@ impl JMAP {
         while let Some(event) = instance.run(input) {
             match event {
                 Ok(event) => match event {
-                    Event::IncludeScript { name, .. } => {
-                        if let Ok(Some(script)) =
-                            self.sieve_script_get_by_name(account_id, &name).await
-                        {
-                            input = Input::script(name, script);
-                        } else {
-                            input = false.into();
+                    Event::IncludeScript { name, .. } => match &name {
+                        sieve::Script::Personal(name_) => {
+                            if let Ok(Some(script)) =
+                                self.sieve_script_get_by_name(account_id, name_).await
+                            {
+                                input = Input::script(name, script);
+                            } else {
+                                input = false.into();
+                            }
                         }
-                    }
+                        sieve::Script::Global(name_) => {
+                            if let Some(script) =
+                                self.core.get_untrusted_sieve_script(name_, session_id)
+                            {
+                                input = Input::script(name, script.clone());
+                            } else {
+                                input = false.into();
+                            }
+                        }
+                    },
                     Event::MailboxExists {
                         mailboxes,
                         special_use,
