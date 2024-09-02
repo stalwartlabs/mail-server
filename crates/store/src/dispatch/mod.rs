@@ -26,6 +26,8 @@ impl Store {
             Self::MySQL(_) => "mysql",
             #[cfg(feature = "rocks")]
             Self::RocksDb(_) => "rocksdb",
+            #[cfg(feature = "tikv")]
+            Self::TiKV(_) => "tikv",
             #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(_) => "read_replica",
             Self::None => "none",

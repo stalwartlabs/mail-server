@@ -73,7 +73,7 @@ Key features:
   - **Greylisting** to temporarily defer unknown senders.
   - **Spam traps** to set up decoy email addresses that catch and analyze spam.
 - **Flexible and scalable**:
-  - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Redis** and **ElasticSearch** support.
+  - Pluggable storage backends with **RocksDB**, **FoundationDB**, **FoundationDB**, **TiKV**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Redis** and **ElasticSearch** support.
   - **Clustering** support with node autodiscovery and partition-tolerant failure detection.
   - Built-in, **LDAP** or **SQL** authentication backend support.
   - Full-text search available in 17 languages.

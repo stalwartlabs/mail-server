@@ -32,6 +32,9 @@ use crate::backend::foundationdb::FdbStore;
 #[cfg(feature = "rocks")]
 use crate::backend::rocksdb::RocksDbStore;
 
+#[cfg(feature = "tikv")]
+use crate::backend::tikv::TikvStore;
+
 #[cfg(feature = "elastic")]
 use crate::backend::elastic::ElasticSearchStore;
 
@@ -179,6 +182,28 @@ impl Stores {
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
                         self.lookup_stores.insert(store_id.clone(), db.into());
+                    }
+                }
+                #[cfg(feature = "tikv")]
+                "tikv" => {
+                    // Avoid opening the same store twice
+                    if is_reload
+                        && self
+                        .stores
+                        .values()
+                        .any(|store| matches!(store, Store::TiKV(_)))
+                    {
+                        continue;
+                    }
+
+                    if let Some(db) = TikvStore::open(config, prefix).await.map(Store::from) {
+                        self.stores.insert(store_id.clone(), db.clone());
+                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.blob_stores.insert(
+                            store_id.clone(),
+                            BlobStore::from(db.clone()).with_compression(compression_algo),
+                        );
+                        self.lookup_stores.insert(store_id, db.into());
                     }
                 }
                 "fs" => {
