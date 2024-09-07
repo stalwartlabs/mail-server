@@ -839,10 +839,14 @@ impl JMAP {
             };
 
         let mut next_parent_id = 0;
-        let mut path = expanded_path.path.into_iter().peekable();
-        'outer: while let Some(name) = path.peek() {
+        let mut path = expanded_path.path.into_iter().enumerate().peekable();
+        'outer: while let Some((pos, name)) = path.peek() {
+            let is_inbox = *pos == 0 && name.eq_ignore_ascii_case("inbox");
+
             for (part, parent_id, document_id) in &expanded_path.found_names {
-                if part.eq(name) && *parent_id == next_parent_id {
+                if (part.eq(name) || (is_inbox && part.eq_ignore_ascii_case("inbox")))
+                    && *parent_id == next_parent_id
+                {
                     next_parent_id = *document_id;
                     path.next();
                     continue 'outer;
@@ -855,7 +859,7 @@ impl JMAP {
         if path.peek().is_some() {
             let mut changes = self.begin_changes(account_id).await?;
 
-            for name in path {
+            for (_, name) in path {
                 if name.len() > self.core.jmap.mailbox_name_max_len {
                     return Ok(None);
                 }

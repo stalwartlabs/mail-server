@@ -375,9 +375,13 @@ impl JMAP {
             .await?
             .and_then(|ep| {
                 let mut next_parent_id = 0;
-                'outer: for name in ep.path {
+                'outer: for (pos, name) in ep.path.iter().enumerate() {
+                    let is_inbox = pos == 0 && name.eq_ignore_ascii_case("inbox");
+
                     for (part, parent_id, document_id) in &ep.found_names {
-                        if part.eq(name) && *parent_id == next_parent_id {
+                        if (part.eq(name) || (is_inbox && part.eq_ignore_ascii_case("inbox")))
+                            && *parent_id == next_parent_id
+                        {
                             next_parent_id = *document_id;
                             continue 'outer;
                         }
