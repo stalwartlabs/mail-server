@@ -7,7 +7,7 @@
 use hyper::Method;
 use serde_json::json;
 use store::ahash::AHashMap;
-use utils::{config::ConfigKey, url_params::UrlParams};
+use utils::{config::ConfigKey, map::vec_map::VecMap, url_params::UrlParams};
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
@@ -75,7 +75,7 @@ impl JMAP {
                     // Obtain record ids
                     let mut total = 0;
                     let mut ids = Vec::new();
-                    for (key, _) in &settings {
+                    for key in settings.keys() {
                         if let Some(id) = key.strip_suffix(&suffix) {
                             if !id.is_empty() {
                                 if !has_filter {
@@ -189,7 +189,7 @@ impl JMAP {
                     .into_iter()
                     .skip(offset)
                     .take(if limit == 0 { total } else { limit })
-                    .collect::<AHashMap<_, _>>();
+                    .collect::<VecMap<_, _>>();
 
                 Ok(JsonResponse::new(json!({
                     "data": {

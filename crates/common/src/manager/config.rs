@@ -91,13 +91,13 @@ impl ConfigManager {
         &self,
         prefix: &str,
         strip_prefix: bool,
-    ) -> trc::Result<Vec<(String, String)>> {
+    ) -> trc::Result<BTreeMap<String, String>> {
         let mut results = self.db_list(prefix, strip_prefix).await?;
         for (key, value) in self.cfg_local.load().iter() {
             if prefix.is_empty() || (!strip_prefix && key.starts_with(prefix)) {
-                results.push((key.clone(), value.clone()));
+                results.insert(key.clone(), value.clone());
             } else if let Some(key) = key.strip_prefix(prefix) {
-                results.push((key.to_string(), value.clone()));
+                results.insert(key.to_string(), value.clone());
             }
         }
 
@@ -112,7 +112,7 @@ impl ConfigManager {
         let mut grouped = AHashMap::new();
 
         let mut list = self.list(prefix, true).await?;
-        for (key, _) in &list {
+        for key in list.keys() {
             if let Some(key) = key.strip_suffix(suffix) {
                 grouped.insert(key.to_string(), AHashMap::new());
             }
@@ -134,7 +134,7 @@ impl ConfigManager {
         &self,
         prefix: &str,
         strip_prefix: bool,
-    ) -> trc::Result<Vec<(String, String)>> {
+    ) -> trc::Result<BTreeMap<String, String>> {
         let key = prefix.as_bytes();
         let from_key = ValueKey::from(ValueClass::Config(key.to_vec()));
         let to_key = ValueKey::from(ValueClass::Config(
@@ -143,7 +143,7 @@ impl ConfigManager {
                 .chain([u8::MAX, u8::MAX, u8::MAX, u8::MAX, u8::MAX])
                 .collect::<Vec<_>>(),
         ));
-        let mut results = Vec::new();
+        let mut results = BTreeMap::new();
         let patterns = self.cfg_local_patterns.clone();
         self.cfg_store
             .iterate(
@@ -158,7 +158,7 @@ impl ConfigManager {
                             key = key.strip_prefix(prefix).unwrap_or(key);
                         }
 
-                        results.push((key.to_string(), String::deserialize(value)?));
+                        results.insert(key.to_string(), String::deserialize(value)?);
                     }
 
                     Ok(true)
