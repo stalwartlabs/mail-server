@@ -611,6 +611,7 @@ impl EventType {
             EventType::MtaHook(_) => true,
             EventType::Delivery(
                 DeliveryEvent::AttemptStart
+                | DeliveryEvent::Completed
                 | DeliveryEvent::AttemptEnd
                 | DeliveryEvent::MxLookupFailed
                 | DeliveryEvent::IpLookupFailed
