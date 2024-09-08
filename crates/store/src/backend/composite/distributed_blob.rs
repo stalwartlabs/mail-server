@@ -71,6 +71,8 @@ impl DistributedBlob {
                     Store::MySQL(store) => store.get_blob(key, read_range).await,
                     #[cfg(feature = "rocks")]
                     Store::RocksDb(store) => store.get_blob(key, read_range).await,
+                    #[cfg(feature = "etcd")]
+                    Store::Etcd(store) => unimplemented!(),
                     #[cfg(all(
                         feature = "enterprise",
                         any(feature = "postgres", feature = "mysql")
@@ -101,6 +103,8 @@ impl DistributedBlob {
                     Store::MySQL(store) => store.put_blob(key, data).await,
                     #[cfg(feature = "rocks")]
                     Store::RocksDb(store) => store.put_blob(key, data).await,
+                    #[cfg(feature = "etcd")]
+                    Store::Etcd(store) => unimplemented!(),
                     #[cfg(all(
                         feature = "enterprise",
                         any(feature = "postgres", feature = "mysql")
@@ -131,6 +135,8 @@ impl DistributedBlob {
                     Store::MySQL(store) => store.delete_blob(key).await,
                     #[cfg(feature = "rocks")]
                     Store::RocksDb(store) => store.delete_blob(key).await,
+                    #[cfg(feature = "etcd")]
+                    Store::Etcd(store) => unimplemented!(),
                     #[cfg(all(
                         feature = "enterprise",
                         any(feature = "postgres", feature = "mysql")

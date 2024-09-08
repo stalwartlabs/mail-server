@@ -46,6 +46,9 @@ use backend::elastic::ElasticSearchStore;
 #[cfg(feature = "redis")]
 use backend::redis::RedisStore;
 
+#[cfg(feature = "etcd")]
+use backend::etcd::EtcdStore;
+
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self>;
 }
@@ -186,6 +189,8 @@ pub enum Store {
     RocksDb(Arc<RocksDbStore>),
     #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
     SQLReadReplica(Arc<backend::composite::read_replica::SQLReadReplica>),
+    #[cfg(feature = "etcd")]
+    Etcd(Arc<EtcdStore>),
     #[default]
     None,
 }
@@ -299,6 +304,13 @@ impl From<ElasticSearchStore> for FtsStore {
 impl From<RedisStore> for LookupStore {
     fn from(store: RedisStore) -> Self {
         Self::Redis(Arc::new(store))
+    }
+}
+
+#[cfg(feature = "etcd")]
+impl From<EtcdStore> for Store {
+    fn from(store: EtcdStore) -> Self {
+        Self::Etcd(Arc::new(store))
     }
 }
 
@@ -714,6 +726,8 @@ impl std::fmt::Debug for Store {
             Self::MySQL(_) => f.debug_tuple("MySQL").finish(),
             #[cfg(feature = "rocks")]
             Self::RocksDb(_) => f.debug_tuple("RocksDb").finish(),
+            #[cfg(feature = "etcd")]
+            Self::Etcd(_) => f.debug_tuple("Etcd").finish(),
             #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(_) => f.debug_tuple("SQLReadReplica").finish(),
             Self::None => f.debug_tuple("None").finish(),

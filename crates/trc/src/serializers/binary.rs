@@ -864,6 +864,7 @@ impl EventType {
             EventType::Ai(AiEvent::LlmResponse) => 556,
             EventType::Ai(AiEvent::ApiError) => 557,
             EventType::Security(SecurityEvent::ScanBan) => 558,
+            EventType::Store(StoreEvent::EtcdError) => 559,
         }
     }
 
@@ -1468,6 +1469,7 @@ impl EventType {
             556 => Some(EventType::Ai(AiEvent::LlmResponse)),
             557 => Some(EventType::Ai(AiEvent::ApiError)),
             558 => Some(EventType::Security(SecurityEvent::ScanBan)),
+            559 => Some(EventType::Store(StoreEvent::EtcdError)),
             _ => None,
         }
     }
