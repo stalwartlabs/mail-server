@@ -64,7 +64,7 @@ impl Core {
     }
 
     pub async fn reload_lookups(&self) -> trc::Result<ReloadResult> {
-        let mut config = self.storage.config.build_config("certificate").await?;
+        let mut config = self.storage.config.build_config("lookup").await?;
         let mut stores = Stores::default();
         stores.parse_memory_stores(&mut config);
 

@@ -19,6 +19,7 @@ use utils::config::{utils::AsKey, Config};
 pub mod lookup;
 pub mod pool;
 
+#[derive(Debug)]
 pub struct RedisStore {
     pool: RedisPool,
 }
@@ -185,4 +186,13 @@ fn build_pool<M: Manager>(
 #[inline(always)]
 fn into_error(err: impl Display) -> trc::Error {
     trc::StoreEvent::RedisError.reason(err)
+}
+
+impl std::fmt::Debug for RedisPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Single(_) => f.debug_tuple("Single").finish(),
+            Self::Cluster(_) => f.debug_tuple("Cluster").finish(),
+        }
+    }
 }

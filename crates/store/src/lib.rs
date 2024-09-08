@@ -219,7 +219,7 @@ pub enum FtsStore {
     ElasticSearch(Arc<ElasticSearchStore>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum LookupStore {
     Store(Store),
     Query(Arc<QueryStore>),
@@ -228,6 +228,7 @@ pub enum LookupStore {
     Memory(Arc<MemoryStore>),
 }
 
+#[derive(Debug)]
 pub struct QueryStore {
     pub store: LookupStore,
     pub query: String,
