@@ -28,6 +28,7 @@ impl Store {
             Self::RocksDb(_) => "rocksdb",
             #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(_) => "read_replica",
+            Self::Etcd(_) => "etcd",
             Self::None => "none",
         }
     }
