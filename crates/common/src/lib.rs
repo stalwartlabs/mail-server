@@ -21,7 +21,6 @@ use config::{
 };
 use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy, Type};
 use expr::if_block::IfBlock;
-use jmap_proto::types::collection::Collection;
 use listener::{
     blocked::{AllowedIps, BlockedIps},
     tls::TlsManager,
@@ -31,7 +30,7 @@ use mail_send::Credentials;
 use sieve::Sieve;
 use store::{
     write::{DirectoryClass, QueueClass, ValueClass},
-    BitmapKey, IterateParams, LookupStore, ValueKey,
+    IterateParams, LookupStore, ValueKey,
 };
 use tokio::sync::{mpsc, oneshot};
 use trc::AddContext;
@@ -343,12 +342,7 @@ impl Core {
     }
 
     pub async fn total_accounts(&self) -> trc::Result<u64> {
-        self.storage
-            .data
-            .get_bitmap(BitmapKey::document_ids(u32::MAX, Collection::Principal))
-            .await
-            .caused_by(trc::location!())
-            .map(|bitmap| bitmap.map_or(0, |b| b.len()))
+        total_accounts(&self.storage.data).await
     }
 
     pub async fn total_domains(&self) -> trc::Result<u64> {
@@ -374,6 +368,30 @@ impl Core {
             .caused_by(trc::location!())
             .map(|_| total)
     }
+}
+
+pub(crate) async fn total_accounts(store: &store::Store) -> trc::Result<u64> {
+    let mut total = 0;
+    store
+        .iterate(
+            IterateParams::new(
+                ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![]))),
+                ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
+                    u8::MAX;
+                    10
+                ]))),
+            )
+            .ascending(),
+            |_, value| {
+                if matches!(value.last(), Some(0u8 | 4u8)) {
+                    total += 1;
+                }
+                Ok(true)
+            },
+        )
+        .await
+        .caused_by(trc::location!())
+        .map(|_| total)
 }
 
 trait CredentialsUsername {

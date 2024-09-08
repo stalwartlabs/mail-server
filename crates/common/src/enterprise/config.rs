@@ -10,8 +10,7 @@
 
 use std::time::Duration;
 
-use jmap_proto::types::collection::Collection;
-use store::{BitmapKey, Store, Stores};
+use store::{Store, Stores};
 use trc::{EventType, MetricType, TOTAL_EVENT_COUNT};
 use utils::config::{
     cron::SimpleCron,
@@ -19,7 +18,10 @@ use utils::config::{
     Config,
 };
 
-use crate::expr::{tokenizer::TokenMap, Expression};
+use crate::{
+    expr::{tokenizer::TokenMap, Expression},
+    total_accounts,
+};
 
 use super::{
     license::LicenseValidator, AlertContent, AlertContentToken, AlertMethod, Enterprise,
@@ -40,17 +42,13 @@ impl Enterprise {
             }
         };
 
-        match data
-            .get_bitmap(BitmapKey::document_ids(u32::MAX, Collection::Principal))
-            .await
-        {
-            Ok(Some(bitmap)) if bitmap.len() > license.accounts as u64 => {
+        match total_accounts(data).await {
+            Ok(total) if total > license.accounts as u64 => {
                 config.new_build_warning(
                     "enterprise.license-key",
                     format!(
                         "License key is valid but only allows {} accounts, found {}.",
-                        license.accounts,
-                        bitmap.len()
+                        license.accounts, total
                     ),
                 );
                 return None;

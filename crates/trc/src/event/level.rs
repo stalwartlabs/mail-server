@@ -239,10 +239,9 @@ impl EventType {
                 ConfigEvent::DefaultApplied
                 | ConfigEvent::MissingSetting
                 | ConfigEvent::UnusedSetting
-                | ConfigEvent::ParseWarning
-                | ConfigEvent::BuildWarning
                 | ConfigEvent::AlreadyUpToDate
                 | ConfigEvent::ExternalKeyIgnored => Level::Debug,
+                ConfigEvent::ParseWarning | ConfigEvent::BuildWarning => Level::Warn,
                 ConfigEvent::ImportExternal => Level::Info,
             },
             EventType::Resource(cause) => match cause {
