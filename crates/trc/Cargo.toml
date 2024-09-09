@@ -1,6 +1,6 @@
 [package]
 name = "trc"
-version = "0.9.3"
+version = "0.9.4"
 edition = "2021"
 resolver = "2"
 

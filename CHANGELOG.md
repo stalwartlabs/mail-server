@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.9.4] - 2024-09-09
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+## Added
+- Support for global Sieve scripts that can be used by users to filter their incoming mail.
+- Allow localhost to override HTTP access controls to prevent lockouts.
+
+### Changed
+- Sieve runtime error default log level is now `debug`.
+
+### Fixed
+- Ignore INBOX case on Sieve's `fileinto` (#725)
+- Local keys parsing and retrieval issues.
+- Lookup reload does not include database settings.
+- Account count is incorrect.
+
 ## [0.9.3] - 2024-08-29
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
