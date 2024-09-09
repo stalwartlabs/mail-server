@@ -25,20 +25,24 @@
 </p>
 <p align="center">
   <a href="https://mastodon.social/@stalwartlabs">
-    <img src="https://img.shields.io/mastodon/follow/109929667531941122?style=flat-square&logo=mastodon&color=%236364ff" alt="Mastodon">
+    <img src="https://img.shields.io/mastodon/follow/109929667531941122?style=flat-square&logo=mastodon&color=%236364ff&label=Follow%20on%20Mastodon" alt="Mastodon">
   </a>
   &nbsp;
   <a href="https://twitter.com/stalwartlabs">
-    <img src="https://img.shields.io/twitter/follow/stalwartlabs?style=flat-square&logo=twitter" alt="Twitter">
+    <img src="https://img.shields.io/twitter/follow/stalwartlabs?style=flat-square&logo=x&label=Follow%20on%20Twitter" alt="Twitter">
+  </a>
+  &nbsp;
+  <a href="nostr:npub167hk2ermhky3pmudc3q0d2vnnhcesdgsrcqgywv447ls4xs5u89q5d6395">
+    <img src="https://img.shields.io/nostr-band/followers/npub167hk2ermhky3pmudc3q0d2vnnhcesdgsrcqgywv447ls4xs5u89q5d6395?style=flat-square&logo=chatbot&label=Follow%20on%20Nostr" alt="Nostr">
   </a>
 </p>
 <p align="center">
   <a href="https://discord.gg/jtgtCNj66U">
-    <img src="https://img.shields.io/discord/923615863037390889?label=discord&style=flat-square" alt="Discord">
+    <img src="https://img.shields.io/discord/923615863037390889?label=Join%20Discord&logo=discord&style=flat-square" alt="Discord">
   </a>
   &nbsp;
   <a href="https://matrix.to/#/#stalwart:matrix.org">
-    <img src="https://img.shields.io/matrix/stalwartmail%3Amatrix.org?label=matrix&style=flat-square" alt="Matrix">
+    <img src="https://img.shields.io/matrix/stalwartmail%3Amatrix.org?label=Join%20Matrix&logo=matrix&style=flat-square" alt="Matrix">
   </a>
 </p>
 
