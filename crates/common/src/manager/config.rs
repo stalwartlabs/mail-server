@@ -34,11 +34,13 @@ pub struct Patterns {
     patterns: Vec<Pattern>,
 }
 
+#[derive(Debug)]
 enum Pattern {
     Include(MatchType),
     Exclude(MatchType),
 }
 
+#[derive(Debug)]
 enum MatchType {
     Equal(String),
     StartsWith(String),
@@ -469,9 +471,9 @@ impl Patterns {
             }
             let match_type = if value == "*" {
                 MatchType::All
-            } else if let Some(value) = value.strip_prefix('*') {
-                MatchType::StartsWith(value.to_string())
             } else if let Some(value) = value.strip_suffix('*') {
+                MatchType::StartsWith(value.to_string())
+            } else if let Some(value) = value.strip_prefix('*') {
                 MatchType::EndsWith(value.to_string())
             } else if value.contains('*') {
                 MatchType::Matches(GlobPattern::compile(&value, false))
@@ -485,6 +487,7 @@ impl Patterns {
                 Pattern::Exclude(match_type)
             });
         }
+
         if cfg_local_patterns.is_empty() {
             cfg_local_patterns = vec![
                 Pattern::Include(MatchType::StartsWith("store.".to_string())),
@@ -494,6 +497,7 @@ impl Patterns {
                 Pattern::Exclude(MatchType::StartsWith("server.allowed-ip.".to_string())),
                 Pattern::Include(MatchType::StartsWith("server.".to_string())),
                 Pattern::Include(MatchType::StartsWith("certificate.".to_string())),
+                Pattern::Include(MatchType::StartsWith("config.local-keys.".to_string())),
                 Pattern::Include(MatchType::StartsWith(
                     "authentication.fallback-admin.".to_string(),
                 )),
