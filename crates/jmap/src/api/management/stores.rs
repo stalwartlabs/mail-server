@@ -6,7 +6,10 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use common::manager::webadmin::Resource;
-use directory::backend::internal::manage::{self, ManageDirectory};
+use directory::{
+    backend::internal::manage::{self, ManageDirectory},
+    Permission,
+};
 use hyper::Method;
 use serde_json::json;
 use utils::url_params::UrlParams;
@@ -16,6 +19,7 @@ use crate::{
         http::{HttpSessionData, ToHttpResponse},
         HttpRequest, HttpResponse, JsonResponse,
     },
+    auth::AccessToken,
     services::housekeeper::{Event, PurgeType},
     JMAP,
 };
@@ -29,6 +33,7 @@ impl JMAP {
         path: Vec<&str>,
         body: Option<Vec<u8>>,
         session: &HttpSessionData,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         match (
             path.get(1).copied(),
@@ -37,6 +42,9 @@ impl JMAP {
             req.method(),
         ) {
             (Some("blobs"), Some(blob_hash), _, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::BlobFetch)?;
+
                 let blob_hash = URL_SAFE_NO_PAD
                     .decode(decode_path_element(blob_hash).as_bytes())
                     .map_err(|err| {
@@ -69,6 +77,9 @@ impl JMAP {
                 .into_http_response())
             }
             (Some("purge"), Some("blob"), _, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::PurgeBlobStore)?;
+
                 self.housekeeper_request(Event::Purge(PurgeType::Blobs {
                     store: self.core.storage.data.clone(),
                     blob_store: self.core.storage.blob.clone(),
@@ -76,6 +87,9 @@ impl JMAP {
                 .await
             }
             (Some("purge"), Some("data"), id, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::PurgeDataStore)?;
+
                 let store = if let Some(id) = id {
                     if let Some(store) = self.core.storage.stores.get(id) {
                         store.clone()
@@ -90,6 +104,9 @@ impl JMAP {
                     .await
             }
             (Some("purge"), Some("lookup"), id, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::PurgeLookupStore)?;
+
                 let store = if let Some(id) = id {
                     if let Some(store) = self.core.storage.lookups.get(id) {
                         store.clone()
@@ -104,6 +121,9 @@ impl JMAP {
                     .await
             }
             (Some("purge"), Some("account"), id, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::PurgeAccount)?;
+
                 let account_id = if let Some(id) = id {
                     self.core
                         .storage
@@ -132,6 +152,9 @@ impl JMAP {
                 // unauthorized modifications and will pursue all available legal remedies against
                 // violators to the fullest extent of the law, including but not limited to claims
                 // for copyright infringement, breach of contract, and fraud.
+
+                // Validate the access token
+                access_token.assert_has_permission(Permission::Undelete)?;
 
                 if self.core.is_enterprise_edition() {
                     self.handle_undelete_api_request(req, path, body, session)

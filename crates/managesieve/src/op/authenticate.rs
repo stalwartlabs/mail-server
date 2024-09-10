@@ -5,6 +5,7 @@
  */
 
 use common::listener::{limiter::ConcurrencyLimiter, SessionStream};
+use directory::Permission;
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use imap_proto::{
     protocol::authenticate::Mechanism,
@@ -115,6 +116,9 @@ impl<T: SessionStream> Session<T> {
                 return Err(trc::LimitEvent::ConcurrentRequest.into_err());
             }
         };
+
+        // Validate access
+        access_token.assert_has_permission(Permission::SieveAuthenticate)?;
 
         // Cache access token
         let access_token = Arc::new(access_token);

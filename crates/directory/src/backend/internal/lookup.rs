@@ -12,7 +12,7 @@ use store::{
 
 use crate::{Principal, QueryBy, Type};
 
-use super::{manage::ManageDirectory, PrincipalIdType};
+use super::{manage::ManageDirectory, PrincipalField, PrincipalIdType};
 
 #[allow(async_fn_in_trait)]
 pub trait DirectoryStore: Sync + Send {
@@ -20,7 +20,7 @@ pub trait DirectoryStore: Sync + Send {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> trc::Result<Option<Principal<u32>>>;
+    ) -> trc::Result<Option<Principal>>;
     async fn email_to_ids(&self, email: &str) -> trc::Result<Vec<u32>>;
 
     async fn is_local_domain(&self, domain: &str) -> trc::Result<bool>;
@@ -34,7 +34,7 @@ impl DirectoryStore for Store {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> trc::Result<Option<Principal<u32>>> {
+    ) -> trc::Result<Option<Principal>> {
         let (account_id, secret) = match by {
             QueryBy::Name(name) => (self.get_account_id(name).await?, None),
             QueryBy::Id(account_id) => (account_id.into(), None),
@@ -53,7 +53,7 @@ impl DirectoryStore for Store {
 
         if let Some(account_id) = account_id {
             match (
-                self.get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
+                self.get_value::<Principal>(ValueKey::from(ValueClass::Directory(
                     DirectoryClass::Principal(account_id),
                 )))
                 .await?,
@@ -61,13 +61,19 @@ impl DirectoryStore for Store {
             ) {
                 (Some(mut principal), Some(secret)) if principal.verify_secret(secret).await? => {
                     if return_member_of {
-                        principal.member_of = self.get_member_of(principal.id).await?;
+                        principal.set(
+                            PrincipalField::MemberOf,
+                            self.get_member_of(principal.id).await?,
+                        );
                     }
                     Ok(Some(principal))
                 }
                 (Some(mut principal), None) => {
                     if return_member_of {
-                        principal.member_of = self.get_member_of(principal.id).await?;
+                        principal.set(
+                            PrincipalField::MemberOf,
+                            self.get_member_of(principal.id).await?,
+                        );
                     }
 
                     Ok(Some(principal))
@@ -143,11 +149,11 @@ impl DirectoryStore for Store {
         let mut results = Vec::new();
         for account_id in self.email_to_ids(address).await? {
             if let Some(email) = self
-                .get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
+                .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
                     DirectoryClass::Principal(account_id),
                 )))
                 .await?
-                .and_then(|p| p.emails.into_iter().next())
+                .and_then(|mut p| p.take_str(PrincipalField::Emails))
             {
                 results.push(email);
             }

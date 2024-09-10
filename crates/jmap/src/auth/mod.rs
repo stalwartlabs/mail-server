@@ -14,10 +14,14 @@ use aes_gcm_siv::{
     AeadInPlace, Aes256GcmSiv, KeyInit, Nonce,
 };
 
-use directory::{Principal, Type};
-use jmap_proto::types::{collection::Collection, id::Id};
+use directory::{backend::internal::PrincipalField, Permission, Principal, PERMISSION_BITMAP_SIZE};
+use jmap_proto::{
+    request::RequestMethod,
+    types::{collection::Collection, id::Id},
+};
 use store::blake3;
-use utils::map::bitmap::Bitmap;
+use trc::ipc::bitset::Bitset;
+use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 pub mod acl;
 pub mod authenticate;
@@ -28,28 +32,43 @@ pub mod rate_limit;
 pub struct AccessToken {
     pub primary_id: u32,
     pub member_of: Vec<u32>,
-    pub access_to: Vec<(u32, Bitmap<Collection>)>,
+    pub access_to: VecMap<u32, Bitmap<Collection>>,
     pub name: String,
     pub description: Option<String>,
     pub quota: u64,
-    pub is_superuser: bool,
+    pub permissions: Bitset<PERMISSION_BITMAP_SIZE>,
 }
 
 impl AccessToken {
-    pub fn new(principal: Principal<u32>) -> Self {
+    pub fn new(mut principal: Principal) -> Self {
         Self {
-            primary_id: principal.id,
-            member_of: principal.member_of,
-            access_to: Vec::new(),
-            name: principal.name,
-            description: principal.description,
-            quota: principal.quota,
-            is_superuser: principal.typ == Type::Superuser,
+            primary_id: principal.id(),
+            member_of: principal
+                .iter_int(PrincipalField::MemberOf)
+                .map(|v| v as u32)
+                .collect(),
+            access_to: VecMap::new(),
+            name: principal.take_str(PrincipalField::Name).unwrap_or_default(),
+            description: principal.take_str(PrincipalField::Description),
+            quota: principal.quota(),
+            permissions: Default::default(),
         }
     }
 
-    pub fn with_access_to(self, access_to: Vec<(u32, Bitmap<Collection>)>) -> Self {
+    pub fn from_id(primary_id: u32) -> Self {
+        Self {
+            primary_id,
+            ..Default::default()
+        }
+    }
+
+    pub fn with_access_to(self, access_to: VecMap<u32, Bitmap<Collection>>) -> Self {
         Self { access_to, ..self }
+    }
+
+    pub fn with_permission(mut self, permission: Permission) -> Self {
+        self.permissions.set(permission.id());
+        self
     }
 
     pub fn state(&self) -> u32 {
@@ -71,15 +90,44 @@ impl AccessToken {
     }
 
     pub fn is_member(&self, account_id: u32) -> bool {
-        self.primary_id == account_id || self.member_of.contains(&account_id) || self.is_superuser
+        self.primary_id == account_id
+            || self.member_of.contains(&account_id)
+            || self.has_permission(Permission::Impersonate)
     }
 
     pub fn is_primary_id(&self, account_id: u32) -> bool {
         self.primary_id == account_id
     }
 
-    pub fn is_super_user(&self) -> bool {
-        self.is_superuser
+    #[inline(always)]
+    pub fn has_permission(&self, permission: Permission) -> bool {
+        self.permissions.get(permission.id())
+    }
+
+    pub fn assert_has_permission(&self, permission: Permission) -> trc::Result<()> {
+        if self.has_permission(permission) {
+            Ok(())
+        } else {
+            Err(trc::SecurityEvent::Unauthorized
+                .into_err()
+                .details(permission.name()))
+        }
+    }
+
+    pub fn permissions(&self) -> Vec<Permission> {
+        let mut permissions = Vec::new();
+        for (block_num, bytes) in self.permissions.inner().iter().enumerate() {
+            let mut bytes = *bytes;
+
+            while bytes != 0 {
+                let item = std::mem::size_of::<usize>() - 1 - bytes.leading_zeros() as usize;
+                bytes ^= 1 << item;
+                permissions.push(
+                    Permission::from_id((block_num * std::mem::size_of::<usize>()) + item).unwrap(),
+                );
+            }
+        }
+        permissions
     }
 
     pub fn is_shared(&self, account_id: u32) -> bool {
@@ -129,6 +177,127 @@ impl AccessToken {
             Err(trc::JmapEvent::Forbidden
                 .into_err()
                 .details(format!("You are not an owner of account {}", account_id)))
+        }
+    }
+
+    pub fn assert_has_jmap_permission(&self, request: &RequestMethod) -> trc::Result<()> {
+        let permission = match request {
+            RequestMethod::Get(m) => match &m.arguments {
+                jmap_proto::method::get::RequestArguments::Email(_) => Permission::JmapEmailGet,
+                jmap_proto::method::get::RequestArguments::Mailbox => Permission::JmapMailboxGet,
+                jmap_proto::method::get::RequestArguments::Thread => Permission::JmapThreadGet,
+                jmap_proto::method::get::RequestArguments::Identity => Permission::JmapIdentityGet,
+                jmap_proto::method::get::RequestArguments::EmailSubmission => {
+                    Permission::JmapEmailSubmissionGet
+                }
+                jmap_proto::method::get::RequestArguments::PushSubscription => {
+                    Permission::JmapPushSubscriptionGet
+                }
+                jmap_proto::method::get::RequestArguments::SieveScript => {
+                    Permission::JmapSieveScriptGet
+                }
+                jmap_proto::method::get::RequestArguments::VacationResponse => {
+                    Permission::JmapVacationResponseGet
+                }
+                jmap_proto::method::get::RequestArguments::Principal => {
+                    Permission::JmapPrincipalGet
+                }
+                jmap_proto::method::get::RequestArguments::Quota => Permission::JmapQuotaGet,
+                jmap_proto::method::get::RequestArguments::Blob(_) => Permission::JmapBlobGet,
+            },
+            RequestMethod::Set(m) => match &m.arguments {
+                jmap_proto::method::set::RequestArguments::Email => Permission::JmapEmailSet,
+                jmap_proto::method::set::RequestArguments::Mailbox(_) => Permission::JmapMailboxSet,
+                jmap_proto::method::set::RequestArguments::Identity => Permission::JmapIdentitySet,
+                jmap_proto::method::set::RequestArguments::EmailSubmission(_) => {
+                    Permission::JmapEmailSubmissionSet
+                }
+                jmap_proto::method::set::RequestArguments::PushSubscription => {
+                    Permission::JmapPushSubscriptionSet
+                }
+                jmap_proto::method::set::RequestArguments::SieveScript(_) => {
+                    Permission::JmapSieveScriptSet
+                }
+                jmap_proto::method::set::RequestArguments::VacationResponse => {
+                    Permission::JmapVacationResponseSet
+                }
+            },
+            RequestMethod::Changes(m) => match m.arguments {
+                jmap_proto::method::changes::RequestArguments::Email => {
+                    Permission::JmapEmailChanges
+                }
+                jmap_proto::method::changes::RequestArguments::Mailbox => {
+                    Permission::JmapMailboxChanges
+                }
+                jmap_proto::method::changes::RequestArguments::Thread => {
+                    Permission::JmapThreadChanges
+                }
+                jmap_proto::method::changes::RequestArguments::Identity => {
+                    Permission::JmapIdentityChanges
+                }
+                jmap_proto::method::changes::RequestArguments::EmailSubmission => {
+                    Permission::JmapEmailSubmissionChanges
+                }
+                jmap_proto::method::changes::RequestArguments::Quota => {
+                    Permission::JmapQuotaChanges
+                }
+            },
+            RequestMethod::Copy(m) => match m.arguments {
+                jmap_proto::method::copy::RequestArguments::Email => Permission::JmapEmailCopy,
+            },
+            RequestMethod::CopyBlob(_) => Permission::JmapBlobCopy,
+            RequestMethod::ImportEmail(_) => Permission::JmapEmailImport,
+            RequestMethod::ParseEmail(_) => Permission::JmapEmailParse,
+            RequestMethod::QueryChanges(m) => match m.arguments {
+                jmap_proto::method::query::RequestArguments::Email(_) => {
+                    Permission::JmapEmailQueryChanges
+                }
+                jmap_proto::method::query::RequestArguments::Mailbox(_) => {
+                    Permission::JmapMailboxQueryChanges
+                }
+                jmap_proto::method::query::RequestArguments::EmailSubmission => {
+                    Permission::JmapEmailSubmissionQueryChanges
+                }
+                jmap_proto::method::query::RequestArguments::SieveScript => {
+                    Permission::JmapSieveScriptQueryChanges
+                }
+                jmap_proto::method::query::RequestArguments::Principal => {
+                    Permission::JmapPrincipalQueryChanges
+                }
+                jmap_proto::method::query::RequestArguments::Quota => {
+                    Permission::JmapQuotaQueryChanges
+                }
+            },
+            RequestMethod::Query(m) => match m.arguments {
+                jmap_proto::method::query::RequestArguments::Email(_) => Permission::JmapEmailQuery,
+                jmap_proto::method::query::RequestArguments::Mailbox(_) => {
+                    Permission::JmapMailboxQuery
+                }
+                jmap_proto::method::query::RequestArguments::EmailSubmission => {
+                    Permission::JmapEmailSubmissionQuery
+                }
+                jmap_proto::method::query::RequestArguments::SieveScript => {
+                    Permission::JmapSieveScriptQuery
+                }
+                jmap_proto::method::query::RequestArguments::Principal => {
+                    Permission::JmapPrincipalQuery
+                }
+                jmap_proto::method::query::RequestArguments::Quota => Permission::JmapQuotaQuery,
+            },
+            RequestMethod::SearchSnippet(_) => Permission::JmapSearchSnippet,
+            RequestMethod::ValidateScript(_) => Permission::JmapSieveScriptValidate,
+            RequestMethod::LookupBlob(_) => Permission::JmapBlobLookup,
+            RequestMethod::UploadBlob(_) => Permission::JmapBlobUpload,
+            RequestMethod::Echo(_) => Permission::JmapEcho,
+            RequestMethod::Error(_) => return Ok(()),
+        };
+
+        if self.has_permission(permission) {
+            Ok(())
+        } else {
+            Err(trc::JmapEvent::Forbidden
+                .into_err()
+                .details("You are not authorized to perform this action"))
         }
     }
 }

@@ -501,9 +501,12 @@ impl SerializeResponse for trc::Error {
                     Some(ResponseCode::NonExistent.as_str())
                 }
                 trc::EventType::Store(_) => Some(ResponseCode::ContactAdmin.as_str()),
-                trc::EventType::Limit(trc::LimitEvent::Quota) => Some(ResponseCode::OverQuota.as_str()),
+                trc::EventType::Limit(trc::LimitEvent::Quota) => {
+                    Some(ResponseCode::OverQuota.as_str())
+                }
                 trc::EventType::Limit(_) => Some(ResponseCode::Limit.as_str()),
                 trc::EventType::Auth(_) => Some(ResponseCode::AuthenticationFailed.as_str()),
+                trc::EventType::Security(_) => Some(ResponseCode::AuthorizationFailed.as_str()),
                 _ => None,
             })
         {

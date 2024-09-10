@@ -5,6 +5,7 @@
  */
 
 use common::listener::{limiter::ConcurrencyLimiter, SessionStream};
+use directory::Permission;
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use jmap::auth::rate_limit::ConcurrencyLimiters;
 use mail_parser::decoders::base64::base64_decode;
@@ -112,6 +113,9 @@ impl<T: SessionStream> Session<T> {
             }
         };
 
+        // Validate access
+        access_token.assert_has_permission(Permission::Pop3Authenticate)?;
+
         // Cache access token
         let access_token = Arc::new(access_token);
         self.jmap.cache_access_token(access_token.clone());
@@ -120,7 +124,11 @@ impl<T: SessionStream> Session<T> {
         let mailbox = self.fetch_mailbox(access_token.primary_id()).await?;
 
         // Create session
-        self.state = State::Authenticated { in_flight, mailbox };
+        self.state = State::Authenticated {
+            in_flight,
+            mailbox,
+            access_token,
+        };
         self.write_ok("Authentication successful").await
     }
 

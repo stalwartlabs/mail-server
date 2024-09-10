@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use directory::Permission;
 use jmap_proto::{
     error::set::SetError,
     method::upload::{
@@ -149,7 +150,7 @@ impl JMAP {
                 && used.bytes + data.len() > self.core.jmap.upload_tmp_quota_size)
                 || (self.core.jmap.upload_tmp_quota_amount > 0
                     && used.count + 1 > self.core.jmap.upload_tmp_quota_amount))
-                && !access_token.is_super_user()
+                && !access_token.has_permission(Permission::UnlimitedUploads)
             {
                 response.not_created.append(
                     create_id,
@@ -209,7 +210,7 @@ impl JMAP {
             && used.bytes + data.len() > self.core.jmap.upload_tmp_quota_size)
             || (self.core.jmap.upload_tmp_quota_amount > 0
                 && used.count + 1 > self.core.jmap.upload_tmp_quota_amount))
-            && !access_token.is_super_user()
+            && !access_token.has_permission(Permission::UnlimitedUploads)
         {
             let err = Err(trc::LimitEvent::BlobQuota
                 .into_err()

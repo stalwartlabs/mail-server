@@ -6,14 +6,18 @@
 
 use std::time::Instant;
 
+use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::receiver::Request;
-use tokio::io::{AsyncRead, AsyncWrite};
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
-impl<T: AsyncRead + AsyncWrite> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_havespace(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        // Validate access
+        self.assert_has_permission(Permission::SieveHaveSpace)?;
+
         let op_start = Instant::now();
         let mut tokens = request.tokens.into_iter();
         let name = tokens

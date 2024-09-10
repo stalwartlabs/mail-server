@@ -858,6 +858,7 @@ impl EventType {
             EventType::Security(SecurityEvent::BruteForceBan) => 549,
             EventType::Security(SecurityEvent::LoiterBan) => 550,
             EventType::Smtp(SmtpEvent::MailFromNotAllowed) => 551,
+            EventType::Security(SecurityEvent::Unauthorized) => 552,
         }
     }
 
@@ -1455,6 +1456,7 @@ impl EventType {
             549 => Some(EventType::Security(SecurityEvent::BruteForceBan)),
             550 => Some(EventType::Security(SecurityEvent::LoiterBan)),
             551 => Some(EventType::Smtp(SmtpEvent::MailFromNotAllowed)),
+            552 => Some(EventType::Security(SecurityEvent::Unauthorized)),
             _ => None,
         }
     }

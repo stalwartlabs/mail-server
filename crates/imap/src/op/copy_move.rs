@@ -6,6 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
+use directory::Permission;
 use imap_proto::{
     protocol::copy_move::Arguments, receiver::Request, Command, ResponseCode, ResponseType,
     StatusResponse,
@@ -38,6 +39,13 @@ impl<T: SessionStream> Session<T> {
         is_move: bool,
         is_uid: bool,
     ) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(if is_move {
+            Permission::ImapMove
+        } else {
+            Permission::ImapCopy
+        })?;
+
         let op_start = Instant::now();
         let arguments = request.parse_copy_move(self.version)?;
         let (data, src_mailbox) = self.state.mailbox_state();

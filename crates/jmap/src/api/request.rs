@@ -135,6 +135,11 @@ impl JMAP {
         session: &HttpSessionData,
     ) -> trc::Result<ResponseMethod> {
         let op_start = Instant::now();
+
+        // Check permissions
+        access_token.assert_has_jmap_permission(&method)?;
+
+        // Handle method
         let response = match method {
             RequestMethod::Get(mut req) => match req.take_arguments() {
                 get::RequestArguments::Email(arguments) => {
@@ -177,15 +182,7 @@ impl JMAP {
 
                     self.vacation_response_get(req).await?.into()
                 }
-                get::RequestArguments::Principal => {
-                    if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
-                        self.principal_get(req).await?.into()
-                    } else {
-                        return Err(trc::JmapEvent::Forbidden
-                            .into_err()
-                            .details("Principal lookups are disabled".to_string()));
-                    }
-                }
+                get::RequestArguments::Principal => self.principal_get(req).await?.into(),
                 get::RequestArguments::Quota => {
                     access_token.assert_is_member(req.account_id)?;
 
@@ -225,13 +222,7 @@ impl JMAP {
                     self.sieve_script_query(req).await?.into()
                 }
                 query::RequestArguments::Principal => {
-                    if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
-                        self.principal_query(req, session).await?.into()
-                    } else {
-                        return Err(trc::JmapEvent::Forbidden
-                            .into_err()
-                            .details("Principal lookups are disabled".to_string()));
-                    }
+                    self.principal_query(req, session).await?.into()
                 }
                 query::RequestArguments::Quota => {
                     access_token.assert_is_member(req.account_id)?;

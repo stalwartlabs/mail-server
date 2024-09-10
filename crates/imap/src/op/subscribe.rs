@@ -11,6 +11,7 @@ use crate::{
     spawn_op,
 };
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{receiver::Request, Command, ResponseCode, StatusResponse};
 use jmap::mailbox::set::{MailboxSubscribe, SCHEMA};
 use jmap_proto::{
@@ -30,6 +31,9 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_subscribe: bool,
     ) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapSubscribe)?;
+
         let op_start = Instant::now();
         let arguments = request.parse_subscribe(self.version)?;
         let data = self.state.session_data();

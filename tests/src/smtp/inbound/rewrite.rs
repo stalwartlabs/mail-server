@@ -69,7 +69,6 @@ async fn address_rewrite() {
     // Enable logging
     crate::enable_logging();
 
-
     // Prepare config
     let mut config = Config::new(CONFIG).unwrap();
     let core = Core::parse(&mut config, Default::default(), Default::default()).await;

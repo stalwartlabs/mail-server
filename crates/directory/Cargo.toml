@@ -6,6 +6,7 @@ resolver = "2"
 
 [dependencies]
 utils = { path =  "../utils" }
+proc_macros = { path =  "../utils/proc-macros" }
 store = { path =  "../store" }
 trc = { path = "../trc" }
 jmap_proto = { path =  "../jmap-proto" }

@@ -7,7 +7,7 @@
 use std::borrow::Cow;
 
 use common::listener::stream::NullIo;
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient};
@@ -72,9 +72,15 @@ impl JMAP {
             .query(QueryBy::Id(account_id), false)
             .await
         {
-            Ok(Some(p)) => {
+            Ok(Some(mut p)) => {
                 instance.set_user_full_name(p.description().unwrap_or_else(|| p.name()));
-                (p.quota as i64, p.emails.into_iter().next())
+                (
+                    p.quota() as i64,
+                    p.take_str_array(PrincipalField::Emails)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .next(),
+                )
             }
             Ok(None) => (0, None),
             Err(err) => {

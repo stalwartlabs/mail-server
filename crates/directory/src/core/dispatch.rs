@@ -15,7 +15,7 @@ impl Directory {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> trc::Result<Option<Principal<u32>>> {
+    ) -> trc::Result<Option<Principal>> {
         match &self.store {
             DirectoryInner::Internal(store) => store.query(by, return_member_of).await,
             DirectoryInner::Ldap(store) => store.query(by, return_member_of).await,

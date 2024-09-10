@@ -18,10 +18,11 @@ use sha2::Sha512;
 use tokio::sync::oneshot;
 use totp_rs::TOTP;
 
+use crate::backend::internal::PrincipalField;
 use crate::backend::internal::SpecialSecrets;
 use crate::Principal;
 
-impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
+impl Principal {
     pub async fn verify_secret(&self, mut code: &str) -> trc::Result<bool> {
         let mut totp_token = None;
         let mut is_totp_token_missing = false;
@@ -30,12 +31,10 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
         let mut is_authenticated = false;
         let mut is_app_authenticated = false;
 
-        for secret in &self.secrets {
-            if secret.is_disabled() {
-                // Account is disabled, no need to check further
+        let todo = "validate authenticate permission";
 
-                return Ok(false);
-            } else if secret.is_otp_auth() {
+        for secret in self.iter_str(PrincipalField::Secrets) {
+            if secret.is_otp_auth() {
                 if !is_totp_verified && !is_totp_token_missing {
                     is_totp_required = true;
 
@@ -99,7 +98,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Principal<T> {
         } else {
             if is_totp_verified {
                 // TOTP URL appeared after password hash in secrets list
-                for secret in &self.secrets {
+                for secret in self.iter_str(PrincipalField::Secrets) {
                     if secret.is_password() && verify_secret_hash(secret, code).await? {
                         return Ok(true);
                     }

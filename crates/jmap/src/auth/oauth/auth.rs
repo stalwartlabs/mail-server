@@ -91,8 +91,8 @@ impl JMAP {
                 json!({
                     "data": {
                         "code": client_code,
-                        "is_admin": access_token.is_super_user(),
-                        "is_enterprise": is_enterprise,
+                        "permissions": access_token.permissions(),
+                        "isEnterprise": is_enterprise,
                     },
                 })
             }

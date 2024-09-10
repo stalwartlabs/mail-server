@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -61,11 +61,9 @@ impl JMAP {
                     .storage
                     .directory
                     .query(QueryBy::Id(account_id), false)
-                    .await
+                    .await?
                     .unwrap_or_default()
-                    .unwrap_or_default()
-                    .emails
-                    .contains(email)
+                    .has_str_value(PrincipalField::Emails, email)
                 {
                     response.not_created.append(
                         id,

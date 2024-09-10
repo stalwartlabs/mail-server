@@ -7,11 +7,17 @@
 use std::time::Instant;
 
 use common::listener::SessionStream;
+use directory::Permission;
 
 use crate::{protocol::response::Response, Session};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_list(&mut self, msg: Option<u32>) -> trc::Result<()> {
+        // Validate access
+        self.state
+            .access_token()
+            .assert_has_permission(Permission::Pop3List)?;
+
         let op_start = Instant::now();
         let mailbox = self.state.mailbox();
         if let Some(msg) = msg {
@@ -48,6 +54,11 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_uidl(&mut self, msg: Option<u32>) -> trc::Result<()> {
+        // Validate access
+        self.state
+            .access_token()
+            .assert_has_permission(Permission::Pop3Uidl)?;
+
         let op_start = Instant::now();
         let mailbox = self.state.mailbox();
         if let Some(msg) = msg {
@@ -92,6 +103,11 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_stat(&mut self) -> trc::Result<()> {
+        // Validate access
+        self.state
+            .access_token()
+            .assert_has_permission(Permission::Pop3Stat)?;
+
         let op_start = Instant::now();
         let mailbox = self.state.mailbox();
 

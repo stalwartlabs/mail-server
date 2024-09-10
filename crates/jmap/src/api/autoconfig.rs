@@ -7,7 +7,7 @@
 use std::fmt::Write;
 
 use common::manager::webadmin::Resource;
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use utils::url_params::UrlParams;
@@ -187,14 +187,14 @@ impl JMAP {
             .await
             .unwrap_or_default()
         {
-            if let Ok(Some(principal)) = self
+            if let Ok(Some(mut principal)) = self
                 .core
                 .storage
                 .directory
                 .query(QueryBy::Id(id), false)
                 .await
             {
-                account_name = principal.name;
+                account_name = principal.take_str(PrincipalField::Name).unwrap_or_default();
                 break;
             }
         }

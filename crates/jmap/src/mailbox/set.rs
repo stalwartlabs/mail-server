@@ -5,6 +5,7 @@
  */
 
 use common::config::jmap::settings::SpecialUse;
+use directory::Permission;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
@@ -295,7 +296,9 @@ impl JMAP {
     ) -> trc::Result<Result<bool, SetError>> {
         // Internal folders cannot be deleted
         #[cfg(feature = "test_mode")]
-        if [INBOX_ID, TRASH_ID].contains(&document_id) && !access_token.is_super_user() {
+        if [INBOX_ID, TRASH_ID].contains(&document_id)
+            && !access_token.has_permission(Permission::DeleteSystemFolders)
+        {
             return Ok(Err(SetError::forbidden().with_description(
                 "You are not allowed to delete Inbox, Junk or Trash folders.",
             )));

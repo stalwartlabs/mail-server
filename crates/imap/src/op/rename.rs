@@ -11,6 +11,7 @@ use crate::{
     spawn_op,
 };
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     protocol::rename::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
 };
@@ -29,6 +30,9 @@ use super::ImapContext;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_rename(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapRename)?;
+
         let op_start = Instant::now();
         let arguments = request.parse_rename(self.version)?;
         let data = self.state.session_data();

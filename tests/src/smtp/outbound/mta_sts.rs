@@ -62,7 +62,6 @@ async fn mta_sts_verify() {
     // Enable logging
     crate::enable_logging();
 
-
     // Start test server
     let mut remote = TestServer::new("smtp_mta_sts_remote", REMOTE, true).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;

@@ -104,7 +104,7 @@ impl JMAP {
                         .query(QueryBy::Id(*uid), false)
                         .await
                     {
-                        Ok(Some(p)) => p.quota as i64,
+                        Ok(Some(p)) => p.quota() as i64,
                         Ok(None) => 0,
                         Err(err) => {
                             trc::error!(err

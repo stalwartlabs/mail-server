@@ -8,7 +8,7 @@ use common::{
     config::jmap::settings::SpecialUse,
     listener::{limiter::InFlight, SessionStream},
 };
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use imap_proto::protocol::list::Attribute;
 use jmap::{
     auth::{acl::EffectiveAcl, AccessToken},
@@ -28,7 +28,7 @@ use super::{Account, AccountId, Mailbox, MailboxId, MailboxSync, Session, Sessio
 impl<T: SessionStream> SessionData<T> {
     pub async fn new(
         session: &Session<T>,
-        access_token: &AccessToken,
+        access_token: Arc<AccessToken>,
         in_flight: Option<InFlight>,
     ) -> trc::Result<Self> {
         let mut session = SessionData {
@@ -39,12 +39,14 @@ impl<T: SessionStream> SessionData<T> {
             session_id: session.session_id,
             mailboxes: Mutex::new(vec![]),
             state: access_token.state().into(),
+            access_token,
             in_flight,
         };
+        let access_token = session.access_token.clone();
 
         // Fetch mailboxes for the main account
         let mut mailboxes = vec![session
-            .fetch_account_mailboxes(session.account_id, None, access_token)
+            .fetch_account_mailboxes(session.account_id, None, &access_token)
             .await
             .caused_by(trc::location!())?];
 
@@ -65,11 +67,11 @@ impl<T: SessionStream> SessionData<T> {
                                 .query(QueryBy::Id(account_id), false)
                                 .await
                                 .unwrap_or_default()
-                                .map(|p| p.name)
+                                .and_then(|mut p| p.take_str(PrincipalField::Name))
                                 .unwrap_or_else(|| Id::from(account_id).to_string())
                         )
                         .into(),
-                        access_token,
+                        &access_token,
                     )
                     .await
                     .caused_by(trc::location!())?,
@@ -389,8 +391,8 @@ impl<T: SessionStream> SessionData<T> {
                         .directory
                         .query(QueryBy::Id(account_id), false)
                         .await
-                        .unwrap_or_default()
-                        .map(|p| p.name)
+                        .caused_by(trc::location!())?
+                        .and_then(|mut p| p.take_str(PrincipalField::Name))
                         .unwrap_or_else(|| Id::from(account_id).to_string())
                 );
                 added_accounts.push(
@@ -495,7 +497,7 @@ impl<T: SessionStream> SessionData<T> {
                                 .query(QueryBy::Id(account_id), false)
                                 .await
                                 .caused_by(trc::location!())?
-                                .map(|p| p.name)
+                                .and_then(|mut p| p.take_str(PrincipalField::Name))
                                 .unwrap_or_else(|| Id::from(account_id).to_string())
                         )
                         .into()

@@ -12,6 +12,7 @@ use crate::{
 };
 use ahash::AHashSet;
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     protocol::{
         fetch::{DataItem, FetchItem},
@@ -39,6 +40,9 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_uid: bool,
     ) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapStore)?;
+
         let op_start = Instant::now();
         let arguments = request.parse_store()?;
         let (data, mailbox) = self.state.select_data();

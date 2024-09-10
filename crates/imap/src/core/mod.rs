@@ -82,6 +82,7 @@ pub struct Session<T: SessionStream> {
 
 pub struct SessionData<T: SessionStream> {
     pub account_id: u32,
+    pub access_token: Arc<AccessToken>,
     pub jmap: JMAP,
     pub imap: Arc<Inner>,
     pub session_id: u64,
@@ -239,6 +240,7 @@ impl<T: SessionStream> SessionData<T> {
             stream_tx: new_stream,
             state: self.state,
             in_flight: self.in_flight,
+            access_token: self.access_token,
         }
     }
 }

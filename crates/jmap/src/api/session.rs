@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     request::capability::{Capability, Session},
     types::{acl::Acl, collection::Collection, id::Id},
@@ -52,7 +52,7 @@ impl JMAP {
                     .query(QueryBy::Id(*id), false)
                     .await
                     .caused_by(trc::location!())?
-                    .map(|p| p.name)
+                    .and_then(|mut p| p.take_str(PrincipalField::Name))
                     .unwrap_or_else(|| Id::from(*id).to_string()),
                 is_personal,
                 is_readonly,

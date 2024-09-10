@@ -19,7 +19,7 @@ pub mod stores;
 
 use std::{borrow::Cow, str::FromStr, sync::Arc};
 
-use directory::backend::internal::manage;
+use directory::{backend::internal::manage, Permission};
 use hyper::Method;
 use mail_parser::DateTime;
 use serde::Serialize;
@@ -50,31 +50,68 @@ impl JMAP {
         session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         let path = req.uri().path().split('/').skip(2).collect::<Vec<_>>();
-        let is_superuser = access_token.is_super_user();
 
         match path.first().copied().unwrap_or_default() {
-            "queue" if is_superuser => self.handle_manage_queue(req, path).await,
-            "settings" if is_superuser => self.handle_manage_settings(req, path, body).await,
-            "reports" if is_superuser => self.handle_manage_reports(req, path).await,
-            "principal" if is_superuser => self.handle_manage_principal(req, path, body).await,
-            "domain" if is_superuser => self.handle_manage_domain(req, path).await,
-            "store" if is_superuser => self.handle_manage_store(req, path, body, session).await,
-            "reload" if is_superuser => self.handle_manage_reload(req, path).await,
-            "dkim" if is_superuser => self.handle_manage_dkim(req, path, body).await,
-            "update" if is_superuser => self.handle_manage_update(req, path).await,
-            "logs" if is_superuser && req.method() == Method::GET => {
-                self.handle_view_logs(req).await
+            "queue" => self.handle_manage_queue(req, path, &access_token).await,
+            "settings" => {
+                self.handle_manage_settings(req, path, body, &access_token)
+                    .await
             }
-            "sieve" if is_superuser => self.handle_run_sieve(req, path, body).await,
-            "restart" if is_superuser && req.method() == Method::GET => {
+            "reports" => self.handle_manage_reports(req, path, &access_token).await,
+            "principal" => {
+                self.handle_manage_principal(req, path, body, &access_token)
+                    .await
+            }
+            "domain" => self.handle_manage_domain(req, path, &access_token).await,
+            "store" => {
+                self.handle_manage_store(req, path, body, session, &access_token)
+                    .await
+            }
+            "reload" => self.handle_manage_reload(req, path, &access_token).await,
+            "dkim" => {
+                self.handle_manage_dkim(req, path, body, &access_token)
+                    .await
+            }
+            "update" => self.handle_manage_update(req, path, &access_token).await,
+            "logs" if req.method() == Method::GET => {
+                self.handle_view_logs(req, &access_token).await
+            }
+            "sieve" => self.handle_run_sieve(req, path, body, &access_token).await,
+            "restart" if req.method() == Method::GET => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::Restart)?;
+
                 Err(manage::unsupported("Restart is not yet supported"))
             }
-            "oauth" => self.handle_oauth_api_request(access_token, body).await,
+            "oauth" => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::AuthenticateOauth)?;
+
+                self.handle_oauth_api_request(access_token, body).await
+            }
             "account" => match (path.get(1).copied().unwrap_or_default(), req.method()) {
-                ("crypto", &Method::POST) => self.handle_crypto_post(access_token, body).await,
-                ("crypto", &Method::GET) => self.handle_crypto_get(access_token).await,
-                ("auth", &Method::GET) => self.handle_account_auth_get(access_token).await,
+                ("crypto", &Method::POST) => {
+                    // Validate the access token
+                    access_token.assert_has_permission(Permission::ManageEncryption)?;
+
+                    self.handle_crypto_post(access_token, body).await
+                }
+                ("crypto", &Method::GET) => {
+                    // Validate the access token
+                    access_token.assert_has_permission(Permission::ManageEncryption)?;
+
+                    self.handle_crypto_get(access_token).await
+                }
+                ("auth", &Method::GET) => {
+                    // Validate the access token
+                    access_token.assert_has_permission(Permission::ManagePasswords)?;
+
+                    self.handle_account_auth_get(access_token).await
+                }
                 ("auth", &Method::POST) => {
+                    // Validate the access token
+                    access_token.assert_has_permission(Permission::ManagePasswords)?;
+
                     self.handle_account_auth_post(req, access_token, body).await
                 }
                 _ => Err(trc::ResourceEvent::NotFound.into_err()),
@@ -83,7 +120,7 @@ impl JMAP {
             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL
             #[cfg(feature = "enterprise")]
-            "telemetry" if is_superuser => {
+            "telemetry" => {
                 // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
                 // Any attempt to modify, bypass, or disable this license validation mechanism
                 // constitutes a severe violation of the Stalwart Enterprise License Agreement.
@@ -94,7 +131,7 @@ impl JMAP {
                 // for copyright infringement, breach of contract, and fraud.
 
                 if self.core.is_enterprise_edition() {
-                    self.handle_telemetry_api_request(req, path, access_token.primary_id())
+                    self.handle_telemetry_api_request(req, path, &access_token)
                         .await
                 } else {
                     Err(manage::enterprise())

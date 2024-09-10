@@ -9,45 +9,70 @@ pub mod manage;
 
 use std::{fmt::Display, slice::Iter, str::FromStr};
 
+use ahash::AHashMap;
 use store::{write::key::KeySerializer, Deserialize, Serialize, U32_LEN};
 use utils::codec::leb128::Leb128Iterator;
 
 use crate::{Principal, Type};
+
+const INT_MARKER: u8 = 1 << 7;
 
 pub(super) struct PrincipalIdType {
     pub account_id: u32,
     pub typ: Type,
 }
 
-impl Serialize for Principal<u32> {
+impl Serialize for Principal {
     fn serialize(self) -> Vec<u8> {
         (&self).serialize()
     }
 }
 
-impl Serialize for &Principal<u32> {
+impl Serialize for &Principal {
     fn serialize(self) -> Vec<u8> {
         let mut serializer = KeySerializer::new(
-            U32_LEN * 3
+            U32_LEN * 2
                 + 2
-                + self.name.len()
-                + self.emails.iter().map(|s| s.len()).sum::<usize>()
-                + self.secrets.iter().map(|s| s.len()).sum::<usize>()
-                + self.description.as_ref().map(|s| s.len()).unwrap_or(0),
+                + self
+                    .fields
+                    .values()
+                    .map(|v| v.serialized_size() + 1)
+                    .sum::<usize>(),
         )
-        .write(1u8)
+        .write(2u8)
         .write_leb128(self.id)
         .write(self.typ as u8)
-        .write_leb128(self.quota)
-        .write_leb128(self.name.len())
-        .write(self.name.as_bytes())
-        .write_leb128(self.description.as_ref().map_or(0, |s| s.len()))
-        .write(self.description.as_deref().unwrap_or_default().as_bytes());
+        .write_leb128(self.fields.len());
 
-        for list in [&self.secrets, &self.emails] {
-            serializer = serializer.write_leb128(list.len());
-            for value in list {
-                serializer = serializer.write_leb128(value.len()).write(value.as_bytes());
+        for (k, v) in &self.fields {
+            let id = k.id();
+
+            match v {
+                PrincipalValue::String(v) => {
+                    serializer = serializer
+                        .write(id)
+                        .write_leb128(1usize)
+                        .write_leb128(v.len())
+                        .write(v.as_bytes());
+                }
+                PrincipalValue::StringList(l) => {
+                    serializer = serializer.write(id).write_leb128(l.len());
+                    for v in l {
+                        serializer = serializer.write_leb128(v.len()).write(v.as_bytes());
+                    }
+                }
+                PrincipalValue::Integer(v) => {
+                    serializer = serializer
+                        .write(id | INT_MARKER)
+                        .write_leb128(1usize)
+                        .write_leb128(*v);
+                }
+                PrincipalValue::IntegerList(l) => {
+                    serializer = serializer.write(id | INT_MARKER).write_leb128(l.len());
+                    for v in l {
+                        serializer = serializer.write_leb128(*v);
+                    }
+                }
             }
         }
 
@@ -55,7 +80,7 @@ impl Serialize for &Principal<u32> {
     }
 }
 
-impl Deserialize for Principal<u32> {
+impl Deserialize for Principal {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         deserialize(bytes).ok_or_else(|| {
             trc::StoreEvent::DataCorruption
@@ -98,32 +123,89 @@ impl PrincipalIdType {
     }
 }
 
-fn deserialize(bytes: &[u8]) -> Option<Principal<u32>> {
+fn deserialize(bytes: &[u8]) -> Option<Principal> {
     let mut bytes = bytes.iter();
-    if bytes.next()? != &1 {
-        return None;
-    }
 
-    Principal {
-        id: bytes.next_leb128()?,
-        typ: Type::from_u8(*bytes.next()?),
-        quota: bytes.next_leb128()?,
-        name: deserialize_string(&mut bytes)?,
-        description: deserialize_string(&mut bytes).map(|v| {
-            if !v.is_empty() {
-                Some(v)
-            } else {
-                None
+    let version = *bytes.next()?;
+    let id = bytes.next_leb128()?;
+    let type_id = *bytes.next()?;
+    let typ = Type::from_u8(type_id);
+
+    match version {
+        1 => {
+            // Version 1 (legacy)
+            let mut principal = Principal {
+                id,
+                typ,
+                ..Default::default()
+            };
+
+            principal.set(PrincipalField::Quota, bytes.next_leb128::<u64>()?);
+            principal.set(PrincipalField::Name, deserialize_string(&mut bytes)?);
+            if let Some(description) = deserialize_string(&mut bytes).filter(|s| !s.is_empty()) {
+                principal.set(PrincipalField::Description, description);
             }
-        })?,
-        secrets: deserialize_string_list(&mut bytes)?,
-        emails: deserialize_string_list(&mut bytes)?,
-        member_of: Vec::new(),
+            for key in [PrincipalField::Secrets, PrincipalField::Emails] {
+                for _ in 0..bytes.next_leb128::<usize>()? {
+                    principal.append_str(key, deserialize_string(&mut bytes)?);
+                }
+            }
+
+            if type_id != 4 {
+                principal
+            } else {
+                principal.into_superuser()
+            }
+            .into()
+        }
+        2 => {
+            // Version 2
+            let num_fields = bytes.next_leb128::<usize>()?;
+
+            let mut principal = Principal {
+                id,
+                typ,
+                fields: AHashMap::with_capacity(num_fields),
+            };
+
+            for _ in 0..num_fields {
+                let id = *bytes.next()?;
+                let num_values = bytes.next_leb128::<usize>()?;
+
+                if (id & INT_MARKER) == 0 {
+                    let field = PrincipalField::from_id(id)?;
+                    if num_values == 1 {
+                        principal.set(field, deserialize_string(&mut bytes)?);
+                    } else {
+                        let mut values = Vec::with_capacity(num_values);
+                        for _ in 0..num_values {
+                            values.push(deserialize_string(&mut bytes)?);
+                        }
+                        principal.set(field, values);
+                    }
+                } else {
+                    let field = PrincipalField::from_id(id & !INT_MARKER)?;
+                    if num_values == 1 {
+                        principal.set(field, bytes.next_leb128::<u64>()?);
+                    } else {
+                        let mut values = Vec::with_capacity(num_values);
+                        for _ in 0..num_values {
+                            values.push(bytes.next_leb128::<u64>()?);
+                        }
+                        principal.set(field, values);
+                    }
+                }
+            }
+
+            principal.into()
+        }
+        _ => None,
     }
-    .into()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Hash, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum PrincipalField {
     #[serde(rename = "name")]
     Name,
@@ -166,6 +248,7 @@ pub enum PrincipalValue {
     String(String),
     StringList(Vec<String>),
     Integer(u64),
+    IntegerList(Vec<u64>),
 }
 
 impl PrincipalUpdate {
@@ -201,6 +284,33 @@ impl Display for PrincipalField {
 }
 
 impl PrincipalField {
+    pub fn id(&self) -> u8 {
+        match self {
+            PrincipalField::Name => 0,
+            PrincipalField::Type => 1,
+            PrincipalField::Quota => 2,
+            PrincipalField::Description => 3,
+            PrincipalField::Secrets => 4,
+            PrincipalField::Emails => 5,
+            PrincipalField::MemberOf => 6,
+            PrincipalField::Members => 7,
+        }
+    }
+
+    pub fn from_id(id: u8) -> Option<Self> {
+        match id {
+            0 => Some(PrincipalField::Name),
+            1 => Some(PrincipalField::Type),
+            2 => Some(PrincipalField::Quota),
+            3 => Some(PrincipalField::Description),
+            4 => Some(PrincipalField::Secrets),
+            5 => Some(PrincipalField::Emails),
+            6 => Some(PrincipalField::MemberOf),
+            7 => Some(PrincipalField::Members),
+            _ => None,
+        }
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             PrincipalField::Name => "name",
@@ -224,24 +334,16 @@ fn deserialize_string(bytes: &mut Iter<'_, u8>) -> Option<String> {
     String::from_utf8(string).ok()
 }
 
-fn deserialize_string_list(bytes: &mut Iter<'_, u8>) -> Option<Vec<String>> {
-    let len = bytes.next_leb128()?;
-    let mut list = Vec::with_capacity(len);
-    for _ in 0..len {
-        list.push(deserialize_string(bytes)?);
-    }
-    Some(list)
-}
-
 impl Type {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "individual" => Some(Type::Individual),
-            "superuser" => Some(Type::Superuser),
             "group" => Some(Type::Group),
             "resource" => Some(Type::Resource),
             "location" => Some(Type::Location),
             "list" => Some(Type::List),
+            "tenant" => Some(Type::Tenant),
+            "superuser" => Some(Type::Individual), // legacy
             _ => None,
         }
     }
@@ -252,16 +354,10 @@ impl Type {
             1 => Type::Group,
             2 => Type::Resource,
             3 => Type::Location,
-            4 => Type::Superuser,
+            4 => Type::Individual, // legacy
             5 => Type::List,
+            7 => Type::Tenant,
             _ => Type::Other,
-        }
-    }
-
-    pub fn into_base_type(self) -> Self {
-        match self {
-            Type::Superuser => Type::Individual,
-            any => any,
         }
     }
 }
@@ -275,7 +371,6 @@ impl FromStr for Type {
 }
 
 pub trait SpecialSecrets {
-    fn is_disabled(&self) -> bool;
     fn is_otp_auth(&self) -> bool;
     fn is_app_password(&self) -> bool;
     fn is_password(&self) -> bool;
@@ -285,10 +380,6 @@ impl<T> SpecialSecrets for T
 where
     T: AsRef<str>,
 {
-    fn is_disabled(&self) -> bool {
-        self.as_ref() == "$disabled$"
-    }
-
     fn is_otp_auth(&self) -> bool {
         self.as_ref().starts_with("otpauth://")
     }
@@ -298,6 +389,6 @@ where
     }
 
     fn is_password(&self) -> bool {
-        !self.is_disabled() && !self.is_otp_auth() && !self.is_app_password()
+        !self.is_otp_auth() && !self.is_app_password()
     }
 }

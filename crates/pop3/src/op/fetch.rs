@@ -7,6 +7,7 @@
 use std::time::Instant;
 
 use common::listener::SessionStream;
+use directory::Permission;
 use jmap::email::metadata::MessageMetadata;
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::Bincode;
@@ -16,6 +17,11 @@ use crate::{protocol::response::Response, Session};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_fetch(&mut self, msg: u32, lines: Option<u32>) -> trc::Result<()> {
+        // Validate access
+        self.state
+            .access_token()
+            .assert_has_permission(Permission::Pop3Retr)?;
+
         let op_start = Instant::now();
         let mailbox = self.state.mailbox();
         if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {

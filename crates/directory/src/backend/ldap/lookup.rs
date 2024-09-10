@@ -7,7 +7,10 @@
 use ldap3::{Ldap, LdapConnAsync, Scope, SearchEntry};
 use mail_send::Credentials;
 
-use crate::{backend::internal::manage::ManageDirectory, IntoError, Principal, QueryBy, Type};
+use crate::{
+    backend::internal::{manage::ManageDirectory, PrincipalField},
+    IntoError, Principal, QueryBy, Type,
+};
 
 use super::{LdapDirectory, LdapMappings};
 
@@ -16,7 +19,7 @@ impl LdapDirectory {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> trc::Result<Option<Principal<u32>>> {
+    ) -> trc::Result<Option<Principal>> {
         let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;
         let mut account_id = None;
         let account_name;
@@ -125,11 +128,11 @@ impl LdapDirectory {
                 .get_or_create_account_id(&account_name)
                 .await?;
         }
-        principal.name = account_name;
+        principal.append_str(PrincipalField::Name, account_name);
 
         // Obtain groups
-        if return_member_of && !principal.member_of.is_empty() {
-            for member_of in principal.member_of.iter_mut() {
+        if return_member_of && principal.has_field(PrincipalField::MemberOf) {
+            for member_of in principal.iter_mut_str(PrincipalField::MemberOf) {
                 if member_of.contains('=') {
                     let (rs, _res) = conn
                         .search(
@@ -163,8 +166,8 @@ impl LdapDirectory {
                 .await
                 .map(Some)
         } else {
-            principal.member_of.clear();
-            Ok(Some(principal.into()))
+            principal.remove(PrincipalField::MemberOf);
+            Ok(Some(principal))
         }
     }
 
@@ -370,7 +373,7 @@ impl LdapDirectory {
         &self,
         conn: &mut Ldap,
         filter: &str,
-    ) -> trc::Result<Option<Principal<String>>> {
+    ) -> trc::Result<Option<Principal>> {
         conn.search(
             &self.mappings.base_dn,
             Scope::Subtree,
@@ -400,39 +403,47 @@ impl LdapDirectory {
 }
 
 impl LdapMappings {
-    fn entry_to_principal(&self, entry: SearchEntry) -> Principal<String> {
+    fn entry_to_principal(&self, entry: SearchEntry) -> Principal {
         let mut principal = Principal::default();
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {
-                principal.name = value.into_iter().next().unwrap_or_default();
+                principal.set(
+                    PrincipalField::Name,
+                    value.into_iter().next().unwrap_or_default(),
+                );
             } else if self.attr_secret.contains(&attr) {
-                principal.secrets.extend(value);
+                for item in value {
+                    principal.append_str(PrincipalField::Secrets, item);
+                }
             } else if self.attr_email_address.contains(&attr) {
-                for value in value {
-                    if principal.emails.is_empty() {
-                        principal.emails.push(value);
-                    } else {
-                        principal.emails.insert(0, value);
-                    }
+                for item in value {
+                    principal.prepend_str(PrincipalField::Emails, item);
                 }
             } else if self.attr_email_alias.contains(&attr) {
-                principal.emails.extend(value);
+                for item in value {
+                    principal.append_str(PrincipalField::Emails, item);
+                }
             } else if let Some(idx) = self.attr_description.iter().position(|a| a == &attr) {
-                if principal.description.is_none() || idx == 0 {
-                    principal.description = value.into_iter().next();
+                if !principal.has_field(PrincipalField::Description) || idx == 0 {
+                    principal.set(
+                        PrincipalField::Description,
+                        value.into_iter().next().unwrap_or_default(),
+                    );
                 }
             } else if self.attr_groups.contains(&attr) {
-                principal.member_of.extend(value);
+                for item in value {
+                    principal.append_str(PrincipalField::MemberOf, item);
+                }
             } else if self.attr_quota.contains(&attr) {
-                if let Ok(quota) = value.into_iter().next().unwrap_or_default().parse() {
-                    principal.quota = quota;
+                if let Ok(quota) = value.into_iter().next().unwrap_or_default().parse::<u64>() {
+                    principal.set(PrincipalField::Quota, quota);
                 }
             } else if self.attr_type.contains(&attr) {
                 for value in value {
                     match value.to_ascii_lowercase().as_str() {
                         "admin" | "administrator" | "root" | "superuser" => {
-                            principal.typ = Type::Superuser
+                            principal = principal.into_superuser();
                         }
                         "posixaccount" | "individual" | "person" | "inetorgperson" => {
                             principal.typ = Type::Individual

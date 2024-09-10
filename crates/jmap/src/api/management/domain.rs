@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::backend::internal::manage::{self, ManageDirectory};
+use directory::{
+    backend::internal::manage::{self, ManageDirectory},
+    Permission,
+};
 
 use hyper::Method;
 use serde::{Deserialize, Serialize};
@@ -19,6 +22,7 @@ use crate::{
         management::dkim::{obtain_dkim_public_key, Algorithm},
         HttpRequest, HttpResponse, JsonResponse,
     },
+    auth::AccessToken,
     JMAP,
 };
 
@@ -37,9 +41,13 @@ impl JMAP {
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         match (path.get(1), req.method()) {
             (None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::DomainList)?;
+
                 // List domains
                 let params = UrlParams::new(req.uri().query());
                 let filter = params.get("filter");
@@ -66,6 +74,9 @@ impl JMAP {
                 .into_http_response())
             }
             (Some(domain), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::DomainGet)?;
+
                 // Obtain DNS records
                 let domain = decode_path_element(domain);
                 Ok(JsonResponse::new(json!({
@@ -74,6 +85,9 @@ impl JMAP {
                 .into_http_response())
             }
             (Some(domain), &Method::POST) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::DomainCreate)?;
+
                 // Create domain
                 let domain = decode_path_element(domain);
                 self.core
@@ -103,6 +117,9 @@ impl JMAP {
                 .into_http_response())
             }
             (Some(domain), &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::DomainDelete)?;
+
                 // Delete domain
                 let domain = decode_path_element(domain);
                 self.core

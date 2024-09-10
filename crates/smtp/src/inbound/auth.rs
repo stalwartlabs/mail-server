@@ -5,6 +5,7 @@
  */
 
 use common::listener::SessionStream;
+use directory::backend::internal::PrincipalField;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
@@ -177,10 +178,10 @@ impl<T: SessionStream> Session<T> {
                 .await
             {
                 Ok(principal) => {
+                    let todo = "check smtp auth permissions";
                     self.data.authenticated_as = authenticated_as.to_lowercase();
                     self.data.authenticated_emails = principal
-                        .emails
-                        .into_iter()
+                        .iter_str(PrincipalField::Emails)
                         .map(|e| e.trim().to_lowercase())
                         .collect();
                     self.eval_post_auth_params().await;

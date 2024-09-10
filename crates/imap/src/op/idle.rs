@@ -7,6 +7,7 @@
 use std::{sync::Arc, time::Instant};
 
 use ahash::AHashSet;
+use directory::Permission;
 use imap_proto::{
     protocol::{
         fetch,
@@ -32,6 +33,9 @@ use crate::{
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_idle(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapIdle)?;
+
         let op_start = Instant::now();
         let (data, mailbox, types) = match &self.state {
             State::Authenticated { data, .. } => {

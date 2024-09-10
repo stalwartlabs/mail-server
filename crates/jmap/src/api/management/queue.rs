@@ -5,6 +5,7 @@
  */
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use directory::Permission;
 use hyper::Method;
 use mail_auth::{
     dmarc::URI,
@@ -23,6 +24,7 @@ use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
+    auth::AccessToken,
     JMAP,
 };
 
@@ -105,6 +107,7 @@ impl JMAP {
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         let params = UrlParams::new(req.uri().query());
 
@@ -114,6 +117,9 @@ impl JMAP {
             req.method(),
         ) {
             ("messages", None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueList)?;
+
                 let text = params.get("text");
                 let from = params.get("from");
                 let to = params.get("to");
@@ -217,6 +223,9 @@ impl JMAP {
                 .into_http_response())
             }
             ("messages", Some(queue_id), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueGet)?;
+
                 if let Some(message) = self
                     .smtp
                     .read_message(queue_id.parse().unwrap_or_default())
@@ -231,6 +240,9 @@ impl JMAP {
                 }
             }
             ("messages", Some(queue_id), &Method::PATCH) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueUpdate)?;
+
                 let time = params
                     .parse::<FutureTimestamp>("at")
                     .map(|t| t.into_inner())
@@ -278,6 +290,9 @@ impl JMAP {
                 }
             }
             ("messages", Some(queue_id), &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueDelete)?;
+
                 if let Some(mut message) = self
                     .smtp
                     .read_message(queue_id.parse().unwrap_or_default())
@@ -358,6 +373,9 @@ impl JMAP {
                 }
             }
             ("reports", None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::OutgoingReportList)?;
+
                 let domain = params.get("domain").map(|d| d.to_lowercase());
                 let type_ = params.get("type").and_then(|t| match t {
                     "dmarc" => 0u8.into(),
@@ -436,6 +454,9 @@ impl JMAP {
                 .into_http_response())
             }
             ("reports", Some(report_id), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::OutgoingReportGet)?;
+
                 let mut result = None;
                 if let Some(report_id) = parse_queued_report_id(report_id.as_ref()) {
                     match report_id {
@@ -473,6 +494,9 @@ impl JMAP {
                 }
             }
             ("reports", Some(report_id), &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::OutgoingReportDelete)?;
+
                 if let Some(report_id) = parse_queued_report_id(report_id.as_ref()) {
                     match report_id {
                         QueueClass::DmarcReportHeader(event) => {

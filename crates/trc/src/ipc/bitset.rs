@@ -51,6 +51,10 @@ impl<const N: usize> Bitset<N> {
         }
         true
     }
+
+    pub fn inner(&self) -> &[usize; N] {
+        &self.0
+    }
 }
 
 impl<const N: usize> Default for Bitset<N> {

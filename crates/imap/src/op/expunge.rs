@@ -7,6 +7,7 @@
 use std::{sync::Arc, time::Instant};
 
 use ahash::AHashMap;
+use directory::Permission;
 use imap_proto::{
     parser::parse_sequence_set,
     receiver::{Request, Token},
@@ -34,6 +35,9 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_uid: bool,
     ) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapExpunge)?;
+
         let op_start = Instant::now();
         let (data, mailbox) = self.state.select_data();
 

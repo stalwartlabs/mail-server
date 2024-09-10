@@ -1784,6 +1784,7 @@ impl SecurityEvent {
             SecurityEvent::BruteForceBan => "Banned due to brute force attack",
             SecurityEvent::LoiterBan => "Banned due to loitering",
             SecurityEvent::IpBlocked => "Blocked IP address",
+            SecurityEvent::Unauthorized => "Unauthorized access",
         }
     }
 
@@ -1797,6 +1798,7 @@ impl SecurityEvent {
             }
             SecurityEvent::LoiterBan => "IP address was banned due to multiple loitering events",
             SecurityEvent::IpBlocked => "Rejected connection from blocked IP address",
+            SecurityEvent::Unauthorized => "Account does not have permission to access resource",
         }
     }
 }

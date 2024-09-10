@@ -12,7 +12,7 @@ use directory::{
         manage::{self, ManageDirectory},
         PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue, SpecialSecrets,
     },
-    DirectoryInner, Principal, QueryBy, Type,
+    DirectoryInner, Permission, Principal, QueryBy, Type,
 };
 
 use hyper::{header, Method};
@@ -28,7 +28,7 @@ use crate::{
 use super::decode_path_element;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct PrincipalResponse {
+pub struct PrincipalPayload {
     #[serde(default)]
     pub id: u32,
     #[serde(rename = "type")]
@@ -68,8 +68,6 @@ pub enum AccountAuthRequest {
 pub struct AccountAuthResponse {
     #[serde(rename = "otpEnabled")]
     pub otp_auth: bool,
-    #[serde(rename = "isAdministrator")]
-    pub is_admin: bool,
     #[serde(rename = "appPasswords")]
     pub app_passwords: Vec<String>,
 }
@@ -80,43 +78,47 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         match (path.get(1), req.method()) {
             (None, &Method::POST) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::PrincipalCreate)?;
+
                 // Make sure the current directory supports updates
                 self.assert_supported_directory()?;
 
                 // Create principal
-                let principal = serde_json::from_slice::<PrincipalResponse>(
-                    body.as_deref().unwrap_or_default(),
-                )
-                .map_err(|err| {
-                    trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
-                })?;
+                let principal =
+                    serde_json::from_slice::<PrincipalPayload>(body.as_deref().unwrap_or_default())
+                        .map_err(|err| {
+                            trc::EventType::Resource(trc::ResourceEvent::BadParameters)
+                                .from_json_error(err)
+                        })?;
+
+                let principal = Principal::new(principal.id, principal.typ)
+                    .with_field(PrincipalField::Name, principal.name)
+                    .with_field(PrincipalField::Secrets, principal.secrets)
+                    .with_field(PrincipalField::Quota, principal.quota)
+                    .with_field(PrincipalField::Emails, principal.emails)
+                    .with_field(PrincipalField::MemberOf, principal.member_of)
+                    .with_field(PrincipalField::Members, principal.members)
+                    .with_opt_field(PrincipalField::Description, principal.description);
 
                 Ok(JsonResponse::new(json!({
                     "data": self
                     .core
                     .storage
                     .data
-                    .create_account(
-                        Principal {
-                            id: principal.id,
-                            typ: principal.typ,
-                            quota: principal.quota,
-                            name: principal.name,
-                            secrets: principal.secrets,
-                            emails: principal.emails,
-                            member_of: principal.member_of,
-                            description: principal.description,
-                        },
-                        principal.members,
-                    )
+                    .create_account(principal)
                     .await?,
                 }))
                 .into_http_response())
             }
             (None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::PrincipalList)?;
+
                 // List principal ids
                 let params = UrlParams::new(req.uri().query());
                 let filter = params.get("filter");
@@ -144,6 +146,20 @@ impl JMAP {
                 .into_http_response())
             }
             (Some(name), method) => {
+                // Validate the access token
+                match *method {
+                    Method::GET => {
+                        access_token.assert_has_permission(Permission::PrincipalGet)?;
+                    }
+                    Method::DELETE => {
+                        access_token.assert_has_permission(Permission::PrincipalDelete)?;
+                    }
+                    Method::PATCH => {
+                        access_token.assert_has_permission(Permission::PrincipalUpdate)?;
+                    }
+                    _ => {}
+                }
+
                 // Fetch, update or delete principal
                 let name = decode_path_element(name);
                 let account_id = self
@@ -166,19 +182,23 @@ impl JMAP {
                         let principal = self.core.storage.data.map_group_ids(principal).await?;
 
                         // Obtain quota usage
-                        let mut principal = PrincipalResponse::from(principal);
+                        let mut principal = PrincipalPayload::from(principal);
                         principal.used_quota = self.get_used_quota(account_id).await? as u64;
 
                         // Obtain member names
                         for member_id in self.core.storage.data.get_members(account_id).await? {
-                            if let Some(member_principal) = self
+                            if let Some(mut member_principal) = self
                                 .core
                                 .storage
                                 .data
                                 .query(QueryBy::Id(member_id), false)
                                 .await?
                             {
-                                principal.members.push(member_principal.name);
+                                principal.members.push(
+                                    member_principal
+                                        .take_str(PrincipalField::Name)
+                                        .unwrap_or_default(),
+                                );
                             }
                         }
 
@@ -257,7 +277,6 @@ impl JMAP {
     ) -> trc::Result<HttpResponse> {
         let mut response = AccountAuthResponse {
             otp_auth: false,
-            is_admin: access_token.is_super_user(),
             app_passwords: Vec::new(),
         };
 
@@ -270,7 +289,7 @@ impl JMAP {
                 .await?
                 .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
-            for secret in principal.secrets {
+            for secret in principal.iter_str(PrincipalField::Secrets) {
                 if secret.is_otp_auth() {
                     response.otp_auth = true;
                 } else if let Some((app_name, _)) =
@@ -327,7 +346,7 @@ impl JMAP {
         }
 
         // Handle Fallback admin password changes
-        if access_token.is_super_user() && access_token.primary_id() == u32::MAX {
+        if access_token.primary_id() == u32::MAX {
             match requests.into_iter().next().unwrap() {
                 AccountAuthRequest::SetPassword { password } => {
                     self.core
@@ -420,24 +439,31 @@ impl JMAP {
         Err(manage::unsupported(format!(
             concat!(
                 "{} directory cannot be managed. ",
-                "Only internal directories support inserts and update operations."
+                "Only internal directories support inserts ",
+                "and update operations."
             ),
             class
         )))
     }
 }
 
-impl From<Principal<String>> for PrincipalResponse {
-    fn from(principal: Principal<String>) -> Self {
-        PrincipalResponse {
-            id: principal.id,
-            typ: principal.typ,
-            quota: principal.quota,
-            name: principal.name,
-            emails: principal.emails,
-            member_of: principal.member_of,
-            description: principal.description,
-            secrets: principal.secrets,
+impl From<Principal> for PrincipalPayload {
+    fn from(mut principal: Principal) -> Self {
+        PrincipalPayload {
+            id: principal.id(),
+            typ: principal.typ(),
+            quota: principal.quota(),
+            name: principal.take_str(PrincipalField::Name).unwrap_or_default(),
+            emails: principal
+                .take_str_array(PrincipalField::Emails)
+                .unwrap_or_default(),
+            member_of: principal
+                .take_str_array(PrincipalField::MemberOf)
+                .unwrap_or_default(),
+            description: principal.take_str(PrincipalField::Description),
+            secrets: principal
+                .take_str_array(PrincipalField::Secrets)
+                .unwrap_or_default(),
             used_quota: 0,
             members: Vec::new(),
         }

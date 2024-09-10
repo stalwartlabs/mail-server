@@ -12,7 +12,7 @@ use crate::{IntoError, Principal, QueryBy};
 use super::{SmtpClient, SmtpDirectory};
 
 impl SmtpDirectory {
-    pub async fn query(&self, query: QueryBy<'_>) -> trc::Result<Option<Principal<u32>>> {
+    pub async fn query(&self, query: QueryBy<'_>) -> trc::Result<Option<Principal>> {
         if let QueryBy::Credentials(credentials) = query {
             self.pool
                 .get()
@@ -93,7 +93,7 @@ impl SmtpClient {
     async fn authenticate(
         &mut self,
         credentials: &Credentials<String>,
-    ) -> trc::Result<Option<Principal<u32>>> {
+    ) -> trc::Result<Option<Principal>> {
         match self
             .client
             .authenticate(credentials, &self.capabilities)

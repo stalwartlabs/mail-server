@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     error::set::SetError,
     object::Object,
@@ -67,17 +67,10 @@ impl JMAP {
                     }
 
                     if !collections.is_empty() {
-                        if let Some((_, sharing)) = access_token
+                        access_token
                             .access_to
-                            .iter_mut()
-                            .find(|(account_id, _)| *account_id == acl_item.to_account_id)
-                        {
-                            sharing.union(&collections);
-                        } else {
-                            access_token
-                                .access_to
-                                .push((acl_item.to_account_id, collections));
-                        }
+                            .get_mut_or_insert_with(acl_item.to_account_id, Bitmap::new)
+                            .union(&collections);
                     }
                 }
             }
@@ -322,7 +315,7 @@ impl JMAP {
         {
             let mut acl_obj = Object::with_capacity(value.len() / 2);
             for item in value {
-                if let Some(principal) = self
+                if let Some(mut principal) = self
                     .core
                     .storage
                     .directory
@@ -331,7 +324,7 @@ impl JMAP {
                     .unwrap_or_default()
                 {
                     acl_obj.append(
-                        Property::_T(principal.name),
+                        Property::_T(principal.take_str(PrincipalField::Name).unwrap_or_default()),
                         item.grants
                             .map(|acl_item| Value::Text(acl_item.to_string()))
                             .collect::<Vec<_>>(),
@@ -402,7 +395,7 @@ impl JMAP {
                 {
                     Ok(Some(principal)) => {
                         acls.push(AclGrant {
-                            account_id: principal.id,
+                            account_id: principal.id(),
                             grants: Bitmap::from(*grants),
                         });
                     }
@@ -443,7 +436,7 @@ impl JMAP {
             {
                 Ok(Some(principal)) => Ok((
                     AclGrant {
-                        account_id: principal.id,
+                        account_id: principal.id(),
                         grants: Bitmap::from(*grants),
                     },
                     acl_patch.get(2).map(|v| v.as_bool().unwrap_or(false)),

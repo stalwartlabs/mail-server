@@ -202,6 +202,7 @@ pub enum SecurityEvent {
     BruteForceBan,
     LoiterBan,
     IpBlocked,
+    Unauthorized,
 }
 
 #[event_type]

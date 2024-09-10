@@ -329,7 +329,7 @@ impl JMAP {
                 .query(QueryBy::Id(account_id), false)
                 .await
                 .add_context(|err| err.caused_by(trc::location!()).account_id(account_id))?
-                .map(|p| p.quota as i64)
+                .map(|p| p.quota() as i64)
                 .unwrap_or_default()
         })
     }

@@ -17,7 +17,7 @@ use common::telemetry::{
     metrics::store::{Metric, MetricsStore},
     tracers::store::{TracingQuery, TracingStore},
 };
-use directory::backend::internal::manage;
+use directory::{backend::internal::manage, Permission};
 use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::{
     body::{Bytes, Frame},
@@ -38,6 +38,7 @@ use crate::{
         http::ToHttpResponse, management::Timestamp, HttpRequest, HttpResponse, HttpResponseBody,
         JsonResponse,
     },
+    auth::AccessToken,
     JMAP,
 };
 
@@ -46,9 +47,10 @@ impl JMAP {
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
-        account_id: u32,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         let params = UrlParams::new(req.uri().query());
+        let account_id = access_token.primary_id();
 
         match (
             path.get(1).copied().unwrap_or_default(),
@@ -56,6 +58,9 @@ impl JMAP {
             req.method(),
         ) {
             ("traces", None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::TracingList)?;
+
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
                 let mut tracing_query = Vec::new();
@@ -162,6 +167,9 @@ impl JMAP {
                 }
             }
             ("traces", Some("live"), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::TracingLive)?;
+
                 let mut key_filters = AHashMap::new();
                 let mut filter = None;
 
@@ -290,6 +298,9 @@ impl JMAP {
                 })
             }
             ("trace", id, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::TracingGet)?;
+
                 let store = &self
                     .core
                     .enterprise
@@ -327,15 +338,32 @@ impl JMAP {
                     .into_http_response())
                 }
             }
-            ("live", Some("token"), &Method::GET) => {
+            ("live", Some("tracing-token"), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::TracingLive)?;
+
                 // Issue a live telemetry token valid for 60 seconds
 
                 Ok(JsonResponse::new(json!({
-                    "data": self.issue_custom_token(account_id, "live_telemetry", "web", 60).await?,
+                    "data": self.issue_custom_token(account_id, "live_tracing", "web", 60).await?,
+            }))
+            .into_http_response())
+            }
+            ("live", Some("metrics-token"), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MetricsLive)?;
+
+                // Issue a live telemetry token valid for 60 seconds
+
+                Ok(JsonResponse::new(json!({
+                    "data": self.issue_custom_token(account_id, "live_metrics", "web", 60).await?,
             }))
             .into_http_response())
             }
             ("metrics", None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MetricsList)?;
+
                 let before = params
                     .parse::<Timestamp>("before")
                     .map(|t| t.into_inner())
@@ -395,6 +423,9 @@ impl JMAP {
                 .into_http_response())
             }
             ("metrics", Some("live"), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MetricsLive)?;
+
                 let interval = Duration::from_secs(
                     params
                         .parse::<u64>("interval")

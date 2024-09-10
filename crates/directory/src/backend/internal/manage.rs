@@ -28,11 +28,7 @@ pub trait ManageDirectory: Sized {
     async fn get_account_name(&self, account_id: u32) -> trc::Result<Option<String>>;
     async fn get_member_of(&self, account_id: u32) -> trc::Result<Vec<u32>>;
     async fn get_members(&self, account_id: u32) -> trc::Result<Vec<u32>>;
-    async fn create_account(
-        &self,
-        principal: Principal<String>,
-        members: Vec<String>,
-    ) -> trc::Result<u32>;
+    async fn create_account(&self, principal: Principal) -> trc::Result<u32>;
     async fn update_account(
         &self,
         by: QueryBy<'_>,
@@ -44,12 +40,12 @@ pub trait ManageDirectory: Sized {
         filter: Option<&str>,
         typ: Option<Type>,
     ) -> trc::Result<Vec<String>>;
-    async fn map_group_ids(&self, principal: Principal<u32>) -> trc::Result<Principal<String>>;
+    async fn map_group_ids(&self, principal: Principal) -> trc::Result<Principal>;
     async fn map_principal(
         &self,
-        principal: Principal<String>,
+        principal: Principal,
         create_if_missing: bool,
-    ) -> trc::Result<Principal<u32>>;
+    ) -> trc::Result<Principal>;
     async fn map_group_names(
         &self,
         members: Vec<String>,
@@ -62,11 +58,11 @@ pub trait ManageDirectory: Sized {
 
 impl ManageDirectory for Store {
     async fn get_account_name(&self, account_id: u32) -> trc::Result<Option<String>> {
-        self.get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
+        self.get_value::<Principal>(ValueKey::from(ValueClass::Directory(
             DirectoryClass::Principal(account_id),
         )))
         .await
-        .map(|v| if let Some(v) = v { Some(v.name) } else { None })
+        .map(|v| v.and_then(|mut v| v.take_str(PrincipalField::Name)))
         .caused_by(trc::location!())
     }
 
@@ -108,9 +104,9 @@ impl ManageDirectory for Store {
                     ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Dynamic(0))),
                     Principal {
                         typ: Type::Individual,
-                        name: name.to_string(),
                         ..Default::default()
-                    },
+                    }
+                    .with_field(PrincipalField::Name, name.to_string()),
                 );
 
             match self
@@ -133,39 +129,42 @@ impl ManageDirectory for Store {
         }
     }
 
-    async fn create_account(
-        &self,
-        principal: Principal<String>,
-        members: Vec<String>,
-    ) -> trc::Result<u32> {
+    async fn create_account(&self, mut principal: Principal) -> trc::Result<u32> {
         // Make sure the principal has a name
-        if principal.name.is_empty() {
+        let name = principal.name().to_lowercase();
+        if name.is_empty() {
             return Err(err_missing(PrincipalField::Name));
         }
 
         // Map group names
+        let members = self
+            .map_group_names(
+                principal
+                    .take(PrincipalField::Members)
+                    .map(|v| v.into_str_array())
+                    .unwrap_or_default(),
+                false,
+            )
+            .await
+            .caused_by(trc::location!())?;
         let mut principal = self
             .map_principal(principal, false)
             .await
             .caused_by(trc::location!())?;
-        let members = self
-            .map_group_names(members, false)
-            .await
-            .caused_by(trc::location!())?;
 
         // Make sure new name is not taken
-        principal.name = principal.name.to_lowercase();
         if self
-            .get_account_id(&principal.name)
+            .get_account_id(&name)
             .await
             .caused_by(trc::location!())?
             .is_some()
         {
-            return Err(err_exists(PrincipalField::Name, principal.name));
+            return Err(err_exists(PrincipalField::Name, name));
         }
+        principal.set(PrincipalField::Name, name);
 
         // Make sure the e-mail is not taken and validate domain
-        for email in principal.emails.iter_mut() {
+        for email in principal.iter_mut_str(PrincipalField::Emails) {
             *email = email.to_lowercase();
             if self.rcpt(email).await.caused_by(trc::location!())? {
                 return Err(err_exists(PrincipalField::Emails, email.to_string()));
@@ -183,14 +182,14 @@ impl ManageDirectory for Store {
 
         // Write principal
         let mut batch = BatchBuilder::new();
-        let ptype = DynamicPrincipalIdType(principal.typ.into_base_type());
+        let ptype = DynamicPrincipalIdType(principal.typ);
         batch
             .with_account_id(u32::MAX)
             .with_collection(Collection::Principal)
             .create_document()
             .assert_value(
                 ValueClass::Directory(DirectoryClass::NameToId(
-                    principal.name.clone().into_bytes(),
+                    principal.name().to_string().into_bytes(),
                 )),
                 (),
             )
@@ -199,30 +198,40 @@ impl ManageDirectory for Store {
                 principal.clone(),
             )
             .set(
-                ValueClass::Directory(DirectoryClass::NameToId(principal.name.into_bytes())),
+                ValueClass::Directory(DirectoryClass::NameToId(
+                    principal
+                        .take_str(PrincipalField::Name)
+                        .unwrap()
+                        .into_bytes(),
+                )),
                 ptype,
             );
 
         // Write email to id mapping
-        for email in principal.emails {
-            batch.set(
-                ValueClass::Directory(DirectoryClass::EmailToId(email.into_bytes())),
-                ptype,
-            );
+        if let Some(emails) = principal
+            .take(PrincipalField::Emails)
+            .map(|v| v.into_str_array())
+        {
+            for email in emails {
+                batch.set(
+                    ValueClass::Directory(DirectoryClass::EmailToId(email.into_bytes())),
+                    ptype,
+                );
+            }
         }
 
         // Write membership
-        for member_of in principal.member_of {
+        for member_of in principal.iter_int(PrincipalField::MemberOf) {
             batch.set(
                 ValueClass::Directory(DirectoryClass::MemberOf {
                     principal_id: MaybeDynamicId::Dynamic(0),
-                    member_of: MaybeDynamicId::Static(member_of),
+                    member_of: MaybeDynamicId::Static(member_of as u32),
                 }),
                 vec![],
             );
             batch.set(
                 ValueClass::Directory(DirectoryClass::Members {
-                    principal_id: MaybeDynamicId::Static(member_of),
+                    principal_id: MaybeDynamicId::Static(member_of as u32),
                     has_member: MaybeDynamicId::Dynamic(0),
                 }),
                 vec![],
@@ -261,8 +270,8 @@ impl ManageDirectory for Store {
             QueryBy::Credentials(_) => unreachable!(),
         };
 
-        let principal = self
-            .get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
+        let mut principal = self
+            .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
                 DirectoryClass::Principal(account_id),
             )))
             .await
@@ -288,14 +297,21 @@ impl ManageDirectory for Store {
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(account_id)
-            .clear(DirectoryClass::NameToId(principal.name.into_bytes()))
+            .clear(DirectoryClass::NameToId(
+                principal
+                    .take_str(PrincipalField::Name)
+                    .unwrap_or_default()
+                    .into_bytes(),
+            ))
             .clear(DirectoryClass::Principal(MaybeDynamicId::Static(
                 account_id,
             )))
             .clear(DirectoryClass::UsedQuota(account_id));
 
-        for email in principal.emails {
-            batch.clear(DirectoryClass::EmailToId(email.into_bytes()));
+        if let Some(emails) = principal.take_str_array(PrincipalField::Emails) {
+            for email in emails {
+                batch.clear(DirectoryClass::EmailToId(email.into_bytes()));
+            }
         }
 
         for member_id in self
@@ -352,7 +368,7 @@ impl ManageDirectory for Store {
 
         // Fetch principal
         let mut principal = self
-            .get_value::<HashedValue<Principal<u32>>>(ValueKey::from(ValueClass::Directory(
+            .get_value::<HashedValue<Principal>>(ValueKey::from(ValueClass::Directory(
                 DirectoryClass::Principal(account_id),
             )))
             .await
@@ -371,8 +387,7 @@ impl ManageDirectory for Store {
 
         // Apply changes
         let mut batch = BatchBuilder::new();
-        let ptype =
-            PrincipalIdType::new(account_id, principal.inner.typ.into_base_type()).serialize();
+        let ptype = PrincipalIdType::new(account_id, principal.inner.typ).serialize();
         let update_principal = !changes.is_empty()
             && !changes
                 .iter()
@@ -391,7 +406,7 @@ impl ManageDirectory for Store {
                 (PrincipalAction::Set, PrincipalField::Name, PrincipalValue::String(new_name)) => {
                     // Make sure new name is not taken
                     let new_name = new_name.to_lowercase();
-                    if principal.inner.name != new_name {
+                    if principal.inner.name() != new_name {
                         if self
                             .get_account_id(&new_name)
                             .await
@@ -402,10 +417,10 @@ impl ManageDirectory for Store {
                         }
 
                         batch.clear(ValueClass::Directory(DirectoryClass::NameToId(
-                            principal.inner.name.as_bytes().to_vec(),
+                            principal.inner.name().as_bytes().to_vec(),
                         )));
 
-                        principal.inner.name.clone_from(&new_name);
+                        principal.inner.set(PrincipalField::Name, new_name.clone());
 
                         batch.set(
                             ValueClass::Directory(DirectoryClass::NameToId(new_name.into_bytes())),
@@ -413,35 +428,27 @@ impl ManageDirectory for Store {
                         );
                     }
                 }
-                (PrincipalAction::Set, PrincipalField::Type, PrincipalValue::String(new_type)) => {
-                    if let Some(new_type) = Type::parse(&new_type) {
-                        if matches!(principal.inner.typ, Type::Individual | Type::Superuser)
-                            && matches!(new_type, Type::Individual | Type::Superuser)
-                        {
-                            principal.inner.typ = new_type;
-                            continue;
-                        }
-                    }
-                    return Err(trc::ManageEvent::NotSupported.caused_by(trc::location!()));
-                }
                 (
                     PrincipalAction::Set,
                     PrincipalField::Secrets,
-                    PrincipalValue::StringList(secrets),
+                    value @ (PrincipalValue::StringList(_) | PrincipalValue::String(_)),
                 ) => {
-                    principal.inner.secrets = secrets;
+                    principal.inner.set(PrincipalField::Secrets, value);
                 }
                 (
                     PrincipalAction::AddItem,
                     PrincipalField::Secrets,
                     PrincipalValue::String(secret),
                 ) => {
-                    if !principal.inner.secrets.contains(&secret) {
-                        if secret.is_otp_auth() && !principal.inner.secrets.is_empty() {
+                    if !principal
+                        .inner
+                        .has_str_value(PrincipalField::Secrets, &secret)
+                    {
+                        if secret.is_otp_auth() {
                             // Add OTP Auth URLs to the beginning of the list
-                            principal.inner.secrets.insert(0, secret);
+                            principal.inner.prepend_str(PrincipalField::Secrets, secret);
                         } else {
-                            principal.inner.secrets.push(secret);
+                            principal.inner.append_str(PrincipalField::Secrets, secret);
                         }
                     }
                 }
@@ -451,14 +458,17 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(secret),
                 ) => {
                     if secret.is_app_password() || secret.is_otp_auth() {
+                        principal.inner.retain_str(PrincipalField::Secrets, |v| {
+                            *v != secret && !v.starts_with(&secret)
+                        });
+                    } else if !secret.is_empty() {
                         principal
                             .inner
-                            .secrets
-                            .retain(|v| *v != secret && !v.starts_with(&secret));
-                    } else if !secret.is_empty() {
-                        principal.inner.secrets.retain(|v| *v != secret);
+                            .retain_str(PrincipalField::Secrets, |v| *v != secret);
                     } else {
-                        principal.inner.secrets.retain(|v| !v.is_password());
+                        principal
+                            .inner
+                            .retain_str(PrincipalField::Secrets, |v| !v.is_password());
                     }
                 }
                 (
@@ -467,13 +477,15 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(description),
                 ) => {
                     if !description.is_empty() {
-                        principal.inner.description = Some(description);
+                        principal
+                            .inner
+                            .set(PrincipalField::Description, description);
                     } else {
-                        principal.inner.description = None;
+                        principal.inner.remove(PrincipalField::Description);
                     }
                 }
                 (PrincipalAction::Set, PrincipalField::Quota, PrincipalValue::Integer(quota)) => {
-                    principal.inner.quota = quota;
+                    principal.inner.set(PrincipalField::Quota, quota);
                 }
 
                 // Emails
@@ -488,7 +500,7 @@ impl ManageDirectory for Store {
                         .map(|v| v.to_lowercase())
                         .collect::<Vec<_>>();
                     for email in &emails {
-                        if !principal.inner.emails.contains(email) {
+                        if !principal.inner.has_str_value(PrincipalField::Emails, email) {
                             if self.rcpt(email).await.caused_by(trc::location!())? {
                                 return Err(err_exists(PrincipalField::Emails, email.to_string()));
                             }
@@ -510,7 +522,7 @@ impl ManageDirectory for Store {
                         }
                     }
 
-                    for email in &principal.inner.emails {
+                    for email in principal.inner.iter_str(PrincipalField::Emails) {
                         if !emails.contains(email) {
                             batch.clear(ValueClass::Directory(DirectoryClass::EmailToId(
                                 email.as_bytes().to_vec(),
@@ -518,7 +530,7 @@ impl ManageDirectory for Store {
                         }
                     }
 
-                    principal.inner.emails = emails;
+                    principal.inner.set(PrincipalField::Emails, emails);
                 }
                 (
                     PrincipalAction::AddItem,
@@ -526,7 +538,10 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(email),
                 ) => {
                     let email = email.to_lowercase();
-                    if !principal.inner.emails.contains(&email) {
+                    if !principal
+                        .inner
+                        .has_str_value(PrincipalField::Emails, &email)
+                    {
                         if self.rcpt(&email).await.caused_by(trc::location!())? {
                             return Err(err_exists(PrincipalField::Emails, email));
                         }
@@ -545,7 +560,7 @@ impl ManageDirectory for Store {
                             )),
                             ptype.clone(),
                         );
-                        principal.inner.emails.push(email);
+                        principal.inner.append_str(PrincipalField::Emails, email);
                     }
                 }
                 (
@@ -554,11 +569,16 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(email),
                 ) => {
                     let email = email.to_lowercase();
-                    if let Some(pos) = principal.inner.emails.iter().position(|v| *v == email) {
+                    if principal
+                        .inner
+                        .has_str_value(PrincipalField::Emails, &email)
+                    {
+                        principal
+                            .inner
+                            .retain_str(PrincipalField::Emails, |v| *v != email);
                         batch.clear(ValueClass::Directory(DirectoryClass::EmailToId(
-                            email.as_bytes().to_vec(),
+                            email.into_bytes(),
                         )));
-                        principal.inner.emails.remove(pos);
                     }
                 }
 
@@ -806,49 +826,37 @@ impl ManageDirectory for Store {
         self.write(batch.build()).await.map(|_| ())
     }
 
-    async fn map_group_ids(&self, principal: Principal<u32>) -> trc::Result<Principal<String>> {
-        let mut mapped = Principal {
-            id: principal.id,
-            typ: principal.typ,
-            quota: principal.quota,
-            name: principal.name,
-            secrets: principal.secrets,
-            emails: principal.emails,
-            member_of: Vec::with_capacity(principal.member_of.len()),
-            description: principal.description,
-        };
-
-        for account_id in principal.member_of {
-            if let Some(name) = self
-                .get_account_name(account_id)
-                .await
-                .caused_by(trc::location!())?
-            {
-                mapped.member_of.push(name);
+    async fn map_group_ids(&self, mut principal: Principal) -> trc::Result<Principal> {
+        if let Some(member_of) = principal.take_int_array(PrincipalField::MemberOf) {
+            for account_id in member_of {
+                if let Some(name) = self
+                    .get_account_name(account_id as u32)
+                    .await
+                    .caused_by(trc::location!())?
+                {
+                    principal.append_str(PrincipalField::MemberOf, name);
+                }
             }
         }
 
-        Ok(mapped)
+        Ok(principal)
     }
 
     async fn map_principal(
         &self,
-        principal: Principal<String>,
+        mut principal: Principal,
         create_if_missing: bool,
-    ) -> trc::Result<Principal<u32>> {
-        Ok(Principal {
-            id: principal.id,
-            typ: principal.typ,
-            quota: principal.quota,
-            name: principal.name,
-            secrets: principal.secrets,
-            emails: principal.emails,
-            member_of: self
-                .map_group_names(principal.member_of, create_if_missing)
-                .await
-                .caused_by(trc::location!())?,
-            description: principal.description,
-        })
+    ) -> trc::Result<Principal> {
+        if let Some(member_of) = principal.take_str_array(PrincipalField::MemberOf) {
+            principal.set(
+                PrincipalField::MemberOf,
+                self.map_group_names(member_of, create_if_missing)
+                    .await
+                    .caused_by(trc::location!())?,
+            );
+        }
+
+        Ok(principal)
     }
 
     async fn map_group_names(
@@ -914,21 +922,20 @@ impl ManageDirectory for Store {
 
             for (account_id, account_name) in results {
                 let principal = self
-                    .get_value::<Principal<u32>>(ValueKey::from(ValueClass::Directory(
+                    .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
                         DirectoryClass::Principal(account_id),
                     )))
                     .await
                     .caused_by(trc::location!())?
                     .ok_or_else(|| not_found(account_id.to_string()))?;
                 if filters.iter().all(|f| {
-                    principal.name.to_lowercase().contains(f)
+                    principal.name().to_lowercase().contains(f)
                         || principal
-                            .description
+                            .description()
                             .as_ref()
                             .map_or(false, |d| d.to_lowercase().contains(f))
                         || principal
-                            .emails
-                            .iter()
+                            .iter_str(PrincipalField::Emails)
                             .any(|email| email.to_lowercase().contains(f))
                 }) {
                     filtered.push(account_name);
@@ -1010,7 +1017,7 @@ impl ManageDirectory for Store {
     }
 }
 
-impl SerializeWithId for Principal<u32> {
+impl SerializeWithId for Principal {
     fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>> {
         let mut principal = self.clone();
         principal.id = ids.last_document_id().caused_by(trc::location!())?;
@@ -1018,8 +1025,8 @@ impl SerializeWithId for Principal<u32> {
     }
 }
 
-impl From<Principal<u32>> for MaybeDynamicValue {
-    fn from(principal: Principal<u32>) -> Self {
+impl From<Principal> for MaybeDynamicValue {
+    fn from(principal: Principal) -> Self {
         MaybeDynamicValue::Dynamic(Box::new(principal))
     }
 }
@@ -1037,21 +1044,6 @@ impl SerializeWithId for DynamicPrincipalIdType {
 impl From<DynamicPrincipalIdType> for MaybeDynamicValue {
     fn from(value: DynamicPrincipalIdType) -> Self {
         MaybeDynamicValue::Dynamic(Box::new(value))
-    }
-}
-
-impl From<Principal<String>> for Principal<u32> {
-    fn from(principal: Principal<String>) -> Self {
-        Principal {
-            id: principal.id,
-            typ: principal.typ,
-            quota: principal.quota,
-            name: principal.name,
-            secrets: principal.secrets,
-            emails: principal.emails,
-            member_of: Vec::with_capacity(0),
-            description: principal.description,
-        }
     }
 }
 

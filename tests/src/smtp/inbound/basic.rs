@@ -14,8 +14,8 @@ use crate::smtp::{
 
 #[tokio::test]
 async fn basic_commands() {
-        // Enable logging
-        crate::enable_logging();
+    // Enable logging
+    crate::enable_logging();
 
     let mut session = Session::test(build_smtp(Core::default(), Inner::default()));
 

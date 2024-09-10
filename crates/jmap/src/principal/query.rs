@@ -37,9 +37,9 @@ impl JMAP {
                         .query(QueryBy::Name(name.as_str()), false)
                         .await?
                     {
-                        if is_set || result_set.results.contains(principal.id) {
+                        if is_set || result_set.results.contains(principal.id()) {
                             result_set.results =
-                                RoaringBitmap::from_sorted_iter([principal.id]).unwrap();
+                                RoaringBitmap::from_sorted_iter([principal.id()]).unwrap();
                         } else {
                             result_set.results = RoaringBitmap::new();
                         }

@@ -261,6 +261,7 @@ impl EventType {
             EventType::Auth(cause) => cause.message(),
             EventType::Config(_) => "Configuration error",
             EventType::Resource(cause) => cause.message(),
+            EventType::Security(_) => "Insufficient permissions",
             _ => "Internal server error",
         }
     }

@@ -23,7 +23,11 @@ pub(crate) fn sign(
     let combined = format!("{}.{}", &protected, &payload);
     let signature = key
         .sign(&SystemRandom::new(), combined.as_bytes())
-        .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).caused_by(trc::location!()).reason(err))?;
+        .map_err(|err| {
+            trc::EventType::Acme(trc::AcmeEvent::Error)
+                .caused_by(trc::location!())
+                .reason(err)
+        })?;
     let signature = URL_SAFE_NO_PAD.encode(signature.as_ref());
     let body = Body {
         protected,
@@ -31,7 +35,8 @@ pub(crate) fn sign(
         signature,
     };
 
-    serde_json::to_string(&body).map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
+    serde_json::to_string(&body)
+        .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_json_error(err))
 }
 
 pub(crate) fn key_authorization(key: &EcdsaKeyPair, token: &str) -> trc::Result<String> {

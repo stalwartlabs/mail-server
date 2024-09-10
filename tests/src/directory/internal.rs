@@ -21,7 +21,7 @@ use store::{
     BitmapKey, ValueKey,
 };
 
-use crate::directory::DirectoryTest;
+use crate::directory::{DirectoryTest, IntoTestPrincipal, TestPrincipal};
 
 #[tokio::test]
 async fn internal_directory() {
@@ -33,20 +33,20 @@ async fn internal_directory() {
 
         // A principal without name should fail
         assert_eq!(
-            store.create_account(Principal::default(), vec![]).await,
+            store.create_account(Principal::default()).await,
             Err(manage::err_missing(PrincipalField::Name))
         );
 
         // Basic account creation
         let john_id = store
             .create_account(
-                Principal {
+                TestPrincipal {
                     name: "john".to_string(),
                     description: Some("John Doe".to_string()),
                     secrets: vec!["secret".to_string(), "secret2".to_string()],
                     ..Default::default()
-                },
-                vec![],
+                }
+                .into(),
             )
             .await
             .unwrap();
@@ -55,11 +55,11 @@ async fn internal_directory() {
         assert_eq!(
             store
                 .create_account(
-                    Principal {
+                    TestPrincipal {
                         name: "john".to_string(),
                         ..Default::default()
-                    },
-                    vec![]
+                    }
+                    .into(),
                 )
                 .await,
             Err(manage::err_exists(PrincipalField::Name, "john".to_string()))
@@ -69,12 +69,12 @@ async fn internal_directory() {
         assert_eq!(
             store
                 .create_account(
-                    Principal {
+                    TestPrincipal {
                         name: "jane".to_string(),
                         emails: vec!["jane@example.org".to_string()],
                         ..Default::default()
-                    },
-                    vec![]
+                    }
+                    .into(),
                 )
                 .await,
             Err(manage::not_found("example.org".to_string()))
@@ -121,15 +121,15 @@ async fn internal_directory() {
         // Create an account with an email address
         let jane_id = store
             .create_account(
-                Principal {
+                TestPrincipal {
                     name: "jane".to_string(),
                     description: Some("Jane Doe".to_string()),
                     secrets: vec!["my_secret".to_string(), "my_secret2".to_string()],
                     emails: vec!["jane@example.org".to_string()],
                     quota: 123,
                     ..Default::default()
-                },
-                vec![],
+                }
+                .into(),
             )
             .await
             .unwrap();
@@ -151,8 +151,9 @@ async fn internal_directory() {
                     true
                 )
                 .await
-                .unwrap(),
-            Some(Principal {
+                .unwrap()
+                .map(|p| p.into_test()),
+            Some(TestPrincipal {
                 id: jane_id,
                 name: "jane".to_string(),
                 description: Some("Jane Doe".to_string()),
@@ -180,13 +181,13 @@ async fn internal_directory() {
         assert_eq!(
             store
                 .create_account(
-                    Principal {
+                    TestPrincipal {
                         name: "janeth".to_string(),
                         description: Some("Janeth Doe".to_string()),
                         emails: vec!["jane@example.org".to_string()],
                         ..Default::default()
-                    },
-                    vec![]
+                    }
+                    .into()
                 )
                 .await,
             Err(manage::err_exists(
@@ -198,13 +199,13 @@ async fn internal_directory() {
         // Create a mailing list
         let list_id = store
             .create_account(
-                Principal {
+                TestPrincipal {
                     name: "list".to_string(),
                     typ: Type::List,
                     emails: vec!["list@example.org".to_string()],
                     ..Default::default()
-                },
-                vec![],
+                }
+                .into(),
             )
             .await
             .unwrap();
@@ -235,8 +236,9 @@ async fn internal_directory() {
                 .query(QueryBy::Name("list"), true)
                 .await
                 .unwrap()
-                .unwrap(),
-            Principal {
+                .unwrap()
+                .into_test(),
+            TestPrincipal {
                 name: "list".to_string(),
                 id: list_id,
                 typ: Type::List,
@@ -260,25 +262,25 @@ async fn internal_directory() {
         // Create groups
         store
             .create_account(
-                Principal {
+                TestPrincipal {
                     name: "sales".to_string(),
                     description: Some("Sales Team".to_string()),
                     typ: Type::Group,
                     ..Default::default()
-                },
-                vec![],
+                }
+                .into(),
             )
             .await
             .unwrap();
         store
             .create_account(
-                Principal {
+                TestPrincipal {
                     name: "support".to_string(),
                     description: Some("Support Team".to_string()),
                     typ: Type::Group,
                     ..Default::default()
-                },
-                vec![],
+                }
+                .into(),
             )
             .await
             .unwrap();
@@ -313,8 +315,9 @@ async fn internal_directory() {
                 )
                 .await
                 .unwrap()
+                .into_test()
                 .into_sorted(),
-            Principal {
+            TestPrincipal {
                 id: john_id,
                 name: "john".to_string(),
                 description: Some("John Doe".to_string()),
@@ -367,8 +370,9 @@ async fn internal_directory() {
                 )
                 .await
                 .unwrap()
+                .into_test()
                 .into_sorted(),
-            Principal {
+            TestPrincipal {
                 id: john_id,
                 name: "john".to_string(),
                 description: Some("John Doe".to_string()),
@@ -398,10 +402,6 @@ async fn internal_directory() {
                             PrincipalValue::StringList(vec!["12345".to_string()])
                         ),
                         PrincipalUpdate::set(PrincipalField::Quota, PrincipalValue::Integer(1024)),
-                        PrincipalUpdate::set(
-                            PrincipalField::Type,
-                            PrincipalValue::String("superuser".to_string())
-                        ),
                         PrincipalUpdate::remove_item(
                             PrincipalField::Emails,
                             PrincipalValue::String("john@example.org".to_string()),
@@ -426,15 +426,16 @@ async fn internal_directory() {
                 )
                 .await
                 .unwrap()
+                .into_test()
                 .into_sorted(),
-            Principal {
+            TestPrincipal {
                 id: john_id,
                 name: "john.doe".to_string(),
                 description: Some("Johnny Doe".to_string()),
                 secrets: vec!["12345".to_string()],
                 emails: vec!["john.doe@example.org".to_string()],
                 quota: 1024,
-                typ: Type::Superuser,
+                typ: Type::Individual,
                 member_of: vec!["list".to_string(), "sales".to_string()],
             }
         );

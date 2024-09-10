@@ -69,7 +69,6 @@ async fn manage_queue() {
     // Enable logging
     crate::enable_logging();
 
-
     // Start remote test server
     let mut remote = TestServer::new("smtp_manage_queue_remote", REMOTE, true).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;

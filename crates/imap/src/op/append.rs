@@ -6,6 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
+use directory::Permission;
 use imap_proto::{
     protocol::{append::Arguments, select::HighestModSeq},
     receiver::Request,
@@ -25,6 +26,9 @@ use super::{ImapContext, ToModSeq};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_append(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapAppend)?;
+
         let op_start = Instant::now();
         let arguments = request.parse_append(self.version)?;
         let (data, selected_mailbox) = self.state.session_mailbox_state();

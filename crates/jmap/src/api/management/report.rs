@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use directory::Permission;
 use hyper::Method;
 use mail_auth::report::{
     tlsrpt::{FailureDetails, Policy, TlsReport},
@@ -19,6 +20,7 @@ use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
+    auth::AccessToken,
     JMAP,
 };
 
@@ -35,6 +37,7 @@ impl JMAP {
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         match (
             path.get(1).copied().unwrap_or_default(),
@@ -42,6 +45,9 @@ impl JMAP {
             req.method(),
         ) {
             (class @ ("dmarc" | "tls" | "arf"), None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::IncomingReportList)?;
+
                 let params = UrlParams::new(req.uri().query());
                 let filter = params.get("text");
                 let page: usize = params.parse::<usize>("page").unwrap_or_default();
@@ -154,6 +160,9 @@ impl JMAP {
                 .into_http_response())
             }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::IncomingReportGet)?;
+
                 if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
                     match &report_id {
                         ReportClass::Tls { .. } => match self
@@ -207,6 +216,9 @@ impl JMAP {
                 }
             }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::IncomingReportDelete)?;
+
                 if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
                     let mut batch = BatchBuilder::new();
                     batch.clear(ValueClass::Report(report_id));

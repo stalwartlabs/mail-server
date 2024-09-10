@@ -11,6 +11,7 @@ use crate::{
     spawn_op,
 };
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     protocol::delete::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
 };
@@ -21,6 +22,9 @@ use super::ImapContext;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_delete(&mut self, requests: Vec<Request<Command>>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapDelete)?;
+
         let data = self.state.session_data();
         let version = self.version;
 

@@ -19,7 +19,7 @@ use config::{
     storage::Storage,
     telemetry::Metrics,
 };
-use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy, Type};
+use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy};
 use expr::if_block::IfBlock;
 use listener::{
     blocked::{AllowedIps, BlockedIps},
@@ -227,7 +227,7 @@ impl Core {
         credentials: &Credentials<String>,
         remote_ip: IpAddr,
         return_member_of: bool,
-    ) -> trc::Result<Principal<u32>> {
+    ) -> trc::Result<Principal> {
         // First try to authenticate the user against the default directory
         let result = match directory
             .query(QueryBy::Credentials(credentials), return_member_of)
@@ -237,9 +237,9 @@ impl Core {
                 trc::event!(
                     Auth(trc::AuthEvent::Success),
                     AccountName = credentials.login().to_string(),
-                    AccountId = principal.id,
+                    AccountId = principal.id(),
                     SpanId = session_id,
-                    Type = principal.typ.as_str(),
+                    Type = principal.typ().as_str(),
                 );
 
                 return Ok(principal);
@@ -268,7 +268,6 @@ impl Core {
                         Auth(trc::AuthEvent::Success),
                         AccountName = username.clone(),
                         SpanId = session_id,
-                        Type = Type::Superuser.as_str(),
                     );
 
                     return Ok(Principal::fallback_admin(fallback_pass));
@@ -289,8 +288,8 @@ impl Core {
                             Auth(trc::AuthEvent::Success),
                             AccountName = username.to_string(),
                             SpanId = session_id,
-                            AccountId = principal.id,
-                            Type = principal.typ.as_str(),
+                            AccountId = principal.id(),
+                            Type = principal.typ().as_str(),
                         );
 
                         return Ok(principal);

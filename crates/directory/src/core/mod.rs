@@ -7,4 +7,5 @@
 pub mod cache;
 pub mod config;
 pub mod dispatch;
+pub mod principal;
 pub mod secret;

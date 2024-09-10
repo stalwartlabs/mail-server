@@ -7,6 +7,7 @@ resolver = "2"
 [dependencies]
 store = { path = "../store" }
 common = { path = "../common" }
+directory = { path = "../directory" }
 jmap = { path = "../jmap" }
 imap = { path = "../imap" }
 utils = { path = "../utils" }

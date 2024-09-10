@@ -1667,6 +1667,7 @@ dependencies = [
  "parking_lot",
  "password-hash",
  "pbkdf2",
+ "proc_macros",
  "pwhash",
  "regex",
  "rustls 0.23.12",
@@ -1963,7 +1964,7 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.77",
 ]
 
 [[package]]
@@ -4505,6 +4506,7 @@ name = "pop3"
 version = "0.9.4"
 dependencies = [
  "common",
+ "directory",
  "imap",
  "jmap",
  "jmap_proto",
@@ -4657,6 +4659,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e719e8df665df0d1c8fbfd238015744736151d4445ec0836b8e628aae103b77"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "proc_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.77",
 ]
 
 [[package]]

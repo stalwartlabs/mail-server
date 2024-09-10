@@ -85,7 +85,6 @@ async fn dane_verify() {
     // Enable logging
     crate::enable_logging();
 
-
     // Start test server
     let mut remote = TestServer::new("smtp_dane_remote", REMOTE, true).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;

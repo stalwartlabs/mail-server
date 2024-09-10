@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use directory::Permission;
 use hyper::Method;
 use serde_json::json;
 use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
+    auth::AccessToken,
     services::housekeeper::Event,
     JMAP,
 };
@@ -19,7 +21,11 @@ impl JMAP {
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
+        // Validate the access token
+        access_token.assert_has_permission(Permission::SettingsReload)?;
+
         match (path.get(1).copied(), req.method()) {
             (Some("lookup"), &Method::GET) => {
                 let result = self.core.reload_lookups().await?;
@@ -92,18 +98,27 @@ impl JMAP {
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         match (path.get(1).copied(), req.method()) {
-            (Some("spam-filter"), &Method::GET) => Ok(JsonResponse::new(json!({
-                "data":  self
-                .core
-                .storage
-                .config
-                .update_config_resource("spam-filter")
-                .await?,
-            }))
-            .into_http_response()),
+            (Some("spam-filter"), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::UpdateSpamFilter)?;
+
+                Ok(JsonResponse::new(json!({
+                    "data":  self
+                    .core
+                    .storage
+                    .config
+                    .update_config_resource("spam-filter")
+                    .await?,
+                }))
+                .into_http_response())
+            }
             (Some("webadmin"), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::UpdateWebadmin)?;
+
                 self.inner.webadmin.update_and_unpack(&self.core).await?;
 
                 Ok(JsonResponse::new(json!({

@@ -12,6 +12,7 @@ use common::{
     manager::webadmin::Resource,
     Core,
 };
+use directory::Permission;
 use http_body_util::{BodyExt, Full};
 use hyper::{
     body::{self, Bytes},
@@ -29,7 +30,7 @@ use jmap_proto::{
 };
 
 use crate::{
-    auth::{authenticate::HttpHeaders, oauth::OAuthMetadata},
+    auth::{authenticate::HttpHeaders, oauth::OAuthMetadata, AccessToken},
     blob::{DownloadResponse, UploadResponse},
     services::state,
     JmapInstance, JMAP,
@@ -81,7 +82,7 @@ impl JMAP {
 
                         let request = fetch_body(
                             &mut req,
-                            if !access_token.is_super_user() {
+                            if !access_token.has_permission(Permission::UnlimitedUploads) {
                                 self.core.jmap.upload_max_size
                             } else {
                                 0
@@ -142,7 +143,7 @@ impl JMAP {
                         {
                             return match fetch_body(
                                 &mut req,
-                                if !access_token.is_super_user() {
+                                if !access_token.has_permission(Permission::UnlimitedUploads) {
                                     self.core.jmap.upload_max_size
                                 } else {
                                     0
@@ -302,27 +303,29 @@ impl JMAP {
                             if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed))
                                 && self.core.is_enterprise_edition()
                             {
-                                if let Some((live_path, token)) = req
+                                if let Some((live_path, grant_type, token)) = req
                                     .uri()
                                     .path()
                                     .strip_prefix("/api/telemetry/")
                                     .and_then(|p| {
                                         p.strip_prefix("traces/live/")
-                                            .map(|t| ("traces", t))
+                                            .map(|t| ("traces", "live_tracing", t))
                                             .or_else(|| {
                                                 p.strip_prefix("metrics/live/")
-                                                    .map(|t| ("metrics", t))
+                                                    .map(|t| ("metrics", "live_metrics", t))
                                             })
                                     })
                                 {
                                     let (account_id, _, _) =
-                                        self.validate_access_token("live_telemetry", token).await?;
+                                        self.validate_access_token(grant_type, token).await?;
 
                                     return self
                                         .handle_telemetry_api_request(
                                             &req,
                                             vec!["", live_path, "live"],
-                                            account_id,
+                                            &AccessToken::from_id(account_id)
+                                                .with_permission(Permission::MetricsLive)
+                                                .with_permission(Permission::TracingLive),
                                         )
                                         .await;
                                 }
@@ -893,7 +896,13 @@ impl ToRequestError for trc::Error {
                 trc::AuthEvent::TooManyAttempts => RequestError::too_many_auth_attempts(),
                 _ => RequestError::unauthorized(),
             },
-            trc::EventType::Security(_) => RequestError::too_many_auth_attempts(),
+            trc::EventType::Security(cause) => match cause {
+                trc::SecurityEvent::AuthenticationBan
+                | trc::SecurityEvent::BruteForceBan
+                | trc::SecurityEvent::LoiterBan
+                | trc::SecurityEvent::IpBlocked => RequestError::too_many_auth_attempts(),
+                trc::SecurityEvent::Unauthorized => RequestError::forbidden(),
+            },
             trc::EventType::Resource(cause) => match cause {
                 trc::ResourceEvent::NotFound => RequestError::not_found(),
                 trc::ResourceEvent::BadParameters => RequestError::blank(
