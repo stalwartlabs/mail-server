@@ -3,13 +3,14 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
-use etcd_client::{Client, Error as EtcdError};
+use etcd_client::{KvClient, Error as EtcdError};
 
 pub mod main;
+pub mod read;
 
 #[allow(dead_code)]
 pub struct EtcdStore {
-    client: Client,
+    client: KvClient,
 }
 
 #[inline(always)]

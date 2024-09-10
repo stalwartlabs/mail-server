@@ -221,7 +221,7 @@ impl Store {
                 #[cfg(feature = "rocks")]
                 Self::RocksDb(store) => store.write(batch).await,
                 #[cfg(feature = "etcd")]
-                Self::Etcd(store) => store.write(batch).await,
+                Self::Etcd(store) => todo!(), // store.write(batch).await,
                 #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
                 Self::SQLReadReplica(store) => store.write(batch).await,
                 Self::None => Err(trc::StoreEvent::NotConfigured.into()),
@@ -270,7 +270,7 @@ impl Store {
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.write(batch).await,
             #[cfg(feature = "etcd")]
-            Self::Etcd(store) => store.write(batch).await,
+            Self::Etcd(store) => todo!(), // store.write(batch).await,
             #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.write(batch).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
@@ -328,7 +328,7 @@ impl Store {
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.purge_store().await,
             #[cfg(feature = "etcd")]
-            Self::Etcd(store) => store.purge_store().await,
+            Self::Etcd(store) => todo!(), // store.purge_store().await,
             #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.purge_store().await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
@@ -349,7 +349,7 @@ impl Store {
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_range(from, to).await,
             #[cfg(feature = "etcd")]
-            Self::Etcd(store) => store.delete_range(from, to).await,
+            Self::Etcd(store) => todo!(), // store.delete_range(from, to).await,
             #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.delete_range(from, to).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
@@ -524,7 +524,7 @@ impl Store {
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.get_blob(key, range).await,
             #[cfg(feature = "etcd")]
-            Self::Etcd(store) => unimplemented!(),
+            Self::Etcd(_) => unimplemented!(),
             #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.get_blob(key, range).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
@@ -545,7 +545,7 @@ impl Store {
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.put_blob(key, data).await,
             #[cfg(feature = "etcd")]
-            Self::Etcd(store) => unimplemented!(),
+            Self::Etcd(_) => unimplemented!(),
             #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.put_blob(key, data).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
@@ -566,7 +566,7 @@ impl Store {
             #[cfg(feature = "rocks")]
             Self::RocksDb(store) => store.delete_blob(key).await,
             #[cfg(feature = "etcd")]
-            Self::Etcd(store) => unimplemented!(),
+            Self::Etcd(_) => unimplemented!(),
             #[cfg(all(feature = "enterprise", any(feature = "postgres", feature = "mysql")))]
             Self::SQLReadReplica(store) => store.delete_blob(key).await,
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
