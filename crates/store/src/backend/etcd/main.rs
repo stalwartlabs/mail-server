@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use etcd_client::{Client, KvClient, Error};
+use etcd_client::{Client};
 use utils::config::{utils::AsKey, Config};
 use super::{into_error, EtcdStore};
-use std::ops::DerefMut;
 
 impl EtcdStore {
     pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
