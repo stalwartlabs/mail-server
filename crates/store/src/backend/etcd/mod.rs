@@ -7,6 +7,7 @@ use etcd_client::{KvClient, Error as EtcdError};
 
 pub mod main;
 pub mod read;
+pub mod write;
 
 #[allow(dead_code)]
 pub struct EtcdStore {
