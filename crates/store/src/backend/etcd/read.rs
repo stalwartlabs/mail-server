@@ -10,8 +10,8 @@ use super::{into_error, EtcdStore};
 
 use crate::{
     backend::deserialize_i64_le,
-    write::{key::DeserializeBigEndian, BitmapClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE
+    write::{BitmapClass, ValueClass},
+    BitmapKey, Deserialize, IterateParams, Key, ValueKey
 };
 
 impl EtcdStore {
@@ -19,10 +19,11 @@ impl EtcdStore {
     where
         U: Deserialize + 'static,
     {
-        let key = key.serialize(WITH_SUBSPACE);
+        let key_subspace: u8 = key.subspace();
+        let key = key.serialize(0);
 
-        // Clone clients tey said: https://github.com/etcdv3/etcd-client/issues/17
-        let mut client = self.client.clone();
+        let mut client = self.get_prefix_client(key_subspace);
+
         let resp = client.get(key, None)
             .await
             .map_err(into_error)?;
@@ -53,10 +54,11 @@ impl EtcdStore {
         key: impl Into<ValueKey<ValueClass<u32>>> + Sync + Send,
     ) -> trc::Result<i64> {
 
-        let key = key.into().serialize(WITH_SUBSPACE);
+        let key = key.into();
+        let key_subspace: u8 = key.subspace();
+        let key: Vec<u8> = key.serialize(0);
 
-        // Clone clients tey said: https://github.com/etcdv3/etcd-client/issues/17
-        let mut client = self.client.clone();
+        let mut client = self.get_prefix_client(key_subspace);
         let resp = client.get(key.clone(), None)
             .await
             .map_err(into_error)?;
