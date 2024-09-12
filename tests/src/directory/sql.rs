@@ -113,7 +113,7 @@ async fn sql_directory() {
                 .unwrap()
                 .into_test(),
             TestPrincipal {
-                id: base_store.get_account_id("john").await.unwrap().unwrap(),
+                id: base_store.get_principal_id("john").await.unwrap().unwrap(),
                 name: "john".to_string(),
                 description: "John Doe".to_string().into(),
                 secrets: vec!["12345".to_string()],
@@ -145,7 +145,7 @@ async fn sql_directory() {
                 .unwrap()
                 .into_test(),
             TestPrincipal {
-                id: base_store.get_account_id("bill").await.unwrap().unwrap(),
+                id: base_store.get_principal_id("bill").await.unwrap().unwrap(),
                 name: "bill".to_string(),
                 description: "Bill Foobar".to_string().into(),
                 secrets: vec![
@@ -178,7 +178,7 @@ async fn sql_directory() {
                 .unwrap()
                 .into_test(),
             TestPrincipal {
-                id: base_store.get_account_id("jane").await.unwrap().unwrap(),
+                id: base_store.get_principal_id("jane").await.unwrap().unwrap(),
                 name: "jane".to_string(),
                 description: "Jane Doe".to_string().into(),
                 typ: Type::Individual,
@@ -202,7 +202,7 @@ async fn sql_directory() {
                 .unwrap()
                 .into_test(),
             TestPrincipal {
-                id: base_store.get_account_id("sales").await.unwrap().unwrap(),
+                id: base_store.get_principal_id("sales").await.unwrap().unwrap(),
                 name: "sales".to_string(),
                 description: "Sales Team".to_string().into(),
                 typ: Type::Group,

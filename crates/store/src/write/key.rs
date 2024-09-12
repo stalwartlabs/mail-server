@@ -304,7 +304,6 @@ impl<T: ResolveId> ValueClass<T> {
                 DirectoryClass::Principal(uid) => serializer
                     .write(2u8)
                     .write_leb128(uid.resolve_id(assigned_ids)),
-                DirectoryClass::Domain(name) => serializer.write(3u8).write(name.as_slice()),
                 DirectoryClass::UsedQuota(uid) => serializer.write(4u8).write_leb128(*uid),
                 DirectoryClass::MemberOf {
                     principal_id,
@@ -533,9 +532,7 @@ impl<T> ValueClass<T> {
             ValueClass::Lookup(LookupClass::Counter(v) | LookupClass::Key(v))
             | ValueClass::Config(v) => v.len(),
             ValueClass::Directory(d) => match d {
-                DirectoryClass::NameToId(v)
-                | DirectoryClass::EmailToId(v)
-                | DirectoryClass::Domain(v) => v.len(),
+                DirectoryClass::NameToId(v) | DirectoryClass::EmailToId(v) => v.len(),
                 DirectoryClass::Principal(_) | DirectoryClass::UsedQuota(_) => U32_LEN,
                 DirectoryClass::Members { .. } | DirectoryClass::MemberOf { .. } => U32_LEN * 2,
             },

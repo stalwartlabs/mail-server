@@ -5,7 +5,7 @@
  */
 
 pub mod dkim;
-pub mod domain;
+pub mod dns;
 #[cfg(feature = "enterprise")]
 pub mod enterprise;
 pub mod log;
@@ -19,6 +19,7 @@ pub mod stores;
 
 use std::{borrow::Cow, str::FromStr, sync::Arc};
 
+use common::auth::AccessToken;
 use directory::{backend::internal::manage, Permission};
 use hyper::Method;
 use mail_parser::DateTime;
@@ -26,7 +27,7 @@ use serde::Serialize;
 use store::write::now;
 
 use super::{http::HttpSessionData, HttpRequest, HttpResponse};
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 #[derive(Serialize)]
 #[serde(tag = "error")]
@@ -62,7 +63,7 @@ impl JMAP {
                 self.handle_manage_principal(req, path, body, &access_token)
                     .await
             }
-            "domain" => self.handle_manage_domain(req, path, &access_token).await,
+            "dns" => self.handle_manage_dns(req, path, &access_token).await,
             "store" => {
                 self.handle_manage_store(req, path, body, session, &access_token)
                     .await

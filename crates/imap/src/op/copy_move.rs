@@ -243,6 +243,7 @@ impl<T: SessionStream> SessionData<T> {
             let dest_account_id = dest_mailbox.account_id;
             let dest_quota = self
                 .jmap
+                .core
                 .get_cached_access_token(dest_account_id)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?

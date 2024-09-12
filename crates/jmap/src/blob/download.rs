@@ -6,6 +6,7 @@
 
 use std::ops::Range;
 
+use common::auth::AccessToken;
 use jmap_proto::types::{
     acl::Acl,
     blob::{BlobId, BlobSection},
@@ -19,7 +20,7 @@ use store::BlobClass;
 use trc::AddContext;
 use utils::BlobHash;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 impl JMAP {
     #[allow(clippy::blocks_in_conditions)]

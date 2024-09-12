@@ -6,9 +6,12 @@
 
 use std::{net::IpAddr, sync::Arc};
 
-use common::listener::{limiter::InFlight, ServerInstance, SessionStream};
+use common::{
+    auth::AccessToken,
+    listener::{limiter::InFlight, ServerInstance, SessionStream},
+};
 use imap::core::{ImapInstance, Inner};
-use jmap::{auth::AccessToken, JMAP};
+use jmap::JMAP;
 use mailbox::Mailbox;
 use protocol::request::Parser;
 

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::{
         query::Filter,
@@ -15,7 +16,7 @@ use mail_parser::{decoders::html::html_to_text, GetHeader, HeaderName, PartType}
 use nlp::language::{search_snippet::generate_snippet, stemmer::Stemmer, Language};
 use store::{backend::MAX_TOKEN_LENGTH, write::Bincode};
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 use super::metadata::{MessageMetadata, MetadataPartType};
 

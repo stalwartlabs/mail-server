@@ -7,19 +7,20 @@
 pub mod lookup;
 pub mod manage;
 
-use std::{fmt::Display, slice::Iter, str::FromStr};
+use std::{fmt::Display, slice::Iter};
 
 use ahash::AHashMap;
 use store::{write::key::KeySerializer, Deserialize, Serialize, U32_LEN};
 use utils::codec::leb128::Leb128Iterator;
 
-use crate::{Principal, Type};
+use crate::{Principal, Type, ROLE_ADMIN, ROLE_USER};
 
 const INT_MARKER: u8 = 1 << 7;
 
-pub(super) struct PrincipalIdType {
-    pub account_id: u32,
+pub struct PrincipalInfo {
+    pub id: u32,
     pub typ: Type,
+    pub tenant: Option<u32>,
 }
 
 impl Serialize for Principal {
@@ -90,20 +91,36 @@ impl Deserialize for Principal {
     }
 }
 
-impl Serialize for PrincipalIdType {
-    fn serialize(self) -> Vec<u8> {
-        KeySerializer::new(U32_LEN + 1)
-            .write_leb128(self.account_id)
-            .write(self.typ as u8)
-            .finalize()
+impl PrincipalInfo {
+    pub fn has_tenant_access(&self, tenant_id: Option<u32>) -> bool {
+        tenant_id.map_or(true, |tenant_id| {
+            self.tenant.map_or(false, |t| tenant_id == t)
+        })
     }
 }
 
-impl Deserialize for PrincipalIdType {
+impl Serialize for PrincipalInfo {
+    fn serialize(self) -> Vec<u8> {
+        if let Some(tenant) = self.tenant {
+            KeySerializer::new((U32_LEN * 2) + 1)
+                .write_leb128(self.id)
+                .write(self.typ as u8)
+                .write_leb128(tenant)
+                .finalize()
+        } else {
+            KeySerializer::new(U32_LEN + 1)
+                .write_leb128(self.id)
+                .write(self.typ as u8)
+                .finalize()
+        }
+    }
+}
+
+impl Deserialize for PrincipalInfo {
     fn deserialize(bytes_: &[u8]) -> trc::Result<Self> {
         let mut bytes = bytes_.iter();
-        Ok(PrincipalIdType {
-            account_id: bytes.next_leb128().ok_or_else(|| {
+        Ok(PrincipalInfo {
+            id: bytes.next_leb128().ok_or_else(|| {
                 trc::StoreEvent::DataCorruption
                     .caused_by(trc::location!())
                     .ctx(trc::Key::Value, bytes_)
@@ -113,13 +130,18 @@ impl Deserialize for PrincipalIdType {
                     .caused_by(trc::location!())
                     .ctx(trc::Key::Value, bytes_)
             })?),
+            tenant: bytes.next_leb128(),
         })
     }
 }
 
-impl PrincipalIdType {
-    pub fn new(account_id: u32, typ: Type) -> Self {
-        Self { account_id, typ }
+impl PrincipalInfo {
+    pub fn new(principal_id: u32, typ: Type, tenant: Option<u32>) -> Self {
+        Self {
+            id: principal_id,
+            typ,
+            tenant,
+        }
     }
 }
 
@@ -151,12 +173,12 @@ fn deserialize(bytes: &[u8]) -> Option<Principal> {
                 }
             }
 
-            if type_id != 4 {
-                principal
-            } else {
-                principal.into_superuser()
-            }
-            .into()
+            principal
+                .with_field(
+                    PrincipalField::Roles,
+                    if type_id != 4 { ROLE_USER } else { ROLE_ADMIN },
+                )
+                .into()
         }
         2 => {
             // Version 2
@@ -206,23 +228,22 @@ fn deserialize(bytes: &[u8]) -> Option<Principal> {
 #[derive(
     Debug, Clone, Copy, PartialEq, Hash, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
+#[serde(rename_all = "camelCase")]
 pub enum PrincipalField {
-    #[serde(rename = "name")]
     Name,
-    #[serde(rename = "type")]
     Type,
-    #[serde(rename = "quota")]
     Quota,
-    #[serde(rename = "description")]
+    UsedQuota,
     Description,
-    #[serde(rename = "secrets")]
     Secrets,
-    #[serde(rename = "emails")]
     Emails,
-    #[serde(rename = "memberOf")]
     MemberOf,
-    #[serde(rename = "members")]
     Members,
+    Tenant,
+    Roles,
+    Lists,
+    EnabledPermissions,
+    DisabledPermissions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -294,6 +315,12 @@ impl PrincipalField {
             PrincipalField::Emails => 5,
             PrincipalField::MemberOf => 6,
             PrincipalField::Members => 7,
+            PrincipalField::Tenant => 8,
+            PrincipalField::Roles => 9,
+            PrincipalField::Lists => 10,
+            PrincipalField::EnabledPermissions => 11,
+            PrincipalField::DisabledPermissions => 12,
+            PrincipalField::UsedQuota => 13,
         }
     }
 
@@ -307,6 +334,12 @@ impl PrincipalField {
             5 => Some(PrincipalField::Emails),
             6 => Some(PrincipalField::MemberOf),
             7 => Some(PrincipalField::Members),
+            8 => Some(PrincipalField::Tenant),
+            9 => Some(PrincipalField::Roles),
+            10 => Some(PrincipalField::Lists),
+            11 => Some(PrincipalField::EnabledPermissions),
+            12 => Some(PrincipalField::DisabledPermissions),
+            13 => Some(PrincipalField::UsedQuota),
             _ => None,
         }
     }
@@ -316,11 +349,37 @@ impl PrincipalField {
             PrincipalField::Name => "name",
             PrincipalField::Type => "type",
             PrincipalField::Quota => "quota",
+            PrincipalField::UsedQuota => "usedQuota",
             PrincipalField::Description => "description",
             PrincipalField::Secrets => "secrets",
             PrincipalField::Emails => "emails",
             PrincipalField::MemberOf => "memberOf",
             PrincipalField::Members => "members",
+            PrincipalField::Tenant => "tenant",
+            PrincipalField::Roles => "roles",
+            PrincipalField::Lists => "lists",
+            PrincipalField::EnabledPermissions => "enabledPermissions",
+            PrincipalField::DisabledPermissions => "disabledPermissions",
+        }
+    }
+
+    pub fn try_parse(s: &str) -> Option<Self> {
+        match s {
+            "name" => Some(PrincipalField::Name),
+            "type" => Some(PrincipalField::Type),
+            "quota" => Some(PrincipalField::Quota),
+            "usedQuota" => Some(PrincipalField::UsedQuota),
+            "description" => Some(PrincipalField::Description),
+            "secrets" => Some(PrincipalField::Secrets),
+            "emails" => Some(PrincipalField::Emails),
+            "memberOf" => Some(PrincipalField::MemberOf),
+            "members" => Some(PrincipalField::Members),
+            "tenant" => Some(PrincipalField::Tenant),
+            "roles" => Some(PrincipalField::Roles),
+            "lists" => Some(PrincipalField::Lists),
+            "enabledPermissions" => Some(PrincipalField::EnabledPermissions),
+            "disabledPermissions" => Some(PrincipalField::DisabledPermissions),
+            _ => None,
         }
     }
 }
@@ -332,42 +391,6 @@ fn deserialize_string(bytes: &mut Iter<'_, u8>) -> Option<String> {
         string.push(*bytes.next()?);
     }
     String::from_utf8(string).ok()
-}
-
-impl Type {
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "individual" => Some(Type::Individual),
-            "group" => Some(Type::Group),
-            "resource" => Some(Type::Resource),
-            "location" => Some(Type::Location),
-            "list" => Some(Type::List),
-            "tenant" => Some(Type::Tenant),
-            "superuser" => Some(Type::Individual), // legacy
-            _ => None,
-        }
-    }
-
-    pub fn from_u8(value: u8) -> Self {
-        match value {
-            0 => Type::Individual,
-            1 => Type::Group,
-            2 => Type::Resource,
-            3 => Type::Location,
-            4 => Type::Individual, // legacy
-            5 => Type::List,
-            7 => Type::Tenant,
-            _ => Type::Other,
-        }
-    }
-}
-
-impl FromStr for Type {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Type::parse(s).ok_or(())
-    }
 }
 
 pub trait SpecialSecrets {

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     error::set::SetError,
     method::{
@@ -41,7 +42,7 @@ use store::{
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
-use crate::{api::http::HttpSessionData, auth::AccessToken, mailbox::UidMailbox, JMAP};
+use crate::{api::http::HttpSessionData, mailbox::UidMailbox, JMAP};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},

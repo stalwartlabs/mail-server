@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::method::{
     changes::{self, ChangesRequest},
     query::{self, QueryRequest},
     query_changes::{AddedItem, QueryChangesRequest, QueryChangesResponse},
 };
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 impl JMAP {
     pub async fn query_changes(

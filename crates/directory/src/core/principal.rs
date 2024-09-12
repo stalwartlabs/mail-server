@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, str::FromStr};
 
+use serde::{ser::SerializeMap, Serializer};
 use store::U64_LEN;
 
 use crate::{
     backend::internal::{PrincipalField, PrincipalValue},
-    Principal, Type,
+    Principal, Type, ROLE_ADMIN,
 };
 
 impl Principal {
@@ -40,6 +41,10 @@ impl Principal {
 
     pub fn quota(&self) -> u64 {
         self.get_int(PrincipalField::Quota).unwrap_or_default()
+    }
+
+    pub fn tenant(&self) -> Option<u32> {
+        self.get_int(PrincipalField::Tenant).map(|v| v as u32)
     }
 
     pub fn description(&self) -> Option<&str> {
@@ -256,6 +261,10 @@ impl Principal {
         })
     }
 
+    pub fn find_str(&self, value: &str) -> bool {
+        self.fields.values().any(|v| v.find_str(value))
+    }
+
     pub fn field_len(&self, key: PrincipalField) -> usize {
         self.fields.get(&key).map_or(0, |v| match v {
             PrincipalValue::String(_) => 1,
@@ -324,12 +333,7 @@ impl Principal {
             PrincipalField::Secrets,
             PrincipalValue::String(fallback_pass.into()),
         )
-        .into_superuser()
-    }
-
-    pub fn into_superuser(mut self) -> Self {
-        let todo = "add role";
-        self
+        .with_field(PrincipalField::Roles, ROLE_ADMIN)
     }
 }
 
@@ -419,6 +423,14 @@ impl PrincipalValue {
             PrincipalValue::IntegerList(l) => l.len() * U64_LEN,
         }
     }
+
+    pub fn find_str(&self, value: &str) -> bool {
+        match self {
+            PrincipalValue::String(s) => s.to_lowercase().contains(value),
+            PrincipalValue::StringList(l) => l.iter().any(|s| s.to_lowercase().contains(value)),
+            _ => false,
+        }
+    }
 }
 
 impl From<u64> for PrincipalValue {
@@ -473,6 +485,8 @@ impl Type {
             Self::Other => "other",
             Self::List => "list",
             Self::Tenant => "tenant",
+            Self::Role => "role",
+            Self::Domain => "domain",
         }
     }
 
@@ -485,6 +499,143 @@ impl Type {
             Self::Tenant => "Tenant",
             Self::List => "List",
             Self::Other => "Other",
+            Self::Role => "Role",
+            Self::Domain => "Domain",
         }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "individual" => Some(Type::Individual),
+            "group" => Some(Type::Group),
+            "resource" => Some(Type::Resource),
+            "location" => Some(Type::Location),
+            "list" => Some(Type::List),
+            "tenant" => Some(Type::Tenant),
+            "superuser" => Some(Type::Individual), // legacy
+            "role" => Some(Type::Role),
+            "domain" => Some(Type::Domain),
+            _ => None,
+        }
+    }
+
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            0 => Type::Individual,
+            1 => Type::Group,
+            2 => Type::Resource,
+            3 => Type::Location,
+            4 => Type::Individual, // legacy
+            5 => Type::List,
+            6 => Type::Other,
+            7 => Type::Domain,
+            8 => Type::Tenant,
+            9 => Type::Role,
+            _ => Type::Other,
+        }
+    }
+}
+
+impl FromStr for Type {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Type::parse(s).ok_or(())
+    }
+}
+
+impl serde::Serialize for Principal {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(None)?;
+
+        map.serialize_entry("id", &self.id)?;
+        map.serialize_entry("type", &self.typ.to_jmap())?;
+
+        for (key, value) in &self.fields {
+            match value {
+                PrincipalValue::String(v) => map.serialize_entry(key.as_str(), v)?,
+                PrincipalValue::StringList(v) => map.serialize_entry(key.as_str(), v)?,
+                PrincipalValue::Integer(v) => map.serialize_entry(key.as_str(), v)?,
+                PrincipalValue::IntegerList(v) => map.serialize_entry(key.as_str(), v)?,
+            };
+        }
+
+        map.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Principal {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct PrincipalVisitor;
+
+        // Deserialize the principal
+        impl<'de> serde::de::Visitor<'de> for PrincipalVisitor {
+            type Value = Principal;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a valid principal")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut principal = Principal::default();
+
+                while let Some(key) = map.next_key::<&str>()? {
+                    let key = PrincipalField::try_parse(key).ok_or_else(|| {
+                        serde::de::Error::custom(format!("invalid principal field: {}", key))
+                    })?;
+                    let value = match key {
+                        PrincipalField::Name => PrincipalValue::String(map.next_value()?),
+                        PrincipalField::Description | PrincipalField::Tenant => {
+                            if let Some(v) = map.next_value::<Option<String>>()? {
+                                PrincipalValue::String(v)
+                            } else {
+                                continue;
+                            }
+                        }
+
+                        PrincipalField::Type => {
+                            principal.typ = Type::parse(map.next_value()?).ok_or_else(|| {
+                                serde::de::Error::custom("invalid principal type")
+                            })?;
+                            continue;
+                        }
+                        PrincipalField::Quota => PrincipalValue::Integer(
+                            map.next_value::<Option<u64>>()?.unwrap_or_default(),
+                        ),
+
+                        PrincipalField::Secrets
+                        | PrincipalField::Emails
+                        | PrincipalField::MemberOf
+                        | PrincipalField::Members
+                        | PrincipalField::Roles
+                        | PrincipalField::Lists
+                        | PrincipalField::EnabledPermissions
+                        | PrincipalField::DisabledPermissions => {
+                            PrincipalValue::StringList(map.next_value()?)
+                        }
+                        PrincipalField::UsedQuota => {
+                            // consume and ignore
+                            let _ = map.next_value::<Option<u64>>()?;
+                            continue;
+                        }
+                    };
+
+                    principal.set(key, value);
+                }
+
+                Ok(principal)
+            }
+        }
+
+        deserializer.deserialize_map(PrincipalVisitor)
     }
 }

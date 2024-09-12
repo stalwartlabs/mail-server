@@ -10,7 +10,7 @@ use trc::AddContext;
 
 use crate::{
     backend::internal::{manage::ManageDirectory, PrincipalField, PrincipalValue},
-    Principal, QueryBy, Type,
+    Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
 };
 
 use super::{SqlDirectory, SqlMappings};
@@ -37,7 +37,7 @@ impl SqlDirectory {
             QueryBy::Id(uid) => {
                 if let Some(username) = self
                     .data_store
-                    .get_account_name(uid)
+                    .get_principal_name(uid)
                     .await
                     .caused_by(trc::location!())?
                 {
@@ -98,7 +98,7 @@ impl SqlDirectory {
         } else {
             principal.id = self
                 .data_store
-                .get_or_create_account_id(&account_name)
+                .get_or_create_principal_id(&account_name, Type::Individual)
                 .await
                 .caused_by(trc::location!())?;
         }
@@ -117,7 +117,7 @@ impl SqlDirectory {
                     principal.append_int(
                         PrincipalField::MemberOf,
                         self.data_store
-                            .get_or_create_account_id(account_id)
+                            .get_or_create_principal_id(account_id, Type::Group)
                             .await
                             .caused_by(trc::location!())?,
                     );
@@ -155,7 +155,7 @@ impl SqlDirectory {
             if let Some(Value::Text(name)) = row.values.first() {
                 ids.push(
                     self.data_store
-                        .get_or_create_account_id(name)
+                        .get_or_create_principal_id(name, Type::Individual)
                         .await
                         .caused_by(trc::location!())?,
                 );
@@ -208,6 +208,7 @@ impl SqlDirectory {
 impl SqlMappings {
     pub fn row_to_principal(&self, rows: NamedRows) -> trc::Result<Principal> {
         let mut principal = Principal::default();
+        let mut role = ROLE_USER;
 
         if let Some(row) = rows.rows.into_iter().next() {
             for (name, value) in rows.names.into_iter().zip(row.values) {
@@ -221,11 +222,13 @@ impl SqlMappings {
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_type) {
                     match value.to_str().as_ref() {
-                        "individual" | "person" | "user" => principal.typ = Type::Individual,
+                        "individual" | "person" | "user" => {
+                            principal.typ = Type::Individual;
+                        }
                         "group" => principal.typ = Type::Group,
                         "admin" | "superuser" | "administrator" => {
                             principal.typ = Type::Individual;
-                            principal = principal.into_superuser();
+                            role = ROLE_ADMIN;
                         }
                         _ => (),
                     }
@@ -241,6 +244,6 @@ impl SqlMappings {
             }
         }
 
-        Ok(principal)
+        Ok(principal.with_field(PrincipalField::Roles, role))
     }
 }

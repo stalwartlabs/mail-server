@@ -5,7 +5,7 @@
  */
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use common::manager::webadmin::Resource;
+use common::{auth::AccessToken, manager::webadmin::Resource};
 use directory::{
     backend::internal::manage::{self, ManageDirectory},
     Permission,
@@ -19,7 +19,6 @@ use crate::{
         http::{HttpSessionData, ToHttpResponse},
         HttpRequest, HttpResponse, JsonResponse,
     },
-    auth::AccessToken,
     services::housekeeper::{Event, PurgeType},
     JMAP,
 };
@@ -128,7 +127,7 @@ impl JMAP {
                     self.core
                         .storage
                         .data
-                        .get_account_id(decode_path_element(id).as_ref())
+                        .get_principal_id(decode_path_element(id).as_ref())
                         .await?
                         .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?
                         .into()

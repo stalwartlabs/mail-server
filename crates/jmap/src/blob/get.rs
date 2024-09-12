@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::{
         get::{GetRequest, GetResponse},
@@ -25,7 +26,7 @@ use sha2::{Sha256, Sha512};
 use store::BlobClass;
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, mailbox::UidMailbox, JMAP};
+use crate::{mailbox::UidMailbox, JMAP};
 
 impl JMAP {
     pub async fn blob_get(

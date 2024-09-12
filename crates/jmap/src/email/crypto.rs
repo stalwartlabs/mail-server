@@ -8,10 +8,10 @@ use std::{borrow::Cow, collections::BTreeSet, fmt::Display, io::Cursor, sync::Ar
 
 use crate::{
     api::{http::ToHttpResponse, HttpResponse, JsonResponse},
-    auth::AccessToken,
     JMAP,
 };
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
+use common::auth::AccessToken;
 use directory::backend::internal::manage;
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::{encoders::base64::base64_encode_mime, mime::make_boundary};

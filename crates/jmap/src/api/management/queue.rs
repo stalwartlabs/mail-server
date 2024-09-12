@@ -5,6 +5,7 @@
  */
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use common::auth::AccessToken;
 use directory::Permission;
 use hyper::Method;
 use mail_auth::{
@@ -24,7 +25,6 @@ use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::AccessToken,
     JMAP,
 };
 

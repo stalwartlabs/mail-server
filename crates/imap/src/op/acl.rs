@@ -6,7 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::listener::SessionStream;
+use common::{auth::AccessToken, listener::SessionStream};
 use directory::{backend::internal::PrincipalField, Permission, QueryBy};
 use imap_proto::{
     protocol::acl::{
@@ -16,10 +16,7 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
-use jmap::{
-    auth::{acl::EffectiveAcl, AccessToken},
-    mailbox::set::SCHEMA,
-};
+use jmap::{auth::acl::EffectiveAcl, mailbox::set::SCHEMA};
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
@@ -368,7 +365,11 @@ impl<T: SessionStream> Session<T> {
             }
 
             // Invalidate ACLs
-            data.jmap.inner.access_tokens.remove(&acl_account_id);
+            data.jmap
+                .core
+                .security
+                .access_tokens
+                .remove(&acl_account_id);
 
             trc::event!(
                 Imap(trc::ImapEvent::SetAcl),

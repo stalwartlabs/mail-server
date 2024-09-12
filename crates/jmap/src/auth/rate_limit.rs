@@ -12,7 +12,7 @@ use trc::AddContext;
 
 use crate::JMAP;
 
-use super::AccessToken;
+use common::auth::AccessToken;
 
 pub struct ConcurrencyLimiters {
     pub concurrent_requests: ConcurrencyLimiter,

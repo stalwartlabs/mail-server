@@ -6,6 +6,7 @@
 
 use std::{borrow::Cow, collections::HashMap, slice::IterMut};
 
+use common::auth::AccessToken;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -40,7 +41,7 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{api::http::HttpSessionData, auth::AccessToken, mailbox::UidMailbox, JMAP};
+use crate::{api::http::HttpSessionData, mailbox::UidMailbox, JMAP};
 
 use super::{
     headers::{BuildHeader, ValueToHeader},

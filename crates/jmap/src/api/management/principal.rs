@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use common::auth::AccessToken;
 use directory::{
     backend::internal::{
         lookup::DirectoryStore,
@@ -17,41 +18,15 @@ use directory::{
 
 use hyper::{header, Method};
 use serde_json::json;
+use trc::AddContext;
 use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::AccessToken,
     JMAP,
 };
 
 use super::decode_path_element;
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct PrincipalPayload {
-    #[serde(default)]
-    pub id: u32,
-    #[serde(rename = "type")]
-    pub typ: Type,
-    #[serde(default)]
-    pub quota: u64,
-    #[serde(rename = "usedQuota")]
-    #[serde(default)]
-    pub used_quota: u64,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub emails: Vec<String>,
-    #[serde(default)]
-    pub secrets: Vec<String>,
-    #[serde(rename = "memberOf")]
-    #[serde(default)]
-    pub member_of: Vec<String>,
-    #[serde(default)]
-    pub members: Vec<String>,
-    #[serde(default)]
-    pub description: Option<String>,
-}
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
@@ -82,36 +57,62 @@ impl JMAP {
     ) -> trc::Result<HttpResponse> {
         match (path.get(1), req.method()) {
             (None, &Method::POST) => {
-                // Validate the access token
-                access_token.assert_has_permission(Permission::PrincipalCreate)?;
+                let todo = "increment role list version + implement gossip";
 
-                // Make sure the current directory supports updates
-                self.assert_supported_directory()?;
-
-                // Create principal
+                // Parse principal
                 let principal =
-                    serde_json::from_slice::<PrincipalPayload>(body.as_deref().unwrap_or_default())
+                    serde_json::from_slice::<Principal>(body.as_deref().unwrap_or_default())
                         .map_err(|err| {
                             trc::EventType::Resource(trc::ResourceEvent::BadParameters)
                                 .from_json_error(err)
                         })?;
 
-                let principal = Principal::new(principal.id, principal.typ)
-                    .with_field(PrincipalField::Name, principal.name)
-                    .with_field(PrincipalField::Secrets, principal.secrets)
-                    .with_field(PrincipalField::Quota, principal.quota)
-                    .with_field(PrincipalField::Emails, principal.emails)
-                    .with_field(PrincipalField::MemberOf, principal.member_of)
-                    .with_field(PrincipalField::Members, principal.members)
-                    .with_opt_field(PrincipalField::Description, principal.description);
+                // Validate the access token
+                access_token.assert_has_permission(match principal.typ() {
+                    Type::Individual => Permission::IndividualCreate,
+                    Type::Group => Permission::GroupCreate,
+                    Type::List => Permission::MailingListCreate,
+                    Type::Domain => Permission::DomainCreate,
+                    Type::Tenant => Permission::TenantCreate,
+                    Type::Role => Permission::RoleCreate,
+                    Type::Resource | Type::Location | Type::Other => Permission::PrincipalCreate,
+                })?;
 
-                Ok(JsonResponse::new(json!({
-                    "data": self
+                // Make sure the current directory supports updates
+                if matches!(principal.typ(), Type::Individual | Type::Group | Type::List) {
+                    self.assert_supported_directory()?;
+                }
+
+                // Validate tenant limits
+                #[cfg(feature = "enterprise")]
+                if self.core.is_enterprise_edition() {
+                    if let Some(tenant_id) = access_token.tenant_id {
+                        let tenant = self
+                            .core
+                            .storage
+                            .data
+                            .query(QueryBy::Id(tenant_id), false)
+                            .await?
+                            .ok_or_else(|| {
+                                trc::ManageEvent::NotFound
+                                    .into_err()
+                                    .caused_by(trc::location!())
+                            })?;
+
+                        let todo = "check limits";
+                    }
+                }
+
+                // Create principal
+                let result = self
                     .core
                     .storage
                     .data
-                    .create_account(principal)
-                    .await?,
+                    .create_principal(principal, access_token.tenant_id)
+                    .await?;
+
+                Ok(JsonResponse::new(json!({
+                    "data": result,
                 }))
                 .into_http_response())
             }
@@ -126,7 +127,28 @@ impl JMAP {
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
 
-                let accounts = self.core.storage.data.list_accounts(filter, typ).await?;
+                let mut tenant_id = access_token.tenant_id;
+
+                #[cfg(feature = "enterprise")]
+                if self.core.is_enterprise_edition() && tenant_id.is_none() {
+                    if let Some(tenant_name) = params.get("tenant") {
+                        tenant_id = self
+                            .core
+                            .storage
+                            .data
+                            .get_principal_info(tenant_name)
+                            .await?
+                            .filter(|p| p.typ == Type::Tenant)
+                            .map(|p| p.id);
+                    }
+                }
+
+                let accounts = self
+                    .core
+                    .storage
+                    .data
+                    .list_principals(filter, typ, tenant_id)
+                    .await?;
                 let (total, accounts) = if limit > 0 {
                     let offset = page.saturating_sub(1) * limit;
                     (
@@ -166,24 +188,42 @@ impl JMAP {
                     .core
                     .storage
                     .data
-                    .get_account_id(name.as_ref())
+                    .get_principal_id(name.as_ref())
                     .await?
                     .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
                 match *method {
                     Method::GET => {
-                        let principal = self
+                        let mut principal = self
                             .core
                             .storage
                             .data
                             .query(QueryBy::Id(account_id), true)
                             .await?
                             .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
-                        let principal = self.core.storage.data.map_group_ids(principal).await?;
+
+                        // Map groups
+                        if let Some(member_of) = principal.take_int_array(PrincipalField::MemberOf)
+                        {
+                            for principal_id in member_of {
+                                if let Some(name) = self
+                                    .core
+                                    .storage
+                                    .data
+                                    .get_principal_name(principal_id as u32)
+                                    .await
+                                    .caused_by(trc::location!())?
+                                {
+                                    principal.append_str(PrincipalField::MemberOf, name);
+                                }
+                            }
+                        }
 
                         // Obtain quota usage
-                        let mut principal = PrincipalPayload::from(principal);
-                        principal.used_quota = self.get_used_quota(account_id).await? as u64;
+                        principal.set(
+                            PrincipalField::UsedQuota,
+                            self.get_used_quota(account_id).await? as u64,
+                        );
 
                         // Obtain member names
                         for member_id in self.core.storage.data.get_members(account_id).await? {
@@ -194,11 +234,10 @@ impl JMAP {
                                 .query(QueryBy::Id(member_id), false)
                                 .await?
                             {
-                                principal.members.push(
-                                    member_principal
-                                        .take_str(PrincipalField::Name)
-                                        .unwrap_or_default(),
-                                );
+                                if let Some(name) = member_principal.take_str(PrincipalField::Name)
+                                {
+                                    principal.append_str(PrincipalField::Members, name);
+                                }
                             }
                         }
 
@@ -215,7 +254,7 @@ impl JMAP {
                         self.core
                             .storage
                             .data
-                            .delete_account(QueryBy::Id(account_id))
+                            .delete_principal(QueryBy::Id(account_id))
                             .await?;
                         // Remove entries from cache
                         self.inner.sessions.retain(|_, id| id.item != account_id);
@@ -251,7 +290,7 @@ impl JMAP {
                         self.core
                             .storage
                             .data
-                            .update_account(QueryBy::Id(account_id), changes)
+                            .update_principal(QueryBy::Id(account_id), changes)
                             .await?;
                         if is_password_change {
                             // Remove entries from cache
@@ -412,7 +451,7 @@ impl JMAP {
         self.core
             .storage
             .data
-            .update_account(QueryBy::Id(access_token.primary_id()), actions)
+            .update_principal(QueryBy::Id(access_token.primary_id()), actions)
             .await?;
 
         // Remove entries from cache
@@ -444,28 +483,5 @@ impl JMAP {
             ),
             class
         )))
-    }
-}
-
-impl From<Principal> for PrincipalPayload {
-    fn from(mut principal: Principal) -> Self {
-        PrincipalPayload {
-            id: principal.id(),
-            typ: principal.typ(),
-            quota: principal.quota(),
-            name: principal.take_str(PrincipalField::Name).unwrap_or_default(),
-            emails: principal
-                .take_str_array(PrincipalField::Emails)
-                .unwrap_or_default(),
-            member_of: principal
-                .take_str_array(PrincipalField::MemberOf)
-                .unwrap_or_default(),
-            description: principal.take_str(PrincipalField::Description),
-            secrets: principal
-                .take_str_array(PrincipalField::Secrets)
-                .unwrap_or_default(),
-            used_quota: 0,
-            members: Vec::new(),
-        }
     }
 }

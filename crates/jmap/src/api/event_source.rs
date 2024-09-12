@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::auth::AccessToken;
 use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::{
     body::{Bytes, Frame},
@@ -17,7 +18,7 @@ use hyper::{
 use jmap_proto::types::type_state::DataType;
 use utils::map::bitmap::Bitmap;
 
-use crate::{auth::AccessToken, JMAP, LONG_SLUMBER};
+use crate::{JMAP, LONG_SLUMBER};
 
 use super::{HttpRequest, HttpResponse, HttpResponseBody, StateChangeResponse};
 

@@ -9,7 +9,7 @@ use utils::config::{utils::AsKey, Config};
 
 use crate::{
     backend::internal::{manage::ManageDirectory, PrincipalField},
-    Principal, Type,
+    Principal, Type, ROLE_ADMIN, ROLE_USER,
 };
 
 use super::{EmailType, MemoryDirectory};
@@ -48,7 +48,7 @@ impl MemoryDirectory {
             // Obtain id
             let id = directory
                 .data_store
-                .get_or_create_account_id(&name)
+                .get_or_create_principal_id(&name, Type::Individual)
                 .await
                 .map_err(|err| {
                     config.new_build_error(
@@ -62,20 +62,15 @@ impl MemoryDirectory {
                 .ok()?;
 
             // Create principal
-            let mut principal = if is_superuser {
-                Principal {
-                    id,
-                    typ,
-                    ..Default::default()
-                }
-                .into_superuser()
-            } else {
-                Principal {
-                    id,
-                    typ,
-                    ..Default::default()
-                }
-            };
+            let mut principal = Principal {
+                id,
+                typ,
+                ..Default::default()
+            }
+            .with_field(
+                PrincipalField::Roles,
+                if is_superuser { ROLE_ADMIN } else { ROLE_USER },
+            );
 
             // Obtain group ids
             for group in config
@@ -87,7 +82,7 @@ impl MemoryDirectory {
                     PrincipalField::MemberOf,
                     directory
                         .data_store
-                        .get_or_create_account_id(&group)
+                        .get_or_create_principal_id(&group, Type::Group)
                         .await
                         .map_err(|err| {
                             config.new_build_error(

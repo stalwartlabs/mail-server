@@ -10,6 +10,7 @@
 
 use std::time::Duration;
 
+use directory::Type;
 use store::{Store, Stores};
 use trc::{EventType, MetricType, TOTAL_EVENT_COUNT};
 use utils::config::{
@@ -20,7 +21,7 @@ use utils::config::{
 
 use crate::{
     expr::{tokenizer::TokenMap, Expression},
-    total_accounts,
+    total_principals,
 };
 
 use super::{
@@ -42,7 +43,7 @@ impl Enterprise {
             }
         };
 
-        match total_accounts(data).await {
+        match total_principals(data, Type::Individual).await {
             Ok(total) if total > license.accounts as u64 => {
                 config.new_build_warning(
                     "enterprise.license-key",

@@ -632,7 +632,13 @@ async fn address_mappings() {
 async fn map_account_ids(store: &Store, names: Vec<impl AsRef<str>>) -> Vec<u32> {
     let mut ids = Vec::with_capacity(names.len());
     for name in names {
-        ids.push(store.get_account_id(name.as_ref()).await.unwrap().unwrap());
+        ids.push(
+            store
+                .get_principal_id(name.as_ref())
+                .await
+                .unwrap()
+                .unwrap(),
+        );
     }
     ids
 }

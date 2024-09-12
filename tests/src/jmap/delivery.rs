@@ -41,7 +41,7 @@ pub async fn test(params: &mut JMAPTest) {
             .core
             .storage
             .data
-            .get_or_create_account_id("jdoe@example.com")
+            .get_or_create_principal_id("jdoe@example.com")
             .await
             .unwrap(),
     )
@@ -51,7 +51,7 @@ pub async fn test(params: &mut JMAPTest) {
             .core
             .storage
             .data
-            .get_or_create_account_id("jane@example.com")
+            .get_or_create_principal_id("jane@example.com")
             .await
             .unwrap(),
     )
@@ -61,7 +61,7 @@ pub async fn test(params: &mut JMAPTest) {
             .core
             .storage
             .data
-            .get_or_create_account_id("bill@example.com")
+            .get_or_create_principal_id("bill@example.com")
             .await
             .unwrap(),
     )

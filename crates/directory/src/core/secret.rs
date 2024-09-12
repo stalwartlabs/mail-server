@@ -31,8 +31,6 @@ impl Principal {
         let mut is_authenticated = false;
         let mut is_app_authenticated = false;
 
-        let todo = "validate authenticate permission";
-
         for secret in self.iter_str(PrincipalField::Secrets) {
             if secret.is_otp_auth() {
                 if !is_totp_verified && !is_totp_token_missing {

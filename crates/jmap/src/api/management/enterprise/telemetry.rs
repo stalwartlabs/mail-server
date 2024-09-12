@@ -13,9 +13,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::telemetry::{
-    metrics::store::{Metric, MetricsStore},
-    tracers::store::{TracingQuery, TracingStore},
+use common::{
+    auth::AccessToken,
+    telemetry::{
+        metrics::store::{Metric, MetricsStore},
+        tracers::store::{TracingQuery, TracingStore},
+    },
 };
 use directory::{backend::internal::manage, Permission};
 use http_body_util::{combinators::BoxBody, StreamBody};
@@ -38,7 +41,6 @@ use crate::{
         http::ToHttpResponse, management::Timestamp, HttpRequest, HttpResponse, HttpResponseBody,
         JsonResponse,
     },
-    auth::AccessToken,
     JMAP,
 };
 

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use directory::Permission;
 use hyper::Method;
 use serde_json::json;
@@ -12,7 +13,6 @@ use utils::{config::ConfigKey, map::vec_map::VecMap, url_params::UrlParams};
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::AccessToken,
     JMAP,
 };
 

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use directory::Permission;
 use hyper::Method;
 use mail_auth::report::{
@@ -20,7 +21,6 @@ use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::AccessToken,
     JMAP,
 };
 

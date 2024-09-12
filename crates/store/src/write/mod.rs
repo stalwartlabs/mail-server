@@ -181,7 +181,6 @@ pub enum DirectoryClass<T> {
     EmailToId(Vec<u8>),
     MemberOf { principal_id: T, member_of: T },
     Members { principal_id: T, has_member: T },
-    Domain(Vec<u8>),
     Principal(T),
     UsedQuota(u32),
 }

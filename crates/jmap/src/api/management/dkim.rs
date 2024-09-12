@@ -6,7 +6,7 @@
 
 use std::str::FromStr;
 
-use common::config::smtp::auth::simple_pem_parse;
+use common::{auth::AccessToken, config::smtp::auth::simple_pem_parse};
 use directory::{backend::internal::manage, Permission};
 use hyper::Method;
 use mail_auth::{
@@ -23,7 +23,6 @@ use store::write::now;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::AccessToken,
     JMAP,
 };
 

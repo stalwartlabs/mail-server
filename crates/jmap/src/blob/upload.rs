@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use common::auth::AccessToken;
 use directory::Permission;
 use jmap_proto::{
     error::set::SetError,
@@ -22,7 +23,7 @@ use store::{
 use trc::AddContext;
 use utils::BlobHash;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 use super::UploadResponse;
 

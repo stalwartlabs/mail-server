@@ -439,7 +439,7 @@ async fn internal_directory() {
                 member_of: vec!["list".to_string(), "sales".to_string()],
             }
         );
-        assert_eq!(store.get_account_id("john").await.unwrap(), None);
+        assert_eq!(store.get_principal_id("john").await.unwrap(), None);
         assert!(!store.rcpt("john@example.org").await.unwrap());
         assert!(store.rcpt("john.doe@example.org").await.unwrap());
 
@@ -589,7 +589,7 @@ async fn internal_directory() {
 
         // Delete John's account and make sure his records are gone
         store.delete_account(QueryBy::Id(john_id)).await.unwrap();
-        assert_eq!(store.get_account_id("john.doe").await.unwrap(), None);
+        assert_eq!(store.get_principal_id("john.doe").await.unwrap(), None);
         assert_eq!(
             store.email_to_ids("john.doe@example.org").await.unwrap(),
             Vec::<u32>::new()
@@ -633,7 +633,7 @@ async fn internal_directory() {
         );
 
         // Make sure Jane's records are still there
-        assert_eq!(store.get_account_id("jane").await.unwrap(), Some(jane_id));
+        assert_eq!(store.get_principal_id("jane").await.unwrap(), Some(jane_id));
         assert_eq!(
             store.email_to_ids("jane@example.org").await.unwrap(),
             vec![jane_id]

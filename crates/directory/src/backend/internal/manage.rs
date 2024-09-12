@@ -14,83 +14,82 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{Principal, QueryBy, Type};
+use crate::{Permission, Principal, QueryBy, Type, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER};
 
 use super::{
-    lookup::DirectoryStore, PrincipalAction, PrincipalField, PrincipalIdType, PrincipalUpdate,
+    lookup::DirectoryStore, PrincipalAction, PrincipalField, PrincipalInfo, PrincipalUpdate,
     PrincipalValue, SpecialSecrets,
 };
 
+pub struct MemberOf {
+    pub principal_id: u32,
+    pub typ: Type,
+}
+
 #[allow(async_fn_in_trait)]
 pub trait ManageDirectory: Sized {
-    async fn get_account_id(&self, name: &str) -> trc::Result<Option<u32>>;
-    async fn get_or_create_account_id(&self, name: &str) -> trc::Result<u32>;
-    async fn get_account_name(&self, account_id: u32) -> trc::Result<Option<String>>;
-    async fn get_member_of(&self, account_id: u32) -> trc::Result<Vec<u32>>;
-    async fn get_members(&self, account_id: u32) -> trc::Result<Vec<u32>>;
-    async fn create_account(&self, principal: Principal) -> trc::Result<u32>;
-    async fn update_account(
+    async fn get_principal_id(&self, name: &str) -> trc::Result<Option<u32>>;
+    async fn get_principal_info(&self, name: &str) -> trc::Result<Option<PrincipalInfo>>;
+    async fn get_or_create_principal_id(&self, name: &str, typ: Type) -> trc::Result<u32>;
+    async fn get_principal_name(&self, principal_id: u32) -> trc::Result<Option<String>>;
+    async fn get_member_of(&self, principal_id: u32) -> trc::Result<Vec<MemberOf>>;
+    async fn get_members(&self, principal_id: u32) -> trc::Result<Vec<u32>>;
+    async fn create_principal(
+        &self,
+        principal: Principal,
+        tenant_id: Option<u32>,
+    ) -> trc::Result<u32>;
+    async fn update_principal(
         &self,
         by: QueryBy<'_>,
         changes: Vec<PrincipalUpdate>,
     ) -> trc::Result<()>;
-    async fn delete_account(&self, by: QueryBy<'_>) -> trc::Result<()>;
-    async fn list_accounts(
+    async fn delete_principal(&self, by: QueryBy<'_>) -> trc::Result<()>;
+    async fn list_principals(
         &self,
         filter: Option<&str>,
         typ: Option<Type>,
+        tenant_id: Option<u32>,
     ) -> trc::Result<Vec<String>>;
-    async fn map_group_ids(&self, principal: Principal) -> trc::Result<Principal>;
-    async fn map_principal(
-        &self,
-        principal: Principal,
-        create_if_missing: bool,
-    ) -> trc::Result<Principal>;
-    async fn map_group_names(
-        &self,
-        members: Vec<String>,
-        create_if_missing: bool,
-    ) -> trc::Result<Vec<u32>>;
-    async fn create_domain(&self, domain: &str) -> trc::Result<()>;
-    async fn delete_domain(&self, domain: &str) -> trc::Result<()>;
-    async fn list_domains(&self, filter: Option<&str>) -> trc::Result<Vec<String>>;
 }
 
 impl ManageDirectory for Store {
-    async fn get_account_name(&self, account_id: u32) -> trc::Result<Option<String>> {
+    async fn get_principal_name(&self, principal_id: u32) -> trc::Result<Option<String>> {
         self.get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-            DirectoryClass::Principal(account_id),
+            DirectoryClass::Principal(principal_id),
         )))
         .await
         .map(|v| v.and_then(|mut v| v.take_str(PrincipalField::Name)))
         .caused_by(trc::location!())
     }
 
-    async fn get_account_id(&self, name: &str) -> trc::Result<Option<u32>> {
-        self.get_value::<PrincipalIdType>(ValueKey::from(ValueClass::Directory(
+    async fn get_principal_id(&self, name: &str) -> trc::Result<Option<u32>> {
+        self.get_principal_info(name).await.map(|v| v.map(|v| v.id))
+    }
+    async fn get_principal_info(&self, name: &str) -> trc::Result<Option<PrincipalInfo>> {
+        self.get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
             DirectoryClass::NameToId(name.as_bytes().to_vec()),
         )))
         .await
-        .map(|v| v.map(|v| v.account_id))
         .caused_by(trc::location!())
     }
 
     // Used by all directories except internal
-    async fn get_or_create_account_id(&self, name: &str) -> trc::Result<u32> {
+    async fn get_or_create_principal_id(&self, name: &str, typ: Type) -> trc::Result<u32> {
         let mut try_count = 0;
         let name = name.to_lowercase();
 
         loop {
             // Try to obtain ID
-            if let Some(account_id) = self
-                .get_account_id(&name)
+            if let Some(principal_id) = self
+                .get_principal_id(&name)
                 .await
                 .caused_by(trc::location!())?
             {
-                return Ok(account_id);
+                return Ok(principal_id);
             }
 
-            // Write account ID
+            // Write principal ID
             let name_key =
                 ValueClass::Directory(DirectoryClass::NameToId(name.as_bytes().to_vec()));
             let mut batch = BatchBuilder::new();
@@ -99,11 +98,11 @@ impl ManageDirectory for Store {
                 .with_collection(Collection::Principal)
                 .assert_value(name_key.clone(), ())
                 .create_document()
-                .set(name_key, DynamicPrincipalIdType(Type::Individual))
+                .set(name_key, DynamicPrincipalInfo::new(typ, None))
                 .set(
                     ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Dynamic(0))),
                     Principal {
-                        typ: Type::Individual,
+                        typ,
                         ..Default::default()
                     }
                     .with_field(PrincipalField::Name, name.to_string()),
@@ -114,8 +113,8 @@ impl ManageDirectory for Store {
                 .await
                 .and_then(|r| r.last_document_id())
             {
-                Ok(account_id) => {
-                    return Ok(account_id);
+                Ok(principal_id) => {
+                    return Ok(principal_id);
                 }
                 Err(err) => {
                     if err.is_assertion_failure() && try_count < 3 {
@@ -129,32 +128,43 @@ impl ManageDirectory for Store {
         }
     }
 
-    async fn create_account(&self, mut principal: Principal) -> trc::Result<u32> {
+    async fn create_principal(
+        &self,
+        mut principal: Principal,
+        mut tenant_id: Option<u32>,
+    ) -> trc::Result<u32> {
         // Make sure the principal has a name
         let name = principal.name().to_lowercase();
         if name.is_empty() {
             return Err(err_missing(PrincipalField::Name));
         }
 
-        // Map group names
-        let members = self
-            .map_group_names(
-                principal
-                    .take(PrincipalField::Members)
-                    .map(|v| v.into_str_array())
-                    .unwrap_or_default(),
-                false,
-            )
-            .await
-            .caused_by(trc::location!())?;
-        let mut principal = self
-            .map_principal(principal, false)
-            .await
-            .caused_by(trc::location!())?;
+        // Tenants must provide principal names including a valid domain
+        if tenant_id.is_some() {
+            let mut name_is_valid = false;
+            if let Some(domain) = name.split('@').nth(1) {
+                if self
+                    .get_principal_info(domain)
+                    .await
+                    .caused_by(trc::location!())?
+                    .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
+                    .is_some()
+                {
+                    name_is_valid = true;
+                }
+            }
+
+            if !name_is_valid {
+                return Err(error(
+                    "Invalid principal name",
+                    "Principal name must include a valid domain".into(),
+                ));
+            }
+        }
 
         // Make sure new name is not taken
         if self
-            .get_account_id(&name)
+            .get_principal_id(&name)
             .await
             .caused_by(trc::location!())?
             .is_some()
@@ -163,6 +173,67 @@ impl ManageDirectory for Store {
         }
         principal.set(PrincipalField::Name, name);
 
+        // Map member names
+        let mut members = Vec::new();
+        let mut member_of = Vec::new();
+        for (field, expected_type) in [
+            (PrincipalField::Members, None),
+            (PrincipalField::MemberOf, Some(Type::Group)),
+            (PrincipalField::Lists, Some(Type::List)),
+            (PrincipalField::Roles, Some(Type::Role)),
+        ] {
+            if let Some(names) = principal.take_str_array(field) {
+                let list = if field == PrincipalField::Members {
+                    &mut members
+                } else {
+                    &mut member_of
+                };
+
+                for name in names {
+                    let id = match name.strip_prefix("_") {
+                        Some("admin") if field == PrincipalField::Roles && tenant_id.is_none() => {
+                            PrincipalInfo::new(ROLE_ADMIN, Type::Role, None)
+                        }
+                        Some("tenant_admin") if field == PrincipalField::Roles => {
+                            PrincipalInfo::new(ROLE_TENANT_ADMIN, Type::Role, None)
+                        }
+                        Some("user") if field == PrincipalField::Roles => {
+                            PrincipalInfo::new(ROLE_USER, Type::Role, None)
+                        }
+                        _ => self
+                            .get_principal_info(&name)
+                            .await
+                            .caused_by(trc::location!())?
+                            .filter(|v| {
+                                expected_type.map_or(true, |t| v.typ == t)
+                                    && v.has_tenant_access(tenant_id)
+                            })
+                            .ok_or_else(|| not_found(name))?,
+                    };
+
+                    list.push(id);
+                }
+            }
+        }
+
+        // Map permissions
+        for field in [
+            PrincipalField::EnabledPermissions,
+            PrincipalField::DisabledPermissions,
+        ] {
+            if let Some(names) = principal.take_str_array(field) {
+                for name in names {
+                    let permission = Permission::from_name(&name).ok_or_else(|| {
+                        error(
+                            "Invalid permission",
+                            format!("Permission {name:?} is invalid").into(),
+                        )
+                    })?;
+                    principal.append_int(field, permission.id() as u64);
+                }
+            }
+        }
+
         // Make sure the e-mail is not taken and validate domain
         for email in principal.iter_mut_str(PrincipalField::Emails) {
             *email = email.to_lowercase();
@@ -170,19 +241,32 @@ impl ManageDirectory for Store {
                 return Err(err_exists(PrincipalField::Emails, email.to_string()));
             }
             if let Some(domain) = email.split('@').nth(1) {
-                if !self
-                    .is_local_domain(domain)
+                self.get_principal_info(domain)
                     .await
                     .caused_by(trc::location!())?
-                {
-                    return Err(not_found(domain.to_string()));
-                }
+                    .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
+                    .ok_or_else(|| not_found(domain.to_string()))?;
             }
+        }
+
+        // Obtain tenant id
+        if let Some(tenant_id) = tenant_id {
+            principal.set(PrincipalField::Tenant, tenant_id);
+        } else if let Some(tenant_name) = principal.take_str(PrincipalField::Tenant) {
+            tenant_id = self
+                .get_principal_info(&tenant_name)
+                .await
+                .caused_by(trc::location!())?
+                .filter(|v| v.typ == Type::Tenant)
+                .ok_or_else(|| not_found(tenant_name.clone()))?
+                .id
+                .into();
         }
 
         // Write principal
         let mut batch = BatchBuilder::new();
-        let ptype = DynamicPrincipalIdType(principal.typ);
+        let pinfo_name = DynamicPrincipalInfo::new(principal.typ, tenant_id);
+        let pinfo_email = DynamicPrincipalInfo::new(principal.typ, None);
         batch
             .with_account_id(u32::MAX)
             .with_collection(Collection::Principal)
@@ -204,7 +288,7 @@ impl ManageDirectory for Store {
                         .unwrap()
                         .into_bytes(),
                 )),
-                ptype,
+                pinfo_name,
             );
 
         // Write email to id mapping
@@ -215,40 +299,40 @@ impl ManageDirectory for Store {
             for email in emails {
                 batch.set(
                     ValueClass::Directory(DirectoryClass::EmailToId(email.into_bytes())),
-                    ptype,
+                    pinfo_email,
                 );
             }
         }
 
         // Write membership
-        for member_of in principal.iter_int(PrincipalField::MemberOf) {
+        for member_of in member_of {
             batch.set(
                 ValueClass::Directory(DirectoryClass::MemberOf {
                     principal_id: MaybeDynamicId::Dynamic(0),
-                    member_of: MaybeDynamicId::Static(member_of as u32),
+                    member_of: MaybeDynamicId::Static(member_of.id),
                 }),
-                vec![],
+                vec![member_of.typ as u8],
             );
             batch.set(
                 ValueClass::Directory(DirectoryClass::Members {
-                    principal_id: MaybeDynamicId::Static(member_of as u32),
+                    principal_id: MaybeDynamicId::Static(member_of.id),
                     has_member: MaybeDynamicId::Dynamic(0),
                 }),
                 vec![],
             );
         }
-        for member_id in members {
+        for member in members {
             batch.set(
                 ValueClass::Directory(DirectoryClass::MemberOf {
-                    principal_id: MaybeDynamicId::Static(member_id),
+                    principal_id: MaybeDynamicId::Static(member.id),
                     member_of: MaybeDynamicId::Dynamic(0),
                 }),
-                vec![],
+                vec![member.typ as u8],
             );
             batch.set(
                 ValueClass::Directory(DirectoryClass::Members {
                     principal_id: MaybeDynamicId::Dynamic(0),
-                    has_member: MaybeDynamicId::Static(member_id),
+                    has_member: MaybeDynamicId::Static(member.id),
                 }),
                 vec![],
             );
@@ -259,44 +343,46 @@ impl ManageDirectory for Store {
             .and_then(|r| r.last_document_id())
     }
 
-    async fn delete_account(&self, by: QueryBy<'_>) -> trc::Result<()> {
-        let account_id = match by {
+    async fn delete_principal(&self, by: QueryBy<'_>) -> trc::Result<()> {
+        let todo = "do not delete tenants with children";
+
+        let principal_id = match by {
             QueryBy::Name(name) => self
-                .get_account_id(name)
+                .get_principal_id(name)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or_else(|| not_found(name.to_string()))?,
-            QueryBy::Id(account_id) => account_id,
+            QueryBy::Id(principal_id) => principal_id,
             QueryBy::Credentials(_) => unreachable!(),
         };
 
         let mut principal = self
             .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-                DirectoryClass::Principal(account_id),
+                DirectoryClass::Principal(principal_id),
             )))
             .await
             .caused_by(trc::location!())?
-            .ok_or_else(|| not_found(account_id.to_string()))?;
+            .ok_or_else(|| not_found(principal_id.to_string()))?;
 
-        // Unlink all account's blobs
-        self.blob_hash_unlink_account(account_id)
+        // Unlink all principal's blobs
+        self.blob_hash_unlink_account(principal_id)
             .await
             .caused_by(trc::location!())?;
 
         // Revoke ACLs
-        self.acl_revoke_all(account_id)
+        self.acl_revoke_all(principal_id)
             .await
             .caused_by(trc::location!())?;
 
-        // Delete account data
-        self.purge_account(account_id)
+        // Delete principal data
+        self.purge_account(principal_id)
             .await
             .caused_by(trc::location!())?;
 
-        // Delete account
+        // Delete principal
         let mut batch = BatchBuilder::new();
         batch
-            .with_account_id(account_id)
+            .with_account_id(principal_id)
             .clear(DirectoryClass::NameToId(
                 principal
                     .take_str(PrincipalField::Name)
@@ -304,9 +390,9 @@ impl ManageDirectory for Store {
                     .into_bytes(),
             ))
             .clear(DirectoryClass::Principal(MaybeDynamicId::Static(
-                account_id,
+                principal_id,
             )))
-            .clear(DirectoryClass::UsedQuota(account_id));
+            .clear(DirectoryClass::UsedQuota(principal_id));
 
         if let Some(emails) = principal.take_str_array(PrincipalField::Emails) {
             for email in emails {
@@ -314,32 +400,32 @@ impl ManageDirectory for Store {
             }
         }
 
-        for member_id in self
-            .get_member_of(account_id)
+        for member in self
+            .get_member_of(principal_id)
             .await
             .caused_by(trc::location!())?
         {
             batch.clear(DirectoryClass::MemberOf {
-                principal_id: MaybeDynamicId::Static(account_id),
-                member_of: MaybeDynamicId::Static(member_id),
+                principal_id: MaybeDynamicId::Static(principal_id),
+                member_of: MaybeDynamicId::Static(member.principal_id),
             });
             batch.clear(DirectoryClass::Members {
-                principal_id: MaybeDynamicId::Static(member_id),
-                has_member: MaybeDynamicId::Static(account_id),
+                principal_id: MaybeDynamicId::Static(member.principal_id),
+                has_member: MaybeDynamicId::Static(principal_id),
             });
         }
 
         for member_id in self
-            .get_members(account_id)
+            .get_members(principal_id)
             .await
             .caused_by(trc::location!())?
         {
             batch.clear(DirectoryClass::MemberOf {
                 principal_id: MaybeDynamicId::Static(member_id),
-                member_of: MaybeDynamicId::Static(account_id),
+                member_of: MaybeDynamicId::Static(principal_id),
             });
             batch.clear(DirectoryClass::Members {
-                principal_id: MaybeDynamicId::Static(account_id),
+                principal_id: MaybeDynamicId::Static(principal_id),
                 has_member: MaybeDynamicId::Static(member_id),
             });
         }
@@ -351,43 +437,49 @@ impl ManageDirectory for Store {
         Ok(())
     }
 
-    async fn update_account(
+    async fn update_principal(
         &self,
         by: QueryBy<'_>,
         changes: Vec<PrincipalUpdate>,
     ) -> trc::Result<()> {
-        let account_id = match by {
+        let principal_id = match by {
             QueryBy::Name(name) => self
-                .get_account_id(name)
+                .get_principal_id(name)
                 .await
                 .caused_by(trc::location!())?
                 .ok_or_else(|| not_found(name.to_string()))?,
-            QueryBy::Id(account_id) => account_id,
+            QueryBy::Id(principal_id) => principal_id,
             QueryBy::Credentials(_) => unreachable!(),
         };
 
         // Fetch principal
         let mut principal = self
             .get_value::<HashedValue<Principal>>(ValueKey::from(ValueClass::Directory(
-                DirectoryClass::Principal(account_id),
+                DirectoryClass::Principal(principal_id),
             )))
             .await
             .caused_by(trc::location!())?
-            .ok_or_else(|| not_found(account_id.to_string()))?;
+            .ok_or_else(|| not_found(principal_id.to_string()))?;
 
         // Obtain members and memberOf
         let mut member_of = self
-            .get_member_of(account_id)
+            .get_member_of(principal_id)
             .await
-            .caused_by(trc::location!())?;
+            .caused_by(trc::location!())?
+            .into_iter()
+            .map(|v| v.principal_id)
+            .collect::<Vec<_>>();
         let mut members = self
-            .get_members(account_id)
+            .get_members(principal_id)
             .await
             .caused_by(trc::location!())?;
 
         // Apply changes
         let mut batch = BatchBuilder::new();
-        let ptype = PrincipalIdType::new(account_id, principal.inner.typ).serialize();
+        let mut pinfo_name =
+            PrincipalInfo::new(principal_id, principal.inner.typ, principal.inner.tenant())
+                .serialize();
+        let pinfo_email = PrincipalInfo::new(principal_id, principal.inner.typ, None).serialize();
         let update_principal = !changes.is_empty()
             && !changes
                 .iter()
@@ -396,7 +488,7 @@ impl ManageDirectory for Store {
         if update_principal {
             batch.assert_value(
                 ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
-                    account_id,
+                    principal_id,
                 ))),
                 &principal,
             );
@@ -408,7 +500,7 @@ impl ManageDirectory for Store {
                     let new_name = new_name.to_lowercase();
                     if principal.inner.name() != new_name {
                         if self
-                            .get_account_id(&new_name)
+                            .get_principal_id(&new_name)
                             .await
                             .caused_by(trc::location!())?
                             .is_some()
@@ -424,9 +516,53 @@ impl ManageDirectory for Store {
 
                         batch.set(
                             ValueClass::Directory(DirectoryClass::NameToId(new_name.into_bytes())),
-                            ptype.clone(),
+                            pinfo_name.clone(),
                         );
                     }
+                }
+                (
+                    PrincipalAction::Set,
+                    PrincipalField::Tenant,
+                    PrincipalValue::String(tenant_name),
+                ) => {
+                    if !tenant_name.is_empty() {
+                        let tenant_info = self
+                            .get_principal_info(&tenant_name)
+                            .await
+                            .caused_by(trc::location!())?
+                            .ok_or_else(|| not_found(tenant_name.clone()))?;
+                        if tenant_info.typ != Type::Tenant {
+                            return Err(error(
+                                "Not a tenant",
+                                format!("Principal {tenant_name:?} is not a tenant").into(),
+                            ));
+                        }
+
+                        if principal.inner.tenant() != Some(tenant_info.id) {
+                            principal.inner.set(PrincipalField::Tenant, tenant_info.id);
+                            pinfo_name = PrincipalInfo::new(
+                                principal_id,
+                                principal.inner.typ,
+                                tenant_info.id.into(),
+                            )
+                            .serialize();
+                        } else {
+                            continue;
+                        }
+                    } else if principal.inner.tenant().is_some() {
+                        principal.inner.remove(PrincipalField::Tenant);
+                        pinfo_name =
+                            PrincipalInfo::new(principal_id, principal.inner.typ, None).serialize();
+                    } else {
+                        continue;
+                    }
+
+                    batch.set(
+                        ValueClass::Directory(DirectoryClass::NameToId(
+                            principal.inner.name().as_bytes().to_vec(),
+                        )),
+                        pinfo_name.clone(),
+                    );
                 }
                 (
                     PrincipalAction::Set,
@@ -517,7 +653,7 @@ impl ManageDirectory for Store {
                                 ValueClass::Directory(DirectoryClass::EmailToId(
                                     email.as_bytes().to_vec(),
                                 )),
-                                ptype.clone(),
+                                pinfo_email.clone(),
                             );
                         }
                     }
@@ -558,7 +694,7 @@ impl ManageDirectory for Store {
                             ValueClass::Directory(DirectoryClass::EmailToId(
                                 email.as_bytes().to_vec(),
                             )),
-                            ptype.clone(),
+                            pinfo_email.clone(),
                         );
                         principal.inner.append_str(PrincipalField::Emails, email);
                     }
@@ -590,40 +726,40 @@ impl ManageDirectory for Store {
                 ) => {
                     let mut new_member_of = Vec::new();
                     for member in members {
-                        let member_id = self
-                            .get_account_id(&member)
+                        let member_info = self
+                            .get_principal_info(&member)
                             .await
                             .caused_by(trc::location!())?
                             .ok_or_else(|| not_found(member))?;
-                        if !member_of.contains(&member_id) {
+                        if !member_of.contains(&member_info.id) {
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::MemberOf {
-                                    principal_id: MaybeDynamicId::Static(account_id),
-                                    member_of: MaybeDynamicId::Static(member_id),
+                                    principal_id: MaybeDynamicId::Static(principal_id),
+                                    member_of: MaybeDynamicId::Static(member_info.id),
                                 }),
-                                vec![],
+                                vec![member_info.typ as u8],
                             );
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::Members {
-                                    principal_id: MaybeDynamicId::Static(member_id),
-                                    has_member: MaybeDynamicId::Static(account_id),
+                                    principal_id: MaybeDynamicId::Static(member_info.id),
+                                    has_member: MaybeDynamicId::Static(principal_id),
                                 }),
                                 vec![],
                             );
                         }
 
-                        new_member_of.push(member_id);
+                        new_member_of.push(member_info.id);
                     }
 
                     for member_id in &member_of {
                         if !new_member_of.contains(member_id) {
                             batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
-                                principal_id: MaybeDynamicId::Static(account_id),
+                                principal_id: MaybeDynamicId::Static(principal_id),
                                 member_of: MaybeDynamicId::Static(*member_id),
                             }));
                             batch.clear(ValueClass::Directory(DirectoryClass::Members {
                                 principal_id: MaybeDynamicId::Static(*member_id),
-                                has_member: MaybeDynamicId::Static(account_id),
+                                has_member: MaybeDynamicId::Static(principal_id),
                             }));
                         }
                     }
@@ -635,27 +771,27 @@ impl ManageDirectory for Store {
                     PrincipalField::MemberOf,
                     PrincipalValue::String(member),
                 ) => {
-                    let member_id = self
-                        .get_account_id(&member)
+                    let member_info = self
+                        .get_principal_info(&member)
                         .await
                         .caused_by(trc::location!())?
                         .ok_or_else(|| not_found(member))?;
-                    if !member_of.contains(&member_id) {
+                    if !member_of.contains(&member_info.id) {
                         batch.set(
                             ValueClass::Directory(DirectoryClass::MemberOf {
-                                principal_id: MaybeDynamicId::Static(account_id),
-                                member_of: MaybeDynamicId::Static(member_id),
+                                principal_id: MaybeDynamicId::Static(principal_id),
+                                member_of: MaybeDynamicId::Static(member_info.id),
                             }),
-                            vec![],
+                            vec![member_info.typ as u8],
                         );
                         batch.set(
                             ValueClass::Directory(DirectoryClass::Members {
-                                principal_id: MaybeDynamicId::Static(member_id),
-                                has_member: MaybeDynamicId::Static(account_id),
+                                principal_id: MaybeDynamicId::Static(member_info.id),
+                                has_member: MaybeDynamicId::Static(principal_id),
                             }),
                             vec![],
                         );
-                        member_of.push(member_id);
+                        member_of.push(member_info.id);
                     }
                 }
                 (
@@ -664,18 +800,18 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(member),
                 ) => {
                     if let Some(member_id) = self
-                        .get_account_id(&member)
+                        .get_principal_id(&member)
                         .await
                         .caused_by(trc::location!())?
                     {
                         if let Some(pos) = member_of.iter().position(|v| *v == member_id) {
                             batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
-                                principal_id: MaybeDynamicId::Static(account_id),
+                                principal_id: MaybeDynamicId::Static(principal_id),
                                 member_of: MaybeDynamicId::Static(member_id),
                             }));
                             batch.clear(ValueClass::Directory(DirectoryClass::Members {
                                 principal_id: MaybeDynamicId::Static(member_id),
-                                has_member: MaybeDynamicId::Static(account_id),
+                                has_member: MaybeDynamicId::Static(principal_id),
                             }));
                             member_of.remove(pos);
                         }
@@ -689,39 +825,39 @@ impl ManageDirectory for Store {
                 ) => {
                     let mut new_members = Vec::new();
                     for member in members_ {
-                        let member_id = self
-                            .get_account_id(&member)
+                        let member_info = self
+                            .get_principal_info(&member)
                             .await
                             .caused_by(trc::location!())?
                             .ok_or_else(|| not_found(member))?;
-                        if !members.contains(&member_id) {
+                        if !members.contains(&member_info.id) {
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::MemberOf {
-                                    principal_id: MaybeDynamicId::Static(member_id),
-                                    member_of: MaybeDynamicId::Static(account_id),
+                                    principal_id: MaybeDynamicId::Static(member_info.id),
+                                    member_of: MaybeDynamicId::Static(principal_id),
                                 }),
-                                vec![],
+                                vec![member_info.typ as u8],
                             );
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::Members {
-                                    principal_id: MaybeDynamicId::Static(account_id),
-                                    has_member: MaybeDynamicId::Static(member_id),
+                                    principal_id: MaybeDynamicId::Static(principal_id),
+                                    has_member: MaybeDynamicId::Static(member_info.id),
                                 }),
                                 vec![],
                             );
                         }
 
-                        new_members.push(member_id);
+                        new_members.push(member_info.id);
                     }
 
                     for member_id in &members {
                         if !new_members.contains(member_id) {
                             batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
                                 principal_id: MaybeDynamicId::Static(*member_id),
-                                member_of: MaybeDynamicId::Static(account_id),
+                                member_of: MaybeDynamicId::Static(principal_id),
                             }));
                             batch.clear(ValueClass::Directory(DirectoryClass::Members {
-                                principal_id: MaybeDynamicId::Static(account_id),
+                                principal_id: MaybeDynamicId::Static(principal_id),
                                 has_member: MaybeDynamicId::Static(*member_id),
                             }));
                         }
@@ -734,27 +870,27 @@ impl ManageDirectory for Store {
                     PrincipalField::Members,
                     PrincipalValue::String(member),
                 ) => {
-                    let member_id = self
-                        .get_account_id(&member)
+                    let member_info = self
+                        .get_principal_info(&member)
                         .await
                         .caused_by(trc::location!())?
                         .ok_or_else(|| not_found(member))?;
-                    if !members.contains(&member_id) {
+                    if !members.contains(&member_info.id) {
                         batch.set(
                             ValueClass::Directory(DirectoryClass::MemberOf {
-                                principal_id: MaybeDynamicId::Static(member_id),
-                                member_of: MaybeDynamicId::Static(account_id),
+                                principal_id: MaybeDynamicId::Static(member_info.id),
+                                member_of: MaybeDynamicId::Static(principal_id),
                             }),
-                            vec![],
+                            vec![member_info.typ as u8],
                         );
                         batch.set(
                             ValueClass::Directory(DirectoryClass::Members {
-                                principal_id: MaybeDynamicId::Static(account_id),
-                                has_member: MaybeDynamicId::Static(member_id),
+                                principal_id: MaybeDynamicId::Static(principal_id),
+                                has_member: MaybeDynamicId::Static(member_info.id),
                             }),
                             vec![],
                         );
-                        members.push(member_id);
+                        members.push(member_info.id);
                     }
                 }
                 (
@@ -763,17 +899,17 @@ impl ManageDirectory for Store {
                     PrincipalValue::String(member),
                 ) => {
                     if let Some(member_id) = self
-                        .get_account_id(&member)
+                        .get_principal_id(&member)
                         .await
                         .caused_by(trc::location!())?
                     {
                         if let Some(pos) = members.iter().position(|v| *v == member_id) {
                             batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
                                 principal_id: MaybeDynamicId::Static(member_id),
-                                member_of: MaybeDynamicId::Static(account_id),
+                                member_of: MaybeDynamicId::Static(principal_id),
                             }));
                             batch.clear(ValueClass::Directory(DirectoryClass::Members {
-                                principal_id: MaybeDynamicId::Static(account_id),
+                                principal_id: MaybeDynamicId::Static(principal_id),
                                 has_member: MaybeDynamicId::Static(member_id),
                             }));
                             members.remove(pos);
@@ -790,7 +926,7 @@ impl ManageDirectory for Store {
         if update_principal {
             batch.set(
                 ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
-                    account_id,
+                    principal_id,
                 ))),
                 principal.inner.serialize(),
             );
@@ -803,90 +939,11 @@ impl ManageDirectory for Store {
         Ok(())
     }
 
-    async fn create_domain(&self, domain: &str) -> trc::Result<()> {
-        if !domain.contains('.') {
-            return Err(err_missing(PrincipalField::Name));
-        }
-        let mut batch = BatchBuilder::new();
-        batch.set(
-            ValueClass::Directory(DirectoryClass::Domain(domain.to_lowercase().into_bytes())),
-            vec![],
-        );
-        self.write(batch.build()).await.map(|_| ())
-    }
-
-    async fn delete_domain(&self, domain: &str) -> trc::Result<()> {
-        if !domain.contains('.') {
-            return Err(err_missing(PrincipalField::Name));
-        }
-        let mut batch = BatchBuilder::new();
-        batch.clear(ValueClass::Directory(DirectoryClass::Domain(
-            domain.to_lowercase().into_bytes(),
-        )));
-        self.write(batch.build()).await.map(|_| ())
-    }
-
-    async fn map_group_ids(&self, mut principal: Principal) -> trc::Result<Principal> {
-        if let Some(member_of) = principal.take_int_array(PrincipalField::MemberOf) {
-            for account_id in member_of {
-                if let Some(name) = self
-                    .get_account_name(account_id as u32)
-                    .await
-                    .caused_by(trc::location!())?
-                {
-                    principal.append_str(PrincipalField::MemberOf, name);
-                }
-            }
-        }
-
-        Ok(principal)
-    }
-
-    async fn map_principal(
-        &self,
-        mut principal: Principal,
-        create_if_missing: bool,
-    ) -> trc::Result<Principal> {
-        if let Some(member_of) = principal.take_str_array(PrincipalField::MemberOf) {
-            principal.set(
-                PrincipalField::MemberOf,
-                self.map_group_names(member_of, create_if_missing)
-                    .await
-                    .caused_by(trc::location!())?,
-            );
-        }
-
-        Ok(principal)
-    }
-
-    async fn map_group_names(
-        &self,
-        members: Vec<String>,
-        create_if_missing: bool,
-    ) -> trc::Result<Vec<u32>> {
-        let mut member_ids = Vec::with_capacity(members.len());
-
-        for member in members {
-            let account_id = if create_if_missing {
-                self.get_or_create_account_id(&member)
-                    .await
-                    .caused_by(trc::location!())?
-            } else {
-                self.get_account_id(&member)
-                    .await
-                    .caused_by(trc::location!())?
-                    .ok_or_else(|| not_found(member))?
-            };
-            member_ids.push(account_id);
-        }
-
-        Ok(member_ids)
-    }
-
-    async fn list_accounts(
+    async fn list_principals(
         &self,
         filter: Option<&str>,
         typ: Option<Type>,
+        tenant_id: Option<u32>,
     ) -> trc::Result<Vec<String>> {
         let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![])));
         let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
@@ -898,11 +955,11 @@ impl ManageDirectory for Store {
         self.iterate(
             IterateParams::new(from_key, to_key).ascending(),
             |key, value| {
-                let pt = PrincipalIdType::deserialize(value).caused_by(trc::location!())?;
+                let pt = PrincipalInfo::deserialize(value).caused_by(trc::location!())?;
 
-                if typ.map_or(true, |t| pt.typ == t) {
+                if typ.map_or(true, |t| pt.typ == t) && pt.has_tenant_access(tenant_id) {
                     results.push((
-                        pt.account_id,
+                        pt.id,
                         String::from_utf8_lossy(key.get(1..).unwrap_or_default()).into_owned(),
                     ));
                 }
@@ -920,25 +977,16 @@ impl ManageDirectory for Store {
                 .map(|r| r.to_lowercase())
                 .collect::<Vec<_>>();
 
-            for (account_id, account_name) in results {
+            for (principal_id, principal_name) in results {
                 let principal = self
                     .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-                        DirectoryClass::Principal(account_id),
+                        DirectoryClass::Principal(principal_id),
                     )))
                     .await
                     .caused_by(trc::location!())?
-                    .ok_or_else(|| not_found(account_id.to_string()))?;
-                if filters.iter().all(|f| {
-                    principal.name().to_lowercase().contains(f)
-                        || principal
-                            .description()
-                            .as_ref()
-                            .map_or(false, |d| d.to_lowercase().contains(f))
-                        || principal
-                            .iter_str(PrincipalField::Emails)
-                            .any(|email| email.to_lowercase().contains(f))
-                }) {
-                    filtered.push(account_name);
+                    .ok_or_else(|| not_found(principal_id.to_string()))?;
+                if filters.iter().all(|f| principal.find_str(f)) {
+                    filtered.push(principal_name);
                 }
             }
 
@@ -948,59 +996,38 @@ impl ManageDirectory for Store {
         }
     }
 
-    async fn list_domains(&self, filter: Option<&str>) -> trc::Result<Vec<String>> {
-        let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(vec![])));
-        let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(vec![
-            u8::MAX;
-            10
-        ])));
-
-        let mut results = Vec::new();
-        self.iterate(
-            IterateParams::new(from_key, to_key).no_values().ascending(),
-            |key, _| {
-                let domain = String::from_utf8_lossy(key.get(1..).unwrap_or_default()).into_owned();
-                if filter.map_or(true, |f| domain.contains(f)) {
-                    results.push(domain);
-                }
-                Ok(true)
-            },
-        )
-        .await
-        .caused_by(trc::location!())?;
-
-        Ok(results)
-    }
-
-    async fn get_member_of(&self, account_id: u32) -> trc::Result<Vec<u32>> {
+    async fn get_member_of(&self, principal_id: u32) -> trc::Result<Vec<MemberOf>> {
         let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::MemberOf {
-            principal_id: account_id,
+            principal_id,
             member_of: 0,
         }));
         let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::MemberOf {
-            principal_id: account_id,
+            principal_id,
             member_of: u32::MAX,
         }));
         let mut results = Vec::new();
-        self.iterate(
-            IterateParams::new(from_key, to_key).no_values(),
-            |key, _| {
-                results.push(key.deserialize_be_u32(key.len() - U32_LEN)?);
-                Ok(true)
-            },
-        )
+        self.iterate(IterateParams::new(from_key, to_key), |key, value| {
+            results.push(MemberOf {
+                principal_id: key.deserialize_be_u32(key.len() - U32_LEN)?,
+                typ: value
+                    .first()
+                    .map(|v| Type::from_u8(*v))
+                    .unwrap_or(Type::Group),
+            });
+            Ok(true)
+        })
         .await
         .caused_by(trc::location!())?;
         Ok(results)
     }
 
-    async fn get_members(&self, account_id: u32) -> trc::Result<Vec<u32>> {
+    async fn get_members(&self, principal_id: u32) -> trc::Result<Vec<u32>> {
         let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Members {
-            principal_id: account_id,
+            principal_id,
             has_member: 0,
         }));
         let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::Members {
-            principal_id: account_id,
+            principal_id,
             has_member: u32::MAX,
         }));
         let mut results = Vec::new();
@@ -1032,17 +1059,26 @@ impl From<Principal> for MaybeDynamicValue {
 }
 
 #[derive(Clone, Copy)]
-struct DynamicPrincipalIdType(Type);
+struct DynamicPrincipalInfo {
+    typ: Type,
+    tenant: Option<u32>,
+}
 
-impl SerializeWithId for DynamicPrincipalIdType {
-    fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>> {
-        ids.last_document_id()
-            .map(|account_id| PrincipalIdType::new(account_id, self.0).serialize())
+impl DynamicPrincipalInfo {
+    fn new(typ: Type, tenant: Option<u32>) -> Self {
+        Self { typ, tenant }
     }
 }
 
-impl From<DynamicPrincipalIdType> for MaybeDynamicValue {
-    fn from(value: DynamicPrincipalIdType) -> Self {
+impl SerializeWithId for DynamicPrincipalInfo {
+    fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>> {
+        ids.last_document_id()
+            .map(|principal_id| PrincipalInfo::new(principal_id, self.typ, self.tenant).serialize())
+    }
+}
+
+impl From<DynamicPrincipalInfo> for MaybeDynamicValue {
+    fn from(value: DynamicPrincipalInfo) -> Self {
         MaybeDynamicValue::Dynamic(Box::new(value))
     }
 }

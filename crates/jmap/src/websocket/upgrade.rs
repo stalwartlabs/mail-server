@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use common::auth::AccessToken;
 use hyper::StatusCode;
 use hyper_util::rt::TokioIo;
 use tokio_tungstenite::WebSocketStream;
@@ -14,7 +15,6 @@ use tungstenite::{handshake::derive_accept_key, protocol::Role};
 
 use crate::{
     api::{http::HttpSessionData, HttpRequest, HttpResponse, HttpResponseBody},
-    auth::AccessToken,
     JMAP,
 };
 

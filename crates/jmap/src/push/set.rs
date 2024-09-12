@@ -5,6 +5,7 @@
  */
 
 use base64::{engine::general_purpose, Engine};
+use common::auth::AccessToken;
 use jmap_proto::{
     error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -23,7 +24,7 @@ use store::{
     write::{now, BatchBuilder, F_CLEAR, F_VALUE},
 };
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 const EXPIRES_MAX: i64 = 7 * 24 * 3600; // 7 days
 const VERIFICATION_CODE_LEN: usize = 32;

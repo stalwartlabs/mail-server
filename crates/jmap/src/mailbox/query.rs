@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::{mailbox::QueryArguments, Object},
@@ -15,7 +16,7 @@ use store::{
     roaring::RoaringBitmap,
 };
 
-use crate::{auth::AccessToken, UpdateResults, JMAP};
+use crate::{UpdateResults, JMAP};
 
 impl JMAP {
     pub async fn mailbox_query(

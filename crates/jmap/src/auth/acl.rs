@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     error::set::SetError,
@@ -22,63 +23,11 @@ use store::{
     ValueKey,
 };
 use trc::AddContext;
-use utils::map::bitmap::{Bitmap, BitmapItem};
+use utils::map::bitmap::Bitmap;
 
 use crate::JMAP;
 
-use super::AccessToken;
-
 impl JMAP {
-    pub async fn update_access_token(
-        &self,
-        mut access_token: AccessToken,
-    ) -> trc::Result<AccessToken> {
-        for &grant_account_id in [access_token.primary_id]
-            .iter()
-            .chain(access_token.member_of.clone().iter())
-        {
-            for acl_item in self
-                .core
-                .storage
-                .data
-                .acl_query(AclQuery::HasAccess { grant_account_id })
-                .await
-                .caused_by(trc::location!())?
-            {
-                if !access_token.is_member(acl_item.to_account_id) {
-                    let acl = Bitmap::<Acl>::from(acl_item.permissions);
-                    let collection = Collection::from(acl_item.to_collection);
-                    if !collection.is_valid() {
-                        return Err(trc::StoreEvent::DataCorruption
-                            .ctx(trc::Key::Reason, "Corrupted collection found in ACL key.")
-                            .details(format!("{acl_item:?}"))
-                            .account_id(grant_account_id)
-                            .caused_by(trc::location!()));
-                    }
-
-                    let mut collections: Bitmap<Collection> = Bitmap::new();
-                    if acl.contains(Acl::Read) || acl.contains(Acl::Administer) {
-                        collections.insert(collection);
-                    }
-                    if collection == Collection::Mailbox
-                        && (acl.contains(Acl::ReadItems) || acl.contains(Acl::Administer))
-                    {
-                        collections.insert(Collection::Email);
-                    }
-
-                    if !collections.is_empty() {
-                        access_token
-                            .access_to
-                            .get_mut_or_insert_with(acl_item.to_account_id, Bitmap::new)
-                            .union(&collections);
-                    }
-                }
-            }
-        }
-
-        Ok(access_token)
-    }
-
     pub async fn shared_documents(
         &self,
         access_token: &AccessToken,
@@ -344,7 +293,7 @@ impl JMAP {
         current: &Option<HashedValue<Object<Value>>>,
     ) {
         if let Value::Acl(acl_changes) = changes.get(&Property::Acl) {
-            let access_tokens = &self.inner.access_tokens;
+            let access_tokens = &self.core.security.access_tokens;
             if let Some(Value::Acl(acl_current)) = current
                 .as_ref()
                 .and_then(|current| current.inner.properties.get(&Property::Acl))

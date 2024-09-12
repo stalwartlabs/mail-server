@@ -398,9 +398,12 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             }
                             ActionClass::Session => {
                                 let inner = core.jmap_inner.clone();
+                                let core = core_.clone();
+
                                 tokio::spawn(async move {
                                     trc::event!(Housekeeper(HousekeeperEvent::PurgeSessions));
                                     inner.purge();
+                                    core.security.access_tokens.cleanup();
                                 });
                                 queue.schedule(
                                     Instant::now()
@@ -685,7 +688,6 @@ impl PartialOrd for Action {
 impl Inner {
     pub fn purge(&self) {
         self.sessions.cleanup();
-        self.access_tokens.cleanup();
         self.concurrency_limiter
             .retain(|_, limiter| limiter.is_active());
     }

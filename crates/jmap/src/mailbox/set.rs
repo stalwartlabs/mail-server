@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::config::jmap::settings::SpecialUse;
+use common::{auth::AccessToken, config::jmap::settings::SpecialUse};
 use directory::Permission;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
@@ -36,10 +36,7 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{
-    auth::{acl::EffectiveAcl, AccessToken},
-    JMAP,
-};
+use crate::{auth::acl::EffectiveAcl, JMAP};
 
 #[allow(unused_imports)]
 use super::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};

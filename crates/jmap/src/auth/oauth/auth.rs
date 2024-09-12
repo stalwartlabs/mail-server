@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use common::auth::AccessToken;
 use rand::distributions::Standard;
 use serde_json::json;
 use store::{
@@ -16,7 +17,7 @@ use store::{
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::{oauth::OAuthStatus, AccessToken},
+    auth::oauth::OAuthStatus,
     JMAP,
 };
 

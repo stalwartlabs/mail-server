@@ -424,7 +424,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     }
 
     // Assign Id 0 to admin (required for some tests)
-    store.get_or_create_account_id("admin").await.unwrap();
+    store.get_or_create_principal_id("admin").await.unwrap();
 
     IMAPTest {
         jmap: JMAP::from(jmap.clone()).into(),

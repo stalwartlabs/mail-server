@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
@@ -22,7 +23,7 @@ use mail_parser::HeaderName;
 use store::{write::Bincode, BlobClass};
 use trc::{AddContext, StoreEvent};
 
-use crate::{auth::AccessToken, email::headers::HeaderToValue, mailbox::UidMailbox, JMAP};
+use crate::{email::headers::HeaderToValue, mailbox::UidMailbox, JMAP};
 
 use super::{
     body::{ToBodyPart, TruncateBody},

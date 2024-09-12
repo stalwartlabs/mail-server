@@ -75,7 +75,7 @@ impl<T: SessionStream> Session<T> {
                     .validate_access_token("access_token", &token)
                     .await
                 {
-                    Ok((account_id, _, _)) => self.jmap.get_access_token(account_id).await,
+                    Ok((account_id, _, _)) => self.jmap.core.get_access_token(account_id).await,
                     Err(err) => Err(err),
                 }
             }
@@ -118,7 +118,7 @@ impl<T: SessionStream> Session<T> {
 
         // Cache access token
         let access_token = Arc::new(access_token);
-        self.jmap.cache_access_token(access_token.clone());
+        self.jmap.core.cache_access_token(access_token.clone());
 
         // Fetch mailbox
         let mailbox = self.fetch_mailbox(access_token.primary_id()).await?;

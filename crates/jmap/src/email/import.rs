@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::import::{ImportEmailRequest, ImportEmailResponse},
@@ -19,7 +20,7 @@ use jmap_proto::{
 use mail_parser::MessageParser;
 use utils::map::vec_map::VecMap;
 
-use crate::{api::http::HttpSessionData, auth::AccessToken, JMAP};
+use crate::{api::http::HttpSessionData, JMAP};
 
 use super::ingest::{IngestEmail, IngestSource};
 

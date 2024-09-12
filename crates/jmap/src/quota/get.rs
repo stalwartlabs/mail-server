@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{id::Id, property::Property, state::State, type_state::DataType, value::Value},
 };
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 impl JMAP {
     pub async fn quota_get(

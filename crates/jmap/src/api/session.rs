@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use common::auth::AccessToken;
 use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     request::capability::{Capability, Session},
@@ -13,7 +14,7 @@ use jmap_proto::{
 };
 use trc::AddContext;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 impl JMAP {
     pub async fn handle_session_resource(

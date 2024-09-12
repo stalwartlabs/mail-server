@@ -195,11 +195,11 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                                         .deserialize_leb128::<u32>()
                                         .expect("Failed to deserialize principal id"),
                                 )),
-                                3 => DirectoryClass::Domain(
+                                /*3 => DirectoryClass::Domain(
                                     key.get(1..)
                                         .expect("Failed to read directory string")
                                         .to_vec(),
-                                ),
+                                ),*/
                                 4 => {
                                     batch.add(
                                         ValueClass::Directory(DirectoryClass::UsedQuota(

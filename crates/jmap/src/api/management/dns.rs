@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use directory::{
-    backend::internal::manage::{self, ManageDirectory},
+    backend::internal::manage::{self},
     Permission,
 };
 
@@ -13,7 +14,7 @@ use hyper::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha1::Digest;
-use utils::{config::Config, url_params::UrlParams};
+use utils::config::Config;
 use x509_parser::parse_x509_certificate;
 
 use crate::{
@@ -22,7 +23,6 @@ use crate::{
         management::dkim::{obtain_dkim_public_key, Algorithm},
         HttpRequest, HttpResponse, JsonResponse,
     },
-    auth::AccessToken,
     JMAP,
 };
 
@@ -37,43 +37,18 @@ struct DnsRecord {
 }
 
 impl JMAP {
-    pub async fn handle_manage_domain(
+    pub async fn handle_manage_dns(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
-        match (path.get(1), req.method()) {
-            (None, &Method::GET) => {
-                // Validate the access token
-                access_token.assert_has_permission(Permission::DomainList)?;
-
-                // List domains
-                let params = UrlParams::new(req.uri().query());
-                let filter = params.get("filter");
-                let page: usize = params.parse("page").unwrap_or(0);
-                let limit: usize = params.parse("limit").unwrap_or(0);
-
-                let domains = self.core.storage.data.list_domains(filter).await?;
-                let (total, domains) = if limit > 0 {
-                    let offset = page.saturating_sub(1) * limit;
-                    (
-                        domains.len(),
-                        domains.into_iter().skip(offset).take(limit).collect(),
-                    )
-                } else {
-                    (domains.len(), domains)
-                };
-
-                Ok(JsonResponse::new(json!({
-                        "data": {
-                            "items": domains,
-                            "total": total,
-                        },
-                }))
-                .into_http_response())
-            }
-            (Some(domain), &Method::GET) => {
+        match (
+            path.get(1).copied().unwrap_or_default(),
+            path.get(2),
+            req.method(),
+        ) {
+            ("records", Some(domain), &Method::GET) => {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::DomainGet)?;
 
@@ -84,56 +59,6 @@ impl JMAP {
                 }))
                 .into_http_response())
             }
-            (Some(domain), &Method::POST) => {
-                // Validate the access token
-                access_token.assert_has_permission(Permission::DomainCreate)?;
-
-                // Create domain
-                let domain = decode_path_element(domain);
-                self.core
-                    .storage
-                    .data
-                    .create_domain(domain.as_ref())
-                    .await?;
-                // Set default domain name if missing
-                if self
-                    .core
-                    .storage
-                    .config
-                    .get("lookup.default.domain")
-                    .await?
-                    .is_none()
-                {
-                    self.core
-                        .storage
-                        .config
-                        .set([("lookup.default.domain", domain.as_ref())])
-                        .await?;
-                }
-
-                Ok(JsonResponse::new(json!({
-                    "data": (),
-                }))
-                .into_http_response())
-            }
-            (Some(domain), &Method::DELETE) => {
-                // Validate the access token
-                access_token.assert_has_permission(Permission::DomainDelete)?;
-
-                // Delete domain
-                let domain = decode_path_element(domain);
-                self.core
-                    .storage
-                    .data
-                    .delete_domain(domain.as_ref())
-                    .await?;
-
-                Ok(JsonResponse::new(json!({
-                    "data": (),
-                }))
-                .into_http_response())
-            }
-
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }

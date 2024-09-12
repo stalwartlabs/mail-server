@@ -7,6 +7,7 @@
 use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use common::{
+    auth::AccessToken,
     expr::{functions::ResolveVariable, *},
     listener::{ServerInstance, SessionData, SessionManager, SessionStream},
     manager::webadmin::Resource,
@@ -30,7 +31,7 @@ use jmap_proto::{
 };
 
 use crate::{
-    auth::{authenticate::HttpHeaders, oauth::OAuthMetadata, AccessToken},
+    auth::{authenticate::HttpHeaders, oauth::OAuthMetadata},
     blob::{DownloadResponse, UploadResponse},
     services::state,
     JmapInstance, JMAP,

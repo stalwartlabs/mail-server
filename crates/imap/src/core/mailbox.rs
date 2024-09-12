@@ -5,15 +5,13 @@ use std::{
 
 use ahash::AHashMap;
 use common::{
+    auth::AccessToken,
     config::jmap::settings::SpecialUse,
     listener::{limiter::InFlight, SessionStream},
 };
 use directory::{backend::internal::PrincipalField, QueryBy};
 use imap_proto::protocol::list::Attribute;
-use jmap::{
-    auth::{acl::EffectiveAcl, AccessToken},
-    mailbox::INBOX_ID,
-};
+use jmap::{auth::acl::EffectiveAcl, mailbox::INBOX_ID};
 use jmap_proto::{
     object::Object,
     types::{acl::Acl, collection::Collection, id::Id, property::Property, value::Value},
@@ -335,6 +333,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain access token
         let access_token = self
             .jmap
+            .core
             .get_cached_access_token(self.account_id)
             .await
             .caused_by(trc::location!())?;

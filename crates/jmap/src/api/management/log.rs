@@ -5,6 +5,7 @@ use std::{
 };
 
 use chrono::DateTime;
+use common::auth::AccessToken;
 use directory::{backend::internal::manage, Permission};
 use rev_lines::RevLines;
 use serde::Serialize;
@@ -14,7 +15,6 @@ use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::AccessToken,
     JMAP,
 };
 

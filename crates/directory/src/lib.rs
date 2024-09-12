@@ -21,6 +21,7 @@ use ldap3::LdapError;
 use mail_send::Credentials;
 use proc_macros::EnumMethods;
 use store::Store;
+use trc::ipc::bitset::Bitset;
 
 pub mod backend;
 pub mod core;
@@ -53,8 +54,12 @@ pub enum Type {
     List = 5,
     #[serde(rename = "other")]
     Other = 6,
+    #[serde(rename = "domain")]
+    Domain = 7,
     #[serde(rename = "tenant")]
-    Tenant = 7,
+    Tenant = 8,
+    #[serde(rename = "role")]
+    Role = 9,
 }
 
 #[derive(
@@ -81,16 +86,41 @@ pub enum Permission {
     SettingsUpdate,
     SettingsDelete,
     SettingsReload,
-    PrincipalList,
-    PrincipalGet,
-    PrincipalUpdate,
-    PrincipalDelete,
-    PrincipalCreate,
+    IndividualList,
+    IndividualGet,
+    IndividualUpdate,
+    IndividualDelete,
+    IndividualCreate,
+    GroupList,
+    GroupGet,
+    GroupUpdate,
+    GroupDelete,
+    GroupCreate,
     DomainList,
     DomainGet,
     DomainCreate,
     DomainUpdate,
     DomainDelete,
+    TenantList,
+    TenantGet,
+    TenantCreate,
+    TenantUpdate,
+    TenantDelete,
+    MailingListList,
+    MailingListGet,
+    MailingListCreate,
+    MailingListUpdate,
+    MailingListDelete,
+    RoleList,
+    RoleGet,
+    RoleCreate,
+    RoleUpdate,
+    RoleDelete,
+    PrincipalList,
+    PrincipalGet,
+    PrincipalCreate,
+    PrincipalUpdate,
+    PrincipalDelete,
     BlobFetch,
     PurgeBlobStore,
     PurgeDataStore,
@@ -113,6 +143,8 @@ pub enum Permission {
     // Generic
     Authenticate,
     AuthenticateOauth,
+    EmailSend,
+    EmailReceive,
 
     // Account Management
     ManageEncryption,
@@ -195,9 +227,6 @@ pub enum Permission {
     ImapSubscribe,
     ImapThread,
 
-    // SMTP
-    SmtpAuthenticate,
-
     // POP3
     Pop3Authenticate,
     Pop3List,
@@ -218,8 +247,13 @@ pub enum Permission {
     SieveHaveSpace,
 }
 
-pub const PERMISSION_BITMAP_SIZE: usize =
-    (Permission::COUNT + std::mem::size_of::<usize>() - 1) / std::mem::size_of::<usize>();
+pub type Permissions = Bitset<
+    { (Permission::COUNT + std::mem::size_of::<usize>() - 1) / std::mem::size_of::<usize>() },
+>;
+
+pub const ROLE_ADMIN: u32 = u32::MAX;
+pub const ROLE_TENANT_ADMIN: u32 = u32::MAX - 1;
+pub const ROLE_USER: u32 = u32::MAX - 2;
 
 pub enum DirectoryInner {
     Internal(Store),

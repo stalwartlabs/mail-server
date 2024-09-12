@@ -10,9 +10,14 @@ use arc_swap::ArcSwap;
 use directory::{Directories, Directory};
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use telemetry::Metrics;
-use utils::config::Config;
+use utils::{
+    config::Config,
+    map::ttl_dashmap::{ADashMap, TtlDashMap, TtlMap},
+};
 
-use crate::{expr::*, listener::tls::TlsManager, manager::config::ConfigManager, Core, Network};
+use crate::{
+    expr::*, listener::tls::TlsManager, manager::config::ConfigManager, Core, Network, Security,
+};
 
 use self::{
     imap::ImapConfig, jmap::settings::JmapConfig, scripts::Scripting, smtp::SmtpConfig,
@@ -162,6 +167,15 @@ impl Core {
             imap: ImapConfig::parse(config),
             tls: TlsManager::parse(config),
             metrics: Metrics::parse(config),
+            security: Security {
+                access_tokens: TtlDashMap::with_capacity(32, 100),
+                permissions: ADashMap::with_capacity_and_hasher_and_shard_amount(
+                    32,
+                    ahash::RandomState::new(),
+                    100,
+                ),
+                permissions_version: Default::default(),
+            },
             storage: Storage {
                 data,
                 blob,

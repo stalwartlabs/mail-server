@@ -6,7 +6,7 @@
 
 use std::time::SystemTime;
 
-use common::{scripts::ScriptModification, IntoString};
+use common::{auth::AccessToken, scripts::ScriptModification, IntoString};
 use directory::Permission;
 use hyper::Method;
 use serde_json::json;
@@ -16,7 +16,6 @@ use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::AccessToken,
     JMAP,
 };
 

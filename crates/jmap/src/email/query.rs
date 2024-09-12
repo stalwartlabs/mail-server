@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,
@@ -19,7 +20,7 @@ use store::{
     ValueKey,
 };
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 impl JMAP {
     pub async fn email_query(

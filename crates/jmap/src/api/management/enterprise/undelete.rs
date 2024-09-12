@@ -65,7 +65,7 @@ impl JMAP {
                     .core
                     .storage
                     .data
-                    .get_account_id(account_name)
+                    .get_principal_id(account_name)
                     .await?
                     .ok_or_else(|| trc::ResourceEvent::NotFound.into_err())?;
                 let mut deleted = self.core.list_deleted(account_id).await?;
@@ -115,7 +115,7 @@ impl JMAP {
                     .core
                     .storage
                     .data
-                    .get_account_id(account_name)
+                    .get_principal_id(account_name)
                     .await?
                     .ok_or_else(|| trc::ResourceEvent::NotFound.into_err())?;
 

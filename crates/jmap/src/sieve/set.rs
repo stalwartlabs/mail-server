@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
@@ -33,7 +34,7 @@ use store::{
     BlobClass,
 };
 
-use crate::{api::http::HttpSessionData, auth::AccessToken, JMAP};
+use crate::{api::http::HttpSessionData, JMAP};
 
 struct SetContext<'x> {
     account_id: u32,

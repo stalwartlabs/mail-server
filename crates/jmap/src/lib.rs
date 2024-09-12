@@ -11,8 +11,10 @@ use std::{
     time::Duration,
 };
 
-use auth::{rate_limit::ConcurrencyLimiters, AccessToken};
-use common::{manager::webadmin::WebAdminManager, Core, DeliveryEvent, SharedCore};
+use auth::rate_limit::ConcurrencyLimiters;
+use common::{
+    auth::AccessToken, manager::webadmin::WebAdminManager, Core, DeliveryEvent, SharedCore,
+};
 use dashmap::DashMap;
 use directory::QueryBy;
 use email::cache::Threads;
@@ -87,7 +89,6 @@ pub struct JmapInstance {
 
 pub struct Inner {
     pub sessions: TtlDashMap<String, u32>,
-    pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
     pub snowflake_id: SnowflakeIdGenerator,
     pub webadmin: WebAdminManager,
     pub config_version: AtomicU8,
@@ -121,7 +122,6 @@ impl JMAP {
         let inner = Inner {
             webadmin: WebAdminManager::new(),
             sessions: TtlDashMap::with_capacity(capacity, shard_amount),
-            access_tokens: TtlDashMap::with_capacity(capacity, shard_amount),
             snowflake_id: config
                 .property::<u64>("cluster.node-id")
                 .map(SnowflakeIdGenerator::with_node_id)

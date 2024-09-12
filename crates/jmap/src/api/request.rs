@@ -6,6 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::{
         get, query,
@@ -17,7 +18,7 @@ use jmap_proto::{
 };
 use trc::JmapEvent;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 use super::http::HttpSessionData;
 

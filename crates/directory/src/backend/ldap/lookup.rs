@@ -6,10 +6,11 @@
 
 use ldap3::{Ldap, LdapConnAsync, Scope, SearchEntry};
 use mail_send::Credentials;
+use trc::AddContext;
 
 use crate::{
     backend::internal::{manage::ManageDirectory, PrincipalField},
-    IntoError, Principal, QueryBy, Type,
+    IntoError, Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
 };
 
 use super::{LdapDirectory, LdapMappings};
@@ -38,7 +39,7 @@ impl LdapDirectory {
                 }
             }
             QueryBy::Id(uid) => {
-                if let Some(username) = self.data_store.get_account_name(uid).await? {
+                if let Some(username) = self.data_store.get_principal_name(uid).await? {
                     account_name = username;
                 } else {
                     return Ok(None);
@@ -125,18 +126,22 @@ impl LdapDirectory {
         } else {
             principal.id = self
                 .data_store
-                .get_or_create_account_id(&account_name)
+                .get_or_create_principal_id(&account_name, Type::Individual)
                 .await?;
         }
         principal.append_str(PrincipalField::Name, account_name);
 
         // Obtain groups
         if return_member_of && principal.has_field(PrincipalField::MemberOf) {
-            for member_of in principal.iter_mut_str(PrincipalField::MemberOf) {
-                if member_of.contains('=') {
+            let mut member_of = Vec::new();
+            for mut name in principal
+                .take_str_array(PrincipalField::MemberOf)
+                .unwrap_or_default()
+            {
+                if name.contains('=') {
                     let (rs, _res) = conn
                         .search(
-                            member_of,
+                            &name,
                             Scope::Base,
                             "objectClass=*",
                             &self.mappings.attr_name,
@@ -150,7 +155,7 @@ impl LdapDirectory {
                             if self.mappings.attr_name.contains(&attr) {
                                 if let Some(group) = value.into_iter().next() {
                                     if !group.is_empty() {
-                                        *member_of = group;
+                                        name = group;
                                         break 'outer;
                                     }
                                 }
@@ -158,17 +163,22 @@ impl LdapDirectory {
                         }
                     }
                 }
+
+                member_of.push(
+                    self.data_store
+                        .get_or_create_principal_id(&name, Type::Group)
+                        .await
+                        .caused_by(trc::location!())?,
+                );
             }
 
             // Map ids
-            self.data_store
-                .map_principal(principal, true)
-                .await
-                .map(Some)
+            principal.set(PrincipalField::MemberOf, member_of);
         } else {
             principal.remove(PrincipalField::MemberOf);
-            Ok(Some(principal))
         }
+
+        Ok(Some(principal))
     }
 
     pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
@@ -205,7 +215,11 @@ impl LdapDirectory {
             'outer: for attr in &self.mappings.attr_name {
                 if let Some(name) = entry.attrs.get(attr).and_then(|v| v.first()) {
                     if !name.is_empty() {
-                        ids.push(self.data_store.get_or_create_account_id(name).await?);
+                        ids.push(
+                            self.data_store
+                                .get_or_create_principal_id(name, Type::Individual)
+                                .await?,
+                        );
                         break 'outer;
                     }
                 }
@@ -405,6 +419,7 @@ impl LdapDirectory {
 impl LdapMappings {
     fn entry_to_principal(&self, entry: SearchEntry) -> Principal {
         let mut principal = Principal::default();
+        let mut role = ROLE_USER;
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {
@@ -443,7 +458,8 @@ impl LdapMappings {
                 for value in value {
                     match value.to_ascii_lowercase().as_str() {
                         "admin" | "administrator" | "root" | "superuser" => {
-                            principal = principal.into_superuser();
+                            role = ROLE_ADMIN;
+                            principal.typ = Type::Individual
                         }
                         "posixaccount" | "individual" | "person" | "inetorgperson" => {
                             principal.typ = Type::Individual
@@ -458,6 +474,6 @@ impl LdapMappings {
             }
         }
 
-        principal
+        principal.with_field(PrincipalField::Roles, role)
     }
 }

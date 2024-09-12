@@ -7,7 +7,7 @@
 use std::{net::IpAddr, sync::Arc, time::Instant};
 
 use common::listener::limiter::InFlight;
-use directory::{Principal, QueryBy};
+use directory::Permission;
 use hyper::header;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
@@ -18,7 +18,7 @@ use crate::{
     JMAP,
 };
 
-use super::AccessToken;
+use common::auth::AccessToken;
 
 impl JMAP {
     pub async fn authenticate_headers(
@@ -28,7 +28,7 @@ impl JMAP {
     ) -> trc::Result<(InFlight, Arc<AccessToken>)> {
         if let Some((mechanism, token)) = req.authorization() {
             let access_token = if let Some(account_id) = self.inner.sessions.get_with_ttl(token) {
-                self.get_cached_access_token(account_id).await?
+                self.core.get_cached_access_token(account_id).await?
             } else {
                 let access_token = if mechanism.eq_ignore_ascii_case("basic") {
                     // Enforce rate limit for authentication requests
@@ -64,7 +64,7 @@ impl JMAP {
                     let (account_id, _, _) =
                         self.validate_access_token("access_token", token).await?;
 
-                    self.get_access_token(account_id).await?
+                    self.core.get_access_token(account_id).await?
                 } else {
                     // Enforce anonymous rate limit
                     self.is_anonymous_allowed(&session.remote_ip).await?;
@@ -78,7 +78,7 @@ impl JMAP {
                 // Cache session
                 let access_token = Arc::new(access_token);
                 self.cache_session(token.to_string(), &access_token);
-                self.cache_access_token(access_token.clone());
+                self.core.cache_access_token(access_token.clone());
                 access_token
             };
 
@@ -105,27 +105,6 @@ impl JMAP {
         );
     }
 
-    pub fn cache_access_token(&self, access_token: Arc<AccessToken>) {
-        self.inner.access_tokens.insert_with_ttl(
-            access_token.primary_id(),
-            access_token,
-            Instant::now() + self.core.jmap.session_cache_ttl,
-        );
-    }
-
-    pub async fn get_cached_access_token(&self, primary_id: u32) -> trc::Result<Arc<AccessToken>> {
-        if let Some(access_token) = self.inner.access_tokens.get_with_ttl(&primary_id) {
-            Ok(access_token)
-        } else {
-            // Refresh ACL token
-            self.get_access_token(primary_id).await.map(|access_token| {
-                let access_token = Arc::new(access_token);
-                self.cache_access_token(access_token.clone());
-                access_token
-            })
-        }
-    }
-
     pub async fn authenticate_plain(
         &self,
         username: &str,
@@ -147,40 +126,21 @@ impl JMAP {
             )
             .await
         {
-            Ok(principal) => Ok(AccessToken::new(principal)),
+            Ok(principal) => self
+                .core
+                .build_access_token(principal)
+                .await
+                .and_then(|token| {
+                    token
+                        .assert_has_permission(Permission::Authenticate)
+                        .map(|_| token)
+                }),
             Err(err) => {
                 if !err.matches(trc::EventType::Auth(trc::AuthEvent::MissingTotp)) {
                     let _ = self.is_auth_allowed_hard(&remote_ip).await;
                 }
                 Err(err)
             }
-        }
-    }
-
-    pub async fn get_access_token(&self, account_id: u32) -> trc::Result<AccessToken> {
-        let err = match self
-            .core
-            .storage
-            .directory
-            .query(QueryBy::Id(account_id), true)
-            .await
-        {
-            Ok(Some(principal)) => {
-                return self.update_access_token(AccessToken::new(principal)).await
-            }
-            Ok(None) => Err(trc::AuthEvent::Error
-                .into_err()
-                .details("Account not found.")
-                .caused_by(trc::location!())),
-            Err(err) => Err(err),
-        };
-
-        match &self.core.jmap.fallback_admin {
-            Some((_, secret)) if account_id == u32::MAX => {
-                self.update_access_token(AccessToken::new(Principal::fallback_admin(secret)))
-                    .await
-            }
-            _ => err,
         }
     }
 }
