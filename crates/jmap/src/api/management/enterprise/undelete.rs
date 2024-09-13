@@ -11,7 +11,7 @@
 use std::str::FromStr;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use common::enterprise::undelete::DeletedBlob;
+use common::{auth::AccessToken, enterprise::undelete::DeletedBlob};
 use directory::backend::internal::manage::ManageDirectory;
 use hyper::Method;
 use jmap_proto::types::collection::Collection;
@@ -168,8 +168,13 @@ impl JMAP {
                                         .email_ingest(IngestEmail {
                                             raw_message: &bytes,
                                             message: MessageParser::new().parse(&bytes),
-                                            account_id,
-                                            account_quota: 0,
+                                            resource: self
+                                                .get_resource_token(
+                                                    &AccessToken::from_id(u32::MAX),
+                                                    account_id,
+                                                )
+                                                .await
+                                                .caused_by(trc::location!())?,
                                             mailbox_ids: vec![INBOX_ID],
                                             keywords: vec![],
                                             received_at: (request.time as u64).into(),

@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use common::auth::AccessToken;
 use directory::{
     backend::internal::{
         lookup::DirectoryStore,
-        manage::{self, ManageDirectory},
+        manage::{self, not_found, ManageDirectory},
         PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue, SpecialSecrets,
     },
-    DirectoryInner, Permission, Principal, QueryBy, Type,
+    DirectoryInner, Permission, Principal, QueryBy, Type, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER,
 };
 
 use hyper::{header, Method};
@@ -57,8 +57,6 @@ impl JMAP {
     ) -> trc::Result<HttpResponse> {
         match (path.get(1), req.method()) {
             (None, &Method::POST) => {
-                let todo = "increment role list version + implement gossip";
-
                 // Parse principal
                 let principal =
                     serde_json::from_slice::<Principal>(body.as_deref().unwrap_or_default())
@@ -78,6 +76,14 @@ impl JMAP {
                     Type::Resource | Type::Location | Type::Other => Permission::PrincipalCreate,
                 })?;
 
+                #[cfg(feature = "enterprise")]
+                if (matches!(principal.typ(), Type::Tenant)
+                    || principal.has_field(PrincipalField::Tenant))
+                    && !self.core.is_enterprise_edition()
+                {
+                    return Err(manage::enterprise());
+                }
+
                 // Make sure the current directory supports updates
                 if matches!(principal.typ(), Type::Individual | Type::Group | Type::List) {
                     self.assert_supported_directory()?;
@@ -86,12 +92,12 @@ impl JMAP {
                 // Validate tenant limits
                 #[cfg(feature = "enterprise")]
                 if self.core.is_enterprise_edition() {
-                    if let Some(tenant_id) = access_token.tenant_id {
+                    if let Some(tenant_info) = access_token.tenant {
                         let tenant = self
                             .core
                             .storage
                             .data
-                            .query(QueryBy::Id(tenant_id), false)
+                            .query(QueryBy::Id(tenant_info.id), false)
                             .await?
                             .ok_or_else(|| {
                                 trc::ManageEvent::NotFound
@@ -99,7 +105,35 @@ impl JMAP {
                                     .caused_by(trc::location!())
                             })?;
 
-                        let todo = "check limits";
+                        // Enforce tenant quotas
+                        if let Some(limit) = tenant
+                            .get_int_array(PrincipalField::Quota)
+                            .and_then(|quotas| quotas.get(principal.typ() as usize + 1))
+                            .copied()
+                            .filter(|q| *q > 0)
+                        {
+                            // Obtain number of principals
+                            let total = self
+                                .core
+                                .storage
+                                .data
+                                .count_principals(
+                                    None,
+                                    principal.typ().into(),
+                                    tenant_info.id.into(),
+                                )
+                                .await
+                                .caused_by(trc::location!())?;
+
+                            if total >= limit {
+                                trc::bail!(trc::LimitEvent::TenantQuota
+                                    .into_err()
+                                    .details("Tenant principal quota exceeded")
+                                    .ctx(trc::Key::Details, principal.typ().as_str())
+                                    .ctx(trc::Key::Limit, limit)
+                                    .ctx(trc::Key::Total, total));
+                            }
+                        }
                     }
                 }
 
@@ -108,7 +142,7 @@ impl JMAP {
                     .core
                     .storage
                     .data
-                    .create_principal(principal, access_token.tenant_id)
+                    .create_principal(principal, access_token.tenant.map(|t| t.id))
                     .await?;
 
                 Ok(JsonResponse::new(json!({
@@ -117,38 +151,52 @@ impl JMAP {
                 .into_http_response())
             }
             (None, &Method::GET) => {
-                // Validate the access token
-                access_token.assert_has_permission(Permission::PrincipalList)?;
-
                 // List principal ids
                 let params = UrlParams::new(req.uri().query());
                 let filter = params.get("filter");
-                let typ = params.parse("type");
+                let typ = params.parse("type").unwrap_or(Type::Individual);
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
 
-                let mut tenant_id = access_token.tenant_id;
+                // Validate the access token
+                access_token.assert_has_permission(match typ {
+                    Type::Individual => Permission::IndividualList,
+                    Type::Group => Permission::GroupList,
+                    Type::List => Permission::MailingListList,
+                    Type::Domain => Permission::DomainList,
+                    Type::Tenant => Permission::TenantList,
+                    Type::Role => Permission::RoleList,
+                    Type::Resource | Type::Location | Type::Other => Permission::PrincipalList,
+                })?;
+
+                let mut tenant = access_token.tenant.map(|t| t.id);
 
                 #[cfg(feature = "enterprise")]
-                if self.core.is_enterprise_edition() && tenant_id.is_none() {
-                    if let Some(tenant_name) = params.get("tenant") {
-                        tenant_id = self
-                            .core
-                            .storage
-                            .data
-                            .get_principal_info(tenant_name)
-                            .await?
-                            .filter(|p| p.typ == Type::Tenant)
-                            .map(|p| p.id);
+                if self.core.is_enterprise_edition() {
+                    if tenant.is_none() {
+                        // Limit search to current tenant
+                        if let Some(tenant_name) = params.get("tenant") {
+                            tenant = self
+                                .core
+                                .storage
+                                .data
+                                .get_principal_info(tenant_name)
+                                .await?
+                                .filter(|p| p.typ == Type::Tenant)
+                                .map(|p| p.id);
+                        }
                     }
+                } else if matches!(typ, Type::Tenant) {
+                    return Err(manage::enterprise());
                 }
 
                 let accounts = self
                     .core
                     .storage
                     .data
-                    .list_principals(filter, typ, tenant_id)
+                    .list_principals(filter, typ.into(), tenant)
                     .await?;
+
                 let (total, accounts) = if limit > 0 {
                     let offset = page.saturating_sub(1) * limit;
                     (
@@ -168,32 +216,38 @@ impl JMAP {
                 .into_http_response())
             }
             (Some(name), method) => {
-                // Validate the access token
-                match *method {
-                    Method::GET => {
-                        access_token.assert_has_permission(Permission::PrincipalGet)?;
-                    }
-                    Method::DELETE => {
-                        access_token.assert_has_permission(Permission::PrincipalDelete)?;
-                    }
-                    Method::PATCH => {
-                        access_token.assert_has_permission(Permission::PrincipalUpdate)?;
-                    }
-                    _ => {}
-                }
-
                 // Fetch, update or delete principal
                 let name = decode_path_element(name);
-                let account_id = self
+                let (account_id, typ) = self
                     .core
                     .storage
                     .data
-                    .get_principal_id(name.as_ref())
+                    .get_principal_info(name.as_ref())
                     .await?
-                    .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
+                    .filter(|p| p.has_tenant_access(access_token.tenant.map(|t| t.id)))
+                    .map(|p| (p.id, p.typ))
+                    .ok_or_else(|| not_found(name.to_string()))?;
+
+                #[cfg(feature = "enterprise")]
+                if matches!(typ, Type::Tenant) && !self.core.is_enterprise_edition() {
+                    return Err(manage::enterprise());
+                }
 
                 match *method {
                     Method::GET => {
+                        // Validate the access token
+                        access_token.assert_has_permission(match typ {
+                            Type::Individual => Permission::IndividualGet,
+                            Type::Group => Permission::GroupGet,
+                            Type::List => Permission::MailingListGet,
+                            Type::Domain => Permission::DomainGet,
+                            Type::Tenant => Permission::TenantGet,
+                            Type::Role => Permission::RoleGet,
+                            Type::Resource | Type::Location | Type::Other => {
+                                Permission::PrincipalGet
+                            }
+                        })?;
+
                         let mut principal = self
                             .core
                             .storage
@@ -203,27 +257,47 @@ impl JMAP {
                             .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
                         // Map groups
-                        if let Some(member_of) = principal.take_int_array(PrincipalField::MemberOf)
-                        {
-                            for principal_id in member_of {
-                                if let Some(name) = self
-                                    .core
-                                    .storage
-                                    .data
-                                    .get_principal_name(principal_id as u32)
-                                    .await
-                                    .caused_by(trc::location!())?
-                                {
-                                    principal.append_str(PrincipalField::MemberOf, name);
+                        for field in [
+                            PrincipalField::MemberOf,
+                            PrincipalField::Lists,
+                            PrincipalField::Roles,
+                        ] {
+                            if let Some(member_of) = principal.take_int_array(field) {
+                                for principal_id in member_of {
+                                    match principal_id as u32 {
+                                        ROLE_ADMIN if field == PrincipalField::Roles => {
+                                            principal.append_str(field, "admin");
+                                        }
+                                        ROLE_TENANT_ADMIN if field == PrincipalField::Roles => {
+                                            principal.append_str(field, "tenant-admin");
+                                        }
+                                        ROLE_USER if field == PrincipalField::Roles => {
+                                            principal.append_str(field, "user");
+                                        }
+                                        principal_id => {
+                                            if let Some(name) = self
+                                                .core
+                                                .storage
+                                                .data
+                                                .get_principal_name(principal_id)
+                                                .await
+                                                .caused_by(trc::location!())?
+                                            {
+                                                principal.append_str(field, name);
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
 
                         // Obtain quota usage
-                        principal.set(
-                            PrincipalField::UsedQuota,
-                            self.get_used_quota(account_id).await? as u64,
-                        );
+                        if matches!(typ, Type::Individual | Type::Group | Type::Tenant) {
+                            principal.set(
+                                PrincipalField::UsedQuota,
+                                self.get_used_quota(account_id).await? as u64,
+                            );
+                        }
 
                         // Obtain member names
                         for member_id in self.core.storage.data.get_members(account_id).await? {
@@ -247,6 +321,19 @@ impl JMAP {
                         .into_http_response())
                     }
                     Method::DELETE => {
+                        // Validate the access token
+                        access_token.assert_has_permission(match typ {
+                            Type::Individual => Permission::IndividualDelete,
+                            Type::Group => Permission::GroupDelete,
+                            Type::List => Permission::MailingListDelete,
+                            Type::Domain => Permission::DomainDelete,
+                            Type::Tenant => Permission::TenantDelete,
+                            Type::Role => Permission::RoleDelete,
+                            Type::Resource | Type::Location | Type::Other => {
+                                Permission::PrincipalDelete
+                            }
+                        })?;
+
                         // Remove FTS index
                         self.core.storage.fts.remove_all(account_id).await?;
 
@@ -256,8 +343,18 @@ impl JMAP {
                             .data
                             .delete_principal(QueryBy::Id(account_id))
                             .await?;
+
                         // Remove entries from cache
                         self.inner.sessions.retain(|_, id| id.item != account_id);
+
+                        if matches!(typ, Type::Role | Type::Tenant) {
+                            // Update permissions cache
+                            self.core.security.permissions.clear();
+                            self.core
+                                .security
+                                .permissions_version
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
 
                         Ok(JsonResponse::new(json!({
                             "data": (),
@@ -265,6 +362,20 @@ impl JMAP {
                         .into_http_response())
                     }
                     Method::PATCH => {
+                        // Validate the access token
+                        let permission_needed = match typ {
+                            Type::Individual => Permission::IndividualUpdate,
+                            Type::Group => Permission::GroupUpdate,
+                            Type::List => Permission::MailingListUpdate,
+                            Type::Domain => Permission::DomainUpdate,
+                            Type::Tenant => Permission::TenantUpdate,
+                            Type::Role => Permission::RoleUpdate,
+                            Type::Resource | Type::Location | Type::Other => {
+                                Permission::PrincipalUpdate
+                            }
+                        };
+                        access_token.assert_has_permission(permission_needed)?;
+
                         let changes = serde_json::from_slice::<Vec<PrincipalUpdate>>(
                             body.as_deref().unwrap_or_default(),
                         )
@@ -273,28 +384,81 @@ impl JMAP {
                                 .from_json_error(err)
                         })?;
 
-                        // Make sure the current directory supports updates
-                        if changes.iter().any(|change| {
-                            !matches!(
-                                change.field,
-                                PrincipalField::Quota | PrincipalField::Description
-                            )
-                        }) {
+                        // Validate changes
+                        let mut needs_assert = false;
+                        let mut is_password_change = false;
+                        let mut is_role_change = false;
+
+                        for change in &changes {
+                            match change.field {
+                                PrincipalField::Name
+                                | PrincipalField::Emails
+                                | PrincipalField::MemberOf
+                                | PrincipalField::Members
+                                | PrincipalField::Lists => {
+                                    needs_assert = true;
+                                }
+                                PrincipalField::Quota
+                                | PrincipalField::UsedQuota
+                                | PrincipalField::Description
+                                | PrincipalField::Type
+                                | PrincipalField::Picture => (),
+                                PrincipalField::Secrets => {
+                                    is_password_change = true;
+                                    needs_assert = true;
+                                }
+                                PrincipalField::Tenant => {
+                                    // Tenants are not allowed to change their tenantId
+                                    if access_token.tenant.is_some() {
+                                        trc::bail!(trc::SecurityEvent::Unauthorized
+                                            .into_err()
+                                            .details(permission_needed.name())
+                                            .ctx(
+                                                trc::Key::Reason,
+                                                "Tenants cannot change their tenantId"
+                                            ));
+                                    }
+                                }
+                                PrincipalField::Roles
+                                | PrincipalField::EnabledPermissions
+                                | PrincipalField::DisabledPermissions => {
+                                    if matches!(typ, Type::Role | Type::Tenant) {
+                                        is_role_change = true;
+                                    }
+                                    if change.field == PrincipalField::Roles {
+                                        needs_assert = true;
+                                    }
+                                }
+                            }
+                        }
+
+                        if needs_assert {
                             self.assert_supported_directory()?;
                         }
 
-                        let is_password_change = changes
-                            .iter()
-                            .any(|change| matches!(change.field, PrincipalField::Secrets));
-
+                        // Update principal
                         self.core
                             .storage
                             .data
-                            .update_principal(QueryBy::Id(account_id), changes)
+                            .update_principal(
+                                QueryBy::Id(account_id),
+                                changes,
+                                access_token.tenant.map(|t| t.id),
+                            )
                             .await?;
+
                         if is_password_change {
                             // Remove entries from cache
                             self.inner.sessions.retain(|_, id| id.item != account_id);
+                        }
+
+                        if is_role_change {
+                            // Update permissions cache
+                            self.core.security.permissions.clear();
+                            self.core
+                                .security
+                                .permissions_version
+                                .fetch_add(1, Ordering::Relaxed);
                         }
 
                         Ok(JsonResponse::new(json!({
@@ -451,7 +615,11 @@ impl JMAP {
         self.core
             .storage
             .data
-            .update_principal(QueryBy::Id(access_token.primary_id()), actions)
+            .update_principal(
+                QueryBy::Id(access_token.primary_id()),
+                actions,
+                access_token.tenant.map(|t| t.id),
+            )
             .await?;
 
         // Remove entries from cache

@@ -5,7 +5,7 @@
  */
 
 use common::auth::AccessToken;
-use directory::Permission;
+use directory::{backend::internal::manage::ManageDirectory, Permission, Type};
 use hyper::Method;
 use mail_auth::report::{
     tlsrpt::{FailureDetails, Policy, TlsReport},
@@ -17,6 +17,7 @@ use store::{
     write::{key::DeserializeBigEndian, BatchBuilder, Bincode, ReportClass, ValueClass},
     Deserialize, IterateParams, ValueKey, U64_LEN,
 };
+use trc::AddContext;
 use utils::url_params::UrlParams;
 
 use crate::{
@@ -39,6 +40,21 @@ impl JMAP {
         path: Vec<&str>,
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
+        // Limit to tenant domains
+        let mut tenant_domains = None;
+        if self.core.is_enterprise_edition() {
+            if let Some(tenant) = access_token.tenant {
+                tenant_domains = self
+                    .core
+                    .storage
+                    .data
+                    .list_principals(None, Type::Domain.into(), tenant.id.into())
+                    .await
+                    .caused_by(trc::location!())?
+                    .into();
+            }
+        }
+
         match (
             path.get(1).copied().unwrap_or_default(),
             path.get(2).copied().map(decode_path_element),
@@ -98,12 +114,13 @@ impl JMAP {
                 let mut offset = page.saturating_sub(1) * limit;
                 let mut total = 0;
                 let mut last_id = 0;
+                let has_filters = filter.is_some() || tenant_domains.is_some();
                 self.core
                     .storage
                     .data
                     .iterate(
                         IterateParams::new(from_key, to_key)
-                            .set_values(filter.is_some())
+                            .set_values(has_filters)
                             .descending(),
                         |key, value| {
                             // Skip chunked records
@@ -114,22 +131,51 @@ impl JMAP {
                             last_id = id;
 
                             // TODO: Support filtering chunked records (over 10MB) on FDB
-                            let matches = filter.map_or(true, |filter| match typ {
-                                ReportType::Dmarc => Bincode::<
-                                    IncomingReport<mail_auth::report::Report>,
-                                >::deserialize(
-                                    value
-                                )
-                                .map_or(false, |v| v.inner.contains(filter)),
-                                ReportType::Tls => {
-                                    Bincode::<IncomingReport<TlsReport>>::deserialize(value)
-                                        .map_or(false, |v| v.inner.contains(filter))
+                            let matches = if has_filters {
+                                match typ {
+                                    ReportType::Dmarc => {
+                                        let report = Bincode::<
+                                            IncomingReport<mail_auth::report::Report>,
+                                        >::deserialize(
+                                            value
+                                        )
+                                        .caused_by(trc::location!())?
+                                        .inner;
+
+                                        filter.map_or(true, |f| report.contains(f))
+                                            && tenant_domains
+                                                .as_ref()
+                                                .map_or(true, |domains| report.has_domain(domains))
+                                    }
+                                    ReportType::Tls => {
+                                        let report =
+                                            Bincode::<IncomingReport<TlsReport>>::deserialize(
+                                                value,
+                                            )
+                                            .caused_by(trc::location!())?
+                                            .inner;
+
+                                        filter.map_or(true, |f| report.contains(f))
+                                            && tenant_domains
+                                                .as_ref()
+                                                .map_or(true, |domains| report.has_domain(domains))
+                                    }
+                                    ReportType::Arf => {
+                                        let report =
+                                            Bincode::<IncomingReport<Feedback>>::deserialize(value)
+                                                .caused_by(trc::location!())?
+                                                .inner;
+
+                                        filter.map_or(true, |f| report.contains(f))
+                                            && tenant_domains
+                                                .as_ref()
+                                                .map_or(true, |domains| report.has_domain(domains))
+                                    }
                                 }
-                                ReportType::Arf => {
-                                    Bincode::<IncomingReport<Feedback>>::deserialize(value)
-                                        .map_or(false, |v| v.inner.contains(filter))
-                                }
-                            });
+                            } else {
+                                true
+                            };
+
                             if matches {
                                 if offset == 0 {
                                     if limit == 0 || results.len() < limit {
@@ -174,11 +220,17 @@ impl JMAP {
                             ))
                             .await?
                         {
-                            Some(report) => Ok(JsonResponse::new(json!({
-                                    "data": report.inner,
-                            }))
-                            .into_http_response()),
-                            None => Err(trc::ResourceEvent::NotFound.into_err()),
+                            Some(report)
+                                if tenant_domains
+                                    .as_ref()
+                                    .map_or(true, |domains| report.inner.has_domain(domains)) =>
+                            {
+                                Ok(JsonResponse::new(json!({
+                                        "data": report.inner,
+                                }))
+                                .into_http_response())
+                            }
+                            _ => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
                         ReportClass::Dmarc { .. } => match self
                             .core
@@ -189,11 +241,17 @@ impl JMAP {
                             )
                             .await?
                         {
-                            Some(report) => Ok(JsonResponse::new(json!({
-                                    "data": report.inner,
-                            }))
-                            .into_http_response()),
-                            None => Err(trc::ResourceEvent::NotFound.into_err()),
+                            Some(report)
+                                if tenant_domains
+                                    .as_ref()
+                                    .map_or(true, |domains| report.inner.has_domain(domains)) =>
+                            {
+                                Ok(JsonResponse::new(json!({
+                                        "data": report.inner,
+                                }))
+                                .into_http_response())
+                            }
+                            _ => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
                         ReportClass::Arf { .. } => match self
                             .core
@@ -204,11 +262,17 @@ impl JMAP {
                             ))
                             .await?
                         {
-                            Some(report) => Ok(JsonResponse::new(json!({
-                                    "data": report.inner,
-                            }))
-                            .into_http_response()),
-                            None => Err(trc::ResourceEvent::NotFound.into_err()),
+                            Some(report)
+                                if tenant_domains
+                                    .as_ref()
+                                    .map_or(true, |domains| report.inner.has_domain(domains)) =>
+                            {
+                                Ok(JsonResponse::new(json!({
+                                        "data": report.inner,
+                                }))
+                                .into_http_response())
+                            }
+                            _ => Err(trc::ResourceEvent::NotFound.into_err()),
                         },
                     }
                 } else {
@@ -220,6 +284,43 @@ impl JMAP {
                 access_token.assert_has_permission(Permission::IncomingReportDelete)?;
 
                 if let Some(report_id) = parse_incoming_report_id(class, report_id.as_ref()) {
+                    if let Some(domains) = &tenant_domains {
+                        let is_tenant_report = match &report_id {
+                            ReportClass::Tls { .. } => self
+                                .core
+                                .storage
+                                .data
+                                .get_value::<Bincode<IncomingReport<TlsReport>>>(ValueKey::from(
+                                    ValueClass::Report(report_id.clone()),
+                                ))
+                                .await?
+                                .map_or(true, |report| report.inner.has_domain(domains)),
+                            ReportClass::Dmarc { .. } => self
+                                .core
+                                .storage
+                                .data
+                                .get_value::<Bincode<IncomingReport<mail_auth::report::Report>>>(
+                                    ValueKey::from(ValueClass::Report(report_id.clone())),
+                                )
+                                .await?
+                                .map_or(true, |report| report.inner.has_domain(domains)),
+
+                            ReportClass::Arf { .. } => self
+                                .core
+                                .storage
+                                .data
+                                .get_value::<Bincode<IncomingReport<Feedback>>>(ValueKey::from(
+                                    ValueClass::Report(report_id.clone()),
+                                ))
+                                .await?
+                                .map_or(true, |report| report.inner.has_domain(domains)),
+                        };
+
+                        if !is_tenant_report {
+                            return Err(trc::ResourceEvent::NotFound.into_err());
+                        }
+                    }
+
                     let mut batch = BatchBuilder::new();
                     batch.clear(ValueClass::Report(report_id));
                     self.core.storage.data.write(batch.build()).await?;

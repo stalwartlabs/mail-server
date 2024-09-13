@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::auth::{AccessToken, ResourceToken};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
@@ -37,8 +37,7 @@ use store::{
 use crate::{api::http::HttpSessionData, JMAP};
 
 struct SetContext<'x> {
-    account_id: u32,
-    account_quota: i64,
+    resource_token: ResourceToken,
     access_token: &'x AccessToken,
     response: SetResponse,
 }
@@ -67,8 +66,7 @@ impl JMAP {
             .await?
             .unwrap_or_default();
         let mut ctx = SetContext {
-            account_id,
-            account_quota: self.get_quota(access_token, account_id).await?,
+            resource_token: self.get_resource_token(access_token, account_id).await?,
             access_token,
             response: self
                 .prepare_set_response(&request, Collection::SieveScript)
@@ -105,6 +103,14 @@ impl JMAP {
                                 Vec::new(),
                             )
                             .custom(builder);
+
+                        // Increment tenant quota
+                        #[cfg(feature = "enterprise")]
+                        if self.core.is_enterprise_edition() {
+                            if let Some(tenant) = ctx.resource_token.tenant {
+                                batch.add(DirectoryClass::UsedQuota(tenant.id), script_size as i64);
+                            }
+                        }
 
                         let document_id = self.write_batch_expect_id(batch).await?;
                         sieve_ids.insert(document_id);
@@ -192,11 +198,6 @@ impl JMAP {
                             // Store blob
                             let blob_id = builder.changes_mut().unwrap().blob_id_mut().unwrap();
                             blob_id.hash = self.put_blob(account_id, &blob, false).await?.hash;
-                            /*blob_id.class = BlobClass::Linked {
-                                account_id,
-                                collection: Collection::SieveScript.into(),
-                                document_id,
-                            };*/
                             let script_size = blob_id.section.as_ref().unwrap().size as i64;
                             let prev_script_size =
                                 prev_blob_id.section.as_ref().unwrap().size as i64;
@@ -210,6 +211,17 @@ impl JMAP {
                             };
                             if update_quota != 0 {
                                 batch.add(DirectoryClass::UsedQuota(account_id), update_quota);
+
+                                // Update tenant quota
+                                #[cfg(feature = "enterprise")]
+                                if self.core.is_enterprise_edition() {
+                                    if let Some(tenant) = ctx.resource_token.tenant {
+                                        batch.add(
+                                            DirectoryClass::UsedQuota(tenant.id),
+                                            update_quota,
+                                        );
+                                    }
+                                }
                             }
 
                             // Update blobId
@@ -271,7 +283,7 @@ impl JMAP {
             let document_id = id.document_id();
             if sieve_ids.contains(document_id) {
                 if self
-                    .sieve_script_delete(account_id, document_id, true)
+                    .sieve_script_delete(&ctx.resource_token, document_id, true)
                     .await?
                 {
                     changes.log_delete(Collection::SieveScript, document_id);
@@ -333,11 +345,12 @@ impl JMAP {
 
     pub async fn sieve_script_delete(
         &self,
-        account_id: u32,
+        resource_token: &ResourceToken,
         document_id: u32,
         fail_if_active: bool,
     ) -> trc::Result<bool> {
         // Fetch record
+        let account_id = resource_token.account_id;
         let obj = self
             .get_property::<HashedValue<Object<Value>>>(
                 account_id,
@@ -371,6 +384,7 @@ impl JMAP {
                 .caused_by(trc::location!())
                 .document_id(document_id)
         })?;
+        let updated_quota = -(blob_id.section.as_ref().unwrap().size as i64);
         batch
             .with_account_id(account_id)
             .with_collection(Collection::SieveScript)
@@ -379,11 +393,17 @@ impl JMAP {
             .clear(BlobOp::Link {
                 hash: blob_id.hash.clone(),
             })
-            .add(
-                DirectoryClass::UsedQuota(account_id),
-                -(blob_id.section.as_ref().unwrap().size as i64),
-            )
+            .add(DirectoryClass::UsedQuota(account_id), updated_quota)
             .custom(ObjectIndexBuilder::new(SCHEMA).with_current(obj));
+
+        // Update tenant quota
+        #[cfg(feature = "enterprise")]
+        if self.core.is_enterprise_edition() {
+            if let Some(tenant) = resource_token.tenant {
+                batch.add(DirectoryClass::UsedQuota(tenant.id), updated_quota);
+            }
+        }
+
         self.write_batch(batch).await?;
         Ok(true)
     }
@@ -437,7 +457,7 @@ impl JMAP {
                     {
                         if let Some(id) = self
                             .filter(
-                                ctx.account_id,
+                                ctx.resource_token.account_id,
                                 Collection::SieveScript,
                                 vec![Filter::eq(Property::Name, &value)],
                             )
@@ -494,29 +514,35 @@ impl JMAP {
 
         let blob_update = if let Some(blob_id) = blob_id {
             if update.as_ref().map_or(true, |(document_id, _)| {
-                !matches!(blob_id.class, BlobClass::Linked { account_id, collection, document_id: d } if account_id == ctx.account_id && collection == u8::from(Collection::SieveScript) && *document_id == d)
+                !matches!(blob_id.class, BlobClass::Linked { account_id, collection, document_id: d } if account_id == ctx.resource_token.account_id && collection == u8::from(Collection::SieveScript) && *document_id == d)
             }) {
                 // Check access
                 if let Some(mut bytes) = self.blob_download(&blob_id, ctx.access_token).await? {
                     // Check quota
                     match self
-                        .has_available_quota(ctx.account_id, ctx.account_quota, bytes.len() as i64)
-                        .await {
-                            Ok(_) => (),
-                            Err(err) => {
-                                if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) {
-                                    trc::error!(err.account_id(ctx.account_id).span_id(session_id));
-                                    return Ok(Err(SetError::over_quota()));
-                                } else {
-                                    return Err(err);
-                                }
-                            },
+                        .has_available_quota(&ctx.resource_token, bytes.len() as u64)
+                        .await
+                    {
+                        Ok(_) => (),
+                        Err(err) => {
+                            if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota))
+                                || err.matches(trc::EventType::Limit(trc::LimitEvent::TenantQuota))
+                            {
+                                trc::error!(err.account_id(ctx.resource_token.account_id).span_id(session_id));
+                                return Ok(Err(SetError::over_quota()));
+                            } else {
+                                return Err(err);
+                            }
                         }
+                    }
 
                     // Compile script
                     match self.core.sieve.untrusted_compiler.compile(&bytes) {
                         Ok(script) => {
-                            changes.set(Property::BlobId, BlobId::default().with_section_size(bytes.len()));
+                            changes.set(
+                                Property::BlobId,
+                                BlobId::default().with_section_size(bytes.len()),
+                            );
                             bytes.extend(bincode::serialize(&script).unwrap_or_default());
                             bytes.into()
                         }

@@ -880,6 +880,7 @@ impl ToRequestError for trc::Error {
                     RequestError::limit(RequestLimitError::ConcurrentUpload)
                 }
                 trc::LimitEvent::Quota => RequestError::over_quota(),
+                trc::LimitEvent::TenantQuota => RequestError::tenant_over_quota(),
                 trc::LimitEvent::BlobQuota => RequestError::over_blob_quota(
                     self.value(trc::Key::Total)
                         .and_then(|v| v.to_uint())

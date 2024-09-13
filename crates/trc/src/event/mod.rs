@@ -468,6 +468,7 @@ impl LimitEvent {
             Self::Quota => "Quota exceeded",
             Self::BlobQuota => "Blob quota exceeded",
             Self::TooManyRequests => "Too many requests",
+            Self::TenantQuota => "Tenant quota exceeded",
         }
     }
 }

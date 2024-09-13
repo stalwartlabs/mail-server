@@ -33,11 +33,12 @@ impl<T: SessionStream> Session<T> {
                     .details("Expected script name as a parameter.")
             })?;
 
-        let account_id = self.state.access_token().primary_id();
+        let access_token = self.state.access_token();
+        let account_id = access_token.primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
         if self
             .jmap
-            .sieve_script_delete(account_id, document_id, true)
+            .sieve_script_delete(&access_token.as_resource_token(), document_id, true)
             .await
             .caused_by(trc::location!())?
         {

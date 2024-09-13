@@ -214,8 +214,7 @@ pub enum ClusterEvent {
     PeerSuspectedIsAlive,
     PeerBackOnline,
     PeerLeaving,
-    PeerHasConfigChanges,
-    PeerHasListChanges,
+    PeerHasChanges,
     OneOrMorePeersOffline,
     EmptyPacket,
     InvalidPacket,
@@ -906,6 +905,7 @@ pub enum LimitEvent {
     ConcurrentConnection, // Used by listener
     Quota,
     BlobQuota,
+    TenantQuota,
     TooManyRequests,
 }
 

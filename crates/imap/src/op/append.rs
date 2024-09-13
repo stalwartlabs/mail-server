@@ -88,11 +88,11 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Obtain quota
-        let account_quota = self
+        let resource_token = self
             .get_access_token()
             .await
             .imap_ctx(&arguments.tag, trc::location!())?
-            .quota as i64;
+            .as_resource_token();
 
         // Append messages
         let mut response = StatusResponse::completed(Command::Append);
@@ -104,8 +104,7 @@ impl<T: SessionStream> SessionData<T> {
                 .email_ingest(IngestEmail {
                     raw_message: &message.message,
                     message: MessageParser::new().parse(&message.message),
-                    account_id,
-                    account_quota,
+                    resource: resource_token.clone(),
                     mailbox_ids: vec![mailbox_id],
                     keywords: message.flags.into_iter().map(Keyword::from).collect(),
                     received_at: message.received_at.map(|d| d as u64),
@@ -126,6 +125,9 @@ impl<T: SessionStream> SessionData<T> {
                     return Err(
                         if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) {
                             err.details("Disk quota exceeded.")
+                                .code(ResponseCode::OverQuota)
+                        } else if err.matches(trc::EventType::Limit(trc::LimitEvent::TenantQuota)) {
+                            err.details("Organization disk quota exceeded.")
                                 .code(ResponseCode::OverQuota)
                         } else {
                             err

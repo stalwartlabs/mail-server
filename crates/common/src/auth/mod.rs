@@ -14,11 +14,24 @@ pub mod roles;
 #[derive(Debug, Clone, Default)]
 pub struct AccessToken {
     pub primary_id: u32,
-    pub tenant_id: Option<u32>,
     pub member_of: Vec<u32>,
     pub access_to: VecMap<u32, Bitmap<Collection>>,
     pub name: String,
     pub description: Option<String>,
     pub quota: u64,
     pub permissions: Permissions,
+    pub tenant: Option<TenantInfo>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TenantInfo {
+    pub id: u32,
+    pub quota: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ResourceToken {
+    pub account_id: u32,
+    pub quota: u64,
+    pub tenant: Option<TenantInfo>,
 }

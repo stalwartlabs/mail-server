@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use ahash::AHashSet;
 use directory::{
@@ -12,7 +12,6 @@ use directory::{
     Permission, Permissions, QueryBy, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER,
 };
 use trc::AddContext;
-use utils::map::ttl_dashmap::TtlMap;
 
 use crate::Core;
 
@@ -22,18 +21,17 @@ pub struct RolePermissions {
     pub disabled: Permissions,
 }
 
-const USER_PERMISSIONS: RolePermissions = user_permissions();
-const ADMIN_PERMISSIONS: RolePermissions = admin_permissions();
-const TENANT_ADMIN_PERMISSIONS: RolePermissions = tenant_admin_permissions();
+static USER_PERMISSIONS: LazyLock<Arc<RolePermissions>> = LazyLock::new(user_permissions);
+static ADMIN_PERMISSIONS: LazyLock<Arc<RolePermissions>> = LazyLock::new(admin_permissions);
+static TENANT_ADMIN_PERMISSIONS: LazyLock<Arc<RolePermissions>> =
+    LazyLock::new(tenant_admin_permissions);
 
 impl Core {
     pub async fn get_role_permissions(&self, role_id: u32) -> trc::Result<Arc<RolePermissions>> {
-        let todo = "create default permissions";
-
         match role_id {
-            ROLE_USER => Ok(Arc::new(USER_PERMISSIONS.clone())),
-            ROLE_ADMIN => Ok(Arc::new(ADMIN_PERMISSIONS.clone())),
-            ROLE_TENANT_ADMIN => Ok(Arc::new(TENANT_ADMIN_PERMISSIONS.clone())),
+            ROLE_USER => Ok(USER_PERMISSIONS.clone()),
+            ROLE_ADMIN => Ok(ADMIN_PERMISSIONS.clone()),
+            ROLE_TENANT_ADMIN => Ok(TENANT_ADMIN_PERMISSIONS.clone()),
             role_id => {
                 if let Some(role_permissions) = self.security.permissions.get(&role_id) {
                     Ok(role_permissions.clone())
@@ -170,23 +168,41 @@ impl RolePermissions {
     }
 }
 
-const fn admin_permissions() -> RolePermissions {
-    RolePermissions {
-        enabled: Permissions::all(),
-        disabled: Permissions::new(),
-    }
-}
-
-const fn tenant_admin_permissions() -> RolePermissions {
-    RolePermissions {
-        enabled: Permissions::all(),
-        disabled: Permissions::new(),
-    }
-}
-
-const fn user_permissions() -> RolePermissions {
-    RolePermissions {
+fn tenant_admin_permissions() -> Arc<RolePermissions> {
+    let mut permissions = RolePermissions {
         enabled: Permissions::new(),
-        disabled: Permissions::all(),
+        disabled: Permissions::new(),
+    };
+
+    for permission_id in 0..Permission::COUNT {
+        let permission = Permission::from_id(permission_id).unwrap();
+        if permission.is_tenant_admin_permission() {
+            permissions.enabled.set(permission_id);
+        }
     }
+
+    Arc::new(permissions)
+}
+
+fn user_permissions() -> Arc<RolePermissions> {
+    let mut permissions = RolePermissions {
+        enabled: Permissions::new(),
+        disabled: Permissions::new(),
+    };
+
+    for permission_id in 0..Permission::COUNT {
+        let permission = Permission::from_id(permission_id).unwrap();
+        if permission.is_user_permission() {
+            permissions.enabled.set(permission_id);
+        }
+    }
+
+    Arc::new(permissions)
+}
+
+fn admin_permissions() -> Arc<RolePermissions> {
+    Arc::new(RolePermissions {
+        enabled: Permissions::all(),
+        disabled: Permissions::new(),
+    })
 }

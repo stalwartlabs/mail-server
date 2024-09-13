@@ -4,14 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::hash_map::Entry, str::FromStr};
+use std::{collections::hash_map::Entry, fmt, str::FromStr};
 
-use serde::{ser::SerializeMap, Serializer};
+use serde::{
+    de::{self, IgnoredAny, Visitor},
+    ser::SerializeMap,
+    Deserializer, Serializer,
+};
 use store::U64_LEN;
 
 use crate::{
     backend::internal::{PrincipalField, PrincipalValue},
-    Principal, Type, ROLE_ADMIN,
+    Permission, Principal, Type, ROLE_ADMIN,
 };
 
 impl Principal {
@@ -57,6 +61,22 @@ impl Principal {
 
     pub fn get_int(&self, key: PrincipalField) -> Option<u64> {
         self.fields.get(&key).and_then(|v| v.as_int())
+    }
+
+    pub fn get_str_array(&self, key: PrincipalField) -> Option<&[String]> {
+        self.fields.get(&key).and_then(|v| match v {
+            PrincipalValue::StringList(v) => Some(v.as_slice()),
+            PrincipalValue::String(v) => Some(std::slice::from_ref(v)),
+            PrincipalValue::Integer(_) | PrincipalValue::IntegerList(_) => None,
+        })
+    }
+
+    pub fn get_int_array(&self, key: PrincipalField) -> Option<&[u64]> {
+        self.fields.get(&key).and_then(|v| match v {
+            PrincipalValue::IntegerList(v) => Some(v.as_slice()),
+            PrincipalValue::Integer(v) => Some(std::slice::from_ref(v)),
+            PrincipalValue::String(_) | PrincipalValue::StringList(_) => None,
+        })
     }
 
     pub fn take(&mut self, key: PrincipalField) -> Option<PrincipalValue> {
@@ -128,10 +148,14 @@ impl Principal {
 
                 match v {
                     PrincipalValue::IntegerList(v) => {
-                        v.push(value);
+                        if !v.contains(&value) {
+                            v.push(value);
+                        }
                     }
                     PrincipalValue::Integer(i) => {
-                        *v = PrincipalValue::IntegerList(vec![*i, value]);
+                        if value != *i {
+                            *v = PrincipalValue::IntegerList(vec![*i, value]);
+                        }
                     }
                     PrincipalValue::String(s) => {
                         *v =
@@ -163,10 +187,14 @@ impl Principal {
 
                 match v {
                     PrincipalValue::StringList(v) => {
-                        v.push(value);
+                        if !v.contains(&value) {
+                            v.push(value);
+                        }
                     }
                     PrincipalValue::String(s) => {
-                        *v = PrincipalValue::StringList(vec![std::mem::take(s), value]);
+                        if s != &value {
+                            *v = PrincipalValue::StringList(vec![std::mem::take(s), value]);
+                        }
                     }
                     PrincipalValue::Integer(i) => {
                         *v = PrincipalValue::StringList(vec![i.to_string(), value]);
@@ -196,10 +224,14 @@ impl Principal {
 
                 match v {
                     PrincipalValue::StringList(v) => {
-                        v.insert(0, value);
+                        if !v.contains(&value) {
+                            v.insert(0, value);
+                        }
                     }
                     PrincipalValue::String(s) => {
-                        *v = PrincipalValue::StringList(vec![value, std::mem::take(s)]);
+                        if s != &value {
+                            *v = PrincipalValue::StringList(vec![value, std::mem::take(s)]);
+                        }
                     }
                     PrincipalValue::Integer(i) => {
                         *v = PrincipalValue::StringList(vec![value, i.to_string()]);
@@ -567,6 +599,82 @@ impl serde::Serialize for Principal {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for PrincipalValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct PrincipalValueVisitor;
+
+        impl<'de> Visitor<'de> for PrincipalValueVisitor {
+            type Value = PrincipalValue;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("an optional u64 or a vector of u64")
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(PrincipalValue::String(String::new()))
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                deserializer.deserialize_any(self)
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(PrincipalValue::Integer(value))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(PrincipalValue::String(value))
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(PrincipalValue::String(v.to_string()))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let mut vec_u64 = Vec::new();
+                let mut vec_string = Vec::new();
+
+                while let Some(value) = seq.next_element::<StringOrU64>()? {
+                    match value {
+                        StringOrU64::String(s) => vec_string.push(s),
+                        StringOrU64::U64(u) => vec_u64.push(u),
+                    }
+                }
+
+                match (vec_u64.is_empty(), vec_string.is_empty()) {
+                    (true, false) => Ok(PrincipalValue::StringList(vec_string)),
+                    (false, true) => Ok(PrincipalValue::IntegerList(vec_u64)),
+                    (true, true) => Ok(PrincipalValue::StringList(vec_string)),
+                    _ => Err(serde::de::Error::custom("invalid principal value")),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(PrincipalValueVisitor)
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for Principal {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -575,16 +683,16 @@ impl<'de> serde::Deserialize<'de> for Principal {
         struct PrincipalVisitor;
 
         // Deserialize the principal
-        impl<'de> serde::de::Visitor<'de> for PrincipalVisitor {
+        impl<'de> Visitor<'de> for PrincipalVisitor {
             type Value = Principal;
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 formatter.write_str("a valid principal")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
-                A: serde::de::MapAccess<'de>,
+                A: de::MapAccess<'de>,
             {
                 let mut principal = Principal::default();
 
@@ -594,7 +702,9 @@ impl<'de> serde::Deserialize<'de> for Principal {
                     })?;
                     let value = match key {
                         PrincipalField::Name => PrincipalValue::String(map.next_value()?),
-                        PrincipalField::Description | PrincipalField::Tenant => {
+                        PrincipalField::Description
+                        | PrincipalField::Tenant
+                        | PrincipalField::Picture => {
                             if let Some(v) = map.next_value::<Option<String>>()? {
                                 PrincipalValue::String(v)
                             } else {
@@ -608,9 +718,7 @@ impl<'de> serde::Deserialize<'de> for Principal {
                             })?;
                             continue;
                         }
-                        PrincipalField::Quota => PrincipalValue::Integer(
-                            map.next_value::<Option<u64>>()?.unwrap_or_default(),
-                        ),
+                        PrincipalField::Quota => map.next_value::<PrincipalValue>()?,
 
                         PrincipalField::Secrets
                         | PrincipalField::Emails
@@ -624,7 +732,7 @@ impl<'de> serde::Deserialize<'de> for Principal {
                         }
                         PrincipalField::UsedQuota => {
                             // consume and ignore
-                            let _ = map.next_value::<Option<u64>>()?;
+                            map.next_value::<IgnoredAny>()?;
                             continue;
                         }
                     };
@@ -637,5 +745,195 @@ impl<'de> serde::Deserialize<'de> for Principal {
         }
 
         deserializer.deserialize_map(PrincipalVisitor)
+    }
+}
+
+impl Permission {
+    pub const fn is_user_permission(&self) -> bool {
+        matches!(
+            self,
+            Permission::Authenticate
+                | Permission::AuthenticateOauth
+                | Permission::EmailSend
+                | Permission::EmailReceive
+                | Permission::ManageEncryption
+                | Permission::ManagePasswords
+                | Permission::JmapEmailGet
+                | Permission::JmapMailboxGet
+                | Permission::JmapThreadGet
+                | Permission::JmapIdentityGet
+                | Permission::JmapEmailSubmissionGet
+                | Permission::JmapPushSubscriptionGet
+                | Permission::JmapSieveScriptGet
+                | Permission::JmapVacationResponseGet
+                | Permission::JmapQuotaGet
+                | Permission::JmapBlobGet
+                | Permission::JmapEmailSet
+                | Permission::JmapMailboxSet
+                | Permission::JmapIdentitySet
+                | Permission::JmapEmailSubmissionSet
+                | Permission::JmapPushSubscriptionSet
+                | Permission::JmapSieveScriptSet
+                | Permission::JmapVacationResponseSet
+                | Permission::JmapEmailChanges
+                | Permission::JmapMailboxChanges
+                | Permission::JmapThreadChanges
+                | Permission::JmapIdentityChanges
+                | Permission::JmapEmailSubmissionChanges
+                | Permission::JmapQuotaChanges
+                | Permission::JmapEmailCopy
+                | Permission::JmapBlobCopy
+                | Permission::JmapEmailImport
+                | Permission::JmapEmailParse
+                | Permission::JmapEmailQueryChanges
+                | Permission::JmapMailboxQueryChanges
+                | Permission::JmapEmailSubmissionQueryChanges
+                | Permission::JmapSieveScriptQueryChanges
+                | Permission::JmapQuotaQueryChanges
+                | Permission::JmapEmailQuery
+                | Permission::JmapMailboxQuery
+                | Permission::JmapEmailSubmissionQuery
+                | Permission::JmapSieveScriptQuery
+                | Permission::JmapQuotaQuery
+                | Permission::JmapSearchSnippet
+                | Permission::JmapSieveScriptValidate
+                | Permission::JmapBlobLookup
+                | Permission::JmapBlobUpload
+                | Permission::JmapEcho
+                | Permission::ImapAuthenticate
+                | Permission::ImapAclGet
+                | Permission::ImapAclSet
+                | Permission::ImapMyRights
+                | Permission::ImapListRights
+                | Permission::ImapAppend
+                | Permission::ImapCapability
+                | Permission::ImapId
+                | Permission::ImapCopy
+                | Permission::ImapMove
+                | Permission::ImapCreate
+                | Permission::ImapDelete
+                | Permission::ImapEnable
+                | Permission::ImapExpunge
+                | Permission::ImapFetch
+                | Permission::ImapIdle
+                | Permission::ImapList
+                | Permission::ImapLsub
+                | Permission::ImapNamespace
+                | Permission::ImapRename
+                | Permission::ImapSearch
+                | Permission::ImapSort
+                | Permission::ImapSelect
+                | Permission::ImapExamine
+                | Permission::ImapStatus
+                | Permission::ImapStore
+                | Permission::ImapSubscribe
+                | Permission::ImapThread
+                | Permission::Pop3Authenticate
+                | Permission::Pop3List
+                | Permission::Pop3Uidl
+                | Permission::Pop3Stat
+                | Permission::Pop3Retr
+                | Permission::Pop3Dele
+                | Permission::SieveAuthenticate
+                | Permission::SieveListScripts
+                | Permission::SieveSetActive
+                | Permission::SieveGetScript
+                | Permission::SievePutScript
+                | Permission::SieveDeleteScript
+                | Permission::SieveRenameScript
+                | Permission::SieveCheckScript
+                | Permission::SieveHaveSpace
+        )
+    }
+
+    pub const fn is_tenant_admin_permission(&self) -> bool {
+        matches!(
+            self,
+            Permission::MessageQueueList
+                | Permission::MessageQueueGet
+                | Permission::MessageQueueUpdate
+                | Permission::MessageQueueDelete
+                | Permission::OutgoingReportList
+                | Permission::OutgoingReportGet
+                | Permission::OutgoingReportDelete
+                | Permission::IncomingReportList
+                | Permission::IncomingReportGet
+                | Permission::IncomingReportDelete
+                | Permission::IndividualList
+                | Permission::IndividualGet
+                | Permission::IndividualUpdate
+                | Permission::IndividualDelete
+                | Permission::IndividualCreate
+                | Permission::GroupList
+                | Permission::GroupGet
+                | Permission::GroupUpdate
+                | Permission::GroupDelete
+                | Permission::GroupCreate
+                | Permission::DomainList
+                | Permission::DomainGet
+                | Permission::DomainCreate
+                | Permission::DomainUpdate
+                | Permission::DomainDelete
+                | Permission::MailingListList
+                | Permission::MailingListGet
+                | Permission::MailingListCreate
+                | Permission::MailingListUpdate
+                | Permission::MailingListDelete
+                | Permission::RoleList
+                | Permission::RoleGet
+                | Permission::RoleCreate
+                | Permission::RoleUpdate
+                | Permission::RoleDelete
+                | Permission::PrincipalList
+                | Permission::PrincipalGet
+                | Permission::PrincipalCreate
+                | Permission::PrincipalUpdate
+                | Permission::PrincipalDelete
+                | Permission::Undelete
+                | Permission::DkimSignatureCreate
+                | Permission::DkimSignatureGet
+                | Permission::JmapPrincipalGet
+                | Permission::JmapPrincipalQueryChanges
+                | Permission::JmapPrincipalQuery
+        ) || self.is_user_permission()
+    }
+}
+
+#[derive(Debug)]
+enum StringOrU64 {
+    String(String),
+    U64(u64),
+}
+
+impl<'de> serde::Deserialize<'de> for StringOrU64 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct StringOrU64Visitor;
+
+        impl<'de> Visitor<'de> for StringOrU64Visitor {
+            type Value = StringOrU64;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string or u64")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StringOrU64::String(value.to_string()))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StringOrU64::U64(value))
+            }
+        }
+
+        deserializer.deserialize_any(StringOrU64Visitor)
     }
 }

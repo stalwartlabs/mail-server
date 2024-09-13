@@ -99,6 +99,7 @@ impl Gossiper {
         let mut remove_seeds = false;
         let mut update_config = false;
         let mut update_lists = false;
+        let mut update_permissions = false;
 
         'outer: for (pos, peer) in peers.into_iter().enumerate() {
             if peer.addr == self.addr {
@@ -116,8 +117,9 @@ impl Gossiper {
                                 local_peer.gen_config = peer.gen_config;
                                 if local_peer.hb_sum > 0 {
                                     trc::event!(
-                                        Cluster(ClusterEvent::PeerHasConfigChanges),
-                                        RemoteIp = peer.addr
+                                        Cluster(ClusterEvent::PeerHasChanges),
+                                        RemoteIp = peer.addr,
+                                        Details = "settings"
                                     );
 
                                     update_config = true;
@@ -127,11 +129,24 @@ impl Gossiper {
                                 local_peer.gen_lists = peer.gen_lists;
                                 if local_peer.hb_sum > 0 {
                                     trc::event!(
-                                        Cluster(ClusterEvent::PeerHasListChanges),
-                                        RemoteIp = peer.addr
+                                        Cluster(ClusterEvent::PeerHasChanges),
+                                        RemoteIp = peer.addr,
+                                        Details = "blocked_ips"
                                     );
 
                                     update_lists = true;
+                                }
+                            }
+                            if local_peer.gen_permissions != peer.gen_permissions {
+                                local_peer.gen_permissions = peer.gen_permissions;
+                                if local_peer.hb_sum > 0 {
+                                    trc::event!(
+                                        Cluster(ClusterEvent::PeerHasChanges),
+                                        RemoteIp = peer.addr,
+                                        Details = "permissions"
+                                    );
+
+                                    update_permissions = true;
                                 }
                             }
                         }
@@ -158,6 +173,10 @@ impl Gossiper {
         }
 
         // Reload settings
+        if update_permissions {
+            self.core.core.load().security.permissions.clear();
+        }
+
         if update_config || update_lists {
             let core = self.core.core.clone();
             let inner = self.core.jmap_inner.clone();

@@ -138,8 +138,7 @@ impl ClusterEvent {
             ClusterEvent::PeerSuspectedIsAlive => "A suspected peer is actually alive",
             ClusterEvent::PeerBackOnline => "A peer came back online",
             ClusterEvent::PeerLeaving => "A peer is leaving the cluster",
-            ClusterEvent::PeerHasConfigChanges => "A peer has configuration changes",
-            ClusterEvent::PeerHasListChanges => "A peer has list changes",
+            ClusterEvent::PeerHasChanges => "A peer has reported changes",
             ClusterEvent::OneOrMorePeersOffline => "One or more peers are offline",
             ClusterEvent::EmptyPacket => "Received an empty gossip packet",
             ClusterEvent::InvalidPacket => "Received an invalid gossip packet",
@@ -157,8 +156,7 @@ impl ClusterEvent {
             ClusterEvent::PeerSuspectedIsAlive => "A suspected peer is actually alive",
             ClusterEvent::PeerBackOnline => "A peer came back online",
             ClusterEvent::PeerLeaving => "A peer is leaving the cluster",
-            ClusterEvent::PeerHasConfigChanges => "A peer has configuration changes",
-            ClusterEvent::PeerHasListChanges => "A peer has list changes",
+            ClusterEvent::PeerHasChanges => "A peer has reported changes",
             ClusterEvent::OneOrMorePeersOffline => "One or more peers are offline",
             ClusterEvent::EmptyPacket => "Received an empty gossip packet",
             ClusterEvent::InvalidPacket => "Received an invalid gossip packet",
@@ -1691,6 +1689,7 @@ impl LimitEvent {
             LimitEvent::Quota => "Quota limit reached",
             LimitEvent::BlobQuota => "Blob quota limit reached",
             LimitEvent::TooManyRequests => "Too many requests",
+            LimitEvent::TenantQuota => "Tenant quota limit reached",
         }
     }
 
@@ -1705,6 +1704,7 @@ impl LimitEvent {
             LimitEvent::Quota => "The quota limit has been reached",
             LimitEvent::BlobQuota => "The blob quota limit has been reached",
             LimitEvent::TooManyRequests => "Too many requests have been made",
+            LimitEvent::TenantQuota => "One of the tenant quota limits has been reached",
         }
     }
 }

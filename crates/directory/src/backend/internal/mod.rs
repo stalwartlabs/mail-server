@@ -244,6 +244,7 @@ pub enum PrincipalField {
     Lists,
     EnabledPermissions,
     DisabledPermissions,
+    Picture,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -263,7 +264,7 @@ pub enum PrincipalAction {
     RemoveItem,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(untagged)]
 pub enum PrincipalValue {
     String(String),
@@ -321,6 +322,7 @@ impl PrincipalField {
             PrincipalField::EnabledPermissions => 11,
             PrincipalField::DisabledPermissions => 12,
             PrincipalField::UsedQuota => 13,
+            PrincipalField::Picture => 14,
         }
     }
 
@@ -340,6 +342,7 @@ impl PrincipalField {
             11 => Some(PrincipalField::EnabledPermissions),
             12 => Some(PrincipalField::DisabledPermissions),
             13 => Some(PrincipalField::UsedQuota),
+            14 => Some(PrincipalField::Picture),
             _ => None,
         }
     }
@@ -360,6 +363,7 @@ impl PrincipalField {
             PrincipalField::Lists => "lists",
             PrincipalField::EnabledPermissions => "enabledPermissions",
             PrincipalField::DisabledPermissions => "disabledPermissions",
+            PrincipalField::Picture => "picture",
         }
     }
 
@@ -379,6 +383,7 @@ impl PrincipalField {
             "lists" => Some(PrincipalField::Lists),
             "enabledPermissions" => Some(PrincipalField::EnabledPermissions),
             "disabledPermissions" => Some(PrincipalField::DisabledPermissions),
+            "picture" => Some(PrincipalField::Picture),
             _ => None,
         }
     }

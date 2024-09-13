@@ -25,8 +25,8 @@ use config::{
     telemetry::Metrics,
 };
 use directory::{
-    backend::internal::PrincipalInfo, core::secret::verify_secret_hash, Directory, Principal,
-    QueryBy, Type,
+    backend::internal::manage::ManageDirectory, core::secret::verify_secret_hash, Directory,
+    Principal, QueryBy, Type,
 };
 use expr::if_block::IfBlock;
 use listener::{
@@ -37,8 +37,8 @@ use mail_send::Credentials;
 
 use sieve::Sieve;
 use store::{
-    write::{DirectoryClass, QueueClass, ValueClass},
-    Deserialize, IterateParams, LookupStore, ValueKey,
+    write::{QueueClass, ValueClass},
+    IterateParams, LookupStore, ValueKey,
 };
 use tokio::sync::{mpsc, oneshot};
 use trc::AddContext;
@@ -149,11 +149,13 @@ impl Core {
 
     pub fn get_directory_or_default(&self, name: &str, session_id: u64) -> &Arc<Directory> {
         self.storage.directories.get(name).unwrap_or_else(|| {
-            trc::event!(
-                Eval(trc::EvalEvent::DirectoryNotFound),
-                Id = name.to_string(),
-                SpanId = session_id,
-            );
+            if !name.is_empty() {
+                trc::event!(
+                    Eval(trc::EvalEvent::DirectoryNotFound),
+                    Id = name.to_string(),
+                    SpanId = session_id,
+                );
+            }
 
             &self.storage.directory
         })
@@ -161,11 +163,13 @@ impl Core {
 
     pub fn get_lookup_store(&self, name: &str, session_id: u64) -> &LookupStore {
         self.storage.lookups.get(name).unwrap_or_else(|| {
-            trc::event!(
-                Eval(trc::EvalEvent::StoreNotFound),
-                Id = name.to_string(),
-                SpanId = session_id,
-            );
+            if !name.is_empty() {
+                trc::event!(
+                    Eval(trc::EvalEvent::StoreNotFound),
+                    Id = name.to_string(),
+                    SpanId = session_id,
+                );
+            }
 
             &self.storage.lookup
         })
@@ -362,41 +366,20 @@ impl Core {
     }
 
     pub async fn total_accounts(&self) -> trc::Result<u64> {
-        total_principals(&self.storage.data, Type::Individual).await
+        self.storage
+            .data
+            .count_principals(None, Type::Individual.into(), None)
+            .await
+            .caused_by(trc::location!())
     }
 
     pub async fn total_domains(&self) -> trc::Result<u64> {
-        total_principals(&self.storage.data, Type::Domain).await
+        self.storage
+            .data
+            .count_principals(None, Type::Domain.into(), None)
+            .await
+            .caused_by(trc::location!())
     }
-}
-
-pub(crate) async fn total_principals(store: &store::Store, typ: Type) -> trc::Result<u64> {
-    let mut total = 0;
-    store
-        .iterate(
-            IterateParams::new(
-                ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![]))),
-                ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
-                    u8::MAX;
-                    10
-                ]))),
-            )
-            .ascending(),
-            |_, value| {
-                if PrincipalInfo::deserialize(value)
-                    .caused_by(trc::location!())?
-                    .typ
-                    == typ
-                {
-                    total += 1;
-                }
-
-                Ok(true)
-            },
-        )
-        .await
-        .caused_by(trc::location!())
-        .map(|_| total)
 }
 
 trait CredentialsUsername {

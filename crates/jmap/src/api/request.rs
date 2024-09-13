@@ -273,7 +273,7 @@ impl JMAP {
                 set::RequestArguments::VacationResponse => {
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.vacation_response_set(req).await?.into()
+                    self.vacation_response_set(req, access_token).await?.into()
                 }
             },
             RequestMethod::Changes(req) => self.changes(req, access_token).await?.into(),

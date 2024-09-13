@@ -500,3 +500,12 @@ impl LogReport for Feedback<'_> {
         );
     }
 }
+
+impl<T> IncomingReport<T> {
+    pub fn has_domain(&self, domain: &[String]) -> bool {
+        self.to
+            .iter()
+            .any(|to| domain.iter().any(|d| to.ends_with(d)))
+            || domain.iter().any(|d| self.from.ends_with(d))
+    }
+}

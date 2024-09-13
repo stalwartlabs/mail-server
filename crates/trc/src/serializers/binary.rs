@@ -353,8 +353,7 @@ impl EventType {
             EventType::Cluster(ClusterEvent::PeerAlive) => 44,
             EventType::Cluster(ClusterEvent::PeerBackOnline) => 45,
             EventType::Cluster(ClusterEvent::PeerDiscovered) => 46,
-            EventType::Cluster(ClusterEvent::PeerHasConfigChanges) => 47,
-            EventType::Cluster(ClusterEvent::PeerHasListChanges) => 48,
+            EventType::Cluster(ClusterEvent::PeerHasChanges) => 47,
             EventType::Cluster(ClusterEvent::PeerLeaving) => 49,
             EventType::Cluster(ClusterEvent::PeerOffline) => 50,
             EventType::Cluster(ClusterEvent::PeerSuspected) => 51,
@@ -859,6 +858,7 @@ impl EventType {
             EventType::Security(SecurityEvent::LoiterBan) => 550,
             EventType::Smtp(SmtpEvent::MailFromNotAllowed) => 551,
             EventType::Security(SecurityEvent::Unauthorized) => 552,
+            EventType::Limit(LimitEvent::TenantQuota) => 553,
         }
     }
 
@@ -911,8 +911,8 @@ impl EventType {
             44 => Some(EventType::Cluster(ClusterEvent::PeerAlive)),
             45 => Some(EventType::Cluster(ClusterEvent::PeerBackOnline)),
             46 => Some(EventType::Cluster(ClusterEvent::PeerDiscovered)),
-            47 => Some(EventType::Cluster(ClusterEvent::PeerHasConfigChanges)),
-            48 => Some(EventType::Cluster(ClusterEvent::PeerHasListChanges)),
+            47 => Some(EventType::Cluster(ClusterEvent::PeerHasChanges)),
+            48 => Some(EventType::Cluster(ClusterEvent::PeerHasChanges)), // TODO: recycle
             49 => Some(EventType::Cluster(ClusterEvent::PeerLeaving)),
             50 => Some(EventType::Cluster(ClusterEvent::PeerOffline)),
             51 => Some(EventType::Cluster(ClusterEvent::PeerSuspected)),
@@ -1457,6 +1457,7 @@ impl EventType {
             550 => Some(EventType::Security(SecurityEvent::LoiterBan)),
             551 => Some(EventType::Smtp(SmtpEvent::MailFromNotAllowed)),
             552 => Some(EventType::Security(SecurityEvent::Unauthorized)),
+            553 => Some(EventType::Limit(LimitEvent::TenantQuota)),
             _ => None,
         }
     }

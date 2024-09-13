@@ -221,6 +221,7 @@ impl EventType {
                 LimitEvent::Quota => Level::Debug,
                 LimitEvent::BlobQuota => Level::Debug,
                 LimitEvent::TooManyRequests => Level::Warn,
+                LimitEvent::TenantQuota => Level::Info,
             },
             EventType::Manage(_) => Level::Debug,
             EventType::Auth(cause) => match cause {
@@ -361,9 +362,7 @@ impl EventType {
                 | ClusterEvent::PeerSuspectedIsAlive
                 | ClusterEvent::PeerBackOnline
                 | ClusterEvent::PeerLeaving => Level::Info,
-                ClusterEvent::PeerHasConfigChanges
-                | ClusterEvent::PeerHasListChanges
-                | ClusterEvent::OneOrMorePeersOffline => Level::Debug,
+                ClusterEvent::PeerHasChanges | ClusterEvent::OneOrMorePeersOffline => Level::Debug,
                 ClusterEvent::EmptyPacket
                 | ClusterEvent::Error
                 | ClusterEvent::DecryptionError

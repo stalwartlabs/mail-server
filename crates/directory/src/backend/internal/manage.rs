@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use ahash::AHashSet;
 use jmap_proto::types::collection::Collection;
 use store::{
     write::{
@@ -43,6 +44,7 @@ pub trait ManageDirectory: Sized {
         &self,
         by: QueryBy<'_>,
         changes: Vec<PrincipalUpdate>,
+        tenant_id: Option<u32>,
     ) -> trc::Result<()>;
     async fn delete_principal(&self, by: QueryBy<'_>) -> trc::Result<()>;
     async fn list_principals(
@@ -51,6 +53,12 @@ pub trait ManageDirectory: Sized {
         typ: Option<Type>,
         tenant_id: Option<u32>,
     ) -> trc::Result<Vec<String>>;
+    async fn count_principals(
+        &self,
+        filter: Option<&str>,
+        typ: Option<Type>,
+        tenant_id: Option<u32>,
+    ) -> trc::Result<u64>;
 }
 
 impl ManageDirectory for Store {
@@ -140,8 +148,8 @@ impl ManageDirectory for Store {
         }
 
         // Tenants must provide principal names including a valid domain
+        let mut valid_domains = AHashSet::new();
         if tenant_id.is_some() {
-            let mut name_is_valid = false;
             if let Some(domain) = name.split('@').nth(1) {
                 if self
                     .get_principal_info(domain)
@@ -150,11 +158,11 @@ impl ManageDirectory for Store {
                     .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
                     .is_some()
                 {
-                    name_is_valid = true;
+                    valid_domains.insert(domain.to_string());
                 }
             }
 
-            if !name_is_valid {
+            if valid_domains.is_empty() {
                 return Err(error(
                     "Invalid principal name",
                     "Principal name must include a valid domain".into(),
@@ -190,28 +198,17 @@ impl ManageDirectory for Store {
                 };
 
                 for name in names {
-                    let id = match name.strip_prefix("_") {
-                        Some("admin") if field == PrincipalField::Roles && tenant_id.is_none() => {
-                            PrincipalInfo::new(ROLE_ADMIN, Type::Role, None)
-                        }
-                        Some("tenant_admin") if field == PrincipalField::Roles => {
-                            PrincipalInfo::new(ROLE_TENANT_ADMIN, Type::Role, None)
-                        }
-                        Some("user") if field == PrincipalField::Roles => {
-                            PrincipalInfo::new(ROLE_USER, Type::Role, None)
-                        }
-                        _ => self
-                            .get_principal_info(&name)
+                    list.push(
+                        self.get_principal_info(&name)
                             .await
                             .caused_by(trc::location!())?
                             .filter(|v| {
                                 expected_type.map_or(true, |t| v.typ == t)
                                     && v.has_tenant_access(tenant_id)
                             })
+                            .or_else(|| field.map_internal_roles(&name))
                             .ok_or_else(|| not_found(name))?,
-                    };
-
-                    list.push(id);
+                    );
                 }
             }
         }
@@ -222,14 +219,24 @@ impl ManageDirectory for Store {
             PrincipalField::DisabledPermissions,
         ] {
             if let Some(names) = principal.take_str_array(field) {
+                let mut permissions = Vec::with_capacity(names.len());
                 for name in names {
-                    let permission = Permission::from_name(&name).ok_or_else(|| {
-                        error(
-                            "Invalid permission",
-                            format!("Permission {name:?} is invalid").into(),
-                        )
-                    })?;
-                    principal.append_int(field, permission.id() as u64);
+                    let permission = Permission::from_name(&name)
+                        .ok_or_else(|| {
+                            error(
+                                format!("Invalid {} value", field.as_str()),
+                                format!("Permission {name:?} is invalid").into(),
+                            )
+                        })?
+                        .id() as u64;
+
+                    if !permissions.contains(&permission) {
+                        permissions.push(permission);
+                    }
+                }
+
+                if !permissions.is_empty() {
+                    principal.set(field, permissions);
                 }
             }
         }
@@ -241,11 +248,13 @@ impl ManageDirectory for Store {
                 return Err(err_exists(PrincipalField::Emails, email.to_string()));
             }
             if let Some(domain) = email.split('@').nth(1) {
-                self.get_principal_info(domain)
-                    .await
-                    .caused_by(trc::location!())?
-                    .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
-                    .ok_or_else(|| not_found(domain.to_string()))?;
+                if valid_domains.insert(domain.to_string()) {
+                    self.get_principal_info(domain)
+                        .await
+                        .caused_by(trc::location!())?
+                        .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
+                        .ok_or_else(|| not_found(domain.to_string()))?;
+                }
             }
         }
 
@@ -344,8 +353,7 @@ impl ManageDirectory for Store {
     }
 
     async fn delete_principal(&self, by: QueryBy<'_>) -> trc::Result<()> {
-        let todo = "do not delete tenants with children";
-
+        // Obtain principal
         let principal_id = match by {
             QueryBy::Name(name) => self
                 .get_principal_id(name)
@@ -355,7 +363,6 @@ impl ManageDirectory for Store {
             QueryBy::Id(principal_id) => principal_id,
             QueryBy::Credentials(_) => unreachable!(),
         };
-
         let mut principal = self
             .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
                 DirectoryClass::Principal(principal_id),
@@ -363,6 +370,50 @@ impl ManageDirectory for Store {
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| not_found(principal_id.to_string()))?;
+
+        // Make sure tenant has no data
+        let mut batch = BatchBuilder::new();
+        match principal.typ {
+            Type::Individual | Type::Group => {
+                // Update tenant quota
+                if let Some(tenant_id) = principal.tenant() {
+                    let quota = self
+                        .get_counter(DirectoryClass::UsedQuota(principal_id))
+                        .await
+                        .caused_by(trc::location!())?;
+                    if quota > 0 {
+                        batch.add(DirectoryClass::UsedQuota(tenant_id), -quota);
+                    }
+                }
+            }
+            Type::Tenant => {
+                let tenant_members = self
+                    .list_principals(None, None, principal.id().into())
+                    .await
+                    .caused_by(trc::location!())?;
+
+                if !tenant_members.is_empty() {
+                    let tenant_members = if tenant_members.len() > 5 {
+                        tenant_members[..5].join(", ")
+                            + " and "
+                            + &(&tenant_members.len() - 5).to_string()
+                            + " others"
+                    } else {
+                        tenant_members.join(", ")
+                    };
+
+                    return Err(error(
+                        "Tenant has members",
+                        format!(
+                            "Tenant must have no members to be deleted: Found: {tenant_members}"
+                        )
+                        .into(),
+                    ));
+                }
+            }
+
+            _ => {}
+        }
 
         // Unlink all principal's blobs
         self.blob_hash_unlink_account(principal_id)
@@ -380,7 +431,6 @@ impl ManageDirectory for Store {
             .caused_by(trc::location!())?;
 
         // Delete principal
-        let mut batch = BatchBuilder::new();
         batch
             .with_account_id(principal_id)
             .clear(DirectoryClass::NameToId(
@@ -441,6 +491,7 @@ impl ManageDirectory for Store {
         &self,
         by: QueryBy<'_>,
         changes: Vec<PrincipalUpdate>,
+        tenant_id: Option<u32>,
     ) -> trc::Result<()> {
         let principal_id = match by {
             QueryBy::Name(name) => self
@@ -474,16 +525,22 @@ impl ManageDirectory for Store {
             .await
             .caused_by(trc::location!())?;
 
-        // Apply changes
+        // Prepare changes
         let mut batch = BatchBuilder::new();
         let mut pinfo_name =
             PrincipalInfo::new(principal_id, principal.inner.typ, principal.inner.tenant())
                 .serialize();
         let pinfo_email = PrincipalInfo::new(principal_id, principal.inner.typ, None).serialize();
         let update_principal = !changes.is_empty()
-            && !changes
-                .iter()
-                .all(|c| matches!(c.field, PrincipalField::MemberOf | PrincipalField::Members));
+            && !changes.iter().all(|c| {
+                matches!(
+                    c.field,
+                    PrincipalField::MemberOf
+                        | PrincipalField::Members
+                        | PrincipalField::Lists
+                        | PrincipalField::Roles
+                )
+            });
 
         if update_principal {
             batch.assert_value(
@@ -493,12 +550,70 @@ impl ManageDirectory for Store {
                 &principal,
             );
         }
+
+        // Obtain used quota
+        let mut used_quota = None;
+        if tenant_id.is_none()
+            && changes
+                .iter()
+                .any(|c| matches!(c.field, PrincipalField::Tenant))
+        {
+            let quota = self
+                .get_counter(DirectoryClass::UsedQuota(principal_id))
+                .await
+                .caused_by(trc::location!())?;
+            if quota > 0 {
+                used_quota = Some(quota);
+            }
+        }
+
+        // Allowed principal types for Member fields
+        let allowed_member_types = match principal.inner.typ() {
+            Type::Group => &[Type::Individual, Type::Group][..],
+            Type::Resource => &[Type::Resource][..],
+            Type::Location => &[
+                Type::Location,
+                Type::Resource,
+                Type::Individual,
+                Type::Group,
+                Type::Other,
+            ][..],
+            Type::List => &[Type::Individual, Type::Group][..],
+            Type::Other | Type::Domain | Type::Tenant | Type::Individual => &[][..],
+            Type::Role => &[Type::Role][..],
+        };
+        let mut valid_domains = AHashSet::new();
+
+        // Process changes
         for change in changes {
             match (change.action, change.field, change.value) {
                 (PrincipalAction::Set, PrincipalField::Name, PrincipalValue::String(new_name)) => {
                     // Make sure new name is not taken
                     let new_name = new_name.to_lowercase();
                     if principal.inner.name() != new_name {
+                        if tenant_id.is_some() {
+                            if let Some(domain) = new_name.split('@').nth(1) {
+                                if self
+                                    .get_principal_info(domain)
+                                    .await
+                                    .caused_by(trc::location!())?
+                                    .filter(|v| {
+                                        v.typ == Type::Domain && v.has_tenant_access(tenant_id)
+                                    })
+                                    .is_some()
+                                {
+                                    valid_domains.insert(domain.to_string());
+                                }
+                            }
+
+                            if valid_domains.is_empty() {
+                                return Err(error(
+                                    "Invalid principal name",
+                                    "Principal name must include a valid domain".into(),
+                                ));
+                            }
+                        }
+
                         if self
                             .get_principal_id(&new_name)
                             .await
@@ -524,13 +639,14 @@ impl ManageDirectory for Store {
                     PrincipalAction::Set,
                     PrincipalField::Tenant,
                     PrincipalValue::String(tenant_name),
-                ) => {
+                ) if tenant_id.is_none() => {
                     if !tenant_name.is_empty() {
                         let tenant_info = self
                             .get_principal_info(&tenant_name)
                             .await
                             .caused_by(trc::location!())?
                             .ok_or_else(|| not_found(tenant_name.clone()))?;
+
                         if tenant_info.typ != Type::Tenant {
                             return Err(error(
                                 "Not a tenant",
@@ -538,18 +654,31 @@ impl ManageDirectory for Store {
                             ));
                         }
 
-                        if principal.inner.tenant() != Some(tenant_info.id) {
-                            principal.inner.set(PrincipalField::Tenant, tenant_info.id);
-                            pinfo_name = PrincipalInfo::new(
-                                principal_id,
-                                principal.inner.typ,
-                                tenant_info.id.into(),
-                            )
-                            .serialize();
-                        } else {
-                            continue;
+                        match principal.inner.tenant() {
+                            Some(old_tenant_id) if old_tenant_id != tenant_info.id => {
+                                // Update quota
+                                if let Some(used_quota) = used_quota {
+                                    batch
+                                        .add(DirectoryClass::UsedQuota(old_tenant_id), -used_quota)
+                                        .add(DirectoryClass::UsedQuota(tenant_info.id), used_quota);
+                                }
+
+                                principal.inner.set(PrincipalField::Tenant, tenant_info.id);
+                                pinfo_name = PrincipalInfo::new(
+                                    principal_id,
+                                    principal.inner.typ,
+                                    tenant_info.id.into(),
+                                )
+                                .serialize();
+                            }
+                            _ => continue,
                         }
-                    } else if principal.inner.tenant().is_some() {
+                    } else if let Some(tenant_id) = principal.inner.tenant() {
+                        // Update quota
+                        if let Some(used_quota) = used_quota {
+                            batch.add(DirectoryClass::UsedQuota(tenant_id), -used_quota);
+                        }
+
                         principal.inner.remove(PrincipalField::Tenant);
                         pinfo_name =
                             PrincipalInfo::new(principal_id, principal.inner.typ, None).serialize();
@@ -620,8 +749,30 @@ impl ManageDirectory for Store {
                         principal.inner.remove(PrincipalField::Description);
                     }
                 }
-                (PrincipalAction::Set, PrincipalField::Quota, PrincipalValue::Integer(quota)) => {
+                (PrincipalAction::Set, PrincipalField::Quota, PrincipalValue::Integer(quota))
+                    if matches!(
+                        principal.inner.typ,
+                        Type::Individual | Type::Group | Type::Tenant
+                    ) =>
+                {
                     principal.inner.set(PrincipalField::Quota, quota);
+                }
+                (PrincipalAction::Set, PrincipalField::Quota, PrincipalValue::String(quota))
+                    if matches!(
+                        principal.inner.typ,
+                        Type::Individual | Type::Group | Type::Tenant
+                    ) && quota.is_empty() =>
+                {
+                    principal.inner.remove(PrincipalField::Quota);
+                }
+                (
+                    PrincipalAction::Set,
+                    PrincipalField::Quota,
+                    PrincipalValue::IntegerList(quotas),
+                ) if matches!(principal.inner.typ, Type::Tenant)
+                    && quotas.len() <= (Type::Other as usize + 1) =>
+                {
+                    principal.inner.set(PrincipalField::Quota, quotas);
                 }
 
                 // Emails
@@ -721,7 +872,7 @@ impl ManageDirectory for Store {
                 // MemberOf
                 (
                     PrincipalAction::Set,
-                    PrincipalField::MemberOf,
+                    PrincipalField::MemberOf | PrincipalField::Lists | PrincipalField::Roles,
                     PrincipalValue::StringList(members),
                 ) => {
                     let mut new_member_of = Vec::new();
@@ -730,7 +881,28 @@ impl ManageDirectory for Store {
                             .get_principal_info(&member)
                             .await
                             .caused_by(trc::location!())?
-                            .ok_or_else(|| not_found(member))?;
+                            .filter(|p| p.has_tenant_access(tenant_id))
+                            .or_else(|| change.field.map_internal_roles(&member))
+                            .ok_or_else(|| not_found(member.clone()))?;
+
+                        let expected_type = match change.field {
+                            PrincipalField::MemberOf => Type::Group,
+                            PrincipalField::Lists => Type::List,
+                            PrincipalField::Roles => Type::Role,
+                            _ => unreachable!(),
+                        };
+
+                        if member_info.typ != expected_type {
+                            return Err(error(
+                                format!("Invalid {} value", change.field.as_str()),
+                                format!(
+                                    "Principal {member:?} is not a {}.",
+                                    expected_type.as_str()
+                                )
+                                .into(),
+                            ));
+                        }
+
                         if !member_of.contains(&member_info.id) {
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::MemberOf {
@@ -768,15 +940,36 @@ impl ManageDirectory for Store {
                 }
                 (
                     PrincipalAction::AddItem,
-                    PrincipalField::MemberOf,
+                    PrincipalField::MemberOf | PrincipalField::Lists | PrincipalField::Roles,
                     PrincipalValue::String(member),
                 ) => {
                     let member_info = self
                         .get_principal_info(&member)
                         .await
                         .caused_by(trc::location!())?
-                        .ok_or_else(|| not_found(member))?;
+                        .filter(|p| p.has_tenant_access(tenant_id))
+                        .or_else(|| change.field.map_internal_roles(&member))
+                        .ok_or_else(|| not_found(member.clone()))?;
+
                     if !member_of.contains(&member_info.id) {
+                        let expected_type = match change.field {
+                            PrincipalField::MemberOf => Type::Group,
+                            PrincipalField::Lists => Type::List,
+                            PrincipalField::Roles => Type::Role,
+                            _ => unreachable!(),
+                        };
+
+                        if member_info.typ != expected_type {
+                            return Err(error(
+                                format!("Invalid {} value", change.field.as_str()),
+                                format!(
+                                    "Principal {member:?} is not a {}.",
+                                    expected_type.as_str()
+                                )
+                                .into(),
+                            ));
+                        }
+
                         batch.set(
                             ValueClass::Directory(DirectoryClass::MemberOf {
                                 principal_id: MaybeDynamicId::Static(principal_id),
@@ -784,6 +977,7 @@ impl ManageDirectory for Store {
                             }),
                             vec![member_info.typ as u8],
                         );
+
                         batch.set(
                             ValueClass::Directory(DirectoryClass::Members {
                                 principal_id: MaybeDynamicId::Static(member_info.id),
@@ -791,28 +985,32 @@ impl ManageDirectory for Store {
                             }),
                             vec![],
                         );
+
                         member_of.push(member_info.id);
                     }
                 }
                 (
                     PrincipalAction::RemoveItem,
-                    PrincipalField::MemberOf,
+                    PrincipalField::MemberOf | PrincipalField::Lists | PrincipalField::Roles,
                     PrincipalValue::String(member),
                 ) => {
                     if let Some(member_id) = self
                         .get_principal_id(&member)
                         .await
                         .caused_by(trc::location!())?
+                        .or_else(|| change.field.map_internal_role_name(&member))
                     {
                         if let Some(pos) = member_of.iter().position(|v| *v == member_id) {
                             batch.clear(ValueClass::Directory(DirectoryClass::MemberOf {
                                 principal_id: MaybeDynamicId::Static(principal_id),
                                 member_of: MaybeDynamicId::Static(member_id),
                             }));
+
                             batch.clear(ValueClass::Directory(DirectoryClass::Members {
                                 principal_id: MaybeDynamicId::Static(member_id),
                                 has_member: MaybeDynamicId::Static(principal_id),
                             }));
+
                             member_of.remove(pos);
                         }
                     }
@@ -824,12 +1022,30 @@ impl ManageDirectory for Store {
                     PrincipalValue::StringList(members_),
                 ) => {
                     let mut new_members = Vec::new();
+
                     for member in members_ {
                         let member_info = self
                             .get_principal_info(&member)
                             .await
                             .caused_by(trc::location!())?
-                            .ok_or_else(|| not_found(member))?;
+                            .filter(|p| p.has_tenant_access(tenant_id))
+                            .ok_or_else(|| not_found(member.clone()))?;
+
+                        if !allowed_member_types.contains(&member_info.typ) {
+                            return Err(error(
+                                "Invalid members value",
+                                format!(
+                                    "Principal {member:?} is not one of {}.",
+                                    allowed_member_types
+                                        .iter()
+                                        .map(|v| v.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                )
+                                .into(),
+                            ));
+                        }
+
                         if !members.contains(&member_info.id) {
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::MemberOf {
@@ -874,8 +1090,25 @@ impl ManageDirectory for Store {
                         .get_principal_info(&member)
                         .await
                         .caused_by(trc::location!())?
-                        .ok_or_else(|| not_found(member))?;
+                        .filter(|p| p.has_tenant_access(tenant_id))
+                        .ok_or_else(|| not_found(member.clone()))?;
+
                     if !members.contains(&member_info.id) {
+                        if !allowed_member_types.contains(&member_info.typ) {
+                            return Err(error(
+                                "Invalid members value",
+                                format!(
+                                    "Principal {member:?} is not one of {}.",
+                                    allowed_member_types
+                                        .iter()
+                                        .map(|v| v.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                )
+                                .into(),
+                            ));
+                        }
+
                         batch.set(
                             ValueClass::Directory(DirectoryClass::MemberOf {
                                 principal_id: MaybeDynamicId::Static(member_info.id),
@@ -915,6 +1148,68 @@ impl ManageDirectory for Store {
                             members.remove(pos);
                         }
                     }
+                }
+
+                (
+                    PrincipalAction::Set,
+                    PrincipalField::EnabledPermissions | PrincipalField::DisabledPermissions,
+                    PrincipalValue::StringList(names),
+                ) => {
+                    let mut permissions = Vec::with_capacity(names.len());
+                    for name in names {
+                        let permission = Permission::from_name(&name)
+                            .ok_or_else(|| {
+                                error(
+                                    format!("Invalid {} value", change.field.as_str()),
+                                    format!("Permission {name:?} is invalid").into(),
+                                )
+                            })?
+                            .id() as u64;
+
+                        if !permissions.contains(&permission) {
+                            permissions.push(permission);
+                        }
+                    }
+
+                    if !permissions.is_empty() {
+                        principal.inner.set(change.field, permissions);
+                    } else {
+                        principal.inner.remove(change.field);
+                    }
+                }
+                (
+                    PrincipalAction::AddItem,
+                    PrincipalField::EnabledPermissions | PrincipalField::DisabledPermissions,
+                    PrincipalValue::String(name),
+                ) => {
+                    let permission = Permission::from_name(&name)
+                        .ok_or_else(|| {
+                            error(
+                                format!("Invalid {} value", change.field.as_str()),
+                                format!("Permission {name:?} is invalid").into(),
+                            )
+                        })?
+                        .id() as u64;
+
+                    principal.inner.append_int(change.field, permission);
+                }
+                (
+                    PrincipalAction::RemoveItem,
+                    PrincipalField::EnabledPermissions | PrincipalField::DisabledPermissions,
+                    PrincipalValue::String(name),
+                ) => {
+                    let permission = Permission::from_name(&name)
+                        .ok_or_else(|| {
+                            error(
+                                format!("Invalid {} value", change.field.as_str()),
+                                format!("Permission {name:?} is invalid").into(),
+                            )
+                        })?
+                        .id() as u64;
+
+                    principal
+                        .inner
+                        .retain_int(change.field, |v| *v != permission);
                 }
 
                 _ => {
@@ -996,6 +1291,41 @@ impl ManageDirectory for Store {
         }
     }
 
+    async fn count_principals(
+        &self,
+        filter: Option<&str>,
+        typ: Option<Type>,
+        tenant_id: Option<u32>,
+    ) -> trc::Result<u64> {
+        let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![])));
+        let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
+            u8::MAX;
+            10
+        ])));
+
+        let mut count = 0;
+        self.iterate(
+            IterateParams::new(from_key, to_key).ascending(),
+            |key, value| {
+                let pt = PrincipalInfo::deserialize(value).caused_by(trc::location!())?;
+                let name =
+                    std::str::from_utf8(key.get(1..).unwrap_or_default()).unwrap_or_default();
+
+                if typ.map_or(true, |t| pt.typ == t)
+                    && pt.has_tenant_access(tenant_id)
+                    && filter.map_or(true, |f| name.contains(f))
+                {
+                    count += 1;
+                }
+
+                Ok(true)
+            },
+        )
+        .await
+        .caused_by(trc::location!())
+        .map(|_| count)
+    }
+
     async fn get_member_of(&self, principal_id: u32) -> trc::Result<Vec<MemberOf>> {
         let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::MemberOf {
             principal_id,
@@ -1041,6 +1371,22 @@ impl ManageDirectory for Store {
         .await
         .caused_by(trc::location!())?;
         Ok(results)
+    }
+}
+
+impl PrincipalField {
+    pub fn map_internal_role_name(&self, name: &str) -> Option<u32> {
+        match (self, name) {
+            (PrincipalField::Roles, "admin") => Some(ROLE_ADMIN),
+            (PrincipalField::Roles, "tenant-admin") => Some(ROLE_TENANT_ADMIN),
+            (PrincipalField::Roles, "user") => Some(ROLE_USER),
+            _ => None,
+        }
+    }
+
+    pub fn map_internal_roles(&self, name: &str) -> Option<PrincipalInfo> {
+        self.map_internal_role_name(name)
+            .map(|role_id| PrincipalInfo::new(role_id, Type::Role, None))
     }
 }
 

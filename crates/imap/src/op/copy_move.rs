@@ -241,13 +241,13 @@ impl<T: SessionStream> SessionData<T> {
             let src_account_id = src_mailbox.id.account_id;
             let mut dest_change_id = None;
             let dest_account_id = dest_mailbox.account_id;
-            let dest_quota = self
+            let resource_token = self
                 .jmap
                 .core
                 .get_cached_access_token(dest_account_id)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?
-                .quota as i64;
+                .as_resource_token();
             let mut destroy_ids = RoaringBitmap::new();
             for (id, imap_id) in ids {
                 match self
@@ -255,8 +255,7 @@ impl<T: SessionStream> SessionData<T> {
                     .copy_message(
                         src_account_id,
                         id,
-                        dest_account_id,
-                        dest_quota,
+                        &resource_token,
                         vec![dest_mailbox_id],
                         Vec::new(),
                         None,

@@ -66,6 +66,7 @@ pub struct Peer {
     pub epoch: EpochId,
     pub gen_config: GenerationId,
     pub gen_lists: GenerationId,
+    pub gen_permissions: GenerationId,
     pub state: State,
 
     // Heartbeat state
@@ -83,6 +84,7 @@ pub struct PeerStatus {
     pub epoch: EpochId,
     pub gen_config: GenerationId,
     pub gen_lists: GenerationId,
+    pub gen_permissions: GenerationId,
 }
 
 impl From<&Peer> for PeerStatus {
@@ -92,12 +94,14 @@ impl From<&Peer> for PeerStatus {
             epoch: peer.epoch,
             gen_config: peer.gen_config,
             gen_lists: peer.gen_lists,
+            gen_permissions: peer.gen_permissions,
         }
     }
 }
 
 impl From<&Gossiper> for PeerStatus {
     fn from(cluster: &Gossiper) -> Self {
+        let core = cluster.core.core.load();
         PeerStatus {
             addr: cluster.addr,
             epoch: cluster.epoch,
@@ -106,14 +110,8 @@ impl From<&Gossiper> for PeerStatus {
                 .jmap_inner
                 .config_version
                 .load(Ordering::Relaxed),
-            gen_lists: cluster
-                .core
-                .core
-                .load()
-                .network
-                .blocked_ips
-                .version
-                .load(Ordering::Relaxed),
+            gen_lists: core.network.blocked_ips.version.load(Ordering::Relaxed),
+            gen_permissions: core.security.permissions_version.load(Ordering::Relaxed),
         }
     }
 }

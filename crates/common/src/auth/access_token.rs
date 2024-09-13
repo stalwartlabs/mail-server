@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::{backend::internal::PrincipalField, Permission, Principal, QueryBy};
+use directory::{
+    backend::internal::{lookup::DirectoryStore, PrincipalField},
+    Permission, Principal, QueryBy,
+};
 use jmap_proto::{
     request::RequestMethod,
     types::{acl::Acl, collection::Collection, id::Id},
@@ -24,7 +27,7 @@ use utils::map::{
 
 use crate::Core;
 
-use super::{roles::RolePermissions, AccessToken};
+use super::{roles::RolePermissions, AccessToken, ResourceToken, TenantInfo};
 
 impl Core {
     pub async fn build_access_token(&self, mut principal: Principal) -> trc::Result<AccessToken> {
@@ -57,13 +60,32 @@ impl Core {
         // Apply principal permissions
         let mut permissions = role_permissions.finalize();
 
-        // Limit tenant permissions
-        let mut tenant_id = None;
+        let mut tenant = None;
         #[cfg(feature = "enterprise")]
         if self.is_enterprise_edition() {
-            tenant_id = principal.get_int(PrincipalField::Tenant).map(|v| v as u32);
-            if let Some(tenant_id) = tenant_id {
+            if let Some(tenant_id) = principal.get_int(PrincipalField::Tenant).map(|v| v as u32) {
+                // Limit tenant permissions
                 permissions.intersection(&self.get_role_permissions(tenant_id).await?.enabled);
+
+                // Obtain tenant quota
+                tenant = Some(TenantInfo {
+                    id: tenant_id,
+                    quota: self
+                        .storage
+                        .data
+                        .query(QueryBy::Id(tenant_id), false)
+                        .await
+                        .caused_by(trc::location!())?
+                        .ok_or_else(|| {
+                            trc::SecurityEvent::Unauthorized
+                                .into_err()
+                                .details("Tenant not found")
+                                .id(tenant_id)
+                                .caused_by(trc::location!())
+                        })?
+                        .get_int(PrincipalField::Quota)
+                        .unwrap_or_default(),
+                });
             }
         }
 
@@ -74,7 +96,7 @@ impl Core {
                 .map(|v| v as u32)
                 .collect(),
             access_to: VecMap::new(),
-            tenant_id,
+            tenant,
             name: principal.take_str(PrincipalField::Name).unwrap_or_default(),
             description: principal.take_str(PrincipalField::Description),
             quota: principal.quota(),
@@ -428,6 +450,14 @@ impl AccessToken {
             Err(trc::JmapEvent::Forbidden
                 .into_err()
                 .details("You are not authorized to perform this action"))
+        }
+    }
+
+    pub fn as_resource_token(&self) -> ResourceToken {
+        ResourceToken {
+            account_id: self.primary_id,
+            quota: self.quota,
+            tenant: self.tenant,
         }
     }
 }
