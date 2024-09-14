@@ -46,7 +46,30 @@ impl EtcdStore {
         params: IterateParams<T>,
         mut cb: impl for<'x> FnMut(&'x [u8], &'x [u8]) -> trc::Result<bool> + Sync + Send,
     ) -> trc::Result<()> {
-        todo!()
+
+        let begin = params.begin;
+        let key_subspace: u8 = begin.subspace();
+        let begin: Vec<u8> = begin.serialize(0);
+        let end: Vec<u8> = params.end.serialize(0);
+        // TODO: implement params.ascending
+
+        let mut client = self.get_prefix_client(key_subspace);
+        let resp = client.get(begin.clone(), None)
+            .await
+            .map_err(into_error)?;
+        for kv in resp.kvs() {
+            let key = &kv.key();
+            let value = &kv.value();
+            if key.as_ref() < begin.as_slice()
+                || key.as_ref() > end.as_slice()
+                || !cb(&key, &value)?
+                || params.first
+            {
+                break;
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn get_counter(
