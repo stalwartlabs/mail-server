@@ -24,6 +24,7 @@ use utils::{url_params::UrlParams, BlobHash};
 use crate::{
     api::{
         http::{HttpSessionData, ToHttpResponse},
+        management::decode_path_element,
         HttpRequest, HttpResponse, JsonResponse,
     },
     email::ingest::{IngestEmail, IngestSource},
@@ -61,11 +62,12 @@ impl JMAP {
     ) -> trc::Result<HttpResponse> {
         match (path.get(2).copied(), req.method()) {
             (Some(account_name), &Method::GET) => {
+                let account_name = decode_path_element(account_name);
                 let account_id = self
                     .core
                     .storage
                     .data
-                    .get_principal_id(account_name)
+                    .get_principal_id(account_name.as_ref())
                     .await?
                     .ok_or_else(|| trc::ResourceEvent::NotFound.into_err())?;
                 let mut deleted = self.core.list_deleted(account_id).await?;
@@ -111,11 +113,12 @@ impl JMAP {
                 .into_http_response())
             }
             (Some(account_name), &Method::POST) => {
+                let account_name = decode_path_element(account_name);
                 let account_id = self
                     .core
                     .storage
                     .data
-                    .get_principal_id(account_name)
+                    .get_principal_id(account_name.as_ref())
                     .await?
                     .ok_or_else(|| trc::ResourceEvent::NotFound.into_err())?;
 
