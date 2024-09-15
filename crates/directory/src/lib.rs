@@ -40,32 +40,24 @@ pub struct Principal {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Type {
-    #[serde(rename = "individual")]
     #[default]
     Individual = 0,
-    #[serde(rename = "group")]
     Group = 1,
-    #[serde(rename = "resource")]
     Resource = 2,
-    #[serde(rename = "location")]
     Location = 3,
-    #[serde(rename = "list")]
     List = 5,
-    #[serde(rename = "other")]
     Other = 6,
-    #[serde(rename = "domain")]
     Domain = 7,
-    #[serde(rename = "tenant")]
     Tenant = 8,
-    #[serde(rename = "role")]
     Role = 9,
 }
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, EnumMethods,
 )]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "kebab-case")]
 pub enum Permission {
     // Admin
     Impersonate,

@@ -27,6 +27,12 @@ pub struct MemberOf {
     pub typ: Type,
 }
 
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct PrincipalList {
+    pub items: Vec<Principal>,
+    pub total: u64,
+}
+
 #[allow(async_fn_in_trait)]
 pub trait ManageDirectory: Sized {
     async fn get_principal_id(&self, name: &str) -> trc::Result<Option<u32>>;
@@ -50,15 +56,23 @@ pub trait ManageDirectory: Sized {
     async fn list_principals(
         &self,
         filter: Option<&str>,
-        typ: Option<Type>,
         tenant_id: Option<u32>,
-    ) -> trc::Result<Vec<String>>;
+        types: &[Type],
+        fields: &[PrincipalField],
+        page: usize,
+        limit: usize,
+    ) -> trc::Result<PrincipalList>;
     async fn count_principals(
         &self,
         filter: Option<&str>,
         typ: Option<Type>,
         tenant_id: Option<u32>,
     ) -> trc::Result<u64>;
+    async fn map_field_ids(
+        &self,
+        principal: &mut Principal,
+        fields: &[PrincipalField],
+    ) -> trc::Result<()>;
 }
 
 impl ManageDirectory for Store {
@@ -147,15 +161,50 @@ impl ManageDirectory for Store {
             return Err(err_missing(PrincipalField::Name));
         }
 
-        // Tenants must provide principal names including a valid domain
+        // Validate tenant
         let mut valid_domains = AHashSet::new();
-        if tenant_id.is_some() {
+        if let Some(tenant_id) = tenant_id {
+            let tenant = self
+                .query(QueryBy::Id(tenant_id), false)
+                .await?
+                .ok_or_else(|| {
+                    trc::ManageEvent::NotFound
+                        .into_err()
+                        .id(tenant_id)
+                        .details("Tenant not found")
+                        .caused_by(trc::location!())
+                })?;
+
+            // Enforce tenant quotas
+            if let Some(limit) = tenant
+                .get_int_array(PrincipalField::Quota)
+                .and_then(|quotas| quotas.get(principal.typ() as usize + 1))
+                .copied()
+                .filter(|q| *q > 0)
+            {
+                // Obtain number of principals
+                let total = self
+                    .count_principals(None, principal.typ().into(), tenant_id.into())
+                    .await
+                    .caused_by(trc::location!())?;
+
+                if total >= limit {
+                    trc::bail!(trc::LimitEvent::TenantQuota
+                        .into_err()
+                        .details("Tenant principal quota exceeded")
+                        .ctx(trc::Key::Details, principal.typ().as_str())
+                        .ctx(trc::Key::Limit, limit)
+                        .ctx(trc::Key::Total, total));
+                }
+            }
+
+            // Tenants must provide principal names including a valid domain
             if let Some(domain) = name.split('@').nth(1) {
                 if self
                     .get_principal_info(domain)
                     .await
                     .caused_by(trc::location!())?
-                    .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
+                    .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id.into()))
                     .is_some()
                 {
                     valid_domains.insert(domain.to_string());
@@ -388,27 +437,35 @@ impl ManageDirectory for Store {
             }
             Type::Tenant => {
                 let tenant_members = self
-                    .list_principals(None, None, principal.id().into())
+                    .list_principals(
+                        None,
+                        principal.id().into(),
+                        &[],
+                        &[PrincipalField::Name],
+                        0,
+                        0,
+                    )
                     .await
                     .caused_by(trc::location!())?;
 
-                if !tenant_members.is_empty() {
-                    let tenant_members = if tenant_members.len() > 5 {
-                        tenant_members[..5].join(", ")
-                            + " and "
-                            + &(&tenant_members.len() - 5).to_string()
-                            + " others"
-                    } else {
-                        tenant_members.join(", ")
-                    };
+                if tenant_members.total > 0 {
+                    let mut message =
+                        String::from("Tenant must have no members to be deleted: Found: ");
 
-                    return Err(error(
-                        "Tenant has members",
-                        format!(
-                            "Tenant must have no members to be deleted: Found: {tenant_members}"
-                        )
-                        .into(),
-                    ));
+                    for (num, principal) in tenant_members.items.iter().enumerate() {
+                        if num > 0 {
+                            message.push_str(", ");
+                        }
+                        message.push_str(principal.name());
+                    }
+
+                    if tenant_members.total > 5 {
+                        message.push_str(" and ");
+                        message.push_str(&(tenant_members.total - 5).to_string());
+                        message.push_str(" others");
+                    }
+
+                    return Err(error("Tenant has members", message.into()));
                 }
             }
 
@@ -1237,9 +1294,12 @@ impl ManageDirectory for Store {
     async fn list_principals(
         &self,
         filter: Option<&str>,
-        typ: Option<Type>,
         tenant_id: Option<u32>,
-    ) -> trc::Result<Vec<String>> {
+        types: &[Type],
+        fields: &[PrincipalField],
+        page: usize,
+        limit: usize,
+    ) -> trc::Result<PrincipalList> {
         let from_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![])));
         let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
             u8::MAX;
@@ -1252,9 +1312,10 @@ impl ManageDirectory for Store {
             |key, value| {
                 let pt = PrincipalInfo::deserialize(value).caused_by(trc::location!())?;
 
-                if typ.map_or(true, |t| pt.typ == t) && pt.has_tenant_access(tenant_id) {
-                    results.push((
-                        pt.id,
+                if (types.is_empty() || types.contains(&pt.typ)) && pt.has_tenant_access(tenant_id)
+                {
+                    results.push(Principal::new(pt.id, pt.typ).with_field(
+                        PrincipalField::Name,
                         String::from_utf8_lossy(key.get(1..).unwrap_or_default()).into_owned(),
                     ));
                 }
@@ -1265,30 +1326,83 @@ impl ManageDirectory for Store {
         .await
         .caused_by(trc::location!())?;
 
-        if let Some(filter) = filter {
-            let mut filtered = Vec::new();
+        if filter.is_none() && fields.iter().all(|f| matches!(f, PrincipalField::Name)) {
+            return Ok(PrincipalList {
+                total: results.len() as u64,
+                items: results
+                    .into_iter()
+                    .skip(page.saturating_sub(1) * limit)
+                    .take(if limit > 0 { limit } else { usize::MAX })
+                    .collect(),
+            });
+        }
+
+        let mut result = PrincipalList::default();
+        let filters = filter.and_then(|filter| {
             let filters = filter
                 .split_whitespace()
                 .map(|r| r.to_lowercase())
                 .collect::<Vec<_>>();
+            if !filters.is_empty() {
+                Some(filters)
+            } else {
+                None
+            }
+        });
 
-            for (principal_id, principal_name) in results {
-                let principal = self
+        let mut offset = limit * page;
+        let mut is_done = false;
+        let map_principals = fields.is_empty()
+            || fields.iter().any(|f| {
+                matches!(
+                    f,
+                    PrincipalField::MemberOf
+                        | PrincipalField::Lists
+                        | PrincipalField::Roles
+                        | PrincipalField::EnabledPermissions
+                        | PrincipalField::DisabledPermissions
+                        | PrincipalField::Members
+                        | PrincipalField::UsedQuota
+                )
+            });
+
+        for mut principal in results {
+            if !is_done || filters.is_some() {
+                principal = self
                     .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-                        DirectoryClass::Principal(principal_id),
+                        DirectoryClass::Principal(principal.id),
                     )))
                     .await
                     .caused_by(trc::location!())?
-                    .ok_or_else(|| not_found(principal_id.to_string()))?;
-                if filters.iter().all(|f| principal.find_str(f)) {
-                    filtered.push(principal_name);
-                }
+                    .ok_or_else(|| not_found(principal.name().to_string()))?;
             }
 
-            Ok(filtered)
-        } else {
-            Ok(results.into_iter().map(|(_, name)| name).collect())
+            if filters.as_ref().map_or(true, |filters| {
+                filters.iter().all(|f| principal.find_str(f))
+            }) {
+                result.total += 1;
+
+                if offset == 0 {
+                    if !is_done {
+                        if !fields.is_empty() {
+                            principal.fields.retain(|k, _| fields.contains(k));
+                        }
+
+                        if map_principals {
+                            self.map_field_ids(&mut principal, fields)
+                                .await
+                                .caused_by(trc::location!())?;
+                        }
+                        result.items.push(principal);
+                        is_done = result.items.len() >= limit;
+                    }
+                } else {
+                    offset -= 1;
+                }
+            }
         }
+
+        Ok(result)
     }
 
     async fn count_principals(
@@ -1371,6 +1485,146 @@ impl ManageDirectory for Store {
         .await
         .caused_by(trc::location!())?;
         Ok(results)
+    }
+
+    async fn map_field_ids(
+        &self,
+        principal: &mut Principal,
+        fields: &[PrincipalField],
+    ) -> trc::Result<()> {
+        // Map groups
+        for field in [
+            PrincipalField::MemberOf,
+            PrincipalField::Lists,
+            PrincipalField::Roles,
+        ] {
+            if let Some(member_of) = principal
+                .take_int_array(field)
+                .filter(|_| fields.is_empty() || fields.contains(&field))
+            {
+                for principal_id in member_of {
+                    match principal_id as u32 {
+                        ROLE_ADMIN if field == PrincipalField::Roles => {
+                            principal.append_str(field, "admin");
+                        }
+                        ROLE_TENANT_ADMIN if field == PrincipalField::Roles => {
+                            principal.append_str(field, "tenant-admin");
+                        }
+                        ROLE_USER if field == PrincipalField::Roles => {
+                            principal.append_str(field, "user");
+                        }
+                        principal_id => {
+                            if let Some(name) = self
+                                .get_principal_name(principal_id)
+                                .await
+                                .caused_by(trc::location!())?
+                            {
+                                principal.append_str(field, name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Obtain member names
+        if fields.is_empty() || fields.contains(&PrincipalField::Members) {
+            match principal.typ {
+                Type::Group | Type::List | Type::Role => {
+                    for member_id in self.get_members(principal.id).await? {
+                        if let Some(mut member_principal) =
+                            self.query(QueryBy::Id(member_id), false).await?
+                        {
+                            if let Some(name) = member_principal.take_str(PrincipalField::Name) {
+                                principal.append_str(PrincipalField::Members, name);
+                            }
+                        }
+                    }
+                }
+                Type::Domain => {
+                    let from_key =
+                        ValueKey::from(ValueClass::Directory(DirectoryClass::EmailToId(vec![])));
+                    let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::EmailToId(
+                        vec![u8::MAX; 10],
+                    )));
+                    let mut results = Vec::new();
+                    let domain_name = principal.name();
+                    self.iterate(
+                        IterateParams::new(from_key, to_key).no_values(),
+                        |key, _| {
+                            let email = std::str::from_utf8(key.get(1..).unwrap_or_default())
+                                .unwrap_or_default();
+                            if email
+                                .rsplit_once('@')
+                                .map_or(false, |(_, domain)| domain == domain_name)
+                            {
+                                results.push(email.to_string());
+                            }
+                            Ok(true)
+                        },
+                    )
+                    .await
+                    .caused_by(trc::location!())?;
+                    principal.set(PrincipalField::Members, results);
+                }
+                Type::Tenant => {
+                    let from_key =
+                        ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![])));
+                    let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(
+                        vec![u8::MAX; 10],
+                    )));
+                    let mut results = Vec::new();
+                    self.iterate(IterateParams::new(from_key, to_key), |key, value| {
+                        let pinfo =
+                            PrincipalInfo::deserialize(value).caused_by(trc::location!())?;
+
+                        if pinfo.typ == Type::Individual
+                            && pinfo.has_tenant_access(Some(principal.id))
+                        {
+                            results.push(
+                                std::str::from_utf8(key.get(1..).unwrap_or_default())
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            );
+                        }
+                        Ok(true)
+                    })
+                    .await
+                    .caused_by(trc::location!())?;
+                    principal.set(PrincipalField::Members, results);
+                }
+                _ => {}
+            }
+        }
+
+        // Obtain used quota
+        if matches!(principal.typ, Type::Individual | Type::Group | Type::Tenant)
+            && (fields.is_empty() || fields.contains(&PrincipalField::UsedQuota))
+        {
+            let quota = self
+                .get_counter(DirectoryClass::UsedQuota(principal.id))
+                .await
+                .caused_by(trc::location!())?;
+            if quota > 0 {
+                principal.set(PrincipalField::UsedQuota, quota as u64);
+            }
+        }
+
+        // Map permissions
+        for field in [
+            PrincipalField::EnabledPermissions,
+            PrincipalField::DisabledPermissions,
+        ] {
+            if let Some(permissions) = principal.take_int_array(field) {
+                for permission in permissions {
+                    if let Some(name) = Permission::from_id(permission as usize) {
+                        principal.append_str(field, name.name().to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

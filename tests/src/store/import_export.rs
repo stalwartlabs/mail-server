@@ -204,12 +204,6 @@ pub async fn test(db: Store) {
                 random_bytes(4),
             )
             .set(
-                ValueClass::Directory(DirectoryClass::Domain(random_bytes(
-                    4 + account_id as usize,
-                ))),
-                random_bytes(4),
-            )
-            .set(
                 ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
                     account_id,
                 ))),

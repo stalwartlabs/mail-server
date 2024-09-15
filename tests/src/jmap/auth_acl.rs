@@ -51,7 +51,7 @@ pub async fn test(params: &mut JMAPTest) {
         .core
         .storage
         .data
-        .get_or_create_principal_id("jdoe@example.com")
+        .get_or_create_principal_id("jdoe@example.com", directory::Type::Individual)
         .await
         .unwrap()
         .into();
@@ -59,7 +59,7 @@ pub async fn test(params: &mut JMAPTest) {
         .core
         .storage
         .data
-        .get_or_create_principal_id("jane.smith@example.com")
+        .get_or_create_principal_id("jane.smith@example.com", directory::Type::Individual)
         .await
         .unwrap()
         .into();
@@ -67,7 +67,7 @@ pub async fn test(params: &mut JMAPTest) {
         .core
         .storage
         .data
-        .get_or_create_principal_id("bill@example.com")
+        .get_or_create_principal_id("bill@example.com", directory::Type::Individual)
         .await
         .unwrap()
         .into();
@@ -75,7 +75,7 @@ pub async fn test(params: &mut JMAPTest) {
         .core
         .storage
         .data
-        .get_or_create_principal_id("sales@example.com")
+        .get_or_create_principal_id("sales@example.com", directory::Type::Individual)
         .await
         .unwrap()
         .into();
@@ -671,7 +671,7 @@ pub async fn test(params: &mut JMAPTest) {
             .add_to_group(name, "sales@example.com")
             .await;
     }
-    server.inner.access_tokens.clear();
+    server.core.security.access_tokens.clear();
     john_client.refresh_session().await.unwrap();
     jane_client.refresh_session().await.unwrap();
     bill_client.refresh_session().await.unwrap();

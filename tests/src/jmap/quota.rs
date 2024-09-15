@@ -34,7 +34,7 @@ pub async fn test(params: &mut JMAPTest) {
             .core
             .storage
             .data
-            .get_or_create_principal_id("jdoe@example.com")
+            .get_or_create_principal_id("jdoe@example.com", directory::Type::Individual)
             .await
             .unwrap(),
     );
@@ -43,7 +43,7 @@ pub async fn test(params: &mut JMAPTest) {
             .core
             .storage
             .data
-            .get_or_create_principal_id("robert@example.com")
+            .get_or_create_principal_id("robert@example.com", directory::Type::Individual)
             .await
             .unwrap(),
     );

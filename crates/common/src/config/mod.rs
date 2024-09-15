@@ -168,11 +168,11 @@ impl Core {
             tls: TlsManager::parse(config),
             metrics: Metrics::parse(config),
             security: Security {
-                access_tokens: TtlDashMap::with_capacity(32, 100),
+                access_tokens: TtlDashMap::with_capacity(100, 32),
                 permissions: ADashMap::with_capacity_and_hasher_and_shard_amount(
-                    32,
-                    ahash::RandomState::new(),
                     100,
+                    ahash::RandomState::new(),
+                    32,
                 ),
                 permissions_version: Default::default(),
             },

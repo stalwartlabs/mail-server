@@ -166,6 +166,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
             .await;
         imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     }
+    let c = println!("----cococ");
     imap_john.send("UID STORE 1 +FLAGS (\\Deleted)").await;
     imap_john.assert_read(Type::Tagged, ResponseType::No).await;
 

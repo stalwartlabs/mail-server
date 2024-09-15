@@ -5,7 +5,10 @@
  */
 
 use common::auth::AccessToken;
-use directory::{backend::internal::manage::ManageDirectory, Permission, Type};
+use directory::{
+    backend::internal::{manage::ManageDirectory, PrincipalField},
+    Permission, Type,
+};
 use hyper::Method;
 use mail_auth::report::{
     tlsrpt::{FailureDetails, Policy, TlsReport},
@@ -48,8 +51,22 @@ impl JMAP {
                     .core
                     .storage
                     .data
-                    .list_principals(None, Type::Domain.into(), tenant.id.into())
+                    .list_principals(
+                        None,
+                        tenant.id.into(),
+                        &[Type::Domain],
+                        &[PrincipalField::Name],
+                        0,
+                        0,
+                    )
                     .await
+                    .map(|principals| {
+                        principals
+                            .items
+                            .into_iter()
+                            .filter_map(|mut p| p.take_str(PrincipalField::Name))
+                            .collect::<Vec<_>>()
+                    })
                     .caused_by(trc::location!())?
                     .into();
             }

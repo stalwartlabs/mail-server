@@ -22,7 +22,6 @@ pub trait DirectoryStore: Sync + Send {
         return_member_of: bool,
     ) -> trc::Result<Option<Principal>>;
     async fn email_to_ids(&self, email: &str) -> trc::Result<Vec<u32>>;
-
     async fn is_local_domain(&self, domain: &str) -> trc::Result<bool>;
     async fn rcpt(&self, address: &str) -> trc::Result<bool>;
     async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>>;

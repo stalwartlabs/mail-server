@@ -33,13 +33,13 @@ async fn internal_directory() {
 
         // A principal without name should fail
         assert_eq!(
-            store.create_account(Principal::default()).await,
+            store.create_principal(Principal::default(), None).await,
             Err(manage::err_missing(PrincipalField::Name))
         );
 
         // Basic account creation
         let john_id = store
-            .create_account(
+            .create_principal(
                 TestPrincipal {
                     name: "john".to_string(),
                     description: Some("John Doe".to_string()),
@@ -47,6 +47,7 @@ async fn internal_directory() {
                     ..Default::default()
                 }
                 .into(),
+                None,
             )
             .await
             .unwrap();
@@ -54,12 +55,13 @@ async fn internal_directory() {
         // Two accounts with the same name should fail
         assert_eq!(
             store
-                .create_account(
+                .create_principal(
                     TestPrincipal {
                         name: "john".to_string(),
                         ..Default::default()
                     }
                     .into(),
+                    None
                 )
                 .await,
             Err(manage::err_exists(PrincipalField::Name, "john".to_string()))
@@ -68,32 +70,45 @@ async fn internal_directory() {
         // An account using a non-existent domain should fail
         assert_eq!(
             store
-                .create_account(
+                .create_principal(
                     TestPrincipal {
                         name: "jane".to_string(),
                         emails: vec!["jane@example.org".to_string()],
                         ..Default::default()
                     }
                     .into(),
+                    None
                 )
                 .await,
             Err(manage::not_found("example.org".to_string()))
         );
 
         // Create a domain name
-        assert_eq!(store.create_domain("example.org").await, Ok(()));
+        store
+            .create_principal(
+                TestPrincipal {
+                    name: "example.org".to_string(),
+                    typ: Type::Domain,
+                    ..Default::default()
+                }
+                .into(),
+                None,
+            )
+            .await
+            .unwrap();
         assert!(store.is_local_domain("example.org").await.unwrap());
         assert!(!store.is_local_domain("otherdomain.org").await.unwrap());
 
         // Add an email address
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("john"),
                     vec![PrincipalUpdate::add_item(
                         PrincipalField::Emails,
                         PrincipalValue::String("john@example.org".to_string()),
                     )],
+                    None
                 )
                 .await,
             Ok(())
@@ -107,12 +122,13 @@ async fn internal_directory() {
         // Using non-existent domain should fail
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("john"),
                     vec![PrincipalUpdate::add_item(
                         PrincipalField::Emails,
                         PrincipalValue::String("john@otherdomain.org".to_string()),
                     )],
+                    None
                 )
                 .await,
             Err(manage::not_found("otherdomain.org".to_string()))
@@ -120,7 +136,7 @@ async fn internal_directory() {
 
         // Create an account with an email address
         let jane_id = store
-            .create_account(
+            .create_principal(
                 TestPrincipal {
                     name: "jane".to_string(),
                     description: Some("Jane Doe".to_string()),
@@ -130,6 +146,7 @@ async fn internal_directory() {
                     ..Default::default()
                 }
                 .into(),
+                None,
             )
             .await
             .unwrap();
@@ -180,14 +197,15 @@ async fn internal_directory() {
         // Duplicate email address should fail
         assert_eq!(
             store
-                .create_account(
+                .create_principal(
                     TestPrincipal {
                         name: "janeth".to_string(),
                         description: Some("Janeth Doe".to_string()),
                         emails: vec!["jane@example.org".to_string()],
                         ..Default::default()
                     }
-                    .into()
+                    .into(),
+                    None
                 )
                 .await,
             Err(manage::err_exists(
@@ -198,7 +216,7 @@ async fn internal_directory() {
 
         // Create a mailing list
         let list_id = store
-            .create_account(
+            .create_principal(
                 TestPrincipal {
                     name: "list".to_string(),
                     typ: Type::List,
@@ -206,17 +224,19 @@ async fn internal_directory() {
                     ..Default::default()
                 }
                 .into(),
+                None,
             )
             .await
             .unwrap();
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("list"),
                     vec![PrincipalUpdate::set(
                         PrincipalField::Members,
                         PrincipalValue::StringList(vec!["john".to_string(), "jane".to_string()]),
-                    ),],
+                    )],
+                    None
                 )
                 .await,
             Ok(())
@@ -261,7 +281,7 @@ async fn internal_directory() {
 
         // Create groups
         store
-            .create_account(
+            .create_principal(
                 TestPrincipal {
                     name: "sales".to_string(),
                     description: Some("Sales Team".to_string()),
@@ -269,11 +289,12 @@ async fn internal_directory() {
                     ..Default::default()
                 }
                 .into(),
+                None,
             )
             .await
             .unwrap();
         store
-            .create_account(
+            .create_principal(
                 TestPrincipal {
                     name: "support".to_string(),
                     description: Some("Support Team".to_string()),
@@ -281,6 +302,7 @@ async fn internal_directory() {
                     ..Default::default()
                 }
                 .into(),
+                None,
             )
             .await
             .unwrap();
@@ -288,7 +310,7 @@ async fn internal_directory() {
         // Add John to the Sales and Support groups
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("john"),
                     vec![
                         PrincipalUpdate::add_item(
@@ -300,23 +322,19 @@ async fn internal_directory() {
                             PrincipalValue::String("support".to_string()),
                         )
                     ],
+                    None
                 )
                 .await,
             Ok(())
         );
+        let mut principal = store
+            .query(QueryBy::Name("john"), true)
+            .await
+            .unwrap()
+            .unwrap();
+        store.map_field_ids(&mut principal, &[]).await.unwrap();
         assert_eq!(
-            store
-                .map_group_ids(
-                    store
-                        .query(QueryBy::Name("john"), true)
-                        .await
-                        .unwrap()
-                        .unwrap()
-                )
-                .await
-                .unwrap()
-                .into_test()
-                .into_sorted(),
+            principal.into_test().into_sorted(),
             TestPrincipal {
                 id: john_id,
                 name: "john".to_string(),
@@ -335,12 +353,13 @@ async fn internal_directory() {
         // Adding a non-existent user should fail
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("john"),
                     vec![PrincipalUpdate::add_item(
                         PrincipalField::MemberOf,
                         PrincipalValue::String("accounting".to_string()),
                     )],
+                    None
                 )
                 .await,
             Err(manage::not_found("accounting".to_string()))
@@ -349,29 +368,25 @@ async fn internal_directory() {
         // Remove a member from a group
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("john"),
                     vec![PrincipalUpdate::remove_item(
                         PrincipalField::MemberOf,
                         PrincipalValue::String("support".to_string()),
                     )],
+                    None
                 )
                 .await,
             Ok(())
         );
+        let mut principal = store
+            .query(QueryBy::Name("john"), true)
+            .await
+            .unwrap()
+            .unwrap();
+        store.map_field_ids(&mut principal, &[]).await.unwrap();
         assert_eq!(
-            store
-                .map_group_ids(
-                    store
-                        .query(QueryBy::Name("john"), true)
-                        .await
-                        .unwrap()
-                        .unwrap()
-                )
-                .await
-                .unwrap()
-                .into_test()
-                .into_sorted(),
+            principal.into_test().into_sorted(),
             TestPrincipal {
                 id: john_id,
                 name: "john".to_string(),
@@ -386,7 +401,7 @@ async fn internal_directory() {
         // Update multiple fields
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("john"),
                     vec![
                         PrincipalUpdate::set(
@@ -411,23 +426,20 @@ async fn internal_directory() {
                             PrincipalValue::String("john.doe@example.org".to_string()),
                         )
                     ],
+                    None
                 )
                 .await,
             Ok(())
         );
+
+        let mut principal = store
+            .query(QueryBy::Name("john.doe"), true)
+            .await
+            .unwrap()
+            .unwrap();
+        store.map_field_ids(&mut principal, &[]).await.unwrap();
         assert_eq!(
-            store
-                .map_group_ids(
-                    store
-                        .query(QueryBy::Name("john.doe"), true)
-                        .await
-                        .unwrap()
-                        .unwrap()
-                )
-                .await
-                .unwrap()
-                .into_test()
-                .into_sorted(),
+            principal.into_test().into_sorted(),
             TestPrincipal {
                 id: john_id,
                 name: "john.doe".to_string(),
@@ -446,12 +458,13 @@ async fn internal_directory() {
         // Remove a member from a mailing list and then add it back
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("list"),
                     vec![PrincipalUpdate::remove_item(
                         PrincipalField::Members,
                         PrincipalValue::String("john.doe".to_string()),
                     )],
+                    None
                 )
                 .await,
             Ok(())
@@ -462,12 +475,13 @@ async fn internal_directory() {
         );
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("list"),
                     vec![PrincipalUpdate::add_item(
                         PrincipalField::Members,
                         PrincipalValue::String("john.doe".to_string()),
                     )],
+                    None
                 )
                 .await,
             Ok(())
@@ -485,24 +499,26 @@ async fn internal_directory() {
         // Field validation
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("john.doe"),
                     vec![PrincipalUpdate::set(
                         PrincipalField::Name,
                         PrincipalValue::String("jane".to_string())
                     ),],
+                    None
                 )
                 .await,
             Err(manage::err_exists(PrincipalField::Name, "jane".to_string()))
         );
         assert_eq!(
             store
-                .update_account(
+                .update_principal(
                     QueryBy::Name("john.doe"),
                     vec![PrincipalUpdate::add_item(
                         PrincipalField::Emails,
                         PrincipalValue::String("jane@example.org".to_string())
                     ),],
+                    None
                 )
                 .await,
             Err(manage::err_exists(
@@ -514,10 +530,12 @@ async fn internal_directory() {
         // List accounts
         assert_eq!(
             store
-                .list_accounts(None, None)
+                .list_principals(None, None, &[], &[], 0, 0)
                 .await
                 .unwrap()
+                .items
                 .into_iter()
+                .map(|p| p.name().to_string())
                 .collect::<AHashSet<_>>(),
             ["jane", "john.doe", "list", "sales", "support"]
                 .into_iter()
@@ -525,15 +543,24 @@ async fn internal_directory() {
                 .collect::<AHashSet<_>>()
         );
         assert_eq!(
-            store.list_accounts("john".into(), None).await.unwrap(),
+            store
+                .list_principals("john".into(), None, &[], &[], 0, 0)
+                .await
+                .unwrap()
+                .items
+                .into_iter()
+                .map(|p| p.name().to_string())
+                .collect::<Vec<_>>(),
             vec!["john.doe"]
         );
         assert_eq!(
             store
-                .list_accounts(None, Type::Individual.into())
+                .list_principals(None, None, &[Type::Individual], &[], 0, 0)
                 .await
                 .unwrap()
+                .items
                 .into_iter()
+                .map(|p| p.name().to_string())
                 .collect::<AHashSet<_>>(),
             ["jane", "john.doe"]
                 .into_iter()
@@ -542,10 +569,12 @@ async fn internal_directory() {
         );
         assert_eq!(
             store
-                .list_accounts(None, Type::Group.into())
+                .list_principals(None, None, &[Type::Group], &[], 0, 0)
                 .await
                 .unwrap()
+                .items
                 .into_iter()
+                .map(|p| p.name().to_string())
                 .collect::<AHashSet<_>>(),
             ["sales", "support"]
                 .into_iter()
@@ -553,7 +582,14 @@ async fn internal_directory() {
                 .collect::<AHashSet<_>>()
         );
         assert_eq!(
-            store.list_accounts(None, Type::List.into()).await.unwrap(),
+            store
+                .list_principals(None, None, &[Type::List], &[], 0, 0)
+                .await
+                .unwrap()
+                .items
+                .into_iter()
+                .map(|p| p.name().to_string())
+                .collect::<Vec<_>>(),
             vec!["list"]
         );
 
@@ -588,7 +624,7 @@ async fn internal_directory() {
         }
 
         // Delete John's account and make sure his records are gone
-        store.delete_account(QueryBy::Id(john_id)).await.unwrap();
+        store.delete_principal(QueryBy::Id(john_id)).await.unwrap();
         assert_eq!(store.get_principal_id("john.doe").await.unwrap(), None);
         assert_eq!(
             store.email_to_ids("john.doe@example.org").await.unwrap(),
@@ -597,10 +633,12 @@ async fn internal_directory() {
         assert!(!store.rcpt("john.doe@example.org").await.unwrap());
         assert_eq!(
             store
-                .list_accounts(None, None)
+                .list_principals(None, None, &[], &[], 0, 0)
                 .await
                 .unwrap()
+                .items
                 .into_iter()
+                .map(|p| p.name().to_string())
                 .collect::<AHashSet<_>>(),
             ["jane", "list", "sales", "support"]
                 .into_iter()

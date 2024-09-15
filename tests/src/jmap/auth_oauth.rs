@@ -26,9 +26,9 @@ use super::JMAPTest;
 #[derive(serde::Deserialize)]
 #[allow(dead_code)]
 struct OAuthCodeResponse {
-    code: String,
-    is_admin: bool,
-    is_enterprise: bool,
+    pub code: String,
+    #[serde(rename = "isEnterprise")]
+    pub is_enterprise: bool,
 }
 
 pub async fn test(params: &mut JMAPTest) {
@@ -45,7 +45,7 @@ pub async fn test(params: &mut JMAPTest) {
             .core
             .storage
             .data
-            .get_or_create_principal_id("jdoe@example.com")
+            .get_or_create_principal_id("jdoe@example.com", directory::Type::Individual)
             .await
             .unwrap(),
     )

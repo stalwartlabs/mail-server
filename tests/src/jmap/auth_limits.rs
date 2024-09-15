@@ -42,7 +42,7 @@ pub async fn test(params: &mut JMAPTest) {
             .core
             .storage
             .data
-            .get_or_create_principal_id("jdoe@example.com")
+            .get_or_create_principal_id("jdoe@example.com", directory::Type::Individual)
             .await
             .unwrap(),
     )
@@ -268,5 +268,5 @@ pub async fn test(params: &mut JMAPTest) {
     // Check webhook events
     params
         .webhook
-        .assert_contains(&["auth.failed", "auth.success", "auth.banned"]);
+        .assert_contains(&["auth.failed", "auth.success", "security.authentication-ban"]);
 }

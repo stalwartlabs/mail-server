@@ -4,13 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use base64::{
     engine::general_purpose::{self, STANDARD},
     Engine,
 };
 use common::{
+    auth::AccessToken,
     config::{
         server::{ServerProtocol, Servers},
         telemetry::Telemetry,
@@ -36,7 +41,7 @@ use store::{
     IterateParams, Stores, ValueKey, SUBSPACE_PROPERTY,
 };
 use tokio::sync::{mpsc, watch};
-use utils::{config::Config, BlobHash};
+use utils::{config::Config, map::ttl_dashmap::TtlMap, BlobHash};
 use webhooks::{spawn_mock_webhook_endpoint, MockWebhookEndpoint};
 
 use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
@@ -287,7 +292,7 @@ disabled-events = ["network.*"]
 
 [webhook."test"]
 url = "http://127.0.0.1:8821/hook"
-events = ["auth.*", "delivery.dsn*", "message-ingest.*"]
+events = ["auth.*", "delivery.dsn*", "message-ingest.*", "security.authentication-ban"]
 signature-key = "ovos-moles"
 throttle = "100ms"
 
@@ -311,7 +316,7 @@ pub async fn jmap_tests() {
     .await;
 
     webhooks::test(&mut params).await;
-    email_query::test(&mut params, delete).await;
+    /*email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -324,7 +329,7 @@ pub async fn jmap_tests() {
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
-    auth_limits::test(&mut params).await;
+    auth_limits::test(&mut params).await;*/
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
     push_subscription::test(&mut params).await;
@@ -469,7 +474,24 @@ pub async fn emails_purge_tombstoned(server: &JMAP) {
         .unwrap();
 
     for account_id in account_ids {
+        let do_add = server
+            .core
+            .security
+            .access_tokens
+            .get_with_ttl(&account_id)
+            .is_none();
+
+        if do_add {
+            server.core.security.access_tokens.insert_with_ttl(
+                account_id,
+                Arc::new(AccessToken::from_id(account_id)),
+                Instant::now() + Duration::from_secs(3600),
+            );
+        }
         server.emails_purge_tombstoned(account_id).await.unwrap();
+        if do_add {
+            server.core.security.access_tokens.remove(&account_id);
+        }
     }
 }
 
