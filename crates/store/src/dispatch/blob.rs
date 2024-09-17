@@ -75,7 +75,7 @@ impl BlobStore {
             _ => return result,
         };
 
-        if range.end >= decompressed.len() {
+        if range.end > decompressed.len() {
             Ok(Some(decompressed))
         } else {
             Ok(Some(
