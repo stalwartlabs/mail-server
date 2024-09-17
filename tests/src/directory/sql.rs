@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::{backend::internal::manage::ManageDirectory, QueryBy, Type};
+use directory::{backend::internal::manage::ManageDirectory, QueryBy, Type, ROLE_ADMIN, ROLE_USER};
 use mail_send::Credentials;
 use store::{LookupStore, Store};
 
@@ -39,6 +39,9 @@ async fn sql_directory() {
         store.create_test_directory().await;
 
         // Create test users
+        store
+            .create_test_user("admin", "very_secret", "Administrator")
+            .await;
         store.create_test_user("john", "12345", "John Doe").await;
         store.create_test_user("jane", "abcde", "Jane Doe").await;
         store
@@ -128,6 +131,7 @@ async fn sql_directory() {
                     "jdoe@example.org".to_string(),
                     "john.doe@example.org".to_string()
                 ],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );
@@ -154,6 +158,30 @@ async fn sql_directory() {
                 typ: Type::Individual,
                 quota: 500000,
                 emails: vec!["bill@example.org".to_string(),],
+                roles: vec![ROLE_USER.to_string()],
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            handle
+                .query(
+                    QueryBy::Credentials(&Credentials::Plain {
+                        username: "admin".to_string(),
+                        secret: "very_secret".to_string()
+                    }),
+                    true
+                )
+                .await
+                .unwrap()
+                .unwrap()
+                .into_test(),
+            TestPrincipal {
+                id: base_store.get_principal_id("admin").await.unwrap().unwrap(),
+                name: "admin".to_string(),
+                description: "Administrator".to_string().into(),
+                secrets: vec!["very_secret".to_string()],
+                typ: Type::Individual,
+                roles: vec![ROLE_ADMIN.to_string()],
                 ..Default::default()
             }
         );
@@ -189,6 +217,7 @@ async fn sql_directory() {
                     .map(|v| v.to_string())
                     .collect(),
                 emails: vec!["jane@example.org".to_string(),],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );
@@ -206,6 +235,7 @@ async fn sql_directory() {
                 name: "sales".to_string(),
                 description: "Sales Team".to_string().into(),
                 typ: Type::Group,
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );

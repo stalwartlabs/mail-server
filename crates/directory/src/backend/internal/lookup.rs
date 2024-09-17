@@ -60,7 +60,7 @@ impl DirectoryStore for Store {
                 .await?
             {
                 if let Some(secret) = secret {
-                    if principal.verify_secret(secret).await? {
+                    if !principal.verify_secret(secret).await? {
                         return Ok(None);
                     }
                 }

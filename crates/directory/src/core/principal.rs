@@ -610,7 +610,7 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
             type Value = PrincipalValue;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("an optional u64 or a vector of u64")
+                formatter.write_str("an optional values or a sequence of values")
             }
 
             fn visit_none<E>(self) -> Result<Self::Value, E>
@@ -671,7 +671,7 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
             }
         }
 
-        deserializer.deserialize_map(PrincipalValueVisitor)
+        deserializer.deserialize_any(PrincipalValueVisitor)
     }
 }
 
@@ -745,6 +745,45 @@ impl<'de> serde::Deserialize<'de> for Principal {
         }
 
         deserializer.deserialize_map(PrincipalVisitor)
+    }
+}
+
+#[derive(Debug)]
+enum StringOrU64 {
+    String(String),
+    U64(u64),
+}
+
+impl<'de> serde::Deserialize<'de> for StringOrU64 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct StringOrU64Visitor;
+
+        impl<'de> Visitor<'de> for StringOrU64Visitor {
+            type Value = StringOrU64;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string or u64")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StringOrU64::String(value.to_string()))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StringOrU64::U64(value))
+            }
+        }
+
+        deserializer.deserialize_any(StringOrU64Visitor)
     }
 }
 
@@ -896,44 +935,5 @@ impl Permission {
                 | Permission::JmapPrincipalQueryChanges
                 | Permission::JmapPrincipalQuery
         ) || self.is_user_permission()
-    }
-}
-
-#[derive(Debug)]
-enum StringOrU64 {
-    String(String),
-    U64(u64),
-}
-
-impl<'de> serde::Deserialize<'de> for StringOrU64 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct StringOrU64Visitor;
-
-        impl<'de> Visitor<'de> for StringOrU64Visitor {
-            type Value = StringOrU64;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a string or u64")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(StringOrU64::String(value.to_string()))
-            }
-
-            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(StringOrU64::U64(value))
-            }
-        }
-
-        deserializer.deserialize_any(StringOrU64Visitor)
     }
 }

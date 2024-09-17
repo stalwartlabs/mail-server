@@ -266,6 +266,7 @@ pub struct TestPrincipal {
     pub secrets: Vec<String>,
     pub emails: Vec<String>,
     pub member_of: Vec<String>,
+    pub roles: Vec<String>,
     pub description: Option<String>,
 }
 
@@ -457,10 +458,9 @@ impl From<Principal> for TestPrincipal {
             member_of: value
                 .take_str_array(PrincipalField::MemberOf)
                 .unwrap_or_default(),
-            /*member_of: value
-            .iter_int(PrincipalField::MemberOf)
-            .map(|v| v as u32)
-            .collect(),*/
+            roles: value
+                .take_str_array(PrincipalField::Roles)
+                .unwrap_or_default(),
             description: value.take_str(PrincipalField::Description),
         }
     }

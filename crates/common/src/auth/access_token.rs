@@ -267,19 +267,21 @@ impl AccessToken {
     }
 
     pub fn permissions(&self) -> Vec<Permission> {
-        const BYTES_LEN: u32 = (std::mem::size_of::<usize>() * 8) as u32 - 1;
+        const USIZE_BITS: usize = std::mem::size_of::<usize>() * 8;
+        const USIZE_MASK: u32 = USIZE_BITS as u32 - 1;
         let mut permissions = Vec::new();
 
         for (block_num, bytes) in self.permissions.inner().iter().enumerate() {
             let mut bytes = *bytes;
 
             while bytes != 0 {
-                let item = BYTES_LEN - bytes.leading_zeros();
+                let item = USIZE_MASK - bytes.leading_zeros();
                 bytes ^= 1 << item;
-                permissions.push(
-                    Permission::from_id((block_num * std::mem::size_of::<usize>()) + item as usize)
-                        .unwrap(),
-                );
+                if let Some(permission) =
+                    Permission::from_id((block_num * USIZE_BITS) + item as usize)
+                {
+                    permissions.push(permission);
+                }
             }
         }
         permissions

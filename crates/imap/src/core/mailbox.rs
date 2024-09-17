@@ -351,10 +351,6 @@ impl<T: SessionStream> SessionData<T> {
                     .shared_accounts(Collection::Mailbox)
                     .copied()
                     .collect::<Vec<_>>();
-                let c = println!(
-                    "{} has_access_to: {:?}",
-                    access_token.primary_id, has_access_to
-                );
                 for account in mailboxes.drain(..) {
                     if access_token.is_primary_id(account.account_id)
                         || has_access_to.contains(&account.account_id)

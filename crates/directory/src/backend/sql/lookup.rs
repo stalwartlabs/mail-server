@@ -105,22 +105,49 @@ impl SqlDirectory {
         principal.set(PrincipalField::Name, account_name);
 
         // Obtain members
-        if return_member_of && !self.mappings.query_members.is_empty() {
-            for row in self
-                .store
-                .query::<Rows>(&self.mappings.query_members, vec![principal.name().into()])
+        if return_member_of {
+            if !self.mappings.query_members.is_empty() {
+                for row in self
+                    .store
+                    .query::<Rows>(&self.mappings.query_members, vec![principal.name().into()])
+                    .await
+                    .caused_by(trc::location!())?
+                    .rows
+                {
+                    if let Some(Value::Text(account_id)) = row.values.first() {
+                        principal.append_int(
+                            PrincipalField::MemberOf,
+                            self.data_store
+                                .get_or_create_principal_id(account_id, Type::Group)
+                                .await
+                                .caused_by(trc::location!())?,
+                        );
+                    }
+                }
+            }
+
+            // Obtain roles
+            let mut did_role_cleanup = false;
+            for member in self
+                .data_store
+                .get_member_of(principal.id)
                 .await
                 .caused_by(trc::location!())?
-                .rows
             {
-                if let Some(Value::Text(account_id)) = row.values.first() {
-                    principal.append_int(
-                        PrincipalField::MemberOf,
-                        self.data_store
-                            .get_or_create_principal_id(account_id, Type::Group)
-                            .await
-                            .caused_by(trc::location!())?,
-                    );
+                match member.typ {
+                    Type::List => {
+                        principal.append_int(PrincipalField::Lists, member.principal_id);
+                    }
+                    Type::Role => {
+                        if !did_role_cleanup {
+                            principal.remove(PrincipalField::Roles);
+                            did_role_cleanup = true;
+                        }
+                        principal.append_int(PrincipalField::Roles, member.principal_id);
+                    }
+                    _ => {
+                        principal.append_int(PrincipalField::MemberOf, member.principal_id);
+                    }
                 }
             }
         }

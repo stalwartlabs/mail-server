@@ -131,50 +131,77 @@ impl LdapDirectory {
         }
         principal.append_str(PrincipalField::Name, account_name);
 
-        // Obtain groups
-        if return_member_of && principal.has_field(PrincipalField::MemberOf) {
-            let mut member_of = Vec::new();
-            for mut name in principal
-                .take_str_array(PrincipalField::MemberOf)
-                .unwrap_or_default()
-            {
-                if name.contains('=') {
-                    let (rs, _res) = conn
-                        .search(
-                            &name,
-                            Scope::Base,
-                            "objectClass=*",
-                            &self.mappings.attr_name,
-                        )
-                        .await
-                        .map_err(|err| err.into_error().caused_by(trc::location!()))?
-                        .success()
-                        .map_err(|err| err.into_error().caused_by(trc::location!()))?;
-                    for entry in rs {
-                        'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
-                            if self.mappings.attr_name.contains(&attr) {
-                                if let Some(group) = value.into_iter().next() {
-                                    if !group.is_empty() {
-                                        name = group;
-                                        break 'outer;
+        if return_member_of {
+            // Obtain groups
+            if principal.has_field(PrincipalField::MemberOf) {
+                let mut member_of = Vec::new();
+                for mut name in principal
+                    .take_str_array(PrincipalField::MemberOf)
+                    .unwrap_or_default()
+                {
+                    if name.contains('=') {
+                        let (rs, _res) = conn
+                            .search(
+                                &name,
+                                Scope::Base,
+                                "objectClass=*",
+                                &self.mappings.attr_name,
+                            )
+                            .await
+                            .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                            .success()
+                            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
+                        for entry in rs {
+                            'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
+                                if self.mappings.attr_name.contains(&attr) {
+                                    if let Some(group) = value.into_iter().next() {
+                                        if !group.is_empty() {
+                                            name = group;
+                                            break 'outer;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+
+                    member_of.push(
+                        self.data_store
+                            .get_or_create_principal_id(&name, Type::Group)
+                            .await
+                            .caused_by(trc::location!())?,
+                    );
                 }
 
-                member_of.push(
-                    self.data_store
-                        .get_or_create_principal_id(&name, Type::Group)
-                        .await
-                        .caused_by(trc::location!())?,
-                );
+                // Map ids
+                principal.set(PrincipalField::MemberOf, member_of);
             }
 
-            // Map ids
-            principal.set(PrincipalField::MemberOf, member_of);
-        } else {
+            // Obtain roles
+            let mut did_role_cleanup = false;
+            for member in self
+                .data_store
+                .get_member_of(principal.id)
+                .await
+                .caused_by(trc::location!())?
+            {
+                match member.typ {
+                    Type::List => {
+                        principal.append_int(PrincipalField::Lists, member.principal_id);
+                    }
+                    Type::Role => {
+                        if !did_role_cleanup {
+                            principal.remove(PrincipalField::Roles);
+                            did_role_cleanup = true;
+                        }
+                        principal.append_int(PrincipalField::Roles, member.principal_id);
+                    }
+                    _ => {
+                        principal.append_int(PrincipalField::MemberOf, member.principal_id);
+                    }
+                }
+            }
+        } else if principal.has_field(PrincipalField::MemberOf) {
             principal.remove(PrincipalField::MemberOf);
         }
 

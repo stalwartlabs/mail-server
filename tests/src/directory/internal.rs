@@ -449,6 +449,7 @@ async fn internal_directory() {
                 quota: 1024,
                 typ: Type::Individual,
                 member_of: vec!["list".to_string(), "sales".to_string()],
+                ..Default::default()
             }
         );
         assert_eq!(store.get_principal_id("john").await.unwrap(), None);
@@ -530,7 +531,14 @@ async fn internal_directory() {
         // List accounts
         assert_eq!(
             store
-                .list_principals(None, None, &[], &[], 0, 0)
+                .list_principals(
+                    None,
+                    None,
+                    &[Type::Individual, Type::Group, Type::List],
+                    &[],
+                    0,
+                    0
+                )
                 .await
                 .unwrap()
                 .items
@@ -633,7 +641,14 @@ async fn internal_directory() {
         assert!(!store.rcpt("john.doe@example.org").await.unwrap());
         assert_eq!(
             store
-                .list_principals(None, None, &[], &[], 0, 0)
+                .list_principals(
+                    None,
+                    None,
+                    &[Type::Individual, Type::Group, Type::List],
+                    &[],
+                    0,
+                    0
+                )
                 .await
                 .unwrap()
                 .items

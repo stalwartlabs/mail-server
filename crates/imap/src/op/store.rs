@@ -68,19 +68,16 @@ impl<T: SessionStream> SessionData<T> {
         op_start: Instant,
     ) -> trc::Result<Vec<u8>> {
         // Resync messages if needed
-        let c = println!("Checking mailbox acl 1 {:?}", mailbox.state.lock());
         let account_id = mailbox.id.account_id;
         self.synchronize_messages(&mailbox)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Convert IMAP ids to JMAP ids.
-        let c = println!("Checking mailbox acl 2 {:?}", mailbox.state.lock());
         let mut ids = mailbox
             .sequence_to_ids(&arguments.sequence_set, is_uid)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
-        let c = println!("Checking mailbox acl3 {:?}", arguments.sequence_set);
         if ids.is_empty() {
             return Ok(StatusResponse::completed(Command::Store(is_uid))
                 .with_tag(arguments.tag)
@@ -88,7 +85,6 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Verify that the user can modify messages in this mailbox.
-        let c = println!("Checking mailbox acl4");
         if !self
             .check_mailbox_acl(
                 mailbox.id.account_id,

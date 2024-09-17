@@ -6,7 +6,7 @@
 
 use std::fmt::Debug;
 
-use directory::{backend::internal::manage::ManageDirectory, QueryBy, Type};
+use directory::{backend::internal::manage::ManageDirectory, QueryBy, Type, ROLE_USER};
 use mail_send::Credentials;
 
 use crate::directory::{map_account_ids, DirectoryTest, IntoTestPrincipal, TestPrincipal};
@@ -57,6 +57,7 @@ async fn ldap_directory() {
                 "john@example.org".to_string(),
                 "john.doe@example.org".to_string()
             ],
+            roles: vec![ROLE_USER.to_string()],
             ..Default::default()
         }
         .into_sorted()
@@ -85,6 +86,7 @@ async fn ldap_directory() {
             typ: Type::Individual,
             quota: 500000,
             emails: vec!["bill@example.org".to_string(),],
+            roles: vec![ROLE_USER.to_string()],
             ..Default::default()
         }
         .into_sorted()
@@ -122,6 +124,7 @@ async fn ldap_directory() {
                 .map(|v| v.to_string())
                 .collect(),
             emails: vec!["jane@example.org".to_string(),],
+            roles: vec![ROLE_USER.to_string()],
             ..Default::default()
         }
         .into_sorted()
@@ -140,6 +143,7 @@ async fn ldap_directory() {
             name: "sales".to_string(),
             description: "sales".to_string().into(),
             typ: Type::Group,
+            roles: vec![ROLE_USER.to_string()],
             ..Default::default()
         }
     );

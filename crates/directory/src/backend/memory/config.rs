@@ -147,6 +147,8 @@ impl MemoryDirectory {
             {
                 principal.set(PrincipalField::Quota, quota);
             }
+
+            directory.principals.push(principal);
         }
 
         Some(directory)

@@ -827,7 +827,7 @@ impl ManageDirectory for Store {
                     PrincipalField::Quota,
                     PrincipalValue::IntegerList(quotas),
                 ) if matches!(principal.inner.typ, Type::Tenant)
-                    && quotas.len() <= (Type::Other as usize + 1) =>
+                    && quotas.len() <= (Type::Role as usize + 1) =>
                 {
                     principal.inner.set(PrincipalField::Quota, quotas);
                 }
@@ -1269,8 +1269,11 @@ impl ManageDirectory for Store {
                         .retain_int(change.field, |v| *v != permission);
                 }
 
-                _ => {
-                    return Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()));
+                (_, field, value) => {
+                    return Err(error(
+                        "Invalid parameter",
+                        format!("Invalid value {:?} for {}", value, field.as_str()).into(),
+                    ));
                 }
             }
         }
@@ -1326,7 +1329,10 @@ impl ManageDirectory for Store {
         .await
         .caused_by(trc::location!())?;
 
-        if filter.is_none() && fields.iter().all(|f| matches!(f, PrincipalField::Name)) {
+        if filter.is_none()
+            && !fields.is_empty()
+            && fields.iter().all(|f| matches!(f, PrincipalField::Name))
+        {
             return Ok(PrincipalList {
                 total: results.len() as u64,
                 items: results
@@ -1350,7 +1356,7 @@ impl ManageDirectory for Store {
             }
         });
 
-        let mut offset = limit * page;
+        let mut offset = limit * page.saturating_sub(1);
         let mut is_done = false;
         let map_principals = fields.is_empty()
             || fields.iter().any(|f| {
@@ -1394,7 +1400,7 @@ impl ManageDirectory for Store {
                                 .caused_by(trc::location!())?;
                         }
                         result.items.push(principal);
-                        is_done = result.items.len() >= limit;
+                        is_done = limit != 0 && result.items.len() >= limit;
                     }
                 } else {
                     offset -= 1;
