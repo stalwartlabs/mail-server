@@ -38,6 +38,9 @@ use crate::backend::elastic::ElasticSearchStore;
 #[cfg(feature = "redis")]
 use crate::backend::redis::RedisStore;
 
+#[cfg(feature = "etcd")]
+use crate::backend::etcd::EtcdStore;
+
 impl Stores {
     pub async fn parse_all(config: &mut Config) -> Self {
         let mut stores = Self::parse(config).await;
@@ -210,6 +213,24 @@ impl Stores {
                         .map(LookupStore::from)
                     {
                         self.lookup_stores.insert(store_id, db);
+                    }
+                }
+                #[cfg(feature = "etcd")]
+                "etcd" => {
+                    // Avoid opening the same store twice
+                    if is_reload
+                        && self
+                        .stores
+                        .values()
+                        .any(|store| matches!(store, Store::Etcd(_)))
+                    {
+                        continue;
+                    }
+
+                    if let Some(db) = EtcdStore::open(config, prefix).await.map(Store::from) {
+                        self.stores.insert(store_id.clone(), db.clone());
+                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.lookup_stores.insert(store_id, db.into());
                     }
                 }
                 #[cfg(feature = "enterprise")]
