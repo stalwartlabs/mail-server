@@ -5,7 +5,6 @@
  */
 
 use ahash::AHashMap;
-use directory::backend::internal::manage::ManageDirectory;
 use jmap_client::{
     core::set::{SetError, SetErrorType, SetObject},
     email_submission::{query::Filter, Address, Delivered, DeliveryStatus, Displayed, UndoStatus},
@@ -26,8 +25,9 @@ use tokio::{
     sync::mpsc,
 };
 
-use crate::jmap::{
-    assert_is_empty, email_set::assert_email_properties, mailbox::destroy_all_mailboxes,
+use crate::{
+    directory::internal::TestInternalDirectory,
+    jmap::{assert_is_empty, email_set::assert_email_properties, mailbox::destroy_all_mailboxes},
 };
 
 use super::JMAPTest;
@@ -76,22 +76,18 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create a test account
     let server = params.server.clone();
-    params
-        .directory
-        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
-        .await;
-    params
-        .directory
-        .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
-        .await;
     let account_id = Id::from(
         server
             .core
             .storage
             .data
-            .get_or_create_principal_id("jdoe@example.com", directory::Type::Individual)
-            .await
-            .unwrap(),
+            .create_test_user(
+                "jdoe@example.com",
+                "12345",
+                "John Doe",
+                &["jdoe@example.com", "john.doe@example.com"],
+            )
+            .await,
     )
     .to_string();
 

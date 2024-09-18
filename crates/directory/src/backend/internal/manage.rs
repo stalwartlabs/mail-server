@@ -942,23 +942,12 @@ impl ManageDirectory for Store {
                             .or_else(|| change.field.map_internal_roles(&member))
                             .ok_or_else(|| not_found(member.clone()))?;
 
-                        let expected_type = match change.field {
-                            PrincipalField::MemberOf => Type::Group,
-                            PrincipalField::Lists => Type::List,
-                            PrincipalField::Roles => Type::Role,
-                            _ => unreachable!(),
-                        };
-
-                        if member_info.typ != expected_type {
-                            return Err(error(
-                                format!("Invalid {} value", change.field.as_str()),
-                                format!(
-                                    "Principal {member:?} is not a {}.",
-                                    expected_type.as_str()
-                                )
-                                .into(),
-                            ));
-                        }
+                        validate_member_of(
+                            change.field,
+                            principal.inner.typ,
+                            member_info.typ,
+                            &member,
+                        )?;
 
                         if !member_of.contains(&member_info.id) {
                             batch.set(
@@ -1009,23 +998,12 @@ impl ManageDirectory for Store {
                         .ok_or_else(|| not_found(member.clone()))?;
 
                     if !member_of.contains(&member_info.id) {
-                        let expected_type = match change.field {
-                            PrincipalField::MemberOf => Type::Group,
-                            PrincipalField::Lists => Type::List,
-                            PrincipalField::Roles => Type::Role,
-                            _ => unreachable!(),
-                        };
-
-                        if member_info.typ != expected_type {
-                            return Err(error(
-                                format!("Invalid {} value", change.field.as_str()),
-                                format!(
-                                    "Principal {member:?} is not a {}.",
-                                    expected_type.as_str()
-                                )
-                                .into(),
-                            ));
-                        }
+                        validate_member_of(
+                            change.field,
+                            principal.inner.typ,
+                            member_info.typ,
+                            &member,
+                        )?;
 
                         batch.set(
                             ValueClass::Directory(DirectoryClass::MemberOf {
@@ -1661,6 +1639,38 @@ impl SerializeWithId for Principal {
 impl From<Principal> for MaybeDynamicValue {
     fn from(principal: Principal) -> Self {
         MaybeDynamicValue::Dynamic(Box::new(principal))
+    }
+}
+
+fn validate_member_of(
+    field: PrincipalField,
+    typ: Type,
+    member_type: Type,
+    member_name: &str,
+) -> trc::Result<()> {
+    let expected_types = match (field, typ) {
+        (PrincipalField::MemberOf, Type::Individual) => &[Type::Group, Type::Individual][..],
+        (PrincipalField::MemberOf, Type::Group) => &[Type::Group][..],
+        (PrincipalField::Lists, Type::Individual | Type::Group) => &[Type::List][..],
+        (PrincipalField::Roles, Type::Individual | Type::Tenant | Type::Role) => &[Type::Role][..],
+        _ => &[][..],
+    };
+
+    if expected_types.is_empty() || !expected_types.contains(&member_type) {
+        Err(error(
+            format!("Invalid {} value", field.as_str()),
+            format!(
+                "Principal {member_name:?} is not a {}.",
+                expected_types
+                    .iter()
+                    .map(|t| t.as_str().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+            .into(),
+        ))
+    } else {
+        Ok(())
     }
 }
 

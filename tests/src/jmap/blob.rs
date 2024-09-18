@@ -4,32 +4,33 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::backend::internal::manage::ManageDirectory;
 use jmap::mailbox::INBOX_ID;
 use jmap_proto::types::id::Id;
 use serde_json::Value;
 
-use crate::jmap::{assert_is_empty, jmap_json_request, mailbox::destroy_all_mailboxes};
+use crate::{
+    directory::internal::TestInternalDirectory,
+    jmap::{assert_is_empty, jmap_json_request, mailbox::destroy_all_mailboxes},
+};
 
 use super::JMAPTest;
 
 pub async fn test(params: &mut JMAPTest) {
     println!("Running blob tests...");
     let server = params.server.clone();
-    params
-        .directory
-        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
-        .await;
     let account_id = Id::from(
         server
             .core
             .storage
             .data
-            .get_or_create_principal_id("jdoe@example.com", directory::Type::Individual)
-            .await
-            .unwrap(),
+            .create_test_user(
+                "jdoe@example.com",
+                "12345",
+                "John Doe",
+                &["jdoe@example.com"],
+            )
+            .await,
     );
-
     server.core.storage.data.blob_expire_all().await;
 
     // Blob/set simple test

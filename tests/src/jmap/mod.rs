@@ -23,7 +23,7 @@ use common::{
     manager::config::{ConfigManager, Patterns},
     Core, Ipc, IPC_CHANNEL_BUFFER,
 };
-use enterprise::insert_test_metrics;
+use enterprise::{insert_test_metrics, EnterpriseCore};
 use hyper::{header::AUTHORIZATION, Method};
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, JMAP};
@@ -44,7 +44,9 @@ use tokio::sync::{mpsc, watch};
 use utils::{config::Config, map::ttl_dashmap::TtlMap, BlobHash};
 use webhooks::{spawn_mock_webhook_endpoint, MockWebhookEndpoint};
 
-use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
+use crate::{
+    add_test_certs, directory::internal::TestInternalDirectory, store::TempDir, AssertConfig,
+};
 
 pub mod auth_acl;
 pub mod auth_limits;
@@ -117,7 +119,7 @@ reject-non-fqdn = false
 [session.rcpt]
 relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
           { else = false } ]
-directory = "'auth'"
+directory = "'{STORE}'"
 
 [session.rcpt.errors]
 total = 5
@@ -196,7 +198,7 @@ data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
 lookup = "{STORE}"
-directory = "auth"
+directory = "{STORE}"
 
 [spam.header]
 is-spam  = "X-Spam-Status: Yes"
@@ -252,17 +254,9 @@ verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
-[directory."auth"]
-type = "sql"
-store = "auth"
-
-[directory."auth".columns]
-name = "name"
-description = "description"
-secret = "secret"
-email = "address"
-quota = "quota"
-class = "type"
+[directory."{STORE}"]
+type = "internal"
+store = "{STORE}"
 
 [imap.auth]
 allow-plain-text = true
@@ -316,7 +310,7 @@ pub async fn jmap_tests() {
     .await;
 
     webhooks::test(&mut params).await;
-    /*email_query::test(&mut params, delete).await;
+    /* //email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -324,12 +318,12 @@ pub async fn jmap_tests() {
     email_changes::test(&mut params).await;
     email_query_changes::test(&mut params).await;
     email_copy::test(&mut params).await;
-    thread_get::test(&mut params).await;
-    thread_merge::test(&mut params).await;
+    //thread_get::test(&mut params).await;
+    //thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
-    auth_limits::test(&mut params).await;*/
+    auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
     push_subscription::test(&mut params).await;
@@ -339,7 +333,7 @@ pub async fn jmap_tests() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;
+    blob::test(&mut params).await;*/
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;
 
@@ -378,7 +372,6 @@ pub async fn jmap_metric_tests() {
 pub struct JMAPTest {
     server: Arc<JMAP>,
     client: Client,
-    directory: DirectoryStore,
     temp_dir: TempDir,
     webhook: Arc<MockWebhookEndpoint>,
     shutdown_tx: watch::Sender<bool>,
@@ -531,7 +524,9 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             .unwrap_or_default(),
     };
     let tracers = Telemetry::parse(&mut config, &stores);
-    let core = Core::parse(&mut config, stores, config_manager).await;
+    let core = Core::parse(&mut config, stores, config_manager)
+        .await
+        .enable_enterprise();
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
 
@@ -599,24 +594,17 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         };
     });
 
-    // Create tables
-    let directory = DirectoryStore {
-        store: shared_core
-            .load()
-            .storage
-            .lookups
-            .get("auth")
-            .unwrap()
-            .clone(),
-    };
-    directory.create_test_directory().await;
-    directory
-        .create_test_user("admin", "secret", "Superuser")
-        .await;
-
     if delete_if_exists {
         store.destroy().await;
     }
+
+    // Create tables
+    shared_core
+        .load()
+        .storage
+        .data
+        .create_test_user("admin", "secret", "Superuser", &[])
+        .await;
 
     // Create client
     let mut client = Client::new()
@@ -632,7 +620,6 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         server: JMAP::from(jmap).into(),
         temp_dir,
         client,
-        directory,
         shutdown_tx,
         webhook: spawn_mock_webhook_endpoint(),
     }

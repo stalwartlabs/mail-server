@@ -18,7 +18,7 @@ use mail_send::Credentials;
 use store::{
     roaring::RoaringBitmap,
     write::{BatchBuilder, BitmapClass, ValueClass},
-    BitmapKey, ValueKey,
+    BitmapKey, Store, ValueKey,
 };
 
 use crate::directory::{DirectoryTest, IntoTestPrincipal, TestPrincipal};
@@ -716,5 +716,199 @@ async fn internal_directory() {
                 .unwrap(),
             Some("hello".to_string())
         );
+    }
+}
+
+#[allow(async_fn_in_trait)]
+pub trait TestInternalDirectory {
+    async fn create_test_user(&self, login: &str, secret: &str, name: &str, emails: &[&str])
+        -> u32;
+    async fn create_test_group(&self, login: &str, name: &str, emails: &[&str]) -> u32;
+    async fn create_test_list(&self, login: &str, name: &str, emails: &[&str]) -> u32;
+    async fn set_test_quota(&self, login: &str, quota: u32);
+    async fn add_to_group(&self, login: &str, group: &str);
+    async fn remove_from_group(&self, login: &str, group: &str);
+    async fn remove_test_alias(&self, login: &str, alias: &str);
+    async fn create_test_domains(&self, domains: &[&str]);
+}
+
+impl TestInternalDirectory for Store {
+    async fn create_test_user(
+        &self,
+        login: &str,
+        secret: &str,
+        name: &str,
+        emails: &[&str],
+    ) -> u32 {
+        let role = if login == "admin" { "admin" } else { "user" };
+        self.create_test_domains(emails).await;
+        if let Some(principal) = self.query(QueryBy::Name(login), false).await.unwrap() {
+            self.update_principal(
+                QueryBy::Id(principal.id()),
+                vec![
+                    PrincipalUpdate::set(
+                        PrincipalField::Secrets,
+                        PrincipalValue::StringList(vec![secret.to_string()]),
+                    ),
+                    PrincipalUpdate::set(
+                        PrincipalField::Description,
+                        PrincipalValue::String(name.to_string()),
+                    ),
+                    PrincipalUpdate::set(
+                        PrincipalField::Emails,
+                        PrincipalValue::StringList(emails.iter().map(|s| s.to_string()).collect()),
+                    ),
+                    PrincipalUpdate::add_item(
+                        PrincipalField::Roles,
+                        PrincipalValue::String(role.to_string()),
+                    ),
+                ],
+                None,
+            )
+            .await
+            .unwrap();
+            principal.id()
+        } else {
+            self.create_principal(
+                Principal::new(0, Type::Individual)
+                    .with_field(PrincipalField::Name, login.to_string())
+                    .with_field(PrincipalField::Description, name.to_string())
+                    .with_field(
+                        PrincipalField::Secrets,
+                        PrincipalValue::StringList(vec![secret.to_string()]),
+                    )
+                    .with_field(
+                        PrincipalField::Emails,
+                        PrincipalValue::StringList(emails.iter().map(|s| s.to_string()).collect()),
+                    )
+                    .with_field(
+                        PrincipalField::Roles,
+                        PrincipalValue::StringList(vec![role.to_string()]),
+                    ),
+                None,
+            )
+            .await
+            .unwrap()
+        }
+    }
+
+    async fn create_test_group(&self, login: &str, name: &str, emails: &[&str]) -> u32 {
+        self.create_test_domains(emails).await;
+        if let Some(principal) = self.query(QueryBy::Name(login), false).await.unwrap() {
+            principal.id()
+        } else {
+            self.create_principal(
+                Principal::new(0, Type::Group)
+                    .with_field(PrincipalField::Name, login.to_string())
+                    .with_field(PrincipalField::Description, name.to_string())
+                    .with_field(
+                        PrincipalField::Emails,
+                        PrincipalValue::StringList(emails.iter().map(|s| s.to_string()).collect()),
+                    )
+                    .with_field(
+                        PrincipalField::Roles,
+                        PrincipalValue::StringList(vec!["user".to_string()]),
+                    ),
+                None,
+            )
+            .await
+            .unwrap()
+        }
+    }
+
+    async fn create_test_list(&self, login: &str, name: &str, members: &[&str]) -> u32 {
+        if let Some(principal) = self.query(QueryBy::Name(login), false).await.unwrap() {
+            principal.id()
+        } else {
+            self.create_test_domains(&[login]).await;
+            self.create_principal(
+                Principal::new(0, Type::List)
+                    .with_field(PrincipalField::Name, login.to_string())
+                    .with_field(PrincipalField::Description, name.to_string())
+                    .with_field(
+                        PrincipalField::Members,
+                        PrincipalValue::StringList(members.iter().map(|s| s.to_string()).collect()),
+                    )
+                    .with_field(
+                        PrincipalField::Emails,
+                        PrincipalValue::StringList(vec![login.to_string()]),
+                    ),
+                None,
+            )
+            .await
+            .unwrap()
+        }
+    }
+
+    async fn set_test_quota(&self, login: &str, quota: u32) {
+        self.update_principal(
+            QueryBy::Name(login),
+            vec![PrincipalUpdate::set(
+                PrincipalField::Quota,
+                PrincipalValue::Integer(quota as u64),
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    async fn add_to_group(&self, login: &str, group: &str) {
+        self.update_principal(
+            QueryBy::Name(login),
+            vec![PrincipalUpdate::add_item(
+                PrincipalField::MemberOf,
+                PrincipalValue::String(group.to_string()),
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    async fn remove_from_group(&self, login: &str, group: &str) {
+        self.update_principal(
+            QueryBy::Name(login),
+            vec![PrincipalUpdate::remove_item(
+                PrincipalField::MemberOf,
+                PrincipalValue::String(group.to_string()),
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    async fn remove_test_alias(&self, login: &str, alias: &str) {
+        self.update_principal(
+            QueryBy::Name(login),
+            vec![PrincipalUpdate::remove_item(
+                PrincipalField::Emails,
+                PrincipalValue::String(alias.to_string()),
+            )],
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    async fn create_test_domains(&self, domains: &[&str]) {
+        for domain in domains {
+            let domain = domain.rsplit_once('@').map_or(*domain, |(_, d)| d);
+            if self
+                .query(QueryBy::Name(domain), false)
+                .await
+                .unwrap()
+                .is_none()
+            {
+                self.create_principal(
+                    Principal::new(0, Type::Domain)
+                        .with_field(PrincipalField::Name, domain.to_string()),
+                    None,
+                )
+                .await
+                .unwrap();
+            }
+        }
     }
 }

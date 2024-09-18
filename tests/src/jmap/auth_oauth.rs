@@ -7,7 +7,6 @@
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use directory::backend::internal::manage::ManageDirectory;
 use jmap::auth::oauth::{
     DeviceAuthResponse, ErrorType, OAuthCodeRequest, OAuthMetadata, TokenResponse,
 };
@@ -19,7 +18,10 @@ use jmap_proto::types::id::Id;
 use serde::de::DeserializeOwned;
 use store::ahash::AHashMap;
 
-use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, ManagementApi};
+use crate::{
+    directory::internal::TestInternalDirectory,
+    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, ManagementApi},
+};
 
 use super::JMAPTest;
 
@@ -36,18 +38,18 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create test account
     let server = params.server.clone();
-    params
-        .directory
-        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
-        .await;
     let john_id = Id::from(
         server
             .core
             .storage
             .data
-            .get_or_create_principal_id("jdoe@example.com", directory::Type::Individual)
-            .await
-            .unwrap(),
+            .create_test_user(
+                "jdoe@example.com",
+                "12345",
+                "John Doe",
+                &["jdoe@example.com"],
+            )
+            .await,
     )
     .to_string();
 

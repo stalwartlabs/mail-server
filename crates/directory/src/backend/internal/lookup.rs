@@ -7,8 +7,9 @@
 use mail_send::Credentials;
 use store::{
     write::{DirectoryClass, ValueClass},
-    IterateParams, Store, ValueKey,
+    Deserialize, IterateParams, Store, ValueKey,
 };
+use trc::AddContext;
 
 use crate::{Principal, QueryBy, Type};
 
@@ -124,12 +125,16 @@ impl DirectoryStore for Store {
                     ValueKey::from(ValueClass::Directory(DirectoryClass::EmailToId(
                         vec![u8::MAX; 10],
                     ))),
-                )
-                .no_values(),
-                |key, _| {
+                ),
+                |key, value| {
                     let key =
                         std::str::from_utf8(key.get(1..).unwrap_or_default()).unwrap_or_default();
-                    if key.split('@').next().unwrap_or(key).contains(address) {
+                    if key.split('@').next().unwrap_or(key).contains(address)
+                        && PrincipalInfo::deserialize(value)
+                            .caused_by(trc::location!())?
+                            .typ
+                            != Type::List
+                    {
                         results.push(key.to_string());
                     }
                     Ok(true)
@@ -143,15 +148,23 @@ impl DirectoryStore for Store {
 
     async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
         let mut results = Vec::new();
-        for account_id in self.email_to_ids(address).await? {
-            if let Some(email) = self
-                .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-                    DirectoryClass::Principal(account_id),
-                )))
-                .await?
-                .and_then(|mut p| p.take_str(PrincipalField::Emails))
-            {
-                results.push(email);
+        if let Some(ptype) = self
+            .get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
+                DirectoryClass::EmailToId(address.as_bytes().to_vec()),
+            )))
+            .await?
+            .filter(|p| p.typ == Type::List)
+        {
+            for account_id in self.get_members(ptype.id).await? {
+                if let Some(email) = self
+                    .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
+                        DirectoryClass::Principal(account_id),
+                    )))
+                    .await?
+                    .and_then(|mut p| p.take_str(PrincipalField::Emails))
+                {
+                    results.push(email);
+                }
             }
         }
 
