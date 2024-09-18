@@ -197,26 +197,6 @@ impl ManageDirectory for Store {
                         .ctx(trc::Key::Total, total));
                 }
             }
-
-            // Tenants must provide principal names including a valid domain
-            if let Some(domain) = name.split('@').nth(1) {
-                if self
-                    .get_principal_info(domain)
-                    .await
-                    .caused_by(trc::location!())?
-                    .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id.into()))
-                    .is_some()
-                {
-                    valid_domains.insert(domain.to_string());
-                }
-            }
-
-            if valid_domains.is_empty() {
-                return Err(error(
-                    "Invalid principal name",
-                    "Principal name must include a valid domain".into(),
-                ));
-            }
         }
 
         // Make sure new name is not taken
@@ -227,6 +207,60 @@ impl ManageDirectory for Store {
             .is_some()
         {
             return Err(err_exists(PrincipalField::Name, name));
+        }
+
+        // Obtain tenant id, only if no default tenant is provided
+        if let (Some(tenant_name), None) = (principal.take_str(PrincipalField::Tenant), tenant_id) {
+            tenant_id = self
+                .get_principal_info(&tenant_name)
+                .await
+                .caused_by(trc::location!())?
+                .filter(|v| v.typ == Type::Tenant)
+                .ok_or_else(|| not_found(tenant_name.clone()))?
+                .id
+                .into();
+        }
+
+        // Tenants must provide principal names including a valid domain
+        if let Some(tenant_id) = tenant_id {
+            if matches!(principal.typ, Type::Tenant) {
+                return Err(error(
+                    "Invalid field",
+                    "Tenants cannot contain a tenant field".into(),
+                ));
+            }
+
+            principal.set(PrincipalField::Tenant, tenant_id);
+
+            if matches!(
+                principal.typ,
+                Type::Individual
+                    | Type::Group
+                    | Type::List
+                    | Type::Role
+                    | Type::Location
+                    | Type::Resource
+                    | Type::Other
+            ) {
+                if let Some(domain) = name.split('@').nth(1) {
+                    if self
+                        .get_principal_info(domain)
+                        .await
+                        .caused_by(trc::location!())?
+                        .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id.into()))
+                        .is_some()
+                    {
+                        valid_domains.insert(domain.to_string());
+                    }
+                }
+
+                if valid_domains.is_empty() {
+                    return Err(error(
+                        "Invalid principal name",
+                        "Principal name must include a valid domain assigned to the tenant".into(),
+                    ));
+                }
+            }
         }
         principal.set(PrincipalField::Name, name);
 
@@ -305,20 +339,6 @@ impl ManageDirectory for Store {
                         .ok_or_else(|| not_found(domain.to_string()))?;
                 }
             }
-        }
-
-        // Obtain tenant id
-        if let Some(tenant_id) = tenant_id {
-            principal.set(PrincipalField::Tenant, tenant_id);
-        } else if let Some(tenant_name) = principal.take_str(PrincipalField::Tenant) {
-            tenant_id = self
-                .get_principal_info(&tenant_name)
-                .await
-                .caused_by(trc::location!())?
-                .filter(|v| v.typ == Type::Tenant)
-                .ok_or_else(|| not_found(tenant_name.clone()))?
-                .id
-                .into();
         }
 
         // Write principal
@@ -648,7 +668,18 @@ impl ManageDirectory for Store {
                     // Make sure new name is not taken
                     let new_name = new_name.to_lowercase();
                     if principal.inner.name() != new_name {
-                        if tenant_id.is_some() {
+                        if tenant_id.is_some()
+                            && matches!(
+                                principal.inner.typ,
+                                Type::Individual
+                                    | Type::Group
+                                    | Type::List
+                                    | Type::Role
+                                    | Type::Location
+                                    | Type::Resource
+                                    | Type::Other
+                            )
+                        {
                             if let Some(domain) = new_name.split('@').nth(1) {
                                 if self
                                     .get_principal_info(domain)
@@ -666,7 +697,7 @@ impl ManageDirectory for Store {
                             if valid_domains.is_empty() {
                                 return Err(error(
                                     "Invalid principal name",
-                                    "Principal name must include a valid domain".into(),
+                                    "Principal name must include a valid domain assigned to the tenant".into(),
                                 ));
                             }
                         }
@@ -1340,7 +1371,8 @@ impl ManageDirectory for Store {
             || fields.iter().any(|f| {
                 matches!(
                     f,
-                    PrincipalField::MemberOf
+                    PrincipalField::Tenant
+                        | PrincipalField::MemberOf
                         | PrincipalField::Lists
                         | PrincipalField::Roles
                         | PrincipalField::EnabledPermissions
@@ -1353,9 +1385,7 @@ impl ManageDirectory for Store {
         for mut principal in results {
             if !is_done || filters.is_some() {
                 principal = self
-                    .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-                        DirectoryClass::Principal(principal.id),
-                    )))
+                    .query(QueryBy::Id(principal.id), map_principals)
                     .await
                     .caused_by(trc::location!())?
                     .ok_or_else(|| not_found(principal.name().to_string()))?;
@@ -1581,6 +1611,19 @@ impl ManageDirectory for Store {
             }
         }
 
+        // Map tenant name
+        if let Some(tenant_id) = principal.take_int(PrincipalField::Tenant) {
+            if fields.is_empty() || fields.contains(&PrincipalField::Tenant) {
+                if let Some(name) = self
+                    .get_principal_name(tenant_id as u32)
+                    .await
+                    .caused_by(trc::location!())?
+                {
+                    principal.set(PrincipalField::Tenant, name);
+                }
+            }
+        }
+
         // Obtain used quota
         if matches!(principal.typ, Type::Individual | Type::Group | Type::Tenant)
             && (fields.is_empty() || fields.contains(&PrincipalField::UsedQuota))
@@ -1659,15 +1702,19 @@ fn validate_member_of(
     if expected_types.is_empty() || !expected_types.contains(&member_type) {
         Err(error(
             format!("Invalid {} value", field.as_str()),
-            format!(
-                "Principal {member_name:?} is not a {}.",
-                expected_types
-                    .iter()
-                    .map(|t| t.as_str().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-            .into(),
+            if !expected_types.is_empty() {
+                format!(
+                    "Principal {member_name:?} is not a {}.",
+                    expected_types
+                        .iter()
+                        .map(|t| t.as_str().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+                .into()
+            } else {
+                format!("Principal {member_name:?} cannot be added as a member.").into()
+            },
         ))
     } else {
         Ok(())

@@ -85,7 +85,7 @@ impl JMAP {
                 }
 
                 // Make sure the current directory supports updates
-                if matches!(principal.typ(), Type::Individual | Type::Group | Type::List) {
+                if matches!(principal.typ(), Type::Individual) {
                     self.assert_supported_directory()?;
                 }
 
@@ -315,27 +315,27 @@ impl JMAP {
 
                         // Validate changes
                         let mut needs_assert = false;
-                        let mut is_password_change = false;
+                        let mut expire_session = false;
+                        let mut expire_token = false;
                         let mut is_role_change = false;
 
                         for change in &changes {
                             match change.field {
-                                PrincipalField::Name
-                                | PrincipalField::Emails
-                                | PrincipalField::MemberOf
-                                | PrincipalField::Members
-                                | PrincipalField::Lists => {
+                                PrincipalField::Name | PrincipalField::Emails => {
+                                    needs_assert = true;
+                                }
+                                PrincipalField::Secrets => {
+                                    expire_session = true;
                                     needs_assert = true;
                                 }
                                 PrincipalField::Quota
                                 | PrincipalField::UsedQuota
                                 | PrincipalField::Description
                                 | PrincipalField::Type
-                                | PrincipalField::Picture => (),
-                                PrincipalField::Secrets => {
-                                    is_password_change = true;
-                                    needs_assert = true;
-                                }
+                                | PrincipalField::Picture
+                                | PrincipalField::MemberOf
+                                | PrincipalField::Members
+                                | PrincipalField::Lists => (),
                                 PrincipalField::Tenant => {
                                     // Tenants are not allowed to change their tenantId
                                     if access_token.tenant.is_some() {
@@ -353,6 +353,8 @@ impl JMAP {
                                 | PrincipalField::DisabledPermissions => {
                                     if matches!(typ, Type::Role | Type::Tenant) {
                                         is_role_change = true;
+                                    } else {
+                                        expire_token = true;
                                     }
                                     if change.field == PrincipalField::Roles {
                                         needs_assert = true;
@@ -376,7 +378,7 @@ impl JMAP {
                             )
                             .await?;
 
-                        if is_password_change {
+                        if expire_session {
                             // Remove entries from cache
                             self.inner.sessions.retain(|_, id| id.item != account_id);
                         }
@@ -388,6 +390,10 @@ impl JMAP {
                                 .security
                                 .permissions_version
                                 .fetch_add(1, Ordering::Relaxed);
+                        }
+
+                        if expire_token {
+                            self.core.security.access_tokens.remove(&account_id);
                         }
 
                         Ok(JsonResponse::new(json!({

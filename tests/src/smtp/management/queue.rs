@@ -56,7 +56,7 @@ reject-non-fqdn = false
 relay = true
 "#;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 #[allow(dead_code)]
 pub(super) struct List<T> {
     pub items: Vec<T>,

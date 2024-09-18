@@ -92,6 +92,15 @@ impl Principal {
         })
     }
 
+    pub fn take_int(&mut self, key: PrincipalField) -> Option<u64> {
+        self.take(key).and_then(|v| match v {
+            PrincipalValue::Integer(i) => Some(i),
+            PrincipalValue::IntegerList(l) => l.into_iter().next(),
+            PrincipalValue::String(s) => s.parse().ok(),
+            PrincipalValue::StringList(l) => l.into_iter().next().and_then(|s| s.parse().ok()),
+        })
+    }
+
     pub fn take_str_array(&mut self, key: PrincipalField) -> Option<Vec<String>> {
         self.take(key).map(|v| v.into_str_array())
     }
@@ -697,9 +706,19 @@ impl<'de> serde::Deserialize<'de> for Principal {
                 let mut principal = Principal::default();
 
                 while let Some(key) = map.next_key::<&str>()? {
-                    let key = PrincipalField::try_parse(key).ok_or_else(|| {
-                        serde::de::Error::custom(format!("invalid principal field: {}", key))
-                    })?;
+                    let key = PrincipalField::try_parse(key)
+                        .or_else(|| {
+                            if key == "id" {
+                                // Ignored
+                                Some(PrincipalField::UsedQuota)
+                            } else {
+                                None
+                            }
+                        })
+                        .ok_or_else(|| {
+                            serde::de::Error::custom(format!("invalid principal field: {}", key))
+                        })?;
+
                     let value = match key {
                         PrincipalField::Name => PrincipalValue::String(map.next_value()?),
                         PrincipalField::Description
@@ -711,7 +730,6 @@ impl<'de> serde::Deserialize<'de> for Principal {
                                 continue;
                             }
                         }
-
                         PrincipalField::Type => {
                             principal.typ = Type::parse(map.next_value()?).ok_or_else(|| {
                                 serde::de::Error::custom("invalid principal type")
@@ -719,7 +737,6 @@ impl<'de> serde::Deserialize<'de> for Principal {
                             continue;
                         }
                         PrincipalField::Quota => map.next_value::<PrincipalValue>()?,
-
                         PrincipalField::Secrets
                         | PrincipalField::Emails
                         | PrincipalField::MemberOf
@@ -728,7 +745,16 @@ impl<'de> serde::Deserialize<'de> for Principal {
                         | PrincipalField::Lists
                         | PrincipalField::EnabledPermissions
                         | PrincipalField::DisabledPermissions => {
-                            PrincipalValue::StringList(map.next_value()?)
+                            match map.next_value::<StringOrMany>()? {
+                                StringOrMany::One(v) => PrincipalValue::StringList(vec![v]),
+                                StringOrMany::Many(v) => {
+                                    if !v.is_empty() {
+                                        PrincipalValue::StringList(v)
+                                    } else {
+                                        continue;
+                                    }
+                                }
+                            }
                         }
                         PrincipalField::UsedQuota => {
                             // consume and ignore
@@ -787,7 +813,56 @@ impl<'de> serde::Deserialize<'de> for StringOrU64 {
     }
 }
 
+#[derive(Debug)]
+enum StringOrMany {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl<'de> serde::Deserialize<'de> for StringOrMany {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct StringOrManyVisitor;
+
+        impl<'de> Visitor<'de> for StringOrManyVisitor {
+            type Value = StringOrMany;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string or a sequence of strings")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(StringOrMany::One(value.to_string()))
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                let mut vec = Vec::new();
+
+                while let Some(value) = seq.next_element::<String>()? {
+                    vec.push(value);
+                }
+
+                Ok(StringOrMany::Many(vec))
+            }
+        }
+
+        deserializer.deserialize_any(StringOrManyVisitor)
+    }
+}
+
 impl Permission {
+    pub fn all() -> impl Iterator<Item = Permission> {
+        (0..Permission::COUNT).filter_map(Permission::from_id)
+    }
+
     pub const fn is_user_permission(&self) -> bool {
         matches!(
             self,

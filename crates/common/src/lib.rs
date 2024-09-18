@@ -119,7 +119,7 @@ pub struct IngestMessage {
     pub session_id: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeliveryResult {
     Success,
     TemporaryFailure {

@@ -25,7 +25,7 @@ use crate::{
 
 use super::JMAPTest;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 #[allow(dead_code)]
 struct OAuthCodeResponse {
     pub code: String,

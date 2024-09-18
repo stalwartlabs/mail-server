@@ -345,7 +345,7 @@ impl EventType {
                 SpamEvent::ListUpdated => Level::Info,
             },
             EventType::Http(event) => match event {
-                HttpEvent::ConnectionStart | HttpEvent::ConnectionEnd => Level::Info,
+                HttpEvent::ConnectionStart | HttpEvent::ConnectionEnd => Level::Debug,
                 HttpEvent::XForwardedMissing => Level::Warn,
                 HttpEvent::Error | HttpEvent::RequestUrl => Level::Debug,
                 HttpEvent::RequestBody | HttpEvent::ResponseBody => Level::Trace,

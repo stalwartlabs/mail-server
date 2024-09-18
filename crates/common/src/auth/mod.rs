@@ -23,7 +23,7 @@ pub struct AccessToken {
     pub tenant: Option<TenantInfo>,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TenantInfo {
     pub id: u32,
     pub quota: u64,

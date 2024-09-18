@@ -5,6 +5,7 @@
  */
 
 use std::{
+    fmt::Debug,
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
@@ -66,6 +67,7 @@ pub mod email_submission;
 pub mod enterprise;
 pub mod event_source;
 pub mod mailbox;
+pub mod permissions;
 pub mod purge;
 pub mod push_subscription;
 pub mod quota;
@@ -310,7 +312,7 @@ pub async fn jmap_tests() {
     .await;
 
     webhooks::test(&mut params).await;
-    /* //email_query::test(&mut params, delete).await;
+    email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -318,8 +320,8 @@ pub async fn jmap_tests() {
     email_changes::test(&mut params).await;
     email_query_changes::test(&mut params).await;
     email_copy::test(&mut params).await;
-    //thread_get::test(&mut params).await;
-    //thread_merge::test(&mut params).await;
+    thread_get::test(&mut params).await;
+    thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
@@ -333,7 +335,8 @@ pub async fn jmap_tests() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;*/
+    blob::test(&mut params).await;
+    permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;
 
@@ -740,8 +743,15 @@ pub async fn test_account_login(login: &str, secret: &str) -> Client {
 #[serde(untagged)]
 pub enum Response<T> {
     RequestError(RequestError<'static>),
-    Error { error: String, details: String },
-    Data { data: T },
+    Error {
+        error: String,
+        details: Option<String>,
+        item: Option<String>,
+        reason: Option<String>,
+    },
+    Data {
+        data: T,
+    },
 }
 
 pub struct ManagementApi {
@@ -784,6 +794,32 @@ impl ManagementApi {
             serde_json::from_str::<Response<T>>(&result)
                 .unwrap_or_else(|err| panic!("{err}: {result}"))
         })
+    }
+
+    pub async fn patch<T: DeserializeOwned>(
+        &self,
+        query: &str,
+        body: &impl Serialize,
+    ) -> Result<Response<T>, String> {
+        self.request_raw(
+            Method::PATCH,
+            query,
+            Some(serde_json::to_string(body).unwrap()),
+        )
+        .await
+        .map(|result| {
+            serde_json::from_str::<Response<T>>(&result)
+                .unwrap_or_else(|err| panic!("{err}: {result}"))
+        })
+    }
+
+    pub async fn delete<T: DeserializeOwned>(&self, query: &str) -> Result<Response<T>, String> {
+        self.request_raw(Method::DELETE, query, None)
+            .await
+            .map(|result| {
+                serde_json::from_str::<Response<T>>(&result)
+                    .unwrap_or_else(|err| panic!("{err}: {result}"))
+            })
     }
 
     pub async fn get<T: DeserializeOwned>(&self, query: &str) -> Result<Response<T>, String> {
@@ -840,12 +876,17 @@ impl ManagementApi {
     }
 }
 
-impl<T> Response<T> {
+impl<T: Debug> Response<T> {
     pub fn unwrap_data(self) -> T {
         match self {
             Response::Data { data } => data,
-            Response::Error { error, details } => {
-                panic!("Expected data, found error {error:?}: {details:?}")
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => {
+                panic!("Expected data, found error {error:?}: {details:?} {reason:?}")
             }
             Response::RequestError(err) => {
                 panic!("Expected data, found error {err:?}")
@@ -857,8 +898,13 @@ impl<T> Response<T> {
         match self {
             Response::Data { data } => Some(data),
             Response::RequestError(error) if error.status == 404 => None,
-            Response::Error { error, details } => {
-                panic!("Expected data, found error {error:?}: {details:?}")
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => {
+                panic!("Expected data, found error {error:?}: {details:?} {reason:?}")
             }
             Response::RequestError(err) => {
                 panic!("Expected data, found error {err:?}")
@@ -866,13 +912,50 @@ impl<T> Response<T> {
         }
     }
 
-    pub fn unwrap_error(self) -> (String, String) {
+    pub fn unwrap_error(self) -> (String, Option<String>, Option<String>) {
         match self {
-            Response::Error { error, details } => (error, details),
-            Response::Data { .. } => panic!("Expected error, found data."),
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => (error, details, reason),
+            Response::Data { data } => panic!("Expected error, found data: {data:?}"),
             Response::RequestError(err) => {
                 panic!("Expected error, found request error {err:?}")
             }
+        }
+    }
+
+    pub fn unwrap_request_error(self) -> RequestError<'static> {
+        match self {
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => {
+                panic!("Expected request error, found error {error:?}: {details:?} {reason:?}")
+            }
+            Response::Data { data } => panic!("Expected request error, found data: {data:?}"),
+            Response::RequestError(err) => err,
+        }
+    }
+
+    pub fn expect_request_error(self, value: &str) {
+        let err = self.unwrap_request_error();
+        if !err.detail.contains(value) && !err.title.as_ref().map_or(false, |t| t.contains(value)) {
+            panic!("Expected request error containing {value:?}, found {err:?}")
+        }
+    }
+
+    pub fn expect_error(self, value: &str) {
+        let (error, details, reason) = self.unwrap_error();
+        if !error.contains(value)
+            && !details.as_ref().map_or(false, |d| d.contains(value))
+            && !reason.as_ref().map_or(false, |r| r.contains(value))
+        {
+            panic!("Expected error containing {value:?}, found {error:?}: {details:?} {reason:?}")
         }
     }
 }

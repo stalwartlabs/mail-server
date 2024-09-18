@@ -818,11 +818,6 @@ impl ToHttpResponse for &trc::Error {
     fn into_http_response(self) -> HttpResponse {
         match self.as_ref() {
             trc::EventType::Manage(cause) => {
-                let details_or_reason = self
-                    .value(trc::Key::Details)
-                    .or_else(|| self.value(trc::Key::Reason))
-                    .and_then(|v| v.as_str());
-
                 match cause {
                     trc::ManageEvent::MissingParameter => ManagementApiError::FieldMissing {
                         field: self.value_as_str(trc::Key::Key).unwrap_or_default(),
@@ -835,11 +830,18 @@ impl ToHttpResponse for &trc::Error {
                         item: self.value_as_str(trc::Key::Key).unwrap_or_default(),
                     },
                     trc::ManageEvent::NotSupported => ManagementApiError::Unsupported {
-                        details: details_or_reason.unwrap_or("Requested action is unsupported"),
+                        details: self
+                            .value(trc::Key::Details)
+                            .or_else(|| self.value(trc::Key::Reason))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Requested action is unsupported"),
                     },
                     trc::ManageEvent::AssertFailed => ManagementApiError::AssertFailed,
                     trc::ManageEvent::Error => ManagementApiError::Other {
-                        details: details_or_reason.unwrap_or("An error occurred."),
+                        reason: self.value_as_str(trc::Key::Reason),
+                        details: self
+                            .value_as_str(trc::Key::Details)
+                            .unwrap_or("Unknown error"),
                     },
                 }
             }

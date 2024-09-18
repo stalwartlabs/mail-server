@@ -33,12 +33,24 @@ use crate::JMAP;
 #[serde(tag = "error")]
 #[serde(rename_all = "camelCase")]
 pub enum ManagementApiError<'x> {
-    FieldAlreadyExists { field: &'x str, value: &'x str },
-    FieldMissing { field: &'x str },
-    NotFound { item: &'x str },
-    Unsupported { details: &'x str },
+    FieldAlreadyExists {
+        field: &'x str,
+        value: &'x str,
+    },
+    FieldMissing {
+        field: &'x str,
+    },
+    NotFound {
+        item: &'x str,
+    },
+    Unsupported {
+        details: &'x str,
+    },
     AssertFailed,
-    Other { details: &'x str },
+    Other {
+        details: &'x str,
+        reason: Option<&'x str>,
+    },
 }
 
 impl JMAP {
