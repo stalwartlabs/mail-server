@@ -10,6 +10,7 @@ use std::{
     sync::{atomic::AtomicU8, Arc},
 };
 
+use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use auth::{roles::RolePermissions, AccessToken};
 use config::{
@@ -35,6 +36,8 @@ use listener::{
 };
 use mail_send::Credentials;
 
+use manager::webadmin::Resource;
+use parking_lot::Mutex;
 use sieve::Sieve;
 use store::{
     write::{QueueClass, ValueClass},
@@ -57,6 +60,8 @@ pub mod listener;
 pub mod manager;
 pub mod scripts;
 pub mod telemetry;
+
+pub use psl;
 
 pub static USER_AGENT: &str = concat!("Stalwart/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);
@@ -83,6 +88,7 @@ pub struct Core {
 //TODO: temporary hack until OIDC is implemented
 #[derive(Default)]
 pub struct Security {
+    pub logos: Mutex<AHashMap<String, Option<Resource<Vec<u8>>>>>,
     pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
     pub permissions: ADashMap<u32, Arc<RolePermissions>>,
     pub permissions_version: AtomicU8,
@@ -405,6 +411,7 @@ impl Clone for Security {
                 self.permissions_version
                     .load(std::sync::atomic::Ordering::Relaxed),
             ),
+            logos: Mutex::new(self.logos.lock().clone()),
         }
     }
 }

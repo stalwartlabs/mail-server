@@ -13,8 +13,6 @@ use directory::{
     backend::internal::{PrincipalField, PrincipalUpdate, PrincipalValue},
     Permission, Principal, Type,
 };
-use hyper::header::TE;
-use rayon::vec;
 use utils::BlobHash;
 
 use crate::jmap::assert_is_empty;
@@ -360,12 +358,12 @@ pub async fn test(params: &JMAPTest) {
         )
         .await
         .unwrap()
-        .expect_error("notFound");
+        .expect_request_error("Forbidden");
     tenant_api
         .get::<()>("/api/principal/foobar")
         .await
         .unwrap()
-        .expect_error("notFound");
+        .expect_request_error("Forbidden");
     tenant_api
         .get::<()>("/api/principal?type=tenant")
         .await

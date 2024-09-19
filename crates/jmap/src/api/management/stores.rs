@@ -69,11 +69,7 @@ impl JMAP {
                         .to_vec()
                 };
 
-                Ok(Resource {
-                    content_type: "application/octet-stream",
-                    contents,
-                }
-                .into_http_response())
+                Ok(Resource::new("application/octet-stream", contents).into_http_response())
             }
             (Some("purge"), Some("blob"), _, &Method::GET) => {
                 // Validate the access token

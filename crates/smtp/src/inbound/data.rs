@@ -14,6 +14,7 @@ use std::{
 use common::{
     config::smtp::{auth::VerifyStrategy, session::Stage},
     listener::SessionStream,
+    psl,
     scripts::ScriptModification,
 };
 use mail_auth::{
@@ -249,6 +250,7 @@ impl<T: SessionStream> Session<T> {
                             &self.data.helo_domain
                         },
                         spf_output,
+                        |domain| psl::domain_str(domain).unwrap_or(domain),
                     )
                     .await;
 

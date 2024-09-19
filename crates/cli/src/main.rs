@@ -88,7 +88,7 @@ async fn oauth(url: &str) -> Credentials {
             .danger_accept_invalid_certs(is_localhost(url))
             .build()
             .unwrap_or_default()
-            .get(&format!("{}/.well-known/oauth-authorization-server", url))
+            .get(format!("{}/.well-known/oauth-authorization-server", url))
             .send()
             .await
             .unwrap_result("send OAuth GET request")

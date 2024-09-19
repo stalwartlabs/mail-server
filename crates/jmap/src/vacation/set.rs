@@ -200,10 +200,9 @@ impl JMAP {
                         Property::Value,
                     )
                     .await?
-                    .map(|value| {
+                    .inspect(|value| {
                         was_active = value.inner.properties.get(&Property::IsActive)
                             == Some(&Value::Bool(true));
-                        value
                     })
                     .ok_or_else(|| {
                         trc::StoreEvent::NotFound

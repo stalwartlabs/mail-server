@@ -7,7 +7,7 @@ homepage = "https://stalw.art/smtp"
 keywords = ["smtp", "email", "mail", "server"]
 categories = ["email"]
 license = "AGPL-3.0-only OR LicenseRef-SEL"
-version = "0.9.4"
+version = "0.10.0"
 edition = "2021"
 resolver = "2"
 
@@ -18,7 +18,7 @@ nlp = { path =  "../nlp" }
 directory = { path =  "../directory" }
 common = { path =  "../common" }
 trc = { path = "../trc" }
-mail-auth = { version = "0.4" }
+mail-auth = { version = "0.5" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] } 

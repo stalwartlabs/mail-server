@@ -405,7 +405,7 @@ impl ManageDirectory for Store {
                     principal_id: MaybeDynamicId::Static(member.id),
                     member_of: MaybeDynamicId::Dynamic(0),
                 }),
-                vec![member.typ as u8],
+                vec![principal.typ as u8],
             );
             batch.set(
                 ValueClass::Directory(DirectoryClass::Members {
@@ -460,7 +460,15 @@ impl ManageDirectory for Store {
                     .list_principals(
                         None,
                         principal.id().into(),
-                        &[],
+                        &[
+                            Type::Individual,
+                            Type::Group,
+                            Type::Role,
+                            Type::List,
+                            Type::Resource,
+                            Type::Other,
+                            Type::Location,
+                        ],
                         &[PrincipalField::Name],
                         0,
                         0,
@@ -742,25 +750,25 @@ impl ManageDirectory for Store {
                             ));
                         }
 
-                        match principal.inner.tenant() {
-                            Some(old_tenant_id) if old_tenant_id != tenant_info.id => {
-                                // Update quota
-                                if let Some(used_quota) = used_quota {
-                                    batch
-                                        .add(DirectoryClass::UsedQuota(old_tenant_id), -used_quota)
-                                        .add(DirectoryClass::UsedQuota(tenant_info.id), used_quota);
-                                }
-
-                                principal.inner.set(PrincipalField::Tenant, tenant_info.id);
-                                pinfo_name = PrincipalInfo::new(
-                                    principal_id,
-                                    principal.inner.typ,
-                                    tenant_info.id.into(),
-                                )
-                                .serialize();
-                            }
-                            _ => continue,
+                        if principal.inner.tenant() == Some(tenant_info.id) {
+                            continue;
                         }
+
+                        // Update quota
+                        if let Some(used_quota) = used_quota {
+                            if let Some(old_tenant_id) = principal.inner.tenant() {
+                                batch.add(DirectoryClass::UsedQuota(old_tenant_id), -used_quota);
+                            }
+                            batch.add(DirectoryClass::UsedQuota(tenant_info.id), used_quota);
+                        }
+
+                        principal.inner.set(PrincipalField::Tenant, tenant_info.id);
+                        pinfo_name = PrincipalInfo::new(
+                            principal_id,
+                            principal.inner.typ,
+                            tenant_info.id.into(),
+                        )
+                        .serialize();
                     } else if let Some(tenant_id) = principal.inner.tenant() {
                         // Update quota
                         if let Some(used_quota) = used_quota {
@@ -826,15 +834,13 @@ impl ManageDirectory for Store {
                 }
                 (
                     PrincipalAction::Set,
-                    PrincipalField::Description,
-                    PrincipalValue::String(description),
+                    PrincipalField::Description | PrincipalField::Picture,
+                    PrincipalValue::String(value),
                 ) => {
-                    if !description.is_empty() {
-                        principal
-                            .inner
-                            .set(PrincipalField::Description, description);
+                    if !value.is_empty() {
+                        principal.inner.set(change.field, value);
                     } else {
-                        principal.inner.remove(PrincipalField::Description);
+                        principal.inner.remove(change.field);
                     }
                 }
                 (PrincipalAction::Set, PrincipalField::Quota, PrincipalValue::Integer(quota))
@@ -1118,7 +1124,7 @@ impl ManageDirectory for Store {
                                     principal_id: MaybeDynamicId::Static(member_info.id),
                                     member_of: MaybeDynamicId::Static(principal_id),
                                 }),
-                                vec![member_info.typ as u8],
+                                vec![principal.inner.typ as u8],
                             );
                             batch.set(
                                 ValueClass::Directory(DirectoryClass::Members {
@@ -1180,7 +1186,7 @@ impl ManageDirectory for Store {
                                 principal_id: MaybeDynamicId::Static(member_info.id),
                                 member_of: MaybeDynamicId::Static(principal_id),
                             }),
-                            vec![member_info.typ as u8],
+                            vec![principal.inner.typ as u8],
                         );
                         batch.set(
                             ValueClass::Directory(DirectoryClass::Members {
@@ -1561,25 +1567,24 @@ impl ManageDirectory for Store {
                     let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::EmailToId(
                         vec![u8::MAX; 10],
                     )));
-                    let mut results = Vec::new();
                     let domain_name = principal.name();
+                    let mut total: u64 = 0;
                     self.iterate(
                         IterateParams::new(from_key, to_key).no_values(),
                         |key, _| {
-                            let email = std::str::from_utf8(key.get(1..).unwrap_or_default())
-                                .unwrap_or_default();
-                            if email
+                            if std::str::from_utf8(key.get(1..).unwrap_or_default())
+                                .unwrap_or_default()
                                 .rsplit_once('@')
                                 .map_or(false, |(_, domain)| domain == domain_name)
                             {
-                                results.push(email.to_string());
+                                total += 1;
                             }
                             Ok(true)
                         },
                     )
                     .await
                     .caused_by(trc::location!())?;
-                    principal.set(PrincipalField::Members, results);
+                    principal.set(PrincipalField::Members, total);
                 }
                 Type::Tenant => {
                     let from_key =
@@ -1587,25 +1592,23 @@ impl ManageDirectory for Store {
                     let to_key = ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(
                         vec![u8::MAX; 10],
                     )));
-                    let mut results = Vec::new();
-                    self.iterate(IterateParams::new(from_key, to_key), |key, value| {
+                    let mut total: u64 = 0;
+
+                    self.iterate(IterateParams::new(from_key, to_key), |_, value| {
                         let pinfo =
                             PrincipalInfo::deserialize(value).caused_by(trc::location!())?;
 
                         if pinfo.typ == Type::Individual
                             && pinfo.has_tenant_access(Some(principal.id))
                         {
-                            results.push(
-                                std::str::from_utf8(key.get(1..).unwrap_or_default())
-                                    .unwrap_or_default()
-                                    .to_string(),
-                            );
+                            total += 1;
                         }
                         Ok(true)
                     })
                     .await
                     .caused_by(trc::location!())?;
-                    principal.set(PrincipalField::Members, results);
+
+                    principal.set(PrincipalField::Members, total);
                 }
                 _ => {}
             }

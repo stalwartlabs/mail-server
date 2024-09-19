@@ -9,10 +9,10 @@ use unicode_security::MixedScript;
 
 pub fn fn_is_ascii<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     match &v[0] {
-        Variable::String(s) => s.chars().all(|c| c.is_ascii()),
+        Variable::String(s) => s.is_ascii(),
         Variable::Integer(_) | Variable::Float(_) => true,
         Variable::Array(a) => a.iter().all(|v| match v {
-            Variable::String(s) => s.chars().all(|c| c.is_ascii()),
+            Variable::String(s) => s.is_ascii(),
             _ => true,
         }),
     }

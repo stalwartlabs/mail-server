@@ -175,6 +175,7 @@ impl Core {
                     32,
                 ),
                 permissions_version: Default::default(),
+                logos: Default::default(),
             },
             storage: Storage {
                 data,

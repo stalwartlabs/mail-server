@@ -110,7 +110,7 @@ impl MysqlStore {
             SUBSPACE_TELEMETRY_INDEX,
         ] {
             let table = char::from(table);
-            conn.query_drop(&format!(
+            conn.query_drop(format!(
                 "CREATE TABLE IF NOT EXISTS {table} (
                     k TINYBLOB,
                     v MEDIUMBLOB NOT NULL,
@@ -121,7 +121,7 @@ impl MysqlStore {
             .map_err(into_error)?;
         }
 
-        conn.query_drop(&format!(
+        conn.query_drop(format!(
             "CREATE TABLE IF NOT EXISTS {} (
                 k TINYBLOB,
                 v LONGBLOB NOT NULL,
@@ -139,7 +139,7 @@ impl MysqlStore {
             SUBSPACE_BITMAP_TEXT,
         ] {
             let table = char::from(table);
-            conn.query_drop(&format!(
+            conn.query_drop(format!(
                 "CREATE TABLE IF NOT EXISTS {table} (
                     k BLOB,
                     PRIMARY KEY (k(400))
@@ -150,7 +150,7 @@ impl MysqlStore {
         }
 
         for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
-            conn.query_drop(&format!(
+            conn.query_drop(format!(
                 "CREATE TABLE IF NOT EXISTS {} (
                 k TINYBLOB,
                 v BIGINT NOT NULL DEFAULT 0,

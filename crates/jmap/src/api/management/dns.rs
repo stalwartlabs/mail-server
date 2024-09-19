@@ -115,10 +115,10 @@ impl JMAP {
         }
         for signature_id in signature_ids {
             if let (Some(algo), Some(pk), Some(selector)) = (
-                keys.value(&format!("{signature_id}.algorithm"))
+                keys.value(format!("{signature_id}.algorithm"))
                     .and_then(|algo| algo.parse::<Algorithm>().ok()),
-                keys.value(&format!("{signature_id}.private-key")),
-                keys.value(&format!("{signature_id}.selector")),
+                keys.value(format!("{signature_id}.private-key")),
+                keys.value(format!("{signature_id}.selector")),
             ) {
                 match obtain_dkim_public_key(algo, pk) {
                     Ok(public) => {

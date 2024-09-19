@@ -223,22 +223,16 @@ impl JMAP {
                             .key_get::<String>(format!("acme:{token}").into_bytes())
                             .await?
                         {
-                            Some(proof) => Ok(Resource {
-                                content_type: "text/plain",
-                                contents: proof.into_bytes(),
-                            }
-                            .into_http_response()),
+                            Some(proof) => Ok(Resource::new("text/plain", proof.into_bytes())
+                                .into_http_response()),
                             None => Err(trc::ResourceEvent::NotFound.into_err()),
                         };
                     }
                 }
                 ("mta-sts.txt", &Method::GET) => {
                     if let Some(policy) = self.core.build_mta_sts_policy() {
-                        return Ok(Resource {
-                            content_type: "text/plain",
-                            contents: policy.to_string().into_bytes(),
-                        }
-                        .into_http_response());
+                        return Ok(Resource::new("text/plain", policy.to_string().into_bytes())
+                            .into_http_response());
                     } else {
                         return Err(trc::ResourceEvent::NotFound.into_err());
                     }
@@ -357,11 +351,10 @@ impl JMAP {
                 }
             }
             "robots.txt" => {
-                return Ok(Resource {
-                    content_type: "text/plain",
-                    contents: b"User-agent: *\nDisallow: /\n".to_vec(),
-                }
-                .into_http_response());
+                return Ok(
+                    Resource::new("text/plain", b"User-agent: *\nDisallow: /\n".to_vec())
+                        .into_http_response(),
+                );
             }
             "healthz" => match path.next().unwrap_or_default() {
                 "live" => {
@@ -394,10 +387,10 @@ impl JMAP {
                             }
                         }
 
-                        return Ok(Resource {
-                            content_type: "text/plain; version=0.0.4",
-                            contents: self.core.export_prometheus_metrics().await?.into_bytes(),
-                        }
+                        return Ok(Resource::new(
+                            "text/plain; version=0.0.4",
+                            self.core.export_prometheus_metrics().await?.into_bytes(),
+                        )
                         .into_http_response());
                     }
                 }
@@ -406,6 +399,42 @@ impl JMAP {
                 }
                 _ => (),
             },
+            #[cfg(feature = "enterprise")]
+            "logo.svg" if self.core.is_enterprise_edition() => {
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+
+                match self
+                    .core
+                    .logo_resource(
+                        req.headers()
+                            .get(header::HOST)
+                            .and_then(|h| h.to_str().ok())
+                            .map(|h| h.rsplit_once(':').map_or(h, |(h, _)| h))
+                            .unwrap_or_default(),
+                    )
+                    .await
+                {
+                    Ok(Some(resource)) => {
+                        return Ok(resource.into_http_response());
+                    }
+                    Ok(None) => (),
+                    Err(err) => {
+                        trc::error!(err.span_id(session.session_id));
+                    }
+                }
+
+                let resource = self.inner.webadmin.get("logo.svg").await?;
+
+                return if !resource.is_empty() {
+                    Ok(resource.into_http_response())
+                } else {
+                    Err(trc::ResourceEvent::NotFound.into_err())
+                };
+
+                // SPDX-SnippetEnd
+            }
             _ => {
                 let path = req.uri().path();
                 let resource = self
@@ -895,7 +924,7 @@ impl ToRequestError for trc::Error {
             },
             trc::EventType::Auth(cause) => match cause {
                 trc::AuthEvent::MissingTotp => {
-                    RequestError::blank(403, "TOTP code required", cause.message())
+                    RequestError::blank(402, "TOTP code required", cause.message())
                 }
                 trc::AuthEvent::TooManyAttempts => RequestError::too_many_auth_attempts(),
                 _ => RequestError::unauthorized(),

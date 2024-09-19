@@ -35,7 +35,6 @@ use mail_auth::{
     Resolver, MX,
 };
 use rustls_pki_types::CertificateDer;
-use utils::suffixlist::PublicSuffix;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
@@ -260,7 +259,6 @@ async fn dane_test() {
             tlsa: LruCache::with_capacity(10),
             mta_sts: LruCache::with_capacity(10),
         },
-        psl: PublicSuffix::default(),
     };
     let r = SMTP {
         core: core.into(),

@@ -91,14 +91,14 @@ impl<'x> Tokenizer<'x> {
                 _ => {
                     let (prev_token, ch) = if ch == b'(' && self.buf.eq(b"matches") {
                         // Parse regular expressions
-                        let stop_ch = self.find_char(&[b'\"', b'\''])?;
+                        let stop_ch = self.find_char(b"\"'")?;
                         let regex_str = self.parse_string(stop_ch)?;
                         let regex = Regex::new(&regex_str).map_err(|e| {
                             format!("Invalid regular expression {:?}: {}", regex_str, e)
                         })?;
                         self.has_alpha = false;
                         self.buf.clear();
-                        self.find_char(&[b','])?;
+                        self.find_char(b",")?;
                         (Token::Regex(regex).into(), b'(')
                     } else if !self.buf.is_empty() {
                         self.is_start = false;

@@ -67,11 +67,10 @@ impl JMAP {
         );
         config.push_str("</clientConfig>\n");
 
-        Ok(Resource {
-            content_type: "application/xml; charset=utf-8",
-            contents: config.into_bytes(),
-        }
-        .into_http_response())
+        Ok(
+            Resource::new("application/xml; charset=utf-8", config.into_bytes())
+                .into_http_response(),
+        )
     }
 
     pub async fn handle_autodiscover_request(
@@ -147,11 +146,10 @@ impl JMAP {
         let _ = writeln!(&mut config, "\t</Response>");
         let _ = writeln!(&mut config, "</Autodiscover>");
 
-        Ok(Resource {
-            content_type: "application/xml; charset=utf-8",
-            contents: config.into_bytes(),
-        }
-        .into_http_response())
+        Ok(
+            Resource::new("application/xml; charset=utf-8", config.into_bytes())
+                .into_http_response(),
+        )
     }
 
     async fn autoconfig_parameters<'x>(

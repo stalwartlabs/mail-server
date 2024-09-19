@@ -18,7 +18,6 @@ use mail_parser::{decoders::html::add_html_token, Message, PartType};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 use sha1::{Digest, Sha1};
 use tokio::net::UdpSocket;
-use utils::suffixlist::PublicSuffix;
 
 const MIN_LINE_LENGTH: usize = 8;
 const ATOMIC_NUM_LINES: usize = 4;
@@ -47,9 +46,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     }
 
     // Hash message
-    let request = ctx
-        .message
-        .pyzor_check_message(&ctx.core.smtp.resolvers.psl);
+    let request = ctx.message.pyzor_check_message();
 
     #[cfg(feature = "test_mode")]
     {
@@ -161,15 +158,15 @@ async fn pyzor_send_message(
 }
 
 trait PyzorDigest<W: Write> {
-    fn pyzor_digest(&self, writer: W, psl: &PublicSuffix) -> W;
+    fn pyzor_digest(&self, writer: W) -> W;
 }
 
 pub trait PyzorCheck {
-    fn pyzor_check_message(&self, psl: &PublicSuffix) -> String;
+    fn pyzor_check_message(&self) -> String;
 }
 
 impl<'x, W: Write> PyzorDigest<W> for Message<'x> {
-    fn pyzor_digest(&self, writer: W, psl: &PublicSuffix) -> W {
+    fn pyzor_digest(&self, writer: W) -> W {
         let parts = self
             .parts
             .iter()
@@ -180,33 +177,27 @@ impl<'x, W: Write> PyzorDigest<W> for Message<'x> {
             })
             .collect::<Vec<Cow<str>>>();
 
-        pyzor_digest(writer, parts.iter().flat_map(|text| text.lines()), psl)
+        pyzor_digest(writer, parts.iter().flat_map(|text| text.lines()))
     }
 }
 
 impl<'x> PyzorCheck for Message<'x> {
-    fn pyzor_check_message(&self, psl: &PublicSuffix) -> String {
+    fn pyzor_check_message(&self) -> String {
         let time = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
 
         pyzor_create_message(
             self,
-            psl,
             time,
             (time & 0xFFFF) as u16 ^ ((time >> 16) & 0xFFFF) as u16,
         )
     }
 }
 
-fn pyzor_create_message(
-    message: &Message<'_>,
-    psl: &PublicSuffix,
-    time: u64,
-    thread: u16,
-) -> String {
+fn pyzor_create_message(message: &Message<'_>, time: u64, thread: u16) -> String {
     // Hash message
-    let hash = message.pyzor_digest(Sha1::new(), psl).finalize();
+    let hash = message.pyzor_digest(Sha1::new()).finalize();
     // Hash key
     let mut hash_key = Sha1::new();
     hash_key.update("anonymous:".as_bytes());
@@ -223,13 +214,13 @@ fn pyzor_create_message(
     // Sign
     let mut sig = Sha1::new();
     sig.update(msg_hash);
-    sig.update(&format!(":{time}:{hash_key:x}"));
+    sig.update(format!(":{time}:{hash_key:x}"));
     let sig = sig.finalize();
 
     format!("{message}\nSig: {sig:x}\n")
 }
 
-fn pyzor_digest<'x, I, W>(mut writer: W, lines: I, psl: &PublicSuffix) -> W
+fn pyzor_digest<'x, I, W>(mut writer: W, lines: I) -> W
 where
     I: Iterator<Item = &'x str>,
     W: Write,
@@ -254,7 +245,7 @@ where
             }
         };
 
-        for token in TypesTokenizer::new(line, psl) {
+        for token in TypesTokenizer::new(line) {
             match token.word {
                 TokenType::Alphabetic(_)
                 | TokenType::Alphanumeric(_)
@@ -448,7 +439,6 @@ mod test {
     use mail_parser::MessageParser;
     use sha1::Digest;
     use sha1::Sha1;
-    use utils::suffixlist::PublicSuffix;
 
     use super::pyzor_create_message;
     use super::pyzor_send_message;
@@ -485,11 +475,8 @@ mod test {
 
     #[test]
     fn message_pyzor() {
-        let mut psl = PublicSuffix::default();
-        psl.suffixes.insert("com".to_string());
         let message = pyzor_create_message(
             &MessageParser::new().parse(HTML_TEXT_STYLE_SCRIPT).unwrap(),
-            &psl,
             1697468672,
             49005,
         );
@@ -510,9 +497,6 @@ mod test {
 
     #[test]
     fn digest_pyzor() {
-        let mut psl = PublicSuffix::default();
-        psl.suffixes.insert("com".to_string());
-
         // HTML stripping
         assert_eq!(html_to_text(HTML_RAW), HTML_RAW_STRIPED);
 
@@ -531,7 +515,6 @@ mod test {
                 String::from_utf8(pyzor_digest(
                     Vec::new(),
                     format!("Test {strip_me} Test2").lines(),
-                    &psl
                 ))
                 .unwrap(),
                 "TestTest2"
@@ -543,7 +526,6 @@ mod test {
             String::from_utf8(pyzor_digest(
                 Vec::new(),
                 concat!("This line is included\n", "not this\n", "This also").lines(),
-                &psl
             ))
             .unwrap(),
             "ThislineisincludedThisalso"
@@ -554,7 +536,6 @@ mod test {
             String::from_utf8(pyzor_digest(
                 Vec::new(),
                 "All this message\nShould be included\nIn the digest".lines(),
-                &psl
             ))
             .unwrap(),
             "AllthismessageShouldbeincludedInthedigest"
@@ -570,7 +551,7 @@ mod test {
             expected += format!("Line{i}testtesttest").as_str();
         }
         assert_eq!(
-            String::from_utf8(pyzor_digest(Vec::new(), text.lines(), &psl)).unwrap(),
+            String::from_utf8(pyzor_digest(Vec::new(), text.lines(),)).unwrap(),
             expected
         );
 
@@ -602,7 +583,7 @@ mod test {
                     MessageParser::new()
                         .parse(input)
                         .unwrap()
-                        .pyzor_digest(Vec::new(), &psl)
+                        .pyzor_digest(Vec::new(),)
                 )
                 .unwrap(),
                 expected,
@@ -617,7 +598,7 @@ mod test {
                 MessageParser::new()
                     .parse(HTML_TEXT_STYLE_SCRIPT)
                     .unwrap()
-                    .pyzor_digest(Sha1::new(), &psl)
+                    .pyzor_digest(Sha1::new(),)
                     .finalize()
             ),
             "b2c27325a034c581df0c9ef37e4a0d63208a3e7e",

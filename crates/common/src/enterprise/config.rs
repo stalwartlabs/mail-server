@@ -117,6 +117,7 @@ impl Enterprise {
                 .property_or_default::<Option<Duration>>("storage.undelete.retention", "false")
                 .unwrap_or_default()
                 .map(|retention| Undelete { retention }),
+            logo_url: config.value("enterprise.logo-url").map(|s| s.to_string()),
             trace_store,
             metrics_store,
             metrics_alerts: parse_metric_alerts(config),

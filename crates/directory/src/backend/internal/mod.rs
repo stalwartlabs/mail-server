@@ -95,6 +95,7 @@ impl PrincipalInfo {
     pub fn has_tenant_access(&self, tenant_id: Option<u32>) -> bool {
         tenant_id.map_or(true, |tenant_id| {
             self.tenant.map_or(false, |t| tenant_id == t)
+                || (self.typ == Type::Tenant && self.id == tenant_id)
         })
     }
 }

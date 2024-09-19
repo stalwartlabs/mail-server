@@ -131,10 +131,7 @@ pub fn spawn_mock_webhook_endpoint() -> Arc<MockWebhookEndpoint> {
                                             endpoint.events.lock().extend(request.events);
 
                                             Ok::<_, hyper::Error>(
-                                                Resource {
-                                                    content_type: "application/json",
-                                                    contents: "[]".to_string().into_bytes(),
-                                                }
+                                                Resource::new("application/json", "[]".to_string().into_bytes())
                                                 .into_http_response().build(),
                                             )
                                         } else {

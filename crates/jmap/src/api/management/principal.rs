@@ -108,6 +108,7 @@ impl JMAP {
                 let filter = params.get("filter");
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
+                let count = params.get("count").is_some();
 
                 // Parse types
                 let mut types = Vec::new();
@@ -181,12 +182,16 @@ impl JMAP {
                     return Err(manage::enterprise());
                 }
 
-                let principals = self
+                let mut principals = self
                     .core
                     .storage
                     .data
                     .list_principals(filter, tenant, &types, &fields, page, limit)
                     .await?;
+
+                if count {
+                    principals.items.clear();
+                }
 
                 Ok(JsonResponse::new(json!({
                         "data": principals,
@@ -355,9 +360,6 @@ impl JMAP {
                                         is_role_change = true;
                                     } else {
                                         expire_token = true;
-                                    }
-                                    if change.field == PrincipalField::Roles {
-                                        needs_assert = true;
                                     }
                                 }
                             }

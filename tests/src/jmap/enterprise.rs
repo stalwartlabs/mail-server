@@ -104,6 +104,7 @@ pub async fn test(params: &mut JMAPTest) {
         }
         .into(),
         metrics_alerts: parse_metric_alerts(&mut config),
+        logo_url: None,
     }
     .into();
     config.assert_no_errors();
@@ -160,6 +161,7 @@ impl EnterpriseCore for Core {
             trace_store: None,
             metrics_store: None,
             metrics_alerts: vec![],
+            logo_url: None,
         }
         .into();
         self
