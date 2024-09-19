@@ -6,16 +6,20 @@
 
 use std::time::Instant;
 
+use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::receiver::Request;
 use jmap_proto::types::collection::Collection;
 use store::write::log::ChangeLogBuilder;
-use tokio::io::{AsyncRead, AsyncWrite};
 use trc::AddContext;
 
 use crate::core::{Command, Session, StatusResponse};
 
-impl<T: AsyncRead + AsyncWrite> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_setactive(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        // Validate access
+        self.assert_has_permission(Permission::SieveSetActive)?;
+
         let op_start = Instant::now();
         let name = request
             .tokens

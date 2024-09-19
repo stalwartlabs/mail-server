@@ -6,7 +6,6 @@
 
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 use sieve::{runtime::Variable, FunctionMap};
-use utils::suffixlist::DomainPart;
 
 use crate::scripts::functions::{html::html_to_tokens, text::tokenize_words, ApplyString};
 
@@ -33,7 +32,7 @@ pub fn exec_tokenize(ctx: PluginContext<'_>) -> trc::Result<Variable> {
 
     Ok(match v.remove(0) {
         v @ (Variable::String(_) | Variable::Array(_)) => {
-            TypesTokenizer::new(v.to_string().as_ref(), &ctx.core.smtp.resolvers.psl)
+            TypesTokenizer::new(v.to_string().as_ref())
                 .tokenize_numbers(false)
                 .tokenize_urls(urls)
                 .tokenize_urls_without_scheme(urls_without_scheme)
@@ -53,6 +52,12 @@ pub fn exec_tokenize(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     })
 }
 
+enum DomainPart {
+    Sld,
+    Tld,
+    Host,
+}
+
 pub fn exec_domain_part(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let v = ctx.arguments;
     let part = match v[1].to_string().as_ref() {
@@ -63,12 +68,12 @@ pub fn exec_domain_part(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     };
 
     Ok(v[0].transform(|domain| {
-        ctx.core
-            .smtp
-            .resolvers
-            .psl
-            .domain_part(domain, part)
-            .map(Variable::from)
-            .unwrap_or_default()
+        match part {
+            DomainPart::Sld => psl::domain_str(domain),
+            DomainPart::Tld => domain.rsplit_once('.').map(|(_, tld)| tld),
+            DomainPart::Host => domain.split_once('.').map(|(host, _)| host),
+        }
+        .map(Variable::from)
+        .unwrap_or_default()
     }))
 }

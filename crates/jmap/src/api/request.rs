@@ -6,6 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::{
         get, query,
@@ -17,7 +18,7 @@ use jmap_proto::{
 };
 use trc::JmapEvent;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 use super::http::HttpSessionData;
 
@@ -135,6 +136,11 @@ impl JMAP {
         session: &HttpSessionData,
     ) -> trc::Result<ResponseMethod> {
         let op_start = Instant::now();
+
+        // Check permissions
+        access_token.assert_has_jmap_permission(&method)?;
+
+        // Handle method
         let response = match method {
             RequestMethod::Get(mut req) => match req.take_arguments() {
                 get::RequestArguments::Email(arguments) => {
@@ -177,15 +183,7 @@ impl JMAP {
 
                     self.vacation_response_get(req).await?.into()
                 }
-                get::RequestArguments::Principal => {
-                    if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
-                        self.principal_get(req).await?.into()
-                    } else {
-                        return Err(trc::JmapEvent::Forbidden
-                            .into_err()
-                            .details("Principal lookups are disabled".to_string()));
-                    }
-                }
+                get::RequestArguments::Principal => self.principal_get(req).await?.into(),
                 get::RequestArguments::Quota => {
                     access_token.assert_is_member(req.account_id)?;
 
@@ -225,13 +223,7 @@ impl JMAP {
                     self.sieve_script_query(req).await?.into()
                 }
                 query::RequestArguments::Principal => {
-                    if self.core.jmap.principal_allow_lookups || access_token.is_super_user() {
-                        self.principal_query(req, session).await?.into()
-                    } else {
-                        return Err(trc::JmapEvent::Forbidden
-                            .into_err()
-                            .details("Principal lookups are disabled".to_string()));
-                    }
+                    self.principal_query(req, session).await?.into()
                 }
                 query::RequestArguments::Quota => {
                     access_token.assert_is_member(req.account_id)?;
@@ -281,7 +273,7 @@ impl JMAP {
                 set::RequestArguments::VacationResponse => {
                     access_token.assert_is_member(req.account_id)?;
 
-                    self.vacation_response_set(req).await?.into()
+                    self.vacation_response_set(req, access_token).await?.into()
                 }
             },
             RequestMethod::Changes(req) => self.changes(req, access_token).await?.into(),

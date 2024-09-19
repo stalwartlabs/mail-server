@@ -10,6 +10,7 @@ use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
     store::deflate_test_resource,
 };
+use common::auth::AccessToken;
 use jmap::email::ingest::{IngestEmail, IngestSource};
 use jmap_client::{email, mailbox::Role};
 use jmap_proto::types::{collection::Collection, id::Id};
@@ -242,8 +243,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                     .email_ingest(IngestEmail {
                         raw_message: message.contents(),
                         message: MessageParser::new().parse(message.contents()),
-                        account_id: 0,
-                        account_quota: 0,
+                        resource: AccessToken::from_id(0).as_resource_token(),
                         mailbox_ids: vec![mailbox_id],
                         keywords: vec![],
                         received_at: None,

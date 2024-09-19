@@ -22,7 +22,7 @@ impl MysqlStore {
     {
         let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
         let s = conn
-            .prep(&format!(
+            .prep(format!(
                 "SELECT v FROM {} WHERE k = ?",
                 char::from(key.subspace())
             ))
@@ -54,7 +54,7 @@ impl MysqlStore {
 
         let mut bm = RoaringBitmap::new();
         let s = conn
-            .prep(&format!("SELECT k FROM {table} WHERE k >= ? AND k <= ?"))
+            .prep(format!("SELECT k FROM {table} WHERE k >= ? AND k <= ?"))
             .await
             .map_err(into_error)?;
         let mut rows = conn
@@ -147,7 +147,7 @@ impl MysqlStore {
         let key = key.serialize(0);
         let mut conn = self.conn_pool.get_conn().await.map_err(into_error)?;
         let s = conn
-            .prep(&format!("SELECT v FROM {table} WHERE k = ?"))
+            .prep(format!("SELECT v FROM {table} WHERE k = ?"))
             .await
             .map_err(into_error)?;
         match conn.exec_first::<i64, _, _>(&s, (key,)).await {

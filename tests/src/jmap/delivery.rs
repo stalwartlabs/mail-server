@@ -6,7 +6,6 @@
 
 use std::time::Duration;
 
-use directory::backend::internal::manage::ManageDirectory;
 use jmap::mailbox::{INBOX_ID, JUNK_ID};
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 
@@ -15,7 +14,10 @@ use tokio::{
     net::TcpStream,
 };
 
-use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes};
+use crate::{
+    directory::internal::TestInternalDirectory,
+    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
+};
 
 use super::JMAPTest;
 
@@ -24,65 +26,54 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create a domain name and a test account
     let server = params.server.clone();
-    params
-        .directory
-        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
-        .await;
-    params
-        .directory
-        .create_test_user_with_email("jane@example.com", "abcdef", "Jane Smith")
-        .await;
-    params
-        .directory
-        .create_test_user_with_email("bill@example.com", "098765", "Bill Foobar")
-        .await;
-    let account_id_1 = Id::from(
-        server
-            .core
-            .storage
-            .data
-            .get_or_create_account_id("jdoe@example.com")
-            .await
-            .unwrap(),
-    )
-    .to_string();
-    let account_id_2 = Id::from(
-        server
-            .core
-            .storage
-            .data
-            .get_or_create_account_id("jane@example.com")
-            .await
-            .unwrap(),
-    )
-    .to_string();
-    let account_id_3 = Id::from(
-        server
-            .core
-            .storage
-            .data
-            .get_or_create_account_id("bill@example.com")
-            .await
-            .unwrap(),
-    )
-    .to_string();
-    params
-        .directory
-        .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
-        .await;
+    let mut account_id_1 = String::new();
+    let mut account_id_2 = String::new();
+    let mut account_id_3 = String::new();
+
+    for (id, email, password, name, aliases) in [
+        (
+            &mut account_id_1,
+            "jdoe@example.com",
+            "12345",
+            "John Doe",
+            Some(&["jdoe@example.com", "john.doe@example.com"][..]),
+        ),
+        (
+            &mut account_id_2,
+            "jane@example.com",
+            "abcdef",
+            "Jane Smith",
+            None,
+        ),
+        (
+            &mut account_id_3,
+            "bill@example.com",
+            "098765",
+            "Bill Foobar",
+            None,
+        ),
+    ] {
+        *id = Id::from(
+            server
+                .core
+                .storage
+                .data
+                .create_test_user(email, password, name, aliases.unwrap_or(&[email][..]))
+                .await,
+        )
+        .to_string();
+    }
 
     // Create a mailing list
-    params
-        .directory
-        .link_test_address("jdoe@example.com", "members@example.com", "list")
-        .await;
-    params
-        .directory
-        .link_test_address("jane@example.com", "members@example.com", "list")
-        .await;
-    params
-        .directory
-        .link_test_address("bill@example.com", "members@example.com", "list")
+    server
+        .core
+        .storage
+        .data
+        .create_test_list(
+            "members@example.com",
+            "Mailing List",
+            &["jdoe@example.com", "jane@example.com", "bill@example.com"],
+        )
         .await;
 
     // Delivering to individuals
@@ -225,8 +216,11 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Removing members from the mailing list and chunked ingest
     params
-        .directory
-        .remove_test_alias("jdoe@example.com", "members@example.com")
+        .server
+        .core
+        .storage
+        .data
+        .remove_from_group("jdoe@example.com", "members@example.com")
         .await;
     lmtp.ingest_chunked(
         "bill@example.com",

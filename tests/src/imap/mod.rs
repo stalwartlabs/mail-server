@@ -36,7 +36,6 @@ use common::{
 
 use ::store::Stores;
 use ahash::AHashSet;
-use directory::backend::internal::manage::ManageDirectory;
 use imap::core::{ImapSessionManager, Inner, IMAP};
 use imap_proto::ResponseType;
 use jmap::{api::JmapSessionManager, JMAP};
@@ -49,7 +48,9 @@ use tokio::{
 };
 use utils::config::Config;
 
-use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
+use crate::{
+    add_test_certs, directory::internal::TestInternalDirectory, store::TempDir, AssertConfig,
+};
 
 const SERVER: &str = r#"
 [lookup.default]
@@ -98,7 +99,7 @@ reject-non-fqdn = false
 [session.rcpt]
 relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
           { else = false } ]
-directory = "'auth'"
+directory = "'{STORE}'"
 
 [session.rcpt.errors]
 total = 5
@@ -187,7 +188,7 @@ data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
 lookup = "{STORE}"
-directory = "auth"
+directory = "{STORE}"
 
 [jmap.protocol]
 set.max-objects = 100000
@@ -252,17 +253,9 @@ verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
-[directory."auth"]
-type = "sql"
-store = "auth"
-
-[directory."auth".columns]
-name = "name"
-description = "description"
-secret = "secret"
-email = "address"
-quota = "quota"
-class = "type"
+[directory."{STORE}"]
+type = "internal"
+store = "{STORE}"
 
 [oauth]
 key = "parerga_und_paralipomena"
@@ -386,45 +379,56 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
         };
     });
 
-    // Create tables and test accounts
-    let lookup = DirectoryStore {
-        store: shared_core
-            .load()
-            .storage
-            .lookups
-            .get("auth")
-            .unwrap()
-            .clone(),
-    };
-    lookup.create_test_directory().await;
-    lookup
-        .create_test_user("admin", "secret", "Superuser")
-        .await;
-    lookup
-        .create_test_user_with_email("jdoe@example.com", "secret", "John Doe")
-        .await;
-    lookup
-        .create_test_user_with_email("jane.smith@example.com", "secret", "Jane Smith")
-        .await;
-    lookup
-        .create_test_user_with_email("foobar@example.com", "secret", "Bill Foobar")
-        .await;
-    lookup
-        .create_test_user_with_email("popper@example.com", "secret", "Karl Popper")
-        .await;
-    lookup
-        .create_test_group_with_email("support@example.com", "Support Group")
-        .await;
-    lookup
-        .add_to_group("jane.smith@example.com", "support@example.com")
-        .await;
-
     if delete_if_exists {
         store.destroy().await;
     }
 
-    // Assign Id 0 to admin (required for some tests)
-    store.get_or_create_account_id("admin").await.unwrap();
+    // Create tables and test accounts
+    store
+        .create_test_user("admin", "secret", "Superuser", &[])
+        .await;
+    store
+        .create_test_user(
+            "jdoe@example.com",
+            "secret",
+            "John Doe",
+            &["jdoe@example.com"],
+        )
+        .await;
+    store
+        .create_test_user(
+            "jane.smith@example.com",
+            "secret",
+            "Jane Smith",
+            &["jane.smith@example.com"],
+        )
+        .await;
+    store
+        .create_test_user(
+            "foobar@example.com",
+            "secret",
+            "Bill Foobar",
+            &["foobar@example.com"],
+        )
+        .await;
+    store
+        .create_test_user(
+            "popper@example.com",
+            "secret",
+            "Karl Popper",
+            &["popper@example.com"],
+        )
+        .await;
+    store
+        .create_test_group(
+            "support@example.com",
+            "Support Group",
+            &["support@example.com"],
+        )
+        .await;
+    store
+        .add_to_group("jane.smith@example.com", "support@example.com")
+        .await;
 
     IMAPTest {
         jmap: JMAP::from(jmap.clone()).into(),

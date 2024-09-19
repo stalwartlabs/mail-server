@@ -22,10 +22,7 @@ use mail_auth::{
     Resolver,
 };
 use parking_lot::Mutex;
-use utils::{
-    config::{utils::ParseValue, Config},
-    suffixlist::PublicSuffix,
-};
+use utils::config::{utils::ParseValue, Config};
 
 use crate::Core;
 
@@ -33,7 +30,6 @@ pub struct Resolvers {
     pub dns: Resolver,
     pub dnssec: DnssecResolver,
     pub cache: DnsRecordCache,
-    pub psl: PublicSuffix,
 }
 
 #[derive(Clone)]
@@ -237,7 +233,6 @@ impl Resolvers {
                         .unwrap_or(1024),
                 ),
             },
-            psl: PublicSuffix::parse(config, "resolver.public-suffix").await,
         }
     }
 }
@@ -356,7 +351,6 @@ impl Default for Resolvers {
                 tlsa: LruCache::with_capacity(1024),
                 mta_sts: LruCache::with_capacity(1024),
             },
-            psl: PublicSuffix::default(),
         }
     }
 }
@@ -402,7 +396,6 @@ impl Clone for Resolvers {
             dns: self.dns.clone(),
             dnssec: self.dnssec.clone(),
             cache: self.cache.clone(),
-            psl: self.psl.clone(),
         }
     }
 }

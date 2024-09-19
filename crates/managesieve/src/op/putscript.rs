@@ -6,6 +6,8 @@
 
 use std::time::Instant;
 
+use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::receiver::Request;
 use jmap::sieve::set::{ObjectBlobId, SCHEMA};
 use jmap_proto::{
@@ -18,13 +20,15 @@ use store::{
     write::{assert::HashedValue, log::LogInsert, BatchBuilder, BlobOp, DirectoryClass},
     BlobClass,
 };
-use tokio::io::{AsyncRead, AsyncWrite};
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
-impl<T: AsyncRead + AsyncWrite> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_putscript(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        // Validate access
+        self.assert_has_permission(Permission::SievePutScript)?;
+
         let op_start = Instant::now();
         let mut tokens = request.tokens.into_iter();
         let name = tokens
@@ -48,14 +52,10 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
         let script_size = script_bytes.len() as i64;
 
         // Check quota
-        let access_token = self.state.access_token();
-        let account_id = access_token.primary_id();
+        let resource_token = self.state.access_token().as_resource_token();
+        let account_id = resource_token.account_id;
         self.jmap
-            .has_available_quota(
-                account_id,
-                access_token.quota as i64,
-                script_bytes.len() as i64,
-            )
+            .has_available_quota(&resource_token, script_bytes.len() as u64)
             .await
             .caused_by(trc::location!())?;
 
@@ -165,6 +165,13 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
             };
             if update_quota != 0 {
                 batch.add(DirectoryClass::UsedQuota(account_id), update_quota);
+
+                // Update tenant quota
+                if self.jmap.core.is_enterprise_edition() {
+                    if let Some(tenant) = resource_token.tenant {
+                        batch.add(DirectoryClass::UsedQuota(tenant.id), update_quota);
+                    }
+                }
             }
 
             batch.custom(
@@ -225,6 +232,14 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                             .with_property(Property::BlobId, Value::BlobId(blob_id)),
                     ),
                 );
+
+            // Update tenant quota
+            if self.jmap.core.is_enterprise_edition() {
+                if let Some(tenant) = resource_token.tenant {
+                    batch.add(DirectoryClass::UsedQuota(tenant.id), script_size);
+                }
+            }
+
             let assigned_ids = self
                 .jmap
                 .write_batch(batch)

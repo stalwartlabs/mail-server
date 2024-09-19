@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::{AccessToken, ResourceToken};
 use jmap_proto::{
     error::set::SetError,
     method::{
@@ -41,7 +42,7 @@ use store::{
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
-use crate::{api::http::HttpSessionData, auth::AccessToken, mailbox::UidMailbox, JMAP};
+use crate::{api::http::HttpSessionData, mailbox::UidMailbox, JMAP};
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
@@ -93,7 +94,7 @@ impl JMAP {
         let mut destroy_ids = Vec::new();
 
         // Obtain quota
-        let account_quota = self.get_quota(access_token, account_id).await?;
+        let resource_token = self.get_resource_token(access_token, account_id).await?;
 
         'create: for (id, create) in request.create {
             let id = id.unwrap();
@@ -215,8 +216,7 @@ impl JMAP {
                 .copy_message(
                     from_account_id,
                     from_message_id,
-                    account_id,
-                    account_quota,
+                    &resource_token,
                     mailboxes,
                     keywords,
                     received_at,
@@ -275,14 +275,14 @@ impl JMAP {
         &self,
         from_account_id: u32,
         from_message_id: u32,
-        account_id: u32,
-        account_quota: i64,
+        resource_token: &ResourceToken,
         mailboxes: Vec<u32>,
         keywords: Vec<Keyword>,
         received_at: Option<UTCDate>,
         session_id: u64,
     ) -> trc::Result<Result<IngestedEmail, SetError>> {
         // Obtain metadata
+        let account_id = resource_token.account_id;
         let mut metadata = if let Some(metadata) = self
             .get_property::<Bincode<MessageMetadata>>(
                 from_account_id,
@@ -302,12 +302,14 @@ impl JMAP {
 
         // Check quota
         match self
-            .has_available_quota(account_id, account_quota, metadata.size as i64)
+            .has_available_quota(resource_token, metadata.size as u64)
             .await
         {
             Ok(_) => (),
             Err(err) => {
-                if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota)) {
+                if err.matches(trc::EventType::Limit(trc::LimitEvent::Quota))
+                    || err.matches(trc::EventType::Limit(trc::LimitEvent::TenantQuota))
+                {
                     trc::error!(err.account_id(account_id).span_id(session_id));
                     return Ok(Err(SetError::over_quota()));
                 } else {
@@ -411,8 +413,12 @@ impl JMAP {
                     hash: metadata.blob_hash.clone(),
                 }),
                 0u64.serialize(),
-            )
-            .custom(EmailIndexBuilder::set(metadata));
+            );
+        EmailIndexBuilder::set(metadata).build(
+            &mut batch,
+            account_id,
+            resource_token.tenant.map(|t| t.id),
+        );
 
         // Insert and obtain ids
         let ids = self

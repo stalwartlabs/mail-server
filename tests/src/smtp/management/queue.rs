@@ -56,7 +56,7 @@ reject-non-fqdn = false
 relay = true
 "#;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 #[allow(dead_code)]
 pub(super) struct List<T> {
     pub items: Vec<T>,
@@ -68,7 +68,6 @@ pub(super) struct List<T> {
 async fn manage_queue() {
     // Enable logging
     crate::enable_logging();
-
 
     // Start remote test server
     let mut remote = TestServer::new("smtp_manage_queue_remote", REMOTE, true).await;

@@ -5,10 +5,11 @@
  */
 
 use common::listener::SessionStream;
+use directory::{backend::internal::PrincipalField, Permission};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use smtp_proto::{IntoString, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
-use trc::{AuthEvent, SmtpEvent};
+use trc::{AddContext, AuthEvent, SmtpEvent};
 
 use crate::core::Session;
 
@@ -164,7 +165,9 @@ impl<T: SessionStream> Session<T> {
                 | Credentials::XOauth2 { username, .. }
                 | Credentials::OAuthBearer { token: username } => username.to_string(),
             };
-            match self
+
+            // Authenticate
+            let mut result = self
                 .core
                 .core
                 .authenticate(
@@ -174,13 +177,38 @@ impl<T: SessionStream> Session<T> {
                     self.data.remote_ip,
                     false,
                 )
-                .await
-            {
+                .await;
+
+            // Validate permissions
+            if let Ok(principal) = &result {
+                match self
+                    .core
+                    .core
+                    .get_cached_access_token(principal.id())
+                    .await
+                    .caused_by(trc::location!())
+                {
+                    Ok(access_token) => {
+                        if let Err(err) = access_token
+                            .assert_has_permission(Permission::EmailSend)
+                            .and_then(|_| {
+                                access_token.assert_has_permission(Permission::Authenticate)
+                            })
+                        {
+                            result = Err(err);
+                        }
+                    }
+                    Err(err) => {
+                        result = Err(err);
+                    }
+                }
+            }
+
+            match result {
                 Ok(principal) => {
                     self.data.authenticated_as = authenticated_as.to_lowercase();
                     self.data.authenticated_emails = principal
-                        .emails
-                        .into_iter()
+                        .iter_str(PrincipalField::Emails)
                         .map(|e| e.trim().to_lowercase())
                         .collect();
                     self.eval_post_auth_params().await;
@@ -205,6 +233,11 @@ impl<T: SessionStream> Session<T> {
                                 b"334 5.7.8 Missing TOTP token, try with 'secret$totp_code'.\r\n",
                             )
                             .await;
+                        }
+                        trc::EventType::Security(trc::SecurityEvent::Unauthorized) => {
+                            self.write(b"550 5.7.1 Your account is not authorized to use this service.\r\n")
+                            .await?;
+                            return Ok(false);
                         }
                         trc::EventType::Security(_) => {
                             return Err(());

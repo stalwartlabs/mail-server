@@ -221,6 +221,7 @@ impl EventType {
                 LimitEvent::Quota => Level::Debug,
                 LimitEvent::BlobQuota => Level::Debug,
                 LimitEvent::TooManyRequests => Level::Warn,
+                LimitEvent::TenantQuota => Level::Info,
             },
             EventType::Manage(_) => Level::Debug,
             EventType::Auth(cause) => match cause {
@@ -344,7 +345,7 @@ impl EventType {
                 SpamEvent::ListUpdated => Level::Info,
             },
             EventType::Http(event) => match event {
-                HttpEvent::ConnectionStart | HttpEvent::ConnectionEnd => Level::Info,
+                HttpEvent::ConnectionStart | HttpEvent::ConnectionEnd => Level::Debug,
                 HttpEvent::XForwardedMissing => Level::Warn,
                 HttpEvent::Error | HttpEvent::RequestUrl => Level::Debug,
                 HttpEvent::RequestBody | HttpEvent::ResponseBody => Level::Trace,
@@ -361,9 +362,7 @@ impl EventType {
                 | ClusterEvent::PeerSuspectedIsAlive
                 | ClusterEvent::PeerBackOnline
                 | ClusterEvent::PeerLeaving => Level::Info,
-                ClusterEvent::PeerHasConfigChanges
-                | ClusterEvent::PeerHasListChanges
-                | ClusterEvent::OneOrMorePeersOffline => Level::Debug,
+                ClusterEvent::PeerHasChanges | ClusterEvent::OneOrMorePeersOffline => Level::Debug,
                 ClusterEvent::EmptyPacket
                 | ClusterEvent::Error
                 | ClusterEvent::DecryptionError

@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::auth::ResourceToken;
 use jmap_proto::{
     object::Object,
     types::{
@@ -57,8 +58,7 @@ pub struct IngestedEmail {
 pub struct IngestEmail<'x> {
     pub raw_message: &'x [u8],
     pub message: Option<Message<'x>>,
-    pub account_id: u32,
-    pub account_quota: i64,
+    pub resource: ResourceToken,
     pub mailbox_ids: Vec<u32>,
     pub keywords: Vec<Keyword>,
     pub received_at: Option<u64>,
@@ -81,8 +81,10 @@ impl JMAP {
     pub async fn email_ingest(&self, mut params: IngestEmail<'_>) -> trc::Result<IngestedEmail> {
         // Check quota
         let start_time = Instant::now();
-        let mut raw_message_len = params.raw_message.len() as i64;
-        self.has_available_quota(params.account_id, params.account_quota, raw_message_len)
+        let account_id = params.resource.account_id;
+        let tenant_id = params.resource.tenant.map(|t| t.id);
+        let mut raw_message_len = params.raw_message.len() as u64;
+        self.has_available_quota(&params.resource, raw_message_len)
             .await
             .caused_by(trc::location!())?;
 
@@ -157,7 +159,7 @@ impl JMAP {
                     .storage
                     .data
                     .filter(
-                        params.account_id,
+                        account_id,
                         Collection::Email,
                         vec![
                             Filter::eq(Property::MessageId, &message_id),
@@ -175,7 +177,7 @@ impl JMAP {
                 trc::event!(
                     MessageIngest(MessageIngestEvent::Duplicate),
                     SpanId = params.session_id,
-                    AccountId = params.account_id,
+                    AccountId = account_id,
                     MessageId = message_id,
                 );
 
@@ -189,7 +191,7 @@ impl JMAP {
             }
 
             if !references.is_empty() {
-                self.find_or_merge_thread(params.account_id, subject, &references)
+                self.find_or_merge_thread(account_id, subject, &references)
                     .await?
             } else {
                 None
@@ -200,7 +202,7 @@ impl JMAP {
         if params.encrypt && !message.is_encrypted() {
             if let Some(encrypt_params) = self
                 .get_property::<EncryptionParams>(
-                    params.account_id,
+                    account_id,
                     Collection::Principal,
                     0,
                     Property::Parameters,
@@ -211,7 +213,7 @@ impl JMAP {
                 match message.encrypt(&encrypt_params).await {
                     Ok(new_raw_message) => {
                         raw_message = Cow::from(new_raw_message);
-                        raw_message_len = raw_message.len() as i64;
+                        raw_message_len = raw_message.len() as u64;
                         message = MessageParser::default()
                             .parse(raw_message.as_ref())
                             .ok_or_else(|| {
@@ -252,13 +254,13 @@ impl JMAP {
 
         // Obtain a documentId and changeId
         let change_id = self
-            .assign_change_id(params.account_id)
+            .assign_change_id(account_id)
             .await
             .caused_by(trc::location!())?;
 
         // Store blob
         let blob_id = self
-            .put_blob(params.account_id, raw_message.as_ref(), false)
+            .put_blob(account_id, raw_message.as_ref(), false)
             .await
             .caused_by(trc::location!())?;
 
@@ -267,7 +269,7 @@ impl JMAP {
         let mut imap_uids = Vec::with_capacity(params.mailbox_ids.len());
         for mailbox_id in &params.mailbox_ids {
             let uid = self
-                .assign_imap_uid(params.account_id, *mailbox_id)
+                .assign_imap_uid(account_id, *mailbox_id)
                 .await
                 .caused_by(trc::location!())?;
             mailbox_ids.push(UidMailbox::new(*mailbox_id, uid));
@@ -278,7 +280,7 @@ impl JMAP {
         let mut batch = BatchBuilder::new();
         batch
             .with_change_id(change_id)
-            .with_account_id(params.account_id)
+            .with_account_id(account_id)
             .with_collection(Collection::Thread);
         if let Some(thread_id) = thread_id {
             batch.log(Changes::update([thread_id]));
@@ -301,6 +303,8 @@ impl JMAP {
             .create_document()
             .log(LogEmailInsert(thread_id))
             .index_message(
+                account_id,
+                tenant_id,
                 message,
                 blob_id.hash.clone(),
                 params.keywords,
@@ -348,13 +352,13 @@ impl JMAP {
                 IngestSource::Imap => MessageIngestEvent::ImapAppend,
             }),
             SpanId = params.session_id,
-            AccountId = params.account_id,
+            AccountId = account_id,
             DocumentId = document_id,
             MailboxId = mailbox_ids_event,
             BlobId = blob_id.hash.to_hex(),
             ChangeId = change_id,
             MessageId = message_id,
-            Size = raw_message_len as u64,
+            Size = raw_message_len,
             Elapsed = start_time.elapsed(),
         );
 
@@ -364,7 +368,7 @@ impl JMAP {
             blob_id: BlobId {
                 hash: blob_id.hash,
                 class: BlobClass::Linked {
-                    account_id: params.account_id,
+                    account_id,
                     collection: Collection::Email.into(),
                     document_id,
                 },

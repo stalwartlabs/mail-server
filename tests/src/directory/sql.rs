@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::{backend::internal::manage::ManageDirectory, Principal, QueryBy, Type};
+use directory::{backend::internal::manage::ManageDirectory, QueryBy, Type, ROLE_ADMIN, ROLE_USER};
 use mail_send::Credentials;
 use store::{LookupStore, Store};
 
-use crate::directory::{map_account_ids, DirectoryTest};
+use crate::directory::{map_account_ids, DirectoryTest, IntoTestPrincipal, TestPrincipal};
 
 use super::DirectoryStore;
 
@@ -39,6 +39,9 @@ async fn sql_directory() {
         store.create_test_directory().await;
 
         // Create test users
+        store
+            .create_test_user("admin", "very_secret", "Administrator")
+            .await;
         store.create_test_user("john", "12345", "John Doe").await;
         store.create_test_user("jane", "abcde", "Jane Doe").await;
         store
@@ -110,19 +113,25 @@ async fn sql_directory() {
                 )
                 .await
                 .unwrap()
-                .unwrap(),
-            Principal {
-                id: base_store.get_account_id("john").await.unwrap().unwrap(),
+                .unwrap()
+                .into_test(),
+            TestPrincipal {
+                id: base_store.get_principal_id("john").await.unwrap().unwrap(),
                 name: "john".to_string(),
                 description: "John Doe".to_string().into(),
                 secrets: vec!["12345".to_string()],
                 typ: Type::Individual,
-                member_of: map_account_ids(base_store, vec!["sales"]).await,
+                member_of: map_account_ids(base_store, vec!["sales"])
+                    .await
+                    .into_iter()
+                    .map(|v| v.to_string())
+                    .collect(),
                 emails: vec![
                     "john@example.org".to_string(),
                     "jdoe@example.org".to_string(),
                     "john.doe@example.org".to_string()
                 ],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );
@@ -137,9 +146,10 @@ async fn sql_directory() {
                 )
                 .await
                 .unwrap()
-                .unwrap(),
-            Principal {
-                id: base_store.get_account_id("bill").await.unwrap().unwrap(),
+                .unwrap()
+                .into_test(),
+            TestPrincipal {
+                id: base_store.get_principal_id("bill").await.unwrap().unwrap(),
                 name: "bill".to_string(),
                 description: "Bill Foobar".to_string().into(),
                 secrets: vec![
@@ -148,6 +158,30 @@ async fn sql_directory() {
                 typ: Type::Individual,
                 quota: 500000,
                 emails: vec!["bill@example.org".to_string(),],
+                roles: vec![ROLE_USER.to_string()],
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            handle
+                .query(
+                    QueryBy::Credentials(&Credentials::Plain {
+                        username: "admin".to_string(),
+                        secret: "very_secret".to_string()
+                    }),
+                    true
+                )
+                .await
+                .unwrap()
+                .unwrap()
+                .into_test(),
+            TestPrincipal {
+                id: base_store.get_principal_id("admin").await.unwrap().unwrap(),
+                name: "admin".to_string(),
+                description: "Administrator".to_string().into(),
+                secrets: vec!["very_secret".to_string()],
+                typ: Type::Individual,
+                roles: vec![ROLE_ADMIN.to_string()],
                 ..Default::default()
             }
         );
@@ -169,15 +203,21 @@ async fn sql_directory() {
                 .query(QueryBy::Name("jane"), true)
                 .await
                 .unwrap()
-                .unwrap(),
-            Principal {
-                id: base_store.get_account_id("jane").await.unwrap().unwrap(),
+                .unwrap()
+                .into_test(),
+            TestPrincipal {
+                id: base_store.get_principal_id("jane").await.unwrap().unwrap(),
                 name: "jane".to_string(),
                 description: "Jane Doe".to_string().into(),
                 typ: Type::Individual,
                 secrets: vec!["abcde".to_string()],
-                member_of: map_account_ids(base_store, vec!["sales", "support"]).await,
+                member_of: map_account_ids(base_store, vec!["sales", "support"])
+                    .await
+                    .into_iter()
+                    .map(|v| v.to_string())
+                    .collect(),
                 emails: vec!["jane@example.org".to_string(),],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );
@@ -188,12 +228,14 @@ async fn sql_directory() {
                 .query(QueryBy::Name("sales"), true)
                 .await
                 .unwrap()
-                .unwrap(),
-            Principal {
-                id: base_store.get_account_id("sales").await.unwrap().unwrap(),
+                .unwrap()
+                .into_test(),
+            TestPrincipal {
+                id: base_store.get_principal_id("sales").await.unwrap().unwrap(),
                 name: "sales".to_string(),
                 description: "Sales Team".to_string().into(),
                 typ: Type::Group,
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );

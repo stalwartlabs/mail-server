@@ -1,11 +1,10 @@
 [package]
 name = "nlp"
-version = "0.9.4"
+version = "0.10.0"
 edition = "2021"
 resolver = "2"
 
 [dependencies]
-utils = { path = "../utils" }
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 farmhash = "1.1.5"
 siphasher = "1.0"
@@ -20,6 +19,7 @@ jieba-rs = "0.7" # Chinese stemmer
 phf = { version = "0.11", features = ["macros"] }
 lru-cache = "0.1.2"
 parking_lot = "0.12.1"
+psl = "2"
 
 [features]
 test_mode = []

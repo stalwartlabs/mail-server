@@ -6,7 +6,7 @@
 
 use std::borrow::Cow;
 
-use prettytable::{Attr, Cell, Row, Table, format};
+use prettytable::{format, Attr, Cell, Row, Table};
 use reqwest::Method;
 use serde_json::Value;
 

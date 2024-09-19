@@ -5,7 +5,8 @@ use std::{
 };
 
 use chrono::DateTime;
-use directory::backend::internal::manage;
+use common::auth::AccessToken;
+use directory::{backend::internal::manage, Permission};
 use rev_lines::RevLines;
 use serde::Serialize;
 use serde_json::json;
@@ -27,7 +28,14 @@ struct LogEntry {
 }
 
 impl JMAP {
-    pub async fn handle_view_logs(&self, req: &HttpRequest) -> trc::Result<HttpResponse> {
+    pub async fn handle_view_logs(
+        &self,
+        req: &HttpRequest,
+        access_token: &AccessToken,
+    ) -> trc::Result<HttpResponse> {
+        // Validate the access token
+        access_token.assert_has_permission(Permission::LogsView)?;
+
         let path = self
             .core
             .metrics

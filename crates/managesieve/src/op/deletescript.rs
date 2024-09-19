@@ -6,16 +6,20 @@
 
 use std::time::Instant;
 
+use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::receiver::Request;
 use jmap_proto::types::collection::Collection;
 use store::write::log::ChangeLogBuilder;
-use tokio::io::{AsyncRead, AsyncWrite};
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
-impl<T: AsyncRead + AsyncWrite> Session<T> {
+impl<T: SessionStream> Session<T> {
     pub async fn handle_deletescript(&mut self, request: Request<Command>) -> trc::Result<Vec<u8>> {
+        // Validate access
+        self.assert_has_permission(Permission::SieveDeleteScript)?;
+
         let op_start = Instant::now();
 
         let name = request
@@ -29,11 +33,12 @@ impl<T: AsyncRead + AsyncWrite> Session<T> {
                     .details("Expected script name as a parameter.")
             })?;
 
-        let account_id = self.state.access_token().primary_id();
+        let access_token = self.state.access_token();
+        let account_id = access_token.primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
         if self
             .jmap
-            .sieve_script_delete(account_id, document_id, true)
+            .sieve_script_delete(&access_token.as_resource_token(), document_id, true)
             .await
             .caused_by(trc::location!())?
         {

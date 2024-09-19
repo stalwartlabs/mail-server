@@ -7,11 +7,13 @@
 use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use common::{
+    auth::AccessToken,
     expr::{functions::ResolveVariable, *},
     listener::{ServerInstance, SessionData, SessionManager, SessionStream},
     manager::webadmin::Resource,
     Core,
 };
+use directory::Permission;
 use http_body_util::{BodyExt, Full};
 use hyper::{
     body::{self, Bytes},
@@ -81,7 +83,7 @@ impl JMAP {
 
                         let request = fetch_body(
                             &mut req,
-                            if !access_token.is_super_user() {
+                            if !access_token.has_permission(Permission::UnlimitedUploads) {
                                 self.core.jmap.upload_max_size
                             } else {
                                 0
@@ -142,7 +144,7 @@ impl JMAP {
                         {
                             return match fetch_body(
                                 &mut req,
-                                if !access_token.is_super_user() {
+                                if !access_token.has_permission(Permission::UnlimitedUploads) {
                                     self.core.jmap.upload_max_size
                                 } else {
                                     0
@@ -221,22 +223,16 @@ impl JMAP {
                             .key_get::<String>(format!("acme:{token}").into_bytes())
                             .await?
                         {
-                            Some(proof) => Ok(Resource {
-                                content_type: "text/plain",
-                                contents: proof.into_bytes(),
-                            }
-                            .into_http_response()),
+                            Some(proof) => Ok(Resource::new("text/plain", proof.into_bytes())
+                                .into_http_response()),
                             None => Err(trc::ResourceEvent::NotFound.into_err()),
                         };
                     }
                 }
                 ("mta-sts.txt", &Method::GET) => {
                     if let Some(policy) = self.core.build_mta_sts_policy() {
-                        return Ok(Resource {
-                            content_type: "text/plain",
-                            contents: policy.to_string().into_bytes(),
-                        }
-                        .into_http_response());
+                        return Ok(Resource::new("text/plain", policy.to_string().into_bytes())
+                            .into_http_response());
                     } else {
                         return Err(trc::ResourceEvent::NotFound.into_err());
                     }
@@ -302,27 +298,29 @@ impl JMAP {
                             if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed))
                                 && self.core.is_enterprise_edition()
                             {
-                                if let Some((live_path, token)) = req
+                                if let Some((live_path, grant_type, token)) = req
                                     .uri()
                                     .path()
                                     .strip_prefix("/api/telemetry/")
                                     .and_then(|p| {
                                         p.strip_prefix("traces/live/")
-                                            .map(|t| ("traces", t))
+                                            .map(|t| ("traces", "live_tracing", t))
                                             .or_else(|| {
                                                 p.strip_prefix("metrics/live/")
-                                                    .map(|t| ("metrics", t))
+                                                    .map(|t| ("metrics", "live_metrics", t))
                                             })
                                     })
                                 {
                                     let (account_id, _, _) =
-                                        self.validate_access_token("live_telemetry", token).await?;
+                                        self.validate_access_token(grant_type, token).await?;
 
                                     return self
                                         .handle_telemetry_api_request(
                                             &req,
                                             vec!["", live_path, "live"],
-                                            account_id,
+                                            &AccessToken::from_id(account_id)
+                                                .with_permission(Permission::MetricsLive)
+                                                .with_permission(Permission::TracingLive),
                                         )
                                         .await;
                                 }
@@ -353,11 +351,10 @@ impl JMAP {
                 }
             }
             "robots.txt" => {
-                return Ok(Resource {
-                    content_type: "text/plain",
-                    contents: b"User-agent: *\nDisallow: /\n".to_vec(),
-                }
-                .into_http_response());
+                return Ok(
+                    Resource::new("text/plain", b"User-agent: *\nDisallow: /\n".to_vec())
+                        .into_http_response(),
+                );
             }
             "healthz" => match path.next().unwrap_or_default() {
                 "live" => {
@@ -390,10 +387,10 @@ impl JMAP {
                             }
                         }
 
-                        return Ok(Resource {
-                            content_type: "text/plain; version=0.0.4",
-                            contents: self.core.export_prometheus_metrics().await?.into_bytes(),
-                        }
+                        return Ok(Resource::new(
+                            "text/plain; version=0.0.4",
+                            self.core.export_prometheus_metrics().await?.into_bytes(),
+                        )
                         .into_http_response());
                     }
                 }
@@ -402,6 +399,42 @@ impl JMAP {
                 }
                 _ => (),
             },
+            #[cfg(feature = "enterprise")]
+            "logo.svg" if self.core.is_enterprise_edition() => {
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+
+                match self
+                    .core
+                    .logo_resource(
+                        req.headers()
+                            .get(header::HOST)
+                            .and_then(|h| h.to_str().ok())
+                            .map(|h| h.rsplit_once(':').map_or(h, |(h, _)| h))
+                            .unwrap_or_default(),
+                    )
+                    .await
+                {
+                    Ok(Some(resource)) => {
+                        return Ok(resource.into_http_response());
+                    }
+                    Ok(None) => (),
+                    Err(err) => {
+                        trc::error!(err.span_id(session.session_id));
+                    }
+                }
+
+                let resource = self.inner.webadmin.get("logo.svg").await?;
+
+                return if !resource.is_empty() {
+                    Ok(resource.into_http_response())
+                } else {
+                    Err(trc::ResourceEvent::NotFound.into_err())
+                };
+
+                // SPDX-SnippetEnd
+            }
             _ => {
                 let path = req.uri().path();
                 let resource = self
@@ -814,11 +847,6 @@ impl ToHttpResponse for &trc::Error {
     fn into_http_response(self) -> HttpResponse {
         match self.as_ref() {
             trc::EventType::Manage(cause) => {
-                let details_or_reason = self
-                    .value(trc::Key::Details)
-                    .or_else(|| self.value(trc::Key::Reason))
-                    .and_then(|v| v.as_str());
-
                 match cause {
                     trc::ManageEvent::MissingParameter => ManagementApiError::FieldMissing {
                         field: self.value_as_str(trc::Key::Key).unwrap_or_default(),
@@ -831,11 +859,18 @@ impl ToHttpResponse for &trc::Error {
                         item: self.value_as_str(trc::Key::Key).unwrap_or_default(),
                     },
                     trc::ManageEvent::NotSupported => ManagementApiError::Unsupported {
-                        details: details_or_reason.unwrap_or("Requested action is unsupported"),
+                        details: self
+                            .value(trc::Key::Details)
+                            .or_else(|| self.value(trc::Key::Reason))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Requested action is unsupported"),
                     },
                     trc::ManageEvent::AssertFailed => ManagementApiError::AssertFailed,
                     trc::ManageEvent::Error => ManagementApiError::Other {
-                        details: details_or_reason.unwrap_or("An error occurred."),
+                        reason: self.value_as_str(trc::Key::Reason),
+                        details: self
+                            .value_as_str(trc::Key::Details)
+                            .unwrap_or("Unknown error"),
                     },
                 }
             }
@@ -876,6 +911,7 @@ impl ToRequestError for trc::Error {
                     RequestError::limit(RequestLimitError::ConcurrentUpload)
                 }
                 trc::LimitEvent::Quota => RequestError::over_quota(),
+                trc::LimitEvent::TenantQuota => RequestError::tenant_over_quota(),
                 trc::LimitEvent::BlobQuota => RequestError::over_blob_quota(
                     self.value(trc::Key::Total)
                         .and_then(|v| v.to_uint())
@@ -888,12 +924,18 @@ impl ToRequestError for trc::Error {
             },
             trc::EventType::Auth(cause) => match cause {
                 trc::AuthEvent::MissingTotp => {
-                    RequestError::blank(403, "TOTP code required", cause.message())
+                    RequestError::blank(402, "TOTP code required", cause.message())
                 }
                 trc::AuthEvent::TooManyAttempts => RequestError::too_many_auth_attempts(),
                 _ => RequestError::unauthorized(),
             },
-            trc::EventType::Security(_) => RequestError::too_many_auth_attempts(),
+            trc::EventType::Security(cause) => match cause {
+                trc::SecurityEvent::AuthenticationBan
+                | trc::SecurityEvent::BruteForceBan
+                | trc::SecurityEvent::LoiterBan
+                | trc::SecurityEvent::IpBlocked => RequestError::too_many_auth_attempts(),
+                trc::SecurityEvent::Unauthorized => RequestError::forbidden(),
+            },
             trc::EventType::Resource(cause) => match cause {
                 trc::ResourceEvent::NotFound => RequestError::not_found(),
                 trc::ResourceEvent::BadParameters => RequestError::blank(

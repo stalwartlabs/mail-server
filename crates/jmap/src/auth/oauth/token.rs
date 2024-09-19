@@ -6,7 +6,7 @@
 
 use std::time::SystemTime;
 
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use hyper::StatusCode;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
@@ -187,7 +187,8 @@ impl JMAP {
                 .await
                 .map_err(|_| "Temporary lookup error")?
                 .ok_or("Account no longer exists")?
-                .secrets
+                .take_str_array(PrincipalField::Secrets)
+                .unwrap_or_default()
                 .into_iter()
                 .next()
                 .ok_or("Failed to obtain password hash")

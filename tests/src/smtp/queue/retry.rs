@@ -38,7 +38,6 @@ async fn queue_retry() {
     // Enable logging
     crate::enable_logging();
 
-
     // Create temp dir for queue
     let mut local = TestServer::new("smtp_queue_retry_test", CONFIG, true).await;
 

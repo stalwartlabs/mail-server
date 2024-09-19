@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::QueryBy;
+use common::auth::AccessToken;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     error::set::SetError,
     object::Object,
@@ -22,70 +23,11 @@ use store::{
     ValueKey,
 };
 use trc::AddContext;
-use utils::map::bitmap::{Bitmap, BitmapItem};
+use utils::map::bitmap::Bitmap;
 
 use crate::JMAP;
 
-use super::AccessToken;
-
 impl JMAP {
-    pub async fn update_access_token(
-        &self,
-        mut access_token: AccessToken,
-    ) -> trc::Result<AccessToken> {
-        for &grant_account_id in [access_token.primary_id]
-            .iter()
-            .chain(access_token.member_of.clone().iter())
-        {
-            for acl_item in self
-                .core
-                .storage
-                .data
-                .acl_query(AclQuery::HasAccess { grant_account_id })
-                .await
-                .caused_by(trc::location!())?
-            {
-                if !access_token.is_member(acl_item.to_account_id) {
-                    let acl = Bitmap::<Acl>::from(acl_item.permissions);
-                    let collection = Collection::from(acl_item.to_collection);
-                    if !collection.is_valid() {
-                        return Err(trc::StoreEvent::DataCorruption
-                            .ctx(trc::Key::Reason, "Corrupted collection found in ACL key.")
-                            .details(format!("{acl_item:?}"))
-                            .account_id(grant_account_id)
-                            .caused_by(trc::location!()));
-                    }
-
-                    let mut collections: Bitmap<Collection> = Bitmap::new();
-                    if acl.contains(Acl::Read) || acl.contains(Acl::Administer) {
-                        collections.insert(collection);
-                    }
-                    if collection == Collection::Mailbox
-                        && (acl.contains(Acl::ReadItems) || acl.contains(Acl::Administer))
-                    {
-                        collections.insert(Collection::Email);
-                    }
-
-                    if !collections.is_empty() {
-                        if let Some((_, sharing)) = access_token
-                            .access_to
-                            .iter_mut()
-                            .find(|(account_id, _)| *account_id == acl_item.to_account_id)
-                        {
-                            sharing.union(&collections);
-                        } else {
-                            access_token
-                                .access_to
-                                .push((acl_item.to_account_id, collections));
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(access_token)
-    }
-
     pub async fn shared_documents(
         &self,
         access_token: &AccessToken,
@@ -322,7 +264,7 @@ impl JMAP {
         {
             let mut acl_obj = Object::with_capacity(value.len() / 2);
             for item in value {
-                if let Some(principal) = self
+                if let Some(mut principal) = self
                     .core
                     .storage
                     .directory
@@ -331,7 +273,7 @@ impl JMAP {
                     .unwrap_or_default()
                 {
                     acl_obj.append(
-                        Property::_T(principal.name),
+                        Property::_T(principal.take_str(PrincipalField::Name).unwrap_or_default()),
                         item.grants
                             .map(|acl_item| Value::Text(acl_item.to_string()))
                             .collect::<Vec<_>>(),
@@ -351,7 +293,7 @@ impl JMAP {
         current: &Option<HashedValue<Object<Value>>>,
     ) {
         if let Value::Acl(acl_changes) = changes.get(&Property::Acl) {
-            let access_tokens = &self.inner.access_tokens;
+            let access_tokens = &self.core.security.access_tokens;
             if let Some(Value::Acl(acl_current)) = current
                 .as_ref()
                 .and_then(|current| current.inner.properties.get(&Property::Acl))
@@ -402,7 +344,7 @@ impl JMAP {
                 {
                     Ok(Some(principal)) => {
                         acls.push(AclGrant {
-                            account_id: principal.id,
+                            account_id: principal.id(),
                             grants: Bitmap::from(*grants),
                         });
                     }
@@ -443,7 +385,7 @@ impl JMAP {
             {
                 Ok(Some(principal)) => Ok((
                     AclGrant {
-                        account_id: principal.id,
+                        account_id: principal.id(),
                         grants: Bitmap::from(*grants),
                     },
                     acl_patch.get(2).map(|v| v.as_bool().unwrap_or(false)),

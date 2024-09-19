@@ -6,14 +6,16 @@
 
 use std::path::PathBuf;
 
-use directory::backend::internal::manage::ManageDirectory;
 use jmap::email::crypto::{
     try_parse_certs, Algorithm, EncryptMessage, EncryptionMethod, EncryptionParams, EncryptionType,
 };
 use jmap_proto::types::id::Id;
 use mail_parser::{MessageParser, MimeHeaders};
 
-use crate::jmap::{delivery::SmtpConnection, ManagementApi};
+use crate::{
+    directory::internal::TestInternalDirectory,
+    jmap::{delivery::SmtpConnection, ManagementApi},
+};
 
 use super::JMAPTest;
 
@@ -23,18 +25,18 @@ pub async fn test(params: &mut JMAPTest) {
     // Create test account
     let server = params.server.clone();
     let client = &mut params.client;
-    params
-        .directory
-        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
-        .await;
     let account_id = Id::from(
         server
             .core
             .storage
             .data
-            .get_or_create_account_id("jdoe@example.com")
-            .await
-            .unwrap(),
+            .create_test_user(
+                "jdoe@example.com",
+                "12345",
+                "John Doe",
+                &["jdoe@example.com"],
+            )
+            .await,
     )
     .to_string();
 

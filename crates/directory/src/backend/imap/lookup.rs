@@ -12,7 +12,7 @@ use crate::{IntoError, Principal, QueryBy};
 use super::{ImapDirectory, ImapError};
 
 impl ImapDirectory {
-    pub async fn query(&self, query: QueryBy<'_>) -> trc::Result<Option<Principal<u32>>> {
+    pub async fn query(&self, query: QueryBy<'_>) -> trc::Result<Option<Principal>> {
         if let QueryBy::Credentials(credentials) = query {
             let mut client = self
                 .pool

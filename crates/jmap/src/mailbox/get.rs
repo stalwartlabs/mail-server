@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
@@ -12,10 +13,7 @@ use jmap_proto::{
 use store::{ahash::AHashSet, query::Filter, roaring::RoaringBitmap};
 use trc::AddContext;
 
-use crate::{
-    auth::{acl::EffectiveAcl, AccessToken},
-    JMAP,
-};
+use crate::{auth::acl::EffectiveAcl, JMAP};
 
 impl JMAP {
     pub async fn mailbox_get(

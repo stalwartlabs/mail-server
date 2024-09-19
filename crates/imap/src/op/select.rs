@@ -6,6 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
+use directory::Permission;
 use imap_proto::{
     protocol::{
         fetch,
@@ -26,6 +27,13 @@ use super::{ImapContext, ToModSeq};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_select(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(if request.command == Command::Select {
+            Permission::ImapSelect
+        } else {
+            Permission::ImapExamine
+        })?;
+
         let op_start = Instant::now();
         let is_select = request.command == Command::Select;
         let command = request.command;

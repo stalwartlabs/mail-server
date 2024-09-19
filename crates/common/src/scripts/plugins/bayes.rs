@@ -63,10 +63,7 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> trc::Result<Variable> 
     // Train the model
     let mut model = BayesModel::default();
     model.train(
-        OsbTokenizer::new(
-            BayesTokenizer::new(text.as_ref(), &ctx.core.smtp.resolvers.psl),
-            5,
-        ),
+        OsbTokenizer::new(BayesTokenizer::new(text.as_ref()), 5),
         is_spam,
     );
     if model.weights.is_empty() {
@@ -187,10 +184,7 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> trc::Result<Variable> {
 
     // Classify the text
     let mut tokens = Vec::new();
-    for token in OsbTokenizer::<_, TokenHash>::new(
-        BayesTokenizer::new(text.as_ref(), &ctx.core.smtp.resolvers.psl),
-        5,
-    ) {
+    for token in OsbTokenizer::<_, TokenHash>::new(BayesTokenizer::new(text.as_ref()), 5) {
         let weights = bayes_cache.get_or_update(token.inner, store).await?;
         tokens.push(OsbToken {
             inner: weights,

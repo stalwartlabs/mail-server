@@ -7,6 +7,7 @@
 use std::{sync::Arc, time::Instant};
 
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     protocol::{
         search::{self, Arguments, Filter, Response, ResultOption},
@@ -43,8 +44,14 @@ impl<T: SessionStream> Session<T> {
     ) -> trc::Result<()> {
         let op_start = Instant::now();
         let mut arguments = if !is_sort {
+            // Validate access
+            self.assert_has_permission(Permission::ImapSearch)?;
+
             request.parse_search(self.version)
         } else {
+            // Validate access
+            self.assert_has_permission(Permission::ImapSort)?;
+
             request.parse_sort()
         }?;
 

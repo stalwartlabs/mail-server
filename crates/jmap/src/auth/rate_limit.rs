@@ -7,11 +7,12 @@
 use std::{net::IpAddr, sync::Arc};
 
 use common::listener::limiter::{ConcurrencyLimiter, InFlight};
+use directory::Permission;
 use trc::AddContext;
 
 use crate::JMAP;
 
-use super::AccessToken;
+use common::auth::AccessToken;
 
 pub struct ConcurrencyLimiters {
     pub concurrent_requests: ConcurrencyLimiter,
@@ -61,12 +62,12 @@ impl JMAP {
         if is_rate_allowed {
             if let Some(in_flight_request) = limiter.concurrent_requests.is_allowed() {
                 Ok(in_flight_request)
-            } else if access_token.is_super_user() {
+            } else if access_token.has_permission(Permission::UnlimitedRequests) {
                 Ok(InFlight::default())
             } else {
                 Err(trc::LimitEvent::ConcurrentRequest.into_err())
             }
-        } else if access_token.is_super_user() {
+        } else if access_token.has_permission(Permission::UnlimitedRequests) {
             Ok(InFlight::default())
         } else {
             Err(trc::LimitEvent::TooManyRequests.into_err())
@@ -97,7 +98,7 @@ impl JMAP {
             .is_allowed()
         {
             Ok(in_flight_request)
-        } else if access_token.is_super_user() {
+        } else if access_token.has_permission(Permission::UnlimitedRequests) {
             Ok(InFlight::default())
         } else {
             Err(trc::LimitEvent::ConcurrentUpload.into_err())

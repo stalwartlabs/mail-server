@@ -1,6 +1,6 @@
 [package]
 name = "common"
-version = "0.9.4"
+version = "0.10.0"
 edition = "2021"
 resolver = "2"
 
@@ -14,7 +14,7 @@ jmap_proto = { path = "../jmap-proto" }
 sieve-rs = { version = "0.5" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
-mail-auth = { version = "0.4" }
+mail-auth = { version = "0.5" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 smtp-proto = { version = "0.1", features = ["serde_support"] }
 dns-update = { version = "0.1" }
@@ -58,6 +58,7 @@ hostname = "0.4.0"
 zip = "2.1"
 pwhash = "1.0.0"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
+psl = "2"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

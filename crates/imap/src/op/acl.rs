@@ -6,8 +6,8 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::listener::SessionStream;
-use directory::QueryBy;
+use common::{auth::AccessToken, listener::SessionStream};
+use directory::{backend::internal::PrincipalField, Permission, QueryBy};
 use imap_proto::{
     protocol::acl::{
         Arguments, GetAclResponse, ListRightsResponse, ModRightsOp, MyRightsResponse, Rights,
@@ -16,10 +16,7 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
-use jmap::{
-    auth::{acl::EffectiveAcl, AccessToken},
-    mailbox::set::SCHEMA,
-};
+use jmap::{auth::acl::EffectiveAcl, mailbox::set::SCHEMA};
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
@@ -36,13 +33,16 @@ use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    core::{MailboxId, Session, SessionData},
+    core::{MailboxId, Session, SessionData, State},
     op::ImapContext,
     spawn_op,
 };
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_get_acl(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapAuthenticate)?;
+
         let op_start = Instant::now();
         let arguments = request.parse_acl(self.version)?;
         let is_rev2 = self.version.is_rev2();
@@ -69,7 +69,7 @@ impl<T: SessionStream> Session<T> {
                         .query(QueryBy::Id(item.account_id), false)
                         .await
                         .imap_ctx(&arguments.tag, trc::location!())?
-                        .map(|p| p.name)
+                        .and_then(|mut p| p.take_str(PrincipalField::Name))
                     {
                         let mut rights = Vec::new();
 
@@ -142,6 +142,9 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_my_rights(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapMyRights)?;
+
         let op_start = Instant::now();
         let arguments = request.parse_acl(self.version)?;
         let data = self.state.session_data();
@@ -224,6 +227,9 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_set_acl(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapAclSet)?;
+
         let op_start = Instant::now();
         let command = request.command;
         let arguments = request.parse_acl(self.version)?;
@@ -252,7 +258,7 @@ impl<T: SessionStream> Session<T> {
                         .id(arguments.tag.to_string())
                         .caused_by(trc::location!())
                 })?
-                .id;
+                .id();
 
             // Prepare changes
             let mut changes = Object::with_capacity(1);
@@ -359,7 +365,11 @@ impl<T: SessionStream> Session<T> {
             }
 
             // Invalidate ACLs
-            data.jmap.inner.access_tokens.remove(&acl_account_id);
+            data.jmap
+                .core
+                .security
+                .access_tokens
+                .remove(&acl_account_id);
 
             trc::event!(
                 Imap(trc::ImapEvent::SetAcl),
@@ -381,6 +391,9 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_list_rights(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapListRights)?;
+
         let op_start = Instant::now();
         let arguments = request.parse_acl(self.version)?;
 
@@ -414,6 +427,15 @@ impl<T: SessionStream> Session<T> {
                 ),
         )
         .await
+    }
+
+    pub fn assert_has_permission(&self, permission: Permission) -> trc::Result<()> {
+        match &self.state {
+            State::Authenticated { data } | State::Selected { data, .. } => {
+                data.access_token.assert_has_permission(permission)
+            }
+            State::NotAuthenticated { .. } => Ok(()),
+        }
     }
 }
 

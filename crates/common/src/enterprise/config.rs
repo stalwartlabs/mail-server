@@ -10,6 +10,7 @@
 
 use std::time::Duration;
 
+use directory::{backend::internal::manage::ManageDirectory, Type};
 use store::{Store, Stores};
 use trc::{EventType, MetricType, TOTAL_EVENT_COUNT};
 use utils::config::{
@@ -18,10 +19,7 @@ use utils::config::{
     Config,
 };
 
-use crate::{
-    expr::{tokenizer::TokenMap, Expression},
-    total_accounts,
-};
+use crate::expr::{tokenizer::TokenMap, Expression};
 
 use super::{
     license::LicenseValidator, AlertContent, AlertContentToken, AlertMethod, Enterprise,
@@ -42,7 +40,10 @@ impl Enterprise {
             }
         };
 
-        match total_accounts(data).await {
+        match data
+            .count_principals(None, Type::Individual.into(), None)
+            .await
+        {
             Ok(total) if total > license.accounts as u64 => {
                 config.new_build_warning(
                     "enterprise.license-key",
@@ -116,6 +117,7 @@ impl Enterprise {
                 .property_or_default::<Option<Duration>>("storage.undelete.retention", "false")
                 .unwrap_or_default()
                 .map(|retention| Undelete { retention }),
+            logo_url: config.value("enterprise.logo-url").map(|s| s.to_string()),
             trace_store,
             metrics_store,
             metrics_alerts: parse_metric_alerts(config),

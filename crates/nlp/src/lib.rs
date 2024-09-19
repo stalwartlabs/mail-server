@@ -6,8 +6,6 @@ pub mod tokenizers;
 mod test {
     use std::fs;
 
-    use utils::suffixlist::PublicSuffix;
-
     use crate::{
         bayes::{tokenize::BayesTokenizer, BayesClassifier, BayesModel},
         tokenizers::osb::{OsbToken, OsbTokenizer},
@@ -19,16 +17,12 @@ mod test {
         let db =
             fs::read_to_string("/Users/me/code/mail-server/_ignore/spam_or_not_spam.csv").unwrap();
         let mut bayes = BayesModel::default();
-        let suffixes = PublicSuffix::default();
 
         for line in db.lines() {
             let (text, is_spam) = line.rsplit_once(',').unwrap();
             let is_spam = is_spam == "1";
 
-            bayes.train(
-                OsbTokenizer::new(BayesTokenizer::new(text, &suffixes), 5),
-                is_spam,
-            );
+            bayes.train(OsbTokenizer::new(BayesTokenizer::new(text), 5), is_spam);
         }
         println!("Ham: {} Spam: {}", bayes.ham_learns, bayes.spam_learns,);
         fs::write(
@@ -46,7 +40,6 @@ mod test {
         )
         .unwrap();
         let bayes = BayesClassifier::new();
-        let suffixes = PublicSuffix::default();
 
         for text in [
             "i am attaching to this email a presentation to integrate the spreadsheet into our server",
@@ -58,7 +51,7 @@ mod test {
                 "{:?} -> {}",
                 text,
                 bayes
-                    .classify(OsbTokenizer::new(BayesTokenizer::new(text, &suffixes), 5).filter_map(|x| model.weights.get(&x.inner).map(|w| {
+                    .classify(OsbTokenizer::new(BayesTokenizer::new(text), 5).filter_map(|x| model.weights.get(&x.inner).map(|w| {
                         OsbToken {
                             idx: x.idx,
                             inner: *w,

@@ -9,10 +9,13 @@ pub mod session;
 
 use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
-use common::listener::{limiter::InFlight, ServerInstance};
+use common::{
+    auth::AccessToken,
+    listener::{limiter::InFlight, ServerInstance},
+};
 use imap::core::{ImapInstance, Inner};
 use imap_proto::receiver::{CommandParser, Receiver};
-use jmap::{auth::AccessToken, JMAP};
+use jmap::JMAP;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 pub struct Session<T: AsyncRead + AsyncWrite> {

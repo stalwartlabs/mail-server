@@ -83,8 +83,6 @@ pub struct JmapConfig {
     pub encrypt: bool,
     pub encrypt_append: bool,
 
-    pub principal_allow_lookups: bool,
-
     pub capabilities: BaseCapabilities,
     pub session_purge_frequency: SimpleCron,
     pub account_purge_frequency: SimpleCron,
@@ -371,9 +369,6 @@ impl JmapConfig {
             push_max_total: config
                 .property_or_default("jmap.push.max-total", "100")
                 .unwrap_or(100),
-            principal_allow_lookups: config
-                .property("jmap.principal.allow-lookups")
-                .unwrap_or(true),
             encrypt: config
                 .property_or_default("storage.encryption.enable", "true")
                 .unwrap_or(true),

@@ -29,8 +29,8 @@ duration = [{if = "remote_ip = '10.0.0.3'", then = '500ms'},
 
 #[tokio::test]
 async fn limits() {
-        // Enable logging
-        crate::enable_logging();
+    // Enable logging
+    crate::enable_logging();
 
     let mut config = Config::new(CONFIG).unwrap();
     let core = Core::parse(&mut config, Default::default(), Default::default()).await;

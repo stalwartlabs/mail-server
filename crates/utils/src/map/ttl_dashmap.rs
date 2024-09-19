@@ -9,6 +9,7 @@ use std::{borrow::Borrow, hash::Hash, time::Instant};
 use dashmap::DashMap;
 
 pub type TtlDashMap<K, V> = DashMap<K, LruItem<V>, ahash::RandomState>;
+pub type ADashMap<K, V> = DashMap<K, V, ahash::RandomState>;
 
 #[derive(Debug, Clone)]
 pub struct LruItem<V> {

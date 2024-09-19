@@ -6,8 +6,12 @@
 
 use ldap3::{Ldap, LdapConnAsync, Scope, SearchEntry};
 use mail_send::Credentials;
+use trc::AddContext;
 
-use crate::{backend::internal::manage::ManageDirectory, IntoError, Principal, QueryBy, Type};
+use crate::{
+    backend::internal::{manage::ManageDirectory, PrincipalField},
+    IntoError, Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
+};
 
 use super::{LdapDirectory, LdapMappings};
 
@@ -16,7 +20,7 @@ impl LdapDirectory {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> trc::Result<Option<Principal<u32>>> {
+    ) -> trc::Result<Option<Principal>> {
         let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;
         let mut account_id = None;
         let account_name;
@@ -35,7 +39,7 @@ impl LdapDirectory {
                 }
             }
             QueryBy::Id(uid) => {
-                if let Some(username) = self.data_store.get_account_name(uid).await? {
+                if let Some(username) = self.data_store.get_principal_name(uid).await? {
                     account_name = username;
                 } else {
                     return Ok(None);
@@ -122,50 +126,86 @@ impl LdapDirectory {
         } else {
             principal.id = self
                 .data_store
-                .get_or_create_account_id(&account_name)
+                .get_or_create_principal_id(&account_name, Type::Individual)
                 .await?;
         }
-        principal.name = account_name;
+        principal.append_str(PrincipalField::Name, account_name);
 
-        // Obtain groups
-        if return_member_of && !principal.member_of.is_empty() {
-            for member_of in principal.member_of.iter_mut() {
-                if member_of.contains('=') {
-                    let (rs, _res) = conn
-                        .search(
-                            member_of,
-                            Scope::Base,
-                            "objectClass=*",
-                            &self.mappings.attr_name,
-                        )
-                        .await
-                        .map_err(|err| err.into_error().caused_by(trc::location!()))?
-                        .success()
-                        .map_err(|err| err.into_error().caused_by(trc::location!()))?;
-                    for entry in rs {
-                        'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
-                            if self.mappings.attr_name.contains(&attr) {
-                                if let Some(group) = value.into_iter().next() {
-                                    if !group.is_empty() {
-                                        *member_of = group;
-                                        break 'outer;
+        if return_member_of {
+            // Obtain groups
+            if principal.has_field(PrincipalField::MemberOf) {
+                let mut member_of = Vec::new();
+                for mut name in principal
+                    .take_str_array(PrincipalField::MemberOf)
+                    .unwrap_or_default()
+                {
+                    if name.contains('=') {
+                        let (rs, _res) = conn
+                            .search(
+                                &name,
+                                Scope::Base,
+                                "objectClass=*",
+                                &self.mappings.attr_name,
+                            )
+                            .await
+                            .map_err(|err| err.into_error().caused_by(trc::location!()))?
+                            .success()
+                            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
+                        for entry in rs {
+                            'outer: for (attr, value) in SearchEntry::construct(entry).attrs {
+                                if self.mappings.attr_name.contains(&attr) {
+                                    if let Some(group) = value.into_iter().next() {
+                                        if !group.is_empty() {
+                                            name = group;
+                                            break 'outer;
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+
+                    member_of.push(
+                        self.data_store
+                            .get_or_create_principal_id(&name, Type::Group)
+                            .await
+                            .caused_by(trc::location!())?,
+                    );
                 }
+
+                // Map ids
+                principal.set(PrincipalField::MemberOf, member_of);
             }
 
-            // Map ids
-            self.data_store
-                .map_principal(principal, true)
+            // Obtain roles
+            let mut did_role_cleanup = false;
+            for member in self
+                .data_store
+                .get_member_of(principal.id)
                 .await
-                .map(Some)
-        } else {
-            principal.member_of.clear();
-            Ok(Some(principal.into()))
+                .caused_by(trc::location!())?
+            {
+                match member.typ {
+                    Type::List => {
+                        principal.append_int(PrincipalField::Lists, member.principal_id);
+                    }
+                    Type::Role => {
+                        if !did_role_cleanup {
+                            principal.remove(PrincipalField::Roles);
+                            did_role_cleanup = true;
+                        }
+                        principal.append_int(PrincipalField::Roles, member.principal_id);
+                    }
+                    _ => {
+                        principal.append_int(PrincipalField::MemberOf, member.principal_id);
+                    }
+                }
+            }
+        } else if principal.has_field(PrincipalField::MemberOf) {
+            principal.remove(PrincipalField::MemberOf);
         }
+
+        Ok(Some(principal))
     }
 
     pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
@@ -202,7 +242,11 @@ impl LdapDirectory {
             'outer: for attr in &self.mappings.attr_name {
                 if let Some(name) = entry.attrs.get(attr).and_then(|v| v.first()) {
                     if !name.is_empty() {
-                        ids.push(self.data_store.get_or_create_account_id(name).await?);
+                        ids.push(
+                            self.data_store
+                                .get_or_create_principal_id(name, Type::Individual)
+                                .await?,
+                        );
                         break 'outer;
                     }
                 }
@@ -370,7 +414,7 @@ impl LdapDirectory {
         &self,
         conn: &mut Ldap,
         filter: &str,
-    ) -> trc::Result<Option<Principal<String>>> {
+    ) -> trc::Result<Option<Principal>> {
         conn.search(
             &self.mappings.base_dn,
             Scope::Subtree,
@@ -400,39 +444,49 @@ impl LdapDirectory {
 }
 
 impl LdapMappings {
-    fn entry_to_principal(&self, entry: SearchEntry) -> Principal<String> {
+    fn entry_to_principal(&self, entry: SearchEntry) -> Principal {
         let mut principal = Principal::default();
+        let mut role = ROLE_USER;
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {
-                principal.name = value.into_iter().next().unwrap_or_default();
+                principal.set(
+                    PrincipalField::Name,
+                    value.into_iter().next().unwrap_or_default(),
+                );
             } else if self.attr_secret.contains(&attr) {
-                principal.secrets.extend(value);
+                for item in value {
+                    principal.append_str(PrincipalField::Secrets, item);
+                }
             } else if self.attr_email_address.contains(&attr) {
-                for value in value {
-                    if principal.emails.is_empty() {
-                        principal.emails.push(value);
-                    } else {
-                        principal.emails.insert(0, value);
-                    }
+                for item in value {
+                    principal.prepend_str(PrincipalField::Emails, item);
                 }
             } else if self.attr_email_alias.contains(&attr) {
-                principal.emails.extend(value);
+                for item in value {
+                    principal.append_str(PrincipalField::Emails, item);
+                }
             } else if let Some(idx) = self.attr_description.iter().position(|a| a == &attr) {
-                if principal.description.is_none() || idx == 0 {
-                    principal.description = value.into_iter().next();
+                if !principal.has_field(PrincipalField::Description) || idx == 0 {
+                    principal.set(
+                        PrincipalField::Description,
+                        value.into_iter().next().unwrap_or_default(),
+                    );
                 }
             } else if self.attr_groups.contains(&attr) {
-                principal.member_of.extend(value);
+                for item in value {
+                    principal.append_str(PrincipalField::MemberOf, item);
+                }
             } else if self.attr_quota.contains(&attr) {
-                if let Ok(quota) = value.into_iter().next().unwrap_or_default().parse() {
-                    principal.quota = quota;
+                if let Ok(quota) = value.into_iter().next().unwrap_or_default().parse::<u64>() {
+                    principal.set(PrincipalField::Quota, quota);
                 }
             } else if self.attr_type.contains(&attr) {
                 for value in value {
                     match value.to_ascii_lowercase().as_str() {
                         "admin" | "administrator" | "root" | "superuser" => {
-                            principal.typ = Type::Superuser
+                            role = ROLE_ADMIN;
+                            principal.typ = Type::Individual
                         }
                         "posixaccount" | "individual" | "person" | "inetorgperson" => {
                             principal.typ = Type::Individual
@@ -447,6 +501,6 @@ impl LdapMappings {
             }
         }
 
-        principal
+        principal.with_field(PrincipalField::Roles, role)
     }
 }

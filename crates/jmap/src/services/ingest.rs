@@ -5,7 +5,7 @@
  */
 
 use common::{DeliveryResult, IngestMessage};
-use directory::QueryBy;
+use directory::Permission;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 use store::ahash::AHashMap;
@@ -83,68 +83,50 @@ impl JMAP {
 
         // Deliver to each recipient
         for (uid, (status, rcpt)) in &mut deliver_names {
-            // Check if there is an active sieve script
-            let result = match self.sieve_script_get_active(*uid).await {
-                Ok(Some(active_script)) => {
-                    self.sieve_script_ingest(
-                        &raw_message,
-                        &message.sender_address,
-                        rcpt,
-                        *uid,
-                        message.session_id,
-                        active_script,
-                    )
-                    .await
-                }
-                Ok(None) => {
-                    let account_quota = match self
-                        .core
-                        .storage
-                        .directory
-                        .query(QueryBy::Id(*uid), false)
-                        .await
-                    {
-                        Ok(Some(p)) => p.quota as i64,
-                        Ok(None) => 0,
-                        Err(err) => {
-                            trc::error!(err
-                                .details("Failed to obtain account quota.")
-                                .ctx(trc::Key::To, rcpt.to_string())
-                                .span_id(message.session_id)
-                                .caused_by(trc::location!()));
-
-                            *status = DeliveryResult::TemporaryFailure {
-                                reason: "Transient server failure.".into(),
-                            };
-                            continue;
+            // Obtain access token
+            let result = match self
+                .core
+                .get_cached_access_token(*uid)
+                .await
+                .and_then(|token| {
+                    token
+                        .assert_has_permission(Permission::EmailReceive)
+                        .map(|_| token)
+                }) {
+                Ok(access_token) => {
+                    // Check if there is an active sieve script
+                    match self.sieve_script_get_active(*uid).await {
+                        Ok(Some(active_script)) => {
+                            self.sieve_script_ingest(
+                                &access_token,
+                                &raw_message,
+                                &message.sender_address,
+                                rcpt,
+                                message.session_id,
+                                active_script,
+                            )
+                            .await
                         }
-                    };
-
-                    self.email_ingest(IngestEmail {
-                        raw_message: &raw_message,
-                        message: MessageParser::new().parse(&raw_message),
-                        account_id: *uid,
-                        account_quota,
-                        mailbox_ids: vec![INBOX_ID],
-                        keywords: vec![],
-                        received_at: None,
-                        source: IngestSource::Smtp,
-                        encrypt: self.core.jmap.encrypt,
-                        session_id: message.session_id,
-                    })
-                    .await
+                        Ok(None) => {
+                            // Ingest message
+                            self.email_ingest(IngestEmail {
+                                raw_message: &raw_message,
+                                message: MessageParser::new().parse(&raw_message),
+                                resource: access_token.as_resource_token(),
+                                mailbox_ids: vec![INBOX_ID],
+                                keywords: vec![],
+                                received_at: None,
+                                source: IngestSource::Smtp,
+                                encrypt: self.core.jmap.encrypt,
+                                session_id: message.session_id,
+                            })
+                            .await
+                        }
+                        Err(err) => Err(err),
+                    }
                 }
-                Err(err) => {
-                    trc::error!(err
-                        .details("Failed to ingest message.")
-                        .ctx(trc::Key::To, rcpt.to_string())
-                        .span_id(message.session_id));
 
-                    *status = DeliveryResult::TemporaryFailure {
-                        reason: "Transient server failure.".into(),
-                    };
-                    continue;
-                }
+                Err(err) => Err(err),
             };
 
             match result {
@@ -166,6 +148,17 @@ impl JMAP {
                         trc::EventType::Limit(trc::LimitEvent::Quota) => {
                             *status = DeliveryResult::TemporaryFailure {
                                 reason: "Mailbox over quota.".into(),
+                            }
+                        }
+                        trc::EventType::Limit(trc::LimitEvent::TenantQuota) => {
+                            *status = DeliveryResult::TemporaryFailure {
+                                reason: "Organization over quota.".into(),
+                            }
+                        }
+                        trc::EventType::Security(trc::SecurityEvent::Unauthorized) => {
+                            *status = DeliveryResult::PermanentFailure {
+                                code: [5, 5, 0],
+                                reason: "This account is not authorized to receive email.".into(),
                             }
                         }
                         trc::EventType::MessageIngest(trc::MessageIngestEvent::Error) => {

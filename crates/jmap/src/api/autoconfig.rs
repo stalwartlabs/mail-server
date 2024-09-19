@@ -7,7 +7,7 @@
 use std::fmt::Write;
 
 use common::manager::webadmin::Resource;
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use utils::url_params::UrlParams;
@@ -67,11 +67,10 @@ impl JMAP {
         );
         config.push_str("</clientConfig>\n");
 
-        Ok(Resource {
-            content_type: "application/xml; charset=utf-8",
-            contents: config.into_bytes(),
-        }
-        .into_http_response())
+        Ok(
+            Resource::new("application/xml; charset=utf-8", config.into_bytes())
+                .into_http_response(),
+        )
     }
 
     pub async fn handle_autodiscover_request(
@@ -147,11 +146,10 @@ impl JMAP {
         let _ = writeln!(&mut config, "\t</Response>");
         let _ = writeln!(&mut config, "</Autodiscover>");
 
-        Ok(Resource {
-            content_type: "application/xml; charset=utf-8",
-            contents: config.into_bytes(),
-        }
-        .into_http_response())
+        Ok(
+            Resource::new("application/xml; charset=utf-8", config.into_bytes())
+                .into_http_response(),
+        )
     }
 
     async fn autoconfig_parameters<'x>(
@@ -187,14 +185,14 @@ impl JMAP {
             .await
             .unwrap_or_default()
         {
-            if let Ok(Some(principal)) = self
+            if let Ok(Some(mut principal)) = self
                 .core
                 .storage
                 .directory
                 .query(QueryBy::Id(id), false)
                 .await
             {
-                account_name = principal.name;
+                account_name = principal.take_str(PrincipalField::Name).unwrap_or_default();
                 break;
             }
         }

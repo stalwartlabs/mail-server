@@ -12,6 +12,7 @@ use crate::{
     spawn_op,
 };
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     parser::PushUnique,
     protocol::status::{Status, StatusItem, StatusItemType},
@@ -34,6 +35,9 @@ use super::ToModSeq;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_status(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapStatus)?;
+
         let op_start = Instant::now();
         let arguments = request.parse_status(self.version)?;
         let version = self.version;

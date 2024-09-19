@@ -5,7 +5,7 @@ authors = ["Stalwart Labs Ltd. <hello@stalw.art>"]
 license = "AGPL-3.0-only OR LicenseRef-SEL"
 repository = "https://github.com/stalwartlabs/cli"
 homepage = "https://github.com/stalwartlabs/cli"
-version = "0.9.4"
+version = "0.10.0"
 edition = "2021"
 readme = "README.md"
 resolver = "2"
@@ -29,4 +29,4 @@ human-size = "0.4.2"
 futures = "0.3.28"
 pwhash = "1.0.0"
 rand = "0.8.5"
-mail-auth = { version = "0.4" }
+mail-auth = { version = "0.5" }

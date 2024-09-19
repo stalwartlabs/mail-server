@@ -11,7 +11,7 @@
 use std::str::FromStr;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use common::enterprise::undelete::DeletedBlob;
+use common::{auth::AccessToken, enterprise::undelete::DeletedBlob};
 use directory::backend::internal::manage::ManageDirectory;
 use hyper::Method;
 use jmap_proto::types::collection::Collection;
@@ -24,6 +24,7 @@ use utils::{url_params::UrlParams, BlobHash};
 use crate::{
     api::{
         http::{HttpSessionData, ToHttpResponse},
+        management::decode_path_element,
         HttpRequest, HttpResponse, JsonResponse,
     },
     email::ingest::{IngestEmail, IngestSource},
@@ -61,11 +62,12 @@ impl JMAP {
     ) -> trc::Result<HttpResponse> {
         match (path.get(2).copied(), req.method()) {
             (Some(account_name), &Method::GET) => {
+                let account_name = decode_path_element(account_name);
                 let account_id = self
                     .core
                     .storage
                     .data
-                    .get_account_id(account_name)
+                    .get_principal_id(account_name.as_ref())
                     .await?
                     .ok_or_else(|| trc::ResourceEvent::NotFound.into_err())?;
                 let mut deleted = self.core.list_deleted(account_id).await?;
@@ -111,11 +113,12 @@ impl JMAP {
                 .into_http_response())
             }
             (Some(account_name), &Method::POST) => {
+                let account_name = decode_path_element(account_name);
                 let account_id = self
                     .core
                     .storage
                     .data
-                    .get_account_id(account_name)
+                    .get_principal_id(account_name.as_ref())
                     .await?
                     .ok_or_else(|| trc::ResourceEvent::NotFound.into_err())?;
 
@@ -168,8 +171,13 @@ impl JMAP {
                                         .email_ingest(IngestEmail {
                                             raw_message: &bytes,
                                             message: MessageParser::new().parse(&bytes),
-                                            account_id,
-                                            account_quota: 0,
+                                            resource: self
+                                                .get_resource_token(
+                                                    &AccessToken::from_id(u32::MAX),
+                                                    account_id,
+                                                )
+                                                .await
+                                                .caused_by(trc::location!())?,
                                             mailbox_ids: vec![INBOX_ID],
                                             keywords: vec![],
                                             received_at: (request.time as u64).into(),

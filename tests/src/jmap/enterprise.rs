@@ -35,6 +35,7 @@ use trc::{
 use utils::config::{cron::SimpleCron, Config};
 
 use crate::{
+    directory::internal::TestInternalDirectory,
     imap::{ImapConnection, Type},
     jmap::delivery::SmtpConnection,
     AssertConfig,
@@ -103,6 +104,7 @@ pub async fn test(params: &mut JMAPTest) {
         }
         .into(),
         metrics_alerts: parse_metric_alerts(&mut config),
+        logo_url: None,
     }
     .into();
     config.assert_no_errors();
@@ -112,8 +114,17 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create test account
     params
-        .directory
-        .create_test_user_with_email("jdoe@example.com", "secret", "John Doe")
+        .server
+        .shared_core
+        .load()
+        .storage
+        .data
+        .create_test_user(
+            "jdoe@example.com",
+            "secret",
+            "John Doe",
+            &["jdoe@example.com"],
+        )
         .await;
 
     alerts(&params.server.shared_core.load()).await;
@@ -121,10 +132,40 @@ pub async fn test(params: &mut JMAPTest) {
     tracing(params).await;
     metrics(params).await;
 
-    // Disable Enterprise
-    let mut core = params.server.shared_core.load_full().as_ref().clone();
-    core.enterprise = None;
-    params.server.shared_core.store(core.into());
+    params.server.shared_core.store(
+        params
+            .server
+            .shared_core
+            .load_full()
+            .as_ref()
+            .clone()
+            .enable_enterprise()
+            .into(),
+    );
+}
+
+pub trait EnterpriseCore {
+    fn enable_enterprise(self) -> Self;
+}
+
+impl EnterpriseCore for Core {
+    fn enable_enterprise(mut self) -> Self {
+        self.enterprise = Enterprise {
+            license: LicenseKey {
+                valid_to: now() + 3600,
+                valid_from: now() - 3600,
+                hostname: String::new(),
+                accounts: 100,
+            },
+            undelete: None,
+            trace_store: None,
+            metrics_store: None,
+            metrics_alerts: vec![],
+            logo_url: None,
+        }
+        .into();
+        self
+    }
 }
 
 async fn alerts(core: &Core) {

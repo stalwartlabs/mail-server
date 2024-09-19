@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
@@ -125,7 +125,8 @@ impl JMAP {
             .await
             .caused_by(trc::location!())?
             .unwrap_or_default();
-        if principal.emails.is_empty() {
+        let num_emails = principal.field_len(PrincipalField::Emails);
+        if num_emails == 0 {
             return Ok(identity_ids);
         }
 
@@ -136,14 +137,14 @@ impl JMAP {
 
         // Create identities
         let name = principal
-            .description
-            .unwrap_or(principal.name)
+            .description()
+            .unwrap_or(principal.name())
             .trim()
             .to_string();
-        let has_many = principal.emails.len() > 1;
-        for (idx, email) in principal.emails.into_iter().enumerate() {
+        let has_many = num_emails > 1;
+        for (idx, email) in principal.iter_str(PrincipalField::Emails).enumerate() {
             let document_id = idx as u32;
-            let email = sanitize_email(&email).unwrap_or_default();
+            let email = sanitize_email(email).unwrap_or_default();
             if email.is_empty() {
                 continue;
             }

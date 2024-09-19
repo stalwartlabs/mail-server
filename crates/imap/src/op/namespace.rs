@@ -6,6 +6,7 @@
 
 use crate::core::Session;
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     protocol::{namespace::Response, ImapResponse},
     receiver::Request,
@@ -14,6 +15,9 @@ use imap_proto::{
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_namespace(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapNamespace)?;
+
         trc::event!(
             Imap(trc::ImapEvent::Namespace),
             SpanId = self.session_id,

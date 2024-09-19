@@ -53,7 +53,6 @@ async fn extensions() {
     // Enable logging
     crate::enable_logging();
 
-
     // Start test server
     let mut remote = TestServer::new("smtp_ext_remote", REMOTE, true).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;

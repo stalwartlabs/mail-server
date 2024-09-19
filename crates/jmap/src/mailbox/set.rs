@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::config::jmap::settings::SpecialUse;
+use common::{auth::AccessToken, config::jmap::settings::SpecialUse};
+use directory::Permission;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
@@ -35,10 +36,7 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{
-    auth::{acl::EffectiveAcl, AccessToken},
-    JMAP,
-};
+use crate::{auth::acl::EffectiveAcl, JMAP};
 
 #[allow(unused_imports)]
 use super::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
@@ -295,14 +293,18 @@ impl JMAP {
     ) -> trc::Result<Result<bool, SetError>> {
         // Internal folders cannot be deleted
         #[cfg(feature = "test_mode")]
-        if [INBOX_ID, TRASH_ID].contains(&document_id) && !access_token.is_super_user() {
+        if [INBOX_ID, TRASH_ID].contains(&document_id)
+            && !access_token.has_permission(Permission::DeleteSystemFolders)
+        {
             return Ok(Err(SetError::forbidden().with_description(
                 "You are not allowed to delete Inbox, Junk or Trash folders.",
             )));
         }
 
         #[cfg(not(feature = "test_mode"))]
-        if [INBOX_ID, TRASH_ID, JUNK_ID].contains(&document_id) && !access_token.is_super_user() {
+        if [INBOX_ID, TRASH_ID, JUNK_ID].contains(&document_id)
+            && !access_token.has_permission(Permission::DeleteSystemFolders)
+        {
             return Ok(Err(SetError::forbidden().with_description(
                 "You are not allowed to delete Inbox, Junk or Trash folders.",
             )));

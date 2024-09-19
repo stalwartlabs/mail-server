@@ -118,6 +118,14 @@ impl<'x> RequestError<'x> {
         )
     }
 
+    pub fn tenant_over_quota() -> Self {
+        RequestError::blank(
+            403,
+            "Tenant quota exceeded",
+            "Your organization has exceeded its quota.",
+        )
+    }
+
     pub fn too_many_requests() -> Self {
         RequestError::blank(
             429,

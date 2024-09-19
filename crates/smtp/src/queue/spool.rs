@@ -464,4 +464,12 @@ impl Message {
             true
         }
     }
+
+    pub fn has_domain(&self, domains: &[String]) -> bool {
+        self.domains.iter().any(|d| domains.contains(&d.domain))
+            || self
+                .return_path
+                .rsplit_once('@')
+                .map_or(false, |(_, domain)| domains.contains(&domain.to_string()))
+    }
 }

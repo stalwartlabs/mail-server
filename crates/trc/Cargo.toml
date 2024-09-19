@@ -1,12 +1,12 @@
 [package]
 name = "trc"
-version = "0.9.4"
+version = "0.10.0"
 edition = "2021"
 resolver = "2"
 
 [dependencies]
 event_macro = { path = "./event-macro" }
-mail-auth = { version = "0.4" }
+mail-auth = { version = "0.5" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 base64 = "0.22.1"
 serde = "1.0"

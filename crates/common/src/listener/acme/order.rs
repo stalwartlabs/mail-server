@@ -9,7 +9,6 @@ use rustls::sign::CertifiedKey;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use utils::suffixlist::DomainPart;
 use x509_parser::parse_x509_certificate;
 
 use crate::listener::acme::directory::Identifier;
@@ -241,11 +240,10 @@ impl Core {
                         let domain = domain.strip_prefix("*.").unwrap_or(&domain);
                         let name = format!("_acme-challenge.{}", domain);
                         let origin = origin
-                            .clone()
-                            .or_else(|| {
-                                self.smtp.resolvers.psl.domain_part(domain, DomainPart::Sld)
-                            })
-                            .unwrap_or_else(|| domain.to_string());
+                            .as_deref()
+                            .or_else(|| psl::domain_str(domain))
+                            .unwrap_or(domain)
+                            .to_string();
 
                         // First try deleting the record
                         if let Err(err) = updater.delete(&name, &origin).await {

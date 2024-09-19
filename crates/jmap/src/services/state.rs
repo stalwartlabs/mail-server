@@ -101,7 +101,11 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                 }
                 Event::UpdateSharedAccounts { account_id } => {
                     // Obtain account membership and shared mailboxes
-                    let acl = match JMAP::from(core.clone()).get_access_token(account_id).await {
+                    let acl = match JMAP::from(core.clone())
+                        .core
+                        .get_access_token(account_id)
+                        .await
+                    {
                         Ok(result) => result,
                         Err(err) => {
                             trc::error!(err

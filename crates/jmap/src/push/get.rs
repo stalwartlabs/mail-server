@@ -5,6 +5,7 @@
  */
 
 use base64::{engine::general_purpose, Engine};
+use common::auth::AccessToken;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
@@ -16,7 +17,7 @@ use store::{
 };
 use utils::map::bitmap::Bitmap;
 
-use crate::{auth::AccessToken, services::state, JMAP};
+use crate::{services::state, JMAP};
 
 use super::{EncryptionKeys, PushSubscription, UpdateSubscription};
 

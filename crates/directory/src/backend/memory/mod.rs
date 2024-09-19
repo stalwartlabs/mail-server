@@ -14,7 +14,7 @@ pub mod lookup;
 
 #[derive(Debug)]
 pub struct MemoryDirectory {
-    principals: Vec<Principal<u32>>,
+    principals: Vec<Principal>,
     emails_to_ids: AHashMap<String, Vec<EmailType>>,
     pub(crate) data_store: Store,
     domains: AHashSet<String>,

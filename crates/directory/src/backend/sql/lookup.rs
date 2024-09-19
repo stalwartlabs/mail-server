@@ -8,7 +8,10 @@ use mail_send::Credentials;
 use store::{NamedRows, Rows, Value};
 use trc::AddContext;
 
-use crate::{backend::internal::manage::ManageDirectory, Principal, QueryBy, Type};
+use crate::{
+    backend::internal::{manage::ManageDirectory, PrincipalField, PrincipalValue},
+    Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
+};
 
 use super::{SqlDirectory, SqlMappings};
 
@@ -17,7 +20,7 @@ impl SqlDirectory {
         &self,
         by: QueryBy<'_>,
         return_member_of: bool,
-    ) -> trc::Result<Option<Principal<u32>>> {
+    ) -> trc::Result<Option<Principal>> {
         let mut account_id = None;
         let account_name;
         let mut secret = None;
@@ -34,7 +37,7 @@ impl SqlDirectory {
             QueryBy::Id(uid) => {
                 if let Some(username) = self
                     .data_store
-                    .get_account_name(uid)
+                    .get_principal_name(uid)
                     .await
                     .caused_by(trc::location!())?
                 {
@@ -95,46 +98,72 @@ impl SqlDirectory {
         } else {
             principal.id = self
                 .data_store
-                .get_or_create_account_id(&account_name)
+                .get_or_create_principal_id(&account_name, Type::Individual)
                 .await
                 .caused_by(trc::location!())?;
         }
-        principal.name = account_name;
+        principal.set(PrincipalField::Name, account_name);
 
         // Obtain members
-        if return_member_of && !self.mappings.query_members.is_empty() {
-            for row in self
-                .store
-                .query::<Rows>(
-                    &self.mappings.query_members,
-                    vec![principal.name.clone().into()],
-                )
+        if return_member_of {
+            if !self.mappings.query_members.is_empty() {
+                for row in self
+                    .store
+                    .query::<Rows>(&self.mappings.query_members, vec![principal.name().into()])
+                    .await
+                    .caused_by(trc::location!())?
+                    .rows
+                {
+                    if let Some(Value::Text(account_id)) = row.values.first() {
+                        principal.append_int(
+                            PrincipalField::MemberOf,
+                            self.data_store
+                                .get_or_create_principal_id(account_id, Type::Group)
+                                .await
+                                .caused_by(trc::location!())?,
+                        );
+                    }
+                }
+            }
+
+            // Obtain roles
+            let mut did_role_cleanup = false;
+            for member in self
+                .data_store
+                .get_member_of(principal.id)
                 .await
                 .caused_by(trc::location!())?
-                .rows
             {
-                if let Some(Value::Text(account_id)) = row.values.first() {
-                    principal.member_of.push(
-                        self.data_store
-                            .get_or_create_account_id(account_id)
-                            .await
-                            .caused_by(trc::location!())?,
-                    );
+                match member.typ {
+                    Type::List => {
+                        principal.append_int(PrincipalField::Lists, member.principal_id);
+                    }
+                    Type::Role => {
+                        if !did_role_cleanup {
+                            principal.remove(PrincipalField::Roles);
+                            did_role_cleanup = true;
+                        }
+                        principal.append_int(PrincipalField::Roles, member.principal_id);
+                    }
+                    _ => {
+                        principal.append_int(PrincipalField::MemberOf, member.principal_id);
+                    }
                 }
             }
         }
 
         // Obtain emails
         if !self.mappings.query_emails.is_empty() {
-            principal.emails = self
-                .store
-                .query::<Rows>(
-                    &self.mappings.query_emails,
-                    vec![principal.name.clone().into()],
-                )
-                .await
-                .caused_by(trc::location!())?
-                .into();
+            principal.set(
+                PrincipalField::Emails,
+                PrincipalValue::StringList(
+                    self.store
+                        .query::<Rows>(&self.mappings.query_emails, vec![principal.name().into()])
+                        .await
+                        .caused_by(trc::location!())?
+                        .into(),
+                ),
+            );
         }
 
         Ok(Some(principal))
@@ -153,7 +182,7 @@ impl SqlDirectory {
             if let Some(Value::Text(name)) = row.values.first() {
                 ids.push(
                     self.data_store
-                        .get_or_create_account_id(name)
+                        .get_or_create_principal_id(name, Type::Individual)
                         .await
                         .caused_by(trc::location!())?,
                 );
@@ -204,8 +233,9 @@ impl SqlDirectory {
 }
 
 impl SqlMappings {
-    pub fn row_to_principal(&self, rows: NamedRows) -> trc::Result<Principal<u32>> {
+    pub fn row_to_principal(&self, rows: NamedRows) -> trc::Result<Principal> {
         let mut principal = Principal::default();
+        let mut role = ROLE_USER;
 
         if let Some(row) = rows.rows.into_iter().next() {
             for (name, value) in rows.names.into_iter().zip(row.values) {
@@ -215,27 +245,32 @@ impl SqlMappings {
                     .any(|c| name.eq_ignore_ascii_case(c))
                 {
                     if let Value::Text(secret) = value {
-                        principal.secrets.push(secret.into_owned());
+                        principal.append_str(PrincipalField::Secrets, secret.into_owned());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_type) {
                     match value.to_str().as_ref() {
-                        "individual" | "person" | "user" => principal.typ = Type::Individual,
+                        "individual" | "person" | "user" => {
+                            principal.typ = Type::Individual;
+                        }
                         "group" => principal.typ = Type::Group,
-                        "admin" | "superuser" | "administrator" => principal.typ = Type::Superuser,
+                        "admin" | "superuser" | "administrator" => {
+                            principal.typ = Type::Individual;
+                            role = ROLE_ADMIN;
+                        }
                         _ => (),
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_description) {
                     if let Value::Text(text) = value {
-                        principal.description = text.into_owned().into();
+                        principal.set(PrincipalField::Description, text.into_owned());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_quota) {
                     if let Value::Integer(quota) = value {
-                        principal.quota = quota as u64;
+                        principal.set(PrincipalField::Quota, quota as u64);
                     }
                 }
             }
         }
 
-        Ok(principal)
+        Ok(principal.with_field(PrincipalField::Roles, role))
     }
 }

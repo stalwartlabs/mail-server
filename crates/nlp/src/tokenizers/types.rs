@@ -6,13 +6,10 @@
 
 use std::str::CharIndices;
 
-use utils::suffixlist::PublicSuffix;
-
 use super::Token;
 
-pub struct TypesTokenizer<'x, 'y> {
+pub struct TypesTokenizer<'x> {
     text: &'x str,
-    suffixes: &'y PublicSuffix,
     iter: CharIndices<'x>,
     tokens: Vec<Token<TokenType<&'x str>>>,
     peek_pos: usize,
@@ -45,7 +42,7 @@ pub enum TokenType<T> {
 
 impl Copy for Token<TokenType<&'_ str>> {}
 
-impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
+impl<'x> Iterator for TypesTokenizer<'x> {
     type Item = Token<TokenType<&'x str>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -58,7 +55,7 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
             && matches!(
             token.word,
             TokenType::Alphabetic(t) | TokenType::Alphanumeric(t)
-            if t.len() <= 8 && t.chars().all(|c| c.is_ascii()))
+            if t.len() <= 8 && t.is_ascii())
             && self.try_skip_url_scheme()
         {
             if let Some(url) = self.try_parse_url(token.into()) {
@@ -111,15 +108,14 @@ impl<'x, 'y> Iterator for TypesTokenizer<'x, 'y> {
     }
 }
 
-impl<'x, 'y> TypesTokenizer<'x, 'y> {
-    pub fn new(text: &'x str, suffixes: &'y PublicSuffix) -> Self {
+impl<'x> TypesTokenizer<'x> {
+    pub fn new(text: &'x str) -> Self {
         Self {
             text,
             iter: text.char_indices(),
             tokens: Vec::new(),
             eof: false,
             peek_pos: 0,
-            suffixes,
             last_ch_is_space: false,
             last_token_is_dot: false,
             tokenize_urls: true,
@@ -327,8 +323,13 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
             while let Some(token) = self.peek() {
                 match token.word {
                     TokenType::Alphabetic(text) | TokenType::Alphanumeric(text) => {
-                        last_label_is_tld =
-                            text.len() >= 2 && self.suffixes.contains(&text.to_ascii_lowercase());
+                        last_label_is_tld = text.len() >= 2
+                            && psl::Psl::find(
+                                &psl::List,
+                                [text.to_ascii_lowercase().as_bytes()].into_iter(),
+                            )
+                            .typ
+                            .is_some();
                         text_count += 1;
                     }
                     TokenType::Integer(text) => {
@@ -552,8 +553,13 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                         .map(|(from, to)| (from, to, true));
                 }
                 TokenType::Alphabetic(text) | TokenType::Alphanumeric(text) if text.len() <= 63 => {
-                    last_label_is_tld =
-                        text.len() >= 2 && self.suffixes.contains(&text.to_ascii_lowercase());
+                    last_label_is_tld = text.len() >= 2
+                        && psl::Psl::find(
+                            &psl::List,
+                            [text.to_ascii_lowercase().as_bytes()].into_iter(),
+                        )
+                        .typ
+                        .is_some();
                     has_alpha = true;
                     last_ch = 0;
                 }
@@ -691,7 +697,7 @@ impl<'x, 'y> TypesTokenizer<'x, 'y> {
                 (TokenType::Punctuation('/'), State::Slash2) => return true,
                 (TokenType::Punctuation('+'), State::None) => State::PlusAlpha,
                 (TokenType::Alphabetic(t) | TokenType::Alphanumeric(t), State::PlusAlpha)
-                    if t.chars().all(|c| c.is_ascii()) =>
+                    if t.is_ascii() =>
                 {
                     State::Colon
                 }
@@ -748,17 +754,10 @@ impl<T> TokenType<T> {
 #[cfg(test)]
 mod test {
 
-    use utils::suffixlist::PublicSuffix;
-
     use super::{TokenType, TypesTokenizer};
 
     #[test]
     fn type_tokenizer() {
-        let mut suffixes = PublicSuffix::default();
-        suffixes.suffixes.insert("com".to_string());
-        suffixes.suffixes.insert("co".to_string());
-        suffixes.suffixes.insert("org".to_string());
-
         // Credits: test suite from linkify crate
         for (text, expected) in [
             ("", vec![]),
@@ -2862,7 +2861,7 @@ mod test {
                 ],
             ),
         ] {
-            let result = TypesTokenizer::new(text, &suffixes)
+            let result = TypesTokenizer::new(text)
                 .map(|t| t.word)
                 .collect::<Vec<_>>();
 

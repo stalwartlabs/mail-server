@@ -78,8 +78,8 @@ path = "{PATH}/test_antispam.db"
 #url = "redis://127.0.0.1"
 
 [lookup]
-"spam-free" = {"gmail.com", "googlemail.com", "yahoomail.com", "*.freemail.org"}
-"spam-disposable" = {"guerrillamail.com", "*.disposable.org"}
+"spam-free" = {"gmail.com", "googlemail.com", "yahoomail.com", "*freemail.org"}
+"spam-disposable" = {"guerrillamail.com", "*disposable.org"}
 "spam-redirect" = {"bit.ly", "redirect.io", "redirect.me", "redirect.org", "redirect.com", "redirect.net", "t.ly", "tinyurl.com"}
 "spam-dmarc" = {"dmarc-allow.org"}
 "spam-spdk" = {"spf-dkim-allow.org"}

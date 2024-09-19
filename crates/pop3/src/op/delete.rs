@@ -7,6 +7,7 @@
 use std::time::Instant;
 
 use common::listener::SessionStream;
+use directory::Permission;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::roaring::RoaringBitmap;
 use trc::AddContext;
@@ -15,6 +16,11 @@ use crate::{protocol::response::Response, Session, State};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_dele(&mut self, msgs: Vec<u32>) -> trc::Result<()> {
+        // Validate access
+        self.state
+            .access_token()
+            .assert_has_permission(Permission::Pop3Dele)?;
+
         let op_start = Instant::now();
         let mailbox = self.state.mailbox_mut();
         let mut response = Vec::new();

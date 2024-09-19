@@ -9,10 +9,13 @@ use common::Core;
 use store::Stores;
 use utils::config::Config;
 
-use crate::smtp::{
-    build_smtp,
-    session::{TestSession, VerifyResponse},
-    TempDir,
+use crate::{
+    smtp::{
+        build_smtp,
+        session::{TestSession, VerifyResponse},
+        TempDir,
+    },
+    AssertConfig,
 };
 use smtp::core::{Inner, Session, State};
 
@@ -22,6 +25,7 @@ data = "sqlite"
 lookup = "sqlite"
 blob = "sqlite"
 fts = "sqlite"
+directory = "local"
 
 [store."sqlite"]
 type = "sqlite"
@@ -74,6 +78,7 @@ async fn auth() {
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
+    config.assert_no_errors();
 
     // EHLO should not advertise plain text auth without TLS
     let mut session = Session::test(build_smtp(core, Inner::default()));

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
 use jmap_proto::{
     method::parse::{ParseEmailRequest, ParseEmailResponse},
     object::Object,
@@ -14,7 +15,7 @@ use mail_parser::{
 };
 use utils::map::vec_map::VecMap;
 
-use crate::{auth::AccessToken, JMAP};
+use crate::JMAP;
 
 use super::{
     body::{ToBodyPart, TruncateBody},

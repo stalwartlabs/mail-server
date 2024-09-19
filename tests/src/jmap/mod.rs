@@ -4,13 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    fmt::Debug,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use base64::{
     engine::general_purpose::{self, STANDARD},
     Engine,
 };
 use common::{
+    auth::AccessToken,
     config::{
         server::{ServerProtocol, Servers},
         telemetry::Telemetry,
@@ -18,7 +24,7 @@ use common::{
     manager::config::{ConfigManager, Patterns},
     Core, Ipc, IPC_CHANNEL_BUFFER,
 };
-use enterprise::insert_test_metrics;
+use enterprise::{insert_test_metrics, EnterpriseCore};
 use hyper::{header::AUTHORIZATION, Method};
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, JMAP};
@@ -36,10 +42,12 @@ use store::{
     IterateParams, Stores, ValueKey, SUBSPACE_PROPERTY,
 };
 use tokio::sync::{mpsc, watch};
-use utils::{config::Config, BlobHash};
+use utils::{config::Config, map::ttl_dashmap::TtlMap, BlobHash};
 use webhooks::{spawn_mock_webhook_endpoint, MockWebhookEndpoint};
 
-use crate::{add_test_certs, directory::DirectoryStore, store::TempDir, AssertConfig};
+use crate::{
+    add_test_certs, directory::internal::TestInternalDirectory, store::TempDir, AssertConfig,
+};
 
 pub mod auth_acl;
 pub mod auth_limits;
@@ -59,6 +67,7 @@ pub mod email_submission;
 pub mod enterprise;
 pub mod event_source;
 pub mod mailbox;
+pub mod permissions;
 pub mod purge;
 pub mod push_subscription;
 pub mod quota;
@@ -112,7 +121,7 @@ reject-non-fqdn = false
 [session.rcpt]
 relay = [ { if = "!is_empty(authenticated_as)", then = true }, 
           { else = false } ]
-directory = "'auth'"
+directory = "'{STORE}'"
 
 [session.rcpt.errors]
 total = 5
@@ -191,7 +200,7 @@ data = "{STORE}"
 fts = "{STORE}"
 blob = "{STORE}"
 lookup = "{STORE}"
-directory = "auth"
+directory = "{STORE}"
 
 [spam.header]
 is-spam  = "X-Spam-Status: Yes"
@@ -247,17 +256,9 @@ verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
 
-[directory."auth"]
-type = "sql"
-store = "auth"
-
-[directory."auth".columns]
-name = "name"
-description = "description"
-secret = "secret"
-email = "address"
-quota = "quota"
-class = "type"
+[directory."{STORE}"]
+type = "internal"
+store = "{STORE}"
 
 [imap.auth]
 allow-plain-text = true
@@ -287,7 +288,7 @@ disabled-events = ["network.*"]
 
 [webhook."test"]
 url = "http://127.0.0.1:8821/hook"
-events = ["auth.*", "delivery.dsn*", "message-ingest.*"]
+events = ["auth.*", "delivery.dsn*", "message-ingest.*", "security.authentication-ban"]
 signature-key = "ovos-moles"
 throttle = "100ms"
 
@@ -335,6 +336,7 @@ pub async fn jmap_tests() {
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
     blob::test(&mut params).await;
+    permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;
 
@@ -373,7 +375,6 @@ pub async fn jmap_metric_tests() {
 pub struct JMAPTest {
     server: Arc<JMAP>,
     client: Client,
-    directory: DirectoryStore,
     temp_dir: TempDir,
     webhook: Arc<MockWebhookEndpoint>,
     shutdown_tx: watch::Sender<bool>,
@@ -469,7 +470,24 @@ pub async fn emails_purge_tombstoned(server: &JMAP) {
         .unwrap();
 
     for account_id in account_ids {
+        let do_add = server
+            .core
+            .security
+            .access_tokens
+            .get_with_ttl(&account_id)
+            .is_none();
+
+        if do_add {
+            server.core.security.access_tokens.insert_with_ttl(
+                account_id,
+                Arc::new(AccessToken::from_id(account_id)),
+                Instant::now() + Duration::from_secs(3600),
+            );
+        }
         server.emails_purge_tombstoned(account_id).await.unwrap();
+        if do_add {
+            server.core.security.access_tokens.remove(&account_id);
+        }
     }
 }
 
@@ -509,7 +527,9 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
             .unwrap_or_default(),
     };
     let tracers = Telemetry::parse(&mut config, &stores);
-    let core = Core::parse(&mut config, stores, config_manager).await;
+    let core = Core::parse(&mut config, stores, config_manager)
+        .await
+        .enable_enterprise();
     let store = core.storage.data.clone();
     let shared_core = core.into_shared();
 
@@ -577,24 +597,17 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         };
     });
 
-    // Create tables
-    let directory = DirectoryStore {
-        store: shared_core
-            .load()
-            .storage
-            .lookups
-            .get("auth")
-            .unwrap()
-            .clone(),
-    };
-    directory.create_test_directory().await;
-    directory
-        .create_test_user("admin", "secret", "Superuser")
-        .await;
-
     if delete_if_exists {
         store.destroy().await;
     }
+
+    // Create tables
+    shared_core
+        .load()
+        .storage
+        .data
+        .create_test_user("admin", "secret", "Superuser", &[])
+        .await;
 
     // Create client
     let mut client = Client::new()
@@ -610,7 +623,6 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         server: JMAP::from(jmap).into(),
         temp_dir,
         client,
-        directory,
         shutdown_tx,
         webhook: spawn_mock_webhook_endpoint(),
     }
@@ -731,8 +743,15 @@ pub async fn test_account_login(login: &str, secret: &str) -> Client {
 #[serde(untagged)]
 pub enum Response<T> {
     RequestError(RequestError<'static>),
-    Error { error: String, details: String },
-    Data { data: T },
+    Error {
+        error: String,
+        details: Option<String>,
+        item: Option<String>,
+        reason: Option<String>,
+    },
+    Data {
+        data: T,
+    },
 }
 
 pub struct ManagementApi {
@@ -775,6 +794,32 @@ impl ManagementApi {
             serde_json::from_str::<Response<T>>(&result)
                 .unwrap_or_else(|err| panic!("{err}: {result}"))
         })
+    }
+
+    pub async fn patch<T: DeserializeOwned>(
+        &self,
+        query: &str,
+        body: &impl Serialize,
+    ) -> Result<Response<T>, String> {
+        self.request_raw(
+            Method::PATCH,
+            query,
+            Some(serde_json::to_string(body).unwrap()),
+        )
+        .await
+        .map(|result| {
+            serde_json::from_str::<Response<T>>(&result)
+                .unwrap_or_else(|err| panic!("{err}: {result}"))
+        })
+    }
+
+    pub async fn delete<T: DeserializeOwned>(&self, query: &str) -> Result<Response<T>, String> {
+        self.request_raw(Method::DELETE, query, None)
+            .await
+            .map(|result| {
+                serde_json::from_str::<Response<T>>(&result)
+                    .unwrap_or_else(|err| panic!("{err}: {result}"))
+            })
     }
 
     pub async fn get<T: DeserializeOwned>(&self, query: &str) -> Result<Response<T>, String> {
@@ -831,12 +876,17 @@ impl ManagementApi {
     }
 }
 
-impl<T> Response<T> {
+impl<T: Debug> Response<T> {
     pub fn unwrap_data(self) -> T {
         match self {
             Response::Data { data } => data,
-            Response::Error { error, details } => {
-                panic!("Expected data, found error {error:?}: {details:?}")
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => {
+                panic!("Expected data, found error {error:?}: {details:?} {reason:?}")
             }
             Response::RequestError(err) => {
                 panic!("Expected data, found error {err:?}")
@@ -848,8 +898,13 @@ impl<T> Response<T> {
         match self {
             Response::Data { data } => Some(data),
             Response::RequestError(error) if error.status == 404 => None,
-            Response::Error { error, details } => {
-                panic!("Expected data, found error {error:?}: {details:?}")
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => {
+                panic!("Expected data, found error {error:?}: {details:?} {reason:?}")
             }
             Response::RequestError(err) => {
                 panic!("Expected data, found error {err:?}")
@@ -857,13 +912,50 @@ impl<T> Response<T> {
         }
     }
 
-    pub fn unwrap_error(self) -> (String, String) {
+    pub fn unwrap_error(self) -> (String, Option<String>, Option<String>) {
         match self {
-            Response::Error { error, details } => (error, details),
-            Response::Data { .. } => panic!("Expected error, found data."),
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => (error, details, reason),
+            Response::Data { data } => panic!("Expected error, found data: {data:?}"),
             Response::RequestError(err) => {
                 panic!("Expected error, found request error {err:?}")
             }
+        }
+    }
+
+    pub fn unwrap_request_error(self) -> RequestError<'static> {
+        match self {
+            Response::Error {
+                error,
+                details,
+                reason,
+                ..
+            } => {
+                panic!("Expected request error, found error {error:?}: {details:?} {reason:?}")
+            }
+            Response::Data { data } => panic!("Expected request error, found data: {data:?}"),
+            Response::RequestError(err) => err,
+        }
+    }
+
+    pub fn expect_request_error(self, value: &str) {
+        let err = self.unwrap_request_error();
+        if !err.detail.contains(value) && !err.title.as_ref().map_or(false, |t| t.contains(value)) {
+            panic!("Expected request error containing {value:?}, found {err:?}")
+        }
+    }
+
+    pub fn expect_error(self, value: &str) {
+        let (error, details, reason) = self.unwrap_error();
+        if !error.contains(value)
+            && !details.as_ref().map_or(false, |d| d.contains(value))
+            && !reason.as_ref().map_or(false, |r| r.contains(value))
+        {
+            panic!("Expected error containing {value:?}, found {error:?}: {details:?} {reason:?}")
         }
     }
 }

@@ -474,6 +474,24 @@ impl Store {
             .caused_by(trc::location!())?;
         }
 
+        // Delete property counters (TODO: make this more elegant)
+        self.delete_range(
+            ValueKey {
+                account_id,
+                collection: 1,
+                document_id: 0,
+                class: ValueClass::Property(84),
+            },
+            ValueKey {
+                account_id,
+                collection: 1,
+                document_id: u32::MAX,
+                class: ValueClass::Property(84),
+            },
+        )
+        .await
+        .caused_by(trc::location!())?;
+
         Ok(())
     }
 

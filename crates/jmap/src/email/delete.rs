@@ -399,6 +399,15 @@ impl JMAP {
             .remove(account_id, Collection::Email.into(), &tombstoned_ids)
             .await?;
 
+        // Obtain tenant id
+        let tenant_id = self
+            .core
+            .get_cached_access_token(account_id)
+            .await
+            .caused_by(trc::location!())?
+            .tenant
+            .map(|t| t.id);
+
         // Delete messages
         for document_id in tombstoned_ids {
             let mut batch = BatchBuilder::new();
@@ -466,7 +475,7 @@ impl JMAP {
                 // SPDX-SnippetEnd
 
                 // Delete message
-                batch.custom(EmailIndexBuilder::clear(metadata.inner));
+                EmailIndexBuilder::clear(metadata.inner).build(&mut batch, account_id, tenant_id);
 
                 // Commit batch
                 self.core.storage.data.write(batch.build()).await?;

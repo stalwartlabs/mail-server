@@ -5,6 +5,7 @@
  */
 
 use common::listener::{limiter::ConcurrencyLimiter, SessionStream};
+use directory::Permission;
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use imap_proto::{
     protocol::authenticate::Mechanism,
@@ -80,7 +81,7 @@ impl<T: SessionStream> Session<T> {
                     .validate_access_token("access_token", &token)
                     .await
                 {
-                    Ok((account_id, _, _)) => self.jmap.get_access_token(account_id).await,
+                    Ok((account_id, _, _)) => self.jmap.core.get_access_token(account_id).await,
                     Err(err) => Err(err),
                 }
             }
@@ -116,9 +117,12 @@ impl<T: SessionStream> Session<T> {
             }
         };
 
+        // Validate access
+        access_token.assert_has_permission(Permission::SieveAuthenticate)?;
+
         // Cache access token
         let access_token = Arc::new(access_token);
-        self.jmap.cache_access_token(access_token.clone());
+        self.jmap.core.cache_access_token(access_token.clone());
 
         // Create session
         self.state = State::Authenticated {

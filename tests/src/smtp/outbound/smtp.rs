@@ -73,7 +73,6 @@ async fn smtp_delivery() {
     // Enable logging
     crate::enable_logging();
 
-
     // Start test server
     let mut remote = TestServer::new("smtp_delivery_remote", REMOTE, true).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;

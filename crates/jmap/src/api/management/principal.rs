@@ -4,54 +4,29 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
+use common::auth::AccessToken;
 use directory::{
     backend::internal::{
         lookup::DirectoryStore,
-        manage::{self, ManageDirectory},
+        manage::{self, not_found, ManageDirectory},
         PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue, SpecialSecrets,
     },
-    DirectoryInner, Principal, QueryBy, Type,
+    DirectoryInner, Permission, Principal, QueryBy, Type,
 };
 
 use hyper::{header, Method};
 use serde_json::json;
+use trc::AddContext;
 use utils::url_params::UrlParams;
 
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    auth::AccessToken,
     JMAP,
 };
 
 use super::decode_path_element;
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct PrincipalResponse {
-    #[serde(default)]
-    pub id: u32,
-    #[serde(rename = "type")]
-    pub typ: Type,
-    #[serde(default)]
-    pub quota: u64,
-    #[serde(rename = "usedQuota")]
-    #[serde(default)]
-    pub used_quota: u64,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub emails: Vec<String>,
-    #[serde(default)]
-    pub secrets: Vec<String>,
-    #[serde(rename = "memberOf")]
-    #[serde(default)]
-    pub member_of: Vec<String>,
-    #[serde(default)]
-    pub members: Vec<String>,
-    #[serde(default)]
-    pub description: Option<String>,
-}
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
@@ -68,8 +43,6 @@ pub enum AccountAuthRequest {
 pub struct AccountAuthResponse {
     #[serde(rename = "otpEnabled")]
     pub otp_auth: bool,
-    #[serde(rename = "isAdministrator")]
-    pub is_admin: bool,
     #[serde(rename = "appPasswords")]
     pub app_passwords: Vec<String>,
 }
@@ -80,39 +53,52 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         match (path.get(1), req.method()) {
             (None, &Method::POST) => {
-                // Make sure the current directory supports updates
-                self.assert_supported_directory()?;
+                // Parse principal
+                let principal =
+                    serde_json::from_slice::<Principal>(body.as_deref().unwrap_or_default())
+                        .map_err(|err| {
+                            trc::EventType::Resource(trc::ResourceEvent::BadParameters)
+                                .from_json_error(err)
+                        })?;
 
-                // Create principal
-                let principal = serde_json::from_slice::<PrincipalResponse>(
-                    body.as_deref().unwrap_or_default(),
-                )
-                .map_err(|err| {
-                    trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
+                // Validate the access token
+                access_token.assert_has_permission(match principal.typ() {
+                    Type::Individual => Permission::IndividualCreate,
+                    Type::Group => Permission::GroupCreate,
+                    Type::List => Permission::MailingListCreate,
+                    Type::Domain => Permission::DomainCreate,
+                    Type::Tenant => Permission::TenantCreate,
+                    Type::Role => Permission::RoleCreate,
+                    Type::Resource | Type::Location | Type::Other => Permission::PrincipalCreate,
                 })?;
 
-                Ok(JsonResponse::new(json!({
-                    "data": self
+                #[cfg(feature = "enterprise")]
+                if (matches!(principal.typ(), Type::Tenant)
+                    || principal.has_field(PrincipalField::Tenant))
+                    && !self.core.is_enterprise_edition()
+                {
+                    return Err(manage::enterprise());
+                }
+
+                // Make sure the current directory supports updates
+                if matches!(principal.typ(), Type::Individual) {
+                    self.assert_supported_directory()?;
+                }
+
+                // Create principal
+                let result = self
                     .core
                     .storage
                     .data
-                    .create_account(
-                        Principal {
-                            id: principal.id,
-                            typ: principal.typ,
-                            quota: principal.quota,
-                            name: principal.name,
-                            secrets: principal.secrets,
-                            emails: principal.emails,
-                            member_of: principal.member_of,
-                            description: principal.description,
-                        },
-                        principal.members,
-                    )
-                    .await?,
+                    .create_principal(principal, access_token.tenant.map(|t| t.id))
+                    .await?;
+
+                Ok(JsonResponse::new(json!({
+                    "data": result,
                 }))
                 .into_http_response())
             }
@@ -120,67 +106,146 @@ impl JMAP {
                 // List principal ids
                 let params = UrlParams::new(req.uri().query());
                 let filter = params.get("filter");
-                let typ = params.parse("type");
                 let page: usize = params.parse("page").unwrap_or(0);
                 let limit: usize = params.parse("limit").unwrap_or(0);
+                let count = params.get("count").is_some();
 
-                let accounts = self.core.storage.data.list_accounts(filter, typ).await?;
-                let (total, accounts) = if limit > 0 {
-                    let offset = page.saturating_sub(1) * limit;
-                    (
-                        accounts.len(),
-                        accounts.into_iter().skip(offset).take(limit).collect(),
-                    )
+                // Parse types
+                let mut types = Vec::new();
+                for typ in params
+                    .get("types")
+                    .or_else(|| params.get("type"))
+                    .unwrap_or_default()
+                    .split(',')
+                {
+                    if let Some(typ) = Type::parse(typ) {
+                        if !types.contains(&typ) {
+                            types.push(typ);
+                        }
+                    }
+                }
+
+                // Parse fields
+                let mut fields = Vec::new();
+                for field in params.get("fields").unwrap_or_default().split(',') {
+                    if let Some(field) = PrincipalField::try_parse(field) {
+                        if !fields.contains(&field) {
+                            fields.push(field);
+                        }
+                    }
+                }
+
+                // Validate the access token
+                let validate_types = if !types.is_empty() {
+                    types.as_slice()
                 } else {
-                    (accounts.len(), accounts)
+                    &[
+                        Type::Individual,
+                        Type::Group,
+                        Type::List,
+                        Type::Domain,
+                        Type::Tenant,
+                        Type::Role,
+                        Type::Other,
+                    ]
                 };
+                for typ in validate_types {
+                    access_token.assert_has_permission(match typ {
+                        Type::Individual => Permission::IndividualList,
+                        Type::Group => Permission::GroupList,
+                        Type::List => Permission::MailingListList,
+                        Type::Domain => Permission::DomainList,
+                        Type::Tenant => Permission::TenantList,
+                        Type::Role => Permission::RoleList,
+                        Type::Resource | Type::Location | Type::Other => Permission::PrincipalList,
+                    })?;
+                }
+
+                let mut tenant = access_token.tenant.map(|t| t.id);
+
+                #[cfg(feature = "enterprise")]
+                if self.core.is_enterprise_edition() {
+                    if tenant.is_none() {
+                        // Limit search to current tenant
+                        if let Some(tenant_name) = params.get("tenant") {
+                            tenant = self
+                                .core
+                                .storage
+                                .data
+                                .get_principal_info(tenant_name)
+                                .await?
+                                .filter(|p| p.typ == Type::Tenant)
+                                .map(|p| p.id);
+                        }
+                    }
+                } else if types.contains(&Type::Tenant) {
+                    return Err(manage::enterprise());
+                }
+
+                let mut principals = self
+                    .core
+                    .storage
+                    .data
+                    .list_principals(filter, tenant, &types, &fields, page, limit)
+                    .await?;
+
+                if count {
+                    principals.items.clear();
+                }
 
                 Ok(JsonResponse::new(json!({
-                        "data": {
-                            "items": accounts,
-                            "total": total,
-                        },
+                        "data": principals,
                 }))
                 .into_http_response())
             }
             (Some(name), method) => {
                 // Fetch, update or delete principal
                 let name = decode_path_element(name);
-                let account_id = self
+                let (account_id, typ) = self
                     .core
                     .storage
                     .data
-                    .get_account_id(name.as_ref())
+                    .get_principal_info(name.as_ref())
                     .await?
-                    .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
+                    .filter(|p| p.has_tenant_access(access_token.tenant.map(|t| t.id)))
+                    .map(|p| (p.id, p.typ))
+                    .ok_or_else(|| not_found(name.to_string()))?;
+
+                #[cfg(feature = "enterprise")]
+                if matches!(typ, Type::Tenant) && !self.core.is_enterprise_edition() {
+                    return Err(manage::enterprise());
+                }
 
                 match *method {
                     Method::GET => {
-                        let principal = self
+                        // Validate the access token
+                        access_token.assert_has_permission(match typ {
+                            Type::Individual => Permission::IndividualGet,
+                            Type::Group => Permission::GroupGet,
+                            Type::List => Permission::MailingListGet,
+                            Type::Domain => Permission::DomainGet,
+                            Type::Tenant => Permission::TenantGet,
+                            Type::Role => Permission::RoleGet,
+                            Type::Resource | Type::Location | Type::Other => {
+                                Permission::PrincipalGet
+                            }
+                        })?;
+
+                        let mut principal = self
                             .core
                             .storage
                             .data
                             .query(QueryBy::Id(account_id), true)
                             .await?
                             .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
-                        let principal = self.core.storage.data.map_group_ids(principal).await?;
 
-                        // Obtain quota usage
-                        let mut principal = PrincipalResponse::from(principal);
-                        principal.used_quota = self.get_used_quota(account_id).await? as u64;
-
-                        // Obtain member names
-                        for member_id in self.core.storage.data.get_members(account_id).await? {
-                            if let Some(member_principal) = self
-                                .core
-                                .storage
-                                .data
-                                .query(QueryBy::Id(member_id), false)
-                                .await?
-                            {
-                                principal.members.push(member_principal.name);
-                            }
-                        }
+                        // Map fields
+                        self.core
+                            .storage
+                            .data
+                            .map_field_ids(&mut principal, &[])
+                            .await
+                            .caused_by(trc::location!())?;
 
                         Ok(JsonResponse::new(json!({
                                 "data": principal,
@@ -188,17 +253,42 @@ impl JMAP {
                         .into_http_response())
                     }
                     Method::DELETE => {
-                        // Remove FTS index
-                        self.core.storage.fts.remove_all(account_id).await?;
+                        // Validate the access token
+                        access_token.assert_has_permission(match typ {
+                            Type::Individual => Permission::IndividualDelete,
+                            Type::Group => Permission::GroupDelete,
+                            Type::List => Permission::MailingListDelete,
+                            Type::Domain => Permission::DomainDelete,
+                            Type::Tenant => Permission::TenantDelete,
+                            Type::Role => Permission::RoleDelete,
+                            Type::Resource | Type::Location | Type::Other => {
+                                Permission::PrincipalDelete
+                            }
+                        })?;
 
                         // Delete account
                         self.core
                             .storage
                             .data
-                            .delete_account(QueryBy::Id(account_id))
+                            .delete_principal(QueryBy::Id(account_id))
                             .await?;
+
+                        // Remove FTS index
+                        if matches!(typ, Type::Individual | Type::Group) {
+                            self.core.storage.fts.remove_all(account_id).await?;
+                        }
+
                         // Remove entries from cache
                         self.inner.sessions.retain(|_, id| id.item != account_id);
+
+                        if matches!(typ, Type::Role | Type::Tenant) {
+                            // Update permissions cache
+                            self.core.security.permissions.clear();
+                            self.core
+                                .security
+                                .permissions_version
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
 
                         Ok(JsonResponse::new(json!({
                             "data": (),
@@ -206,6 +296,20 @@ impl JMAP {
                         .into_http_response())
                     }
                     Method::PATCH => {
+                        // Validate the access token
+                        let permission_needed = match typ {
+                            Type::Individual => Permission::IndividualUpdate,
+                            Type::Group => Permission::GroupUpdate,
+                            Type::List => Permission::MailingListUpdate,
+                            Type::Domain => Permission::DomainUpdate,
+                            Type::Tenant => Permission::TenantUpdate,
+                            Type::Role => Permission::RoleUpdate,
+                            Type::Resource | Type::Location | Type::Other => {
+                                Permission::PrincipalUpdate
+                            }
+                        };
+                        access_token.assert_has_permission(permission_needed)?;
+
                         let changes = serde_json::from_slice::<Vec<PrincipalUpdate>>(
                             body.as_deref().unwrap_or_default(),
                         )
@@ -214,28 +318,84 @@ impl JMAP {
                                 .from_json_error(err)
                         })?;
 
-                        // Make sure the current directory supports updates
-                        if changes.iter().any(|change| {
-                            !matches!(
-                                change.field,
-                                PrincipalField::Quota | PrincipalField::Description
-                            )
-                        }) {
+                        // Validate changes
+                        let mut needs_assert = false;
+                        let mut expire_session = false;
+                        let mut expire_token = false;
+                        let mut is_role_change = false;
+
+                        for change in &changes {
+                            match change.field {
+                                PrincipalField::Name | PrincipalField::Emails => {
+                                    needs_assert = true;
+                                }
+                                PrincipalField::Secrets => {
+                                    expire_session = true;
+                                    needs_assert = true;
+                                }
+                                PrincipalField::Quota
+                                | PrincipalField::UsedQuota
+                                | PrincipalField::Description
+                                | PrincipalField::Type
+                                | PrincipalField::Picture
+                                | PrincipalField::MemberOf
+                                | PrincipalField::Members
+                                | PrincipalField::Lists => (),
+                                PrincipalField::Tenant => {
+                                    // Tenants are not allowed to change their tenantId
+                                    if access_token.tenant.is_some() {
+                                        trc::bail!(trc::SecurityEvent::Unauthorized
+                                            .into_err()
+                                            .details(permission_needed.name())
+                                            .ctx(
+                                                trc::Key::Reason,
+                                                "Tenants cannot change their tenantId"
+                                            ));
+                                    }
+                                }
+                                PrincipalField::Roles
+                                | PrincipalField::EnabledPermissions
+                                | PrincipalField::DisabledPermissions => {
+                                    if matches!(typ, Type::Role | Type::Tenant) {
+                                        is_role_change = true;
+                                    } else {
+                                        expire_token = true;
+                                    }
+                                }
+                            }
+                        }
+
+                        if needs_assert {
                             self.assert_supported_directory()?;
                         }
 
-                        let is_password_change = changes
-                            .iter()
-                            .any(|change| matches!(change.field, PrincipalField::Secrets));
-
+                        // Update principal
                         self.core
                             .storage
                             .data
-                            .update_account(QueryBy::Id(account_id), changes)
+                            .update_principal(
+                                QueryBy::Id(account_id),
+                                changes,
+                                access_token.tenant.map(|t| t.id),
+                            )
                             .await?;
-                        if is_password_change {
+
+                        if expire_session {
                             // Remove entries from cache
                             self.inner.sessions.retain(|_, id| id.item != account_id);
+                        }
+
+                        if is_role_change {
+                            // Update permissions cache
+                            self.core.security.permissions.clear();
+                            self.core
+                                .security
+                                .permissions_version
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+
+                        if expire_token {
+                            self.core.security.access_tokens.remove(&account_id);
                         }
 
                         Ok(JsonResponse::new(json!({
@@ -257,7 +417,6 @@ impl JMAP {
     ) -> trc::Result<HttpResponse> {
         let mut response = AccountAuthResponse {
             otp_auth: false,
-            is_admin: access_token.is_super_user(),
             app_passwords: Vec::new(),
         };
 
@@ -270,7 +429,7 @@ impl JMAP {
                 .await?
                 .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
 
-            for secret in principal.secrets {
+            for secret in principal.iter_str(PrincipalField::Secrets) {
                 if secret.is_otp_auth() {
                     response.otp_auth = true;
                 } else if let Some((app_name, _)) =
@@ -327,7 +486,7 @@ impl JMAP {
         }
 
         // Handle Fallback admin password changes
-        if access_token.is_super_user() && access_token.primary_id() == u32::MAX {
+        if access_token.primary_id() == u32::MAX {
             match requests.into_iter().next().unwrap() {
                 AccountAuthRequest::SetPassword { password } => {
                     self.core
@@ -393,7 +552,11 @@ impl JMAP {
         self.core
             .storage
             .data
-            .update_account(QueryBy::Id(access_token.primary_id()), actions)
+            .update_principal(
+                QueryBy::Id(access_token.primary_id()),
+                actions,
+                access_token.tenant.map(|t| t.id),
+            )
             .await?;
 
         // Remove entries from cache
@@ -420,26 +583,10 @@ impl JMAP {
         Err(manage::unsupported(format!(
             concat!(
                 "{} directory cannot be managed. ",
-                "Only internal directories support inserts and update operations."
+                "Only internal directories support inserts ",
+                "and update operations."
             ),
             class
         )))
-    }
-}
-
-impl From<Principal<String>> for PrincipalResponse {
-    fn from(principal: Principal<String>) -> Self {
-        PrincipalResponse {
-            id: principal.id,
-            typ: principal.typ,
-            quota: principal.quota,
-            name: principal.name,
-            emails: principal.emails,
-            member_of: principal.member_of,
-            description: principal.description,
-            secrets: principal.secrets,
-            used_quota: 0,
-            members: Vec::new(),
-        }
     }
 }

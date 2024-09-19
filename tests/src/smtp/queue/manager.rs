@@ -23,8 +23,8 @@ relay = true
 
 #[tokio::test]
 async fn queue_due() {
-        // Enable logging
-        crate::enable_logging();
+    // Enable logging
+    crate::enable_logging();
 
     let local = TestServer::new("smtp_queue_due_test", CONFIG, true).await;
     let core = local.build_smtp();

@@ -17,10 +17,7 @@ use nlp::language::Language;
 use store::{
     backend::MAX_TOKEN_LENGTH,
     fts::{index::FtsDocument, Field},
-    write::{
-        BatchBuilder, Bincode, BlobOp, DirectoryClass, IntoOperations, F_BITMAP, F_CLEAR, F_INDEX,
-        F_VALUE,
-    },
+    write::{BatchBuilder, Bincode, BlobOp, DirectoryClass, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE},
 };
 use utils::BlobHash;
 
@@ -41,8 +38,11 @@ pub struct SortedAddressBuilder {
 }
 
 pub(super) trait IndexMessage {
+    #[allow(clippy::too_many_arguments)]
     fn index_message(
         &mut self,
+        account_id: u32,
+        tenant_id: Option<u32>,
         message: Message,
         blob_hash: BlobHash,
         keywords: Vec<Keyword>,
@@ -60,6 +60,8 @@ pub trait IndexMessageText<'x>: Sized {
 impl IndexMessage for BatchBuilder {
     fn index_message(
         &mut self,
+        account_id: u32,
+        tenant_id: Option<u32>,
         message: Message,
         blob_hash: BlobHash,
         keywords: Vec<Keyword>,
@@ -73,12 +75,17 @@ impl IndexMessage for BatchBuilder {
         self.value(Property::MailboxIds, mailbox_ids, F_VALUE | F_BITMAP);
 
         // Index size
-        let account_id = self.last_account_id().unwrap();
         self.value(Property::Size, message.raw_message.len() as u32, F_INDEX)
             .add(
                 DirectoryClass::UsedQuota(account_id),
                 message.raw_message.len() as i64,
             );
+        if let Some(tenant_id) = tenant_id {
+            self.add(
+                DirectoryClass::UsedQuota(tenant_id),
+                message.raw_message.len() as i64,
+            );
+        }
 
         // Index receivedAt
         self.value(Property::ReceivedAt, received_at, F_INDEX);
@@ -399,8 +406,8 @@ impl<'x> EmailIndexBuilder<'x> {
     }
 }
 
-impl<'x> IntoOperations for EmailIndexBuilder<'x> {
-    fn build(self, batch: &mut BatchBuilder) {
+impl<'x> EmailIndexBuilder<'x> {
+    pub fn build(self, batch: &mut BatchBuilder, account_id: u32, tenant_id: Option<u32>) {
         let options = if self.set {
             // Serialize metadata
             batch.value(Property::BodyStructure, &self.inner, F_VALUE);
@@ -413,17 +420,18 @@ impl<'x> IntoOperations for EmailIndexBuilder<'x> {
         let metadata = &self.inner.inner;
 
         // Index properties
-        let account_id = batch.last_account_id().unwrap();
+        let quota = if self.set {
+            metadata.size as i64
+        } else {
+            -(metadata.size as i64)
+        };
         batch
             .value(Property::Size, metadata.size as u32, F_INDEX | options)
-            .add(
-                DirectoryClass::UsedQuota(account_id),
-                if self.set {
-                    metadata.size as i64
-                } else {
-                    -(metadata.size as i64)
-                },
-            );
+            .add(DirectoryClass::UsedQuota(account_id), quota);
+        if let Some(tenant_id) = tenant_id {
+            batch.add(DirectoryClass::UsedQuota(tenant_id), quota);
+        }
+
         batch.value(
             Property::ReceivedAt,
             metadata.received_at,

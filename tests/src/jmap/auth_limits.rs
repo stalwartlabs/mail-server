@@ -11,7 +11,6 @@ use std::{
 };
 
 use common::listener::blocked::BLOCKED_IP_KEY;
-use directory::backend::internal::manage::ManageDirectory;
 use imap_proto::ResponseType;
 use jmap_client::{
     client::{Client, Credentials},
@@ -22,6 +21,7 @@ use jmap_proto::types::id::Id;
 use store::write::now;
 
 use crate::{
+    directory::internal::TestInternalDirectory,
     imap::{ImapConnection, Type},
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes},
 };
@@ -33,24 +33,20 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create test account
     let server = params.server.clone();
-    params
-        .directory
-        .create_test_user_with_email("jdoe@example.com", "12345", "John Doe")
-        .await;
     let account_id = Id::from(
         server
             .core
             .storage
             .data
-            .get_or_create_account_id("jdoe@example.com")
-            .await
-            .unwrap(),
+            .create_test_user(
+                "jdoe@example.com",
+                "12345",
+                "John Doe",
+                &["jdoe@example.com", "john.doe@example.com"],
+            )
+            .await,
     )
     .to_string();
-    params
-        .directory
-        .link_test_address("jdoe@example.com", "john.doe@example.com", "alias")
-        .await;
 
     // Reset rate limiters
     server.inner.concurrency_limiter.clear();
@@ -268,5 +264,5 @@ pub async fn test(params: &mut JMAPTest) {
     // Check webhook events
     params
         .webhook
-        .assert_contains(&["auth.failed", "auth.success", "auth.banned"]);
+        .assert_contains(&["auth.failed", "auth.success", "security.authentication-ban"]);
 }

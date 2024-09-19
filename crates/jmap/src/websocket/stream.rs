@@ -6,6 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
+use common::auth::AccessToken;
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
@@ -23,7 +24,6 @@ use utils::map::bitmap::Bitmap;
 
 use crate::{
     api::http::{HttpSessionData, ToRequestError},
-    auth::AccessToken,
     JMAP,
 };
 

@@ -69,7 +69,6 @@ async fn throttle_outbound() {
     // Enable logging
     crate::enable_logging();
 
-
     // Build test message
     let mut test_message = new_message(0);
     test_message.return_path_domain = "foobar.org".to_string();

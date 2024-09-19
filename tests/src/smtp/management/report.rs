@@ -57,7 +57,6 @@ async fn manage_reports() {
     // Enable logging
     crate::enable_logging();
 
-
     // Start reporting service
     let local = TestServer::new("smtp_manage_reports", CONFIG, true).await;
     let _rx = local.start(&[ServerProtocol::Http]).await;

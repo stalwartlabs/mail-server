@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::auth::AccessToken;
+use directory::Permission;
 use hyper::Method;
 use serde_json::json;
 use store::ahash::AHashMap;
@@ -38,9 +40,13 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         match (path.get(1).copied(), req.method()) {
             (Some("group"), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::SettingsList)?;
+
                 // List settings
                 let params = UrlParams::new(req.uri().query());
                 let prefix = params
@@ -168,6 +174,9 @@ impl JMAP {
                 }
             }
             (Some("list"), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::SettingsList)?;
+
                 // List settings
                 let params = UrlParams::new(req.uri().query());
                 let prefix = params
@@ -200,6 +209,9 @@ impl JMAP {
                 .into_http_response())
             }
             (Some("keys"), &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::SettingsList)?;
+
                 // Obtain keys
                 let params = UrlParams::new(req.uri().query());
                 let keys = params
@@ -232,6 +244,9 @@ impl JMAP {
                 .into_http_response())
             }
             (Some(prefix), &Method::DELETE) if !prefix.is_empty() => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::SettingsDelete)?;
+
                 let prefix = decode_path_element(prefix);
 
                 self.core.storage.config.clear(prefix.as_ref()).await?;
@@ -242,6 +257,9 @@ impl JMAP {
                 .into_http_response())
             }
             (None, &Method::POST) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::SettingsUpdate)?;
+
                 let changes = serde_json::from_slice::<Vec<UpdateSettings>>(
                     body.as_deref().unwrap_or_default(),
                 )

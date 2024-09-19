@@ -5,6 +5,7 @@
  */
 
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     protocol::{authenticate::Mechanism, capability::Capability},
     receiver::{self, Request},
@@ -87,7 +88,7 @@ impl<T: SessionStream> Session<T> {
                     .validate_access_token("access_token", &token)
                     .await
                 {
-                    Ok((account_id, _, _)) => self.jmap.get_access_token(account_id).await,
+                    Ok((account_id, _, _)) => self.jmap.core.get_access_token(account_id).await,
                     Err(err) => Err(err),
                 }
             }
@@ -121,14 +122,17 @@ impl<T: SessionStream> Session<T> {
             }
         };
 
+        // Validate access
+        access_token.assert_has_permission(Permission::ImapAuthenticate)?;
+
         // Cache access token
         let access_token = Arc::new(access_token);
-        self.jmap.cache_access_token(access_token.clone());
+        self.jmap.core.cache_access_token(access_token.clone());
 
         // Create session
         self.state = State::Authenticated {
             data: Arc::new(
-                SessionData::new(self, &access_token, in_flight)
+                SessionData::new(self, access_token, in_flight)
                     .await
                     .map_err(|err| err.id(tag.clone()))?,
             ),

@@ -11,8 +11,12 @@ use std::{
     time::Duration,
 };
 
-use auth::{rate_limit::ConcurrencyLimiters, AccessToken};
-use common::{manager::webadmin::WebAdminManager, Core, DeliveryEvent, SharedCore};
+use auth::rate_limit::ConcurrencyLimiters;
+use common::{
+    auth::{AccessToken, ResourceToken, TenantInfo},
+    manager::webadmin::WebAdminManager,
+    Core, DeliveryEvent, SharedCore,
+};
 use dashmap::DashMap;
 use directory::QueryBy;
 use email::cache::Threads;
@@ -87,7 +91,6 @@ pub struct JmapInstance {
 
 pub struct Inner {
     pub sessions: TtlDashMap<String, u32>,
-    pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
     pub snowflake_id: SnowflakeIdGenerator,
     pub webadmin: WebAdminManager,
     pub config_version: AtomicU8,
@@ -121,7 +124,6 @@ impl JMAP {
         let inner = Inner {
             webadmin: WebAdminManager::new(),
             sessions: TtlDashMap::with_capacity(capacity, shard_amount),
-            access_tokens: TtlDashMap::with_capacity(capacity, shard_amount),
             snowflake_id: config
                 .property::<u64>("cluster.node-id")
                 .map(SnowflakeIdGenerator::with_node_id)
@@ -319,18 +321,56 @@ impl JMAP {
         )
     }
 
-    pub async fn get_quota(&self, access_token: &AccessToken, account_id: u32) -> trc::Result<i64> {
+    pub async fn get_resource_token(
+        &self,
+        access_token: &AccessToken,
+        account_id: u32,
+    ) -> trc::Result<ResourceToken> {
         Ok(if access_token.primary_id == account_id {
-            access_token.quota as i64
+            ResourceToken {
+                account_id,
+                quota: access_token.quota,
+                tenant: access_token.tenant,
+            }
         } else {
-            self.core
+            let mut quotas = ResourceToken {
+                account_id,
+                ..Default::default()
+            };
+
+            if let Some(principal) = self
+                .core
                 .storage
                 .directory
                 .query(QueryBy::Id(account_id), false)
                 .await
                 .add_context(|err| err.caused_by(trc::location!()).account_id(account_id))?
-                .map(|p| p.quota as i64)
-                .unwrap_or_default()
+            {
+                quotas.quota = principal.quota();
+
+                #[cfg(feature = "enterprise")]
+                if self.core.is_enterprise_edition() {
+                    if let Some(tenant_id) = principal.tenant() {
+                        quotas.tenant = TenantInfo {
+                            id: tenant_id,
+                            quota: self
+                                .core
+                                .storage
+                                .directory
+                                .query(QueryBy::Id(tenant_id), false)
+                                .await
+                                .add_context(|err| {
+                                    err.caused_by(trc::location!()).account_id(tenant_id)
+                                })?
+                                .map(|tenant| tenant.quota())
+                                .unwrap_or_default(),
+                        }
+                        .into();
+                    }
+                }
+            }
+
+            quotas
         })
     }
 
@@ -345,25 +385,35 @@ impl JMAP {
 
     pub async fn has_available_quota(
         &self,
-        account_id: u32,
-        account_quota: i64,
-        item_size: i64,
+        quotas: &ResourceToken,
+        item_size: u64,
     ) -> trc::Result<()> {
-        if account_quota == 0 {
-            return Ok(());
+        if quotas.quota != 0 {
+            let used_quota = self.get_used_quota(quotas.account_id).await? as u64;
+
+            if used_quota + item_size > quotas.quota {
+                return Err(trc::LimitEvent::Quota
+                    .into_err()
+                    .ctx(trc::Key::Limit, quotas.quota)
+                    .ctx(trc::Key::Size, used_quota));
+            }
         }
-        self.get_used_quota(account_id)
-            .await
-            .and_then(|used_quota| {
-                if used_quota + item_size <= account_quota {
-                    Ok(())
-                } else {
-                    Err(trc::LimitEvent::Quota
+
+        #[cfg(feature = "enterprise")]
+        if self.core.is_enterprise_edition() {
+            if let Some(tenant) = quotas.tenant {
+                let used_quota = self.get_used_quota(tenant.id).await? as u64;
+
+                if used_quota + item_size > tenant.quota {
+                    return Err(trc::LimitEvent::TenantQuota
                         .into_err()
-                        .ctx(trc::Key::Limit, account_quota as u64)
-                        .ctx(trc::Key::Size, used_quota as u64))
+                        .ctx(trc::Key::Limit, tenant.quota)
+                        .ctx(trc::Key::Size, used_quota));
                 }
-            })
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn filter(

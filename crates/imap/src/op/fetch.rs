@@ -12,6 +12,7 @@ use crate::{
 };
 use ahash::AHashMap;
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     parser::PushUnique,
     protocol::{
@@ -44,6 +45,9 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_uid: bool,
     ) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapFetch)?;
+
         let op_start = Instant::now();
         let arguments = request.parse_fetch()?;
 

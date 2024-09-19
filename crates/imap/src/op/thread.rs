@@ -12,6 +12,7 @@ use crate::{
 };
 use ahash::AHashMap;
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     protocol::{
         thread::{Arguments, Response},
@@ -28,6 +29,9 @@ impl<T: SessionStream> Session<T> {
         request: Request<Command>,
         is_uid: bool,
     ) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapThread)?;
+
         let op_start = Instant::now();
         let command = request.command;
         let mut arguments = request.parse_thread()?;

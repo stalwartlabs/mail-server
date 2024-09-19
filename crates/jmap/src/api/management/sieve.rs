@@ -6,7 +6,8 @@
 
 use std::time::SystemTime;
 
-use common::{scripts::ScriptModification, IntoString};
+use common::{auth::AccessToken, scripts::ScriptModification, IntoString};
+use directory::Permission;
 use hyper::Method;
 use serde_json::json;
 use sieve::{runtime::Variable, Envelope};
@@ -41,7 +42,11 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
+        // Validate the access token
+        access_token.assert_has_permission(Permission::SieveRun)?;
+
         let (script, script_id) = match (
             path.get(1).and_then(|name| {
                 self.core

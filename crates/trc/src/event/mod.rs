@@ -261,6 +261,7 @@ impl EventType {
             EventType::Auth(cause) => cause.message(),
             EventType::Config(_) => "Configuration error",
             EventType::Resource(cause) => cause.message(),
+            EventType::Security(_) => "Insufficient permissions",
             _ => "Internal server error",
         }
     }
@@ -467,6 +468,7 @@ impl LimitEvent {
             Self::Quota => "Quota exceeded",
             Self::BlobQuota => "Blob quota exceeded",
             Self::TooManyRequests => "Too many requests",
+            Self::TenantQuota => "Tenant quota exceeded",
         }
     }
 }

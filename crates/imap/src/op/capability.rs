@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use crate::core::Session;
 use common::listener::SessionStream;
+use directory::Permission;
 use imap_proto::{
     protocol::{
         capability::{Capability, Response},
@@ -19,6 +20,9 @@ use imap_proto::{
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_capability(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapCapability)?;
+
         let op_start = Instant::now();
         trc::event!(
             Imap(trc::ImapEvent::Capabilities),
@@ -45,6 +49,9 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_id(&mut self, request: Request<Command>) -> trc::Result<()> {
+        // Validate access
+        self.assert_has_permission(Permission::ImapId)?;
+
         let op_start = Instant::now();
         trc::event!(
             Imap(trc::ImapEvent::Id),

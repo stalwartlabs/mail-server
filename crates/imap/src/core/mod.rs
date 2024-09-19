@@ -11,17 +11,17 @@ use std::{
 };
 
 use ahash::AHashMap;
-use common::listener::{limiter::InFlight, ServerInstance, SessionStream};
+use common::{
+    auth::AccessToken,
+    listener::{limiter::InFlight, ServerInstance, SessionStream},
+};
 use dashmap::DashMap;
 use imap_proto::{
     protocol::{list::Attribute, ProtocolVersion},
     receiver::Receiver,
     Command,
 };
-use jmap::{
-    auth::{rate_limit::ConcurrencyLimiters, AccessToken},
-    JmapInstance, JMAP,
-};
+use jmap::{auth::rate_limit::ConcurrencyLimiters, JmapInstance, JMAP};
 use tokio::{
     io::{ReadHalf, WriteHalf},
     sync::watch,
@@ -82,6 +82,7 @@ pub struct Session<T: SessionStream> {
 
 pub struct SessionData<T: SessionStream> {
     pub account_id: u32,
+    pub access_token: Arc<AccessToken>,
     pub jmap: JMAP,
     pub imap: Arc<Inner>,
     pub session_id: u64,
@@ -221,6 +222,7 @@ impl<T: SessionStream> State<T> {
 impl<T: SessionStream> SessionData<T> {
     pub async fn get_access_token(&self) -> trc::Result<Arc<AccessToken>> {
         self.jmap
+            .core
             .get_cached_access_token(self.account_id)
             .await
             .caused_by(trc::location!())
@@ -239,6 +241,7 @@ impl<T: SessionStream> SessionData<T> {
             stream_tx: new_stream,
             state: self.state,
             in_flight: self.in_flight,
+            access_token: self.access_token,
         }
     }
 }

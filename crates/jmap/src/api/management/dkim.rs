@@ -6,8 +6,8 @@
 
 use std::str::FromStr;
 
-use common::config::smtp::auth::simple_pem_parse;
-use directory::backend::internal::manage;
+use common::{auth::AccessToken, config::smtp::auth::simple_pem_parse};
+use directory::{backend::internal::manage, Permission};
 use hyper::Method;
 use mail_auth::{
     common::crypto::{Ed25519Key, RsaKey, Sha256},
@@ -48,10 +48,21 @@ impl JMAP {
         req: &HttpRequest,
         path: Vec<&str>,
         body: Option<Vec<u8>>,
+        access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         match *req.method() {
-            Method::GET => self.handle_get_public_key(path).await,
-            Method::POST => self.handle_create_signature(body).await,
+            Method::GET => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::DkimSignatureGet)?;
+
+                self.handle_get_public_key(path).await
+            }
+            Method::POST => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::DkimSignatureCreate)?;
+
+                self.handle_create_signature(body).await
+            }
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }

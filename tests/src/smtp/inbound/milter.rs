@@ -809,10 +809,7 @@ pub fn spawn_mock_mta_hook_server() -> watch::Sender<bool> {
                                         let response = handle_mta_hook(request, tests);
 
                                         Ok::<_, hyper::Error>(
-                                            Resource {
-                                                content_type: "application/json",
-                                                contents: serde_json::to_string(&response).unwrap().into_bytes(),
-                                            }
+                                            Resource::new("application/json", serde_json::to_string(&response).unwrap().into_bytes())
                                             .into_http_response().build(),
                                         )
                                     }

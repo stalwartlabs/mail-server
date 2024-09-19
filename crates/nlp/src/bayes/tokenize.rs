@@ -6,8 +6,6 @@
 
 use std::borrow::Cow;
 
-use utils::suffixlist::PublicSuffix;
-
 use crate::{
     language::{
         detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
@@ -21,9 +19,9 @@ use crate::{
     },
 };
 
-pub struct BayesTokenizer<'x, 'y> {
+pub struct BayesTokenizer<'x> {
     text: &'x str,
-    tokenizer: TypesTokenizer<'x, 'y>,
+    tokenizer: TypesTokenizer<'x>,
     stemmer: Stemmer,
     stop_words: Option<&'static phf::Set<&'static str>>,
     tokens: Vec<Cow<'x, str>>,
@@ -36,8 +34,8 @@ enum Stemmer {
     None,
 }
 
-impl<'x, 'y> BayesTokenizer<'x, 'y> {
-    pub fn new(text: &'x str, suffixes: &'y PublicSuffix) -> Self {
+impl<'x> BayesTokenizer<'x> {
+    pub fn new(text: &'x str) -> Self {
         // Detect language
         let (mut language, score) =
             LanguageDetector::detect_single(text).unwrap_or((Language::English, 1.0));
@@ -47,7 +45,7 @@ impl<'x, 'y> BayesTokenizer<'x, 'y> {
 
         Self {
             text,
-            tokenizer: TypesTokenizer::new(text, suffixes),
+            tokenizer: TypesTokenizer::new(text),
             stemmer: match language {
                 Language::Mandarin => Stemmer::Mandarin,
                 Language::Japanese => Stemmer::Japanese,
@@ -61,7 +59,7 @@ impl<'x, 'y> BayesTokenizer<'x, 'y> {
     }
 }
 
-impl<'x, 'y> Iterator for BayesTokenizer<'x, 'y> {
+impl<'x> Iterator for BayesTokenizer<'x> {
     type Item = Cow<'x, str>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1149,8 +1147,6 @@ pub static SYMBOLS: phf::Set<char> = phf::phf_set! {
 mod tests {
     use std::borrow::Cow;
 
-    use utils::suffixlist::PublicSuffix;
-
     use crate::bayes::tokenize::BayesTokenizer;
 
     #[test]
@@ -1236,10 +1232,8 @@ mod tests {
             ("시작이 반이다", vec!["시작이", "반이다"]),
         ];
 
-        let suffixes = PublicSuffix::default();
-
         for (input, expect) in inputs.iter() {
-            let input = BayesTokenizer::new(input, &suffixes).collect::<Vec<_>>();
+            let input = BayesTokenizer::new(input).collect::<Vec<_>>();
             let expect = expect.iter().copied().map(Cow::from).collect::<Vec<_>>();
 
             assert_eq!(input, expect,);

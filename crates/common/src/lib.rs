@@ -4,9 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, net::IpAddr, sync::Arc};
+use std::{
+    borrow::Cow,
+    net::IpAddr,
+    sync::{atomic::AtomicU8, Arc},
+};
 
+use ahash::AHashMap;
 use arc_swap::ArcSwap;
+use auth::{roles::RolePermissions, AccessToken};
 use config::{
     imap::ImapConfig,
     jmap::settings::JmapConfig,
@@ -19,7 +25,10 @@ use config::{
     storage::Storage,
     telemetry::Metrics,
 };
-use directory::{core::secret::verify_secret_hash, Directory, Principal, QueryBy, Type};
+use directory::{
+    backend::internal::manage::ManageDirectory, core::secret::verify_secret_hash, Directory,
+    Principal, QueryBy, Type,
+};
 use expr::if_block::IfBlock;
 use listener::{
     blocked::{AllowedIps, BlockedIps},
@@ -27,16 +36,22 @@ use listener::{
 };
 use mail_send::Credentials;
 
+use manager::webadmin::Resource;
+use parking_lot::Mutex;
 use sieve::Sieve;
 use store::{
-    write::{DirectoryClass, QueueClass, ValueClass},
+    write::{QueueClass, ValueClass},
     IterateParams, LookupStore, ValueKey,
 };
 use tokio::sync::{mpsc, oneshot};
 use trc::AddContext;
-use utils::BlobHash;
+use utils::{
+    map::ttl_dashmap::{ADashMap, TtlDashMap},
+    BlobHash,
+};
 
 pub mod addresses;
+pub mod auth;
 pub mod config;
 #[cfg(feature = "enterprise")]
 pub mod enterprise;
@@ -45,6 +60,8 @@ pub mod listener;
 pub mod manager;
 pub mod scripts;
 pub mod telemetry;
+
+pub use psl;
 
 pub static USER_AGENT: &str = concat!("Stalwart/", env!("CARGO_PKG_VERSION"),);
 pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG_VERSION"),);
@@ -63,8 +80,18 @@ pub struct Core {
     pub jmap: JmapConfig,
     pub imap: ImapConfig,
     pub metrics: Metrics,
+    pub security: Security,
     #[cfg(feature = "enterprise")]
     pub enterprise: Option<enterprise::Enterprise>,
+}
+
+//TODO: temporary hack until OIDC is implemented
+#[derive(Default)]
+pub struct Security {
+    pub logos: Mutex<AHashMap<String, Option<Resource<Vec<u8>>>>>,
+    pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
+    pub permissions: ADashMap<u32, Arc<RolePermissions>>,
+    pub permissions_version: AtomicU8,
 }
 
 #[derive(Clone)]
@@ -98,7 +125,7 @@ pub struct IngestMessage {
     pub session_id: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeliveryResult {
     Success,
     TemporaryFailure {
@@ -128,11 +155,13 @@ impl Core {
 
     pub fn get_directory_or_default(&self, name: &str, session_id: u64) -> &Arc<Directory> {
         self.storage.directories.get(name).unwrap_or_else(|| {
-            trc::event!(
-                Eval(trc::EvalEvent::DirectoryNotFound),
-                Id = name.to_string(),
-                SpanId = session_id,
-            );
+            if !name.is_empty() {
+                trc::event!(
+                    Eval(trc::EvalEvent::DirectoryNotFound),
+                    Id = name.to_string(),
+                    SpanId = session_id,
+                );
+            }
 
             &self.storage.directory
         })
@@ -140,11 +169,13 @@ impl Core {
 
     pub fn get_lookup_store(&self, name: &str, session_id: u64) -> &LookupStore {
         self.storage.lookups.get(name).unwrap_or_else(|| {
-            trc::event!(
-                Eval(trc::EvalEvent::StoreNotFound),
-                Id = name.to_string(),
-                SpanId = session_id,
-            );
+            if !name.is_empty() {
+                trc::event!(
+                    Eval(trc::EvalEvent::StoreNotFound),
+                    Id = name.to_string(),
+                    SpanId = session_id,
+                );
+            }
 
             &self.storage.lookup
         })
@@ -227,7 +258,7 @@ impl Core {
         credentials: &Credentials<String>,
         remote_ip: IpAddr,
         return_member_of: bool,
-    ) -> trc::Result<Principal<u32>> {
+    ) -> trc::Result<Principal> {
         // First try to authenticate the user against the default directory
         let result = match directory
             .query(QueryBy::Credentials(credentials), return_member_of)
@@ -237,9 +268,9 @@ impl Core {
                 trc::event!(
                     Auth(trc::AuthEvent::Success),
                     AccountName = credentials.login().to_string(),
-                    AccountId = principal.id,
+                    AccountId = principal.id(),
                     SpanId = session_id,
-                    Type = principal.typ.as_str(),
+                    Type = principal.typ().as_str(),
                 );
 
                 return Ok(principal);
@@ -268,7 +299,6 @@ impl Core {
                         Auth(trc::AuthEvent::Success),
                         AccountName = username.clone(),
                         SpanId = session_id,
-                        Type = Type::Superuser.as_str(),
                     );
 
                     return Ok(Principal::fallback_admin(fallback_pass));
@@ -289,8 +319,8 @@ impl Core {
                             Auth(trc::AuthEvent::Success),
                             AccountName = username.to_string(),
                             SpanId = session_id,
-                            AccountId = principal.id,
-                            Type = principal.typ.as_str(),
+                            AccountId = principal.id(),
+                            Type = principal.typ().as_str(),
                         );
 
                         return Ok(principal);
@@ -342,56 +372,20 @@ impl Core {
     }
 
     pub async fn total_accounts(&self) -> trc::Result<u64> {
-        total_accounts(&self.storage.data).await
+        self.storage
+            .data
+            .count_principals(None, Type::Individual.into(), None)
+            .await
+            .caused_by(trc::location!())
     }
 
     pub async fn total_domains(&self) -> trc::Result<u64> {
-        let mut total = 0;
         self.storage
             .data
-            .iterate(
-                IterateParams::new(
-                    ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(vec![]))),
-                    ValueKey::from(ValueClass::Directory(DirectoryClass::Domain(vec![
-                        u8::MAX;
-                        10
-                    ]))),
-                )
-                .no_values()
-                .ascending(),
-                |_, _| {
-                    total += 1;
-                    Ok(true)
-                },
-            )
+            .count_principals(None, Type::Domain.into(), None)
             .await
             .caused_by(trc::location!())
-            .map(|_| total)
     }
-}
-
-pub(crate) async fn total_accounts(store: &store::Store) -> trc::Result<u64> {
-    let mut total = 0;
-    store
-        .iterate(
-            IterateParams::new(
-                ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![]))),
-                ValueKey::from(ValueClass::Directory(DirectoryClass::NameToId(vec![
-                    u8::MAX;
-                    10
-                ]))),
-            )
-            .ascending(),
-            |_, value| {
-                if matches!(value.last(), Some(0u8 | 4u8)) {
-                    total += 1;
-                }
-                Ok(true)
-            },
-        )
-        .await
-        .caused_by(trc::location!())
-        .map(|_| total)
 }
 
 trait CredentialsUsername {
@@ -404,6 +398,20 @@ impl CredentialsUsername for Credentials<String> {
             Credentials::Plain { username, .. }
             | Credentials::XOauth2 { username, .. }
             | Credentials::OAuthBearer { token: username } => username,
+        }
+    }
+}
+
+impl Clone for Security {
+    fn clone(&self) -> Self {
+        Self {
+            access_tokens: self.access_tokens.clone(),
+            permissions: self.permissions.clone(),
+            permissions_version: AtomicU8::new(
+                self.permissions_version
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            logos: Mutex::new(self.logos.lock().clone()),
         }
     }
 }

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::QueryBy;
+use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
@@ -67,16 +67,15 @@ impl JMAP {
             for property in &properties {
                 let value = match property {
                     Property::Id => Value::Id(id),
-                    Property::Type => Value::Text(principal.typ.to_jmap().to_string()),
-                    Property::Name => Value::Text(principal.name.clone()),
+                    Property::Type => Value::Text(principal.typ().to_jmap().to_string()),
+                    Property::Name => Value::Text(principal.name().to_string()),
                     Property::Description => principal
-                        .description
-                        .clone()
-                        .map(Value::Text)
+                        .description()
+                        .map(|v| Value::Text(v.to_string()))
                         .unwrap_or(Value::Null),
                     Property::Email => principal
-                        .emails
-                        .first()
+                        .iter_str(PrincipalField::Emails)
+                        .next()
                         .map(|email| Value::Text(email.clone()))
                         .unwrap_or(Value::Null),
                     _ => Value::Null,

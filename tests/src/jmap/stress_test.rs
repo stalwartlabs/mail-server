@@ -29,7 +29,7 @@ pub async fn test(server: Arc<JMAP>, mut client: Client) {
         .core
         .storage
         .data
-        .get_or_create_account_id("john")
+        .get_or_create_principal_id("john", directory::Type::Individual)
         .await
         .unwrap();
     client.set_default_account_id(Id::from(TEST_USER_ID).to_string());
