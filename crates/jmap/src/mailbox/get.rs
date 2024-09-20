@@ -15,6 +15,8 @@ use trc::AddContext;
 
 use crate::{auth::acl::EffectiveAcl, JMAP};
 
+use super::INBOX_ID;
+
 impl JMAP {
     pub async fn mailbox_get(
         &self,
@@ -317,16 +319,27 @@ impl JMAP {
         }
 
         let mut filter = Vec::with_capacity(path.len() + 2);
+        let mut has_inbox = false;
         filter.push(Filter::Or);
-        for &item in &path {
-            filter.push(Filter::eq(Property::Name, item));
+        for (pos, item) in path.iter().enumerate() {
+            if pos == 0 && item.eq_ignore_ascii_case("inbox") {
+                has_inbox = true;
+            } else {
+                filter.push(Filter::eq(Property::Name, *item));
+            }
         }
         filter.push(Filter::End);
 
-        let document_ids = self
-            .filter(account_id, Collection::Mailbox, filter)
-            .await?
-            .results;
+        let mut document_ids = if filter.len() > 2 {
+            self.filter(account_id, Collection::Mailbox, filter)
+                .await?
+                .results
+        } else {
+            RoaringBitmap::new()
+        };
+        if has_inbox {
+            document_ids.insert(INBOX_ID);
+        }
         if exact_match && (document_ids.len() as usize) < path.len() {
             return Ok(None);
         }

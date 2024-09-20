@@ -37,7 +37,7 @@ if not mailboxexists ["Drafts", "Sent Items"] {
 }
 
 # File into new mailboxes using flags
-fileinto :create "Inbox /  Folder  ";
+fileinto :create "INBOX /  Folder  ";
 fileinto :flags ["$important", "$seen"] :create "My/Nested/Mailbox/with/multiple/levels";
 
 # Make sure all mailboxes were created
