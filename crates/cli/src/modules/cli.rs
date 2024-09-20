@@ -29,21 +29,21 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Manage user accounts
-    #[clap(subcommand)]
-    Account(AccountCommands),
+    /* #[clap(subcommand)]
+        Account(AccountCommands),
 
-    /// Manage domains
-    #[clap(subcommand)]
-    Domain(DomainCommands),
+        /// Manage domains
+        #[clap(subcommand)]
+        Domain(DomainCommands),
 
-    /// Manage mailing lists
-    #[clap(subcommand)]
-    List(ListCommands),
+        /// Manage mailing lists
+        #[clap(subcommand)]
+        List(ListCommands),
 
-    /// Manage groups
-    #[clap(subcommand)]
-    Group(GroupCommands),
-
+        /// Manage groups
+        #[clap(subcommand)]
+        Group(GroupCommands),
+    */
     /// Import JMAP accounts and Maildir/mbox mailboxes
     #[clap(subcommand)]
     Import(ImportCommands),
