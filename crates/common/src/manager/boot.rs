@@ -23,6 +23,7 @@ use crate::{
 };
 
 use super::{
+    backup::BackupParams,
     config::{ConfigManager, Patterns},
     WEBADMIN_KEY,
 };
@@ -33,7 +34,10 @@ pub struct BootManager {
     pub servers: Servers,
 }
 
-const HELP: &str = r#"Stalwart Mail Server
+const HELP: &str = concat!(
+    "Stalwart Mail Server v",
+    env!("CARGO_PKG_VERSION"),
+    r#"
 
 Usage: stalwart-mail [OPTIONS]
 
@@ -44,11 +48,12 @@ Options:
   -I, --init <PATH>                Initialize a new server at a specific path
   -h, --help                       Print help
   -V, --version                    Print version
-"#;
+"#
+);
 
 #[derive(PartialEq, Eq)]
 enum ImportExport {
-    Export(PathBuf),
+    Export(BackupParams),
     Import(PathBuf),
     None,
 }
@@ -89,7 +94,7 @@ impl BootManager {
                         std::process::exit(0);
                     }
                     ("export" | "e", Some(value)) => {
-                        import_export = ImportExport::Export(value.into());
+                        import_export = ImportExport::Export(BackupParams::new(value.into()));
                     }
                     ("import" | "i", Some(value)) => {
                         import_export = ImportExport::Import(value.into());

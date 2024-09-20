@@ -42,7 +42,7 @@ pub(super) enum Op {
     KeyValue((Vec<u8>, Vec<u8>)),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub(super) enum Family {
     Property = 0,
     FtsIndex = 1,
@@ -61,30 +61,61 @@ pub(super) enum Family {
 
 type TaskHandle = (tokio::task::JoinHandle<()>, std::thread::JoinHandle<()>);
 
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct BackupParams {
+    dest: PathBuf,
+    families: AHashSet<Family>,
+}
+
 impl Core {
-    pub async fn backup(&self, dest: PathBuf) {
-        if !dest.exists() {
-            std::fs::create_dir_all(&dest).failed("Failed to create backup directory");
-        } else if !dest.is_dir() {
-            eprintln!("Backup destination {dest:?} is not a directory.");
+    pub async fn backup(&self, params: BackupParams) {
+        if !params.dest.exists() {
+            std::fs::create_dir_all(&params.dest).failed("Failed to create backup directory");
+        } else if !params.dest.is_dir() {
+            eprintln!("Backup destination {:?} is not a directory.", params.dest);
             std::process::exit(1);
         }
 
         let mut sync_handles = Vec::new();
 
         for (async_handle, sync_handle) in [
-            self.backup_properties(&dest),
-            self.backup_fts_index(&dest),
-            self.backup_acl(&dest),
-            self.backup_blob(&dest),
-            self.backup_config(&dest),
-            self.backup_lookup(&dest),
-            self.backup_directory(&dest),
-            self.backup_queue(&dest),
-            self.backup_index(&dest),
-            self.backup_bitmaps(&dest),
-            self.backup_logs(&dest),
-        ] {
+            params
+                .has_family(Family::Property)
+                .then(|| self.backup_properties(&params.dest)),
+            params
+                .has_family(Family::FtsIndex)
+                .then(|| self.backup_fts_index(&params.dest)),
+            params
+                .has_family(Family::Acl)
+                .then(|| self.backup_acl(&params.dest)),
+            params
+                .has_family(Family::Blob)
+                .then(|| self.backup_blob(&params.dest)),
+            params
+                .has_family(Family::Config)
+                .then(|| self.backup_config(&params.dest)),
+            params
+                .has_family(Family::LookupValue)
+                .then(|| self.backup_lookup(&params.dest)),
+            params
+                .has_family(Family::Directory)
+                .then(|| self.backup_directory(&params.dest)),
+            params
+                .has_family(Family::Queue)
+                .then(|| self.backup_queue(&params.dest)),
+            params
+                .has_family(Family::Index)
+                .then(|| self.backup_index(&params.dest)),
+            params
+                .has_family(Family::Bitmap)
+                .then(|| self.backup_bitmaps(&params.dest)),
+            params
+                .has_family(Family::Log)
+                .then(|| self.backup_logs(&params.dest)),
+        ]
+        .into_iter()
+        .flatten()
+        {
             async_handle.await.failed("Task failed");
             sync_handles.push(sync_handle);
         }
@@ -1130,6 +1161,59 @@ impl DeserializeBytes for &[u8] {
         self.read_leb128::<U>()
             .map(|(v, _)| v)
             .ok_or_else(|| trc::StoreEvent::DataCorruption.caused_by(trc::location!()))
+    }
+}
+
+impl BackupParams {
+    pub fn new(dest: PathBuf) -> Self {
+        let mut params = Self {
+            dest,
+            families: AHashSet::new(),
+        };
+
+        if let Ok(families) = std::env::var("EXPORT_TYPES") {
+            params.parse_families(&families);
+        }
+
+        params
+    }
+
+    fn parse_families(&mut self, families: &str) {
+        for family in families.split(',') {
+            let family = family.trim();
+            match Family::parse(family) {
+                Ok(family) => {
+                    self.families.insert(family);
+                }
+                Err(err) => {
+                    eprintln!("Backup failed: {err}.");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
+    fn has_family(&self, family: Family) -> bool {
+        self.families.is_empty() || self.families.contains(&family)
+    }
+}
+
+impl Family {
+    pub fn parse(family: &str) -> Result<Self, String> {
+        match family {
+            "property" => Ok(Family::Property),
+            "fts_index" => Ok(Family::FtsIndex),
+            "acl" => Ok(Family::Acl),
+            "blob" => Ok(Family::Blob),
+            "config" => Ok(Family::Config),
+            "lookup" => Ok(Family::LookupValue),
+            "directory" => Ok(Family::Directory),
+            "queue" => Ok(Family::Queue),
+            "index" => Ok(Family::Index),
+            "bitmap" => Ok(Family::Bitmap),
+            "log" => Ok(Family::Log),
+            _ => Err(format!("Unknown family {}", family)),
+        }
     }
 }
 
