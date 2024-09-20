@@ -47,9 +47,13 @@ impl Principal {
         self.get_int(PrincipalField::Quota).unwrap_or_default()
     }
 
+    // SPDX-SnippetBegin
+    // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+    // SPDX-License-Identifier: LicenseRef-SEL
     pub fn tenant(&self) -> Option<u32> {
         self.get_int(PrincipalField::Tenant).map(|v| v as u32)
     }
+    // SPDX-SnippetEnd
 
     pub fn description(&self) -> Option<&str> {
         self.get_str(PrincipalField::Description)
@@ -1018,6 +1022,10 @@ impl Permission {
         )
     }
 
+    // SPDX-SnippetBegin
+    // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+    // SPDX-License-Identifier: LicenseRef-SEL
+
     pub const fn is_tenant_admin_permission(&self) -> bool {
         matches!(
             self,
@@ -1069,4 +1077,6 @@ impl Permission {
                 | Permission::JmapPrincipalQuery
         ) || self.is_user_permission()
     }
+
+    // SPDX-SnippetEnd
 }

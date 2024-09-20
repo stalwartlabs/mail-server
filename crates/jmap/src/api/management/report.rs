@@ -43,8 +43,13 @@ impl JMAP {
         path: Vec<&str>,
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+
         // Limit to tenant domains
-        let mut tenant_domains = None;
+        let mut tenant_domains: Option<Vec<String>> = None;
+        #[cfg(feature = "enterprise")]
         if self.core.is_enterprise_edition() {
             if let Some(tenant) = access_token.tenant {
                 tenant_domains = self
@@ -71,6 +76,8 @@ impl JMAP {
                     .into();
             }
         }
+
+        // SPDX-SnippetEnd
 
         match (
             path.get(1).copied().unwrap_or_default(),

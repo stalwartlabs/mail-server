@@ -28,7 +28,7 @@ pop3 = { path = "../crates/pop3", features = ["test_mode"] }
 smtp = { path = "../crates/smtp", features = ["test_mode"] }
 common = { path = "../crates/common", features = ["test_mode", "enterprise"] }
 trc = { path = "../crates/trc" }
-managesieve = { path = "../crates/managesieve", features = ["test_mode"] }
+managesieve = { path = "../crates/managesieve", features = ["test_mode", "enterprise"] }
 smtp-proto = { version = "0.1" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 mail-auth = { version = "0.5", features = ["test"] }

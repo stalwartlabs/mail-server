@@ -348,6 +348,10 @@ impl JMAP {
             {
                 quotas.quota = principal.quota();
 
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+
                 #[cfg(feature = "enterprise")]
                 if self.core.is_enterprise_edition() {
                     if let Some(tenant_id) = principal.tenant() {
@@ -368,6 +372,8 @@ impl JMAP {
                         .into();
                     }
                 }
+
+                // SPDX-SnippetEnd
             }
 
             quotas
@@ -399,6 +405,10 @@ impl JMAP {
             }
         }
 
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+
         #[cfg(feature = "enterprise")]
         if self.core.is_enterprise_edition() {
             if let Some(tenant) = quotas.tenant.filter(|tenant| tenant.quota != 0) {
@@ -412,6 +422,8 @@ impl JMAP {
                 }
             }
         }
+
+        // SPDX-SnippetEnd
 
         Ok(())
     }

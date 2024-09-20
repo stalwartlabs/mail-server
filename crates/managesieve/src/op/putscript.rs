@@ -167,6 +167,7 @@ impl<T: SessionStream> Session<T> {
                 batch.add(DirectoryClass::UsedQuota(account_id), update_quota);
 
                 // Update tenant quota
+                #[cfg(feature = "enterprise")]
                 if self.jmap.core.is_enterprise_edition() {
                     if let Some(tenant) = resource_token.tenant {
                         batch.add(DirectoryClass::UsedQuota(tenant.id), update_quota);
@@ -234,6 +235,7 @@ impl<T: SessionStream> Session<T> {
                 );
 
             // Update tenant quota
+            #[cfg(feature = "enterprise")]
             if self.jmap.core.is_enterprise_edition() {
                 if let Some(tenant) = resource_token.tenant {
                     batch.add(DirectoryClass::UsedQuota(tenant.id), script_size);

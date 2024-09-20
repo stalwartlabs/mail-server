@@ -60,6 +60,10 @@ impl Core {
         // Apply principal permissions
         let mut permissions = role_permissions.finalize();
 
+        // SPDX-SnippetBegin
+        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+        // SPDX-License-Identifier: LicenseRef-SEL
+
         let mut tenant = None;
         #[cfg(feature = "enterprise")]
         if self.is_enterprise_edition() {
@@ -88,6 +92,8 @@ impl Core {
                 });
             }
         }
+
+        // SPDX-SnippetEnd
 
         Ok(AccessToken {
             primary_id: principal.id(),
