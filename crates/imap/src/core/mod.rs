@@ -52,11 +52,7 @@ pub struct ImapInstance {
 }
 
 pub struct Inner {
-    pub greeting_plain: Vec<u8>,
-    pub greeting_tls: Vec<u8>,
-
     pub rate_limiter: DashMap<u32, Arc<ConcurrencyLimiters>>,
-
     pub cache_account: LruCache<AccountId, Arc<Account>>,
     pub cache_mailbox: LruCache<MailboxId, Arc<MailboxState>>,
 }

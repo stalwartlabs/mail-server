@@ -15,6 +15,8 @@ use jmap::JMAP;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::server::TlsStream;
 
+use crate::{GREETING_WITHOUT_TLS, GREETING_WITH_TLS};
+
 use super::{ImapSessionManager, Session, State};
 
 impl SessionManager for ImapSessionManager {
@@ -116,11 +118,13 @@ impl<T: SessionStream> Session<T> {
         manager: ImapSessionManager,
     ) -> Result<Session<T>, ()> {
         // Write greeting
-        let (is_tls, greeting) = if session.stream.is_tls() {
-            (true, &manager.imap.imap_inner.greeting_tls)
+        let is_tls = session.stream.is_tls();
+        let greeting = if !is_tls && session.instance.acceptor.is_tls() {
+            &GREETING_WITH_TLS
         } else {
-            (false, &manager.imap.imap_inner.greeting_plain)
+            &GREETING_WITHOUT_TLS
         };
+
         if let Err(err) = session.stream.write_all(greeting).await {
             trc::event!(
                 Network(trc::NetworkEvent::WriteError),

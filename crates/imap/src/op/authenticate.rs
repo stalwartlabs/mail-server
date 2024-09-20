@@ -140,7 +140,10 @@ impl<T: SessionStream> Session<T> {
         self.write_bytes(
             StatusResponse::ok("Authentication successful")
                 .with_code(ResponseCode::Capability {
-                    capabilities: Capability::all_capabilities(true, self.is_tls),
+                    capabilities: Capability::all_capabilities(
+                        true,
+                        !self.is_tls && self.instance.acceptor.is_tls(),
+                    ),
                 })
                 .with_tag(tag)
                 .into_bytes(),

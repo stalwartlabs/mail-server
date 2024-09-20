@@ -69,10 +69,10 @@ impl<T: SessionStream> Session<T> {
         );
 
         let op_start = Instant::now();
-        let mut buf = vec![0; 1024];
+        let mut buf = vec![0; 4];
         loop {
             tokio::select! {
-                result = tokio::time::timeout(self.jmap.core.imap.timeout_idle, self.stream_rx.read(&mut buf)) => {
+                result = tokio::time::timeout(self.jmap.core.imap.timeout_idle, self.stream_rx.read_exact(&mut buf)) => {
                     match result {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {

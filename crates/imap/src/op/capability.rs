@@ -39,7 +39,7 @@ impl<T: SessionStream> Session<T> {
                     Response {
                         capabilities: Capability::all_capabilities(
                             self.state.is_authenticated(),
-                            self.is_tls,
+                            !self.is_tls && self.instance.acceptor.is_tls(),
                         ),
                     }
                     .serialize(),

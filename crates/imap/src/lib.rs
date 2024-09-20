@@ -5,7 +5,10 @@
  */
 
 use core::{ImapInstance, Inner, IMAP};
-use std::{collections::hash_map::RandomState, sync::Arc};
+use std::{
+    collections::hash_map::RandomState,
+    sync::{Arc, LazyLock},
+};
 
 use dashmap::DashMap;
 use imap_proto::{protocol::capability::Capability, ResponseCode, StatusResponse};
@@ -20,6 +23,22 @@ pub mod op;
 
 static SERVER_GREETING: &str = "Stalwart IMAP4rev2 at your service.";
 
+pub(crate) static GREETING_WITH_TLS: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    StatusResponse::ok(SERVER_GREETING)
+        .with_code(ResponseCode::Capability {
+            capabilities: Capability::all_capabilities(false, true),
+        })
+        .into_bytes()
+});
+
+pub(crate) static GREETING_WITHOUT_TLS: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    StatusResponse::ok(SERVER_GREETING)
+        .with_code(ResponseCode::Capability {
+            capabilities: Capability::all_capabilities(false, false),
+        })
+        .into_bytes()
+});
+
 impl IMAP {
     pub async fn init(config: &mut Config, jmap_instance: JmapInstance) -> ImapInstance {
         let shard_amount = config
@@ -29,16 +48,6 @@ impl IMAP {
         let capacity = config.property("cache.capacity").unwrap_or(100);
 
         let inner = Inner {
-            greeting_plain: StatusResponse::ok(SERVER_GREETING)
-                .with_code(ResponseCode::Capability {
-                    capabilities: Capability::all_capabilities(false, false),
-                })
-                .into_bytes(),
-            greeting_tls: StatusResponse::ok(SERVER_GREETING)
-                .with_code(ResponseCode::Capability {
-                    capabilities: Capability::all_capabilities(false, true),
-                })
-                .into_bytes(),
             rate_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
                 capacity,
                 RandomState::default(),
