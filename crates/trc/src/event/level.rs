@@ -44,7 +44,7 @@ impl EventType {
             },
             EventType::Jmap(_) => Level::Debug,
             EventType::Imap(event) => match event {
-                ImapEvent::ConnectionStart | ImapEvent::ConnectionEnd => Level::Info,
+                ImapEvent::ConnectionStart | ImapEvent::ConnectionEnd => Level::Debug,
                 ImapEvent::GetAcl
                 | ImapEvent::SetAcl
                 | ImapEvent::MyRights
@@ -80,7 +80,7 @@ impl EventType {
                 ImapEvent::RawInput | ImapEvent::RawOutput => Level::Trace,
             },
             EventType::ManageSieve(event) => match event {
-                ManageSieveEvent::ConnectionStart | ManageSieveEvent::ConnectionEnd => Level::Info,
+                ManageSieveEvent::ConnectionStart | ManageSieveEvent::ConnectionEnd => Level::Debug,
                 ManageSieveEvent::CreateScript
                 | ManageSieveEvent::UpdateScript
                 | ManageSieveEvent::GetScript
@@ -99,7 +99,7 @@ impl EventType {
                 ManageSieveEvent::RawInput | ManageSieveEvent::RawOutput => Level::Trace,
             },
             EventType::Pop3(event) => match event {
-                Pop3Event::ConnectionStart | Pop3Event::ConnectionEnd => Level::Info,
+                Pop3Event::ConnectionStart | Pop3Event::ConnectionEnd => Level::Debug,
                 Pop3Event::Delete
                 | Pop3Event::Reset
                 | Pop3Event::Quit
@@ -117,7 +117,7 @@ impl EventType {
                 Pop3Event::RawInput | Pop3Event::RawOutput => Level::Trace,
             },
             EventType::Smtp(event) => match event {
-                SmtpEvent::ConnectionStart | SmtpEvent::ConnectionEnd => Level::Info,
+                SmtpEvent::ConnectionStart | SmtpEvent::ConnectionEnd => Level::Debug,
                 SmtpEvent::DidNotSayEhlo
                 | SmtpEvent::EhloExpected
                 | SmtpEvent::LhloExpected

@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.10.0] - 2024-09-21
+
+This version includes breaking changes to how accounts are stored. Please read [UPGRADING.md](UPGRADING.md) for details.
+
+## Added
+- Multi-tenancy (Enterprise feature).
+- Branding (Enterprise feature).
+- Roles and permissions.
+- Full-text search re-indexing.
+- Partial database backups (#497).
+
+### Changed
+
+### Fixed
+- IMAP `IDLE` support for command pipelining, aka the Apple Mail iOS 18 bug (#765).
+- Case insensitive INBOX `fileinto` (#763).
+- Properly decode undelete account name (#761).
+
 ## [0.9.4] - 2024-09-09
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
