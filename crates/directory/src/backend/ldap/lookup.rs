@@ -9,7 +9,11 @@ use mail_send::Credentials;
 use trc::AddContext;
 
 use crate::{
-    backend::internal::{manage::ManageDirectory, PrincipalField},
+    backend::internal::{
+        lookup::DirectoryStore,
+        manage::{self, ManageDirectory, UpdatePrincipal},
+        PrincipalField,
+    },
     IntoError, Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
 };
 
@@ -22,35 +26,38 @@ impl LdapDirectory {
         return_member_of: bool,
     ) -> trc::Result<Option<Principal>> {
         let mut conn = self.pool.get().await.map_err(|err| err.into_error())?;
-        let mut account_id = None;
-        let account_name;
 
-        let principal = match by {
+        let (mut external_principal, stored_principal) = match by {
             QueryBy::Name(username) => {
-                account_name = username.to_string();
-
                 if let Some(principal) = self
                     .find_principal(&mut conn, &self.mappings.filter_name.build(username))
                     .await?
                 {
-                    principal
+                    (
+                        principal.with_field(PrincipalField::Name, username.to_string()),
+                        None,
+                    )
                 } else {
                     return Ok(None);
                 }
             }
             QueryBy::Id(uid) => {
-                if let Some(username) = self.data_store.get_principal_name(uid).await? {
-                    account_name = username;
-                } else {
-                    return Ok(None);
-                }
-                account_id = Some(uid);
-
-                if let Some(principal) = self
-                    .find_principal(&mut conn, &self.mappings.filter_name.build(&account_name))
+                if let Some(stored_principal_) = self
+                    .data_store
+                    .query(QueryBy::Id(uid), return_member_of)
                     .await?
                 {
-                    principal
+                    if let Some(principal) = self
+                        .find_principal(
+                            &mut conn,
+                            &self.mappings.filter_name.build(stored_principal_.name()),
+                        )
+                        .await?
+                    {
+                        (principal, Some(stored_principal_))
+                    } else {
+                        return Ok(None);
+                    }
                 } else {
                     return Ok(None);
                 }
@@ -61,7 +68,6 @@ impl LdapDirectory {
                     Credentials::OAuthBearer { token } => (token, token),
                     Credentials::XOauth2 { username, secret } => (username, secret),
                 };
-                account_name = username.to_string();
 
                 if let Some(auth_bind) = &self.auth_bind {
                     let (conn, mut ldap) = LdapConnAsync::with_settings(
@@ -91,7 +97,10 @@ impl LdapDirectory {
                         .find_principal(&mut ldap, &self.mappings.filter_name.build(username))
                         .await
                     {
-                        Ok(Some(principal)) => principal,
+                        Ok(Some(principal)) => (
+                            principal.with_field(PrincipalField::Name, username.to_string()),
+                            None,
+                        ),
                         Err(err)
                             if err.matches(trc::EventType::Store(trc::StoreEvent::LdapError))
                                 && err
@@ -109,7 +118,10 @@ impl LdapDirectory {
                     .await?
                 {
                     if principal.verify_secret(secret).await? {
-                        principal
+                        (
+                            principal.with_field(PrincipalField::Name, username.to_string()),
+                            None,
+                        )
                     } else {
                         return Ok(None);
                     }
@@ -118,27 +130,12 @@ impl LdapDirectory {
                 }
             }
         };
-        let mut principal = principal;
 
-        // Obtain account ID if not available
-        if let Some(account_id) = account_id {
-            principal.id = account_id;
-        } else {
-            principal.id = self
-                .data_store
-                .get_or_create_principal_id(&account_name, Type::Individual)
-                .await?;
-        }
-        principal.append_str(PrincipalField::Name, account_name);
-
-        if return_member_of {
-            // Obtain groups
-            if principal.has_field(PrincipalField::MemberOf) {
-                let mut member_of = Vec::new();
-                for mut name in principal
-                    .take_str_array(PrincipalField::MemberOf)
-                    .unwrap_or_default()
-                {
+        // Query groups
+        match external_principal.take_str_array(PrincipalField::MemberOf) {
+            Some(names) if return_member_of => {
+                let mut member_of = Vec::with_capacity(names.len());
+                for mut name in names {
                     if name.contains('=') {
                         let (rs, _res) = conn
                             .search(
@@ -174,35 +171,39 @@ impl LdapDirectory {
                 }
 
                 // Map ids
-                principal.set(PrincipalField::MemberOf, member_of);
+                external_principal.set(PrincipalField::MemberOf, member_of);
             }
+            _ => (),
+        }
 
-            // Obtain roles
-            let mut did_role_cleanup = false;
-            for member in self
+        // Obtain account ID if not available
+        let mut principal = if let Some(stored_principal) = stored_principal {
+            stored_principal
+        } else {
+            let id = self
                 .data_store
-                .get_member_of(principal.id)
+                .get_or_create_principal_id(external_principal.name(), Type::Individual)
+                .await
+                .caused_by(trc::location!())?;
+
+            self.data_store
+                .query(QueryBy::Id(id), return_member_of)
                 .await
                 .caused_by(trc::location!())?
-            {
-                match member.typ {
-                    Type::List => {
-                        principal.append_int(PrincipalField::Lists, member.principal_id);
-                    }
-                    Type::Role => {
-                        if !did_role_cleanup {
-                            principal.remove(PrincipalField::Roles);
-                            did_role_cleanup = true;
-                        }
-                        principal.append_int(PrincipalField::Roles, member.principal_id);
-                    }
-                    _ => {
-                        principal.append_int(PrincipalField::MemberOf, member.principal_id);
-                    }
-                }
-            }
-        } else if principal.has_field(PrincipalField::MemberOf) {
-            principal.remove(PrincipalField::MemberOf);
+                .ok_or_else(|| manage::not_found(id).caused_by(trc::location!()))?
+        };
+
+        // Keep the internal store up to date with the LDAP server
+        let changes = principal.update_external(external_principal);
+        if !changes.is_empty() {
+            self.data_store
+                .update_principal(
+                    UpdatePrincipal::by_id(principal.id)
+                        .with_updates(changes)
+                        .no_validate(),
+                )
+                .await
+                .caused_by(trc::location!())?;
         }
 
         Ok(Some(principal))

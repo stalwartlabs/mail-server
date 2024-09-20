@@ -9,7 +9,11 @@ use store::{NamedRows, Rows, Value};
 use trc::AddContext;
 
 use crate::{
-    backend::internal::{manage::ManageDirectory, PrincipalField, PrincipalValue},
+    backend::internal::{
+        lookup::DirectoryStore,
+        manage::{self, ManageDirectory, UpdatePrincipal},
+        PrincipalField, PrincipalValue,
+    },
     Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
 };
 
@@ -21,149 +25,152 @@ impl SqlDirectory {
         by: QueryBy<'_>,
         return_member_of: bool,
     ) -> trc::Result<Option<Principal>> {
-        let mut account_id = None;
-        let account_name;
-        let mut secret = None;
-
-        let result = match by {
-            QueryBy::Name(username) => {
-                account_name = username.to_string();
-
-                self.store
-                    .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
-                    .await
+        let (external_principal, stored_principal) = match by {
+            QueryBy::Name(username) => (
+                self.mappings
+                    .row_to_principal(
+                        self.store
+                            .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
+                            .await
+                            .caused_by(trc::location!())?,
+                    )
                     .caused_by(trc::location!())?
-            }
+                    .map(|p| p.with_field(PrincipalField::Name, username.to_string())),
+                None,
+            ),
             QueryBy::Id(uid) => {
-                if let Some(username) = self
+                if let Some(principal) = self
                     .data_store
-                    .get_principal_name(uid)
+                    .query(QueryBy::Id(uid), return_member_of)
                     .await
                     .caused_by(trc::location!())?
                 {
-                    account_name = username;
+                    (
+                        self.mappings
+                            .row_to_principal(
+                                self.store
+                                    .query::<NamedRows>(
+                                        &self.mappings.query_name,
+                                        vec![principal.name().into()],
+                                    )
+                                    .await
+                                    .caused_by(trc::location!())?,
+                            )
+                            .caused_by(trc::location!())?,
+                        Some(principal),
+                    )
                 } else {
                     return Ok(None);
                 }
-                account_id = Some(uid);
-
-                self.store
-                    .query::<NamedRows>(
-                        &self.mappings.query_name,
-                        vec![account_name.clone().into()],
-                    )
-                    .await
-                    .caused_by(trc::location!())?
             }
             QueryBy::Credentials(credentials) => {
-                let (username, secret_) = match credentials {
+                let (username, secret) = match credentials {
                     Credentials::Plain { username, secret } => (username, secret),
                     Credentials::OAuthBearer { token } => (token, token),
                     Credentials::XOauth2 { username, secret } => (username, secret),
                 };
-                account_name = username.to_string();
-                secret = secret_.into();
 
-                self.store
-                    .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
-                    .await
+                match self
+                    .mappings
+                    .row_to_principal(
+                        self.store
+                            .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
+                            .await
+                            .caused_by(trc::location!())?,
+                    )
                     .caused_by(trc::location!())?
+                {
+                    Some(principal)
+                        if principal
+                            .verify_secret(secret)
+                            .await
+                            .caused_by(trc::location!())? =>
+                    {
+                        (
+                            Some(principal.with_field(PrincipalField::Name, username.to_string())),
+                            None,
+                        )
+                    }
+                    _ => (None, None),
+                }
             }
         };
 
-        if result.rows.is_empty() {
-            return Ok(None);
-        }
-
-        // Map row to principal
-        let mut principal = self
-            .mappings
-            .row_to_principal(result)
-            .caused_by(trc::location!())?;
-
-        // Validate password
-        if let Some(secret) = secret {
-            if !principal
-                .verify_secret(secret)
-                .await
-                .caused_by(trc::location!())?
-            {
-                return Ok(None);
-            }
-        }
-
-        // Obtain account ID if not available
-        if let Some(account_id) = account_id {
-            principal.id = account_id;
+        let mut external_principal = if let Some(external_principal) = external_principal {
+            external_principal
         } else {
-            principal.id = self
-                .data_store
-                .get_or_create_principal_id(&account_name, Type::Individual)
-                .await
-                .caused_by(trc::location!())?;
-        }
-        principal.set(PrincipalField::Name, account_name);
+            return Ok(None);
+        };
 
         // Obtain members
-        if return_member_of {
-            if !self.mappings.query_members.is_empty() {
-                for row in self
-                    .store
-                    .query::<Rows>(&self.mappings.query_members, vec![principal.name().into()])
-                    .await
-                    .caused_by(trc::location!())?
-                    .rows
-                {
-                    if let Some(Value::Text(account_id)) = row.values.first() {
-                        principal.append_int(
-                            PrincipalField::MemberOf,
-                            self.data_store
-                                .get_or_create_principal_id(account_id, Type::Group)
-                                .await
-                                .caused_by(trc::location!())?,
-                        );
-                    }
-                }
-            }
-
-            // Obtain roles
-            let mut did_role_cleanup = false;
-            for member in self
-                .data_store
-                .get_member_of(principal.id)
+        if return_member_of && !self.mappings.query_members.is_empty() {
+            for row in self
+                .store
+                .query::<Rows>(
+                    &self.mappings.query_members,
+                    vec![external_principal.name().into()],
+                )
                 .await
                 .caused_by(trc::location!())?
+                .rows
             {
-                match member.typ {
-                    Type::List => {
-                        principal.append_int(PrincipalField::Lists, member.principal_id);
-                    }
-                    Type::Role => {
-                        if !did_role_cleanup {
-                            principal.remove(PrincipalField::Roles);
-                            did_role_cleanup = true;
-                        }
-                        principal.append_int(PrincipalField::Roles, member.principal_id);
-                    }
-                    _ => {
-                        principal.append_int(PrincipalField::MemberOf, member.principal_id);
-                    }
+                if let Some(Value::Text(account_id)) = row.values.first() {
+                    external_principal.append_int(
+                        PrincipalField::MemberOf,
+                        self.data_store
+                            .get_or_create_principal_id(account_id, Type::Group)
+                            .await
+                            .caused_by(trc::location!())?,
+                    );
                 }
             }
         }
 
         // Obtain emails
         if !self.mappings.query_emails.is_empty() {
-            principal.set(
+            external_principal.set(
                 PrincipalField::Emails,
                 PrincipalValue::StringList(
                     self.store
-                        .query::<Rows>(&self.mappings.query_emails, vec![principal.name().into()])
+                        .query::<Rows>(
+                            &self.mappings.query_emails,
+                            vec![external_principal.name().into()],
+                        )
                         .await
                         .caused_by(trc::location!())?
                         .into(),
                 ),
             );
+        }
+
+        // Obtain account ID if not available
+        let mut principal = if let Some(stored_principal) = stored_principal {
+            stored_principal
+        } else {
+            let id = self
+                .data_store
+                .get_or_create_principal_id(external_principal.name(), Type::Individual)
+                .await
+                .caused_by(trc::location!())?;
+
+            self.data_store
+                .query(QueryBy::Id(id), return_member_of)
+                .await
+                .caused_by(trc::location!())?
+                .ok_or_else(|| manage::not_found(id).caused_by(trc::location!()))?
+        };
+
+        // Keep the internal store up to date with the SQL server
+        let changes = principal.update_external(external_principal);
+        if !changes.is_empty() {
+            self.data_store
+                .update_principal(
+                    UpdatePrincipal::by_id(principal.id)
+                        .with_updates(changes)
+                        .no_validate(),
+                )
+                .await
+                .caused_by(trc::location!())?;
         }
 
         Ok(Some(principal))
@@ -233,7 +240,11 @@ impl SqlDirectory {
 }
 
 impl SqlMappings {
-    pub fn row_to_principal(&self, rows: NamedRows) -> trc::Result<Principal> {
+    pub fn row_to_principal(&self, rows: NamedRows) -> trc::Result<Option<Principal>> {
+        if rows.rows.is_empty() {
+            return Ok(None);
+        }
+
         let mut principal = Principal::default();
         let mut role = ROLE_USER;
 
@@ -271,6 +282,6 @@ impl SqlMappings {
             }
         }
 
-        Ok(principal.with_field(PrincipalField::Roles, role))
+        Ok(Some(principal.with_field(PrincipalField::Roles, role)))
     }
 }

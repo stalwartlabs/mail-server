@@ -14,7 +14,7 @@ use serde::{
 use store::U64_LEN;
 
 use crate::{
-    backend::internal::{PrincipalField, PrincipalValue},
+    backend::internal::{PrincipalField, PrincipalUpdate, PrincipalValue},
     Permission, Principal, Type, ROLE_ADMIN,
 };
 
@@ -365,6 +365,65 @@ impl Principal {
                 _ => {}
             }
         }
+    }
+
+    pub fn update_external(&mut self, mut external: Principal) -> Vec<PrincipalUpdate> {
+        let mut updates = Vec::new();
+        if let Some(name) = external.take_str(PrincipalField::Description) {
+            if self.get_str(PrincipalField::Description) != Some(name.as_str()) {
+                updates.push(PrincipalUpdate::set(
+                    PrincipalField::Description,
+                    PrincipalValue::String(name.clone()),
+                ));
+                self.set(PrincipalField::Description, name);
+            }
+        }
+
+        for field in [PrincipalField::Secrets, PrincipalField::Emails] {
+            if let Some(secrets) = external.take_str_array(field).filter(|s| !s.is_empty()) {
+                if self.get_str_array(field) != Some(secrets.as_ref()) {
+                    updates.push(PrincipalUpdate::set(
+                        field,
+                        PrincipalValue::StringList(secrets.clone()),
+                    ));
+                    self.set(field, secrets);
+                }
+            }
+        }
+
+        if let Some(quota) = external.take_int(PrincipalField::Quota) {
+            if self.get_int(PrincipalField::Quota) != Some(quota) {
+                updates.push(PrincipalUpdate::set(
+                    PrincipalField::Quota,
+                    PrincipalValue::Integer(quota),
+                ));
+                self.set(PrincipalField::Quota, quota);
+            }
+        }
+
+        // Add external members
+        if let Some(member_of) = external
+            .take_int_array(PrincipalField::MemberOf)
+            .filter(|s| !s.is_empty())
+        {
+            self.set(PrincipalField::MemberOf, member_of);
+        }
+
+        // If the principal has no roles, take the ones from the external principal
+        if let Some(member_of) = external
+            .take_int_array(PrincipalField::Roles)
+            .filter(|s| !s.is_empty())
+        {
+            if self
+                .get_int_array(PrincipalField::Roles)
+                .filter(|s| !s.is_empty())
+                .is_none()
+            {
+                self.set(PrincipalField::Roles, member_of);
+            }
+        }
+
+        updates
     }
 
     pub fn fallback_admin(fallback_pass: impl Into<String>) -> Self {

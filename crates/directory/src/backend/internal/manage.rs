@@ -33,12 +33,19 @@ pub struct PrincipalList {
     pub total: u64,
 }
 
+pub struct UpdatePrincipal<'x> {
+    query: QueryBy<'x>,
+    changes: Vec<PrincipalUpdate>,
+    tenant_id: Option<u32>,
+    validate: bool,
+}
+
 #[allow(async_fn_in_trait)]
 pub trait ManageDirectory: Sized {
     async fn get_principal_id(&self, name: &str) -> trc::Result<Option<u32>>;
     async fn get_principal_info(&self, name: &str) -> trc::Result<Option<PrincipalInfo>>;
     async fn get_or_create_principal_id(&self, name: &str, typ: Type) -> trc::Result<u32>;
-    async fn get_principal_name(&self, principal_id: u32) -> trc::Result<Option<String>>;
+    async fn get_principal(&self, principal_id: u32) -> trc::Result<Option<Principal>>;
     async fn get_member_of(&self, principal_id: u32) -> trc::Result<Vec<MemberOf>>;
     async fn get_members(&self, principal_id: u32) -> trc::Result<Vec<u32>>;
     async fn create_principal(
@@ -46,12 +53,7 @@ pub trait ManageDirectory: Sized {
         principal: Principal,
         tenant_id: Option<u32>,
     ) -> trc::Result<u32>;
-    async fn update_principal(
-        &self,
-        by: QueryBy<'_>,
-        changes: Vec<PrincipalUpdate>,
-        tenant_id: Option<u32>,
-    ) -> trc::Result<()>;
+    async fn update_principal(&self, params: UpdatePrincipal<'_>) -> trc::Result<()>;
     async fn delete_principal(&self, by: QueryBy<'_>) -> trc::Result<()>;
     async fn list_principals(
         &self,
@@ -76,12 +78,11 @@ pub trait ManageDirectory: Sized {
 }
 
 impl ManageDirectory for Store {
-    async fn get_principal_name(&self, principal_id: u32) -> trc::Result<Option<String>> {
+    async fn get_principal(&self, principal_id: u32) -> trc::Result<Option<Principal>> {
         self.get_value::<Principal>(ValueKey::from(ValueClass::Directory(
             DirectoryClass::Principal(principal_id),
         )))
         .await
-        .map(|v| v.and_then(|mut v| v.take_str(PrincipalField::Name)))
         .caused_by(trc::location!())
     }
 
@@ -129,6 +130,25 @@ impl ManageDirectory for Store {
                     }
                     .with_field(PrincipalField::Name, name.to_string()),
                 );
+
+            // Add default user role
+            if typ == Type::Individual {
+                batch
+                    .set(
+                        ValueClass::Directory(DirectoryClass::MemberOf {
+                            principal_id: MaybeDynamicId::Dynamic(0),
+                            member_of: MaybeDynamicId::Static(ROLE_USER),
+                        }),
+                        vec![Type::Role as u8],
+                    )
+                    .set(
+                        ValueClass::Directory(DirectoryClass::Members {
+                            principal_id: MaybeDynamicId::Static(ROLE_USER),
+                            has_member: MaybeDynamicId::Dynamic(0),
+                        }),
+                        vec![],
+                    );
+            }
 
             match self
                 .write(batch.build())
@@ -589,13 +609,8 @@ impl ManageDirectory for Store {
         Ok(())
     }
 
-    async fn update_principal(
-        &self,
-        by: QueryBy<'_>,
-        changes: Vec<PrincipalUpdate>,
-        tenant_id: Option<u32>,
-    ) -> trc::Result<()> {
-        let principal_id = match by {
+    async fn update_principal(&self, params: UpdatePrincipal<'_>) -> trc::Result<()> {
+        let principal_id = match params.query {
             QueryBy::Name(name) => self
                 .get_principal_id(name)
                 .await
@@ -604,6 +619,9 @@ impl ManageDirectory for Store {
             QueryBy::Id(principal_id) => principal_id,
             QueryBy::Credentials(_) => unreachable!(),
         };
+        let changes = params.changes;
+        let tenant_id = params.tenant_id;
+        let validate = params.validate;
 
         // Fetch principal
         let mut principal = self
@@ -911,16 +929,21 @@ impl ManageDirectory for Store {
                         .collect::<Vec<_>>();
                     for email in &emails {
                         if !principal.inner.has_str_value(PrincipalField::Emails, email) {
-                            if self.rcpt(email).await.caused_by(trc::location!())? {
-                                return Err(err_exists(PrincipalField::Emails, email.to_string()));
-                            }
-                            if let Some(domain) = email.split('@').nth(1) {
-                                if !self
-                                    .is_local_domain(domain)
-                                    .await
-                                    .caused_by(trc::location!())?
-                                {
-                                    return Err(not_found(domain.to_string()));
+                            if validate {
+                                if self.rcpt(email).await.caused_by(trc::location!())? {
+                                    return Err(err_exists(
+                                        PrincipalField::Emails,
+                                        email.to_string(),
+                                    ));
+                                }
+                                if let Some(domain) = email.split('@').nth(1) {
+                                    if !self
+                                        .is_local_domain(domain)
+                                        .await
+                                        .caused_by(trc::location!())?
+                                    {
+                                        return Err(not_found(domain.to_string()));
+                                    }
                                 }
                             }
                             batch.set(
@@ -952,16 +975,18 @@ impl ManageDirectory for Store {
                         .inner
                         .has_str_value(PrincipalField::Emails, &email)
                     {
-                        if self.rcpt(&email).await.caused_by(trc::location!())? {
-                            return Err(err_exists(PrincipalField::Emails, email));
-                        }
-                        if let Some(domain) = email.split('@').nth(1) {
-                            if !self
-                                .is_local_domain(domain)
-                                .await
-                                .caused_by(trc::location!())?
-                            {
-                                return Err(not_found(domain.to_string()));
+                        if validate {
+                            if self.rcpt(&email).await.caused_by(trc::location!())? {
+                                return Err(err_exists(PrincipalField::Emails, email));
+                            }
+                            if let Some(domain) = email.split('@').nth(1) {
+                                if !self
+                                    .is_local_domain(domain)
+                                    .await
+                                    .caused_by(trc::location!())?
+                                {
+                                    return Err(not_found(domain.to_string()));
+                                }
                             }
                         }
                         batch.set(
@@ -1564,9 +1589,10 @@ impl ManageDirectory for Store {
                         }
                         principal_id => {
                             if let Some(name) = self
-                                .get_principal_name(principal_id)
+                                .get_principal(principal_id)
                                 .await
                                 .caused_by(trc::location!())?
+                                .and_then(|mut p| p.take_str(PrincipalField::Name))
                             {
                                 principal.append_str(field, name);
                             }
@@ -1651,9 +1677,10 @@ impl ManageDirectory for Store {
         if let Some(tenant_id) = principal.take_int(PrincipalField::Tenant) {
             if fields.is_empty() || fields.contains(&PrincipalField::Tenant) {
                 if let Some(name) = self
-                    .get_principal_name(tenant_id as u32)
+                    .get_principal(tenant_id as u32)
                     .await
                     .caused_by(trc::location!())?
+                    .and_then(|mut p| p.take_str(PrincipalField::Name))
                 {
                     principal.set(PrincipalField::Tenant, name);
                 }
@@ -1720,6 +1747,41 @@ impl SerializeWithId for Principal {
 impl From<Principal> for MaybeDynamicValue {
     fn from(principal: Principal) -> Self {
         MaybeDynamicValue::Dynamic(Box::new(principal))
+    }
+}
+
+impl<'x> UpdatePrincipal<'x> {
+    pub fn by_id(id: u32) -> Self {
+        Self {
+            query: QueryBy::Id(id),
+            changes: Vec::new(),
+            validate: true,
+            tenant_id: None,
+        }
+    }
+
+    pub fn by_name(name: &'x str) -> Self {
+        Self {
+            query: QueryBy::Name(name),
+            changes: Vec::new(),
+            validate: true,
+            tenant_id: None,
+        }
+    }
+
+    pub fn with_tenant(mut self, tenant_id: Option<u32>) -> Self {
+        self.tenant_id = tenant_id;
+        self
+    }
+
+    pub fn with_updates(mut self, changes: Vec<PrincipalUpdate>) -> Self {
+        self.changes = changes;
+        self
+    }
+
+    pub fn no_validate(mut self) -> Self {
+        self.validate = false;
+        self
     }
 }
 

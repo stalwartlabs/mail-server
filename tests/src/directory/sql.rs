@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::{backend::internal::manage::ManageDirectory, QueryBy, Type, ROLE_ADMIN, ROLE_USER};
+use directory::{backend::internal::manage::ManageDirectory, QueryBy, Type, ROLE_USER};
 use mail_send::Credentials;
 use store::{LookupStore, Store};
 
@@ -181,7 +181,7 @@ async fn sql_directory() {
                 description: "Administrator".to_string().into(),
                 secrets: vec!["very_secret".to_string()],
                 typ: Type::Individual,
-                roles: vec![ROLE_ADMIN.to_string()],
+                roles: vec![ROLE_USER.to_string()],
                 ..Default::default()
             }
         );

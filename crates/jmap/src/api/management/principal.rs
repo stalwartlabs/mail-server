@@ -10,7 +10,7 @@ use common::auth::AccessToken;
 use directory::{
     backend::internal::{
         lookup::DirectoryStore,
-        manage::{self, not_found, ManageDirectory},
+        manage::{self, not_found, ManageDirectory, UpdatePrincipal},
         PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue, SpecialSecrets,
     },
     DirectoryInner, Permission, Principal, QueryBy, Type,
@@ -344,14 +344,13 @@ impl JMAP {
 
                         for change in &changes {
                             match change.field {
-                                PrincipalField::Name | PrincipalField::Emails => {
-                                    needs_assert = true;
-                                }
                                 PrincipalField::Secrets => {
                                     expire_session = true;
                                     needs_assert = true;
                                 }
-                                PrincipalField::Quota
+                                PrincipalField::Name
+                                | PrincipalField::Emails
+                                | PrincipalField::Quota
                                 | PrincipalField::UsedQuota
                                 | PrincipalField::Description
                                 | PrincipalField::Type
@@ -392,9 +391,9 @@ impl JMAP {
                             .storage
                             .data
                             .update_principal(
-                                QueryBy::Id(account_id),
-                                changes,
-                                access_token.tenant.map(|t| t.id),
+                                UpdatePrincipal::by_id(account_id)
+                                    .with_updates(changes)
+                                    .with_tenant(access_token.tenant.map(|t| t.id)),
                             )
                             .await?;
 
@@ -571,9 +570,9 @@ impl JMAP {
             .storage
             .data
             .update_principal(
-                QueryBy::Id(access_token.primary_id()),
-                actions,
-                access_token.tenant.map(|t| t.id),
+                UpdatePrincipal::by_id(access_token.primary_id())
+                    .with_updates(actions)
+                    .with_tenant(access_token.tenant.map(|t| t.id)),
             )
             .await?;
 
