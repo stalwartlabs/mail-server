@@ -134,6 +134,35 @@ impl JMAP {
                 self.housekeeper_request(Event::Purge(PurgeType::Account(account_id)))
                     .await
             }
+            (Some("reindex"), id, None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::FtsReindex)?;
+
+                let account_id = if let Some(id) = id {
+                    self.core
+                        .storage
+                        .data
+                        .get_principal_id(decode_path_element(id).as_ref())
+                        .await?
+                        .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?
+                        .into()
+                } else {
+                    None
+                };
+                let tenant_id = access_token.tenant.map(|t| t.id);
+
+                let jmap = self.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = jmap.reindex(account_id, tenant_id).await {
+                        trc::error!(err.details("Failed to reindex FTS"));
+                    }
+                });
+
+                Ok(JsonResponse::new(json!({
+                    "data": (),
+                }))
+                .into_http_response())
+            }
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL

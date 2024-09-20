@@ -73,6 +73,7 @@ impl Permission {
             Permission::PurgeDataStore => "Clear the data storage",
             Permission::PurgeLookupStore => "Clear the lookup storage",
             Permission::PurgeAccount => "Completely remove an account and all associated data",
+            Permission::FtsReindex => "Rebuild the full-text search index",
             Permission::Undelete => "Restore deleted items",
             Permission::DkimSignatureCreate => "Create DKIM signatures for email authentication",
             Permission::DkimSignatureGet => "Retrieve DKIM signature information",

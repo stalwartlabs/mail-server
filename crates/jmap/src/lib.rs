@@ -401,7 +401,7 @@ impl JMAP {
 
         #[cfg(feature = "enterprise")]
         if self.core.is_enterprise_edition() {
-            if let Some(tenant) = quotas.tenant {
+            if let Some(tenant) = quotas.tenant.filter(|tenant| tenant.quota != 0) {
                 let used_quota = self.get_used_quota(tenant.id).await? as u64;
 
                 if used_quota + item_size > tenant.quota {
