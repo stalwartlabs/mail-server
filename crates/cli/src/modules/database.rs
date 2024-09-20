@@ -14,6 +14,22 @@ use crate::modules::Response;
 
 use super::cli::{Client, ServerCommands};
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type")]
+pub enum UpdateSettings {
+    Delete {
+        keys: Vec<String>,
+    },
+    Clear {
+        prefix: String,
+    },
+    Insert {
+        prefix: Option<String>,
+        values: Vec<(String, String)>,
+        assert_empty: bool,
+    },
+}
+
 impl ServerCommands {
     pub async fn exec(self, client: Client) {
         match self {
@@ -40,17 +56,23 @@ impl ServerCommands {
                     .http_request::<Value, _>(
                         Method::POST,
                         "/api/settings",
-                        Some(vec![(key.clone(), value.unwrap_or_default())]),
+                        Some(vec![UpdateSettings::Insert {
+                            prefix: None,
+                            values: vec![(key.clone(), value.unwrap_or_default())],
+                            assert_empty: false,
+                        }]),
                     )
                     .await;
                 eprintln!("Successfully added key {key}.");
             }
             ServerCommands::DeleteConfig { key } => {
                 client
-                    .http_request::<Value, String>(
-                        Method::DELETE,
-                        &format!("/api/settings/{key}"),
-                        None,
+                    .http_request::<Value, _>(
+                        Method::POST,
+                        "/api/settings",
+                        Some(vec![UpdateSettings::Delete {
+                            keys: vec![key.clone()],
+                        }]),
                     )
                     .await;
                 eprintln!("Successfully deleted key {key}.");
@@ -59,7 +81,7 @@ impl ServerCommands {
                 let results = client
                     .http_request::<Response<HashMap<String, String>>, String>(
                         Method::GET,
-                        &format!("/api/settings/list/{}", prefix.unwrap_or_default()),
+                        &format!("/api/settings/list?prefix={}", prefix.unwrap_or_default()),
                         None,
                     )
                     .await
