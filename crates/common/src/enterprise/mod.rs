@@ -25,7 +25,7 @@ use store::Store;
 use trc::{AddContext, EventType, MetricType};
 use utils::config::cron::SimpleCron;
 
-use crate::{expr::Expression, manager::webadmin::Resource, Core};
+use crate::{expr::Expression, manager::webadmin::Resource, Core, HttpLimitResponse};
 
 #[derive(Clone)]
 pub struct Enterprise {
@@ -121,6 +121,8 @@ impl Core {
     }
 
     pub async fn logo_resource(&self, domain: &str) -> trc::Result<Option<Resource<Vec<u8>>>> {
+        const MAX_IMAGE_SIZE: usize = 1024 * 1024;
+
         if self.is_enterprise_edition() {
             let domain = psl::domain_str(domain).unwrap_or(domain);
             let logo = { self.security.logos.lock().get(domain).cloned() };
@@ -180,7 +182,7 @@ impl Core {
                         .to_string();
 
                     let contents = response
-                        .bytes()
+                        .bytes_with_limit(MAX_IMAGE_SIZE)
                         .await
                         .map_err(|err| {
                             trc::ResourceEvent::DownloadExternal
@@ -188,7 +190,11 @@ impl Core {
                                 .details("Failed to download logo")
                                 .reason(err)
                         })?
-                        .to_vec();
+                        .ok_or_else(|| {
+                            trc::ResourceEvent::DownloadExternal
+                                .into_err()
+                                .details("Download exceeded maximum size")
+                        })?;
 
                     logo = Resource::new(content_type, contents).into();
                 }

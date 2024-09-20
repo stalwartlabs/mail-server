@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::config::smtp::session::MTAHook;
+use common::{config::smtp::session::MTAHook, HttpLimitResponse};
 
 use super::{Request, Response};
 
@@ -28,22 +28,12 @@ pub(super) async fn send_mta_hook_request(
         .map_err(|err| format!("Hook request failed: {err}"))?;
 
     if response.status().is_success() {
-        if response
-            .content_length()
-            .map_or(false, |len| len as usize > mta_hook.max_response_size)
-        {
-            return Err(format!(
-                "Hook response too large ({} bytes)",
-                response.content_length().unwrap()
-            ));
-        }
-
-        // TODO: Stream response body to limit response size
         serde_json::from_slice(
             response
-                .bytes()
+                .bytes_with_limit(mta_hook.max_response_size)
                 .await
                 .map_err(|err| format!("Failed to parse Hook response: {}", err))?
+                .ok_or_else(|| "Hook response too large".to_string())?
                 .as_ref(),
         )
         .map_err(|err| format!("Failed to parse Hook response: {}", err))

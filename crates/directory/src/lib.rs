@@ -59,6 +59,8 @@ pub enum Type {
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Permission {
+    // WARNING: add new ids at the end (TODO: use static ids)
+
     // Admin
     Impersonate,
     UnlimitedRequests,
@@ -238,6 +240,7 @@ pub enum Permission {
     SieveRenameScript,
     SieveCheckScript,
     SieveHaveSpace,
+    // WARNING: add new ids at the end (TODO: use static ids)
 }
 
 pub type Permissions = Bitset<

@@ -14,7 +14,9 @@ use mail_auth::flate2;
 use sieve::{runtime::Variable, FunctionMap};
 use store::{Deserialize, Value};
 
-use crate::{config::scripts::RemoteList, scripts::into_sieve_value, USER_AGENT};
+use crate::{
+    config::scripts::RemoteList, scripts::into_sieve_value, HttpLimitResponse, USER_AGENT,
+};
 
 use super::PluginContext;
 
@@ -144,6 +146,8 @@ pub async fn exec_remote(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     }
 }
 
+const MAX_RESOURCE_SIZE: usize = 10 * 1024 * 1024;
+
 async fn exec_remote_(ctx: &PluginContext<'_>) -> trc::Result<Variable> {
     let resource = ctx.arguments[0].to_string();
     let item = ctx.arguments[1].to_string();
@@ -228,13 +232,22 @@ async fn exec_remote_(ctx: &PluginContext<'_>) -> trc::Result<Variable> {
         })?;
 
     if response.status().is_success() {
-        let bytes = response.bytes().await.map_err(|err| {
-            trc::SieveEvent::RuntimeError
-                .into_err()
-                .reason(err)
-                .ctx(trc::Key::Url, resource.to_string())
-                .details("Failed to fetch resource")
-        })?;
+        let bytes = response
+            .bytes_with_limit(MAX_RESOURCE_SIZE)
+            .await
+            .map_err(|err| {
+                trc::SieveEvent::RuntimeError
+                    .into_err()
+                    .reason(err)
+                    .ctx(trc::Key::Url, resource.to_string())
+                    .details("Failed to fetch resource")
+            })?
+            .ok_or_else(|| {
+                trc::SieveEvent::RuntimeError
+                    .into_err()
+                    .ctx(trc::Key::Url, resource.to_string())
+                    .details("Resource is too large")
+            })?;
 
         let reader: Box<dyn std::io::Read> = if resource.ends_with(".gz") {
             Box::new(flate2::read::GzDecoder::new(&bytes[..]))

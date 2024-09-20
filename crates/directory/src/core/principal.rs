@@ -608,6 +608,8 @@ impl serde::Serialize for Principal {
     }
 }
 
+const MAX_STRING_LEN: usize = 512;
+
 impl<'de> serde::Deserialize<'de> for PrincipalValue {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -647,14 +649,22 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
             where
                 E: de::Error,
             {
-                Ok(PrincipalValue::String(value))
+                if value.len() <= MAX_STRING_LEN {
+                    Ok(PrincipalValue::String(value))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
             }
 
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                Ok(PrincipalValue::String(v.to_string()))
+                if value.len() <= MAX_STRING_LEN {
+                    Ok(PrincipalValue::String(value.to_string()))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
             }
 
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
@@ -666,7 +676,13 @@ impl<'de> serde::Deserialize<'de> for PrincipalValue {
 
                 while let Some(value) = seq.next_element::<StringOrU64>()? {
                     match value {
-                        StringOrU64::String(s) => vec_string.push(s),
+                        StringOrU64::String(s) => {
+                            if s.len() <= MAX_STRING_LEN {
+                                vec_string.push(s);
+                            } else {
+                                return Err(serde::de::Error::custom("string too long"));
+                            }
+                        }
                         StringOrU64::U64(u) => vec_u64.push(u),
                     }
                 }
@@ -720,12 +736,24 @@ impl<'de> serde::Deserialize<'de> for Principal {
                         })?;
 
                     let value = match key {
-                        PrincipalField::Name => PrincipalValue::String(map.next_value()?),
+                        PrincipalField::Name => {
+                            PrincipalValue::String(map.next_value::<String>().and_then(|v| {
+                                if v.len() <= MAX_STRING_LEN {
+                                    Ok(v)
+                                } else {
+                                    Err(serde::de::Error::custom("string too long"))
+                                }
+                            })?)
+                        }
                         PrincipalField::Description
                         | PrincipalField::Tenant
                         | PrincipalField::Picture => {
                             if let Some(v) = map.next_value::<Option<String>>()? {
-                                PrincipalValue::String(v)
+                                if v.len() <= MAX_STRING_LEN {
+                                    PrincipalValue::String(v)
+                                } else {
+                                    return Err(serde::de::Error::custom("string too long"));
+                                }
                             } else {
                                 continue;
                             }
@@ -798,7 +826,22 @@ impl<'de> serde::Deserialize<'de> for StringOrU64 {
             where
                 E: de::Error,
             {
-                Ok(StringOrU64::String(value.to_string()))
+                if value.len() <= MAX_STRING_LEN {
+                    Ok(StringOrU64::String(value.to_string()))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v.len() <= MAX_STRING_LEN {
+                    Ok(StringOrU64::String(v))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
             }
 
             fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
@@ -837,7 +880,22 @@ impl<'de> serde::Deserialize<'de> for StringOrMany {
             where
                 E: de::Error,
             {
-                Ok(StringOrMany::One(value.to_string()))
+                if value.len() <= MAX_STRING_LEN {
+                    Ok(StringOrMany::One(value.to_string()))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if v.len() <= MAX_STRING_LEN {
+                    Ok(StringOrMany::One(v))
+                } else {
+                    Err(serde::de::Error::custom("string too long"))
+                }
             }
 
             fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>

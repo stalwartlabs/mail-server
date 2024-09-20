@@ -20,6 +20,12 @@ use crate::core::SMTP;
 
 use super::{parse::ParsePolicy, Error};
 
+#[cfg(not(feature = "test_mode"))]
+use common::HttpLimitResponse;
+
+#[cfg(not(feature = "test_mode"))]
+const MAX_POLICY_SIZE: usize = 1024 * 1024;
+
 #[allow(unused_variables)]
 impl SMTP {
     pub async fn lookup_mta_sts_policy<'x>(
@@ -61,11 +67,12 @@ impl SMTP {
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::none())
             .build()?
-            .get(&format!("https://mta-sts.{domain}/.well-known/mta-sts.txt"))
+            .get(format!("https://mta-sts.{domain}/.well-known/mta-sts.txt"))
             .send()
             .await?
-            .bytes()
-            .await?;
+            .bytes_with_limit(MAX_POLICY_SIZE)
+            .await?
+            .ok_or_else(|| Error::InvalidPolicy("Policy too large".to_string()))?;
         #[cfg(feature = "test_mode")]
         let bytes = STS_TEST_POLICY.lock().clone();
 
