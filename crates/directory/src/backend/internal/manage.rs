@@ -84,6 +84,12 @@ impl ManageDirectory for Store {
         )))
         .await
         .caused_by(trc::location!())
+        .map(|v| {
+            v.map(|mut v| {
+                v.id = principal_id;
+                v
+            })
+        })
     }
 
     async fn get_principal_id(&self, name: &str) -> trc::Result<Option<u32>> {
@@ -389,7 +395,7 @@ impl ManageDirectory for Store {
             )
             .set(
                 ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Dynamic(0))),
-                principal.clone(),
+                (&principal).serialize(),
             )
             .set(
                 ValueClass::Directory(DirectoryClass::NameToId(
@@ -465,9 +471,7 @@ impl ManageDirectory for Store {
             QueryBy::Credentials(_) => unreachable!(),
         };
         let mut principal = self
-            .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-                DirectoryClass::Principal(principal_id),
-            )))
+            .get_principal(principal_id)
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| not_found(principal_id.to_string()))?;
@@ -630,7 +634,8 @@ impl ManageDirectory for Store {
             )))
             .await
             .caused_by(trc::location!())?
-            .ok_or_else(|| not_found(principal_id.to_string()))?;
+            .ok_or_else(|| not_found(principal_id))?;
+        principal.inner.id = principal_id;
 
         // Obtain members and memberOf
         let mut member_of = self
@@ -1822,13 +1827,13 @@ fn validate_member_of(
 }
 
 #[derive(Clone, Copy)]
-struct DynamicPrincipalInfo {
+pub(crate) struct DynamicPrincipalInfo {
     typ: Type,
     tenant: Option<u32>,
 }
 
 impl DynamicPrincipalInfo {
-    fn new(typ: Type, tenant: Option<u32>) -> Self {
+    pub fn new(typ: Type, tenant: Option<u32>) -> Self {
         Self { typ, tenant }
     }
 }

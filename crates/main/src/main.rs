@@ -7,6 +7,7 @@
 use std::time::Duration;
 
 use common::{config::server::ServerProtocol, manager::boot::BootManager, Ipc, IPC_CHANNEL_BUFFER};
+use directory::backend::internal::MigrateDirectory;
 use imap::core::{ImapSessionManager, IMAP};
 use jmap::{api::JmapSessionManager, services::gossip::spawn::GossiperBuilder, JMAP};
 use managesieve::core::ManageSieveSessionManager;
@@ -55,6 +56,12 @@ async fn main() -> std::io::Result<()> {
     // Log licensing information
     #[cfg(feature = "enterprise")]
     core.load().as_ref().log_license_details();
+
+    // Migrate directory
+    if let Err(err) = core.load().storage.data.migrate_directory().await {
+        trc::error!(err.details("Directory migration failed"));
+        std::process::exit(1);
+    }
 
     // Spawn servers
     let (shutdown_tx, shutdown_rx) = init.servers.spawn(|server, acceptor, shutdown_rx| {

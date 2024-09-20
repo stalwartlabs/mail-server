@@ -10,8 +10,16 @@ pub mod manage;
 use std::{fmt::Display, slice::Iter};
 
 use ahash::AHashMap;
-use store::{write::key::KeySerializer, Deserialize, Serialize, U32_LEN};
-use utils::codec::leb128::Leb128Iterator;
+use jmap_proto::types::collection::Collection;
+use manage::DynamicPrincipalInfo;
+use store::{
+    write::{
+        key::KeySerializer, AnyClass, BatchBuilder, DirectoryClass, MaybeDynamicId, ValueClass,
+    },
+    Deserialize, IterateParams, Serialize, Store, ValueKey, SUBSPACE_DIRECTORY, U32_LEN,
+};
+use trc::AddContext;
+use utils::codec::leb128::{Leb128Iterator, Leb128Reader};
 
 use crate::{Principal, Type, ROLE_ADMIN, ROLE_USER};
 
@@ -32,7 +40,7 @@ impl Serialize for Principal {
 impl Serialize for &Principal {
     fn serialize(self) -> Vec<u8> {
         let mut serializer = KeySerializer::new(
-            U32_LEN * 2
+            U32_LEN
                 + 2
                 + self
                     .fields
@@ -41,7 +49,6 @@ impl Serialize for &Principal {
                     .sum::<usize>(),
         )
         .write(2u8)
-        .write_leb128(self.id)
         .write(self.typ as u8)
         .write_leb128(self.fields.len());
 
@@ -155,17 +162,15 @@ impl PrincipalInfo {
 fn deserialize(bytes: &[u8]) -> Option<Principal> {
     let mut bytes = bytes.iter();
 
-    let version = *bytes.next()?;
-    let id = bytes.next_leb128()?;
-    let type_id = *bytes.next()?;
-    let typ = Type::from_u8(type_id);
-
-    match version {
+    match *bytes.next()? {
         1 => {
             // Version 1 (legacy)
+            let id = bytes.next_leb128()?;
+            let type_id = *bytes.next()?;
+
             let mut principal = Principal {
                 id,
-                typ,
+                typ: Type::from_u8(type_id),
                 ..Default::default()
             };
 
@@ -189,10 +194,11 @@ fn deserialize(bytes: &[u8]) -> Option<Principal> {
         }
         2 => {
             // Version 2
+            let typ = Type::from_u8(*bytes.next()?);
             let num_fields = bytes.next_leb128::<usize>()?;
 
             let mut principal = Principal {
-                id,
+                id: u32::MAX,
                 typ,
                 fields: AHashMap::with_capacity(num_fields),
             };
@@ -229,6 +235,141 @@ fn deserialize(bytes: &[u8]) -> Option<Principal> {
             principal.into()
         }
         _ => None,
+    }
+}
+
+pub trait MigrateDirectory: Sync + Send {
+    fn migrate_directory(&self) -> impl std::future::Future<Output = trc::Result<()>> + Send;
+}
+
+impl MigrateDirectory for Store {
+    async fn migrate_directory(&self) -> trc::Result<()> {
+        let mut principals = Vec::new();
+        let mut domains = Vec::new();
+
+        self.iterate(
+            IterateParams::new(
+                ValueKey {
+                    account_id: 0,
+                    collection: 0,
+                    document_id: 0,
+                    class: ValueClass::Directory(DirectoryClass::Principal(0)),
+                },
+                ValueKey {
+                    account_id: u32::MAX,
+                    collection: u8::MAX,
+                    document_id: u32::MAX,
+                    class: ValueClass::Directory(DirectoryClass::UsedQuota(0)),
+                },
+            ),
+            |key, value| {
+                if key[0] == 2 && value[0] == 1 {
+                    principals.push((
+                        key.get(1..)
+                            .and_then(|b| b.read_leb128::<u32>().map(|(v, _)| v))
+                            .ok_or_else(|| {
+                                trc::StoreEvent::DataCorruption
+                                    .caused_by(trc::location!())
+                                    .ctx(trc::Key::Value, key)
+                            })?,
+                        Principal::deserialize(value)?,
+                    ));
+                } else if key[0] == 3 {
+                    let domain = std::str::from_utf8(&key[1..]).unwrap_or_default();
+                    if !domain.is_empty() {
+                        domains.push(domain.to_string());
+                    }
+                }
+
+                Ok(true)
+            },
+        )
+        .await
+        .caused_by(trc::location!())?;
+
+        let total_principal_count = principals.len();
+        for (account_id, mut principal) in principals {
+            let role = principal.take_int(PrincipalField::Roles).unwrap() as u32;
+
+            let mut batch = BatchBuilder::new();
+            batch
+                .with_account_id(u32::MAX)
+                .with_collection(Collection::Principal)
+                .set(
+                    ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
+                        account_id,
+                    ))),
+                    (&principal).serialize(),
+                );
+
+            if principal.typ() == Type::Individual {
+                batch
+                    .set(
+                        ValueClass::Directory(DirectoryClass::MemberOf {
+                            principal_id: MaybeDynamicId::Static(account_id),
+                            member_of: MaybeDynamicId::Static(role),
+                        }),
+                        vec![Type::Role as u8],
+                    )
+                    .set(
+                        ValueClass::Directory(DirectoryClass::Members {
+                            principal_id: MaybeDynamicId::Static(role),
+                            has_member: MaybeDynamicId::Static(account_id),
+                        }),
+                        vec![],
+                    );
+            }
+
+            self.write(batch.build())
+                .await
+                .caused_by(trc::location!())?;
+        }
+
+        let total_domain_count = domains.len();
+        for domain in domains {
+            let mut batch = BatchBuilder::new();
+
+            batch
+                .with_account_id(u32::MAX)
+                .with_collection(Collection::Principal)
+                .create_document()
+                .assert_value(
+                    ValueClass::Directory(DirectoryClass::NameToId(
+                        domain.to_string().into_bytes(),
+                    )),
+                    (),
+                )
+                .set(
+                    ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Dynamic(0))),
+                    Principal::new(0, Type::Domain)
+                        .with_field(PrincipalField::Name, domain.to_string())
+                        .with_field(PrincipalField::Description, domain.to_string())
+                        .serialize(),
+                )
+                .set(
+                    ValueClass::Directory(DirectoryClass::NameToId(domain.as_bytes().to_vec())),
+                    DynamicPrincipalInfo::new(Type::Domain, None),
+                )
+                .clear(ValueClass::Any(AnyClass {
+                    subspace: SUBSPACE_DIRECTORY,
+                    key: [3u8].iter().chain(domain.as_bytes()).copied().collect(),
+                }));
+
+            self.write(batch.build())
+                .await
+                .caused_by(trc::location!())?;
+        }
+
+        if total_domain_count > 0 || total_principal_count > 0 {
+            trc::event!(
+                Server(trc::ServerEvent::Startup),
+                Details = format!(
+                    "Migrated {total_principal_count} principals and {total_domain_count} domains",
+                )
+            );
+        }
+
+        Ok(())
     }
 }
 

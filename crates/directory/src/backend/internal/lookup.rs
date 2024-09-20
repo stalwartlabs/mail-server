@@ -54,12 +54,7 @@ impl DirectoryStore for Store {
         };
 
         if let Some(account_id) = account_id {
-            if let Some(mut principal) = self
-                .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-                    DirectoryClass::Principal(account_id),
-                )))
-                .await?
-            {
+            if let Some(mut principal) = self.get_principal(account_id).await? {
                 if let Some(secret) = secret {
                     if !principal.verify_secret(secret).await? {
                         return Ok(None);
@@ -157,9 +152,7 @@ impl DirectoryStore for Store {
         {
             for account_id in self.get_members(ptype.id).await? {
                 if let Some(email) = self
-                    .get_value::<Principal>(ValueKey::from(ValueClass::Directory(
-                        DirectoryClass::Principal(account_id),
-                    )))
+                    .get_principal(account_id)
                     .await?
                     .and_then(|mut p| p.take_str(PrincipalField::Emails))
                 {
