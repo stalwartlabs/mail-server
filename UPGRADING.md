@@ -3,7 +3,8 @@ Upgrading from `v0.9.x` to `v0.10.0`
 
 ## Important Notes
 
-- Version `0.10.0` introduces roles and permissions, changing how principals (accounts, groups, lists, etc.) are stored in the database.
+- In version `0.10.0` accounts are associated with roles and permissions, which define what resources they can access. The concept of administrator or super user accounts no longer exists, now there is a single account type (the `individual` principal) which can be assigned the `admin` role or custom permissions to have administrator access.
+- Due to the changes in the database layout in order to support roles and permissions, the database must be migrated to the new layout. The migration is automatic and should not require any manual intervention.
 - While the database migration is automatic, it's recommended to **back up your data** before upgrading.
 - The webadmin must be upgraded **before** the mail server to maintain access post-upgrade.
 
