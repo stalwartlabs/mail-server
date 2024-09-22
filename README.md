@@ -117,6 +117,16 @@ do not hesitate to reach us on [GitHub Discussions](https://github.com/stalwartl
 [Reddit](https://www.reddit.com/r/stalwartlabs), [Discord](https://discord.gg/aVQr3jF8jd) or [Matrix](https://matrix.to/#/#stalwart:matrix.org).
 Additionally you may purchase a subscription to obtain priority support from Stalwart Labs Ltd.
 
+## Sponsorship
+
+Your support is crucial in helping us continue to improve the project, add new features, and maintain the highest level of quality. By becoming a GitHub Sponsor, you help fund the development and future of Stalwart Mail Server. As a thank-you, sponsors who contribute $10 per month or more will automatically receive a [Small Business Edition](https://stalw.art/small-business/) license, which includes all the powerful features of the [Enterprise edition](https://stalw.art/enterprise/).
+
+These are some of our open-source sponsors:
+
+<!-- sponsors --><a href="https://github.com/kbjr"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;195127?u&#x3D;a11e7de49732184888781379e9282dc7eed55615&amp;v&#x3D;4" width="60px" alt="James Brumond" /></a><a href="https://github.com/EliRibble"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;2319207?u&#x3D;c755aec38204221af321ef3fd7293c4c812238af&amp;v&#x3D;4" width="60px" alt="Eli Ribble" /></a><a href="https://github.com/MailRoute"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;3912377?v&#x3D;4" width="60px" alt="MailRoute, Inc." /></a><a href="https://github.com/JAMflow-Cloud"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;165913352?v&#x3D;4" width="60px" alt="JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;166622226?v&#x3D;4" width="60px" alt="Starsong Consulting" /></a><a href="https://github.com/Vie-eco"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;174055717?v&#x3D;4" width="60px" alt="Vie.eco" /></a><a href="https://github.com/wdes"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;25723041?v&#x3D;4" width="60px" alt="Wdes" /></a><!-- sponsors -->
+
+<br/>If you would like to support our work, please consider [becoming a sponsor](https://github.com/sponsors/stalwartlabs).
+
 ## Roadmap
 
 - [ ] JMAP Calendar, Contacts and Tasks support
@@ -130,14 +140,6 @@ See the [enhancement requests](https://github.com/stalwartlabs/mail-server/issue
 Part of the development of this project was funded through the [NGI0 Entrust Fund](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu/) programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101069594.
 
 If you find the project useful you can help by [becoming a sponsor](https://liberapay.com/stalwartlabs). Thank you!
-
-## Sponsors
-
-These are some of our open-source sponsors:
-
-<!-- sponsors --><a href="https://github.com/kbjr"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;195127?u&#x3D;a11e7de49732184888781379e9282dc7eed55615&amp;v&#x3D;4" width="60px" alt="James Brumond" /></a><a href="https://github.com/EliRibble"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;2319207?u&#x3D;c755aec38204221af321ef3fd7293c4c812238af&amp;v&#x3D;4" width="60px" alt="Eli Ribble" /></a><a href="https://github.com/MailRoute"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;3912377?v&#x3D;4" width="60px" alt="MailRoute, Inc." /></a><a href="https://github.com/JAMflow-Cloud"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;165913352?v&#x3D;4" width="60px" alt="JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;166622226?v&#x3D;4" width="60px" alt="Starsong Consulting" /></a><a href="https://github.com/Vie-eco"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;174055717?v&#x3D;4" width="60px" alt="Vie.eco" /></a><a href="https://github.com/wdes"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;25723041?v&#x3D;4" width="60px" alt="Wdes" /></a><!-- sponsors -->
-
-<br/>If you would like to support our work, please consider [becoming a sponsor](https://github.com/sponsors/stalwartlabs).
 
 ## License
 
