@@ -42,3 +42,4 @@ tokio = { version = "1.23", features = ["full"] }
 
 [features]
 test_mode = []
+enterprise = []

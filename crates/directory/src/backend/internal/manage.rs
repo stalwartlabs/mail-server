@@ -186,13 +186,14 @@ impl ManageDirectory for Store {
         if name.is_empty() {
             return Err(err_missing(PrincipalField::Name));
         }
+        let mut valid_domains: AHashSet<String> = AHashSet::new();
 
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Validate tenant
-        let mut valid_domains = AHashSet::new();
+        #[cfg(feature = "enterprise")]
         if let Some(tenant_id) = tenant_id {
             let tenant = self
                 .query(QueryBy::Id(tenant_id), false)
@@ -246,6 +247,7 @@ impl ManageDirectory for Store {
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Obtain tenant id, only if no default tenant is provided
+        #[cfg(feature = "enterprise")]
         if let (Some(tenant_name), None) = (principal.take_str(PrincipalField::Tenant), tenant_id) {
             tenant_id = self
                 .get_principal_info(&tenant_name)
@@ -258,6 +260,7 @@ impl ManageDirectory for Store {
         }
 
         // Tenants must provide principal names including a valid domain
+        #[cfg(feature = "enterprise")]
         if let Some(tenant_id) = tenant_id {
             if matches!(principal.typ, Type::Tenant) {
                 return Err(error(
@@ -475,13 +478,14 @@ impl ManageDirectory for Store {
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| not_found(principal_id.to_string()))?;
+        let mut batch = BatchBuilder::new();
 
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Make sure tenant has no data
-        let mut batch = BatchBuilder::new();
+        #[cfg(feature = "enterprise")]
         match principal.typ {
             Type::Individual | Type::Group => {
                 // Update tenant quota
@@ -676,12 +680,14 @@ impl ManageDirectory for Store {
             );
         }
 
+        let mut used_quota: Option<i64> = None;
+
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Obtain used quota
-        let mut used_quota = None;
+        #[cfg(feature = "enterprise")]
         if tenant_id.is_none()
             && changes
                 .iter()
@@ -781,6 +787,7 @@ impl ManageDirectory for Store {
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL
+                #[cfg(feature = "enterprise")]
                 (
                     PrincipalAction::Set,
                     PrincipalField::Tenant,
@@ -1679,6 +1686,7 @@ impl ManageDirectory for Store {
         // SPDX-License-Identifier: LicenseRef-SEL
 
         // Map tenant name
+        #[cfg(feature = "enterprise")]
         if let Some(tenant_id) = principal.take_int(PrincipalField::Tenant) {
             if fields.is_empty() || fields.contains(&PrincipalField::Tenant) {
                 if let Some(name) = self
