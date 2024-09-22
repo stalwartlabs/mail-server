@@ -6,7 +6,7 @@ Upgrading from `v0.9.x` to `v0.10.0`
 - In version `0.10.0` accounts are associated with roles and permissions, which define what resources they can access. The concept of administrator or super user accounts no longer exists, now there is a single account type (the `individual` principal) which can be assigned the `admin` role or custom permissions to have administrator access.
 - Due to the changes in the database layout in order to support roles and permissions, the database must be migrated to the new layout. The migration is automatic and should not require any manual intervention.
 - While the database migration is automatic, it's recommended to **back up your data** before upgrading.
-- The webadmin must be upgraded **before** the mail server to maintain access post-upgrade.
+- The webadmin must be upgraded **before** the mail server to maintain access post-upgrade. This is true even if you run Stalwart in Docker.
 
 ## Step-by-Step Upgrade Process
 
@@ -23,7 +23,7 @@ Upgrading from `v0.9.x` to `v0.10.0`
 
   ```bash
   $ docker stop stalwart-mail
-  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it stalwart-mail /opt/stalwart-mail/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
+  $ docker run --rm -v <STALWART_DIR>:/opt/stalwart-mail -it stalwart-mail /usr/local/bin/stalwart-mail --config /opt/stalwart-mail/etc/config.toml --export /opt/stalwart-mail/export
   ```
 - Download the `v0.10.0` mail-server for your platform from the [releases page](https://github.com/stalwartlabs/mail-server/releases/latest/) and replace the binary in `/opt/stalwart-mail/bin`. If you are using the Docker image, pull the latest image.
 - Start the service:
