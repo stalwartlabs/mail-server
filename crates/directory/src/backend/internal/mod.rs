@@ -267,7 +267,10 @@ impl MigrateDirectory for Store {
                     account_id: u32::MAX,
                     collection: u8::MAX,
                     document_id: u32::MAX,
-                    class: ValueClass::Directory(DirectoryClass::UsedQuota(0)),
+                    class: ValueClass::Any(AnyClass {
+                        subspace: SUBSPACE_DIRECTORY,
+                        key: vec![4u8],
+                    }),
                 },
             ),
             |key, value| {
