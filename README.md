@@ -119,13 +119,13 @@ Additionally you may purchase a subscription to obtain priority support from Sta
 
 ## Sponsorship
 
-Your support is crucial in helping us continue to improve the project, add new features, and maintain the highest level of quality. By becoming a sponsor on [Open Collective](https://github.com/sponsors/stalwartlabs) or [Github Sponsors](https://github.com/sponsors/stalwartlabs), you help fund the development and future of Stalwart Mail Server. As a thank-you, sponsors who contribute $10 per month or more will automatically receive a [Small Business Edition](https://stalw.art/small-business/) license, which includes all the powerful features of the [Enterprise edition](https://stalw.art/enterprise/).
+Your support is crucial in helping us continue to improve the project, add new features, and maintain the highest level of quality. By becoming a sponsor on [Open Collective](https://opencollective.com/stalwart) or [Github Sponsors](https://github.com/sponsors/stalwartlabs), you help fund the development and future of Stalwart Mail Server. As a thank-you, sponsors who contribute $10 per month or more will automatically receive a [Small Business Edition](https://stalw.art/small-business/) license, which includes all the powerful features of the [Enterprise edition](https://stalw.art/enterprise/).
 
 These are some of our open-source sponsors:
 
 <!-- sponsors --><a href="https://github.com/kbjr"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;195127?u&#x3D;a11e7de49732184888781379e9282dc7eed55615&amp;v&#x3D;4" width="60px" alt="James Brumond" /></a><a href="https://github.com/EliRibble"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;2319207?u&#x3D;c755aec38204221af321ef3fd7293c4c812238af&amp;v&#x3D;4" width="60px" alt="Eli Ribble" /></a><a href="https://github.com/MailRoute"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;3912377?v&#x3D;4" width="60px" alt="MailRoute, Inc." /></a><a href="https://github.com/JAMflow-Cloud"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;165913352?v&#x3D;4" width="60px" alt="JAMflow Cloud" /></a><a href="https://github.com/starsong-consulting"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;166622226?v&#x3D;4" width="60px" alt="Starsong Consulting" /></a><a href="https://github.com/Vie-eco"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;174055717?v&#x3D;4" width="60px" alt="Vie.eco" /></a><a href="https://github.com/wdes"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;25723041?v&#x3D;4" width="60px" alt="Wdes" /></a><a href="https://github.com/acontext"><img src="https:&#x2F;&#x2F;avatars.githubusercontent.com&#x2F;u&#x2F;56616368?u&#x3D;1454c628ae47b333990b6cba63caa41531d4fbf3&amp;v&#x3D;4" width="60px" alt="Adam House" /></a><!-- sponsors -->
 
-<br/>If you would like to support our work, please consider [becoming a sponsor](https://github.com/sponsors/stalwartlabs).
+<br/>If you would like to support our work, please consider [becoming a sponsor](https://opencollective.com/stalwart).
 
 ## Roadmap
 
