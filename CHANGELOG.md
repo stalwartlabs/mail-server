@@ -2,11 +2,23 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.10.1] - 2024-09-26
+
+To upgrade replace the `stalwart-mail` binary.
+
+### Added
+- `OAUTHBEARER` SASL support in all services (#627).
+
+### Changed
+
+### Fixed
+- Fixed `migrate_directory` range scan (#784).
+
 ## [0.10.0] - 2024-09-21
 
 This version includes breaking changes to how accounts are stored. Please read [UPGRADING.md](UPGRADING.md) for details.
 
-## Added
+### Added
 - Multi-tenancy (Enterprise feature).
 - Branding (Enterprise feature).
 - Roles and permissions.
@@ -24,7 +36,7 @@ This version includes breaking changes to how accounts are stored. Please read [
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
 
-## Added
+### Added
 - Support for global Sieve scripts that can be used by users to filter their incoming mail.
 - Allow localhost to override HTTP access controls to prevent lockouts.
 
@@ -41,7 +53,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
 
-## Added
+### Added
 - Dashboard (Enterprise feature)
 - Alerts (Enterprise feature)
 - SYN Flood (session "loitering") attack protection (#482)
@@ -60,7 +72,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
 
-## Added
+### Added
 - Message delivery history (Enterprise feature)
 - Live tracing and logging (Enterprise feature)
 - SQL Read Replicas (Enterprise feature)
@@ -78,7 +90,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
 
-## Added
+### Added
 - Metrics support (closes #478)
   - OpenTelemetry Push Exporter
   - Prometheus Pull Exporter (closes #275)
@@ -99,7 +111,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin. This version includes breaking changes to the Webhooks configuration and produces a slightly different log output, read [UPGRADING.md](UPGRADING.md) for details.
 
-## Added
+### Added
 - Improved and faster tracing and logging.
 - Customizable event logging levels.
 
@@ -113,7 +125,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 To upgrade replace the `stalwart-mail` binary.
 
-## Added
+### Added
 - Restore deleted e-mails (Enterprise Edition only)
 - Kubernetes (K8S) livenessProbe and readinessProbe endpoints.
 
@@ -128,7 +140,7 @@ To upgrade replace the `stalwart-mail` binary.
 
 To upgrade replace the `stalwart-mail` binary.
 
-## Added
+### Added
 
 ### Changed
 
@@ -140,7 +152,7 @@ To upgrade replace the `stalwart-mail` binary.
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
 
-## Added
+### Added
 - Two-factor authentication with Time-based One-Time Passwords (#436)
 - Application passwords (#479).
 - Option to disable user accounts.
@@ -157,7 +169,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin and spam filter versions.
 
-## Added
+### Added
 - Webhooks support (#480)
 - MTA Hooks (like milter but over HTTP)
 - Manually train and test spam classifier (#473 #264 #257 #471)
@@ -178,7 +190,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin and spam filter versions.
 
-## Added
+### Added
 - POP3 support.
 - DKIM signature length exploit protection.
 - Faster email deletion.
@@ -202,7 +214,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 This version uses a different database layout which is incompatible with previous versions. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
 
-## Added
+### Added
 - Clustering support with node auto-discovery and partition-tolerant failure detection.
 - Autoconfig and MS Autodiscover support (#336)
 - New variables `retry_num`, `notify_num`, `last_error` add `last_status` available in queue expressions.
@@ -231,7 +243,7 @@ This version uses a different database layout which is incompatible with previou
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin version.
 
-## Added
+### Added
 - Full database export and import functionality
 - Add --help and --version command line arguments (#365)
 - Allow catch-all addresses when validating must match sender
@@ -250,7 +262,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin version.
 
-## Added
+### Added
 - Support for `DNS-01` and `HTTP-01` ACME challenges (#226)
 - Configurable external resources (#355)
 
@@ -264,7 +276,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 To upgrade replace the `stalwart-mail` binary.
 
-## Added
+### Added
 - Make initial admin password configurable via env (#311)
 
 ### Changed
@@ -278,7 +290,7 @@ To upgrade replace the `stalwart-mail` binary.
 
 This version uses a different database layout and introduces multiple breaking changes in the configuration files. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
 
-## Added
+### Added
 - Web-based administration interface.
 - REST API for management and configuration.
 - Automatic RSA and ED25519 DKIM key generation.
@@ -300,7 +312,7 @@ This version uses a different database layout and introduces multiple breaking c
 
 This version introduces breaking changes in the configuration file. Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
 
-## Added
+### Added
 - Distributed and fault-tolerant SMTP message queues.
 - Distributed rate-limiting and fail2ban.
 - Expressions in configuration files.
@@ -316,7 +328,7 @@ This version introduces breaking changes in the configuration file. Please read 
 
 Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
 
-## Added
+### Added
 - Built-in [fail2ban](https://stalw.art/docs/server/fail2ban) and IP address/mask blocking (#164).
 - CLI: Read URL and credentials from environment variables (#88).
 - mySQL driver: Add `max-allowed-packet` setting (#201).
@@ -334,7 +346,7 @@ Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to
 
 Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to upgrade from previous versions.
 
-## Added
+### Added
 - [ACME](https://stalw.art/docs/server/tls/acme) support for automatic TLS certificate generation and renewal (#160).
 - TLS certificate [hot-reloading](https://stalw.art/docs/management/database/maintenance#tls-certificate-reloading).
 - [HAProxy protocol](https://stalw.art/docs/server/proxy) support (#36).
@@ -347,7 +359,7 @@ Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to
 
 ## [0.5.1] - 2024-01-02
 
-## Added
+### Added
 - SMTP smuggling protection: Sanitization of outgoing messages that do not use `CRLF` as line endings.
 - SMTP sender validation for authenticated users: Added the `session.auth.must-match-sender` configuration option to enforce that the sender address used in the `MAIL FROM` command matches the authenticated user or any of their associated e-mail addresses.
 
@@ -365,7 +377,7 @@ Please read the [UPGRADING.md](UPGRADING.md) file for more information on how to
 
 This version requires a database migration and introduces breaking changes in the configuration file. Please read the [UPGRADING.md](UPGRADING.md) file for more information.
 
-## Added
+### Added
 - Performance enhancements:
   - Messages are parsed only once and their offsets stored in the database, which avoids having to parse them on every `FETCH` request.
   - Background full-text indexing.
@@ -391,7 +403,7 @@ This version requires a database migration and introduces breaking changes in th
 
 ## [0.4.2] - 2023-11-01
 
-## Added
+### Added
 - JMAP for Quotas support ([RFC9425](https://www.rfc-editor.org/rfc/rfc9425.html))
 - JMAP Blob Management Extension support ([RFC9404](https://www.rfc-editor.org/rfc/rfc9404.html))
 - Spam Filter - Empty header rules.
@@ -404,7 +416,7 @@ This version requires a database migration and introduces breaking changes in th
 
 ## [0.4.1] - 2023-10-26
 
-## Added
+### Added
 
 ### Changed
 
@@ -416,7 +428,7 @@ This version requires a database migration and introduces breaking changes in th
 
 This version introduces some breaking changes in the configuration file. Please read the [UPGRADING.md](UPGRADING.md) file for more information.
 
-## Added
+### Added
 - Built-in Spam and Phishing filter.
 - Scheduled queries on some directory types.
 - In-memory maps and lists containing glob or regex patterns.
@@ -432,7 +444,7 @@ This version introduces some breaking changes in the configuration file. Please 
 
 ## [0.3.10] - 2023-10-17
 
-## Added
+### Added
 - Option to allow invalid certificates on outbound SMTP connections.
 - Option to disable ansi colors on `stdout`.
 
@@ -443,7 +455,7 @@ This version introduces some breaking changes in the configuration file. Please 
 
 ## [0.3.9] - 2023-10-07
 
-## Added
+### Added
 - Support for reading environment variables from the configuration file using the `!ENV_VAR_NAME` special keyword.
 - Option to disable ANSI color codes in logs.
 
@@ -455,7 +467,7 @@ This version introduces some breaking changes in the configuration file. Please 
 
 ## [0.3.8] - 2023-09-19
 
-## Added
+### Added
 - Journal logging support
 - IMAP support for UTF8 APPEND
 
@@ -468,7 +480,7 @@ This version introduces some breaking changes in the configuration file. Please 
 
 ## [0.3.7] - 2023-09-05
 
-## Added
+### Added
 - Option to disable IMAP All Messages folder (#68).
 - Option to allow unencrypted SMTP AUTH (#72)
 - Support for `rcpt-domain` key in `rcpt.relay` SMTP rule evaluation.
@@ -485,7 +497,7 @@ This version introduces some breaking changes in the configuration file. Please 
 
 ## [0.3.6] - 2023-08-29
 
-## Added
+### Added
 - Arithmetic and logical expression evaluation in Sieve scripts.
 - Support for storing query results in Sieve variables.
 - Results of SPF, DKIM, ARC, DMARC and IPREV checks available as environment variables in Sieve scripts.
@@ -501,7 +513,7 @@ This version introduces some breaking changes in the configuration file. Please 
 
 ## [0.3.5] - 2023-08-18
 
-## Added
+### Added
 - TCP listener option `nodelay`.
  
 ### Changed
@@ -512,7 +524,7 @@ This version introduces some breaking changes in the configuration file. Please 
 
 ## [0.3.4] - 2023-08-09
 
-## Added
+### Added
 - JMAP: Support for setting custom HTTP response headers (#52)
  
 ### Changed
