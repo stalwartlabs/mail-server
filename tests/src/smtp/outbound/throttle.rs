@@ -13,10 +13,9 @@ use mail_auth::MX;
 use store::write::now;
 
 use crate::smtp::{
-    inbound::TestQueueEvent, outbound::TestServer, queue::manager::new_message,
-    session::TestSession,
+    inbound::TestQueueEvent, queue::manager::new_message, session::TestSession, TestSMTP,
 };
-use smtp::queue::{Domain, Message, QueueEnvelope, Schedule, Status};
+use smtp::queue::{throttle::IsAllowed, Domain, Message, QueueEnvelope, Schedule, Status};
 
 const CONFIG: &str = r#"
 [session.rcpt]
@@ -73,7 +72,7 @@ async fn throttle_outbound() {
     let mut test_message = new_message(0);
     test_message.return_path_domain = "foobar.org".to_string();
 
-    let mut local = TestServer::new("smtp_throttle_outbound", CONFIG, true).await;
+    let mut local = TestSMTP::new("smtp_throttle_outbound", CONFIG).await;
 
     let core = local.build_smtp();
     let mut session = local.new_session();
@@ -83,7 +82,10 @@ async fn throttle_outbound() {
     session
         .send_message("john@foobar.org", &["bill@test.org"], "test:no_dkim", "250")
         .await;
-    assert_eq!(local.qr.last_queued_due().await as i64 - now() as i64, 0);
+    assert_eq!(
+        local.queue_receiver.last_queued_due().await as i64 - now() as i64,
+        0
+    );
 
     // Throttle sender
     let mut in_flight = vec![];
@@ -102,13 +104,13 @@ async fn throttle_outbound() {
 
     // Expect concurrency throttle for sender domain 'foobar.org'
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.qr.read_event().await.unwrap_on_hold();
+    local.queue_receiver.read_event().await.unwrap_on_hold();
     in_flight.clear();
 
     // Expect rate limit throttle for sender domain 'foobar.net'
@@ -128,14 +130,14 @@ async fn throttle_outbound() {
         .send_message("john@foobar.net", &["bill@test.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.qr.read_event().await.assert_reload();
-    let due = local.qr.last_queued_due().await - now();
+    local.queue_receiver.read_event().await.assert_reload();
+    let due = local.queue_receiver.last_queued_due().await - now();
     assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for recipient domain 'example.org'
@@ -167,13 +169,13 @@ async fn throttle_outbound() {
         )
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.qr.read_event().await.unwrap_on_hold();
+    local.queue_receiver.read_event().await.unwrap_on_hold();
     in_flight.clear();
 
     // Expect rate limit throttle for recipient domain 'example.net'
@@ -204,14 +206,14 @@ async fn throttle_outbound() {
         )
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.qr.read_event().await.assert_reload();
-    let due = local.qr.last_queued_due().await - now();
+    local.queue_receiver.read_event().await.assert_reload();
+    let due = local.queue_receiver.last_queued_due().await - now();
     assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for mx 'mx.test.org'
@@ -250,12 +252,12 @@ async fn throttle_outbound() {
         .send_message("john@test.net", &["jane@test.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    local.qr.read_event().await.unwrap_on_hold();
+    local.queue_receiver.read_event().await.unwrap_on_hold();
     in_flight.clear();
 
     // Expect rate limit throttle for mx 'mx.test.net'
@@ -287,15 +289,15 @@ async fn throttle_outbound() {
         .send_message("john@test.net", &["jane@test.net"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
 
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.qr.read_event().await.assert_reload();
-    let due = local.qr.last_queued_due().await - now();
+    local.queue_receiver.read_event().await.assert_reload();
+    let due = local.queue_receiver.last_queued_due().await - now();
     assert!(due > 0, "Due: {}", due);
 }
 

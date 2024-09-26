@@ -22,7 +22,13 @@ use imap_proto::{
     receiver::Request,
     Command, ResponseCode, ResponseType, StatusResponse,
 };
-use jmap::{email::set::TagManager, mailbox::UidMailbox};
+use jmap::{
+    changes::{get::ChangesLookup, write::ChangeLog},
+    email::set::TagManager,
+    mailbox::UidMailbox,
+    services::state::StateManager,
+    JmapMethods,
+};
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
     state::StateChange, type_state::DataType,
@@ -110,7 +116,7 @@ impl<T: SessionStream> SessionData<T> {
         if let Some(unchanged_since) = arguments.unchanged_since {
             // Obtain changes since the modseq.
             let changelog = self
-                .jmap
+                .server
                 .changes_(
                     account_id,
                     Collection::Email,
@@ -192,7 +198,7 @@ impl<T: SessionStream> SessionData<T> {
             loop {
                 // Obtain current keywords
                 let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
-                    self.jmap
+                    self.server
                         .get_property::<HashedValue<Vec<Keyword>>>(
                             account_id,
                             Collection::Email,
@@ -201,7 +207,7 @@ impl<T: SessionStream> SessionData<T> {
                         )
                         .await
                         .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
-                    self.jmap
+                    self.server
                         .get_property::<u32>(account_id, Collection::Email, *id, Property::ThreadId)
                         .await
                         .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
@@ -253,18 +259,18 @@ impl<T: SessionStream> SessionData<T> {
                     keywords.update_batch(&mut batch, Property::Keywords);
                     if changelog.change_id == u64::MAX {
                         changelog.change_id = self
-                            .jmap
+                            .server
                             .assign_change_id(account_id)
                             .await
                             .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                     }
                     batch.value(Property::Cid, changelog.change_id, F_VALUE);
-                    match self.jmap.write_batch(batch).await {
+                    match self.server.write_batch(batch).await {
                         Ok(_) => {
                             // Set all current mailboxes as changed if the Seen tag changed
                             if seen_changed {
                                 if let Some(mailboxes) = self
-                                    .jmap
+                                    .server
                                     .get_property::<Vec<UidMailbox>>(
                                         account_id,
                                         Collection::Email,
@@ -335,11 +341,11 @@ impl<T: SessionStream> SessionData<T> {
         // Write changes
         if !changelog.is_empty() {
             let change_id = self
-                .jmap
+                .server
                 .commit_changes(account_id, changelog)
                 .await
                 .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
-            self.jmap
+            self.server
                 .broadcast_state_change(if !changed_mailboxes.is_empty() {
                     StateChange::new(account_id)
                         .with_change(DataType::Email, change_id)

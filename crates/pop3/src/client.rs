@@ -163,7 +163,7 @@ impl<T: SessionStream> Session<T> {
             | Command::Pass { .. }
             | Command::Apop { .. } => {
                 if let State::NotAuthenticated { username, .. } = &self.state {
-                    if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
+                    if self.stream.is_tls() || self.server.core.imap.allow_plain_auth {
                         if !matches!(command, Command::Pass { .. }) || username.is_some() {
                             Ok(command)
                         } else {
@@ -211,9 +211,9 @@ impl<T: SessionStream> Session<T> {
             | Command::Stat
             | Command::Rset => {
                 if let State::Authenticated { mailbox, .. } = &self.state {
-                    if let Some(rate) = &self.jmap.core.imap.rate_requests {
+                    if let Some(rate) = &self.server.core.imap.rate_requests {
                         if self
-                            .jmap
+                            .server
                             .core
                             .storage
                             .lookup

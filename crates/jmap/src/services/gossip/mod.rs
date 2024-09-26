@@ -11,16 +11,15 @@ pub mod ping;
 pub mod request;
 pub mod spawn;
 
+use common::Inner;
 use serde::{Deserialize, Serialize};
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::atomic::Ordering,
+    sync::{atomic::Ordering, Arc},
     time::Instant,
 };
 use tokio::sync::mpsc;
 use trc::ClusterEvent;
-
-use crate::JmapInstance;
 
 use self::request::Request;
 
@@ -44,7 +43,7 @@ pub struct Gossiper {
     pub last_peer_pinged: usize,
 
     // IPC
-    pub core: JmapInstance,
+    pub inner: Arc<Inner>,
     pub gossip_tx: mpsc::Sender<(SocketAddr, Request)>,
 }
 
@@ -101,23 +100,26 @@ impl From<&Peer> for PeerStatus {
 
 impl From<&Gossiper> for PeerStatus {
     fn from(cluster: &Gossiper) -> Self {
-        let core = cluster.core.core.load();
         PeerStatus {
             addr: cluster.addr,
             epoch: cluster.epoch,
-            gen_config: cluster
-                .core
-                .jmap_inner
-                .config_version
+            gen_config: cluster.inner.data.config_version.load(Ordering::Relaxed),
+            gen_lists: cluster
+                .inner
+                .data
+                .blocked_ips_version
                 .load(Ordering::Relaxed),
-            gen_lists: core.network.blocked_ips.version.load(Ordering::Relaxed),
-            gen_permissions: core.security.permissions_version.load(Ordering::Relaxed),
+            gen_permissions: cluster
+                .inner
+                .data
+                .permissions_version
+                .load(Ordering::Relaxed),
         }
     }
 }
 
 impl Gossiper {
-    pub async fn send_gossip(&self, dest: IpAddr, request: Request) {
+    async fn send_gossip(&self, dest: IpAddr, request: Request) {
         if let Err(err) = self
             .gossip_tx
             .send((SocketAddr::new(dest, self.port), request))

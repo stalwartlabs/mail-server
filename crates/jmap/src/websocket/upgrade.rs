@@ -6,20 +6,29 @@
 
 use std::sync::Arc;
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use hyper::StatusCode;
 use hyper_util::rt::TokioIo;
 use tokio_tungstenite::WebSocketStream;
 use trc::JmapEvent;
 use tungstenite::{handshake::derive_accept_key, protocol::Role};
 
-use crate::{
-    api::{http::HttpSessionData, HttpRequest, HttpResponse, HttpResponseBody},
-    JMAP,
-};
+use crate::api::{http::HttpSessionData, HttpRequest, HttpResponse, HttpResponseBody};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn upgrade_websocket_connection(
+use super::stream::WebSocketHandler;
+
+pub trait WebSocketUpgrade: Sync + Send {
+    fn upgrade_websocket_connection(
+        &self,
+        req: HttpRequest,
+        access_token: Arc<AccessToken>,
+        session: HttpSessionData,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl WebSocketUpgrade for Server {
+    async fn upgrade_websocket_connection(
         &self,
         req: HttpRequest,
         access_token: Arc<AccessToken>,

@@ -4,18 +4,27 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::Server;
 use jmap_proto::{
     method::query::{
         Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
     },
     types::{collection::Collection, property::Property},
 };
+use std::future::Future;
 use store::query::{self};
 
-use crate::JMAP;
+use crate::JmapMethods;
 
-impl JMAP {
-    pub async fn email_submission_query(
+pub trait EmailSubmissionQuery: Sync + Send {
+    fn email_submission_query(
+        &self,
+        request: QueryRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<QueryResponse>> + Send;
+}
+
+impl EmailSubmissionQuery for Server {
+    async fn email_submission_query(
         &self,
         mut request: QueryRequest<RequestArguments>,
     ) -> trc::Result<QueryResponse> {

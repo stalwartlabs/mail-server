@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use common::config::server::ServerProtocol;
 use mail_auth::MX;
 
-use crate::smtp::{outbound::TestServer, session::TestSession};
+use crate::smtp::{session::TestSession, TestSMTP};
 use smtp::queue::manager::Queue;
 
 const LOCAL: &str = r#"
@@ -37,10 +37,10 @@ async fn concurrent_queue() {
     crate::enable_logging();
 
     // Start test server
-    let remote = TestServer::new("smtp_concurrent_queue_remote", REMOTE, true).await;
+    let remote = TestSMTP::new("smtp_concurrent_queue_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
 
-    let local = TestServer::new("smtp_concurrent_queue_local", LOCAL, true).await;
+    let local = TestSMTP::new("smtp_concurrent_queue_local", LOCAL).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
@@ -72,22 +72,22 @@ async fn concurrent_queue() {
 
     // Spawn 20 concurrent queues at different times
     for _ in 0..10 {
-        let local = local.instance.clone();
+        let local = local.server.clone();
         tokio::spawn(async move {
-            Queue::new(local).process_events().await;
+            Queue::new(local.inner).process_events().await;
         });
     }
     tokio::time::sleep(Duration::from_millis(500)).await;
     for _ in 0..10 {
-        let local = local.instance.clone();
+        let local = local.server.clone();
         tokio::spawn(async move {
-            Queue::new(local).process_events().await;
+            Queue::new(local.inner).process_events().await;
         });
     }
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
-    local.qr.assert_queue_is_empty().await;
-    let remote_messages = remote.qr.read_queued_messages().await;
+    local.queue_receiver.assert_queue_is_empty().await;
+    let remote_messages = remote.queue_receiver.read_queued_messages().await;
     assert_eq!(remote_messages.len(), 100);
 
     // Make sure local store is queue

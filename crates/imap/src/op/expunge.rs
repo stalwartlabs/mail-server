@@ -15,9 +15,15 @@ use imap_proto::{
 };
 use trc::AddContext;
 
-use crate::core::{ImapId, SavedSearch, SelectedMailbox, Session, SessionData};
-use common::listener::SessionStream;
-use jmap::{email::set::TagManager, mailbox::UidMailbox};
+use crate::core::{SavedSearch, SelectedMailbox, Session, SessionData};
+use common::{listener::SessionStream, ImapId};
+use jmap::{
+    changes::write::ChangeLog,
+    email::{delete::EmailDeletion, set::TagManager},
+    mailbox::UidMailbox,
+    services::state::StateManager,
+    JmapMethods,
+};
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
     state::StateChange, type_state::DataType,
@@ -118,7 +124,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain message ids
         let account_id = mailbox.id.account_id;
         let mut deleted_ids = self
-            .jmap
+            .server
             .get_tag(
                 account_id,
                 Collection::Email,
@@ -129,7 +135,7 @@ impl<T: SessionStream> SessionData<T> {
             .caused_by(trc::location!())?
             .unwrap_or_default()
             & self
-                .jmap
+                .server
                 .get_tag(
                     account_id,
                     Collection::Email,
@@ -167,8 +173,8 @@ impl<T: SessionStream> SessionData<T> {
 
         // Write changes on source account
         if !changelog.is_empty() {
-            let change_id = self.jmap.commit_changes(account_id, changelog).await?;
-            self.jmap
+            let change_id = self.server.commit_changes(account_id, changelog).await?;
+            self.server
                 .broadcast_state_change(
                     StateChange::new(account_id)
                         .with_change(DataType::Email, change_id)
@@ -192,7 +198,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut destroy_ids = RoaringBitmap::new();
 
         for (id, mailbox_ids) in self
-            .jmap
+            .server
             .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
                 account_id,
                 Collection::Email,
@@ -208,7 +214,7 @@ impl<T: SessionStream> SessionData<T> {
                 if mailboxes.current().len() > 1 {
                     // Remove deleted flag
                     let (mut keywords, thread_id) = if let (Some(keywords), Some(thread_id)) = (
-                        self.jmap
+                        self.server
                             .get_property::<HashedValue<Vec<Keyword>>>(
                                 account_id,
                                 Collection::Email,
@@ -217,7 +223,7 @@ impl<T: SessionStream> SessionData<T> {
                             )
                             .await
                             .caused_by(trc::location!())?,
-                        self.jmap
+                        self.server
                             .get_property::<u32>(
                                 account_id,
                                 Collection::Email,
@@ -245,10 +251,10 @@ impl<T: SessionStream> SessionData<T> {
                     mailboxes.update_batch(&mut batch, Property::MailboxIds);
                     keywords.update_batch(&mut batch, Property::Keywords);
                     if changelog.change_id == u64::MAX {
-                        changelog.change_id = self.jmap.assign_change_id(account_id).await?
+                        changelog.change_id = self.server.assign_change_id(account_id).await?
                     }
                     batch.value(Property::Cid, changelog.change_id, F_VALUE);
-                    match self.jmap.write_batch(batch).await {
+                    match self.server.write_batch(batch).await {
                         Ok(_) => {
                             changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
                             changelog.log_child_update(Collection::Mailbox, mailbox_id.mailbox_id);
@@ -268,7 +274,7 @@ impl<T: SessionStream> SessionData<T> {
         if !destroy_ids.is_empty() {
             // Delete message from all mailboxes
             let (changes, _) = self
-                .jmap
+                .server
                 .emails_tombstone(account_id, destroy_ids)
                 .await
                 .caused_by(trc::location!())?;

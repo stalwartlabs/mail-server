@@ -28,23 +28,25 @@ use std::{
 use ::managesieve::core::ManageSieveSessionManager;
 use common::{
     config::{
-        server::{ServerProtocol, Servers},
+        server::{Listeners, ServerProtocol},
         telemetry::Telemetry,
     },
-    Core, Ipc, IPC_CHANNEL_BUFFER,
+    core::BuildServer,
+    manager::boot::build_ipc,
+    Core, Data, Inner, Server,
 };
 
 use ::store::Stores;
 use ahash::AHashSet;
-use imap::core::{ImapSessionManager, Inner, IMAP};
+use imap::core::ImapSessionManager;
 use imap_proto::ResponseType;
-use jmap::{api::JmapSessionManager, JMAP};
+use jmap::{api::JmapSessionManager, SpawnServices};
 use pop3::Pop3SessionManager;
-use smtp::core::{SmtpSessionManager, SMTP};
+use smtp::{core::SmtpSessionManager, SpawnQueueManager};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, ReadHalf, WriteHalf},
     net::TcpStream,
-    sync::{mpsc, watch},
+    sync::watch,
 };
 use utils::config::Config;
 
@@ -279,8 +281,7 @@ disabled-events = ["network.*"]
 
 #[allow(dead_code)]
 pub struct IMAPTest {
-    jmap: Arc<JMAP>,
-    imap: Arc<Inner>,
+    server: Server,
     temp_dir: TempDir,
     shutdown_tx: watch::Sender<bool>,
 }
@@ -301,7 +302,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     config.resolve_all_macros().await;
 
     // Parse servers
-    let mut servers = Servers::parse(&mut config);
+    let mut servers = Listeners::parse(&mut config);
 
     // Bind ports and drop privileges
     servers.bind_and_drop_priv(&mut config);
@@ -312,67 +313,56 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     // Parse core
     let tracers = Telemetry::parse(&mut config, &stores);
     let core = Core::parse(&mut config, stores, Default::default()).await;
+    let data = Data::parse(&mut config);
     let store = core.storage.data.clone();
-    let shared_core = core.into_shared();
+    let (ipc, mut ipc_rxs) = build_ipc();
+    let inner = Arc::new(Inner {
+        shared_core: core.into_shared(),
+        data,
+        ipc,
+    });
 
     // Parse acceptors
-    servers.parse_tcp_acceptors(&mut config, shared_core.clone());
+    servers.parse_tcp_acceptors(&mut config, inner.clone());
 
     // Enable tracing
     tracers.enable(true);
 
-    // Setup IPC channels
-    let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let ipc = Ipc { delivery_tx };
-
-    // Init servers
-    let smtp = SMTP::init(
-        &mut config,
-        shared_core.clone(),
-        ipc,
-        servers.span_id_gen.clone(),
-    )
-    .await;
-    let jmap = JMAP::init(
-        &mut config,
-        delivery_rx,
-        shared_core.clone(),
-        smtp.inner.clone(),
-    )
-    .await;
-    let imap = IMAP::init(&mut config, jmap.clone()).await;
+    // Start services
     config.assert_no_errors();
+    ipc_rxs.spawn_queue_manager(inner.clone());
+    ipc_rxs.spawn_services(inner.clone());
 
     // Spawn servers
     let (shutdown_tx, _) = servers.spawn(|server, acceptor, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
-                SmtpSessionManager::new(smtp.clone()),
-                shared_core.clone(),
+                SmtpSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Http => server.spawn(
-                JmapSessionManager::new(jmap.clone()),
-                shared_core.clone(),
+                JmapSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Imap => server.spawn(
-                ImapSessionManager::new(imap.clone()),
-                shared_core.clone(),
+                ImapSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Pop3 => server.spawn(
-                Pop3SessionManager::new(imap.clone()),
-                shared_core.clone(),
+                Pop3SessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::ManageSieve => server.spawn(
-                ManageSieveSessionManager::new(imap.clone()),
-                shared_core.clone(),
+                ManageSieveSessionManager::new(inner.clone()),
+                inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
@@ -431,8 +421,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
         .await;
 
     IMAPTest {
-        jmap: JMAP::from(jmap.clone()).into(),
-        imap: imap.imap_inner,
+        server: inner.build_server(),
         temp_dir,
         shutdown_tx,
     }

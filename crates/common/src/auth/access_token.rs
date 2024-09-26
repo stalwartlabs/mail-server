@@ -25,11 +25,11 @@ use utils::map::{
     vec_map::VecMap,
 };
 
-use crate::Core;
+use crate::Server;
 
 use super::{roles::RolePermissions, AccessToken, ResourceToken, TenantInfo};
 
-impl Core {
+impl Server {
     pub async fn build_access_token(&self, mut principal: Principal) -> trc::Result<AccessToken> {
         let mut role_permissions = RolePermissions::default();
 
@@ -75,8 +75,7 @@ impl Core {
                 tenant = Some(TenantInfo {
                     id: tenant_id,
                     quota: self
-                        .storage
-                        .data
+                        .store()
                         .query(QueryBy::Id(tenant_id), false)
                         .await
                         .caused_by(trc::location!())?
@@ -111,12 +110,7 @@ impl Core {
     }
 
     pub async fn get_access_token(&self, account_id: u32) -> trc::Result<AccessToken> {
-        let err = match self
-            .storage
-            .directory
-            .query(QueryBy::Id(account_id), true)
-            .await
-        {
+        let err = match self.directory().query(QueryBy::Id(account_id), true).await {
             Ok(Some(principal)) => {
                 return self
                     .update_access_token(self.build_access_token(principal).await?)
@@ -129,7 +123,7 @@ impl Core {
             Err(err) => Err(err),
         };
 
-        match &self.jmap.fallback_admin {
+        match &self.core.jmap.fallback_admin {
             Some((_, secret)) if account_id == u32::MAX => {
                 self.update_access_token(
                     self.build_access_token(Principal::fallback_admin(secret))
@@ -150,8 +144,7 @@ impl Core {
             .chain(access_token.member_of.iter().copied())
         {
             for acl_item in self
-                .storage
-                .data
+                .store()
                 .acl_query(AclQuery::HasAccess { grant_account_id })
                 .await
                 .caused_by(trc::location!())?
@@ -191,15 +184,15 @@ impl Core {
     }
 
     pub fn cache_access_token(&self, access_token: Arc<AccessToken>) {
-        self.security.access_tokens.insert_with_ttl(
+        self.inner.data.access_tokens.insert_with_ttl(
             access_token.primary_id(),
             access_token,
-            Instant::now() + self.jmap.session_cache_ttl,
+            Instant::now() + self.core.jmap.session_cache_ttl,
         );
     }
 
     pub async fn get_cached_access_token(&self, primary_id: u32) -> trc::Result<Arc<AccessToken>> {
-        if let Some(access_token) = self.security.access_tokens.get_with_ttl(&primary_id) {
+        if let Some(access_token) = self.inner.data.access_tokens.get_with_ttl(&primary_id) {
             Ok(access_token)
         } else {
             // Refresh ACL token

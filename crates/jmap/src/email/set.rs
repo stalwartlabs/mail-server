@@ -6,7 +6,7 @@
 
 use std::{borrow::Cow, collections::HashMap, slice::IterMut};
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -41,15 +41,33 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{api::http::HttpSessionData, mailbox::UidMailbox, JMAP};
+use crate::{
+    api::http::HttpSessionData,
+    auth::acl::AclMethods,
+    blob::download::BlobDownload,
+    changes::{state::StateManager, write::ChangeLog},
+    mailbox::{set::MailboxSet, UidMailbox},
+    JmapMethods,
+};
+use std::future::Future;
 
 use super::{
+    delete::EmailDeletion,
     headers::{BuildHeader, ValueToHeader},
-    ingest::{IngestEmail, IngestSource},
+    ingest::{EmailIngest, IngestEmail, IngestSource},
 };
 
-impl JMAP {
-    pub async fn email_set(
+pub trait EmailSet: Sync + Send {
+    fn email_set(
+        &self,
+        request: SetRequest<RequestArguments>,
+        access_token: &AccessToken,
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+}
+
+impl EmailSet for Server {
+    async fn email_set(
         &self,
         mut request: SetRequest<RequestArguments>,
         access_token: &AccessToken,

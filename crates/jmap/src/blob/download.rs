@@ -6,7 +6,7 @@
 
 use std::ops::Range;
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::types::{
     acl::Acl,
     blob::{BlobId, BlobSection},
@@ -16,15 +16,42 @@ use mail_parser::{
     decoders::{base64::base64_decode, quoted_printable::quoted_printable_decode},
     Encoding,
 };
+use std::future::Future;
 use store::BlobClass;
 use trc::AddContext;
 use utils::BlobHash;
 
-use crate::JMAP;
+use crate::auth::acl::AclMethods;
 
-impl JMAP {
+pub trait BlobDownload: Sync + Send {
+    fn blob_download(
+        &self,
+        blob_id: &BlobId,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<Option<Vec<u8>>>> + Send;
+
+    fn get_blob_section(
+        &self,
+        hash: &BlobHash,
+        section: &BlobSection,
+    ) -> impl Future<Output = trc::Result<Option<Vec<u8>>>> + Send;
+
+    fn get_blob(
+        &self,
+        hash: &BlobHash,
+        range: Range<usize>,
+    ) -> impl Future<Output = trc::Result<Option<Vec<u8>>>> + Send;
+
+    fn has_access_blob(
+        &self,
+        blob_id: &BlobId,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<bool>> + Send;
+}
+
+impl BlobDownload for Server {
     #[allow(clippy::blocks_in_conditions)]
-    pub async fn blob_download(
+    async fn blob_download(
         &self,
         blob_id: &BlobId,
         access_token: &AccessToken,
@@ -84,7 +111,7 @@ impl JMAP {
         }
     }
 
-    pub async fn get_blob_section(
+    async fn get_blob_section(
         &self,
         hash: &BlobHash,
         section: &BlobSection,
@@ -102,11 +129,7 @@ impl JMAP {
             }))
     }
 
-    pub async fn get_blob(
-        &self,
-        hash: &BlobHash,
-        range: Range<usize>,
-    ) -> trc::Result<Option<Vec<u8>>> {
+    async fn get_blob(&self, hash: &BlobHash, range: Range<usize>) -> trc::Result<Option<Vec<u8>>> {
         self.core
             .storage
             .blob
@@ -115,7 +138,7 @@ impl JMAP {
             .caused_by(trc::location!())
     }
 
-    pub async fn has_access_blob(
+    async fn has_access_blob(
         &self,
         blob_id: &BlobId,
         access_token: &AccessToken,

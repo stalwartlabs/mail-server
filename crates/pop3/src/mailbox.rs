@@ -7,7 +7,10 @@
 use std::collections::BTreeMap;
 
 use common::listener::SessionStream;
-use jmap::mailbox::{UidMailbox, INBOX_ID};
+use jmap::{
+    mailbox::{set::MailboxSet, UidMailbox, INBOX_ID},
+    JmapMethods,
+};
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
@@ -39,7 +42,7 @@ impl<T: SessionStream> Session<T> {
     pub async fn fetch_mailbox(&self, account_id: u32) -> trc::Result<Mailbox> {
         // Obtain message ids
         let message_ids = self
-            .jmap
+            .server
             .get_tag(
                 account_id,
                 Collection::Email,
@@ -58,12 +61,12 @@ impl<T: SessionStream> Session<T> {
         let mut message_sizes = AHashMap::new();
 
         // Obtain UID validity
-        self.jmap
+        self.server
             .mailbox_get_or_create(account_id)
             .await
             .caused_by(trc::location!())?;
         let uid_validity = self
-            .jmap
+            .server
             .get_property::<Object<Value>>(
                 account_id,
                 Collection::Mailbox,
@@ -83,7 +86,7 @@ impl<T: SessionStream> Session<T> {
             .map(|v| v as u32)?;
 
         // Obtain message sizes
-        self.jmap
+        self.server
             .core
             .storage
             .data
@@ -122,7 +125,7 @@ impl<T: SessionStream> Session<T> {
 
         // Sort by UID
         for (message_id, uid_mailbox) in self
-            .jmap
+            .server
             .get_properties::<Vec<UidMailbox>, _, _>(
                 account_id,
                 Collection::Email,

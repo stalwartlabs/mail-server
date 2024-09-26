@@ -5,7 +5,11 @@
  */
 
 use base64::{engine::general_purpose, Engine};
-use common::auth::AccessToken;
+use common::{
+    auth::AccessToken,
+    ipc::{StateEvent, UpdateSubscription},
+    Server,
+};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
@@ -17,12 +21,26 @@ use store::{
 };
 use utils::map::bitmap::Bitmap;
 
-use crate::{services::state, JMAP};
+use crate::JmapMethods;
 
-use super::{EncryptionKeys, PushSubscription, UpdateSubscription};
+use super::{EncryptionKeys, PushSubscription};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn push_subscription_get(
+pub trait PushSubscriptionFetch: Sync + Send {
+    fn push_subscription_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+
+    fn fetch_push_subscriptions(
+        &self,
+        account_id: u32,
+    ) -> impl Future<Output = trc::Result<StateEvent>> + Send;
+}
+
+impl PushSubscriptionFetch for Server {
+    async fn push_subscription_get(
         &self,
         mut request: GetRequest<RequestArguments>,
         access_token: &AccessToken,
@@ -99,7 +117,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn fetch_push_subscriptions(&self, account_id: u32) -> trc::Result<state::Event> {
+    async fn fetch_push_subscriptions(&self, account_id: u32) -> trc::Result<StateEvent> {
         let mut subscriptions = Vec::new();
         let document_ids = self
             .core
@@ -235,7 +253,7 @@ impl JMAP {
             }
         }
 
-        Ok(state::Event::UpdateSubscriptions {
+        Ok(StateEvent::UpdateSubscriptions {
             account_id,
             subscriptions,
         })

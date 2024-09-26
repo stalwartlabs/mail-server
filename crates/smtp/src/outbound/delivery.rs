@@ -5,12 +5,21 @@
  */
 
 use crate::outbound::client::{from_error_status, from_mail_send_error, SmtpClient};
+use crate::outbound::dane::dnssec::TlsaLookup;
+use crate::outbound::lookup::DnsLookup;
+use crate::outbound::mta_sts::lookup::MtaStsLookup;
 use crate::outbound::mta_sts::verify::VerifyPolicy;
 use crate::outbound::{client::StartTlsResult, dane::verify::TlsaVerify};
+use crate::queue::dsn::SendDsn;
+use crate::queue::spool::SmtpSpool;
+use crate::queue::throttle::IsAllowed;
+use crate::reporting::SmtpReporting;
 use common::config::{
     server::ServerProtocol,
     smtp::{queue::RequireOptional, report::AggregateFrequency},
 };
+use common::ipc::{OnHold, PolicyType, QueueEvent, TlsEvent};
+use common::Server;
 use mail_auth::{
     mta_sts::TlsRpt,
     report::tlsrpt::{FailureDetails, ResultType},
@@ -20,31 +29,28 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::{Duration, Instant},
 };
-use store::write::{now, BatchBuilder, QueueClass, QueueEvent, ValueClass};
+use store::write::{now, BatchBuilder, QueueClass, ValueClass};
 use trc::{DaneEvent, DeliveryEvent, MtaStsEvent, ServerEvent, TlsRptEvent};
 
 use crate::{
-    core::SMTP,
     queue::{ErrorDetails, Message},
-    reporting::{tls::TlsRptOptions, PolicyType, TlsEvent},
+    reporting::tls::TlsRptOptions,
 };
 
 use super::{lookup::ToNextHop, mta_sts, session::SessionParams, NextHop, TlsStrategy};
-use crate::queue::{
-    throttle, DeliveryAttempt, Domain, Error, Event, OnHold, QueueEnvelope, Status,
-};
+use crate::queue::{throttle, DeliveryAttempt, Domain, Error, QueueEnvelope, Status};
 
 impl DeliveryAttempt {
-    pub async fn try_deliver(mut self, core: SMTP) {
+    pub async fn try_deliver(mut self, server: Server) {
         tokio::spawn(async move {
             // Lock message
-            if let Some(event) = core.try_lock_event(self.event).await {
+            if let Some(event) = server.try_lock_event(self.event).await {
                 self.event = event;
 
                 // Fetch message
-                if let Some(mut message) = core.read_message(self.event.queue_id).await {
+                if let Some(mut message) = server.read_message(self.event.queue_id).await {
                     // Generate span id
-                    message.span_id = core.inner.span_id_gen.generate().unwrap_or_else(now);
+                    message.span_id = server.inner.data.span_id_gen.generate().unwrap_or_else(now);
                     let span_id = message.span_id;
 
                     trc::event!(
@@ -76,7 +82,7 @@ impl DeliveryAttempt {
 
                     // Attempt delivery
                     let start_time = Instant::now();
-                    self.deliver_task(core, message).await;
+                    self.deliver_task(server, message).await;
 
                     trc::event!(
                         Delivery(DeliveryEvent::AttemptEnd),
@@ -86,12 +92,14 @@ impl DeliveryAttempt {
                 } else {
                     // Message no longer exists, delete queue event.
                     let mut batch = BatchBuilder::new();
-                    batch.clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-                        due: self.event.due,
-                        queue_id: self.event.queue_id,
-                    })));
+                    batch.clear(ValueClass::Queue(QueueClass::MessageEvent(
+                        store::write::QueueEvent {
+                            due: self.event.due,
+                            queue_id: self.event.queue_id,
+                        },
+                    )));
 
-                    if let Err(err) = core.core.storage.data.write(batch.build()).await {
+                    if let Err(err) = server.store().write(batch.build()).await {
                         trc::error!(err
                             .details("Failed to delete queue event.")
                             .caused_by(trc::location!()));
@@ -101,13 +109,13 @@ impl DeliveryAttempt {
         });
     }
 
-    async fn deliver_task(mut self, core: SMTP, mut message: Message) {
+    async fn deliver_task(mut self, server: Server, mut message: Message) {
         // Check that the message still has recipients to be delivered
         let has_pending_delivery = message.has_pending_delivery();
         let span_id = message.span_id;
 
         // Send any due Delivery Status Notifications
-        core.send_dsn(&mut message).await;
+        server.send_dsn(&mut message).await;
 
         if has_pending_delivery {
             // Re-queue the message if its not yet due for delivery
@@ -115,9 +123,16 @@ impl DeliveryAttempt {
             if due > now() {
                 // Save changes
                 message
-                    .save_changes(&core, self.event.due.into(), due.into())
+                    .save_changes(&server, self.event.due.into(), due.into())
                     .await;
-                if core.inner.queue_tx.send(Event::Reload).await.is_err() {
+                if server
+                    .inner
+                    .ipc
+                    .queue_tx
+                    .send(QueueEvent::Reload)
+                    .await
+                    .is_err()
+                {
                     trc::event!(
                         Server(ServerEvent::ThreadError),
                         Reason = "Channel closed.",
@@ -135,8 +150,15 @@ impl DeliveryAttempt {
             );
 
             // All message recipients expired, do not re-queue. (DSN has been already sent)
-            message.remove(&core, self.event.due).await;
-            if core.inner.queue_tx.send(Event::Reload).await.is_err() {
+            message.remove(&server, self.event.due).await;
+            if server
+                .inner
+                .ipc
+                .queue_tx
+                .send(QueueEvent::Reload)
+                .await
+                .is_err()
+            {
                 trc::event!(
                     Server(ServerEvent::ThreadError),
                     Reason = "Channel closed.",
@@ -149,8 +171,8 @@ impl DeliveryAttempt {
         }
 
         // Throttle sender
-        for throttle in &core.core.smtp.queue.throttle.sender {
-            if let Err(err) = core
+        for throttle in &server.core.smtp.queue.throttle.sender {
+            if let Err(err) = server
                 .is_allowed(throttle, &message, &mut self.in_flight, message.span_id)
                 .await
             {
@@ -158,7 +180,7 @@ impl DeliveryAttempt {
                     throttle::Error::Concurrency { limiter } => {
                         // Save changes to disk
                         let next_due = message.next_event_after(now());
-                        message.save_changes(&core, None, None).await;
+                        message.save_changes(&server, None, None).await;
 
                         trc::event!(
                             Delivery(DeliveryEvent::ConcurrencyLimitExceeded),
@@ -166,7 +188,7 @@ impl DeliveryAttempt {
                             SpanId = span_id,
                         );
 
-                        Event::OnHold(OnHold {
+                        QueueEvent::OnHold(OnHold {
                             next_due,
                             limiters: vec![limiter],
                             message: self.event,
@@ -187,14 +209,14 @@ impl DeliveryAttempt {
                         );
 
                         message
-                            .save_changes(&core, self.event.due.into(), next_event.into())
+                            .save_changes(&server, self.event.due.into(), next_event.into())
                             .await;
 
-                        Event::Reload
+                        QueueEvent::Reload
                     }
                 };
 
-                if core.inner.queue_tx.send(event).await.is_err() {
+                if server.inner.ipc.queue_tx.send(event).await.is_err() {
                     trc::event!(
                         Server(ServerEvent::ThreadError),
                         Reason = "Channel closed.",
@@ -206,7 +228,7 @@ impl DeliveryAttempt {
             }
         }
 
-        let queue_config = &core.core.smtp.queue;
+        let queue_config = &server.core.smtp.queue;
         let mut on_hold = Vec::new();
         let no_ip = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
         let mut recipients = std::mem::take(&mut message.recipients);
@@ -232,7 +254,7 @@ impl DeliveryAttempt {
             // Throttle recipient domain
             let mut in_flight = Vec::new();
             for throttle in &queue_config.throttle.rcpt {
-                if let Err(err) = core
+                if let Err(err) = server
                     .is_allowed(throttle, &envelope, &mut in_flight, message.span_id)
                     .await
                 {
@@ -249,24 +271,22 @@ impl DeliveryAttempt {
             }
 
             // Obtain next hop
-            let (mut remote_hosts, is_smtp) = match core
-                .core
+            let (mut remote_hosts, is_smtp) = match server
                 .eval_if::<String, _>(&queue_config.next_hop, &envelope, message.span_id)
                 .await
-                .and_then(|name| core.core.get_relay_host(&name, message.span_id))
+                .and_then(|name| server.get_relay_host(&name, message.span_id))
             {
                 Some(next_hop) if next_hop.protocol == ServerProtocol::Http => {
                     // Deliver message locally
                     let delivery_result = message
                         .deliver_local(
                             recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
-                            &core.inner.ipc.delivery_tx,
+                            &server.inner.ipc.delivery_tx,
                         )
                         .await;
 
                     // Update status for the current domain and continue with the next one
-                    let schedule = core
-                        .core
+                    let schedule = server
                         .eval_if::<Vec<Duration>, _>(
                             &queue_config.retry,
                             &envelope,
@@ -286,23 +306,24 @@ impl DeliveryAttempt {
 
             // Prepare TLS strategy
             let mut tls_strategy = TlsStrategy {
-                mta_sts: core
-                    .core
+                mta_sts: server
                     .eval_if(&queue_config.tls.mta_sts, &envelope, message.span_id)
                     .await
                     .unwrap_or(RequireOptional::Optional),
                 ..Default::default()
             };
-            let allow_invalid_certs = core
-                .core
+            let allow_invalid_certs = server
                 .eval_if(&queue_config.tls.invalid_certs, &envelope, message.span_id)
                 .await
                 .unwrap_or(false);
 
             // Obtain TLS reporting
-            let tls_report = match core
-                .core
-                .eval_if(&core.core.smtp.report.tls.send, &envelope, message.span_id)
+            let tls_report = match server
+                .eval_if(
+                    &server.core.smtp.report.tls.send,
+                    &envelope,
+                    message.span_id,
+                )
                 .await
                 .unwrap_or(AggregateFrequency::Never)
             {
@@ -312,7 +333,7 @@ impl DeliveryAttempt {
                     if is_smtp =>
                 {
                     let time = Instant::now();
-                    match core
+                    match server
                         .core
                         .smtp
                         .resolvers
@@ -357,10 +378,10 @@ impl DeliveryAttempt {
             // Obtain MTA-STS policy for domain
             let mta_sts_policy = if tls_strategy.try_mta_sts() && is_smtp {
                 let time = Instant::now();
-                match core
+                match server
                     .lookup_mta_sts_policy(
                         &domain.domain,
-                        core.core
+                        server
                             .eval_if(&queue_config.timeout.mta_sts, &envelope, message.span_id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(10 * 60)),
@@ -390,7 +411,7 @@ impl DeliveryAttempt {
                             match &err {
                                 mta_sts::Error::Dns(mail_auth::Error::DnsRecordNotFound(_)) => {
                                     if strict {
-                                        core.schedule_report(TlsEvent {
+                                        server.schedule_report(TlsEvent {
                                             policy: PolicyType::Sts(None),
                                             domain: domain.domain.to_string(),
                                             failure: FailureDetails::new(ResultType::Other)
@@ -406,16 +427,17 @@ impl DeliveryAttempt {
                                 }
                                 mta_sts::Error::Dns(mail_auth::Error::DnsError(_)) => (),
                                 _ => {
-                                    core.schedule_report(TlsEvent {
-                                        policy: PolicyType::Sts(None),
-                                        domain: domain.domain.to_string(),
-                                        failure: FailureDetails::new(&err)
-                                            .with_failure_reason_code(err.to_string())
-                                            .into(),
-                                        tls_record: tls_report.record.clone(),
-                                        interval: tls_report.interval,
-                                    })
-                                    .await;
+                                    server
+                                        .schedule_report(TlsEvent {
+                                            policy: PolicyType::Sts(None),
+                                            domain: domain.domain.to_string(),
+                                            failure: FailureDetails::new(&err)
+                                                .with_failure_reason_code(err.to_string())
+                                                .into(),
+                                            tls_record: tls_report.record.clone(),
+                                            interval: tls_report.interval,
+                                        })
+                                        .await;
                                 }
                             }
                         }
@@ -463,8 +485,7 @@ impl DeliveryAttempt {
                         }
 
                         if strict {
-                            let schedule = core
-                                .core
+                            let schedule = server
                                 .eval_if::<Vec<Duration>, _>(
                                     &queue_config.retry,
                                     &envelope,
@@ -488,7 +509,14 @@ impl DeliveryAttempt {
             if is_smtp && remote_hosts.is_empty() {
                 // Lookup MX
                 let time = Instant::now();
-                mx_list = match core.core.smtp.resolvers.dns.mx_lookup(&domain.domain).await {
+                mx_list = match server
+                    .core
+                    .smtp
+                    .resolvers
+                    .dns
+                    .mx_lookup(&domain.domain)
+                    .await
+                {
                     Ok(mx) => mx,
                     Err(err) => {
                         trc::event!(
@@ -499,8 +527,7 @@ impl DeliveryAttempt {
                             Elapsed = time.elapsed(),
                         );
 
-                        let schedule = core
-                            .core
+                        let schedule = server
                             .eval_if::<Vec<Duration>, _>(
                                 &queue_config.retry,
                                 &envelope,
@@ -515,7 +542,7 @@ impl DeliveryAttempt {
 
                 if let Some(remote_hosts_) = mx_list.to_remote_hosts(
                     &domain.domain,
-                    core.core
+                    server
                         .eval_if(&queue_config.max_mx, &envelope, message.span_id)
                         .await
                         .unwrap_or(5),
@@ -539,8 +566,7 @@ impl DeliveryAttempt {
                         Elapsed = time.elapsed(),
                     );
 
-                    let schedule = core
-                        .core
+                    let schedule = server
                         .eval_if::<Vec<Duration>, _>(
                             &queue_config.retry,
                             &envelope,
@@ -559,8 +585,7 @@ impl DeliveryAttempt {
             }
 
             // Try delivering message
-            let max_multihomed = core
-                .core
+            let max_multihomed = server
                 .eval_if(&queue_config.max_multihomed, &envelope, message.span_id)
                 .await
                 .unwrap_or(2);
@@ -573,17 +598,18 @@ impl DeliveryAttempt {
                     if !mta_sts_policy.verify(envelope.mx) {
                         // Report MTA-STS failed verification
                         if let Some(tls_report) = &tls_report {
-                            core.schedule_report(TlsEvent {
-                                policy: mta_sts_policy.into(),
-                                domain: domain.domain.to_string(),
-                                failure: FailureDetails::new(ResultType::ValidationFailure)
-                                    .with_receiving_mx_hostname(envelope.mx)
-                                    .with_failure_reason_code("MX not authorized by policy.")
-                                    .into(),
-                                tls_record: tls_report.record.clone(),
-                                interval: tls_report.interval,
-                            })
-                            .await;
+                            server
+                                .schedule_report(TlsEvent {
+                                    policy: mta_sts_policy.into(),
+                                    domain: domain.domain.to_string(),
+                                    failure: FailureDetails::new(ResultType::ValidationFailure)
+                                        .with_receiving_mx_hostname(envelope.mx)
+                                        .with_failure_reason_code("MX not authorized by policy.")
+                                        .into(),
+                                    tls_record: tls_report.record.clone(),
+                                    interval: tls_report.interval,
+                                })
+                                .await;
                         }
 
                         trc::event!(
@@ -624,7 +650,7 @@ impl DeliveryAttempt {
 
                 // Obtain source and remote IPs
                 let time = Instant::now();
-                let resolve_result = match core
+                let resolve_result = match server
                     .resolve_host(remote_host, &envelope, max_multihomed, message.span_id)
                     .await
                 {
@@ -661,13 +687,11 @@ impl DeliveryAttempt {
                 };
 
                 // Update TLS strategy
-                tls_strategy.dane = core
-                    .core
+                tls_strategy.dane = server
                     .eval_if(&queue_config.tls.dane, &envelope, message.span_id)
                     .await
                     .unwrap_or(RequireOptional::Optional);
-                tls_strategy.tls = core
-                    .core
+                tls_strategy.tls = server
                     .eval_if(&queue_config.tls.start, &envelope, message.span_id)
                     .await
                     .unwrap_or(RequireOptional::Optional);
@@ -676,7 +700,10 @@ impl DeliveryAttempt {
                 let dane_policy = if tls_strategy.try_dane() && is_smtp {
                     let time = Instant::now();
                     let strict = tls_strategy.is_dane_required();
-                    match core.tlsa_lookup(format!("_25._tcp.{}.", envelope.mx)).await {
+                    match server
+                        .tlsa_lookup(format!("_25._tcp.{}.", envelope.mx))
+                        .await
+                    {
                         Ok(Some(tlsa)) => {
                             if tlsa.has_end_entities {
                                 trc::event!(
@@ -703,17 +730,18 @@ impl DeliveryAttempt {
 
                                 // Report invalid TLSA record
                                 if let Some(tls_report) = &tls_report {
-                                    core.schedule_report(TlsEvent {
-                                        policy: tlsa.into(),
-                                        domain: domain.domain.to_string(),
-                                        failure: FailureDetails::new(ResultType::TlsaInvalid)
-                                            .with_receiving_mx_hostname(envelope.mx)
-                                            .with_failure_reason_code("Invalid TLSA record.")
-                                            .into(),
-                                        tls_record: tls_report.record.clone(),
-                                        interval: tls_report.interval,
-                                    })
-                                    .await;
+                                    server
+                                        .schedule_report(TlsEvent {
+                                            policy: tlsa.into(),
+                                            domain: domain.domain.to_string(),
+                                            failure: FailureDetails::new(ResultType::TlsaInvalid)
+                                                .with_receiving_mx_hostname(envelope.mx)
+                                                .with_failure_reason_code("Invalid TLSA record.")
+                                                .into(),
+                                            tls_record: tls_report.record.clone(),
+                                            interval: tls_report.interval,
+                                        })
+                                        .await;
                                 }
 
                                 if strict {
@@ -740,19 +768,20 @@ impl DeliveryAttempt {
                             if strict {
                                 // Report DANE required
                                 if let Some(tls_report) = &tls_report {
-                                    core.schedule_report(TlsEvent {
-                                        policy: PolicyType::Tlsa(None),
-                                        domain: domain.domain.to_string(),
-                                        failure: FailureDetails::new(ResultType::DaneRequired)
-                                            .with_receiving_mx_hostname(envelope.mx)
-                                            .with_failure_reason_code(
-                                                "No TLSA DNSSEC records found.",
-                                            )
-                                            .into(),
-                                        tls_record: tls_report.record.clone(),
-                                        interval: tls_report.interval,
-                                    })
-                                    .await;
+                                    server
+                                        .schedule_report(TlsEvent {
+                                            policy: PolicyType::Tlsa(None),
+                                            domain: domain.domain.to_string(),
+                                            failure: FailureDetails::new(ResultType::DaneRequired)
+                                                .with_receiving_mx_hostname(envelope.mx)
+                                                .with_failure_reason_code(
+                                                    "No TLSA DNSSEC records found.",
+                                                )
+                                                .into(),
+                                            tls_record: tls_report.record.clone(),
+                                            interval: tls_report.interval,
+                                        })
+                                        .await;
                                 }
 
                                 last_status =
@@ -792,19 +821,22 @@ impl DeliveryAttempt {
                                 last_status = if not_found {
                                     // Report DANE required
                                     if let Some(tls_report) = &tls_report {
-                                        core.schedule_report(TlsEvent {
-                                            policy: PolicyType::Tlsa(None),
-                                            domain: domain.domain.to_string(),
-                                            failure: FailureDetails::new(ResultType::DaneRequired)
+                                        server
+                                            .schedule_report(TlsEvent {
+                                                policy: PolicyType::Tlsa(None),
+                                                domain: domain.domain.to_string(),
+                                                failure: FailureDetails::new(
+                                                    ResultType::DaneRequired,
+                                                )
                                                 .with_receiving_mx_hostname(envelope.mx)
                                                 .with_failure_reason_code(
                                                     "No TLSA records found for MX.",
                                                 )
                                                 .into(),
-                                            tls_record: tls_report.record.clone(),
-                                            interval: tls_report.interval,
-                                        })
-                                        .await;
+                                                tls_record: tls_report.record.clone(),
+                                                interval: tls_report.interval,
+                                            })
+                                            .await;
                                     }
 
                                     Status::PermanentFailure(Error::DaneError(ErrorDetails {
@@ -837,7 +869,7 @@ impl DeliveryAttempt {
                     let mut in_flight_host = Vec::new();
                     envelope.remote_ip = remote_ip;
                     for throttle in &queue_config.throttle.host {
-                        if let Err(err) = core
+                        if let Err(err) = server
                             .is_allowed(throttle, &envelope, &mut in_flight_host, message.span_id)
                             .await
                         {
@@ -854,8 +886,7 @@ impl DeliveryAttempt {
 
                     // Connect
                     let time = Instant::now();
-                    let conn_timeout = core
-                        .core
+                    let conn_timeout = server
                         .eval_if(&queue_config.timeout.connect, &envelope, message.span_id)
                         .await
                         .unwrap_or_else(|| Duration::from_secs(5 * 60));
@@ -908,8 +939,7 @@ impl DeliveryAttempt {
                     };
 
                     // Obtain session parameters
-                    let local_hostname = core
-                        .core
+                    let local_hostname = server
                         .eval_if::<String, _>(&queue_config.hostname, &envelope, message.span_id)
                         .await
                         .filter(|s| !s.is_empty())
@@ -922,28 +952,24 @@ impl DeliveryAttempt {
                         });
                     let params = SessionParams {
                         session_id: message.span_id,
-                        core: &core,
+                        server: &server,
                         credentials: remote_host.credentials(),
                         is_smtp: remote_host.is_smtp(),
                         hostname: envelope.mx,
                         local_hostname: &local_hostname,
-                        timeout_ehlo: core
-                            .core
+                        timeout_ehlo: server
                             .eval_if(&queue_config.timeout.ehlo, &envelope, message.span_id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(5 * 60)),
-                        timeout_mail: core
-                            .core
+                        timeout_mail: server
                             .eval_if(&queue_config.timeout.mail, &envelope, message.span_id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(5 * 60)),
-                        timeout_rcpt: core
-                            .core
+                        timeout_rcpt: server
                             .eval_if(&queue_config.timeout.rcpt, &envelope, message.span_id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(5 * 60)),
-                        timeout_data: core
-                            .core
+                        timeout_data: server
                             .eval_if(&queue_config.timeout.data, &envelope, message.span_id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(5 * 60)),
@@ -956,15 +982,14 @@ impl DeliveryAttempt {
                         || dane_policy.is_some();
                     let tls_connector = if allow_invalid_certs || remote_host.allow_invalid_certs()
                     {
-                        &core.inner.connectors.dummy_verify
+                        &server.inner.data.smtp_connectors.dummy_verify
                     } else {
-                        &core.inner.connectors.pki_verify
+                        &server.inner.data.smtp_connectors.pki_verify
                     };
 
                     let delivery_result = if !remote_host.implicit_tls() {
                         // Read greeting
-                        smtp_client.timeout = core
-                            .core
+                        smtp_client.timeout = server
                             .eval_if(&queue_config.timeout.greeting, &envelope, message.span_id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(5 * 60));
@@ -1014,8 +1039,7 @@ impl DeliveryAttempt {
                         // Try starting TLS
                         if tls_strategy.try_start_tls() {
                             let time = Instant::now();
-                            smtp_client.timeout = core
-                                .core
+                            smtp_client.timeout = server
                                 .eval_if(&queue_config.timeout.tls, &envelope, message.span_id)
                                 .await
                                 .unwrap_or_else(|| Duration::from_secs(3 * 60));
@@ -1055,22 +1079,23 @@ impl DeliveryAttempt {
                                         ) {
                                             // Report DANE verification failure
                                             if let Some(tls_report) = &tls_report {
-                                                core.schedule_report(TlsEvent {
-                                                    policy: dane_policy.into(),
-                                                    domain: domain.domain.to_string(),
-                                                    failure: FailureDetails::new(
-                                                        ResultType::ValidationFailure,
-                                                    )
-                                                    .with_receiving_mx_hostname(envelope.mx)
-                                                    .with_receiving_ip(remote_ip)
-                                                    .with_failure_reason_code(
-                                                        "No matching certificates found.",
-                                                    )
-                                                    .into(),
-                                                    tls_record: tls_report.record.clone(),
-                                                    interval: tls_report.interval,
-                                                })
-                                                .await;
+                                                server
+                                                    .schedule_report(TlsEvent {
+                                                        policy: dane_policy.into(),
+                                                        domain: domain.domain.to_string(),
+                                                        failure: FailureDetails::new(
+                                                            ResultType::ValidationFailure,
+                                                        )
+                                                        .with_receiving_mx_hostname(envelope.mx)
+                                                        .with_receiving_ip(remote_ip)
+                                                        .with_failure_reason_code(
+                                                            "No matching certificates found.",
+                                                        )
+                                                        .into(),
+                                                        tls_record: tls_report.record.clone(),
+                                                        interval: tls_report.interval,
+                                                    })
+                                                    .await;
                                             }
 
                                             last_status = status;
@@ -1080,14 +1105,15 @@ impl DeliveryAttempt {
 
                                     // Report TLS success
                                     if let Some(tls_report) = &tls_report {
-                                        core.schedule_report(TlsEvent {
-                                            policy: (&mta_sts_policy, &dane_policy).into(),
-                                            domain: domain.domain.to_string(),
-                                            failure: None,
-                                            tls_record: tls_report.record.clone(),
-                                            interval: tls_report.interval,
-                                        })
-                                        .await;
+                                        server
+                                            .schedule_report(TlsEvent {
+                                                policy: (&mta_sts_policy, &dane_policy).into(),
+                                                domain: domain.domain.to_string(),
+                                                failure: None,
+                                                tls_record: tls_report.record.clone(),
+                                                interval: tls_report.interval,
+                                            })
+                                            .await;
                                     }
 
                                     // Deliver message over TLS
@@ -1126,20 +1152,21 @@ impl DeliveryAttempt {
                                     );
 
                                     if let Some(tls_report) = &tls_report {
-                                        core.schedule_report(TlsEvent {
-                                            policy: (&mta_sts_policy, &dane_policy).into(),
-                                            domain: domain.domain.to_string(),
-                                            failure: FailureDetails::new(
-                                                ResultType::StartTlsNotSupported,
-                                            )
-                                            .with_receiving_mx_hostname(envelope.mx)
-                                            .with_receiving_ip(remote_ip)
-                                            .with_failure_reason_code(reason)
-                                            .into(),
-                                            tls_record: tls_report.record.clone(),
-                                            interval: tls_report.interval,
-                                        })
-                                        .await;
+                                        server
+                                            .schedule_report(TlsEvent {
+                                                policy: (&mta_sts_policy, &dane_policy).into(),
+                                                domain: domain.domain.to_string(),
+                                                failure: FailureDetails::new(
+                                                    ResultType::StartTlsNotSupported,
+                                                )
+                                                .with_receiving_mx_hostname(envelope.mx)
+                                                .with_receiving_ip(remote_ip)
+                                                .with_failure_reason_code(reason)
+                                                .into(),
+                                                tls_record: tls_report.record.clone(),
+                                                interval: tls_report.interval,
+                                            })
+                                            .await;
                                     }
 
                                     if is_strict_tls {
@@ -1173,20 +1200,21 @@ impl DeliveryAttempt {
                                     if let (Some(tls_report), mail_send::Error::Tls(error)) =
                                         (&tls_report, &error)
                                     {
-                                        core.schedule_report(TlsEvent {
-                                            policy: (&mta_sts_policy, &dane_policy).into(),
-                                            domain: domain.domain.to_string(),
-                                            failure: FailureDetails::new(
-                                                ResultType::CertificateNotTrusted,
-                                            )
-                                            .with_receiving_mx_hostname(envelope.mx)
-                                            .with_receiving_ip(remote_ip)
-                                            .with_failure_reason_code(error.to_string())
-                                            .into(),
-                                            tls_record: tls_report.record.clone(),
-                                            interval: tls_report.interval,
-                                        })
-                                        .await;
+                                        server
+                                            .schedule_report(TlsEvent {
+                                                policy: (&mta_sts_policy, &dane_policy).into(),
+                                                domain: domain.domain.to_string(),
+                                                failure: FailureDetails::new(
+                                                    ResultType::CertificateNotTrusted,
+                                                )
+                                                .with_receiving_mx_hostname(envelope.mx)
+                                                .with_receiving_ip(remote_ip)
+                                                .with_failure_reason_code(error.to_string())
+                                                .into(),
+                                                tls_record: tls_report.record.clone(),
+                                                interval: tls_report.interval,
+                                            })
+                                            .await;
                                     }
 
                                     last_status = if is_strict_tls {
@@ -1216,8 +1244,7 @@ impl DeliveryAttempt {
                         }
                     } else {
                         // Start TLS
-                        smtp_client.timeout = core
-                            .core
+                        smtp_client.timeout = server
                             .eval_if(&queue_config.timeout.tls, &envelope, message.span_id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(3 * 60));
@@ -1239,8 +1266,7 @@ impl DeliveryAttempt {
                             };
 
                         // Read greeting
-                        smtp_client.timeout = core
-                            .core
+                        smtp_client.timeout = server
                             .eval_if(&queue_config.timeout.greeting, &envelope, message.span_id)
                             .await
                             .unwrap_or_else(|| Duration::from_secs(5 * 60));
@@ -1268,8 +1294,7 @@ impl DeliveryAttempt {
                     };
 
                     // Update status for the current domain and continue with the next one
-                    let schedule = core
-                        .core
+                    let schedule = server
                         .eval_if::<Vec<Duration>, _>(
                             &queue_config.retry,
                             &envelope,
@@ -1283,8 +1308,7 @@ impl DeliveryAttempt {
             }
 
             // Update status
-            let schedule = core
-                .core
+            let schedule = server
                 .eval_if::<Vec<Duration>, _>(&queue_config.retry, &envelope, message.span_id)
                 .await
                 .unwrap_or_else(|| vec![Duration::from_secs(60)]);
@@ -1293,20 +1317,20 @@ impl DeliveryAttempt {
         message.recipients = recipients;
 
         // Send Delivery Status Notifications
-        core.send_dsn(&mut message).await;
+        server.send_dsn(&mut message).await;
 
         // Notify queue manager
         let result = if !on_hold.is_empty() {
             // Save changes to disk
             let next_due = message.next_event_after(now());
-            message.save_changes(&core, None, None).await;
+            message.save_changes(&server, None, None).await;
 
             trc::event!(
                 Delivery(DeliveryEvent::ConcurrencyLimitExceeded),
                 SpanId = span_id,
             );
 
-            Event::OnHold(OnHold {
+            QueueEvent::OnHold(OnHold {
                 next_due,
                 limiters: on_hold,
                 message: self.event,
@@ -1322,10 +1346,10 @@ impl DeliveryAttempt {
 
             // Save changes to disk
             message
-                .save_changes(&core, self.event.due.into(), due.into())
+                .save_changes(&server, self.event.due.into(), due.into())
                 .await;
 
-            Event::Reload
+            QueueEvent::Reload
         } else {
             trc::event!(
                 Delivery(DeliveryEvent::Completed),
@@ -1334,11 +1358,11 @@ impl DeliveryAttempt {
             );
 
             // Delete message from queue
-            message.remove(&core, self.event.due).await;
+            message.remove(&server, self.event.due).await;
 
-            Event::Reload
+            QueueEvent::Reload
         };
-        if core.inner.queue_tx.send(result).await.is_err() {
+        if server.inner.ipc.queue_tx.send(result).await.is_err() {
             trc::event!(
                 Server(ServerEvent::ThreadError),
                 Reason = "Channel closed.",

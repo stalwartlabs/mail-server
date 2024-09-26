@@ -4,14 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, collections::BTreeSet, fmt::Display, io::Cursor, sync::Arc};
+use std::{
+    borrow::Cow, collections::BTreeSet, fmt::Display, future::Future, io::Cursor, sync::Arc,
+};
 
 use crate::{
     api::{http::ToHttpResponse, HttpResponse, JsonResponse},
-    JMAP,
+    JmapMethods,
 };
 use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use directory::backend::internal::manage;
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::{encoders::base64::base64_encode_mime, mime::make_boundary};
@@ -628,11 +630,21 @@ impl ToBitmaps for &EncryptionParams {
     }
 }
 
-impl JMAP {
-    pub async fn handle_crypto_get(
+pub trait CryptoHandler: Sync + Send {
+    fn handle_crypto_get(
         &self,
         access_token: Arc<AccessToken>,
-    ) -> trc::Result<HttpResponse> {
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn handle_crypto_post(
+        &self,
+        access_token: Arc<AccessToken>,
+        body: Option<Vec<u8>>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl CryptoHandler for Server {
+    async fn handle_crypto_get(&self, access_token: Arc<AccessToken>) -> trc::Result<HttpResponse> {
         let params = self
             .get_property::<EncryptionParams>(
                 access_token.primary_id(),
@@ -664,7 +676,7 @@ impl JMAP {
         .into_http_response())
     }
 
-    pub async fn handle_crypto_post(
+    async fn handle_crypto_post(
         &self,
         access_token: Arc<AccessToken>,
         body: Option<Vec<u8>>,

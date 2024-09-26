@@ -16,7 +16,7 @@ use arc_swap::ArcSwap;
 use dns_update::DnsUpdater;
 use rustls::sign::CertifiedKey;
 
-use crate::Core;
+use crate::Server;
 
 use self::directory::{Account, ChallengeType};
 
@@ -80,7 +80,7 @@ impl AcmeProvider {
     }
 }
 
-impl Core {
+impl Server {
     pub async fn init_acme(&self, provider: &AcmeProvider) -> trc::Result<Duration> {
         // Load account key from cache or generate a new one
         if let Some(account_key) = self.load_account(provider).await? {
@@ -100,15 +100,17 @@ impl Core {
     }
 
     pub fn has_acme_tls_providers(&self) -> bool {
-        self.tls
-            .acme_providers
+        self.core
+            .acme
+            .providers
             .values()
             .any(|p| matches!(p.challenge, ChallengeSettings::TlsAlpn01))
     }
 
     pub fn has_acme_http_providers(&self) -> bool {
-        self.tls
-            .acme_providers
+        self.core
+            .acme
+            .providers
             .values()
             .any(|p| matches!(p.challenge, ChallengeSettings::Http01))
     }

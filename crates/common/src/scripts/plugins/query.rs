@@ -19,8 +19,8 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
 pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     // Obtain store name
     let store = match &ctx.arguments[0] {
-        Variable::String(v) if !v.is_empty() => ctx.core.storage.lookups.get(v.as_ref()),
-        _ => Some(&ctx.core.storage.lookup),
+        Variable::String(v) if !v.is_empty() => ctx.server.core.storage.lookups.get(v.as_ref()),
+        _ => Some(&ctx.server.core.storage.lookup),
     }
     .ok_or_else(|| {
         trc::SieveEvent::RuntimeError

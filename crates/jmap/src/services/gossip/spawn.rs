@@ -5,11 +5,10 @@
  */
 
 use crate::auth::SymmetricEncrypt;
-use crate::JmapInstance;
 
 use super::request::Request;
 use super::{Gossiper, Peer, UDP_MAX_PAYLOAD};
-use common::IPC_CHANNEL_BUFFER;
+use common::{Inner, IPC_CHANNEL_BUFFER};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use std::{net::SocketAddr, sync::Arc};
@@ -64,7 +63,7 @@ impl GossiperBuilder {
         builder.into()
     }
 
-    pub async fn spawn(self, core: JmapInstance, mut shutdown_rx: watch::Receiver<bool>) {
+    pub async fn spawn(self, inner: Arc<Inner>, mut shutdown_rx: watch::Receiver<bool>) {
         // Bind port
         let quidnunc = Arc::new(Quidnunc {
             socket: match UdpSocket::bind(SocketAddr::new(self.bind_addr, self.port)).await {
@@ -100,7 +99,7 @@ impl GossiperBuilder {
             epoch: 0,
             peers: self.peers,
             last_peer_pinged: u32::MAX as usize,
-            core,
+            inner,
             gossip_tx,
         };
         let quidnunc_ = quidnunc.clone();

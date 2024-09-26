@@ -5,32 +5,44 @@
  */
 
 use crate::queue::DomainPart;
+use common::ipc::{QueueEvent, QueueEventLock};
+use common::Server;
 use std::borrow::Cow;
+use std::future::Future;
 use std::time::{Duration, SystemTime};
 use store::write::key::DeserializeBigEndian;
-use store::write::{now, BatchBuilder, Bincode, BlobOp, QueueClass, QueueEvent, ValueClass};
+use store::write::{now, BatchBuilder, Bincode, BlobOp, QueueClass, ValueClass};
 use store::{Deserialize, IterateParams, Serialize, ValueKey, U64_LEN};
 use trc::ServerEvent;
 use utils::BlobHash;
 
-use crate::core::SMTP;
-
 use super::{
-    Domain, Event, Message, MessageSource, QueueEnvelope, QueueId, QuotaKey, Recipient, Schedule,
-    Status,
+    Domain, Message, MessageSource, QueueEnvelope, QueueId, QuotaKey, Recipient, Schedule, Status,
 };
 
 pub const LOCK_EXPIRY: u64 = 300;
 
-#[derive(Debug)]
-pub struct QueueEventLock {
-    pub due: u64,
-    pub queue_id: u64,
-    pub lock_expiry: u64,
+pub trait SmtpSpool: Sync + Send {
+    fn new_message(
+        &self,
+        return_path: impl Into<String>,
+        return_path_lcase: impl Into<String>,
+        return_path_domain: impl Into<String>,
+        span_id: u64,
+    ) -> Message;
+
+    fn next_event(&self) -> impl Future<Output = Vec<QueueEventLock>> + Send;
+
+    fn try_lock_event(
+        &self,
+        event: QueueEventLock,
+    ) -> impl Future<Output = Option<QueueEventLock>> + Send;
+
+    fn read_message(&self, id: QueueId) -> impl Future<Output = Option<Message>> + Send;
 }
 
-impl SMTP {
-    pub fn new_message(
+impl SmtpSpool for Server {
+    fn new_message(
         &self,
         return_path: impl Into<String>,
         return_path_lcase: impl Into<String>,
@@ -41,7 +53,7 @@ impl SMTP {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         Message {
-            queue_id: self.inner.queue_id_gen.generate().unwrap_or(created),
+            queue_id: self.inner.data.queue_id_gen.generate().unwrap_or(created),
             span_id,
             created,
             return_path: return_path.into(),
@@ -58,22 +70,24 @@ impl SMTP {
         }
     }
 
-    pub async fn next_event(&self) -> Vec<QueueEventLock> {
-        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-            due: 0,
-            queue_id: 0,
-        })));
-        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-            due: u64::MAX,
-            queue_id: u64::MAX,
-        })));
+    async fn next_event(&self) -> Vec<QueueEventLock> {
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
+            store::write::QueueEvent {
+                due: 0,
+                queue_id: 0,
+            },
+        )));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
+            store::write::QueueEvent {
+                due: u64::MAX,
+                queue_id: u64::MAX,
+            },
+        )));
 
         let mut events = Vec::new();
         let now = now();
         let result = self
-            .core
-            .storage
-            .data
+            .store()
             .iterate(
                 IterateParams::new(from_key, to_key).ascending(),
                 |key, value| {
@@ -107,10 +121,10 @@ impl SMTP {
         events
     }
 
-    pub async fn try_lock_event(&self, mut event: QueueEventLock) -> Option<QueueEventLock> {
+    async fn try_lock_event(&self, mut event: QueueEventLock) -> Option<QueueEventLock> {
         let mut batch = BatchBuilder::new();
         batch.assert_value(
-            ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+            ValueClass::Queue(QueueClass::MessageEvent(store::write::QueueEvent {
                 due: event.due,
                 queue_id: event.queue_id,
             })),
@@ -118,13 +132,13 @@ impl SMTP {
         );
         event.lock_expiry = now() + LOCK_EXPIRY;
         batch.set(
-            ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+            ValueClass::Queue(QueueClass::MessageEvent(store::write::QueueEvent {
                 due: event.due,
                 queue_id: event.queue_id,
             })),
             event.lock_expiry.serialize(),
         );
-        match self.core.storage.data.write(batch.build()).await {
+        match self.store().write(batch.build()).await {
             Ok(_) => Some(event),
             Err(err) if err.is_assertion_failure() => {
                 trc::event!(
@@ -145,11 +159,9 @@ impl SMTP {
         }
     }
 
-    pub async fn read_message(&self, id: QueueId) -> Option<Message> {
+    async fn read_message(&self, id: QueueId) -> Option<Message> {
         match self
-            .core
-            .storage
-            .data
+            .store()
             .get_value::<Bincode<Message>>(ValueKey::from(ValueClass::Queue(QueueClass::Message(
                 id,
             ))))
@@ -174,7 +186,7 @@ impl Message {
         raw_headers: Option<&[u8]>,
         raw_message: &[u8],
         session_id: u64,
-        core: &SMTP,
+        server: &Server,
         source: MessageSource,
     ) -> bool {
         // Write blob
@@ -203,7 +215,7 @@ impl Message {
             },
             0u32.serialize(),
         );
-        if let Err(err) = core.core.storage.data.write(batch.build()).await {
+        if let Err(err) = server.store().write(batch.build()).await {
             trc::error!(err
                 .details("Failed to write to store.")
                 .span_id(session_id)
@@ -211,10 +223,8 @@ impl Message {
 
             return false;
         }
-        if let Err(err) = core
-            .core
-            .storage
-            .blob
+        if let Err(err) = server
+            .blob_store()
             .put_blob(self.blob_hash.as_slice(), message.as_ref())
             .await
         {
@@ -271,7 +281,7 @@ impl Message {
         }
         batch
             .set(
-                ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                ValueClass::Queue(QueueClass::MessageEvent(store::write::QueueEvent {
                     due: self.next_event().unwrap_or_default(),
                     queue_id: self.queue_id,
                 })),
@@ -299,7 +309,7 @@ impl Message {
                 Bincode::new(self).serialize(),
             );
 
-        if let Err(err) = core.core.storage.data.write(batch.build()).await {
+        if let Err(err) = server.store().write(batch.build()).await {
             trc::error!(err
                 .details("Failed to write to store.")
                 .span_id(session_id)
@@ -309,7 +319,14 @@ impl Message {
         }
 
         // Queue the message
-        if core.inner.queue_tx.send(Event::Reload).await.is_err() {
+        if server
+            .inner
+            .ipc
+            .queue_tx
+            .send(QueueEvent::Reload)
+            .await
+            .is_err()
+        {
             trc::event!(
                 Server(ServerEvent::ThreadError),
                 Reason = "Channel closed.",
@@ -326,7 +343,7 @@ impl Message {
         rcpt: impl Into<String>,
         rcpt_lcase: impl Into<String>,
         rcpt_domain: impl Into<String>,
-        core: &SMTP,
+        server: &Server,
     ) {
         let rcpt_domain = rcpt_domain.into();
         let domain_idx =
@@ -343,10 +360,9 @@ impl Message {
                     status: Status::Scheduled,
                 });
 
-                let expires = core
-                    .core
+                let expires = server
                     .eval_if(
-                        &core.core.smtp.queue.expire,
+                        &server.core.smtp.queue.expire,
                         &QueueEnvelope::new(self, idx),
                         self.span_id,
                     )
@@ -370,17 +386,17 @@ impl Message {
         });
     }
 
-    pub async fn add_recipient(&mut self, rcpt: impl Into<String>, core: &SMTP) {
+    pub async fn add_recipient(&mut self, rcpt: impl Into<String>, server: &Server) {
         let rcpt = rcpt.into();
         let rcpt_lcase = rcpt.to_lowercase();
         let rcpt_domain = rcpt_lcase.domain_part().to_string();
-        self.add_recipient_parts(rcpt, rcpt_lcase, rcpt_domain, core)
+        self.add_recipient_parts(rcpt, rcpt_lcase, rcpt_domain, server)
             .await;
     }
 
     pub async fn save_changes(
         mut self,
-        core: &SMTP,
+        server: &Server,
         prev_event: Option<u64>,
         next_event: Option<u64>,
     ) -> bool {
@@ -395,12 +411,14 @@ impl Message {
         let mut batch = BatchBuilder::new();
         if let (Some(prev_event), Some(next_event)) = (prev_event, next_event) {
             batch
-                .clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-                    due: prev_event,
-                    queue_id: self.queue_id,
-                })))
+                .clear(ValueClass::Queue(QueueClass::MessageEvent(
+                    store::write::QueueEvent {
+                        due: prev_event,
+                        queue_id: self.queue_id,
+                    },
+                )))
                 .set(
-                    ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
+                    ValueClass::Queue(QueueClass::MessageEvent(store::write::QueueEvent {
                         due: next_event,
                         queue_id: self.queue_id,
                     })),
@@ -414,7 +432,7 @@ impl Message {
             Bincode::new(self).serialize(),
         );
 
-        if let Err(err) = core.core.storage.data.write(batch.build()).await {
+        if let Err(err) = server.store().write(batch.build()).await {
             trc::error!(err
                 .details("Failed to save changes.")
                 .span_id(span_id)
@@ -425,7 +443,7 @@ impl Message {
         }
     }
 
-    pub async fn remove(self, core: &SMTP, prev_event: u64) -> bool {
+    pub async fn remove(self, server: &Server, prev_event: u64) -> bool {
         let mut batch = BatchBuilder::new();
 
         // Release all quotas
@@ -448,13 +466,15 @@ impl Message {
                 hash: self.blob_hash.clone(),
                 id: self.queue_id,
             })
-            .clear(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-                due: prev_event,
-                queue_id: self.queue_id,
-            })))
+            .clear(ValueClass::Queue(QueueClass::MessageEvent(
+                store::write::QueueEvent {
+                    due: prev_event,
+                    queue_id: self.queue_id,
+                },
+            )))
             .clear(ValueClass::Queue(QueueClass::Message(self.queue_id)));
 
-        if let Err(err) = core.core.storage.data.write(batch.build()).await {
+        if let Err(err) = server.store().write(batch.build()).await {
             trc::error!(err
                 .details("Failed to write to update queue.")
                 .span_id(self.span_id)

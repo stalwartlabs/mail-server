@@ -19,12 +19,11 @@ use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    build_smtp,
     inbound::{sign::SIGNATURES, TestMessage, TestReportingEvent},
     session::{TestSession, VerifyResponse},
     TempDir, TestSMTP,
 };
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 
 const CONFIG: &str = r#"
 [storage]
@@ -95,14 +94,10 @@ async fn dmarc() {
     // Enable logging
     crate::enable_logging();
 
-    let mut inner = Inner::default();
     let tmp_dir = TempDir::new("smtp_dmarc_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
-
-    // Create temp dir for queue
-    let mut qr = inner.init_test_queue(&core);
 
     // Add SPF, DKIM and DMARC records
     core.smtp.resolvers.dns.txt_add(
@@ -166,12 +161,11 @@ async fn dmarc() {
         Instant::now() + Duration::from_secs(5),
     );
 
-    // Create report channels
-    let mut rr = inner.init_test_report();
-
     // SPF must pass
-    let core = build_smtp(core, inner);
-    let mut session = Session::test(core.clone());
+    let test = TestSMTP::from_core(core);
+    let mut rr = test.report_receiver;
+    let mut qr = test.queue_receiver;
+    let mut session = Session::test(test.server.clone());
     session.data.remote_ip_str = "10.0.0.2".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
@@ -246,7 +240,7 @@ async fn dmarc() {
     qr.assert_no_events();
 
     // Unaligned DMARC should be rejected
-    core.core.smtp.resolvers.dns.txt_add(
+    test.server.core.smtp.resolvers.dns.txt_add(
         "test.net",
         Spf::parse(b"v=spf1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),

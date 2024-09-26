@@ -8,11 +8,11 @@ use std::time::{Duration, Instant};
 
 use crate::smtp::{
     inbound::TestMessage,
-    outbound::TestServer,
     session::{TestSession, VerifyResponse},
+    TestSMTP,
 };
-use common::config::server::ServerProtocol;
-use smtp::queue::{DeliveryAttempt, Event};
+use common::{config::server::ServerProtocol, ipc::QueueEvent};
+use smtp::queue::{spool::SmtpSpool, DeliveryAttempt};
 use store::write::now;
 
 const REMOTE: &str = "
@@ -66,11 +66,11 @@ async fn lmtp_delivery() {
     crate::enable_logging();
 
     // Start test server
-    let mut remote = TestServer::new("lmtp_delivery_remote", REMOTE, true).await;
+    let mut remote = TestSMTP::new("lmtp_delivery_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Lmtp]).await;
 
     // Multiple delivery attempts
-    let mut local = TestServer::new("lmtp_delivery_local", LOCAL, true).await;
+    let mut local = TestSMTP::new("lmtp_delivery_local", LOCAL).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
@@ -100,17 +100,17 @@ async fn lmtp_delivery() {
         )
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     let mut dsn = Vec::new();
     loop {
-        match local.qr.try_read_event().await {
-            Some(Event::Reload) => {}
-            Some(Event::OnHold(_)) => unreachable!(),
-            None | Some(Event::Stop) => break,
+        match local.queue_receiver.try_read_event().await {
+            Some(QueueEvent::Reload) => {}
+            Some(QueueEvent::OnHold(_)) => unreachable!(),
+            None | Some(QueueEvent::Stop) => break,
         }
 
         let events = core.next_event().await;
@@ -133,14 +133,14 @@ async fn lmtp_delivery() {
             }
         }
     }
-    local.qr.assert_queue_is_empty().await;
+    local.queue_receiver.assert_queue_is_empty().await;
     assert_eq!(dsn.len(), 4);
 
     let mut dsn = dsn.into_iter();
 
     dsn.next()
         .unwrap()
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (delivered to")
         .assert_contains("<jane@foobar.org> (delivered to")
@@ -150,28 +150,28 @@ async fn lmtp_delivery() {
 
     dsn.next()
         .unwrap()
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<delay@foobar.org> (host 'lmtp.foobar.org' rejected")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<delay@foobar.org> (host 'lmtp.foobar.org' rejected")
         .assert_contains("Action: delayed");
 
     dsn.next()
         .unwrap()
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<delay@foobar.org> (host 'lmtp.foobar.org' rejected")
         .assert_contains("Action: failed");
 
     assert_eq!(
         remote
-            .qr
+            .queue_receiver
             .expect_message()
             .await
             .recipients
@@ -184,5 +184,5 @@ async fn lmtp_delivery() {
             "john@foobar.org".to_string()
         ]
     );
-    remote.qr.assert_no_events();
+    remote.queue_receiver.assert_no_events();
 }

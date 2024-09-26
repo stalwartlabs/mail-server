@@ -9,7 +9,7 @@ use mail_auth::{report::AuthFailureType, AuthenticationResults, SpfOutput};
 use trc::OutgoingReportEvent;
 use utils::config::Rate;
 
-use crate::core::Session;
+use crate::{core::Session, reporting::SmtpReporting};
 
 impl<T: SessionStream> Session<T> {
     pub async fn send_spf_report(
@@ -35,10 +35,9 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Generate report
-        let config = &self.core.core.smtp.report.spf;
+        let config = &self.server.core.smtp.report.spf;
         let from_addr = self
-            .core
-            .core
+            .server
             .eval_if(&config.address, self, self.data.session_id)
             .await
             .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
@@ -64,8 +63,7 @@ impl<T: SessionStream> Session<T> {
             .with_spf_dns(format!("txt : {} : v=SPF1", output.domain())) // TODO use DNS record
             .write_rfc5322(
                 (
-                    self.core
-                        .core
+                    self.server
                         .eval_if(&config.name, self, self.data.session_id)
                         .await
                         .unwrap_or_else(|| "Mailer Daemon".to_string())
@@ -74,8 +72,7 @@ impl<T: SessionStream> Session<T> {
                 ),
                 rcpt,
                 &self
-                    .core
-                    .core
+                    .server
                     .eval_if(&config.subject, self, self.data.session_id)
                     .await
                     .unwrap_or_else(|| "SPF Report".to_string()),
@@ -91,7 +88,7 @@ impl<T: SessionStream> Session<T> {
         );
 
         // Send report
-        self.core
+        self.server
             .send_report(
                 &from_addr,
                 [rcpt].into_iter(),

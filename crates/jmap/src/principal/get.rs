@@ -4,17 +4,26 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::Server;
 use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, property::Property, state::State, value::Value},
 };
+use std::future::Future;
 
-use crate::JMAP;
+use crate::JmapMethods;
 
-impl JMAP {
-    pub async fn principal_get(
+pub trait PrincipalGet: Sync + Send {
+    fn principal_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+}
+
+impl PrincipalGet for Server {
+    async fn principal_get(
         &self,
         mut request: GetRequest<RequestArguments>,
     ) -> trc::Result<GetResponse> {

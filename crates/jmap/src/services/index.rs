@@ -6,6 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
+use common::{core::BuildServer, Inner, Server};
 use directory::{
     backend::internal::{manage::ManageDirectory, PrincipalField},
     Type,
@@ -22,17 +23,19 @@ use store::{
     Deserialize, IterateParams, Serialize, ValueKey, U32_LEN, U64_LEN,
 };
 
-use tokio::sync::Notify;
+use std::future::Future;
 use trc::{AddContext, FtsIndexEvent};
 use utils::{BlobHash, BLOB_HASH_LEN};
 
 use crate::{
+    blob::download::BlobDownload,
+    changes::write::ChangeLog,
     email::{index::IndexMessageText, metadata::MessageMetadata},
-    Inner, JmapInstance, JMAP,
+    JmapMethods,
 };
 
 #[derive(Debug)]
-struct IndexEmail {
+pub struct IndexEmail {
     account_id: u32,
     document_id: u32,
     seq: u64,
@@ -42,11 +45,12 @@ struct IndexEmail {
 
 const INDEX_LOCK_EXPIRY: u64 = 60 * 5;
 
-pub fn spawn_index_task(core: JmapInstance, rx: Arc<Notify>) {
+pub fn spawn_index_task(inner: Arc<Inner>) {
     tokio::spawn(async move {
+        let rx = inner.ipc.index_tx.clone();
         loop {
             // Index any queued messages
-            JMAP::from(core.clone()).fts_index_queued().await;
+            inner.build_server().fts_index_queued().await;
 
             // Wait for a signal to index more messages
             rx.notified().await;
@@ -54,8 +58,19 @@ pub fn spawn_index_task(core: JmapInstance, rx: Arc<Notify>) {
     });
 }
 
-impl JMAP {
-    pub async fn fts_index_queued(&self) {
+pub trait Indexer: Sync + Send {
+    fn fts_index_queued(&self) -> impl Future<Output = ()> + Send;
+    fn try_lock_index(&self, event: &IndexEmail) -> impl Future<Output = bool> + Send;
+    fn reindex(
+        &self,
+        account_id: Option<u32>,
+        tenant_id: Option<u32>,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+    fn request_fts_index(&self);
+}
+
+impl Indexer for Server {
+    async fn fts_index_queued(&self) {
         let from_key = ValueKey::<ValueClass<u32>> {
             account_id: 0,
             collection: 0,
@@ -243,15 +258,11 @@ impl JMAP {
         }
     }
 
-    pub fn request_fts_index(&self) {
-        self.inner.request_fts_index();
+    fn request_fts_index(&self) {
+        self.inner.ipc.index_tx.notify_one();
     }
 
-    pub async fn reindex(
-        &self,
-        account_id: Option<u32>,
-        tenant_id: Option<u32>,
-    ) -> trc::Result<()> {
+    async fn reindex(&self, account_id: Option<u32>, tenant_id: Option<u32>) -> trc::Result<()> {
         let accounts = if let Some(account_id) = account_id {
             RoaringBitmap::from_sorted_iter([account_id]).unwrap()
         } else {
@@ -359,12 +370,6 @@ impl JMAP {
         self.request_fts_index();
 
         Ok(())
-    }
-}
-
-impl Inner {
-    pub fn request_fts_index(&self) {
-        self.index_tx.notify_one();
     }
 }
 

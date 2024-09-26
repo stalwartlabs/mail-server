@@ -10,20 +10,17 @@ use std::{
     time::Duration,
 };
 
-use arc_swap::ArcSwap;
 use proxy_header::io::ProxiedStream;
 use rustls::crypto::ring::cipher_suite::TLS13_AES_128_GCM_SHA256;
-use tokio::{
-    net::{TcpListener, TcpStream},
-    sync::watch,
-};
+use tokio::{net::TcpStream, sync::watch};
 use tokio_rustls::server::TlsStream;
 use trc::{EventType, HttpEvent, ImapEvent, ManageSieveEvent, Pop3Event, SmtpEvent};
 use utils::{config::Config, UnwrapFailure};
 
 use crate::{
-    config::server::{Listener, Server, ServerProtocol, Servers},
-    Core,
+    config::server::{Listener, Listeners, ServerProtocol, TcpListener},
+    core::BuildServer,
+    Inner, Server,
 };
 
 use super::{
@@ -31,11 +28,11 @@ use super::{
     TcpAcceptor,
 };
 
-impl Server {
+impl Listener {
     pub fn spawn(
         self,
         manager: impl SessionManager,
-        core: Arc<ArcSwap<Core>>,
+        inner: Arc<Inner>,
         acceptor: TcpAcceptor,
         shutdown_rx: watch::Receiver<bool>,
     ) {
@@ -95,7 +92,7 @@ impl Server {
             let mut shutdown_rx = instance.shutdown_rx.clone();
             let manager = manager.clone();
             let instance = instance.clone();
-            let core = core.clone();
+            let inner = inner.clone();
             tokio::spawn(async move {
                 let (span_start, span_end) = match self.protocol {
                     ServerProtocol::Smtp | ServerProtocol::Lmtp => (
@@ -125,8 +122,8 @@ impl Server {
                         stream = listener.accept() => {
                             match stream {
                                 Ok((stream, remote_addr)) => {
-                                    let core = core.as_ref().load_full();
-                                    let enable_acme = (is_https && core.has_acme_tls_providers()).then_some(core.clone());
+                                    let server = inner.build_server();
+                                    let enable_acme = (is_https && server.has_acme_tls_providers()).then(|| server.clone());
 
                                     if has_proxies && instance.proxy_networks.iter().any(|network| network.matches(&remote_addr.ip())) {
                                         let instance = instance.clone();
@@ -142,7 +139,7 @@ impl Server {
                                                                             .proxied_address()
                                                                             .map(|addr| addr.source)
                                                                             .unwrap_or(remote_addr);
-                                                    if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &core) {
+                                                    if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &server) {
                                                         // Spawn session
                                                         manager.spawn(session, is_tls, enable_acme, span_start, span_end);
                                                     }
@@ -159,7 +156,7 @@ impl Server {
                                                 }
                                             }
                                         });
-                                    } else if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &core) {
+                                    } else if let Some(session) = instance.build_session(stream, local_addr, remote_addr, &server) {
                                         // Set socket options
                                         opts.apply(&session.stream);
 
@@ -205,7 +202,7 @@ trait BuildSession {
         stream: T,
         local_addr: SocketAddr,
         remote_addr: SocketAddr,
-        core: &Core,
+        server: &Server,
     ) -> Option<SessionData<T>>;
 }
 
@@ -215,7 +212,7 @@ impl BuildSession for Arc<ServerInstance> {
         stream: T,
         local_addr: SocketAddr,
         remote_addr: SocketAddr,
-        core: &Core,
+        server: &Server,
     ) -> Option<SessionData<T>> {
         // Convert mapped IPv6 addresses to IPv4
         let remote_ip = match remote_addr.ip() {
@@ -228,7 +225,7 @@ impl BuildSession for Arc<ServerInstance> {
         let remote_port = remote_addr.port();
 
         // Check if blocked
-        if core.is_ip_blocked(&remote_ip) {
+        if server.is_ip_blocked(&remote_ip) {
             trc::event!(
                 Security(trc::SecurityEvent::IpBlocked),
                 ListenerId = self.id.clone(),
@@ -303,7 +300,7 @@ impl SocketOpts {
     }
 }
 
-impl Servers {
+impl Listeners {
     pub fn bind_and_drop_priv(&self, config: &mut Config) {
         // Bind as root
         for server in &self.servers {
@@ -332,7 +329,7 @@ impl Servers {
 
     pub fn spawn(
         mut self,
-        spawn: impl Fn(Server, TcpAcceptor, watch::Receiver<bool>),
+        spawn: impl Fn(Listener, TcpAcceptor, watch::Receiver<bool>),
     ) -> (watch::Sender<bool>, watch::Receiver<bool>) {
         // Spawn listeners
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -348,8 +345,8 @@ impl Servers {
     }
 }
 
-impl Listener {
-    pub fn listen(self) -> Result<TcpListener, String> {
+impl TcpListener {
+    pub fn listen(self) -> Result<tokio::net::TcpListener, String> {
         self.socket
             .listen(self.backlog.unwrap_or(1024))
             .map_err(|err| format!("Failed to listen on {}: {}", self.addr, err))

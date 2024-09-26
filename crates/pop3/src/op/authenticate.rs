@@ -4,10 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::listener::{limiter::ConcurrencyLimiter, SessionStream};
+use common::{
+    listener::{limiter::ConcurrencyLimiter, SessionStream},
+    ConcurrencyLimiters,
+};
 use directory::Permission;
 use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
-use jmap::auth::rate_limit::ConcurrencyLimiters;
+use jmap::auth::{
+    authenticate::Authenticator, oauth::token::TokenHandler, rate_limit::RateLimiter,
+};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use std::sync::Arc;
@@ -60,22 +65,22 @@ impl<T: SessionStream> Session<T> {
 
     pub async fn handle_auth(&mut self, credentials: Credentials<String>) -> trc::Result<()> {
         // Throttle authentication requests
-        self.jmap.is_auth_allowed_soft(&self.remote_addr).await?;
+        self.server.is_auth_allowed_soft(&self.remote_addr).await?;
 
         // Authenticate
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
-                self.jmap
+                self.server
                     .authenticate_plain(&username, &secret, self.remote_addr, self.session_id)
                     .await
             }
             Credentials::OAuthBearer { token } => {
                 match self
-                    .jmap
+                    .server
                     .validate_access_token("access_token", &token)
                     .await
                 {
-                    Ok((account_id, _, _)) => self.jmap.core.get_access_token(account_id).await,
+                    Ok((account_id, _, _)) => self.server.get_access_token(account_id).await,
                     Err(err) => Err(err),
                 }
             }
@@ -86,7 +91,7 @@ impl<T: SessionStream> Session<T> {
                     State::NotAuthenticated {
                         auth_failures,
                         username,
-                    } if *auth_failures < self.jmap.core.imap.max_auth_failures => {
+                    } if *auth_failures < self.server.core.imap.max_auth_failures => {
                         self.state = State::NotAuthenticated {
                             auth_failures: auth_failures + 1,
                             username: username.clone(),
@@ -118,7 +123,7 @@ impl<T: SessionStream> Session<T> {
 
         // Cache access token
         let access_token = Arc::new(access_token);
-        self.jmap.core.cache_access_token(access_token.clone());
+        self.server.cache_access_token(access_token.clone());
 
         // Fetch mailbox
         let mailbox = self.fetch_mailbox(access_token.primary_id()).await?;
@@ -133,9 +138,11 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub fn get_concurrency_limiter(&self, account_id: u32) -> Option<Arc<ConcurrencyLimiters>> {
-        let rate = self.jmap.core.imap.rate_concurrent?;
-        self.imap
-            .rate_limiter
+        let rate = self.server.core.imap.rate_concurrent?;
+        self.server
+            .inner
+            .data
+            .imap_limiter
             .get(&account_id)
             .map(|limiter| limiter.clone())
             .unwrap_or_else(|| {
@@ -143,7 +150,11 @@ impl<T: SessionStream> Session<T> {
                     concurrent_requests: ConcurrencyLimiter::new(rate),
                     concurrent_uploads: ConcurrencyLimiter::new(rate),
                 });
-                self.imap.rate_limiter.insert(account_id, limiter.clone());
+                self.server
+                    .inner
+                    .data
+                    .imap_limiter
+                    .insert(account_id, limiter.clone());
                 limiter
             })
             .into()

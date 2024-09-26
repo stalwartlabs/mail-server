@@ -6,28 +6,47 @@
 
 use std::time::Duration;
 
+use common::Server;
 use jmap_proto::types::collection::Collection;
+use std::future::Future;
 use store::{
     write::{log::ChangeLogBuilder, BatchBuilder},
     LogKey,
 };
 use trc::AddContext;
 
-use crate::JMAP;
+pub trait ChangeLog: Sync + Send {
+    fn begin_changes(
+        &self,
+        account_id: u32,
+    ) -> impl Future<Output = trc::Result<ChangeLogBuilder>> + Send;
+    fn assign_change_id(&self, account_id: u32) -> impl Future<Output = trc::Result<u64>> + Send;
+    fn generate_snowflake_id(&self) -> trc::Result<u64>;
+    fn commit_changes(
+        &self,
+        account_id: u32,
+        changes: ChangeLogBuilder,
+    ) -> impl Future<Output = trc::Result<u64>> + Send;
+    fn delete_changes(
+        &self,
+        account_id: u32,
+        before: Duration,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+}
 
-impl JMAP {
-    pub async fn begin_changes(&self, account_id: u32) -> trc::Result<ChangeLogBuilder> {
+impl ChangeLog for Server {
+    async fn begin_changes(&self, account_id: u32) -> trc::Result<ChangeLogBuilder> {
         self.assign_change_id(account_id)
             .await
             .map(ChangeLogBuilder::with_change_id)
     }
 
-    pub async fn assign_change_id(&self, _: u32) -> trc::Result<u64> {
+    async fn assign_change_id(&self, _: u32) -> trc::Result<u64> {
         self.generate_snowflake_id()
     }
 
-    pub fn generate_snowflake_id(&self) -> trc::Result<u64> {
-        self.inner.snowflake_id.generate().ok_or_else(|| {
+    fn generate_snowflake_id(&self) -> trc::Result<u64> {
+        self.inner.data.jmap_id_gen.generate().ok_or_else(|| {
             trc::StoreEvent::UnexpectedError
                 .into_err()
                 .caused_by(trc::location!())
@@ -35,7 +54,7 @@ impl JMAP {
         })
     }
 
-    pub async fn commit_changes(
+    async fn commit_changes(
         &self,
         account_id: u32,
         mut changes: ChangeLogBuilder,
@@ -56,8 +75,8 @@ impl JMAP {
             .map(|_| state)
     }
 
-    pub async fn delete_changes(&self, account_id: u32, before: Duration) -> trc::Result<()> {
-        let reference_cid = self.inner.snowflake_id.past_id(before).ok_or_else(|| {
+    async fn delete_changes(&self, account_id: u32, before: Duration) -> trc::Result<()> {
+        let reference_cid = self.inner.data.jmap_id_gen.past_id(before).ok_or_else(|| {
             trc::StoreEvent::UnexpectedError
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Reason, "Failed to generate reference change id.")

@@ -6,7 +6,7 @@
 
 use std::borrow::Cow;
 
-use common::{auth::AccessToken, listener::stream::NullIo};
+use common::{auth::AccessToken, listener::stream::NullIo, Server};
 use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
@@ -19,13 +19,14 @@ use store::{
 use trc::{AddContext, SieveEvent};
 
 use crate::{
-    email::ingest::{IngestEmail, IngestSource, IngestedEmail},
-    mailbox::{INBOX_ID, TRASH_ID},
+    email::ingest::{EmailIngest, IngestEmail, IngestSource, IngestedEmail},
+    mailbox::{get::MailboxGet, set::MailboxSet, INBOX_ID, TRASH_ID},
     sieve::SeenIdHash,
-    JMAP,
+    JmapMethods,
 };
 
-use super::ActiveScript;
+use super::{get::SieveScriptGet, ActiveScript};
+use std::future::Future;
 
 struct SieveMessage<'x> {
     pub raw_message: Cow<'x, [u8]>,
@@ -33,9 +34,21 @@ struct SieveMessage<'x> {
     pub flags: Vec<Keyword>,
 }
 
-impl JMAP {
+pub trait SieveScriptIngest: Sync + Send {
+    fn sieve_script_ingest(
+        &self,
+        access_token: &AccessToken,
+        raw_message: &[u8],
+        envelope_from: &str,
+        envelope_to: &str,
+        session_id: u64,
+        active_script: ActiveScript,
+    ) -> impl Future<Output = trc::Result<IngestedEmail>> + Send;
+}
+
+impl SieveScriptIngest for Server {
     #[allow(clippy::blocks_in_conditions)]
-    pub async fn sieve_script_ingest(
+    async fn sieve_script_ingest(
         &self,
         access_token: &AccessToken,
         raw_message: &[u8],
@@ -124,8 +137,7 @@ impl JMAP {
                             }
                         }
                         sieve::Script::Global(name_) => {
-                            if let Some(script) =
-                                self.core.get_untrusted_sieve_script(name_, session_id)
+                            if let Some(script) = self.get_untrusted_sieve_script(name_, session_id)
                             {
                                 input = Input::script(name, script.clone());
                             } else {
@@ -353,7 +365,7 @@ impl JMAP {
                                 );
 
                                 Session::<NullIo>::sieve(
-                                    self.smtp.clone(),
+                                    self.clone(),
                                     SessionAddress::new(mail_from.clone()),
                                     recipients,
                                     message.raw_message.to_vec(),

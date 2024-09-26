@@ -13,12 +13,12 @@ use x509_parser::parse_x509_certificate;
 
 use crate::listener::acme::directory::Identifier;
 use crate::listener::acme::ChallengeSettings;
-use crate::Core;
+use crate::Server;
 
 use super::directory::{Account, AuthStatus, Directory, OrderStatus};
 use super::AcmeProvider;
 
-impl Core {
+impl Server {
     pub(crate) async fn process_cert(
         &self,
         provider: &AcmeProvider,
@@ -210,8 +210,7 @@ impl Core {
 
                 match &provider.challenge {
                     ChallengeSettings::TlsAlpn01 => {
-                        self.storage
-                            .lookup
+                        self.lookup_store()
                             .key_set(
                                 format!("acme:{domain}").into_bytes(),
                                 account.tls_alpn_key(challenge, domain.clone())?,
@@ -220,8 +219,7 @@ impl Core {
                             .await?;
                     }
                     ChallengeSettings::Http01 => {
-                        self.storage
-                            .lookup
+                        self.lookup_store()
                             .key_set(
                                 format!("acme:{}", challenge.token).into_bytes(),
                                 account.http_proof(challenge)?,
@@ -289,7 +287,7 @@ impl Core {
                         let wait_until = Instant::now() + *propagation_timeout;
                         let mut did_propagate = false;
                         while Instant::now() < wait_until {
-                            match self.smtp.resolvers.dns.txt_raw_lookup(&name).await {
+                            match self.core.smtp.resolvers.dns.txt_raw_lookup(&name).await {
                                 Ok(result) => {
                                     let result = std::str::from_utf8(&result).unwrap_or_default();
                                     if result.contains(&dns_proof) {

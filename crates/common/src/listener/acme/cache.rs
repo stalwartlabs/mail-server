@@ -8,11 +8,11 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use trc::AddContext;
 use utils::config::ConfigKey;
 
-use crate::Core;
+use crate::Server;
 
 use super::AcmeProvider;
 
-impl Core {
+impl Server {
     pub(crate) async fn load_cert(&self, provider: &AcmeProvider) -> trc::Result<Option<Vec<u8>>> {
         self.read_if_exists(provider, "cert", provider.domains.as_slice())
             .await
@@ -68,6 +68,7 @@ impl Core {
         items: &[String],
     ) -> trc::Result<Option<Vec<u8>>> {
         if let Some(content) = self
+            .core
             .storage
             .config
             .get(self.build_key(provider, class, items))
@@ -94,7 +95,8 @@ impl Core {
         items: &[String],
         contents: impl AsRef<[u8]>,
     ) -> trc::Result<()> {
-        self.storage
+        self.core
+            .storage
             .config
             .set([ConfigKey {
                 key: self.build_key(provider, class, items),

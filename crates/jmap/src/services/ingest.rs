@@ -4,20 +4,33 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{DeliveryResult, IngestMessage};
+use common::{
+    ipc::{DeliveryResult, IngestMessage},
+    Server,
+};
 use directory::Permission;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
+use std::future::Future;
 use store::ahash::AHashMap;
 
 use crate::{
-    email::ingest::{IngestEmail, IngestSource},
+    email::ingest::{EmailIngest, IngestEmail, IngestSource},
     mailbox::INBOX_ID,
-    JMAP,
+    sieve::{get::SieveScriptGet, ingest::SieveScriptIngest},
 };
 
-impl JMAP {
-    pub async fn deliver_message(&self, message: IngestMessage) -> Vec<DeliveryResult> {
+use super::state::StateManager;
+
+pub trait MailDelivery: Sync + Send {
+    fn deliver_message(
+        &self,
+        message: IngestMessage,
+    ) -> impl Future<Output = Vec<DeliveryResult>> + Send;
+}
+
+impl MailDelivery for Server {
+    async fn deliver_message(&self, message: IngestMessage) -> Vec<DeliveryResult> {
         // Read message
         let raw_message = match self
             .core
@@ -60,7 +73,6 @@ impl JMAP {
         let mut deliver_names = AHashMap::with_capacity(message.recipients.len());
         for rcpt in &message.recipients {
             match self
-                .core
                 .email_to_ids(&self.core.storage.directory, rcpt, message.session_id)
                 .await
             {
@@ -84,15 +96,11 @@ impl JMAP {
         // Deliver to each recipient
         for (uid, (status, rcpt)) in &mut deliver_names {
             // Obtain access token
-            let result = match self
-                .core
-                .get_cached_access_token(*uid)
-                .await
-                .and_then(|token| {
-                    token
-                        .assert_has_permission(Permission::EmailReceive)
-                        .map(|_| token)
-                }) {
+            let result = match self.get_cached_access_token(*uid).await.and_then(|token| {
+                token
+                    .assert_has_permission(Permission::EmailReceive)
+                    .map(|_| token)
+            }) {
                 Ok(access_token) => {
                     // Check if there is an active sieve script
                     match self.sieve_script_get_active(*uid).await {

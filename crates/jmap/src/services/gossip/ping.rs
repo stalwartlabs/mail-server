@@ -4,10 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use smtp::queue;
+use common::{
+    core::BuildServer,
+    ipc::{HousekeeperEvent, QueueEvent},
+};
 use trc::ClusterEvent;
 
-use crate::services::housekeeper;
+use crate::services::index::Indexer;
 
 use super::{request::Request, Gossiper, PeerStatus};
 
@@ -66,13 +69,13 @@ impl Gossiper {
     }
 
     pub fn request_reload(&self) {
-        let core = self.core.clone();
+        let server = self.inner.build_server();
 
         tokio::spawn(async move {
             trc::event!(Cluster(ClusterEvent::OneOrMorePeersOffline));
 
-            core.jmap_inner.request_fts_index();
-            let _ = core.smtp_inner.queue_tx.send(queue::Event::Reload).await;
+            server.request_fts_index();
+            let _ = server.inner.ipc.queue_tx.send(QueueEvent::Reload).await;
         });
     }
 
@@ -174,29 +177,30 @@ impl Gossiper {
 
         // Reload settings
         if update_permissions {
-            self.core.core.load().security.permissions.clear();
+            self.inner.data.permissions.clear();
         }
 
         if update_config || update_lists {
-            let core = self.core.core.clone();
-            let inner = self.core.jmap_inner.clone();
+            let server = self.inner.build_server();
 
             tokio::spawn(async move {
                 let result = if update_config {
-                    core.load().reload().await
+                    server.reload().await
                 } else {
-                    core.load().reload_blocked_ips().await
+                    server.reload_blocked_ips().await
                 };
                 match result {
                     Ok(result) => {
                         if let Some(new_core) = result.new_core {
                             // Update core
-                            core.store(new_core.into());
+                            server.inner.shared_core.store(new_core.into());
 
                             // Reload ACME
-                            if inner
+                            if server
+                                .inner
+                                .ipc
                                 .housekeeper_tx
-                                .send(housekeeper::Event::ReloadSettings)
+                                .send(HousekeeperEvent::ReloadSettings)
                                 .await
                                 .is_err()
                             {

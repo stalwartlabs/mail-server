@@ -6,23 +6,33 @@
 
 use std::{net::IpAddr, sync::Arc};
 
-use common::listener::limiter::{ConcurrencyLimiter, InFlight};
+use common::{
+    listener::limiter::{ConcurrencyLimiter, InFlight},
+    ConcurrencyLimiters, Server,
+};
 use directory::Permission;
 use trc::AddContext;
 
-use crate::JMAP;
-
 use common::auth::AccessToken;
+use std::future::Future;
 
-pub struct ConcurrencyLimiters {
-    pub concurrent_requests: ConcurrencyLimiter,
-    pub concurrent_uploads: ConcurrencyLimiter,
+pub trait RateLimiter: Sync + Send {
+    fn get_concurrency_limiter(&self, account_id: u32) -> Arc<ConcurrencyLimiters>;
+    fn is_account_allowed(
+        &self,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<InFlight>> + Send;
+    fn is_anonymous_allowed(&self, addr: &IpAddr) -> impl Future<Output = trc::Result<()>> + Send;
+    fn is_upload_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight>;
+    fn is_auth_allowed_soft(&self, addr: &IpAddr) -> impl Future<Output = trc::Result<()>> + Send;
+    fn is_auth_allowed_hard(&self, addr: &IpAddr) -> impl Future<Output = trc::Result<()>> + Send;
 }
 
-impl JMAP {
-    pub fn get_concurrency_limiter(&self, account_id: u32) -> Arc<ConcurrencyLimiters> {
+impl RateLimiter for Server {
+    fn get_concurrency_limiter(&self, account_id: u32) -> Arc<ConcurrencyLimiters> {
         self.inner
-            .concurrency_limiter
+            .data
+            .jmap_limiter
             .get(&account_id)
             .map(|limiter| limiter.clone())
             .unwrap_or_else(|| {
@@ -35,13 +45,14 @@ impl JMAP {
                     ),
                 });
                 self.inner
-                    .concurrency_limiter
+                    .data
+                    .jmap_limiter
                     .insert(account_id, limiter.clone());
                 limiter
             })
     }
 
-    pub async fn is_account_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight> {
+    async fn is_account_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight> {
         let limiter = self.get_concurrency_limiter(access_token.primary_id());
         let is_rate_allowed = if let Some(rate) = &self.core.jmap.rate_authenticated {
             self.core
@@ -74,7 +85,7 @@ impl JMAP {
         }
     }
 
-    pub async fn is_anonymous_allowed(&self, addr: &IpAddr) -> trc::Result<()> {
+    async fn is_anonymous_allowed(&self, addr: &IpAddr) -> trc::Result<()> {
         if let Some(rate) = &self.core.jmap.rate_anonymous {
             if self
                 .core
@@ -91,7 +102,7 @@ impl JMAP {
         Ok(())
     }
 
-    pub fn is_upload_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight> {
+    fn is_upload_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight> {
         if let Some(in_flight_request) = self
             .get_concurrency_limiter(access_token.primary_id())
             .concurrent_uploads
@@ -105,7 +116,7 @@ impl JMAP {
         }
     }
 
-    pub async fn is_auth_allowed_soft(&self, addr: &IpAddr) -> trc::Result<()> {
+    async fn is_auth_allowed_soft(&self, addr: &IpAddr) -> trc::Result<()> {
         if let Some(rate) = &self.core.jmap.rate_authenticate_req {
             if self
                 .core
@@ -122,7 +133,7 @@ impl JMAP {
         Ok(())
     }
 
-    pub async fn is_auth_allowed_hard(&self, addr: &IpAddr) -> trc::Result<()> {
+    async fn is_auth_allowed_hard(&self, addr: &IpAddr) -> trc::Result<()> {
         if let Some(rate) = &self.core.jmap.rate_authenticate_req {
             if self
                 .core
@@ -137,11 +148,5 @@ impl JMAP {
             }
         }
         Ok(())
-    }
-}
-
-impl ConcurrencyLimiters {
-    pub fn is_active(&self) -> bool {
-        self.concurrent_requests.is_active() || self.concurrent_uploads.is_active()
     }
 }

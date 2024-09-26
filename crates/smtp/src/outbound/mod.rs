@@ -6,16 +6,17 @@
 
 use std::borrow::Cow;
 
-use common::config::{
-    server::ServerProtocol,
-    smtp::queue::{RelayHost, RequireOptional},
+use common::{
+    config::{
+        server::ServerProtocol,
+        smtp::queue::{RelayHost, RequireOptional},
+    },
+    ipc::QueueEventLock,
 };
 use mail_send::Credentials;
 use smtp_proto::{Response, Severity};
 
-use crate::queue::{
-    spool::QueueEventLock, DeliveryAttempt, Error, ErrorDetails, HostResponse, Status,
-};
+use crate::queue::{DeliveryAttempt, Error, ErrorDetails, HostResponse, Status};
 
 pub mod client;
 pub mod dane;

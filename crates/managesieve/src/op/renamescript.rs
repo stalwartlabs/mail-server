@@ -9,7 +9,7 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
-use jmap::sieve::set::SCHEMA;
+use jmap::{changes::write::ChangeLog, sieve::set::SCHEMA, JmapMethods};
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{collection::Collection, property::Property, value::Value},
@@ -62,7 +62,7 @@ impl<T: SessionStream> Session<T> {
 
         // Obtain script values
         let script = self
-            .jmap
+            .server
             .get_property::<HashedValue<Object<Value>>>(
                 account_id,
                 Collection::SieveScript,
@@ -92,13 +92,13 @@ impl<T: SessionStream> Session<T> {
                     ),
             );
         if !batch.is_empty() {
-            self.jmap
+            self.server
                 .write_batch(batch)
                 .await
                 .caused_by(trc::location!())?;
             let mut changelog = ChangeLogBuilder::new();
             changelog.log_update(Collection::SieveScript, document_id);
-            self.jmap
+            self.server
                 .commit_changes(account_id, changelog)
                 .await
                 .caused_by(trc::location!())?;

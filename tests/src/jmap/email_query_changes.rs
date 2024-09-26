@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use jmap::{changes::write::ChangeLog, JmapMethods};
 use jmap_client::{
     core::query::{Comparator, Filter},
     email,

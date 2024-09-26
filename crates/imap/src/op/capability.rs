@@ -28,7 +28,7 @@ impl<T: SessionStream> Session<T> {
             Imap(trc::ImapEvent::Capabilities),
             SpanId = self.session_id,
             Tls = self.is_tls,
-            Strict = !self.jmap.core.imap.allow_plain_auth,
+            Strict = !self.server.core.imap.allow_plain_auth,
             Elapsed = op_start.elapsed()
         );
 

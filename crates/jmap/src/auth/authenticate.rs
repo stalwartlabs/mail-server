@@ -6,81 +6,100 @@
 
 use std::{net::IpAddr, sync::Arc, time::Instant};
 
-use common::listener::limiter::InFlight;
+use common::{listener::limiter::InFlight, Server};
 use directory::Permission;
 use hyper::header;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use utils::map::ttl_dashmap::TtlMap;
 
-use crate::{
-    api::{http::HttpSessionData, HttpRequest},
-    JMAP,
-};
+use crate::api::{http::HttpSessionData, HttpRequest};
 
 use common::auth::AccessToken;
+use std::future::Future;
 
-impl JMAP {
-    pub async fn authenticate_headers(
+use super::{oauth::token::TokenHandler, rate_limit::RateLimiter};
+
+pub trait Authenticator: Sync + Send {
+    fn authenticate_headers(
+        &self,
+        req: &HttpRequest,
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<(InFlight, Arc<AccessToken>)>> + Send;
+
+    fn cache_session(&self, session_id: String, access_token: &AccessToken);
+
+    fn authenticate_plain(
+        &self,
+        username: &str,
+        secret: &str,
+        remote_ip: IpAddr,
+        session_id: u64,
+    ) -> impl Future<Output = trc::Result<AccessToken>> + Send;
+}
+
+impl Authenticator for Server {
+    async fn authenticate_headers(
         &self,
         req: &HttpRequest,
         session: &HttpSessionData,
     ) -> trc::Result<(InFlight, Arc<AccessToken>)> {
         if let Some((mechanism, token)) = req.authorization() {
-            let access_token = if let Some(account_id) = self.inner.sessions.get_with_ttl(token) {
-                self.core.get_cached_access_token(account_id).await?
-            } else {
-                let access_token = if mechanism.eq_ignore_ascii_case("basic") {
-                    // Enforce rate limit for authentication requests
-                    self.is_auth_allowed_soft(&session.remote_ip).await?;
+            let access_token =
+                if let Some(account_id) = self.inner.data.http_auth_cache.get_with_ttl(token) {
+                    self.get_cached_access_token(account_id).await?
+                } else {
+                    let access_token = if mechanism.eq_ignore_ascii_case("basic") {
+                        // Enforce rate limit for authentication requests
+                        self.is_auth_allowed_soft(&session.remote_ip).await?;
 
-                    // Decode the base64 encoded credentials
-                    if let Some((account, secret)) = base64_decode(token.as_bytes())
-                        .and_then(|token| String::from_utf8(token).ok())
-                        .and_then(|token| {
-                            token.split_once(':').map(|(login, secret)| {
-                                (login.trim().to_lowercase(), secret.to_string())
+                        // Decode the base64 encoded credentials
+                        if let Some((account, secret)) = base64_decode(token.as_bytes())
+                            .and_then(|token| String::from_utf8(token).ok())
+                            .and_then(|token| {
+                                token.split_once(':').map(|(login, secret)| {
+                                    (login.trim().to_lowercase(), secret.to_string())
+                                })
                             })
-                        })
-                    {
-                        self.authenticate_plain(
-                            &account,
-                            &secret,
-                            session.remote_ip,
-                            session.session_id,
-                        )
-                        .await?
+                        {
+                            self.authenticate_plain(
+                                &account,
+                                &secret,
+                                session.remote_ip,
+                                session.session_id,
+                            )
+                            .await?
+                        } else {
+                            return Err(trc::AuthEvent::Error
+                                .into_err()
+                                .details("Failed to decode Basic auth request.")
+                                .id(token.to_string())
+                                .caused_by(trc::location!()));
+                        }
+                    } else if mechanism.eq_ignore_ascii_case("bearer") {
+                        // Enforce anonymous rate limit for bearer auth requests
+                        self.is_anonymous_allowed(&session.remote_ip).await?;
+
+                        let (account_id, _, _) =
+                            self.validate_access_token("access_token", token).await?;
+
+                        self.get_access_token(account_id).await?
                     } else {
+                        // Enforce anonymous rate limit
+                        self.is_anonymous_allowed(&session.remote_ip).await?;
                         return Err(trc::AuthEvent::Error
                             .into_err()
-                            .details("Failed to decode Basic auth request.")
-                            .id(token.to_string())
+                            .reason("Unsupported authentication mechanism.")
+                            .details(token.to_string())
                             .caused_by(trc::location!()));
-                    }
-                } else if mechanism.eq_ignore_ascii_case("bearer") {
-                    // Enforce anonymous rate limit for bearer auth requests
-                    self.is_anonymous_allowed(&session.remote_ip).await?;
+                    };
 
-                    let (account_id, _, _) =
-                        self.validate_access_token("access_token", token).await?;
-
-                    self.core.get_access_token(account_id).await?
-                } else {
-                    // Enforce anonymous rate limit
-                    self.is_anonymous_allowed(&session.remote_ip).await?;
-                    return Err(trc::AuthEvent::Error
-                        .into_err()
-                        .reason("Unsupported authentication mechanism.")
-                        .details(token.to_string())
-                        .caused_by(trc::location!()));
+                    // Cache session
+                    let access_token = Arc::new(access_token);
+                    self.cache_session(token.to_string(), &access_token);
+                    self.cache_access_token(access_token.clone());
+                    access_token
                 };
-
-                // Cache session
-                let access_token = Arc::new(access_token);
-                self.cache_session(token.to_string(), &access_token);
-                self.core.cache_access_token(access_token.clone());
-                access_token
-            };
 
             // Enforce authenticated rate limit
             self.is_account_allowed(&access_token)
@@ -97,15 +116,15 @@ impl JMAP {
         }
     }
 
-    pub fn cache_session(&self, session_id: String, access_token: &AccessToken) {
-        self.inner.sessions.insert_with_ttl(
+    fn cache_session(&self, session_id: String, access_token: &AccessToken) {
+        self.inner.data.http_auth_cache.insert_with_ttl(
             session_id,
             access_token.primary_id(),
             Instant::now() + self.core.jmap.session_cache_ttl,
         );
     }
 
-    pub async fn authenticate_plain(
+    async fn authenticate_plain(
         &self,
         username: &str,
         secret: &str,
@@ -113,7 +132,6 @@ impl JMAP {
         session_id: u64,
     ) -> trc::Result<AccessToken> {
         match self
-            .core
             .authenticate(
                 &self.core.storage.directory,
                 session_id,
@@ -126,15 +144,11 @@ impl JMAP {
             )
             .await
         {
-            Ok(principal) => self
-                .core
-                .build_access_token(principal)
-                .await
-                .and_then(|token| {
-                    token
-                        .assert_has_permission(Permission::Authenticate)
-                        .map(|_| token)
-                }),
+            Ok(principal) => self.build_access_token(principal).await.and_then(|token| {
+                token
+                    .assert_has_permission(Permission::Authenticate)
+                    .map(|_| token)
+            }),
             Err(err) => {
                 if !err.matches(trc::EventType::Auth(trc::AuthEvent::MissingTotp)) {
                     let _ = self.is_auth_allowed_hard(&remote_ip).await;

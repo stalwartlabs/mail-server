@@ -6,17 +6,17 @@
 
 use std::time::Duration;
 
+use common::{
+    ipc::{DmarcEvent, OnHold, QueueEvent, QueueEventLock, ReportingEvent, TlsEvent},
+    Server,
+};
 use store::{
-    write::{key::DeserializeBigEndian, Bincode, QueueClass, QueueEvent, ReportEvent, ValueClass},
+    write::{key::DeserializeBigEndian, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, ValueKey, U64_LEN,
 };
 use tokio::sync::mpsc::error::TryRecvError;
 
-use smtp::{
-    core::SMTP,
-    queue::{self, spool::QueueEventLock, DeliveryAttempt, Message, OnHold, QueueId},
-    reporting::{self, DmarcEvent, TlsEvent},
-};
+use smtp::queue::{DeliveryAttempt, Message, QueueId};
 
 use super::{QueueReceiver, ReportReceiver};
 
@@ -37,7 +37,7 @@ pub mod throttle;
 pub mod vrfy;
 
 impl QueueReceiver {
-    pub async fn read_event(&mut self) -> queue::Event {
+    pub async fn read_event(&mut self) -> QueueEvent {
         match tokio::time::timeout(Duration::from_millis(100), self.queue_rx.recv()).await {
             Ok(Some(event)) => event,
             Ok(None) => panic!("Channel closed."),
@@ -45,7 +45,7 @@ impl QueueReceiver {
         }
     }
 
-    pub async fn try_read_event(&mut self) -> Option<queue::Event> {
+    pub async fn try_read_event(&mut self) -> Option<QueueEvent> {
         match tokio::time::timeout(Duration::from_millis(100), self.queue_rx.recv()).await {
             Ok(Some(event)) => Some(event),
             Ok(None) => panic!("Channel closed."),
@@ -120,12 +120,12 @@ impl QueueReceiver {
         self.last_queued_message().await
     }
 
-    pub async fn consume_message(&mut self, core: &SMTP) -> Message {
+    pub async fn consume_message(&mut self, server: &Server) -> Message {
         self.read_event().await.assert_reload();
         let message = self.last_queued_message().await;
         message
             .clone()
-            .remove(core, self.last_queued_due().await)
+            .remove(server, self.last_queued_due().await)
             .await;
         message
     }
@@ -144,23 +144,27 @@ impl QueueReceiver {
         })
     }
 
-    pub async fn read_queued_events(&self) -> Vec<QueueEvent> {
+    pub async fn read_queued_events(&self) -> Vec<store::write::QueueEvent> {
         let mut events = Vec::new();
 
-        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-            due: 0,
-            queue_id: 0,
-        })));
-        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(QueueEvent {
-            due: u64::MAX,
-            queue_id: u64::MAX,
-        })));
+        let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
+            store::write::QueueEvent {
+                due: 0,
+                queue_id: 0,
+            },
+        )));
+        let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
+            store::write::QueueEvent {
+                due: u64::MAX,
+                queue_id: u64::MAX,
+            },
+        )));
 
         self.store
             .iterate(
                 IterateParams::new(from_key, to_key).ascending().no_values(),
                 |key, _| {
-                    events.push(QueueEvent {
+                    events.push(store::write::QueueEvent {
                         due: key.deserialize_be_u64(0)?,
                         queue_id: key.deserialize_be_u64(U64_LEN)?,
                     });
@@ -261,16 +265,16 @@ impl QueueReceiver {
             .expect("No event found in queue for message")
     }
 
-    pub async fn clear_queue(&self, core: &SMTP) {
+    pub async fn clear_queue(&self, server: &Server) {
         for message in self.read_queued_messages().await {
             let due = self.message_due(message.queue_id).await;
-            message.remove(core, due).await;
+            message.remove(server, due).await;
         }
     }
 }
 
 impl ReportReceiver {
-    pub async fn read_report(&mut self) -> reporting::Event {
+    pub async fn read_report(&mut self) -> ReportingEvent {
         match tokio::time::timeout(Duration::from_millis(100), self.report_rx.recv()).await {
             Ok(Some(event)) => event,
             Ok(None) => panic!("Channel closed."),
@@ -278,7 +282,7 @@ impl ReportReceiver {
         }
     }
 
-    pub async fn try_read_report(&mut self) -> Option<reporting::Event> {
+    pub async fn try_read_report(&mut self) -> Option<ReportingEvent> {
         match tokio::time::timeout(Duration::from_millis(100), self.report_rx.recv()).await {
             Ok(Some(event)) => Some(event),
             Ok(None) => panic!("Channel closed."),
@@ -299,17 +303,17 @@ pub trait TestQueueEvent {
     fn unwrap_on_hold(self) -> OnHold<QueueEventLock>;
 }
 
-impl TestQueueEvent for queue::Event {
+impl TestQueueEvent for QueueEvent {
     fn assert_reload(self) {
         match self {
-            queue::Event::Reload => (),
+            QueueEvent::Reload => (),
             e => panic!("Unexpected event: {e:?}"),
         }
     }
 
     fn unwrap_on_hold(self) -> OnHold<QueueEventLock> {
         match self {
-            queue::Event::OnHold(value) => value,
+            QueueEvent::OnHold(value) => value,
             e => panic!("Unexpected event: {e:?}"),
         }
     }
@@ -320,17 +324,17 @@ pub trait TestReportingEvent {
     fn unwrap_tls(self) -> Box<TlsEvent>;
 }
 
-impl TestReportingEvent for reporting::Event {
+impl TestReportingEvent for ReportingEvent {
     fn unwrap_dmarc(self) -> Box<DmarcEvent> {
         match self {
-            reporting::Event::Dmarc(event) => event,
+            ReportingEvent::Dmarc(event) => event,
             e => panic!("Unexpected event: {e:?}"),
         }
     }
 
     fn unwrap_tls(self) -> Box<TlsEvent> {
         match self {
-            reporting::Event::Tls(event) => event,
+            ReportingEvent::Tls(event) => event,
             e => panic!("Unexpected event: {e:?}"),
         }
     }

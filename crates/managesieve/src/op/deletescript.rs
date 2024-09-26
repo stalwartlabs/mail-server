@@ -9,6 +9,7 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
+use jmap::{changes::write::ChangeLog, sieve::set::SieveScriptSet};
 use jmap_proto::types::collection::Collection;
 use store::write::log::ChangeLogBuilder;
 use trc::AddContext;
@@ -37,7 +38,7 @@ impl<T: SessionStream> Session<T> {
         let account_id = access_token.primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
         if self
-            .jmap
+            .server
             .sieve_script_delete(&access_token.as_resource_token(), document_id, true)
             .await
             .caused_by(trc::location!())?
@@ -45,7 +46,7 @@ impl<T: SessionStream> Session<T> {
             // Write changes
             let mut changelog = ChangeLogBuilder::new();
             changelog.log_delete(Collection::SieveScript, document_id);
-            self.jmap
+            self.server
                 .commit_changes(account_id, changelog)
                 .await
                 .caused_by(trc::location!())?;

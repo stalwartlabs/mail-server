@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::listener::{SessionData, SessionManager, SessionResult, SessionStream};
+use common::{
+    core::BuildServer,
+    listener::{SessionData, SessionManager, SessionResult, SessionStream},
+};
 use imap_proto::receiver::{self, Receiver};
-use jmap::JMAP;
 use tokio_rustls::server::TlsStream;
 
 use crate::SERVER_GREETING;
@@ -21,12 +23,11 @@ impl SessionManager for ManageSieveSessionManager {
     ) -> impl std::future::Future<Output = ()> + Send {
         async move {
             // Create session
-            let jmap = JMAP::from(self.imap.jmap_instance);
+            let server = self.inner.build_server();
             let mut session = Session {
-                receiver: Receiver::with_max_request_size(jmap.core.imap.max_request_size)
+                receiver: Receiver::with_max_request_size(server.core.imap.max_request_size)
                     .with_start_state(receiver::State::Command { is_uid: false }),
-                jmap,
-                imap: self.imap.imap_inner,
+                server,
                 instance: session.instance,
                 state: State::NotAuthenticated { auth_failures: 0 },
                 session_id: session.session_id,
@@ -67,9 +68,9 @@ impl<T: SessionStream> Session<T> {
             tokio::select! {
                 result = tokio::time::timeout(
                     if !matches!(self.state, State::NotAuthenticated {..}) {
-                        self.jmap.core.imap.timeout_auth
+                        self.server.core.imap.timeout_auth
                     } else {
-                        self.jmap.core.imap.timeout_unauth
+                        self.server.core.imap.timeout_unauth
                     },
                     self.read(&mut buf)) => {
                         match result {
@@ -142,8 +143,7 @@ impl<T: SessionStream> Session<T> {
             instance: self.instance,
             in_flight: self.in_flight,
             session_id: self.session_id,
-            jmap: self.jmap,
-            imap: self.imap,
+            server: self.server,
             receiver: self.receiver,
             remote_addr: self.remote_addr,
         })

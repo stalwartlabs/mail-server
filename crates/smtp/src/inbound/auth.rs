@@ -168,8 +168,7 @@ impl<T: SessionStream> Session<T> {
 
             // Authenticate
             let mut result = self
-                .core
-                .core
+                .server
                 .authenticate(
                     directory,
                     self.data.session_id,
@@ -182,8 +181,7 @@ impl<T: SessionStream> Session<T> {
             // Validate permissions
             if let Ok(principal) = &result {
                 match self
-                    .core
-                    .core
+                    .server
                     .get_cached_access_token(principal.id())
                     .await
                     .caused_by(trc::location!())

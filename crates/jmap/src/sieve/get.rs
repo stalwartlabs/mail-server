@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use common::Server;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
@@ -18,12 +19,42 @@ use store::{
     BlobClass, Deserialize, Serialize,
 };
 
-use crate::{sieve::SeenIds, JMAP};
+use crate::{
+    blob::{download::BlobDownload, upload::BlobUpload},
+    changes::state::StateManager,
+    sieve::SeenIds,
+    JmapMethods,
+};
 
 use super::ActiveScript;
+use std::future::Future;
 
-impl JMAP {
-    pub async fn sieve_script_get(
+pub trait SieveScriptGet: Sync + Send {
+    fn sieve_script_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+
+    fn sieve_script_get_active(
+        &self,
+        account_id: u32,
+    ) -> impl Future<Output = trc::Result<Option<ActiveScript>>> + Send;
+
+    fn sieve_script_get_by_name(
+        &self,
+        account_id: u32,
+        name: &str,
+    ) -> impl Future<Output = trc::Result<Option<Sieve>>> + Send;
+
+    fn sieve_script_compile(
+        &self,
+        account_id: u32,
+        document_id: u32,
+    ) -> impl Future<Output = trc::Result<(Sieve, Object<Value>)>> + Send;
+}
+
+impl SieveScriptGet for Server {
+    async fn sieve_script_get(
         &self,
         mut request: GetRequest<RequestArguments>,
     ) -> trc::Result<GetResponse> {
@@ -115,10 +146,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn sieve_script_get_active(
-        &self,
-        account_id: u32,
-    ) -> trc::Result<Option<ActiveScript>> {
+    async fn sieve_script_get_active(&self, account_id: u32) -> trc::Result<Option<ActiveScript>> {
         // Find the currently active script
         if let Some(document_id) = self
             .filter(
@@ -156,7 +184,7 @@ impl JMAP {
         }
     }
 
-    pub async fn sieve_script_get_by_name(
+    async fn sieve_script_get_by_name(
         &self,
         account_id: u32,
         name: &str,

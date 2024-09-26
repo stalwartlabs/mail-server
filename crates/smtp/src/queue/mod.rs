@@ -12,14 +12,13 @@ use std::{
 
 use common::{
     expr::{self, functions::ResolveVariable, *},
-    listener::limiter::{ConcurrencyLimiter, InFlight},
+    ipc::QueueEventLock,
+    listener::limiter::InFlight,
 };
 use serde::{Deserialize, Serialize};
 use smtp_proto::Response;
 use store::write::now;
 use utils::BlobHash;
-
-use self::spool::QueueEventLock;
 
 pub mod dsn;
 pub mod manager;
@@ -28,20 +27,6 @@ pub mod spool;
 pub mod throttle;
 
 pub type QueueId = u64;
-
-#[derive(Debug)]
-pub enum Event {
-    Reload,
-    OnHold(OnHold<QueueEventLock>),
-    Stop,
-}
-
-#[derive(Debug)]
-pub struct OnHold<T> {
-    pub next_due: Option<u64>,
-    pub limiters: Vec<ConcurrencyLimiter>,
-    pub message: T,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schedule<T> {

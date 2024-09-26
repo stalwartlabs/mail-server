@@ -6,10 +6,16 @@
 
 use std::{
     collections::BinaryHeap,
+    sync::{atomic::Ordering, Arc},
     time::{Duration, Instant, SystemTime},
 };
 
-use common::{config::telemetry::OtelMetrics, IPC_CHANNEL_BUFFER};
+use common::{
+    config::telemetry::OtelMetrics,
+    core::BuildServer,
+    ipc::{HousekeeperEvent, PurgeType},
+    Inner,
+};
 
 #[cfg(feature = "enterprise")]
 use common::telemetry::{
@@ -17,33 +23,13 @@ use common::telemetry::{
     tracers::store::TracingStore,
 };
 
-use smtp::core::SMTP;
-use store::{
-    write::{now, purge::PurgeStore},
-    BlobStore, LookupStore, Store,
-};
+use smtp::reporting::SmtpReporting;
+use store::write::{now, purge::PurgeStore};
 use tokio::sync::mpsc;
-use trc::{Collector, HousekeeperEvent, MetricType};
+use trc::{Collector, MetricType};
 use utils::map::ttl_dashmap::TtlMap;
 
-use crate::{Inner, JmapInstance, JMAP, LONG_SLUMBER};
-
-pub enum Event {
-    AcmeReschedule {
-        provider_id: String,
-        renew_at: Instant,
-    },
-    Purge(PurgeType),
-    ReloadSettings,
-    Exit,
-}
-
-pub enum PurgeType {
-    Data(Store),
-    Blobs { store: Store, blob_store: BlobStore },
-    Lookup(LookupStore),
-    Account(Option<u32>),
-}
+use crate::{email::delete::EmailDeletion, JmapMethods, LONG_SLUMBER};
 
 #[derive(PartialEq, Eq)]
 struct Action {
@@ -75,30 +61,30 @@ struct Queue {
 #[cfg(feature = "enterprise")]
 const METRIC_ALERTS_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
-pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
+pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEvent>) {
     tokio::spawn(async move {
-        trc::event!(Housekeeper(HousekeeperEvent::Start));
+        trc::event!(Housekeeper(trc::HousekeeperEvent::Start));
         let start_time = SystemTime::now();
 
         // Add all events to queue
         let mut queue = Queue::default();
         {
-            let core_ = core.core.load_full();
+            let server = inner.build_server();
 
             // Session purge
             queue.schedule(
-                Instant::now() + core_.jmap.session_purge_frequency.time_to_next(),
+                Instant::now() + server.core.jmap.session_purge_frequency.time_to_next(),
                 ActionClass::Session,
             );
 
             // Account purge
             queue.schedule(
-                Instant::now() + core_.jmap.account_purge_frequency.time_to_next(),
+                Instant::now() + server.core.jmap.account_purge_frequency.time_to_next(),
                 ActionClass::Account,
             );
 
             // Store purges
-            for (idx, schedule) in core_.storage.purge_schedules.iter().enumerate() {
+            for (idx, schedule) in server.core.storage.purge_schedules.iter().enumerate() {
                 queue.schedule(
                     Instant::now() + schedule.cron.time_to_next(),
                     ActionClass::Store(idx),
@@ -106,7 +92,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
             }
 
             // OTEL Push Metrics
-            if let Some(otel) = &core_.metrics.otel {
+            if let Some(otel) = &server.core.metrics.otel {
                 OtelMetrics::enable_errors();
                 queue.schedule(Instant::now() + otel.interval, ActionClass::OtelMetrics);
             }
@@ -115,8 +101,8 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
             queue.schedule(Instant::now(), ActionClass::CalculateMetrics);
 
             // Add all ACME renewals to heap
-            for provider in core_.tls.acme_providers.values() {
-                match core_.init_acme(provider).await {
+            for provider in server.core.acme.providers.values() {
+                match server.init_acme(provider).await {
                     Ok(renew_at) => {
                         queue.schedule(
                             Instant::now() + renew_at,
@@ -135,7 +121,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
             // Enterprise Edition license management
             #[cfg(feature = "enterprise")]
-            if let Some(enterprise) = &core_.enterprise {
+            if let Some(enterprise) = &server.core.enterprise {
                 queue.schedule(
                     Instant::now() + enterprise.license.expires_in(),
                     ActionClass::ValidateLicense,
@@ -166,12 +152,11 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
         loop {
             match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
                 Ok(Some(event)) => match event {
-                    Event::ReloadSettings => {
-                        let core_ = core.core.load_full();
-                        let inner = core.jmap_inner.clone();
+                    HousekeeperEvent::ReloadSettings => {
+                        let server = inner.build_server();
 
                         // Reload OTEL push metrics
-                        match &core_.metrics.otel {
+                        match &server.core.metrics.otel {
                             Some(otel) if !queue.has_action(&ActionClass::OtelMetrics) => {
                                 OtelMetrics::enable_errors();
 
@@ -187,7 +172,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                         // SPDX-License-Identifier: LicenseRef-SEL
                         #[cfg(feature = "enterprise")]
-                        if let Some(enterprise) = &core_.enterprise {
+                        if let Some(enterprise) = &server.core.enterprise {
                             if !queue.has_action(&ActionClass::ValidateLicense) {
                                 queue.schedule(
                                     Instant::now() + enterprise.license.expires_in(),
@@ -214,12 +199,14 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
                         // Reload ACME certificates
                         tokio::spawn(async move {
-                            for provider in core_.tls.acme_providers.values() {
-                                match core_.init_acme(provider).await {
+                            for provider in server.core.acme.providers.values() {
+                                match server.init_acme(provider).await {
                                     Ok(renew_at) => {
-                                        inner
+                                        server
+                                            .inner
+                                            .ipc
                                             .housekeeper_tx
-                                            .send(Event::AcmeReschedule {
+                                            .send(HousekeeperEvent::AcmeReschedule {
                                                 provider_id: provider.id.clone(),
                                                 renew_at: Instant::now() + renew_at,
                                             })
@@ -234,7 +221,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             }
                         });
                     }
-                    Event::AcmeReschedule {
+                    HousekeeperEvent::AcmeReschedule {
                         provider_id,
                         renew_at,
                     } => {
@@ -242,22 +229,22 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                         queue.remove_action(&action);
                         queue.schedule(renew_at, action);
                     }
-                    Event::Purge(purge) => match purge {
+                    HousekeeperEvent::Purge(purge) => match purge {
                         PurgeType::Data(store) => {
                             // SPDX-SnippetBegin
                             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                             // SPDX-License-Identifier: LicenseRef-SEL
                             #[cfg(feature = "enterprise")]
-                            let trace_retention = core
-                                .core
+                            let trace_retention = inner
+                                .shared_core
                                 .load()
                                 .enterprise
                                 .as_ref()
                                 .and_then(|e| e.trace_store.as_ref())
                                 .and_then(|t| t.retention);
                             #[cfg(feature = "enterprise")]
-                            let metrics_retention = core
-                                .core
+                            let metrics_retention = inner
+                                .shared_core
                                 .load()
                                 .enterprise
                                 .as_ref()
@@ -267,7 +254,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
                             tokio::spawn(async move {
                                 trc::event!(
-                                    Housekeeper(HousekeeperEvent::PurgeStore),
+                                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
                                     Type = "data"
                                 );
                                 if let Err(err) = store.purge_store().await {
@@ -294,7 +281,10 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             });
                         }
                         PurgeType::Blobs { store, blob_store } => {
-                            trc::event!(Housekeeper(HousekeeperEvent::PurgeStore), Type = "blob");
+                            trc::event!(
+                                Housekeeper(trc::HousekeeperEvent::PurgeStore),
+                                Type = "blob"
+                            );
 
                             tokio::spawn(async move {
                                 if let Err(err) = store.purge_blobs(blob_store).await {
@@ -303,7 +293,10 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             });
                         }
                         PurgeType::Lookup(store) => {
-                            trc::event!(Housekeeper(HousekeeperEvent::PurgeStore), Type = "lookup");
+                            trc::event!(
+                                Housekeeper(trc::HousekeeperEvent::PurgeStore),
+                                Type = "lookup"
+                            );
 
                             tokio::spawn(async move {
                                 if let Err(err) = store.purge_lookup_store().await {
@@ -312,45 +305,44 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             });
                         }
                         PurgeType::Account(account_id) => {
-                            let jmap = JMAP::from(core.clone());
+                            let server = inner.build_server();
                             tokio::spawn(async move {
-                                trc::event!(Housekeeper(HousekeeperEvent::PurgeAccounts));
+                                trc::event!(Housekeeper(trc::HousekeeperEvent::PurgeAccounts));
 
                                 if let Some(account_id) = account_id {
-                                    jmap.purge_account(account_id).await;
+                                    server.purge_account(account_id).await;
                                 } else {
-                                    jmap.purge_accounts().await;
+                                    server.purge_accounts().await;
                                 }
                             });
                         }
                     },
-                    Event::Exit => {
-                        trc::event!(Housekeeper(HousekeeperEvent::Stop));
+                    HousekeeperEvent::Exit => {
+                        trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
 
                         return;
                     }
                 },
                 Ok(None) => {
-                    trc::event!(Housekeeper(HousekeeperEvent::Stop));
+                    trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
                     return;
                 }
                 Err(_) => {
-                    let core_ = core.core.load_full();
+                    let server = inner.build_server();
                     while let Some(event) = queue.pop() {
                         match event.event {
                             ActionClass::Acme(provider_id) => {
-                                let inner = core.jmap_inner.clone();
-                                let core = core_.clone();
+                                let server = server.clone();
                                 tokio::spawn(async move {
                                     if let Some(provider) =
-                                        core.tls.acme_providers.get(&provider_id)
+                                        server.core.acme.providers.get(&provider_id)
                                     {
                                         trc::event!(
                                             Acme(trc::AcmeEvent::OrderStart),
                                             Hostname = provider.domains.as_slice()
                                         );
 
-                                        let renew_at = match core.renew(provider).await {
+                                        let renew_at = match server.renew(provider).await {
                                             Ok(renew_at) => {
                                                 trc::event!(
                                                     Acme(trc::AcmeEvent::OrderCompleted),
@@ -371,11 +363,13 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             }
                                         };
 
-                                        inner.increment_config_version();
+                                        server.increment_config_version();
 
-                                        inner
+                                        server
+                                            .inner
+                                            .ipc
                                             .housekeeper_tx
-                                            .send(Event::AcmeReschedule {
+                                            .send(HousekeeperEvent::AcmeReschedule {
                                                 provider_id: provider_id.clone(),
                                                 renew_at: Instant::now() + renew_at,
                                             })
@@ -385,35 +379,48 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                 });
                             }
                             ActionClass::Account => {
-                                let jmap = JMAP::from(core.clone());
-                                tokio::spawn(async move {
-                                    trc::event!(Housekeeper(HousekeeperEvent::PurgeAccounts));
-                                    jmap.purge_accounts().await;
-                                });
+                                let server = server.clone();
                                 queue.schedule(
                                     Instant::now()
-                                        + core_.jmap.account_purge_frequency.time_to_next(),
+                                        + server.core.jmap.account_purge_frequency.time_to_next(),
                                     ActionClass::Account,
                                 );
+                                tokio::spawn(async move {
+                                    trc::event!(Housekeeper(trc::HousekeeperEvent::PurgeAccounts));
+                                    server.purge_accounts().await;
+                                });
                             }
                             ActionClass::Session => {
-                                let inner = core.jmap_inner.clone();
-                                let core = core_.clone();
-
-                                tokio::spawn(async move {
-                                    trc::event!(Housekeeper(HousekeeperEvent::PurgeSessions));
-                                    inner.purge();
-                                    core.security.access_tokens.cleanup();
-                                });
+                                let server = server.clone();
                                 queue.schedule(
                                     Instant::now()
-                                        + core_.jmap.session_purge_frequency.time_to_next(),
+                                        + server.core.jmap.session_purge_frequency.time_to_next(),
                                     ActionClass::Session,
                                 );
+
+                                tokio::spawn(async move {
+                                    trc::event!(Housekeeper(trc::HousekeeperEvent::PurgeSessions));
+                                    server.inner.data.http_auth_cache.cleanup();
+                                    server
+                                        .inner
+                                        .data
+                                        .jmap_limiter
+                                        .retain(|_, limiter| limiter.is_active());
+                                    server.inner.data.access_tokens.cleanup();
+
+                                    for throttle in [
+                                        &server.inner.data.smtp_session_throttle,
+                                        &server.inner.data.smtp_queue_throttle,
+                                    ] {
+                                        throttle.retain(|_, v| {
+                                            v.concurrent.load(Ordering::Relaxed) > 0
+                                        });
+                                    }
+                                });
                             }
                             ActionClass::Store(idx) => {
                                 if let Some(schedule) =
-                                    core_.storage.purge_schedules.get(idx).cloned()
+                                    server.core.storage.purge_schedules.get(idx).cloned()
                                 {
                                     queue.schedule(
                                         Instant::now() + schedule.cron.time_to_next(),
@@ -435,7 +442,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                         match result {
                                             Ok(_) => {
                                                 trc::event!(
-                                                    Housekeeper(HousekeeperEvent::PurgeStore),
+                                                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
                                                     Id = schedule.store_id
                                                 );
                                             }
@@ -451,16 +458,22 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                 }
                             }
                             ActionClass::OtelMetrics => {
-                                if let Some(otel) = &core_.metrics.otel {
+                                if let Some(otel) = &server.core.metrics.otel {
                                     queue.schedule(
                                         Instant::now() + otel.interval,
                                         ActionClass::OtelMetrics,
                                     );
 
                                     let otel = otel.clone();
-                                    let core = core_.clone();
+
+                                    #[cfg(feature = "enterprise")]
+                                    let is_enterprise = server.is_enterprise_edition();
+
+                                    #[cfg(not(feature = "enterprise"))]
+                                    let is_enterprise = false;
+
                                     tokio::spawn(async move {
-                                        otel.push_metrics(core, start_time).await;
+                                        otel.push_metrics(is_enterprise, start_time).await;
                                     });
                                 }
                             }
@@ -479,12 +492,12 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     false
                                 };
 
-                                let core = core_.clone();
+                                let server = server.clone();
                                 tokio::spawn(async move {
                                     #[cfg(feature = "enterprise")]
-                                    if core.is_enterprise_edition() {
+                                    if server.is_enterprise_edition() {
                                         // Obtain queue size
-                                        match core.total_queued_messages().await {
+                                        match server.total_queued_messages().await {
                                             Ok(total) => {
                                                 Collector::update_gauge(
                                                     MetricType::QueueCount,
@@ -500,7 +513,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                     }
 
                                     if update_other_metrics {
-                                        match core.total_accounts().await {
+                                        match server.total_accounts().await {
                                             Ok(total) => {
                                                 Collector::update_gauge(
                                                     MetricType::UserCount,
@@ -514,7 +527,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             }
                                         }
 
-                                        match core.total_domains().await {
+                                        match server.total_domains().await {
                                             Ok(total) => {
                                                 Collector::update_gauge(
                                                     MetricType::DomainCount,
@@ -556,7 +569,8 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                             // SPDX-License-Identifier: LicenseRef-SEL
                             #[cfg(feature = "enterprise")]
                             ActionClass::InternalMetrics => {
-                                if let Some(metrics_store) = &core_
+                                if let Some(metrics_store) = &server
+                                    .core
                                     .enterprise
                                     .as_ref()
                                     .and_then(|e| e.metrics_store.as_ref())
@@ -568,7 +582,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
                                     let metrics_store = metrics_store.store.clone();
                                     let metrics_history = metrics_history.clone();
-                                    let core = core_.clone();
+                                    let core = server.core.clone();
                                     tokio::spawn(async move {
                                         if let Err(err) = metrics_store
                                             .write_metrics(core, now(), metrics_history)
@@ -582,22 +596,20 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
                             #[cfg(feature = "enterprise")]
                             ActionClass::AlertMetrics => {
-                                let smtp = SMTP {
-                                    core: core_.clone(),
-                                    inner: core.smtp_inner.clone(),
-                                };
+                                let server = server.clone();
 
                                 tokio::spawn(async move {
-                                    if let Some(messages) = smtp.core.process_alerts().await {
+                                    if let Some(messages) = server.process_alerts().await {
                                         for message in messages {
-                                            smtp.send_autogenerated(
-                                                message.from,
-                                                message.to.into_iter(),
-                                                message.body,
-                                                None,
-                                                0,
-                                            )
-                                            .await;
+                                            server
+                                                .send_autogenerated(
+                                                    message.from,
+                                                    message.to.into_iter(),
+                                                    message.body,
+                                                    None,
+                                                    0,
+                                                )
+                                                .await;
                                         }
                                     }
                                 });
@@ -605,7 +617,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 
                             #[cfg(feature = "enterprise")]
                             ActionClass::ValidateLicense => {
-                                match core_.reload().await {
+                                match server.reload().await {
                                     Ok(result) => {
                                         if let Some(new_core) = result.new_core {
                                             if let Some(enterprise) = &new_core.enterprise {
@@ -617,10 +629,10 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
                                             }
 
                                             // Update core
-                                            core.core.store(new_core.into());
+                                            server.inner.shared_core.store(new_core.into());
 
                                             // Increment version counter
-                                            core.jmap_inner.increment_config_version();
+                                            server.increment_config_version();
                                         }
                                     }
                                     Err(err) => {
@@ -639,7 +651,7 @@ pub fn spawn_housekeeper(core: JmapInstance, mut rx: mpsc::Receiver<Event>) {
 impl Queue {
     pub fn schedule(&mut self, due: Instant, event: ActionClass) {
         trc::event!(
-            Housekeeper(HousekeeperEvent::Schedule),
+            Housekeeper(trc::HousekeeperEvent::Schedule),
             Due = trc::Value::Timestamp(
                 now() + due.saturating_duration_since(Instant::now()).as_secs()
             ),
@@ -683,16 +695,4 @@ impl PartialOrd for Action {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
-}
-
-impl Inner {
-    pub fn purge(&self) {
-        self.sessions.cleanup();
-        self.concurrency_limiter
-            .retain(|_, limiter| limiter.is_active());
-    }
-}
-
-pub fn init_housekeeper() -> (mpsc::Sender<Event>, mpsc::Receiver<Event>) {
-    mpsc::channel::<Event>(IPC_CHANNEL_BUFFER)
 }

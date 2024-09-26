@@ -12,8 +12,8 @@ use smtp_proto::{MAIL_REQUIRETLS, MAIL_RET_HDRS, MAIL_SMTPUTF8, RCPT_NOTIFY_NEVE
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
-    outbound::TestServer,
     session::{TestSession, VerifyResponse},
+    TestSMTP,
 };
 
 const LOCAL: &str = r#"
@@ -54,11 +54,11 @@ async fn extensions() {
     crate::enable_logging();
 
     // Start test server
-    let mut remote = TestServer::new("smtp_ext_remote", REMOTE, true).await;
+    let mut remote = TestSMTP::new("smtp_ext_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
 
     // Successful delivery with DSN
-    let mut local = TestServer::new("smtp_ext_local", LOCAL, true).await;
+    let mut local = TestSMTP::new("smtp_ext_local", LOCAL).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
@@ -89,27 +89,27 @@ async fn extensions() {
         )
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
 
     local
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (delivered to")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: delivered");
-    local.qr.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_reload();
     remote
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&remote.qr)
+        .read_lines(&remote.queue_receiver)
         .await
         .assert_contains("using TLSv1.3 with cipher");
 
@@ -118,23 +118,23 @@ async fn extensions() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:arc", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (host 'mx.foobar.org' rejected command 'MAIL FROM:")
         .assert_contains("Action: failed")
         .assert_contains("Diagnostic-Code: smtp;552")
         .assert_contains("Status: 5.3.4");
-    local.qr.read_event().await.assert_reload();
-    remote.qr.assert_no_events();
+    local.queue_receiver.read_event().await.assert_reload();
+    remote.queue_receiver.assert_no_events();
 
     // Test DSN, SMTPUTF8 and REQUIRETLS extensions
     session
@@ -146,13 +146,13 @@ async fn extensions() {
         )
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    local.qr.read_event().await.assert_reload();
-    let message = remote.qr.expect_message().await;
+    local.queue_receiver.read_event().await.assert_reload();
+    let message = remote.queue_receiver.expect_message().await;
     assert_eq!(message.env_id, Some("abc123".to_string()));
     assert!((message.flags & MAIL_RET_HDRS) != 0);
     assert!((message.flags & MAIL_REQUIRETLS) != 0);

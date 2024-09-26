@@ -13,7 +13,7 @@ use smtp_proto::*;
 
 use crate::{core::Session, inbound::AuthResult};
 
-use super::{ScriptParameters, ScriptResult};
+use super::{event_loop::RunScript, ScriptParameters, ScriptResult};
 
 impl<T: SessionStream> Session<T> {
     pub fn build_script_parameters(&self, stage: &'static str) -> ScriptParameters<'_> {
@@ -124,12 +124,12 @@ impl<T: SessionStream> Session<T> {
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
     ) -> ScriptResult {
-        self.core
+        self.server
             .run_script(
                 script_id,
                 script,
                 params
-                    .with_envelope(&self.core.core, self, self.data.session_id)
+                    .with_envelope(&self.server, self, self.data.session_id)
                     .await,
                 self.data.session_id,
             )

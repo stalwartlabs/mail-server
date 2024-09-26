@@ -11,34 +11,8 @@ pub mod set;
 
 use std::time::Instant;
 
-use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
-use utils::map::bitmap::Bitmap;
-
-#[derive(Debug)]
-pub enum UpdateSubscription {
-    Unverified {
-        id: u32,
-        url: String,
-        code: String,
-        keys: Option<EncryptionKeys>,
-    },
-    Verified(PushSubscription),
-}
-
-#[derive(Debug)]
-pub struct PushSubscription {
-    pub id: u32,
-    pub url: String,
-    pub expires: u64,
-    pub types: Bitmap<DataType>,
-    pub keys: Option<EncryptionKeys>,
-}
-
-#[derive(Debug, Clone)]
-pub struct EncryptionKeys {
-    pub p256dh: Vec<u8>,
-    pub auth: Vec<u8>,
-}
+use common::ipc::{EncryptionKeys, PushSubscription};
+use jmap_proto::types::{id::Id, state::StateChange};
 
 #[derive(Debug)]
 pub enum Event {

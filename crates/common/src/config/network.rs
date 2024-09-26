@@ -6,7 +6,6 @@
 
 use crate::{
     expr::{if_block::IfBlock, tokenizer::TokenMap},
-    listener::blocked::{AllowedIps, BlockedIps},
     Network,
 };
 use utils::config::Config;
@@ -30,8 +29,7 @@ pub(crate) const HTTP_VARS: &[u32; 11] = &[
 impl Default for Network {
     fn default() -> Self {
         Self {
-            blocked_ips: Default::default(),
-            allowed_ips: Default::default(),
+            security: Default::default(),
             node_id: 0,
             http_response_url: IfBlock::new::<()>(
                 "server.http.url",
@@ -47,8 +45,7 @@ impl Network {
     pub fn parse(config: &mut Config) -> Self {
         let mut network = Network {
             node_id: config.property("cluster.node-id").unwrap_or_default(),
-            blocked_ips: BlockedIps::parse(config),
-            allowed_ips: AllowedIps::parse(config),
+            security: Security::parse(config),
             ..Default::default()
         };
         let token_map = &TokenMap::default().with_variables(HTTP_VARS);

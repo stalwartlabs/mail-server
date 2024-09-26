@@ -9,7 +9,7 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
-use jmap::sieve::set::ObjectBlobId;
+use jmap::{blob::download::BlobDownload, sieve::set::ObjectBlobId, JmapMethods};
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
@@ -37,7 +37,7 @@ impl<T: SessionStream> Session<T> {
         let account_id = self.state.access_token().primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
         let (blob_section, blob_hash) = self
-            .jmap
+            .server
             .get_property::<Object<Value>>(
                 account_id,
                 Collection::SieveScript,
@@ -61,7 +61,7 @@ impl<T: SessionStream> Session<T> {
                     .code(ResponseCode::TryLater)
             })?;
         let script = self
-            .jmap
+            .server
             .get_blob_section(&blob_hash, &blob_section)
             .await
             .caused_by(trc::location!())?

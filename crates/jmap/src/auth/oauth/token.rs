@@ -6,10 +6,12 @@
 
 use std::time::SystemTime;
 
+use common::Server;
 use directory::{backend::internal::PrincipalField, QueryBy};
 use hyper::StatusCode;
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
+use std::future::Future;
 use store::{
     blake3,
     rand::{thread_rng, Rng},
@@ -20,7 +22,6 @@ use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
     auth::SymmetricEncrypt,
-    JMAP,
 };
 
 use super::{
@@ -28,9 +29,52 @@ use super::{
     MAX_POST_LEN, RANDOM_CODE_LEN,
 };
 
-impl JMAP {
+pub trait TokenHandler: Sync + Send {
+    fn handle_token_request(
+        &self,
+        req: &mut HttpRequest,
+        session_id: u64,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn password_hash(
+        &self,
+        account_id: u32,
+    ) -> impl Future<Output = Result<String, &'static str>> + Send;
+
+    fn issue_token(
+        &self,
+        account_id: u32,
+        client_id: &str,
+        with_refresh_token: bool,
+    ) -> impl Future<Output = Result<OAuthResponse, &'static str>> + Send;
+
+    fn issue_custom_token(
+        &self,
+        account_id: u32,
+        grant_type: &str,
+        client_id: &str,
+        expiry_in: u64,
+    ) -> impl Future<Output = trc::Result<String>> + Send;
+
+    fn encode_access_token(
+        &self,
+        grant_type: &str,
+        account_id: u32,
+        password_hash: &str,
+        client_id: &str,
+        expiry_in: u64,
+    ) -> Result<String, &'static str>;
+
+    fn validate_access_token(
+        &self,
+        grant_type: &str,
+        token_: &str,
+    ) -> impl Future<Output = trc::Result<(u32, String, u64)>> + Send;
+}
+
+impl TokenHandler for Server {
     // Token endpoint
-    pub async fn handle_token_request(
+    async fn handle_token_request(
         &self,
         req: &mut HttpRequest,
         session_id: u64,
@@ -199,7 +243,7 @@ impl JMAP {
         }
     }
 
-    pub async fn issue_token(
+    async fn issue_token(
         &self,
         account_id: u32,
         client_id: &str,
@@ -233,7 +277,7 @@ impl JMAP {
         })
     }
 
-    pub async fn issue_custom_token(
+    async fn issue_custom_token(
         &self,
         account_id: u32,
         grant_type: &str,
@@ -303,7 +347,7 @@ impl JMAP {
         Ok(String::from_utf8(base64_encode(&token).unwrap_or_default()).unwrap())
     }
 
-    pub async fn validate_access_token(
+    async fn validate_access_token(
         &self,
         grant_type: &str,
         token_: &str,

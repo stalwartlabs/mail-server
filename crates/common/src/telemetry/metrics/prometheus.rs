@@ -10,9 +10,9 @@ use prometheus::{
 };
 use trc::{atomics::histogram::AtomicHistogram, Collector};
 
-use crate::Core;
+use crate::Server;
 
-impl Core {
+impl Server {
     pub async fn export_prometheus_metrics(&self) -> trc::Result<String> {
         let mut metrics = Vec::new();
 

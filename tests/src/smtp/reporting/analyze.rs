@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use crate::smtp::{inbound::TestQueueEvent, outbound::TestServer, session::TestSession};
+use crate::smtp::{inbound::TestQueueEvent, session::TestSession, TestSMTP};
 
 use store::{
     write::{ReportClass, ValueClass},
@@ -32,11 +32,11 @@ async fn report_analyze() {
     crate::enable_logging();
 
     // Create temp dir for queue
-    let mut local = TestServer::new("smtp_analyze_report_test", CONFIG, true).await;
+    let mut local = TestSMTP::new("smtp_analyze_report_test", CONFIG).await;
 
     // Create test message
     let mut session = local.new_session();
-    let qr = &mut local.qr;
+    let qr = &mut local.queue_receiver;
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;

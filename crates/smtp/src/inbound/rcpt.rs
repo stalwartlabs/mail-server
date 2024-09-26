@@ -77,25 +77,23 @@ impl<T: SessionStream> Session<T> {
 
         // Address rewriting and Sieve filtering
         let rcpt_script = self
-            .core
-            .core
+            .server
             .eval_if::<String, _>(
-                &self.core.core.smtp.session.rcpt.script,
+                &self.server.core.smtp.session.rcpt.script,
                 self,
                 self.data.session_id,
             )
             .await
             .and_then(|name| {
-                self.core
-                    .core
+                self.server
                     .get_trusted_sieve_script(&name, self.data.session_id)
                     .map(|s| (s.clone(), name))
             });
 
         if rcpt_script.is_some()
-            || !self.core.core.smtp.session.rcpt.rewrite.is_empty()
+            || !self.server.core.smtp.session.rcpt.rewrite.is_empty()
             || self
-                .core
+                .server
                 .core
                 .smtp
                 .session
@@ -146,10 +144,9 @@ impl<T: SessionStream> Session<T> {
 
             // Address rewriting
             if let Some(new_address) = self
-                .core
-                .core
+                .server
                 .eval_if::<String, _>(
-                    &self.core.core.smtp.session.rcpt.rewrite,
+                    &self.server.core.smtp.session.rcpt.rewrite,
                     self,
                     self.data.session_id,
                 )
@@ -187,22 +184,20 @@ impl<T: SessionStream> Session<T> {
         // Verify address
         let rcpt = self.data.rcpt_to.last().unwrap();
         if let Some(directory) = self
-            .core
-            .core
+            .server
             .eval_if::<String, _>(
-                &self.core.core.smtp.session.rcpt.directory,
+                &self.server.core.smtp.session.rcpt.directory,
                 self,
                 self.data.session_id,
             )
             .await
-            .and_then(|name| self.core.core.get_directory(&name))
+            .and_then(|name| self.server.get_directory(&name))
         {
             match directory.is_local_domain(&rcpt.domain).await {
                 Ok(is_local_domain) => {
                     if is_local_domain {
                         match self
-                            .core
-                            .core
+                            .server
                             .rcpt(directory, &rcpt.address_lcase, self.data.session_id)
                             .await
                         {
@@ -233,10 +228,9 @@ impl<T: SessionStream> Session<T> {
                             }
                         }
                     } else if !self
-                        .core
-                        .core
+                        .server
                         .eval_if(
-                            &self.core.core.smtp.session.rcpt.relay,
+                            &self.server.core.smtp.session.rcpt.relay,
                             self,
                             self.data.session_id,
                         )
@@ -266,10 +260,9 @@ impl<T: SessionStream> Session<T> {
                 }
             }
         } else if !self
-            .core
-            .core
+            .server
             .eval_if(
-                &self.core.core.smtp.session.rcpt.relay,
+                &self.server.core.smtp.session.rcpt.relay,
                 self,
                 self.data.session_id,
             )
@@ -315,12 +308,7 @@ impl<T: SessionStream> Session<T> {
         if self.data.rcpt_errors < self.params.rcpt_errors_max {
             Ok(())
         } else {
-            match self
-                .core
-                .core
-                .is_rcpt_fail2banned(self.data.remote_ip)
-                .await
-            {
+            match self.server.is_rcpt_fail2banned(self.data.remote_ip).await {
                 Ok(true) => {
                     trc::event!(
                         Security(SecurityEvent::BruteForceBan),

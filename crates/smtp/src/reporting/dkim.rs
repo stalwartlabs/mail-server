@@ -11,7 +11,7 @@ use mail_auth::{
 use trc::OutgoingReportEvent;
 use utils::config::Rate;
 
-use crate::core::Session;
+use crate::{core::Session, reporting::SmtpReporting};
 
 impl<T: SessionStream> Session<T> {
     pub async fn send_dkim_report(
@@ -44,10 +44,9 @@ impl<T: SessionStream> Session<T> {
             return;
         }
 
-        let config = &self.core.core.smtp.report.dkim;
+        let config = &self.server.core.smtp.report.dkim;
         let from_addr = self
-            .core
-            .core
+            .server
             .eval_if(&config.address, self, self.data.session_id)
             .await
             .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
@@ -64,8 +63,7 @@ impl<T: SessionStream> Session<T> {
             .with_headers(std::str::from_utf8(message.raw_headers()).unwrap_or_default())
             .write_rfc5322(
                 (
-                    self.core
-                        .core
+                    self.server
                         .eval_if(&config.name, self, self.data.session_id)
                         .await
                         .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
@@ -74,8 +72,7 @@ impl<T: SessionStream> Session<T> {
                 ),
                 rcpt,
                 &self
-                    .core
-                    .core
+                    .server
                     .eval_if(&config.subject, self, self.data.session_id)
                     .await
                     .unwrap_or_else(|| "DKIM Report".to_string()),
@@ -91,7 +88,7 @@ impl<T: SessionStream> Session<T> {
         );
 
         // Send report
-        self.core
+        self.server
             .send_report(
                 &from_addr,
                 [rcpt].into_iter(),

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::hash_map::Entry, sync::Arc, time::Duration};
+use std::{collections::hash_map::Entry, future::Future, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use common::{
@@ -12,7 +12,8 @@ use common::{
         report::AggregateFrequency,
         resolver::{Mode, MxPattern},
     },
-    USER_AGENT,
+    ipc::{TlsEvent, ToHash},
+    Server, USER_AGENT,
 };
 use mail_auth::{
     flate2::{write::GzEncoder, Compression},
@@ -31,9 +32,9 @@ use store::{
 };
 use trc::OutgoingReportEvent;
 
-use crate::{core::SMTP, queue::RecipientDomain};
+use crate::{queue::RecipientDomain, reporting::SmtpReporting};
 
-use super::{scheduler::ToHash, AggregateTimestamp, ReportLock, SerializedSize, TlsEvent};
+use super::{AggregateTimestamp, ReportLock, SerializedSize};
 
 #[derive(Debug, Clone)]
 pub struct TlsRptOptions {
@@ -51,14 +52,30 @@ pub struct TlsFormat {
 #[cfg(feature = "test_mode")]
 pub static TLS_HTTP_REPORT: parking_lot::Mutex<Vec<u8>> = parking_lot::Mutex::new(Vec::new());
 
-impl SMTP {
-    pub async fn send_tls_aggregate_report(&self, events: Vec<ReportEvent>) {
+pub trait TlsReporting: Sync + Send {
+    fn send_tls_aggregate_report(
+        &self,
+        events: Vec<ReportEvent>,
+    ) -> impl Future<Output = ()> + Send;
+    fn generate_tls_aggregate_report(
+        &self,
+        events: &[ReportEvent],
+        rua: &mut Vec<ReportUri>,
+        serialized_size: Option<&mut serde_json::Serializer<SerializedSize>>,
+        span_id: u64,
+    ) -> impl Future<Output = trc::Result<Option<TlsReport>>> + Send;
+    fn schedule_tls(&self, event: Box<TlsEvent>) -> impl Future<Output = ()> + Send;
+    fn delete_tls_report(&self, events: Vec<ReportEvent>) -> impl Future<Output = ()> + Send;
+}
+
+impl TlsReporting for Server {
+    async fn send_tls_aggregate_report(&self, events: Vec<ReportEvent>) {
         let (domain_name, event_from, event_to) = events
             .first()
             .map(|e| (e.domain.as_str(), e.seq_id, e.due))
             .unwrap();
 
-        let span_id = self.inner.span_id_gen.generate().unwrap_or_else(now);
+        let span_id = self.inner.data.span_id_gen.generate().unwrap_or_else(now);
 
         trc::event!(
             OutgoingReport(OutgoingReportEvent::TlsAggregate),
@@ -72,14 +89,13 @@ impl SMTP {
         // Generate report
         let mut rua = Vec::new();
         let mut serialized_size = serde_json::Serializer::new(SerializedSize::new(
-            self.core
-                .eval_if(
-                    &self.core.smtp.report.tls.max_size,
-                    &RecipientDomain::new(domain_name),
-                    span_id,
-                )
-                .await
-                .unwrap_or(25 * 1024 * 1024),
+            self.eval_if(
+                &self.core.smtp.report.tls.max_size,
+                &RecipientDomain::new(domain_name),
+                span_id,
+            )
+            .await
+            .unwrap_or(25 * 1024 * 1024),
         ));
         let report = match self
             .generate_tls_aggregate_report(&events, &mut rua, Some(&mut serialized_size), span_id)
@@ -191,7 +207,6 @@ impl SMTP {
         if !rcpts.is_empty() {
             let config = &self.core.smtp.report.tls;
             let from_addr = self
-                .core
                 .eval_if(&config.address, &RecipientDomain::new(domain_name), span_id)
                 .await
                 .unwrap_or_else(|| "MAILER-DAEMON@localhost".to_string());
@@ -199,7 +214,6 @@ impl SMTP {
             let _ = report.write_rfc5322_from_bytes(
                 domain_name,
                 &self
-                    .core
                     .eval_if(
                         &self.core.smtp.report.submitter,
                         &RecipientDomain::new(domain_name),
@@ -208,8 +222,7 @@ impl SMTP {
                     .await
                     .unwrap_or_else(|| "localhost".to_string()),
                 (
-                    self.core
-                        .eval_if(&config.name, &RecipientDomain::new(domain_name), span_id)
+                    self.eval_if(&config.name, &RecipientDomain::new(domain_name), span_id)
                         .await
                         .unwrap_or_else(|| "Mail Delivery Subsystem".to_string())
                         .as_str(),
@@ -239,7 +252,7 @@ impl SMTP {
         self.delete_tls_report(events).await;
     }
 
-    pub async fn generate_tls_aggregate_report(
+    async fn generate_tls_aggregate_report(
         &self,
         events: &[ReportEvent],
         rua: &mut Vec<ReportUri>,
@@ -253,7 +266,6 @@ impl SMTP {
         let config = &self.core.smtp.report.tls;
         let mut report = TlsReport {
             organization_name: self
-                .core
                 .eval_if(
                     &config.org_name,
                     &RecipientDomain::new(domain_name),
@@ -266,7 +278,6 @@ impl SMTP {
                 end_datetime: DateTime::from_timestamp(event_to as i64),
             },
             contact_info: self
-                .core
                 .eval_if(
                     &config.contact_info,
                     &RecipientDomain::new(domain_name),
@@ -388,7 +399,7 @@ impl SMTP {
         })
     }
 
-    pub async fn schedule_tls(&self, event: Box<TlsEvent>) {
+    async fn schedule_tls(&self, event: Box<TlsEvent>) {
         let created = event.interval.to_timestamp();
         let deliver_at = created + event.interval.as_secs();
         let mut report_event = ReportEvent {
@@ -420,7 +431,7 @@ impl SMTP {
             };
 
             match event.policy {
-                super::PolicyType::Tlsa(tlsa) => {
+                common::ipc::PolicyType::Tlsa(tlsa) => {
                     policy.policy_type = PolicyType::Tlsa;
                     if let Some(tlsa) = tlsa {
                         for entry in &tlsa.entries {
@@ -440,7 +451,7 @@ impl SMTP {
                         }
                     }
                 }
-                super::PolicyType::Sts(sts) => {
+                common::ipc::PolicyType::Sts(sts) => {
                     policy.policy_type = PolicyType::Sts;
                     if let Some(sts) = sts {
                         policy.policy_string.push("version: STSv1".to_string());
@@ -489,7 +500,7 @@ impl SMTP {
         }
 
         // Write entry
-        report_event.seq_id = self.inner.queue_id_gen.generate().unwrap_or_else(now);
+        report_event.seq_id = self.inner.data.queue_id_gen.generate().unwrap_or_else(now);
         builder.set(
             ValueClass::Queue(QueueClass::TlsReportEvent(report_event)),
             Bincode::new(event.failure).serialize(),
@@ -502,7 +513,7 @@ impl SMTP {
         }
     }
 
-    pub async fn delete_tls_report(&self, events: Vec<ReportEvent>) {
+    async fn delete_tls_report(&self, events: Vec<ReportEvent>) {
         let mut batch = BatchBuilder::new();
 
         for (pos, event) in events.into_iter().enumerate() {

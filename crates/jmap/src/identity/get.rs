@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::Server;
 use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
@@ -16,12 +17,25 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::JMAP;
+use crate::{changes::state::StateManager, JmapMethods};
 
 use super::set::sanitize_email;
+use std::future::Future;
 
-impl JMAP {
-    pub async fn identity_get(
+pub trait IdentityGet: Sync + Send {
+    fn identity_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+
+    fn identity_get_or_create(
+        &self,
+        account_id: u32,
+    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
+}
+
+impl IdentityGet for Server {
+    async fn identity_get(
         &self,
         mut request: GetRequest<RequestArguments>,
     ) -> trc::Result<GetResponse> {
@@ -107,7 +121,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn identity_get_or_create(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
+    async fn identity_get_or_create(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
         let mut identity_ids = self
             .get_document_ids(account_id, Collection::Identity)
             .await?

@@ -9,6 +9,7 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
+use jmap::JmapMethods;
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -52,7 +53,7 @@ impl<T: SessionStream> Session<T> {
         if access_token.quota == 0
             || size as i64
                 + self
-                    .jmap
+                    .server
                     .get_used_quota(account_id)
                     .await
                     .caused_by(trc::location!())?

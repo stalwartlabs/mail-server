@@ -6,7 +6,10 @@
 
 use std::time::Duration;
 
-use jmap::mailbox::{INBOX_ID, JUNK_ID};
+use jmap::{
+    mailbox::{INBOX_ID, JUNK_ID},
+    JmapMethods,
+};
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 
 use tokio::{

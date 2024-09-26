@@ -13,20 +13,18 @@ use std::fmt::Write;
 impl<T: SessionStream> Session<T> {
     pub async fn handle_vrfy(&mut self, address: String) -> Result<(), ()> {
         match self
-            .core
-            .core
+            .server
             .eval_if::<String, _>(
-                &self.core.core.smtp.session.rcpt.directory,
+                &self.server.core.smtp.session.rcpt.directory,
                 self,
                 self.data.session_id,
             )
             .await
-            .and_then(|name| self.core.core.get_directory(&name))
+            .and_then(|name| self.server.get_directory(&name))
         {
             Some(directory) if self.params.can_vrfy => {
                 match self
-                    .core
-                    .core
+                    .server
                     .vrfy(directory, &address.to_lowercase(), self.data.session_id)
                     .await
                 {
@@ -88,20 +86,18 @@ impl<T: SessionStream> Session<T> {
 
     pub async fn handle_expn(&mut self, address: String) -> Result<(), ()> {
         match self
-            .core
-            .core
+            .server
             .eval_if::<String, _>(
-                &self.core.core.smtp.session.rcpt.directory,
+                &self.server.core.smtp.session.rcpt.directory,
                 self,
                 self.data.session_id,
             )
             .await
-            .and_then(|name| self.core.core.get_directory(&name))
+            .and_then(|name| self.server.get_directory(&name))
         {
             Some(directory) if self.params.can_expn => {
                 match self
-                    .core
-                    .core
+                    .server
                     .expn(directory, &address.to_lowercase(), self.data.session_id)
                     .await
                 {

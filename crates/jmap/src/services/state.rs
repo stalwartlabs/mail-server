@@ -4,39 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::{Duration, Instant, SystemTime};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
+};
 
-use common::IPC_CHANNEL_BUFFER;
+use common::{
+    core::BuildServer,
+    ipc::{PushSubscription, StateEvent, UpdateSubscription},
+    Inner, Server, IPC_CHANNEL_BUFFER,
+};
 use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
+use std::future::Future;
 use store::ahash::AHashMap;
 use tokio::sync::mpsc;
 use trc::ServerEvent;
 use utils::map::bitmap::Bitmap;
 
-use crate::{
-    push::{manager::spawn_push_manager, UpdateSubscription},
-    JmapInstance, JMAP,
-};
-
-#[derive(Debug)]
-pub enum Event {
-    Subscribe {
-        account_id: u32,
-        types: Bitmap<DataType>,
-        tx: mpsc::Sender<StateChange>,
-    },
-    Publish {
-        state_change: StateChange,
-    },
-    UpdateSharedAccounts {
-        account_id: u32,
-    },
-    UpdateSubscriptions {
-        account_id: u32,
-        subscriptions: Vec<UpdateSubscription>,
-    },
-    Stop,
-}
+use crate::push::{get::PushSubscriptionFetch, manager::spawn_push_manager};
 
 #[derive(Debug)]
 struct Subscriber {
@@ -62,10 +47,6 @@ impl Subscriber {
 const PURGE_EVERY: Duration = Duration::from_secs(3600);
 const SEND_TIMEOUT: Duration = Duration::from_millis(500);
 
-pub fn init_state_manager() -> (mpsc::Sender<Event>, mpsc::Receiver<Event>) {
-    mpsc::channel::<Event>(IPC_CHANNEL_BUFFER)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum SubscriberId {
     Ipc(u32),
@@ -73,8 +54,8 @@ enum SubscriberId {
 }
 
 #[allow(clippy::unwrap_or_default)]
-pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Event>) {
-    let push_tx = spawn_push_manager(core.clone());
+pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<StateEvent>) {
+    let push_tx = spawn_push_manager(inner.clone());
 
     tokio::spawn(async move {
         let mut subscribers: AHashMap<u32, AHashMap<SubscriberId, Subscriber>> =
@@ -89,7 +70,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
             let mut purge_needed = last_purge.elapsed() >= PURGE_EVERY;
 
             match event {
-                Event::Stop => {
+                StateEvent::Stop => {
                     if push_tx.send(crate::push::Event::Reset).await.is_err() {
                         trc::event!(
                             Server(ServerEvent::ThreadError),
@@ -99,13 +80,9 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                     }
                     break;
                 }
-                Event::UpdateSharedAccounts { account_id } => {
+                StateEvent::UpdateSharedAccounts { account_id } => {
                     // Obtain account membership and shared mailboxes
-                    let acl = match JMAP::from(core.clone())
-                        .core
-                        .get_access_token(account_id)
-                        .await
-                    {
+                    let acl = match inner.build_server().get_access_token(account_id).await {
                         Ok(result) => result,
                         Err(err) => {
                             trc::error!(err
@@ -169,7 +146,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                     }
                     shared_accounts.insert(account_id, shared_account_ids);
                 }
-                Event::Subscribe {
+                StateEvent::Subscribe {
                     account_id,
                     types,
                     tx,
@@ -185,7 +162,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                             },
                         );
                 }
-                Event::Publish { state_change } => {
+                StateEvent::Publish { state_change } => {
                     if let Some(shared_accounts) = shared_accounts_map.get(&state_change.account_id)
                     {
                         let current_time = SystemTime::now()
@@ -266,7 +243,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                         }
                     }
                 }
-                Event::UpdateSubscriptions {
+                StateEvent::UpdateSubscriptions {
                     account_id,
                     subscriptions,
                 } => {
@@ -280,7 +257,7 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
                             if let SubscriberId::Push(push_id) = subscriber_id {
                                 if !subscriptions.iter().any(|s| {
                                     matches!(s, UpdateSubscription::Verified(
-                                        crate::push::PushSubscription { id, .. }
+                                        PushSubscription { id, .. }
                                     ) if id == push_id)
                                 }) {
                                     remove_ids.push(*subscriber_id);
@@ -388,18 +365,33 @@ pub fn spawn_state_manager(core: JmapInstance, mut change_rx: mpsc::Receiver<Eve
     });
 }
 
-impl JMAP {
-    pub async fn subscribe_state_manager(
+pub trait StateManager: Sync + Send {
+    fn subscribe_state_manager(
+        &self,
+        account_id: u32,
+        types: Bitmap<DataType>,
+    ) -> impl Future<Output = trc::Result<mpsc::Receiver<StateChange>>> + Send;
+
+    fn broadcast_state_change(
+        &self,
+        state_change: StateChange,
+    ) -> impl Future<Output = bool> + Send;
+
+    fn update_push_subscriptions(&self, account_id: u32) -> impl Future<Output = bool> + Send;
+}
+
+impl StateManager for Server {
+    async fn subscribe_state_manager(
         &self,
         account_id: u32,
         types: Bitmap<DataType>,
     ) -> trc::Result<mpsc::Receiver<StateChange>> {
         let (change_tx, change_rx) = mpsc::channel::<StateChange>(IPC_CHANNEL_BUFFER);
-        let state_tx = self.inner.state_tx.clone();
+        let state_tx = self.inner.ipc.state_tx.clone();
 
         for event in [
-            Event::UpdateSharedAccounts { account_id },
-            Event::Subscribe {
+            StateEvent::UpdateSharedAccounts { account_id },
+            StateEvent::Subscribe {
                 account_id,
                 types,
                 tx: change_tx,
@@ -415,12 +407,13 @@ impl JMAP {
         Ok(change_rx)
     }
 
-    pub async fn broadcast_state_change(&self, state_change: StateChange) -> bool {
+    async fn broadcast_state_change(&self, state_change: StateChange) -> bool {
         match self
             .inner
+            .ipc
             .state_tx
             .clone()
-            .send(Event::Publish { state_change })
+            .send(StateEvent::Publish { state_change })
             .await
         {
             Ok(_) => true,
@@ -436,7 +429,7 @@ impl JMAP {
         }
     }
 
-    pub async fn update_push_subscriptions(&self, account_id: u32) -> bool {
+    async fn update_push_subscriptions(&self, account_id: u32) -> bool {
         let push_subs = match self.fetch_push_subscriptions(account_id).await {
             Ok(push_subs) => push_subs,
             Err(err) => {
@@ -447,8 +440,8 @@ impl JMAP {
             }
         };
 
-        let state_tx = self.inner.state_tx.clone();
-        for event in [Event::UpdateSharedAccounts { account_id }, push_subs] {
+        let state_tx = self.inner.ipc.state_tx.clone();
+        for event in [StateEvent::UpdateSharedAccounts { account_id }, push_subs] {
             if state_tx.send(event).await.is_err() {
                 trc::event!(
                     Server(ServerEvent::ThreadError),

@@ -6,7 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
@@ -23,12 +23,25 @@ use tungstenite::Message;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    api::http::{HttpSessionData, ToRequestError},
-    JMAP,
+    api::{
+        http::{HttpSessionData, ToRequestError},
+        request::RequestHandler,
+    },
+    services::state::StateManager,
 };
+use std::future::Future;
 
-impl JMAP {
-    pub async fn handle_websocket_stream(
+pub trait WebSocketHandler: Sync + Send {
+    fn handle_websocket_stream(
+        &self,
+        stream: WebSocketStream<TokioIo<Upgraded>>,
+        access_token: Arc<AccessToken>,
+        session: HttpSessionData,
+    ) -> impl Future<Output = ()> + Send;
+}
+
+impl WebSocketHandler for Server {
+    async fn handle_websocket_stream(
         &self,
         mut stream: WebSocketStream<TokioIo<Upgraded>>,
         access_token: Arc<AccessToken>,

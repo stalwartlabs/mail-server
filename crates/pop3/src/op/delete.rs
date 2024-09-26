@@ -8,6 +8,9 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
+use jmap::{
+    changes::write::ChangeLog, email::delete::EmailDeletion, services::state::StateManager,
+};
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::roaring::RoaringBitmap;
 use trc::AddContext;
@@ -87,16 +90,18 @@ impl<T: SessionStream> Session<T> {
             if !deleted.is_empty() {
                 let num_deleted = deleted.len();
                 let (changes, not_deleted) = self
-                    .jmap
+                    .server
                     .emails_tombstone(mailbox.account_id, deleted)
                     .await
                     .caused_by(trc::location!())?;
 
                 if !changes.is_empty() {
-                    if let Ok(change_id) =
-                        self.jmap.commit_changes(mailbox.account_id, changes).await
+                    if let Ok(change_id) = self
+                        .server
+                        .commit_changes(mailbox.account_id, changes)
+                        .await
                     {
-                        self.jmap
+                        self.server
                             .broadcast_state_change(
                                 StateChange::new(mailbox.account_id)
                                     .with_change(DataType::Email, change_id)

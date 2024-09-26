@@ -20,7 +20,7 @@ use mail_auth::AuthenticatedMessage;
 use mail_parser::MessageParser;
 use serde::Deserialize;
 use smtp::{
-    core::{Inner, Session, SessionData},
+    core::{Session, SessionData},
     inbound::{
         hooks::{self, Request, SmtpResponse},
         milter::{
@@ -38,7 +38,6 @@ use tokio::{
 use utils::config::Config;
 
 use crate::smtp::{
-    build_smtp,
     inbound::TestMessage,
     session::{load_test_message, TestSession, VerifyResponse},
     TempDir, TestSMTP,
@@ -108,11 +107,11 @@ async fn milter_session() {
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let _rx = spawn_mock_milter_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let mut inner = Inner::default();
-    let mut qr = inner.init_test_queue(&core);
 
     // Build session
-    let mut session = Session::test(build_smtp(core, inner));
+    let test = TestSMTP::from_core(core);
+    let mut qr = test.queue_receiver;
+    let mut session = Session::test(test.server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;
@@ -241,11 +240,11 @@ async fn mta_hook_session() {
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let _rx = spawn_mock_mta_hook_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let mut inner = Inner::default();
-    let mut qr = inner.init_test_queue(&core);
 
     // Build session
-    let mut session = Session::test(build_smtp(core, inner));
+    let test = TestSMTP::from_core(core);
+    let mut qr = test.queue_receiver;
+    let mut session = Session::test(test.server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.doe.org").await;

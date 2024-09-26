@@ -6,9 +6,9 @@
 
 use std::time::Duration;
 
-use crate::smtp::{build_smtp, session::TestSession, TempDir};
+use crate::smtp::{session::TestSession, TempDir, TestSMTP};
 use common::Core;
-use smtp::core::{Inner, Session, SessionAddress};
+use smtp::core::{Session, SessionAddress};
 use store::Stores;
 use utils::config::Config;
 
@@ -51,10 +51,9 @@ async fn throttle_inbound() {
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
-    let inner = Inner::default();
 
     // Test connection concurrency limit
-    let mut session = Session::test(build_smtp(core, inner));
+    let mut session = Session::test(TestSMTP::from_core(core).server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     assert!(
         session.is_allowed().await,

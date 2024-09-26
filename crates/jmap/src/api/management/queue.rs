@@ -4,8 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::future::Future;
+
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use common::auth::AccessToken;
+use common::{auth::AccessToken, ipc::QueueEvent, Server};
 use directory::{
     backend::internal::{manage::ManageDirectory, PrincipalField},
     Permission, Type,
@@ -19,7 +21,10 @@ use mail_auth::{
 use mail_parser::DateTime;
 use serde::{Deserializer, Serializer};
 use serde_json::json;
-use smtp::queue::{self, ErrorDetails, HostResponse, QueueId, Status};
+use smtp::{
+    queue::{self, spool::SmtpSpool, ErrorDetails, HostResponse, QueueId, Status},
+    reporting::{dmarc::DmarcReporting, tls::TlsReporting},
+};
 use store::{
     write::{key::DeserializeBigEndian, now, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, ValueKey,
@@ -27,10 +32,7 @@ use store::{
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    JMAP,
-};
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 use super::{decode_path_element, FutureTimestamp};
 
@@ -106,8 +108,17 @@ pub enum Report {
     },
 }
 
-impl JMAP {
-    pub async fn handle_manage_queue(
+pub trait QueueManagement: Sync + Send {
+    fn handle_manage_queue(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl QueueManagement for Server {
+    async fn handle_manage_queue(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
@@ -270,7 +281,6 @@ impl JMAP {
                 access_token.assert_has_permission(Permission::MessageQueueGet)?;
 
                 if let Some(message) = self
-                    .smtp
                     .read_message(queue_id.parse().unwrap_or_default())
                     .await
                     .filter(|message| {
@@ -298,7 +308,6 @@ impl JMAP {
                 let item = params.get("filter");
 
                 if let Some(mut message) = self
-                    .smtp
                     .read_message(queue_id.parse().unwrap_or_default())
                     .await
                     .filter(|message| {
@@ -329,9 +338,9 @@ impl JMAP {
                     if found {
                         let next_event = message.next_event().unwrap_or_default();
                         message
-                            .save_changes(&self.smtp, prev_event.into(), next_event.into())
+                            .save_changes(self, prev_event.into(), next_event.into())
                             .await;
-                        let _ = self.smtp.inner.queue_tx.send(queue::Event::Reload).await;
+                        let _ = self.inner.ipc.queue_tx.send(QueueEvent::Reload).await;
                     }
 
                     Ok(JsonResponse::new(json!({
@@ -347,7 +356,6 @@ impl JMAP {
                 access_token.assert_has_permission(Permission::MessageQueueDelete)?;
 
                 if let Some(mut message) = self
-                    .smtp
                     .read_message(queue_id.parse().unwrap_or_default())
                     .await
                     .filter(|message| {
@@ -411,14 +419,14 @@ impl JMAP {
                             }) {
                                 let next_event = message.next_event().unwrap_or_default();
                                 message
-                                    .save_changes(&self.smtp, next_event.into(), prev_event.into())
+                                    .save_changes(self, next_event.into(), prev_event.into())
                                     .await;
                             } else {
-                                message.remove(&self.smtp, prev_event).await;
+                                message.remove(self, prev_event).await;
                             }
                         }
                     } else {
-                        message.remove(&self.smtp, prev_event).await;
+                        message.remove(self, prev_event).await;
                         found = true;
                     }
 
@@ -528,7 +536,6 @@ impl JMAP {
                         {
                             let mut rua = Vec::new();
                             if let Some(report) = self
-                                .smtp
                                 .generate_dmarc_aggregate_report(&event, &mut rua, None, 0)
                                 .await?
                             {
@@ -542,7 +549,6 @@ impl JMAP {
                         {
                             let mut rua = Vec::new();
                             if let Some(report) = self
-                                .smtp
                                 .generate_tls_aggregate_report(&[event.clone()], &mut rua, None, 0)
                                 .await?
                             {
@@ -573,7 +579,7 @@ impl JMAP {
                                 .as_ref()
                                 .map_or(true, |domains| domains.contains(&event.domain)) =>
                         {
-                            self.smtp.delete_dmarc_report(event).await;
+                            self.delete_dmarc_report(event).await;
                             true
                         }
                         QueueClass::TlsReportHeader(event)
@@ -581,7 +587,7 @@ impl JMAP {
                                 .as_ref()
                                 .map_or(true, |domains| domains.contains(&event.domain)) =>
                         {
-                            self.smtp.delete_tls_report(vec![event]).await;
+                            self.delete_tls_report(vec![event]).await;
                             true
                         }
                         _ => false,

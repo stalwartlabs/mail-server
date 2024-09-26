@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
+use common::Inner;
 use hyper::StatusCode;
 use jmap_proto::types::{id::Id, state::State, type_state::DataType};
 use serde::Serialize;
 use utils::map::vec_map::VecMap;
-
-use crate::JmapInstance;
 
 pub mod autoconfig;
 pub mod event_source;
@@ -22,11 +21,11 @@ pub mod session;
 
 #[derive(Clone)]
 pub struct JmapSessionManager {
-    pub inner: JmapInstance,
+    pub inner: Arc<Inner>,
 }
 
 impl JmapSessionManager {
-    pub fn new(inner: JmapInstance) -> Self {
+    pub fn new(inner: Arc<Inner>) -> Self {
         Self { inner }
     }
 }

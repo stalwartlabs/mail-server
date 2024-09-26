@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     method::{
         query::Filter,
@@ -16,12 +16,21 @@ use mail_parser::{decoders::html::html_to_text, GetHeader, HeaderName, PartType}
 use nlp::language::{search_snippet::generate_snippet, stemmer::Stemmer, Language};
 use store::{backend::MAX_TOKEN_LENGTH, write::Bincode};
 
-use crate::JMAP;
+use crate::{auth::acl::AclMethods, blob::download::BlobDownload, JmapMethods};
 
 use super::metadata::{MessageMetadata, MetadataPartType};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn email_search_snippet(
+pub trait EmailSearchSnippet: Sync + Send {
+    fn email_search_snippet(
+        &self,
+        request: GetSearchSnippetRequest,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<GetSearchSnippetResponse>> + Send;
+}
+
+impl EmailSearchSnippet for Server {
+    async fn email_search_snippet(
         &self,
         request: GetSearchSnippetRequest,
         access_token: &AccessToken,

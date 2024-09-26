@@ -11,13 +11,12 @@ use utils::config::Config;
 
 use crate::{
     smtp::{
-        build_smtp,
         session::{TestSession, VerifyResponse},
-        TempDir,
+        TempDir, TestSMTP,
     },
     AssertConfig,
 };
-use smtp::core::{Inner, Session, State};
+use smtp::core::{Session, State};
 
 const CONFIG: &str = r#"
 [storage]
@@ -81,7 +80,7 @@ async fn auth() {
     config.assert_no_errors();
 
     // EHLO should not advertise plain text auth without TLS
-    let mut session = Session::test(build_smtp(core, Inner::default()));
+    let mut session = Session::test(TestSMTP::from_core(core).server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.stream.tls = false;

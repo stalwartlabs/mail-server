@@ -7,7 +7,10 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, HashSet};
-use common::config::{server::ServerProtocol, smtp::report::AggregateFrequency};
+use common::{
+    config::{server::ServerProtocol, smtp::report::AggregateFrequency},
+    ipc::{DmarcEvent, PolicyType, TlsEvent},
+};
 
 use jmap::api::management::queue::Report;
 use mail_auth::{
@@ -23,9 +26,9 @@ use reqwest::Method;
 
 use crate::{
     jmap::ManagementApi,
-    smtp::{management::queue::List, outbound::TestServer},
+    smtp::{management::queue::List, TestSMTP},
 };
-use smtp::reporting::{scheduler::SpawnReport, DmarcEvent, TlsEvent};
+use smtp::reporting::{scheduler::SpawnReport, SmtpReporting};
 
 const CONFIG: &str = r#"
 [storage]
@@ -58,10 +61,13 @@ async fn manage_reports() {
     crate::enable_logging();
 
     // Start reporting service
-    let local = TestServer::new("smtp_manage_reports", CONFIG, true).await;
+    let local = TestSMTP::new("smtp_manage_reports", CONFIG).await;
     let _rx = local.start(&[ServerProtocol::Http]).await;
     let core = local.build_smtp();
-    local.rr.report_rx.spawn(local.instance.clone());
+    local
+        .report_receiver
+        .report_rx
+        .spawn(local.server.inner.clone());
 
     // Send test reporting events
     core.schedule_report(DmarcEvent {
@@ -98,7 +104,7 @@ async fn manage_reports() {
     .await;
     core.schedule_report(TlsEvent {
         domain: "foobar.org".to_string(),
-        policy: smtp::reporting::PolicyType::None,
+        policy: PolicyType::None,
         failure: None,
         tls_record: Arc::new(TlsRpt::parse(b"v=TLSRPTv1;rua=mailto:reports@foobar.org").unwrap()),
         interval: AggregateFrequency::Daily,
@@ -106,7 +112,7 @@ async fn manage_reports() {
     .await;
     core.schedule_report(TlsEvent {
         domain: "foobar.net".to_string(),
-        policy: smtp::reporting::PolicyType::Sts(None),
+        policy: PolicyType::Sts(None),
         failure: FailureDetails::new(ResultType::StsPolicyInvalid).into(),
         tls_record: Arc::new(TlsRpt::parse(b"v=TLSRPTv1;rua=mailto:reports@foobar.net").unwrap()),
         interval: AggregateFrequency::Weekly,

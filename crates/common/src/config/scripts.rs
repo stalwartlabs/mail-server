@@ -11,8 +11,6 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nlp::bayes::cache::BayesTokenCache;
-use parking_lot::RwLock;
 use sieve::{compiler::grammar::Capability, Compiler, Runtime, Sieve};
 use store::Stores;
 use utils::config::Config;
@@ -31,11 +29,6 @@ pub struct Scripting {
     pub sign: IfBlock,
     pub trusted_scripts: AHashMap<String, Arc<Sieve>>,
     pub untrusted_scripts: AHashMap<String, Arc<Sieve>>,
-}
-
-pub struct ScriptCache {
-    pub bayes_cache: BayesTokenCache,
-    pub remote_lists: RwLock<AHashMap<String, RemoteList>>,
 }
 
 #[derive(Clone)]
@@ -364,25 +357,6 @@ impl Scripting {
     }
 }
 
-impl ScriptCache {
-    pub fn parse(config: &mut Config) -> Self {
-        ScriptCache {
-            bayes_cache: BayesTokenCache::new(
-                config
-                    .property_or_default("cache.bayes.capacity", "8192")
-                    .unwrap_or(8192),
-                config
-                    .property_or_default("cache.bayes.ttl.positive", "1h")
-                    .unwrap_or_else(|| Duration::from_secs(3600)),
-                config
-                    .property_or_default("cache.bayes.ttl.negative", "1h")
-                    .unwrap_or_else(|| Duration::from_secs(3600)),
-            ),
-            remote_lists: Default::default(),
-        }
-    }
-}
-
 impl Default for Scripting {
     fn default() -> Self {
         Scripting {
@@ -406,19 +380,6 @@ impl Default for Scripting {
             ),
             untrusted_scripts: AHashMap::new(),
             trusted_scripts: AHashMap::new(),
-        }
-    }
-}
-
-impl Default for ScriptCache {
-    fn default() -> Self {
-        Self {
-            bayes_cache: BayesTokenCache::new(
-                8192,
-                Duration::from_secs(3600),
-                Duration::from_secs(3600),
-            ),
-            remote_lists: Default::default(),
         }
     }
 }

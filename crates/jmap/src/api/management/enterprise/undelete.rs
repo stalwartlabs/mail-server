@@ -11,12 +11,13 @@
 use std::str::FromStr;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use common::{auth::AccessToken, enterprise::undelete::DeletedBlob};
+use common::{auth::AccessToken, enterprise::undelete::DeletedBlob, Server};
 use directory::backend::internal::manage::ManageDirectory;
 use hyper::Method;
 use jmap_proto::types::collection::Collection;
 use mail_parser::{DateTime, MessageParser};
 use serde_json::json;
+use std::future::Future;
 use store::write::{BatchBuilder, BlobOp, ValueClass};
 use trc::AddContext;
 use utils::{url_params::UrlParams, BlobHash};
@@ -27,9 +28,10 @@ use crate::{
         management::decode_path_element,
         HttpRequest, HttpResponse, JsonResponse,
     },
-    email::ingest::{IngestEmail, IngestSource},
+    blob::download::BlobDownload,
+    email::ingest::{EmailIngest, IngestEmail, IngestSource},
     mailbox::INBOX_ID,
-    JMAP,
+    JmapMethods,
 };
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -52,8 +54,18 @@ pub enum UndeleteResponse {
     Error { reason: String },
 }
 
-impl JMAP {
-    pub async fn handle_undelete_api_request(
+pub trait UndeleteApi: Sync + Send {
+    fn handle_undelete_api_request(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        body: Option<Vec<u8>>,
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl UndeleteApi for Server {
+    async fn handle_undelete_api_request(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,

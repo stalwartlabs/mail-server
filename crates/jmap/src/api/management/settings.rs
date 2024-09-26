@@ -4,19 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use directory::Permission;
 use hyper::Method;
 use serde_json::json;
 use store::ahash::AHashMap;
 use utils::{config::ConfigKey, map::vec_map::VecMap, url_params::UrlParams};
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    JMAP,
-};
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 use super::decode_path_element;
+use std::future::Future;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
@@ -34,8 +32,18 @@ pub enum UpdateSettings {
     },
 }
 
-impl JMAP {
-    pub async fn handle_manage_settings(
+pub trait ManageSettings: Sync + Send {
+    fn handle_manage_settings(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        body: Option<Vec<u8>>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl ManageSettings for Server {
+    async fn handle_manage_settings(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,

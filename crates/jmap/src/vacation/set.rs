@@ -6,7 +6,7 @@
 
 use std::borrow::Cow;
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -22,6 +22,7 @@ use jmap_proto::{
 };
 use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
+use std::future::Future;
 use store::write::{
     assert::HashedValue,
     log::{Changes, LogInsert},
@@ -29,12 +30,26 @@ use store::write::{
 };
 
 use crate::{
-    sieve::set::{ObjectBlobId, SCHEMA},
-    JMAP,
+    blob::upload::BlobUpload,
+    changes::write::ChangeLog,
+    sieve::set::{ObjectBlobId, SieveScriptSet, SCHEMA},
+    JmapMethods,
 };
 
-impl JMAP {
-    pub async fn vacation_response_set(
+use super::get::VacationResponseGet;
+
+pub trait VacationResponseSet: Sync + Send {
+    fn vacation_response_set(
+        &self,
+        request: SetRequest<RequestArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+
+    fn build_script(&self, obj: &mut ObjectIndexBuilder) -> trc::Result<Vec<u8>>;
+}
+
+impl VacationResponseSet for Server {
+    async fn vacation_response_set(
         &self,
         mut request: SetRequest<RequestArguments>,
         access_token: &AccessToken,

@@ -7,9 +7,9 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
-use common::listener::SessionStream;
+use common::{listener::SessionStream, NextMailboxState};
 use imap_proto::protocol::{expunge, select::Exists, Sequence};
-use jmap::mailbox::UidMailbox;
+use jmap::{mailbox::UidMailbox, JmapMethods};
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
@@ -20,7 +20,7 @@ use utils::lru_cache::LruCached;
 
 use crate::core::ImapId;
 
-use super::{ImapUidToId, MailboxId, MailboxState, NextMailboxState, SelectedMailbox, SessionData};
+use super::{ImapUidToId, MailboxId, MailboxState, SelectedMailbox, SessionData};
 
 pub(crate) const MAX_RETRIES: usize = 10;
 
@@ -28,7 +28,7 @@ impl<T: SessionStream> SessionData<T> {
     pub async fn fetch_messages(&self, mailbox: &MailboxId) -> trc::Result<MailboxState> {
         // Obtain message ids
         let message_ids = self
-            .jmap
+            .server
             .get_tag(
                 mailbox.account_id,
                 Collection::Email,
@@ -43,7 +43,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Obtain current state
         let modseq = self
-            .jmap
+            .server
             .core
             .storage
             .data
@@ -54,7 +54,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain all message ids
         let mut uid_map = BTreeMap::new();
         for (message_id, uid_mailbox) in self
-            .jmap
+            .server
             .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
                 mailbox.account_id,
                 Collection::Email,
@@ -148,8 +148,10 @@ impl<T: SessionStream> SessionData<T> {
             current_state.id_to_imap = id_to_imap;
 
             // Update cache
-            self.imap
-                .cache_mailbox
+            self.server
+                .inner
+                .data
+                .mailbox_cache
                 .insert(mailbox.id, Arc::new(new_state.clone()));
 
             // Update state
@@ -207,7 +209,7 @@ impl<T: SessionStream> SessionData<T> {
 
     pub async fn get_modseq(&self, account_id: u32) -> trc::Result<Option<u64>> {
         // Obtain current modseq
-        self.jmap
+        self.server
             .core
             .storage
             .data
@@ -221,7 +223,7 @@ impl<T: SessionStream> SessionData<T> {
     }
 
     pub async fn get_uid_validity(&self, mailbox: &MailboxId) -> trc::Result<u32> {
-        self.jmap
+        self.server
             .get_property::<Object<Value>>(
                 mailbox.account_id,
                 Collection::Mailbox,

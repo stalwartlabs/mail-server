@@ -4,15 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::future::Future;
+
 use common::{
     config::smtp::Throttle,
     expr::functions::ResolveVariable,
     listener::limiter::{ConcurrencyLimiter, InFlight},
+    Server,
 };
 use dashmap::mapref::entry::Entry;
 use store::write::now;
 
-use crate::core::{throttle::NewKey, SMTP};
+use crate::core::throttle::NewKey;
 
 use super::{Domain, Status};
 
@@ -22,8 +25,18 @@ pub enum Error {
     Rate { retry_at: u64 },
 }
 
-impl SMTP {
-    pub async fn is_allowed<'x>(
+pub trait IsAllowed: Sync + Send {
+    fn is_allowed<'x>(
+        &'x self,
+        throttle: &'x Throttle,
+        envelope: &impl ResolveVariable,
+        in_flight: &mut Vec<InFlight>,
+        session_id: u64,
+    ) -> impl Future<Output = Result<(), Error>> + Send;
+}
+
+impl IsAllowed for Server {
+    async fn is_allowed<'x>(
         &'x self,
         throttle: &'x Throttle,
         envelope: &impl ResolveVariable,
@@ -32,7 +45,6 @@ impl SMTP {
     ) -> Result<(), Error> {
         if throttle.expr.is_empty()
             || self
-                .core
                 .eval_expr(&throttle.expr, envelope, "throttle", session_id)
                 .await
                 .unwrap_or(false)
@@ -64,7 +76,7 @@ impl SMTP {
             }
 
             if let Some(concurrency) = &throttle.concurrency {
-                match self.inner.queue_throttle.entry(key) {
+                match self.inner.data.smtp_queue_throttle.entry(key) {
                     Entry::Occupied(mut e) => {
                         let limiter = e.get_mut();
                         if let Some(inflight) = limiter.is_allowed() {

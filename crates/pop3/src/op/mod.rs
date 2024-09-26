@@ -18,7 +18,7 @@ pub mod list;
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_capa(&mut self) -> trc::Result<()> {
-        let mechanisms = if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
+        let mechanisms = if self.stream.is_tls() || self.server.core.imap.allow_plain_auth {
             vec![Mechanism::Plain, Mechanism::OAuthBearer]
         } else {
             vec![Mechanism::OAuthBearer]
@@ -28,7 +28,7 @@ impl<T: SessionStream> Session<T> {
             Pop3(trc::Pop3Event::Capabilities),
             SpanId = self.session_id,
             Tls = self.stream.is_tls(),
-            Strict = !self.jmap.core.imap.allow_plain_auth,
+            Strict = !self.server.core.imap.allow_plain_auth,
             Elapsed = trc::Value::Duration(0)
         );
 

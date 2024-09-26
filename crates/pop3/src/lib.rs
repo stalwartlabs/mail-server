@@ -9,9 +9,8 @@ use std::{net::IpAddr, sync::Arc};
 use common::{
     auth::AccessToken,
     listener::{limiter::InFlight, ServerInstance, SessionStream},
+    Inner, Server,
 };
-use imap::core::{ImapInstance, Inner};
-use jmap::JMAP;
 use mailbox::Mailbox;
 use protocol::request::Parser;
 
@@ -25,18 +24,17 @@ static SERVER_GREETING: &str = "+OK Stalwart POP3 at your service.\r\n";
 
 #[derive(Clone)]
 pub struct Pop3SessionManager {
-    pub pop3: ImapInstance,
+    pub inner: Arc<Inner>,
 }
 
 impl Pop3SessionManager {
-    pub fn new(pop3: ImapInstance) -> Self {
-        Self { pop3 }
+    pub fn new(inner: Arc<Inner>) -> Self {
+        Self { inner }
     }
 }
 
 pub struct Session<T: SessionStream> {
-    pub jmap: JMAP,
-    pub imap: Arc<Inner>,
+    pub server: Server,
     pub instance: Arc<ServerInstance>,
     pub receiver: Parser,
     pub state: State,

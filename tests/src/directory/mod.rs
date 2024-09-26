@@ -10,7 +10,7 @@ pub mod ldap;
 pub mod smtp;
 pub mod sql;
 
-use common::{config::smtp::session::AddressMapping, Core};
+use common::{config::smtp::session::AddressMapping, Core, Server};
 use directory::{
     backend::internal::{manage::ManageDirectory, PrincipalField},
     Directories, Principal, Type,
@@ -254,7 +254,7 @@ pub struct DirectoryTest {
     pub directories: Directories,
     pub stores: Stores,
     pub temp_dir: TempDir,
-    pub core: Core,
+    pub server: Server,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -311,7 +311,10 @@ impl DirectoryTest {
             directories,
             stores,
             temp_dir,
-            core,
+            server: Server {
+                inner: Default::default(),
+                core: core.into(),
+            },
         }
     }
 }
@@ -598,7 +601,7 @@ async fn address_mappings() {
     let mut config = utils::config::Config::new(MAPPINGS).unwrap();
     const ADDR: &str = "john.doe+alias@example.org";
     const ADDR_NO_MATCH: &str = "jane@example.org";
-    let core = Core::default();
+    let core = Server::default();
 
     for test in ["enable", "disable", "custom"] {
         let catch_all = AddressMapping::parse(&mut config, (test, "catch-all"));

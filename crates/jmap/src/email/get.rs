@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
@@ -23,16 +23,29 @@ use mail_parser::HeaderName;
 use store::{write::Bincode, BlobClass};
 use trc::{AddContext, StoreEvent};
 
-use crate::{email::headers::HeaderToValue, mailbox::UidMailbox, JMAP};
+use crate::{
+    auth::acl::AclMethods, blob::download::BlobDownload, changes::state::StateManager,
+    email::headers::HeaderToValue, mailbox::UidMailbox, JmapMethods,
+};
+use std::future::Future;
 
 use super::{
     body::{ToBodyPart, TruncateBody},
+    cache::ThreadCache,
     headers::IntoForm,
     metadata::{MessageMetadata, MetadataPartType},
 };
 
-impl JMAP {
-    pub async fn email_get(
+pub trait EmailGet: Sync + Send {
+    fn email_get(
+        &self,
+        request: GetRequest<GetArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+}
+
+impl EmailGet for Server {
+    async fn email_get(
         &self,
         mut request: GetRequest<GetArguments>,
         access_token: &AccessToken,

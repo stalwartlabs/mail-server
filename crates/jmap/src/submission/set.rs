@@ -6,7 +6,10 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use common::listener::{stream::NullIo, ServerInstance};
+use common::{
+    listener::{stream::NullIo, ServerInstance},
+    Server,
+};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{self, SetRequest, SetResponse},
@@ -29,12 +32,19 @@ use jmap_proto::{
     },
 };
 use mail_parser::{HeaderName, HeaderValue};
-use smtp::core::{Session, SessionData, State};
+use smtp::{
+    core::{Session, SessionData, State},
+    queue::spool::SmtpSpool,
+};
 use smtp_proto::{request::parser::Rfc5321Parser, MailFrom, RcptTo};
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder, Bincode};
 use utils::map::vec_map::VecMap;
 
-use crate::{email::metadata::MessageMetadata, identity::set::sanitize_email, JMAP};
+use crate::{
+    blob::download::BlobDownload, changes::write::ChangeLog, email::metadata::MessageMetadata,
+    identity::set::sanitize_email, JmapMethods,
+};
+use std::future::Future;
 
 pub static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::UndoStatus).index_as(IndexAs::Text {
@@ -47,8 +57,25 @@ pub static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::SendAt).index_as(IndexAs::LongInteger),
 ];
 
-impl JMAP {
-    pub async fn email_submission_set(
+pub trait EmailSubmissionSet: Sync + Send {
+    fn email_submission_set(
+        &self,
+        request: SetRequest<SetArguments>,
+        instance: &Arc<ServerInstance>,
+        next_call: &mut Option<Call<RequestMethod>>,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+
+    fn send_message(
+        &self,
+        account_id: u32,
+        response: &SetResponse,
+        instance: &Arc<ServerInstance>,
+        object: Object<SetValue>,
+    ) -> impl Future<Output = trc::Result<Result<Object<Value>, SetError>>> + Send;
+}
+
+impl EmailSubmissionSet for Server {
+    async fn email_submission_set(
         &self,
         mut request: SetRequest<SetArguments>,
         instance: &Arc<ServerInstance>,
@@ -147,10 +174,10 @@ impl JMAP {
 
             match undo_status {
                 Some(undo_status) if undo_status == "canceled" => {
-                    if let Some(queue_message) = self.smtp.read_message(queue_id).await {
+                    if let Some(queue_message) = self.read_message(queue_id).await {
                         // Delete message from queue
                         let message_due = queue_message.next_event().unwrap_or_default();
-                        queue_message.remove(&self.smtp, message_due).await;
+                        queue_message.remove(self, message_due).await;
 
                         // Update record
                         let mut batch = BatchBuilder::new();
@@ -553,7 +580,7 @@ impl JMAP {
 
         // Begin local SMTP session
         let mut session =
-            Session::<NullIo>::local(self.smtp.clone(), instance.clone(), SessionData::default());
+            Session::<NullIo>::local(self.clone(), instance.clone(), SessionData::default());
 
         // MAIL FROM
         let _ = session.handle_mail_from(mail_from).await;

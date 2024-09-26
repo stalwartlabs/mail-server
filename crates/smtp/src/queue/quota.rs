@@ -4,19 +4,34 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{config::smtp::queue::QueueQuota, expr::functions::ResolveVariable};
+use std::future::Future;
+
+use common::{config::smtp::queue::QueueQuota, expr::functions::ResolveVariable, Server};
 use store::{
     write::{BatchBuilder, QueueClass, ValueClass},
     ValueKey,
 };
 use trc::QueueEvent;
 
-use crate::core::{throttle::NewKey, SMTP};
+use crate::core::throttle::NewKey;
 
 use super::{Message, QueueEnvelope, QuotaKey, Status};
 
-impl SMTP {
-    pub async fn has_quota(&self, message: &mut Message) -> bool {
+pub trait HasQueueQuota: Sync + Send {
+    fn has_quota(&self, message: &mut Message) -> impl Future<Output = bool> + Send;
+    fn check_quota<'x>(
+        &'x self,
+        quota: &'x QueueQuota,
+        envelope: &impl ResolveVariable,
+        size: usize,
+        id: u64,
+        refs: &mut Vec<QuotaKey>,
+        session_id: u64,
+    ) -> impl Future<Output = bool> + Send;
+}
+
+impl HasQueueQuota for Server {
+    async fn has_quota(&self, message: &mut Message) -> bool {
         let mut quota_keys = Vec::new();
 
         if !self.core.smtp.queue.quota.sender.is_empty() {
@@ -110,7 +125,6 @@ impl SMTP {
     ) -> bool {
         if !quota.expr.is_empty()
             && self
-                .core
                 .eval_expr(&quota.expr, envelope, "check_quota", session_id)
                 .await
                 .unwrap_or(false)

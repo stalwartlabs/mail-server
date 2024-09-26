@@ -9,13 +9,12 @@ use common::Core;
 use store::Stores;
 use utils::config::Config;
 
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 
 use crate::{
     smtp::{
-        build_smtp,
         session::{TestSession, VerifyResponse},
-        TempDir,
+        TempDir, TestSMTP,
     },
     AssertConfig,
 };
@@ -79,7 +78,7 @@ async fn vrfy_expn() {
     config.assert_no_errors();
 
     // EHLO should not advertise VRFY/EXPN to 10.0.0.2
-    let mut session = Session::test(build_smtp(core, Inner::default()));
+    let mut session = Session::test(TestSMTP::from_core(core).server);
     session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session

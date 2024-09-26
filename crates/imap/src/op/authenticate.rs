@@ -11,6 +11,9 @@ use imap_proto::{
     receiver::{self, Request},
     Command, ResponseCode, StatusResponse,
 };
+use jmap::auth::{
+    authenticate::Authenticator, oauth::token::TokenHandler, rate_limit::RateLimiter,
+};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use std::sync::Arc;
@@ -70,7 +73,7 @@ impl<T: SessionStream> Session<T> {
         tag: String,
     ) -> trc::Result<()> {
         // Throttle authentication requests
-        self.jmap
+        self.server
             .is_auth_allowed_soft(&self.remote_addr)
             .await
             .map_err(|err| err.id(tag.clone()))?;
@@ -78,17 +81,17 @@ impl<T: SessionStream> Session<T> {
         // Authenticate
         let access_token = match credentials {
             Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
-                self.jmap
+                self.server
                     .authenticate_plain(&username, &secret, self.remote_addr, self.session_id)
                     .await
             }
             Credentials::OAuthBearer { token } => {
                 match self
-                    .jmap
+                    .server
                     .validate_access_token("access_token", &token)
                     .await
                 {
-                    Ok((account_id, _, _)) => self.jmap.core.get_access_token(account_id).await,
+                    Ok((account_id, _, _)) => self.server.get_access_token(account_id).await,
                     Err(err) => Err(err),
                 }
             }
@@ -96,7 +99,7 @@ impl<T: SessionStream> Session<T> {
         .map_err(|err| {
             if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
                 let auth_failures = self.state.auth_failures();
-                if auth_failures < self.jmap.core.imap.max_auth_failures {
+                if auth_failures < self.server.core.imap.max_auth_failures {
                     self.state = State::NotAuthenticated {
                         auth_failures: auth_failures + 1,
                     };
@@ -127,7 +130,7 @@ impl<T: SessionStream> Session<T> {
 
         // Cache access token
         let access_token = Arc::new(access_token);
-        self.jmap.core.cache_access_token(access_token.clone());
+        self.server.cache_access_token(access_token.clone());
 
         // Create session
         self.state = State::Authenticated {

@@ -25,7 +25,7 @@ use store::Store;
 use trc::{AddContext, EventType, MetricType};
 use utils::config::cron::SimpleCron;
 
-use crate::{expr::Expression, manager::webadmin::Resource, Core, HttpLimitResponse};
+use crate::{expr::Expression, manager::webadmin::Resource, Core, HttpLimitResponse, Server};
 
 #[derive(Clone)]
 pub struct Enterprise {
@@ -87,6 +87,14 @@ pub enum AlertContentToken {
 }
 
 impl Core {
+    pub fn is_enterprise_edition(&self) -> bool {
+        self.enterprise
+            .as_ref()
+            .map_or(false, |e| !e.license.is_expired())
+    }
+}
+
+impl Server {
     // WARNING: TAMPERING WITH THIS FUNCTION IS STRICTLY PROHIBITED
     // Any attempt to modify, bypass, or disable this license validation mechanism
     // constitutes a severe violation of the Stalwart Enterprise License Agreement.
@@ -96,18 +104,20 @@ impl Core {
     // violators to the fullest extent of the law, including but not limited to claims
     // for copyright infringement, breach of contract, and fraud.
 
+    #[inline]
     pub fn is_enterprise_edition(&self) -> bool {
-        self.enterprise
-            .as_ref()
-            .map_or(false, |e| !e.license.is_expired())
+        self.core.is_enterprise_edition()
     }
 
     pub fn licensed_accounts(&self) -> u32 {
-        self.enterprise.as_ref().map_or(0, |e| e.license.accounts)
+        self.core
+            .enterprise
+            .as_ref()
+            .map_or(0, |e| e.license.accounts)
     }
 
     pub fn log_license_details(&self) {
-        if let Some(enterprise) = &self.enterprise {
+        if let Some(enterprise) = &self.core.enterprise {
             trc::event!(
                 Server(trc::ServerEvent::Licensing),
                 Details = "Stalwart Enterprise Edition license key is valid",
@@ -125,15 +135,14 @@ impl Core {
 
         if self.is_enterprise_edition() {
             let domain = psl::domain_str(domain).unwrap_or(domain);
-            let logo = { self.security.logos.lock().get(domain).cloned() };
+            let logo = { self.inner.data.logos.lock().get(domain).cloned() };
 
             if let Some(logo) = logo {
                 Ok(logo)
             } else {
                 // Try fetching the logo for the domain
                 let logo_url = if let Some(mut principal) = self
-                    .storage
-                    .data
+                    .store()
                     .query(QueryBy::Name(domain), false)
                     .await
                     .caused_by(trc::location!())?
@@ -146,8 +155,7 @@ impl Core {
                         logo.into()
                     } else if let Some(tenant_id) = principal.get_int(PrincipalField::Tenant) {
                         if let Some(logo) = self
-                            .storage
-                            .data
+                            .store()
                             .query(QueryBy::Id(tenant_id as u32), false)
                             .await
                             .caused_by(trc::location!())?
@@ -199,7 +207,8 @@ impl Core {
                     logo = Resource::new(content_type, contents).into();
                 }
 
-                self.security
+                self.inner
+                    .data
                     .logos
                     .lock()
                     .insert(domain.to_string(), logo.clone());
@@ -212,7 +221,8 @@ impl Core {
     }
 
     fn default_logo_url(&self) -> Option<String> {
-        self.enterprise
+        self.core
+            .enterprise
             .as_ref()
             .and_then(|e| e.logo_url.as_ref().map(|l| l.to_string()))
     }

@@ -6,7 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{auth::AccessToken, listener::SessionStream};
+use common::{auth::AccessToken, listener::SessionStream, MailboxId};
 use directory::{backend::internal::PrincipalField, Permission, QueryBy};
 use imap_proto::{
     protocol::acl::{
@@ -16,7 +16,10 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
-use jmap::{auth::acl::EffectiveAcl, mailbox::set::SCHEMA};
+use jmap::{
+    auth::acl::EffectiveAcl, changes::write::ChangeLog, mailbox::set::SCHEMA,
+    services::state::StateManager, JmapMethods,
+};
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
@@ -33,7 +36,7 @@ use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
 use crate::{
-    core::{MailboxId, Session, SessionData, State},
+    core::{Session, SessionData, State},
     op::ImapContext,
     spawn_op,
 };
@@ -62,7 +65,7 @@ impl<T: SessionStream> Session<T> {
             {
                 for item in acls {
                     if let Some(account_name) = data
-                        .jmap
+                        .server
                         .core
                         .storage
                         .directory
@@ -244,7 +247,7 @@ impl<T: SessionStream> Session<T> {
 
             // Obtain principal id
             let acl_account_id = data
-                .jmap
+                .server
                 .core
                 .storage
                 .directory
@@ -345,18 +348,18 @@ impl<T: SessionStream> Session<T> {
                         .with_current(values),
                 );
             if !batch.is_empty() {
-                data.jmap
+                data.server
                     .write_batch(batch)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?;
                 let mut changes = ChangeLogBuilder::new();
                 changes.log_update(Collection::Mailbox, mailbox_id);
                 let change_id = data
-                    .jmap
+                    .server
                     .commit_changes(mailbox.account_id, changes)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?;
-                data.jmap
+                data.server
                     .broadcast_state_change(
                         StateChange::new(mailbox.account_id)
                             .with_change(DataType::Mailbox, change_id),
@@ -365,11 +368,7 @@ impl<T: SessionStream> Session<T> {
             }
 
             // Invalidate ACLs
-            data.jmap
-                .core
-                .security
-                .access_tokens
-                .remove(&acl_account_id);
+            data.server.inner.data.access_tokens.remove(&acl_account_id);
 
             trc::event!(
                 Imap(trc::ImapEvent::SetAcl),
@@ -447,7 +446,7 @@ impl<T: SessionStream> SessionData<T> {
     ) -> trc::Result<(MailboxId, HashedValue<Object<Value>>, Arc<AccessToken>)> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
             if let Some(values) = self
-                .jmap
+                .server
                 .get_property::<HashedValue<Object<Value>>>(
                     mailbox.account_id,
                     Collection::Mailbox,

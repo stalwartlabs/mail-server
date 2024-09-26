@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use jmap::email::metadata::MessageMetadata;
+use jmap::{blob::download::BlobDownload, email::metadata::MessageMetadata, JmapMethods};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::Bincode;
 use trc::AddContext;
@@ -26,7 +26,7 @@ impl<T: SessionStream> Session<T> {
         let mailbox = self.state.mailbox();
         if let Some(message) = mailbox.messages.get(msg.saturating_sub(1) as usize) {
             if let Some(metadata) = self
-                .jmap
+                .server
                 .get_property::<Bincode<MessageMetadata>>(
                     mailbox.account_id,
                     Collection::Email,
@@ -37,7 +37,7 @@ impl<T: SessionStream> Session<T> {
                 .caused_by(trc::location!())?
             {
                 if let Some(bytes) = self
-                    .jmap
+                    .server
                     .get_blob(&metadata.inner.blob_hash, 0..usize::MAX)
                     .await
                     .caused_by(trc::location!())?

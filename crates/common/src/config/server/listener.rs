@@ -23,18 +23,18 @@ use utils::{
 
 use crate::{
     listener::{tls::CertificateResolver, TcpAcceptor},
-    SharedCore,
+    Inner,
 };
 
 use super::{
     tls::{TLS12_VERSION, TLS13_VERSION},
-    Listener, Server, ServerProtocol, Servers,
+    Listener, Listeners, ServerProtocol, TcpListener,
 };
 
-impl Servers {
+impl Listeners {
     pub fn parse(config: &mut Config) -> Self {
         // Parse ACME managers
-        let mut servers = Servers {
+        let mut servers = Listeners {
             span_id_gen: Arc::new(
                 config
                     .property::<u64>("cluster.node-id")
@@ -139,7 +139,7 @@ impl Servers {
                 let _ = socket.set_reuseaddr(true);
             }
 
-            listeners.push(Listener {
+            listeners.push(TcpListener {
                 socket,
                 addr,
                 ttl: config
@@ -197,7 +197,7 @@ impl Servers {
         }
 
         let span_id_gen = self.span_id_gen.clone();
-        self.servers.push(Server {
+        self.servers.push(Listener {
             max_connections: config
                 .property_or_else(
                     ("server.listener", id, "max-connections"),
@@ -213,8 +213,8 @@ impl Servers {
         });
     }
 
-    pub fn parse_tcp_acceptors(&mut self, config: &mut Config, core: SharedCore) {
-        let resolver = Arc::new(CertificateResolver::new(core.clone()));
+    pub fn parse_tcp_acceptors(&mut self, config: &mut Config, inner: Arc<Inner>) {
+        let resolver = Arc::new(CertificateResolver::new(inner.clone()));
 
         for id_ in config
             .sub_keys("server.listener", ".protocol")

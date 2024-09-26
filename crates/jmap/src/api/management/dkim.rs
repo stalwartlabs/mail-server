@@ -6,7 +6,7 @@
 
 use std::str::FromStr;
 
-use common::{auth::AccessToken, config::smtp::auth::simple_pem_parse};
+use common::{auth::AccessToken, config::smtp::auth::simple_pem_parse, Server};
 use directory::{backend::internal::manage, Permission};
 use hyper::Method;
 use mail_auth::{
@@ -21,12 +21,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use store::write::now;
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    JMAP,
-};
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 use super::decode_path_element;
+use std::future::Future;
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq)]
 pub enum Algorithm {
@@ -42,8 +40,36 @@ struct DkimSignature {
     selector: Option<String>,
 }
 
-impl JMAP {
-    pub async fn handle_manage_dkim(
+pub trait DkimManagement: Sync + Send {
+    fn handle_manage_dkim(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        body: Option<Vec<u8>>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn handle_get_public_key(
+        &self,
+        path: Vec<&str>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn handle_create_signature(
+        &self,
+        body: Option<Vec<u8>>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn create_dkim_key(
+        &self,
+        algo: Algorithm,
+        id: impl AsRef<str> + Send,
+        domain: impl Into<String> + Send,
+        selector: impl Into<String> + Send,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+}
+
+impl DkimManagement for Server {
+    async fn handle_manage_dkim(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,

@@ -4,17 +4,26 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::Server;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
 };
-use smtp::queue;
+use smtp::queue::{self, spool::SmtpSpool};
+use std::future::Future;
 
-use crate::JMAP;
+use crate::{changes::state::StateManager, JmapMethods};
 
-impl JMAP {
-    pub async fn email_submission_get(
+pub trait EmailSubmissionGet: Sync + Send {
+    fn email_submission_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+}
+
+impl EmailSubmissionGet for Server {
+    async fn email_submission_get(
         &self,
         mut request: GetRequest<RequestArguments>,
     ) -> trc::Result<GetResponse> {
@@ -79,7 +88,6 @@ impl JMAP {
 
             // Obtain queueId
             let queued_message = self
-                .smtp
                 .read_message(push.get(&Property::MessageId).as_uint().unwrap_or(u64::MAX))
                 .await;
 

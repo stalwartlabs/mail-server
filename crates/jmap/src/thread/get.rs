@@ -4,18 +4,27 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::Server;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{collection::Collection, id::Id, property::Property},
 };
+use std::future::Future;
 use store::query::{sort::Pagination, Comparator, ResultSet};
 use trc::AddContext;
 
-use crate::JMAP;
+use crate::{changes::state::StateManager, JmapMethods};
 
-impl JMAP {
-    pub async fn thread_get(
+pub trait ThreadGet: Sync + Send {
+    fn thread_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+}
+
+impl ThreadGet for Server {
+    async fn thread_get(
         &self,
         mut request: GetRequest<RequestArguments>,
     ) -> trc::Result<GetResponse> {

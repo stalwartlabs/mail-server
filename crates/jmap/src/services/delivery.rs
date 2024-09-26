@@ -4,18 +4,20 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::DeliveryEvent;
+use std::sync::Arc;
+
+use common::{core::BuildServer, ipc::DeliveryEvent, Inner};
 use tokio::sync::mpsc;
 
-use crate::{JmapInstance, JMAP};
+use super::ingest::MailDelivery;
 
-pub fn spawn_delivery_manager(core: JmapInstance, mut delivery_rx: mpsc::Receiver<DeliveryEvent>) {
+pub fn spawn_delivery_manager(inner: Arc<Inner>, mut delivery_rx: mpsc::Receiver<DeliveryEvent>) {
     tokio::spawn(async move {
         while let Some(event) = delivery_rx.recv().await {
             match event {
                 DeliveryEvent::Ingest { message, result_tx } => {
                     result_tx
-                        .send(JMAP::from(core.clone()).deliver_message(message).await)
+                        .send(inner.build_server().deliver_message(message).await)
                         .ok();
                 }
                 DeliveryEvent::Stop => break,

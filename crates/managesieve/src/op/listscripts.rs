@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
+use jmap::JmapMethods;
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},
@@ -24,7 +25,7 @@ impl<T: SessionStream> Session<T> {
         let op_start = Instant::now();
         let account_id = self.state.access_token().primary_id();
         let document_ids = self
-            .jmap
+            .server
             .get_document_ids(account_id, Collection::SieveScript)
             .await
             .caused_by(trc::location!())?
@@ -39,7 +40,7 @@ impl<T: SessionStream> Session<T> {
 
         for document_id in document_ids {
             if let Some(script) = self
-                .jmap
+                .server
                 .get_property::<Object<Value>>(
                     account_id,
                     Collection::SieveScript,

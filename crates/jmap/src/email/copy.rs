@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::{AccessToken, ResourceToken};
+use common::{
+    auth::{AccessToken, ResourceToken},
+    Server,
+};
 use jmap_proto::{
     error::set::SetError,
     method::{
@@ -42,16 +45,46 @@ use store::{
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
-use crate::{api::http::HttpSessionData, mailbox::UidMailbox, JMAP};
+use crate::{
+    api::http::HttpSessionData,
+    auth::acl::AclMethods,
+    changes::{state::StateManager, write::ChangeLog},
+    mailbox::{set::MailboxSet, UidMailbox},
+    services::index::Indexer,
+    JmapMethods,
+};
+use std::future::Future;
 
 use super::{
     index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
-    ingest::{IngestedEmail, LogEmailInsert},
+    ingest::{EmailIngest, IngestedEmail, LogEmailInsert},
     metadata::MessageMetadata,
 };
 
-impl JMAP {
-    pub async fn email_copy(
+pub trait EmailCopy: Sync + Send {
+    fn email_copy(
+        &self,
+        request: CopyRequest<RequestArguments>,
+        access_token: &AccessToken,
+        next_call: &mut Option<Call<RequestMethod>>,
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<CopyResponse>> + Send;
+
+    #[allow(clippy::too_many_arguments)]
+    fn copy_message(
+        &self,
+        from_account_id: u32,
+        from_message_id: u32,
+        resource_token: &ResourceToken,
+        mailboxes: Vec<u32>,
+        keywords: Vec<Keyword>,
+        received_at: Option<UTCDate>,
+        session_id: u64,
+    ) -> impl Future<Output = trc::Result<Result<IngestedEmail, SetError>>> + Send;
+}
+
+impl EmailCopy for Server {
+    async fn email_copy(
         &self,
         request: CopyRequest<RequestArguments>,
         access_token: &AccessToken,
@@ -271,7 +304,7 @@ impl JMAP {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn copy_message(
+    async fn copy_message(
         &self,
         from_account_id: u32,
         from_message_id: u32,
@@ -435,7 +468,7 @@ impl JMAP {
         let document_id = ids.last_document_id().caused_by(trc::location!())?;
 
         // Request FTS index
-        self.inner.request_fts_index();
+        self.request_fts_index();
 
         // Update response
         email.id = Id::from_parts(thread_id, document_id);

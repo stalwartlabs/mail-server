@@ -9,6 +9,7 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
+use jmap::{changes::write::ChangeLog, sieve::set::SieveScriptSet};
 use jmap_proto::types::collection::Collection;
 use store::write::log::ChangeLogBuilder;
 use trc::AddContext;
@@ -35,7 +36,7 @@ impl<T: SessionStream> Session<T> {
         // De/activate script
         let account_id = self.state.access_token().primary_id();
         let changes = self
-            .jmap
+            .server
             .sieve_activate_script(
                 account_id,
                 if !name.is_empty() {
@@ -53,7 +54,7 @@ impl<T: SessionStream> Session<T> {
             for (document_id, _) in changes {
                 changelog.log_update(Collection::SieveScript, document_id);
             }
-            self.jmap
+            self.server
                 .commit_changes(account_id, changelog)
                 .await
                 .caused_by(trc::location!())?;

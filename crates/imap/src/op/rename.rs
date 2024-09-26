@@ -15,7 +15,10 @@ use directory::Permission;
 use imap_proto::{
     protocol::rename::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
 };
-use jmap::{auth::acl::EffectiveAcl, mailbox::set::SCHEMA};
+use jmap::{
+    auth::acl::EffectiveAcl, changes::write::ChangeLog, mailbox::set::SCHEMA,
+    services::state::StateManager, JmapMethods,
+};
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
@@ -92,7 +95,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Obtain mailbox
         let mailbox = self
-            .jmap
+            .server
             .get_property::<HashedValue<Object<Value>>>(
                 params.account_id,
                 Collection::Mailbox,
@@ -133,7 +136,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Build batch
         let mut changes = self
-            .jmap
+            .server
             .begin_changes(params.account_id)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
@@ -159,7 +162,7 @@ impl<T: SessionStream> SessionData<T> {
                 );
 
             let mailbox_id = self
-                .jmap
+                .server
                 .write_batch_expect_id(batch)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
@@ -191,13 +194,13 @@ impl<T: SessionStream> SessionData<T> {
 
         let change_id = changes.change_id;
         batch.custom(changes);
-        self.jmap
+        self.server
             .write_batch(batch)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Broadcast changes
-        self.jmap
+        self.server
             .broadcast_state_change(
                 StateChange::new(params.account_id).with_change(DataType::Mailbox, change_id),
             )

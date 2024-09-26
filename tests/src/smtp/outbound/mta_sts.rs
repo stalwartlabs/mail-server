@@ -9,7 +9,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::config::{server::ServerProtocol, smtp::resolver::Policy};
+use common::{
+    config::{server::ServerProtocol, smtp::resolver::Policy},
+    ipc::PolicyType,
+};
 use mail_auth::{
     common::parse::TxtRecordParser,
     mta_sts::{MtaSts, ReportUri, TlsRpt},
@@ -19,13 +22,10 @@ use mail_auth::{
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
-    outbound::TestServer,
     session::{TestSession, VerifyResponse},
+    TestSMTP,
 };
-use smtp::{
-    outbound::mta_sts::{lookup::STS_TEST_POLICY, parse::ParsePolicy},
-    reporting::PolicyType,
-};
+use smtp::outbound::mta_sts::{lookup::STS_TEST_POLICY, parse::ParsePolicy};
 
 const LOCAL: &str = r#"
 [session.rcpt]
@@ -63,11 +63,11 @@ async fn mta_sts_verify() {
     crate::enable_logging();
 
     // Start test server
-    let mut remote = TestServer::new("smtp_mta_sts_remote", REMOTE, true).await;
+    let mut remote = TestSMTP::new("smtp_mta_sts_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
 
     // Fail on missing MTA-STS record
-    let mut local = TestServer::new("smtp_mta_sts_local", LOCAL, true).await;
+    let mut local = TestSMTP::new("smtp_mta_sts_local", LOCAL).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
@@ -98,23 +98,23 @@ async fn mta_sts_verify() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("Record not found");
-    local.qr.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_reload();
 
     // Expect TLS failure report
-    let report = local.rr.read_report().await.unwrap_tls();
+    let report = local.report_receiver.read_report().await.unwrap_tls();
     assert_eq!(report.domain, "foobar.org");
     assert_eq!(report.policy, PolicyType::Sts(None));
     assert_eq!(
@@ -136,23 +136,23 @@ async fn mta_sts_verify() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("No 'mx' entries found");
-    local.qr.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_reload();
 
     // Expect TLS failure report
-    let report = local.rr.read_report().await.unwrap_tls();
+    let report = local.report_receiver.read_report().await.unwrap_tls();
     assert_eq!(report.policy, PolicyType::Sts(None));
     assert_eq!(
         report.failure.as_ref().unwrap().result_type,
@@ -171,23 +171,23 @@ async fn mta_sts_verify() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&local.qr)
+        .read_lines(&local.queue_receiver)
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("not authorized by policy");
-    local.qr.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_reload();
 
     // Expect TLS failure report
-    let report = local.rr.read_report().await.unwrap_tls();
+    let report = local.report_receiver.read_report().await.unwrap_tls();
     assert_eq!(
         report.policy,
         PolicyType::Sts(
@@ -202,7 +202,7 @@ async fn mta_sts_verify() {
         report.failure.as_ref().unwrap().result_type,
         ResultType::ValidationFailure
     );
-    remote.qr.assert_no_events();
+    remote.queue_receiver.assert_no_events();
 
     // MTA-STS successful validation
     core.core.smtp.resolvers.dns.txt_add(
@@ -222,22 +222,22 @@ async fn mta_sts_verify() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    local.qr.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_reload();
     remote
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&remote.qr)
+        .read_lines(&remote.queue_receiver)
         .await
         .assert_contains("using TLSv1.3 with cipher");
 
     // Expect TLS success report
-    let report = local.rr.read_report().await.unwrap_tls();
+    let report = local.report_receiver.read_report().await.unwrap_tls();
     assert_eq!(
         report.policy,
         PolicyType::Sts(

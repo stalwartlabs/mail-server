@@ -5,23 +5,24 @@
  */
 
 use base64::{engine::general_purpose, Engine};
-use common::IPC_CHANNEL_BUFFER;
+use common::{core::BuildServer, Inner, IPC_CHANNEL_BUFFER};
 use jmap_proto::types::id::Id;
 use store::ahash::{AHashMap, AHashSet};
 use tokio::sync::mpsc;
 use trc::PushSubscriptionEvent;
 
-use crate::{api::StateChangeResponse, JmapInstance, LONG_SLUMBER};
+use crate::{api::StateChangeResponse, LONG_SLUMBER};
 
 use super::{ece::ece_encrypt, EncryptionKeys, Event, PushServer, PushUpdate};
 
 use reqwest::header::{CONTENT_ENCODING, CONTENT_TYPE};
 use std::{
     collections::hash_map::Entry,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
-pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
+pub fn spawn_push_manager(inner: Arc<Inner>) -> mpsc::Sender<Event> {
     let (push_tx_, mut push_rx) = mpsc::channel::<Event>(IPC_CHANNEL_BUFFER);
     let push_tx = push_tx_.clone();
 
@@ -37,13 +38,13 @@ pub fn spawn_push_manager(core: JmapInstance) -> mpsc::Sender<Event> {
             let event_or_timeout = tokio::time::timeout(retry_timeout, push_rx.recv()).await;
 
             // Load settings
-            let core_ = core.core.load_full();
-            let push_attempt_interval = core_.jmap.push_attempt_interval;
-            let push_attempts_max = core_.jmap.push_attempts_max;
-            let push_retry_interval = core_.jmap.push_retry_interval;
-            let push_timeout = core_.jmap.push_timeout;
-            let push_verify_timeout = core_.jmap.push_verify_timeout;
-            let push_throttle = core_.jmap.push_throttle;
+            let server = inner.build_server();
+            let push_attempt_interval = server.core.jmap.push_attempt_interval;
+            let push_attempts_max = server.core.jmap.push_attempts_max;
+            let push_retry_interval = server.core.jmap.push_retry_interval;
+            let push_timeout = server.core.jmap.push_timeout;
+            let push_verify_timeout = server.core.jmap.push_verify_timeout;
+            let push_throttle = server.core.jmap.push_throttle;
 
             match event_or_timeout {
                 Ok(Some(event)) => match event {

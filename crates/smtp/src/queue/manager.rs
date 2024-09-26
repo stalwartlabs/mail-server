@@ -4,33 +4,39 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
+};
 
+use common::{
+    core::BuildServer,
+    ipc::{OnHold, QueueEvent, QueueEventLock},
+    Inner,
+};
 use store::write::now;
 use tokio::sync::mpsc;
 
-use crate::core::{SmtpInstance, SMTP};
-
-use super::{spool::QueueEventLock, DeliveryAttempt, Event, Message, OnHold, Status};
+use super::{spool::SmtpSpool, DeliveryAttempt, Message, Status};
 
 pub(crate) const SHORT_WAIT: Duration = Duration::from_millis(1);
 pub(crate) const LONG_WAIT: Duration = Duration::from_secs(86400 * 365);
 
 pub struct Queue {
-    pub core: SmtpInstance,
+    pub core: Arc<Inner>,
     pub on_hold: Vec<OnHold<QueueEventLock>>,
     pub next_wake_up: Duration,
 }
 
-impl SpawnQueue for mpsc::Receiver<Event> {
-    fn spawn(mut self, core: SmtpInstance) {
+impl SpawnQueue for mpsc::Receiver<QueueEvent> {
+    fn spawn(mut self, core: Arc<Inner>) {
         tokio::spawn(async move {
             let mut queue = Queue::new(core);
 
             loop {
                 let on_hold = match tokio::time::timeout(queue.next_wake_up, self.recv()).await {
-                    Ok(Some(Event::OnHold(on_hold))) => on_hold.into(),
-                    Ok(Some(Event::Stop)) | Ok(None) => {
+                    Ok(Some(QueueEvent::OnHold(on_hold))) => on_hold.into(),
+                    Ok(Some(QueueEvent::Stop)) | Ok(None) => {
                         break;
                     }
                     _ => None,
@@ -48,7 +54,7 @@ impl SpawnQueue for mpsc::Receiver<Event> {
 }
 
 impl Queue {
-    pub fn new(core: SmtpInstance) -> Self {
+    pub fn new(core: Arc<Inner>) -> Self {
         Queue {
             core,
             on_hold: Vec::with_capacity(128),
@@ -58,20 +64,20 @@ impl Queue {
 
     pub async fn process_events(&mut self) {
         // Deliver any concurrency limited messages
-        let core = SMTP::from(self.core.clone());
+        let server = self.core.build_server();
         while let Some(queue_event) = self.next_on_hold() {
             DeliveryAttempt::new(queue_event)
-                .try_deliver(core.clone())
+                .try_deliver(server.clone())
                 .await;
         }
 
         // Deliver scheduled messages
         let now = now();
         self.next_wake_up = LONG_WAIT;
-        for queue_event in core.next_event().await {
+        for queue_event in server.next_event().await {
             if queue_event.due <= now {
                 DeliveryAttempt::new(queue_event)
-                    .try_deliver(core.clone())
+                    .try_deliver(server.clone())
                     .await;
             } else {
                 self.next_wake_up = Duration::from_secs(queue_event.due - now);
@@ -217,5 +223,5 @@ impl Message {
 }
 
 pub trait SpawnQueue {
-    fn spawn(self, core: SmtpInstance);
+    fn spawn(self, core: Arc<Inner>);
 }

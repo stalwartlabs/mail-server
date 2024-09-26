@@ -5,18 +5,19 @@
  */
 
 use std::{
+    future::Future,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::Arc,
 };
 
-use common::expr::{functions::ResolveVariable, V_MX};
+use common::{
+    expr::{functions::ResolveVariable, V_MX},
+    Server,
+};
 use mail_auth::{IpLookupStrategy, MX};
 use rand::{seq::SliceRandom, Rng};
 
-use crate::{
-    core::SMTP,
-    queue::{Error, ErrorDetails, Status},
-};
+use crate::queue::{Error, ErrorDetails, Status};
 
 use super::NextHop;
 
@@ -26,8 +27,25 @@ pub struct IpLookupResult {
     pub remote_ips: Vec<IpAddr>,
 }
 
-impl SMTP {
-    pub async fn ip_lookup(
+pub trait DnsLookup: Sync + Send {
+    fn ip_lookup(
+        &self,
+        key: &str,
+        strategy: IpLookupStrategy,
+        max_results: usize,
+    ) -> impl Future<Output = mail_auth::Result<Vec<IpAddr>>> + Send;
+
+    fn resolve_host<'x>(
+        &'x self,
+        remote_host: &NextHop<'_>,
+        envelope: &impl ResolveVariable,
+        max_multihomed: usize,
+        session_id: u64,
+    ) -> impl Future<Output = Result<IpLookupResult, Status<(), Error>>> + Send;
+}
+
+impl DnsLookup for Server {
+    async fn ip_lookup(
         &self,
         key: &str,
         strategy: IpLookupStrategy,
@@ -82,7 +100,7 @@ impl SMTP {
         }
     }
 
-    pub async fn resolve_host<'x>(
+    async fn resolve_host<'x>(
         &'x self,
         remote_host: &NextHop<'_>,
         envelope: &impl ResolveVariable,
@@ -92,8 +110,7 @@ impl SMTP {
         let remote_ips = self
             .ip_lookup(
                 remote_host.fqdn_hostname().as_ref(),
-                self.core
-                    .eval_if(&self.core.smtp.queue.ip_strategy, envelope, session_id)
+                self.eval_if(&self.core.smtp.queue.ip_strategy, envelope, session_id)
                     .await
                     .unwrap_or(IpLookupStrategy::Ipv4thenIpv6),
                 max_multihomed,
@@ -122,7 +139,6 @@ impl SMTP {
 
             // Obtain source IPv4 address
             let source_ips = self
-                .core
                 .eval_if::<Vec<Ipv4Addr>, _>(
                     &self.core.smtp.queue.source_ip.ipv4,
                     envelope,
@@ -144,7 +160,6 @@ impl SMTP {
 
             // Obtain source IPv6 address
             let source_ips = self
-                .core
                 .eval_if::<Vec<Ipv6Addr>, _>(
                     &self.core.smtp.queue.source_ip.ipv6,
                     envelope,

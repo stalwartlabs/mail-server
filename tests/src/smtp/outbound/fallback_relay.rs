@@ -10,7 +10,7 @@ use common::config::server::ServerProtocol;
 use mail_auth::MX;
 use store::write::now;
 
-use crate::smtp::{outbound::TestServer, session::TestSession};
+use crate::smtp::{session::TestSession, TestSMTP};
 
 const LOCAL: &str = r#"
 [queue.outbound]
@@ -55,9 +55,9 @@ async fn fallback_relay() {
     crate::enable_logging();
 
     // Start test server
-    let mut remote = TestServer::new("smtp_fallback_remote", REMOTE, true).await;
+    let mut remote = TestSMTP::new("smtp_fallback_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
-    let mut local = TestServer::new("smtp_fallback_local", LOCAL, true).await;
+    let mut local = TestSMTP::new("smtp_fallback_local", LOCAL).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
@@ -88,12 +88,12 @@ async fn fallback_relay() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    let mut retry = local.qr.expect_message().await;
+    let mut retry = local.queue_receiver.expect_message().await;
     let prev_due = retry.domains[0].retry.due;
     let next_due = now();
     let queue_id = retry.queue_id;
@@ -102,11 +102,11 @@ async fn fallback_relay() {
         .save_changes(&core, prev_due.into(), next_due.into())
         .await;
     local
-        .qr
+        .queue_receiver
         .delivery_attempt(queue_id)
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
-    remote.qr.expect_message().await;
+    remote.queue_receiver.expect_message().await;
 }

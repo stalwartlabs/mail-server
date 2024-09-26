@@ -7,18 +7,20 @@
 use std::time::Instant;
 
 use crate::{
-    core::{Account, Mailbox, Session, SessionData},
+    core::{Session, SessionData},
     op::ImapContext,
     spawn_op,
 };
-use common::listener::SessionStream;
+use common::{listener::SessionStream, Account, Mailbox};
 use directory::Permission;
 use imap_proto::{
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
     Command, ResponseCode, StatusResponse,
 };
-use jmap::mailbox::set::SCHEMA;
+use jmap::{
+    changes::write::ChangeLog, mailbox::set::SCHEMA, services::state::StateManager, JmapMethods,
+};
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
@@ -75,7 +77,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Build batch
         let mut changes = self
-            .jmap
+            .server
             .begin_changes(params.account_id)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
@@ -102,7 +104,7 @@ impl<T: SessionStream> SessionData<T> {
                 .create_document()
                 .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(mailbox));
             let mailbox_id = self
-                .jmap
+                .server
                 .write_batch_expect_id(batch)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
@@ -118,13 +120,13 @@ impl<T: SessionStream> SessionData<T> {
             .with_account_id(params.account_id)
             .with_collection(Collection::Mailbox)
             .custom(changes);
-        self.jmap
+        self.server
             .write_batch(batch)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Broadcast changes
-        self.jmap
+        self.server
             .broadcast_state_change(
                 StateChange::new(params.account_id).with_change(DataType::Mailbox, change_id),
             )
@@ -205,7 +207,7 @@ impl<T: SessionStream> SessionData<T> {
             };
 
             let effective_id = self
-                .jmap
+                .server
                 .core
                 .jmap
                 .default_folders
@@ -271,7 +273,7 @@ impl<T: SessionStream> SessionData<T> {
                     return Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Invalid empty path item."));
-                } else if path_item.len() > self.jmap.core.jmap.mailbox_name_max_len {
+                } else if path_item.len() > self.server.core.jmap.mailbox_name_max_len {
                     return Err(trc::ImapEvent::Error
                         .into_err()
                         .details("Mailbox name is too long."));
@@ -279,7 +281,7 @@ impl<T: SessionStream> SessionData<T> {
                 path.push(path_item);
             }
 
-            if path.len() > self.jmap.core.jmap.mailbox_max_depth {
+            if path.len() > self.server.core.jmap.mailbox_max_depth {
                 return Err(trc::ImapEvent::Error
                     .into_err()
                     .details("Mailbox path is too deep."));
@@ -295,7 +297,7 @@ impl<T: SessionStream> SessionData<T> {
         let (account_id, path) = {
             let mailboxes = self.mailboxes.lock();
             let first_path_item = path.first().unwrap();
-            let account = if first_path_item == &self.jmap.core.jmap.shared_folder {
+            let account = if first_path_item == &self.server.core.jmap.shared_folder {
                 // Shared Folders/<username>/<folder>
                 if path.len() < 3 {
                     return Err(trc::ImapEvent::Error
@@ -391,7 +393,7 @@ impl<T: SessionStream> SessionData<T> {
             special_use: if let Some(mailbox_role) = mailbox_role {
                 // Make sure role is unique
                 if !self
-                    .jmap
+                    .server
                     .filter(
                         account_id,
                         Collection::Mailbox,

@@ -9,7 +9,11 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
-use jmap::sieve::set::{ObjectBlobId, SCHEMA};
+use jmap::{
+    blob::upload::BlobUpload,
+    sieve::set::{ObjectBlobId, SCHEMA},
+    JmapMethods,
+};
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{blob::BlobId, collection::Collection, property::Property, value::Value},
@@ -54,19 +58,19 @@ impl<T: SessionStream> Session<T> {
         // Check quota
         let resource_token = self.state.access_token().as_resource_token();
         let account_id = resource_token.account_id;
-        self.jmap
+        self.server
             .has_available_quota(&resource_token, script_bytes.len() as u64)
             .await
             .caused_by(trc::location!())?;
 
         if self
-            .jmap
+            .server
             .get_document_ids(account_id, Collection::SieveScript)
             .await
             .caused_by(trc::location!())?
             .map(|ids| ids.len() as usize)
             .unwrap_or(0)
-            > self.jmap.core.jmap.sieve_max_scripts
+            > self.server.core.jmap.sieve_max_scripts
         {
             return Err(trc::ManageSieveEvent::Error
                 .into_err()
@@ -76,7 +80,7 @@ impl<T: SessionStream> Session<T> {
 
         // Compile script
         match self
-            .jmap
+            .server
             .core
             .sieve
             .untrusted_compiler
@@ -103,7 +107,7 @@ impl<T: SessionStream> Session<T> {
         if let Some(document_id) = self.validate_name(account_id, &name).await? {
             // Obtain script values
             let script = self
-                .jmap
+                .server
                 .get_property::<HashedValue<Object<Value>>>(
                     account_id,
                     Collection::SieveScript,
@@ -127,7 +131,7 @@ impl<T: SessionStream> Session<T> {
 
             // Write script blob
             let blob_id = BlobId::new(
-                self.jmap
+                self.server
                     .put_blob(account_id, &script_bytes, false)
                     .await
                     .caused_by(trc::location!())?
@@ -168,7 +172,7 @@ impl<T: SessionStream> Session<T> {
 
                 // Update tenant quota
                 #[cfg(feature = "enterprise")]
-                if self.jmap.core.is_enterprise_edition() {
+                if self.server.core.is_enterprise_edition() {
                     if let Some(tenant) = resource_token.tenant {
                         batch.add(DirectoryClass::UsedQuota(tenant.id), update_quota);
                     }
@@ -183,7 +187,7 @@ impl<T: SessionStream> Session<T> {
                             .with_property(Property::BlobId, Value::BlobId(blob_id)),
                     ),
             );
-            self.jmap
+            self.server
                 .write_batch(batch)
                 .await
                 .caused_by(trc::location!())?;
@@ -199,7 +203,7 @@ impl<T: SessionStream> Session<T> {
         } else {
             // Write script blob
             let blob_id = BlobId::new(
-                self.jmap
+                self.server
                     .put_blob(account_id, &script_bytes, false)
                     .await?
                     .hash,
@@ -236,14 +240,14 @@ impl<T: SessionStream> Session<T> {
 
             // Update tenant quota
             #[cfg(feature = "enterprise")]
-            if self.jmap.core.is_enterprise_edition() {
+            if self.server.core.is_enterprise_edition() {
                 if let Some(tenant) = resource_token.tenant {
                     batch.add(DirectoryClass::UsedQuota(tenant.id), script_size);
                 }
             }
 
             let assigned_ids = self
-                .jmap
+                .server
                 .write_batch(batch)
                 .await
                 .caused_by(trc::location!())?;
@@ -265,7 +269,7 @@ impl<T: SessionStream> Session<T> {
             Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details("Script name cannot be empty."))
-        } else if name.len() > self.jmap.core.jmap.sieve_max_script_name {
+        } else if name.len() > self.server.core.jmap.sieve_max_script_name {
             Err(trc::ManageSieveEvent::Error
                 .into_err()
                 .details("Script name is too long."))
@@ -275,7 +279,7 @@ impl<T: SessionStream> Session<T> {
                 .details("The 'vacation' name is reserved, please use a different name."))
         } else {
             Ok(self
-                .jmap
+                .server
                 .filter(
                     account_id,
                     Collection::SieveScript,

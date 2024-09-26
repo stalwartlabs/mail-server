@@ -10,9 +10,9 @@ use smtp_proto::{Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_S
 use store::write::now;
 use utils::BlobHash;
 
-use crate::smtp::{inbound::sign::SIGNATURES, outbound::TestServer, QueueReceiver};
+use crate::smtp::{inbound::sign::SIGNATURES, QueueReceiver, TestSMTP};
 use smtp::queue::{
-    Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status,
+    dsn::SendDsn, Domain, Error, ErrorDetails, HostResponse, Message, Recipient, Schedule, Status,
 };
 
 const CONFIG: &str = r#"
@@ -92,9 +92,9 @@ async fn generate_dsn() {
     };
 
     // Load config
-    let mut local = TestServer::new("smtp_dsn_test", CONFIG.to_string() + SIGNATURES, true).await;
+    let mut local = TestSMTP::new("smtp_dsn_test", CONFIG.to_string() + SIGNATURES).await;
     let core = local.build_smtp();
-    let qr = &mut local.qr;
+    let qr = &mut local.queue_receiver;
 
     // Create temp dir for queue
     qr.blob_store

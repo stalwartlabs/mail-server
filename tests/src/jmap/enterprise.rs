@@ -12,6 +12,7 @@ use std::{sync::Arc, time::Duration};
 
 use common::{
     config::telemetry::{StoreTracer, TelemetrySubscriberType},
+    core::BuildServer,
     enterprise::{
         config::parse_metric_alerts, license::LicenseKey, undelete::DeletedBlob, Enterprise,
         MetricStore, TraceStore, Undelete,
@@ -20,7 +21,7 @@ use common::{
         metrics::store::{Metric, MetricsStore, SharedMetricHistory},
         tracers::store::{TracingQuery, TracingStore},
     },
-    Core,
+    Core, Server,
 };
 use imap_proto::ResponseType;
 use jmap::api::management::enterprise::undelete::{UndeleteRequest, UndeleteResponse};
@@ -79,7 +80,7 @@ test
 
 pub async fn test(params: &mut JMAPTest) {
     // Enable Enterprise
-    let mut core = params.server.shared_core.load_full().as_ref().clone();
+    let mut core = params.server.inner.shared_core.load_full().as_ref().clone();
     let mut config = Config::new(METRICS_CONFIG).unwrap();
     core.enterprise = Enterprise {
         license: LicenseKey {
@@ -109,12 +110,18 @@ pub async fn test(params: &mut JMAPTest) {
     .into();
     config.assert_no_errors();
     assert_ne!(core.enterprise.as_ref().unwrap().metrics_alerts.len(), 0);
-    params.server.shared_core.store(core.into());
-    assert!(params.server.shared_core.load().is_enterprise_edition());
+    params.server.inner.shared_core.store(core.into());
+    assert!(params
+        .server
+        .inner
+        .shared_core
+        .load()
+        .is_enterprise_edition());
 
     // Create test account
     params
         .server
+        .inner
         .shared_core
         .load()
         .storage
@@ -127,14 +134,15 @@ pub async fn test(params: &mut JMAPTest) {
         )
         .await;
 
-    alerts(&params.server.shared_core.load()).await;
+    alerts(&params.server.inner.build_server()).await;
     undelete(params).await;
     tracing(params).await;
     metrics(params).await;
 
-    params.server.shared_core.store(
+    params.server.inner.shared_core.store(
         params
             .server
+            .inner
             .shared_core
             .load_full()
             .as_ref()
@@ -168,7 +176,7 @@ impl EnterpriseCore for Core {
     }
 }
 
-async fn alerts(core: &Core) {
+async fn alerts(server: &Server) {
     // Make sure the required metrics are set to 0
     assert_eq!(
         Collector::read_event_metric(EventType::Cluster(ClusterEvent::Error).id()),
@@ -192,7 +200,7 @@ async fn alerts(core: &Core) {
     assert_eq!(Collector::read_metric(MetricType::DomainCount), 3.0);
 
     // Process alerts
-    let message = core.process_alerts().await.unwrap().pop().unwrap();
+    let message = server.process_alerts().await.unwrap().pop().unwrap();
     assert_eq!(message.from, "alert@example.com");
     assert_eq!(message.to, vec!["jdoe@example.com".to_string()]);
     let body = String::from_utf8(message.body).unwrap();

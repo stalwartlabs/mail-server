@@ -4,18 +4,32 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::Server;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     request::reference::MaybeReference,
     types::{any_id::AnyId, collection::Collection, id::Id, property::Property, value::Value},
 };
+use std::future::Future;
 use store::query::Filter;
 
-use crate::JMAP;
+use crate::{changes::state::StateManager, JmapMethods};
 
-impl JMAP {
-    pub async fn vacation_response_get(
+pub trait VacationResponseGet: Sync + Send {
+    fn vacation_response_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+
+    fn get_vacation_sieve_script_id(
+        &self,
+        account_id: u32,
+    ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
+}
+
+impl VacationResponseGet for Server {
+    async fn vacation_response_get(
         &self,
         mut request: GetRequest<RequestArguments>,
     ) -> trc::Result<GetResponse> {
@@ -100,7 +114,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn get_vacation_sieve_script_id(&self, account_id: u32) -> trc::Result<Option<u32>> {
+    async fn get_vacation_sieve_script_id(&self, account_id: u32) -> trc::Result<Option<u32>> {
         self.filter(
             account_id,
             Collection::SieveScript,

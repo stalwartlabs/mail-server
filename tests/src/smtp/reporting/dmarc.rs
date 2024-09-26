@@ -10,20 +10,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::config::smtp::report::AggregateFrequency;
+use common::{config::smtp::report::AggregateFrequency, ipc::DmarcEvent};
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::Dmarc,
     report::{ActionDisposition, Disposition, DmarcResult, Record, Report},
 };
+use smtp::reporting::dmarc::DmarcReporting;
 use store::write::QueueClass;
-
-use smtp::reporting::DmarcEvent;
 
 use crate::smtp::{
     inbound::{sign::SIGNATURES, TestMessage},
-    outbound::TestServer,
     session::VerifyResponse,
+    TestSMTP,
 };
 
 const CONFIG: &str = r#"
@@ -53,12 +52,7 @@ async fn report_dmarc() {
     crate::enable_logging();
 
     // Create scheduler
-    let mut local = TestServer::new(
-        "smtp_report_dmarc_test",
-        CONFIG.to_string() + SIGNATURES,
-        true,
-    )
-    .await;
+    let mut local = TestSMTP::new("smtp_report_dmarc_test", CONFIG.to_string() + SIGNATURES).await;
 
     // Authorize external report for foobar.org
     let core = local.build_smtp();
@@ -67,7 +61,7 @@ async fn report_dmarc() {
         Dmarc::parse(b"v=DMARC1;").unwrap(),
         Instant::now() + Duration::from_secs(10),
     );
-    let qr = &mut local.qr;
+    let qr = &mut local.queue_receiver;
 
     // Schedule two events with a same policy and another one with a different policy
     let dmarc_record = Arc::new(

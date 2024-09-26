@@ -12,8 +12,8 @@ use store::write::now;
 
 use crate::smtp::{
     inbound::TestMessage,
-    outbound::TestServer,
     session::{TestSession, VerifyResponse},
+    TestSMTP,
 };
 
 const LOCAL: &str = r#"
@@ -47,11 +47,11 @@ async fn starttls_optional() {
     crate::enable_logging();
 
     // Start test server
-    let mut remote = TestServer::new("smtp_starttls_remote", REMOTE, true).await;
+    let mut remote = TestSMTP::new("smtp_starttls_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
 
     // Retry on failed STARTTLS
-    let mut local = TestServer::new("smtp_starttls_local", LOCAL, true).await;
+    let mut local = TestSMTP::new("smtp_starttls_local", LOCAL).await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
@@ -77,12 +77,12 @@ async fn starttls_optional() {
         .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
         .await;
     local
-        .qr
+        .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone())
         .await;
-    let mut retry = local.qr.expect_message().await;
+    let mut retry = local.queue_receiver.expect_message().await;
     let prev_due = retry.domains[0].retry.due;
     let next_due = now();
     let queue_id = retry.queue_id;
@@ -91,17 +91,17 @@ async fn starttls_optional() {
         .save_changes(&core, prev_due.into(), next_due.into())
         .await;
     local
-        .qr
+        .queue_receiver
         .delivery_attempt(queue_id)
         .await
         .try_deliver(core.clone())
         .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     remote
-        .qr
+        .queue_receiver
         .expect_message()
         .await
-        .read_lines(&remote.qr)
+        .read_lines(&remote.queue_receiver)
         .await
         .assert_not_contains("using TLSv1.3 with cipher");
 }

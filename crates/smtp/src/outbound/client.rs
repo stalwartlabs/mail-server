@@ -177,10 +177,8 @@ impl<T: AsyncRead + AsyncWrite + Unpin> SmtpClient<T> {
         params: &SessionParams<'_>,
     ) -> Result<(), Status<(), Error>> {
         match params
-            .core
-            .core
-            .storage
-            .blob
+            .server
+            .blob_store()
             .get_blob(message.blob_hash.as_slice(), 0..usize::MAX)
             .await
         {

@@ -14,11 +14,14 @@ use imap_proto::{
 };
 
 use crate::{
-    core::{ImapUidToId, MailboxId, SelectedMailbox, Session, SessionData},
+    core::{ImapUidToId, SelectedMailbox, Session, SessionData},
     spawn_op,
 };
-use common::listener::SessionStream;
-use jmap::email::ingest::{IngestEmail, IngestSource};
+use common::{listener::SessionStream, MailboxId};
+use jmap::{
+    email::ingest::{EmailIngest, IngestEmail, IngestSource},
+    services::state::StateManager,
+};
 use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 
@@ -89,8 +92,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Obtain quota
         let resource_token = self
-            .jmap
-            .core
+            .server
             .get_cached_access_token(mailbox.account_id)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?
@@ -102,7 +104,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut last_change_id = None;
         for message in arguments.messages {
             match self
-                .jmap
+                .server
                 .email_ingest(IngestEmail {
                     raw_message: &message.message,
                     message: MessageParser::new().parse(&message.message),
@@ -111,7 +113,7 @@ impl<T: SessionStream> SessionData<T> {
                     keywords: message.flags.into_iter().map(Keyword::from).collect(),
                     received_at: message.received_at.map(|d| d as u64),
                     source: IngestSource::Imap,
-                    encrypt: self.jmap.core.jmap.encrypt && self.jmap.core.jmap.encrypt_append,
+                    encrypt: self.server.core.jmap.encrypt && self.server.core.jmap.encrypt_append,
                     session_id: self.session_id,
                 })
                 .await
@@ -142,7 +144,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Broadcast changes
         if let Some(change_id) = last_change_id {
-            self.jmap
+            self.server
                 .broadcast_state_change(
                     StateChange::new(account_id)
                         .with_change(DataType::Email, change_id)

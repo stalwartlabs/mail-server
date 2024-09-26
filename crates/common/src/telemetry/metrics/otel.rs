@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::SystemTime};
+use std::time::SystemTime;
 
 use opentelemetry::global::set_error_handler;
 use opentelemetry_sdk::metrics::data::{
@@ -13,18 +13,12 @@ use opentelemetry_sdk::metrics::data::{
 };
 use trc::{Collector, TelemetryEvent};
 
-use crate::{config::telemetry::OtelMetrics, Core};
+use crate::config::telemetry::OtelMetrics;
 
 impl OtelMetrics {
-    pub async fn push_metrics(&self, core: Arc<Core>, start_time: SystemTime) {
+    pub async fn push_metrics(&self, is_enterprise: bool, start_time: SystemTime) {
         let mut metrics = Vec::with_capacity(256);
         let now = SystemTime::now();
-
-        #[cfg(feature = "enterprise")]
-        let is_enterprise = core.is_enterprise_edition();
-
-        #[cfg(not(feature = "enterprise"))]
-        let is_enterprise = false;
 
         // Add counters
         for counter in Collector::collect_counters(is_enterprise) {

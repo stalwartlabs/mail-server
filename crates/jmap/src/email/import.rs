@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::import::{ImportEmailRequest, ImportEmailResponse},
@@ -20,12 +20,25 @@ use jmap_proto::{
 use mail_parser::MessageParser;
 use utils::map::vec_map::VecMap;
 
-use crate::{api::http::HttpSessionData, JMAP};
+use crate::{
+    api::http::HttpSessionData, auth::acl::AclMethods, blob::download::BlobDownload,
+    changes::state::StateManager, mailbox::set::MailboxSet, JmapMethods,
+};
 
-use super::ingest::{IngestEmail, IngestSource};
+use super::ingest::{EmailIngest, IngestEmail, IngestSource};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn email_import(
+pub trait EmailImport: Sync + Send {
+    fn email_import(
+        &self,
+        request: ImportEmailRequest,
+        access_token: &AccessToken,
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<ImportEmailResponse>> + Send;
+}
+
+impl EmailImport for Server {
+    async fn email_import(
         &self,
         request: ImportEmailRequest,
         access_token: &AccessToken,

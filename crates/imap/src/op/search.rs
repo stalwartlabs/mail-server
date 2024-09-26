@@ -6,7 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::listener::SessionStream;
+use common::{listener::SessionStream, ImapId};
 use directory::Permission;
 use imap_proto::{
     protocol::{
@@ -16,6 +16,7 @@ use imap_proto::{
     receiver::Request,
     Command, StatusResponse,
 };
+use jmap::{changes::get::ChangesLookup, JmapMethods};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::HeaderName;
 use nlp::language::Language;
@@ -29,7 +30,7 @@ use tokio::sync::watch;
 use trc::AddContext;
 
 use crate::{
-    core::{ImapId, MailboxState, SavedSearch, SelectedMailbox, Session, SessionData},
+    core::{SavedSearch, SelectedMailbox, Session, SessionData},
     spawn_op,
 };
 
@@ -142,7 +143,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut imap_ids = Vec::with_capacity(results_len);
         let is_sort = if let Some(sort) = arguments.sort {
             mailbox.map_search_results(
-                self.jmap
+                self.server
                     .core
                     .storage
                     .data
@@ -260,7 +261,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain message ids
         let mut filters = Vec::with_capacity(imap_filter.len() + 1);
         let message_ids = self
-            .jmap
+            .server
             .get_tag(
                 mailbox.id.account_id,
                 Collection::Email,
@@ -290,7 +291,7 @@ impl<T: SessionStream> SessionData<T> {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Body,
                                     text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                             }
                             search::Filter::Cc(text) => {
@@ -350,7 +351,7 @@ impl<T: SessionStream> SessionData<T> {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Header(HeaderName::Subject),
                                     text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                             }
                             search::Filter::Text(text) => {
@@ -378,17 +379,17 @@ impl<T: SessionStream> SessionData<T> {
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Header(HeaderName::Subject),
                                     &text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Body,
                                     &text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::has_text_detect(
                                     Field::Attachment,
                                     text,
-                                    self.jmap.core.jmap.default_language,
+                                    self.server.core.jmap.default_language,
                                 ));
                                 fts_filters.push(FtsFilter::End);
                             }
@@ -416,7 +417,7 @@ impl<T: SessionStream> SessionData<T> {
                     }
 
                     filters.push(query::Filter::is_in_set(
-                        self.jmap
+                        self.server
                             .fts_filter(mailbox.id.account_id, Collection::Email, fts_filters)
                             .await?,
                     ));
@@ -612,7 +613,7 @@ impl<T: SessionStream> SessionData<T> {
                     search::Filter::ModSeq((modseq, _)) => {
                         let mut set = RoaringBitmap::new();
                         for change in self
-                            .jmap
+                            .server
                             .changes_(
                                 mailbox.id.account_id,
                                 Collection::Email,
@@ -658,7 +659,7 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Run query
-        self.jmap
+        self.server
             .filter(mailbox.id.account_id, Collection::Email, filters)
             .await
             .map(|res| (res, include_highest_modseq))
@@ -734,23 +735,6 @@ impl SelectedMailbox {
                     r.push(*imap_id)
                 }
             }
-        }
-    }
-}
-
-impl MailboxState {
-    pub fn map_result_id(&self, document_id: u32, is_uid: bool) -> Option<(u32, ImapId)> {
-        if let Some(imap_id) = self.id_to_imap.get(&document_id) {
-            Some((if is_uid { imap_id.uid } else { imap_id.seqnum }, *imap_id))
-        } else if is_uid {
-            self.next_state.as_ref().and_then(|s| {
-                s.next_state
-                    .id_to_imap
-                    .get(&document_id)
-                    .map(|imap_id| (imap_id.uid, *imap_id))
-            })
-        } else {
-            None
         }
     }
 }

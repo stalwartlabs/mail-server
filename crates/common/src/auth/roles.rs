@@ -13,7 +13,7 @@ use directory::{
 };
 use trc::AddContext;
 
-use crate::Core;
+use crate::Server;
 
 #[derive(Debug, Clone, Default)]
 pub struct RolePermissions {
@@ -26,14 +26,14 @@ static ADMIN_PERMISSIONS: LazyLock<Arc<RolePermissions>> = LazyLock::new(admin_p
 static TENANT_ADMIN_PERMISSIONS: LazyLock<Arc<RolePermissions>> =
     LazyLock::new(tenant_admin_permissions);
 
-impl Core {
+impl Server {
     pub async fn get_role_permissions(&self, role_id: u32) -> trc::Result<Arc<RolePermissions>> {
         match role_id {
             ROLE_USER => Ok(USER_PERMISSIONS.clone()),
             ROLE_ADMIN => Ok(ADMIN_PERMISSIONS.clone()),
             ROLE_TENANT_ADMIN => Ok(TENANT_ADMIN_PERMISSIONS.clone()),
             role_id => {
-                if let Some(role_permissions) = self.security.permissions.get(&role_id) {
+                if let Some(role_permissions) = self.inner.data.permissions.get(&role_id) {
                     Ok(role_permissions.clone())
                 } else {
                     self.build_role_permissions(role_id).await
@@ -81,15 +81,14 @@ impl Core {
                     }
                     role_id => {
                         // Try with the cache
-                        if let Some(role_permissions) = self.security.permissions.get(&role_id) {
+                        if let Some(role_permissions) = self.inner.data.permissions.get(&role_id) {
                             return_permissions.union(role_permissions.as_ref());
                         } else {
                             let mut role_permissions = RolePermissions::default();
 
                             // Obtain principal
                             let mut principal = self
-                                .storage
-                                .data
+                                .store()
                                 .query(QueryBy::Id(role_id), true)
                                 .await
                                 .caused_by(trc::location!())?
@@ -133,7 +132,8 @@ impl Core {
                                 role_ids = parent_role_ids.into_iter();
                             } else {
                                 // Cache role
-                                self.security
+                                self.inner
+                                    .data
                                     .permissions
                                     .insert(role_id, Arc::new(role_permissions));
                             }
@@ -149,7 +149,8 @@ impl Core {
 
         // Cache role
         let return_permissions = Arc::new(return_permissions);
-        self.security
+        self.inner
+            .data
             .permissions
             .insert(role_id, return_permissions.clone());
         Ok(return_permissions)

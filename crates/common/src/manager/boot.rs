@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use arc_swap::ArcSwap;
 use pwhash::sha512_crypt;
@@ -12,14 +12,16 @@ use store::{
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     Stores,
 };
+use tokio::sync::{mpsc, Notify};
 use utils::{
     config::{Config, ConfigKey},
     failed, UnwrapFailure,
 };
 
 use crate::{
-    config::{server::Servers, telemetry::Telemetry},
-    Core, SharedCore,
+    config::{server::Listeners, telemetry::Telemetry},
+    ipc::{DeliveryEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
+    Core, Data, Inner, Ipc, IPC_CHANNEL_BUFFER,
 };
 
 use super::{
@@ -30,8 +32,17 @@ use super::{
 
 pub struct BootManager {
     pub config: Config,
-    pub core: SharedCore,
-    pub servers: Servers,
+    pub inner: Arc<Inner>,
+    pub servers: Listeners,
+    pub ipc_rxs: IpcReceivers,
+}
+
+pub struct IpcReceivers {
+    pub state_rx: Option<mpsc::Receiver<StateEvent>>,
+    pub housekeeper_rx: Option<mpsc::Receiver<HousekeeperEvent>>,
+    pub delivery_rx: Option<mpsc::Receiver<DeliveryEvent>>,
+    pub queue_rx: Option<mpsc::Receiver<QueueEvent>>,
+    pub report_rx: Option<mpsc::Receiver<ReportingEvent>>,
 }
 
 const HELP: &str = concat!(
@@ -135,7 +146,7 @@ impl BootManager {
         config.resolve_macros(&["env"]).await;
 
         // Parser servers
-        let mut servers = Servers::parse(&mut config);
+        let mut servers = Listeners::parse(&mut config);
 
         // Bind ports and drop privileges
         servers.bind_and_drop_priv(&mut config);
@@ -314,6 +325,9 @@ impl BootManager {
                 // Parse settings
                 let core = Core::parse(&mut config, stores, manager).await;
 
+                // Parse data
+                let data = Data::parse(&mut config);
+
                 // Enable telemetry
                 #[cfg(feature = "enterprise")]
                 telemetry.enable(core.is_enterprise_edition());
@@ -325,16 +339,22 @@ impl BootManager {
                     Version = env!("CARGO_PKG_VERSION"),
                 );
 
-                // Build shared core
-                let core = core.into_shared();
+                // Build shared inner
+                let (ipc, ipc_rxs) = build_ipc();
+                let inner = Arc::new(Inner {
+                    shared_core: ArcSwap::from_pointee(core),
+                    data,
+                    ipc,
+                });
 
                 // Parse TCP acceptors
-                servers.parse_tcp_acceptors(&mut config, core.clone());
+                servers.parse_tcp_acceptors(&mut config, inner.clone());
 
                 BootManager {
-                    core,
+                    inner,
                     config,
                     servers,
+                    ipc_rxs,
                 }
             }
             ImportExport::Export(path) => {
@@ -361,6 +381,32 @@ impl BootManager {
             }
         }
     }
+}
+
+pub fn build_ipc() -> (Ipc, IpcReceivers) {
+    // Build ipc receivers
+    let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let (state_tx, state_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let (housekeeper_tx, housekeeper_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let (queue_tx, queue_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    let (report_tx, report_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
+    (
+        Ipc {
+            state_tx,
+            housekeeper_tx,
+            delivery_tx,
+            queue_tx,
+            report_tx,
+            index_tx: Arc::new(Notify::new()),
+        },
+        IpcReceivers {
+            state_rx: Some(state_rx),
+            housekeeper_rx: Some(housekeeper_rx),
+            delivery_rx: Some(delivery_rx),
+            queue_rx: Some(queue_rx),
+            report_rx: Some(report_rx),
+        },
+    )
 }
 
 fn quickstart(path: impl Into<PathBuf>) {

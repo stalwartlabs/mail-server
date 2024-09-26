@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     method::{
         get::{GetRequest, GetResponse},
@@ -26,10 +26,26 @@ use sha2::{Sha256, Sha512};
 use store::BlobClass;
 use utils::map::vec_map::VecMap;
 
-use crate::{mailbox::UidMailbox, JMAP};
+use crate::{mailbox::UidMailbox, JmapMethods};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn blob_get(
+use super::download::BlobDownload;
+
+pub trait BlobOperations: Sync + Send {
+    fn blob_get(
+        &self,
+        request: GetRequest<GetArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+
+    fn blob_lookup(
+        &self,
+        request: BlobLookupRequest,
+    ) -> impl Future<Output = trc::Result<BlobLookupResponse>> + Send;
+}
+
+impl BlobOperations for Server {
+    async fn blob_get(
         &self,
         mut request: GetRequest<GetArguments>,
         access_token: &AccessToken,
@@ -148,7 +164,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn blob_lookup(&self, request: BlobLookupRequest) -> trc::Result<BlobLookupResponse> {
+    async fn blob_lookup(&self, request: BlobLookupRequest) -> trc::Result<BlobLookupResponse> {
         let mut include_email = false;
         let mut include_mailbox = false;
         let mut include_thread = false;

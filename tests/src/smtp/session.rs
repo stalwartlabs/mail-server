@@ -9,6 +9,7 @@ use std::{borrow::Cow, path::PathBuf, sync::Arc};
 use common::{
     config::server::ServerProtocol,
     listener::{limiter::ConcurrencyLimiter, ServerInstance, SessionStream, TcpAcceptor},
+    Server,
 };
 use rustls::{server::ResolvesServerCert, ServerConfig};
 use tokio::{
@@ -16,7 +17,7 @@ use tokio::{
     sync::watch,
 };
 
-use smtp::core::{Session, SessionAddress, SessionData, SessionParameters, State, SMTP};
+use smtp::core::{Session, SessionAddress, SessionData, SessionParameters, State};
 use tokio_rustls::TlsAcceptor;
 use utils::snowflake::SnowflakeIdGenerator;
 
@@ -81,8 +82,8 @@ impl Unpin for DummyIo {}
 
 #[allow(async_fn_in_trait)]
 pub trait TestSession {
-    fn test(core: SMTP) -> Self;
-    fn test_with_shutdown(core: SMTP, shutdown_rx: watch::Receiver<bool>) -> Self;
+    fn test(server: Server) -> Self;
+    fn test_with_shutdown(server: Server, shutdown_rx: watch::Receiver<bool>) -> Self;
     fn response(&mut self) -> Vec<String>;
     fn write_rx(&mut self, data: &str);
     async fn rset(&mut self);
@@ -96,11 +97,11 @@ pub trait TestSession {
 }
 
 impl TestSession for Session<DummyIo> {
-    fn test_with_shutdown(core: SMTP, shutdown_rx: watch::Receiver<bool>) -> Self {
+    fn test_with_shutdown(server: Server, shutdown_rx: watch::Receiver<bool>) -> Self {
         Self {
             state: State::default(),
             instance: Arc::new(ServerInstance::test_with_shutdown(shutdown_rx)),
-            core,
+            server,
             stream: DummyIo {
                 rx_buf: vec![],
                 tx_buf: vec![],
@@ -119,8 +120,8 @@ impl TestSession for Session<DummyIo> {
         }
     }
 
-    fn test(core: SMTP) -> Self {
-        Self::test_with_shutdown(core, watch::channel(false).1)
+    fn test(server: Server) -> Self {
+        Self::test_with_shutdown(server, watch::channel(false).1)
     }
 
     fn response(&mut self) -> Vec<String> {
@@ -258,7 +259,7 @@ impl TestSession for Session<DummyIo> {
                         dsn_info: None,
                     },
                 ],
-                self.core.inner.queue_id_gen.generate().unwrap(),
+                self.server.inner.data.queue_id_gen.generate().unwrap(),
                 0,
             )
             .await;

@@ -25,7 +25,7 @@ async fn ldap_directory() {
     let mut config = DirectoryTest::new("sqlite".into()).await;
     let handle = config.directories.directories.remove("ldap").unwrap();
     let base_store = config.stores.stores.get("sqlite").unwrap();
-    let core = config.core;
+    let core = config.server;
 
     // Test authentication
     assert_eq!(

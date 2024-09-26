@@ -11,7 +11,6 @@ use std::{
 };
 
 use ahash::AHashMap;
-use arc_swap::ArcSwap;
 use rustls::{
     server::{ClientHello, ResolvesServerCert},
     sign::CertifiedKey,
@@ -21,7 +20,7 @@ use rustls::{
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio_rustls::{Accept, LazyConfigAcceptor};
 
-use crate::{Core, SharedCore};
+use crate::{Inner, Server};
 
 use super::{
     acme::{
@@ -34,36 +33,31 @@ use super::{
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 
-#[derive(Default)]
-pub struct TlsManager {
-    pub certificates: ArcSwap<AHashMap<String, Arc<CertifiedKey>>>,
-    pub acme_providers: AHashMap<String, AcmeProvider>,
-    pub self_signed_cert: Option<Arc<CertifiedKey>>,
+#[derive(Default, Clone)]
+pub struct AcmeProviders {
+    pub providers: AHashMap<String, AcmeProvider>,
 }
 
 #[derive(Clone)]
 pub struct CertificateResolver {
-    pub core: SharedCore,
+    pub inner: Arc<Inner>,
 }
 
 impl CertificateResolver {
-    pub fn new(core: SharedCore) -> Self {
-        Self { core }
+    pub fn new(inner: Arc<Inner>) -> Self {
+        Self { inner }
     }
 }
 
 impl ResolvesServerCert for CertificateResolver {
     fn resolve(&self, hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
-        self.core
-            .as_ref()
-            .load()
-            .resolve_certificate(hello.server_name())
+        self.resolve_certificate(hello.server_name())
     }
 }
 
-impl Core {
+impl CertificateResolver {
     pub(crate) fn resolve_certificate(&self, name: Option<&str>) -> Option<Arc<CertifiedKey>> {
-        let certs = self.tls.certificates.load();
+        let certs = self.inner.data.tls_certificates.load();
 
         name.map_or_else(
             || certs.get("*"),
@@ -98,7 +92,7 @@ impl Core {
                     Tls(trc::TlsEvent::NoCertificatesAvailable),
                     Total = certs.len(),
                 );
-                self.tls.self_signed_cert.as_ref()
+                self.inner.data.tls_self_signed_cert.as_ref()
             }
         })
         .cloned()
@@ -109,7 +103,7 @@ impl TcpAcceptor {
     pub async fn accept<IO>(
         &self,
         stream: IO,
-        enable_acme: Option<Arc<Core>>,
+        enable_acme: Option<Server>,
         instance: &ServerInstance,
     ) -> TcpAcceptorResult<IO>
     where
@@ -213,15 +207,5 @@ where
 impl std::fmt::Debug for CertificateResolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("CertificateResolver").finish()
-    }
-}
-
-impl Clone for TlsManager {
-    fn clone(&self) -> Self {
-        Self {
-            certificates: ArcSwap::from_pointee(self.certificates.load().as_ref().clone()),
-            acme_providers: self.acme_providers.clone(),
-            self_signed_cert: self.self_signed_cert.clone(),
-        }
     }
 }

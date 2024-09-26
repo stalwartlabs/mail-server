@@ -14,7 +14,7 @@ pub mod email;
 pub mod misc;
 pub mod text;
 
-pub trait ResolveVariable {
+pub trait ResolveVariable: Sync + Send {
     fn resolve_variable(&self, variable: u32) -> Variable<'_>;
 }
 

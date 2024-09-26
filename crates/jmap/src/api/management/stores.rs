@@ -5,7 +5,12 @@
  */
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use common::{auth::AccessToken, manager::webadmin::Resource};
+use common::{
+    auth::AccessToken,
+    ipc::{HousekeeperEvent, PurgeType},
+    manager::webadmin::Resource,
+    Server,
+};
 use directory::{
     backend::internal::manage::{self, ManageDirectory},
     Permission,
@@ -19,14 +24,30 @@ use crate::{
         http::{HttpSessionData, ToHttpResponse},
         HttpRequest, HttpResponse, JsonResponse,
     },
-    services::housekeeper::{Event, PurgeType},
-    JMAP,
+    services::index::Indexer,
 };
 
-use super::decode_path_element;
+use super::{decode_path_element, enterprise::undelete::UndeleteApi};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn handle_manage_store(
+pub trait ManageStore: Sync + Send {
+    fn handle_manage_store(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        body: Option<Vec<u8>>,
+        session: &HttpSessionData,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn housekeeper_request(
+        &self,
+        event: HousekeeperEvent,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl ManageStore for Server {
+    async fn handle_manage_store(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
@@ -75,7 +96,7 @@ impl JMAP {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::PurgeBlobStore)?;
 
-                self.housekeeper_request(Event::Purge(PurgeType::Blobs {
+                self.housekeeper_request(HousekeeperEvent::Purge(PurgeType::Blobs {
                     store: self.core.storage.data.clone(),
                     blob_store: self.core.storage.blob.clone(),
                 }))
@@ -95,7 +116,7 @@ impl JMAP {
                     self.core.storage.data.clone()
                 };
 
-                self.housekeeper_request(Event::Purge(PurgeType::Data(store)))
+                self.housekeeper_request(HousekeeperEvent::Purge(PurgeType::Data(store)))
                     .await
             }
             (Some("purge"), Some("lookup"), id, &Method::GET) => {
@@ -112,7 +133,7 @@ impl JMAP {
                     self.core.storage.lookup.clone()
                 };
 
-                self.housekeeper_request(Event::Purge(PurgeType::Lookup(store)))
+                self.housekeeper_request(HousekeeperEvent::Purge(PurgeType::Lookup(store)))
                     .await
             }
             (Some("purge"), Some("account"), id, &Method::GET) => {
@@ -131,7 +152,7 @@ impl JMAP {
                     None
                 };
 
-                self.housekeeper_request(Event::Purge(PurgeType::Account(account_id)))
+                self.housekeeper_request(HousekeeperEvent::Purge(PurgeType::Account(account_id)))
                     .await
             }
             (Some("reindex"), id, None, &Method::GET) => {
@@ -192,12 +213,17 @@ impl JMAP {
         }
     }
 
-    async fn housekeeper_request(&self, event: Event) -> trc::Result<HttpResponse> {
-        self.inner.housekeeper_tx.send(event).await.map_err(|err| {
-            trc::EventType::Server(trc::ServerEvent::ThreadError)
-                .reason(err)
-                .details("Failed to send housekeeper event")
-        })?;
+    async fn housekeeper_request(&self, event: HousekeeperEvent) -> trc::Result<HttpResponse> {
+        self.inner
+            .ipc
+            .housekeeper_tx
+            .send(event)
+            .await
+            .map_err(|err| {
+                trc::EventType::Server(trc::ServerEvent::ThreadError)
+                    .reason(err)
+                    .details("Failed to send housekeeper event")
+            })?;
 
         Ok(JsonResponse::new(json!({
             "data": (),

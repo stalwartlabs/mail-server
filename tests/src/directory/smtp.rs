@@ -30,7 +30,7 @@ async fn lmtp_directory() {
     // Obtain directory handle
     let mut config = DirectoryTest::new(None).await;
     let handle = config.directories.directories.remove("smtp").unwrap();
-    let core = config.core;
+    let core = config.server;
 
     // Basic lookup
     let tests = vec![

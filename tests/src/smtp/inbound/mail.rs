@@ -13,14 +13,13 @@ use common::Core;
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, IprevResult, SpfResult};
 use smtp_proto::{MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
 
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    build_smtp,
     session::{TestSession, VerifyResponse},
-    TempDir,
+    TempDir, TestSMTP,
 };
 
 const CONFIG: &str = r#"
@@ -108,7 +107,7 @@ async fn mail() {
 
     // Be rude and do not say EHLO
     let core = Arc::new(core);
-    let mut session = Session::test(build_smtp(core.clone(), Inner::default()));
+    let mut session = Session::test(TestSMTP::from_core(core.clone()).server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;

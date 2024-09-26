@@ -11,6 +11,7 @@ store = { path = "../store" }
 trc = { path = "../trc" }
 directory = { path = "../directory" }
 jmap_proto = { path = "../jmap-proto" }
+imap_proto = { path = "../imap-proto" }
 sieve-rs = { version = "0.5" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
@@ -59,6 +60,7 @@ zip = "2.1"
 pwhash = "1.0.0"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 psl = "2"
+dashmap = "6.0"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

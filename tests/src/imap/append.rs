@@ -64,7 +64,7 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection, h
         expected_uid += 1;
     }
 
-    wait_for_index(&handle.jmap).await;
+    wait_for_index(&handle.server).await;
 }
 
 pub async fn assert_append_message(

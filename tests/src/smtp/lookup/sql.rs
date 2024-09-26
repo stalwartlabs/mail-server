@@ -18,15 +18,11 @@ use utils::config::Config;
 use crate::{
     directory::DirectoryStore,
     smtp::{
-        build_smtp,
         session::{TestSession, VerifyResponse},
-        TempDir,
+        TempDir, TestSMTP,
     },
 };
-use smtp::{
-    core::{Inner, Session},
-    queue::RecipientDomain,
-};
+use smtp::{core::Session, queue::RecipientDomain};
 
 const CONFIG: &str = r#"
 [storage]
@@ -106,7 +102,6 @@ async fn lookup_sql() {
     let mut config = Config::new(temp_dir.update_config(CONFIG)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
 
-    let inner = Inner::default();
     let core = Core::parse(&mut config, stores, Default::default()).await;
 
     core.smtp.resolvers.dns.mx_add(
@@ -122,6 +117,8 @@ async fn lookup_sql() {
     let handle = DirectoryStore {
         store: core.storage.lookups.get("sql").unwrap().clone(),
     };
+
+    let test = TestSMTP::from_core(core);
 
     // Create tables
     handle.create_test_directory().await;
@@ -184,7 +181,8 @@ async fn lookup_sql() {
         let e =
             Expression::try_parse(&mut config, ("test", test_name, "expr"), &token_map).unwrap();
         assert_eq!(
-            core.eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text", 0)
+            test.server
+                .eval_expr::<String, _>(&e, &RecipientDomain::new("test.org"), "text", 0)
                 .await
                 .unwrap(),
             config.value(("test", test_name, "expect")).unwrap(),
@@ -193,7 +191,7 @@ async fn lookup_sql() {
         );
     }
 
-    let mut session = Session::test(build_smtp(core, inner));
+    let mut session = Session::test(test.server);
     session.data.remote_ip_str = "10.0.0.50".parse().unwrap();
     session.eval_session_params().await;
     session.stream.tls = true;

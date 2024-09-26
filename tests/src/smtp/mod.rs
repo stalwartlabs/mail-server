@@ -6,11 +6,21 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use common::Core;
+use common::{
+    config::server::{Listeners, ServerProtocol},
+    ipc::{QueueEvent, ReportingEvent},
+    manager::boot::build_ipc,
+    Core, Inner, Server,
+};
 
-use smtp::core::{Inner, SMTP};
-use store::{BlobStore, Store};
-use tokio::sync::mpsc;
+use jmap::api::JmapSessionManager;
+use session::{DummyIo, TestSession};
+use smtp::core::{Session, SmtpSessionManager};
+use store::{BlobStore, Store, Stores};
+use tokio::sync::{mpsc, watch};
+use utils::config::Config;
+
+use crate::AssertConfig;
 
 pub mod config;
 pub mod inbound;
@@ -72,40 +82,148 @@ pub fn add_test_certs(config: &str) -> String {
 pub struct QueueReceiver {
     store: Store,
     blob_store: BlobStore,
-    pub queue_rx: mpsc::Receiver<smtp::queue::Event>,
+    pub queue_rx: mpsc::Receiver<QueueEvent>,
 }
 
 pub struct ReportReceiver {
-    pub report_rx: mpsc::Receiver<smtp::reporting::Event>,
+    pub report_rx: mpsc::Receiver<ReportingEvent>,
 }
 
-pub trait TestSMTP {
-    fn init_test_queue(&mut self, core: &Core) -> QueueReceiver;
-    fn init_test_report(&mut self) -> ReportReceiver;
+pub struct TestSMTP {
+    pub server: Server,
+    pub temp_dir: Option<TempDir>,
+    pub queue_receiver: QueueReceiver,
+    pub report_receiver: ReportReceiver,
 }
 
-impl TestSMTP for Inner {
-    fn init_test_queue(&mut self, core: &Core) -> QueueReceiver {
-        let (queue_tx, queue_rx) = mpsc::channel(128);
-        self.queue_tx = queue_tx;
+const CONFIG: &str = r#"
+[session.connect]
+hostname = "'mx.example.org'"
+greeting = "'Test SMTP instance'"
 
-        QueueReceiver {
-            blob_store: core.storage.blob.clone(),
-            store: core.storage.data.clone(),
-            queue_rx,
+[server.listener.smtp-debug]
+bind = ['127.0.0.1:9925']
+protocol = 'smtp'
+
+[server.listener.lmtp-debug]
+bind = ['127.0.0.1:9924']
+protocol = 'lmtp'
+tls.implicit = true
+
+[server.listener.management-debug]
+bind = ['127.0.0.1:9980']
+protocol = 'http'
+tls.implicit = true
+
+[server.socket]
+reuse-addr = true
+
+[server.tls]
+enable = true
+implicit = false
+certificate = 'default'
+
+[certificate.default]
+cert = '%{file:{CERT}}%'
+private-key = '%{file:{PK}}%'
+
+[storage]
+data = "sqlite"
+lookup = "sqlite"
+blob = "sqlite"
+fts = "sqlite"
+
+[store."sqlite"]
+type = "sqlite"
+path = "{TMP}/queue.db"
+
+"#;
+
+impl TestSMTP {
+    pub fn from_core(core: impl Into<Arc<Core>>) -> Self {
+        Self::from_core_and_tempdir(core, None)
+    }
+
+    fn from_core_and_tempdir(core: impl Into<Arc<Core>>, temp_dir: Option<TempDir>) -> Self {
+        let core = core.into();
+        let (ipc, mut ipc_rxs) = build_ipc();
+
+        TestSMTP {
+            queue_receiver: QueueReceiver {
+                store: core.storage.data.clone(),
+                blob_store: core.storage.blob.clone(),
+                queue_rx: ipc_rxs.queue_rx.take().unwrap(),
+            },
+            report_receiver: ReportReceiver {
+                report_rx: ipc_rxs.report_rx.take().unwrap(),
+            },
+            server: Server {
+                inner: Inner {
+                    shared_core: core.as_ref().clone().into_shared(),
+                    data: Default::default(),
+                    ipc,
+                }
+                .into(),
+                core,
+            },
+            temp_dir,
         }
     }
 
-    fn init_test_report(&mut self) -> ReportReceiver {
-        let (report_tx, report_rx) = mpsc::channel(128);
-        self.report_tx = report_tx;
-        ReportReceiver { report_rx }
-    }
-}
+    pub async fn new(name: &str, config: impl AsRef<str>) -> TestSMTP {
+        let temp_dir = TempDir::new(name, true);
+        let mut config =
+            Config::new(temp_dir.update_config(add_test_certs(CONFIG) + config.as_ref())).unwrap();
+        config.resolve_all_macros().await;
+        let stores = Stores::parse_all(&mut config).await;
+        let core = Core::parse(&mut config, stores, Default::default()).await;
 
-fn build_smtp(core: impl Into<Arc<Core>>, inner: impl Into<Arc<Inner>>) -> SMTP {
-    SMTP {
-        core: core.into(),
-        inner: inner.into(),
+        Self::from_core_and_tempdir(core, Some(temp_dir))
+    }
+
+    pub async fn start(&self, protocols: &[ServerProtocol]) -> watch::Sender<bool> {
+        // Spawn listeners
+        let mut config = Config::new(CONFIG).unwrap();
+        let mut servers = Listeners::parse(&mut config);
+        servers.parse_tcp_acceptors(&mut config, self.server.inner.clone());
+
+        // Filter out protocols
+        servers
+            .servers
+            .retain(|server| protocols.contains(&server.protocol));
+
+        // Start servers
+        servers.bind_and_drop_priv(&mut config);
+        config.assert_no_errors();
+
+        servers
+            .spawn(|server, acceptor, shutdown_rx| {
+                match &server.protocol {
+                    ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
+                        SmtpSessionManager::new(self.server.inner.clone()),
+                        self.server.inner.clone(),
+                        acceptor,
+                        shutdown_rx,
+                    ),
+                    ServerProtocol::Http => server.spawn(
+                        JmapSessionManager::new(self.server.inner.clone()),
+                        self.server.inner.clone(),
+                        acceptor,
+                        shutdown_rx,
+                    ),
+                    ServerProtocol::Imap | ServerProtocol::Pop3 | ServerProtocol::ManageSieve => {
+                        unreachable!()
+                    }
+                };
+            })
+            .0
+    }
+
+    pub fn new_session(&self) -> Session<DummyIo> {
+        Session::test(self.server.clone())
+    }
+
+    pub fn build_smtp(&self) -> Server {
+        self.server.clone()
     }
 }

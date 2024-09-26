@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use common::config::server::ServerProtocol;
 use mail_auth::{IpLookupStrategy, MX};
 
-use crate::smtp::{outbound::TestServer, session::TestSession};
+use crate::smtp::{session::TestSession, TestSMTP};
 
 const LOCAL: &str = r#"
 [session.rcpt]
@@ -34,13 +34,13 @@ async fn ip_lookup_strategy() {
     crate::enable_logging();
 
     // Start test server
-    let mut remote = TestServer::new("smtp_iplookup_remote", REMOTE, true).await;
+    let mut remote = TestSMTP::new("smtp_iplookup_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
 
     for strategy in [IpLookupStrategy::Ipv6Only, IpLookupStrategy::Ipv6thenIpv4] {
         //println!("-> Strategy: {:?}", strategy);
         // Add mock DNS entries
-        let mut local = TestServer::new("smtp_iplookup_local", LOCAL, true).await;
+        let mut local = TestSMTP::new("smtp_iplookup_local", LOCAL).await;
         let core = local.build_smtp();
         core.core.smtp.resolvers.dns.mx_add(
             "foobar.org",
@@ -72,16 +72,16 @@ async fn ip_lookup_strategy() {
             .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
             .await;
         local
-            .qr
+            .queue_receiver
             .expect_message_then_deliver()
             .await
             .try_deliver(core.clone())
             .await;
         tokio::time::sleep(Duration::from_millis(100)).await;
         if matches!(strategy, IpLookupStrategy::Ipv6thenIpv4) {
-            remote.qr.expect_message().await;
+            remote.queue_receiver.expect_message().await;
         } else {
-            let message = local.qr.last_queued_message().await;
+            let message = local.queue_receiver.last_queued_message().await;
             let status = message.domains[0].status.to_string();
             assert!(
                 status.contains("Connection refused"),

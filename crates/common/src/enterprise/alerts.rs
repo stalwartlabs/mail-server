@@ -20,7 +20,7 @@ use trc::{Collector, MetricType, TelemetryEvent, TOTAL_EVENT_COUNT};
 use super::{AlertContent, AlertContentToken, AlertMethod};
 use crate::{
     expr::{functions::ResolveVariable, Variable},
-    Core,
+    Server,
 };
 use std::fmt::Write;
 
@@ -33,9 +33,9 @@ pub struct AlertMessage {
 
 struct CollectorResolver;
 
-impl Core {
+impl Server {
     pub async fn process_alerts(&self) -> Option<Vec<AlertMessage>> {
-        let alerts = &self.enterprise.as_ref()?.metrics_alerts;
+        let alerts = &self.core.enterprise.as_ref()?.metrics_alerts;
         if alerts.is_empty() {
             return None;
         }

@@ -10,13 +10,10 @@ use arc_swap::ArcSwap;
 use directory::{Directories, Directory};
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use telemetry::Metrics;
-use utils::{
-    config::Config,
-    map::ttl_dashmap::{ADashMap, TtlDashMap, TtlMap},
-};
+use utils::config::Config;
 
 use crate::{
-    expr::*, listener::tls::TlsManager, manager::config::ConfigManager, Core, Network, Security,
+    expr::*, listener::tls::AcmeProviders, manager::config::ConfigManager, Core, Network, Security,
 };
 
 use self::{
@@ -25,6 +22,7 @@ use self::{
 };
 
 pub mod imap;
+pub mod inner;
 pub mod jmap;
 pub mod network;
 pub mod scripts;
@@ -165,18 +163,8 @@ impl Core {
             smtp: SmtpConfig::parse(config).await,
             jmap: JmapConfig::parse(config),
             imap: ImapConfig::parse(config),
-            tls: TlsManager::parse(config),
+            acme: AcmeProviders::parse(config),
             metrics: Metrics::parse(config),
-            security: Security {
-                access_tokens: TtlDashMap::with_capacity(100, 32),
-                permissions: ADashMap::with_capacity_and_hasher_and_shard_amount(
-                    100,
-                    ahash::RandomState::new(),
-                    32,
-                ),
-                permissions_version: Default::default(),
-                logos: Default::default(),
-            },
             storage: Storage {
                 data,
                 blob,
@@ -194,7 +182,7 @@ impl Core {
         }
     }
 
-    pub fn into_shared(self) -> Arc<ArcSwap<Self>> {
-        Arc::new(ArcSwap::from_pointee(self))
+    pub fn into_shared(self) -> ArcSwap<Self> {
+        ArcSwap::from_pointee(self)
     }
 }

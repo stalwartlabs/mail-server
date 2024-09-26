@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::Server;
 use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::HeaderType;
 use mail_builder::mime::{make_boundary, BodyPart, MimePart};
@@ -13,19 +14,26 @@ use smtp_proto::{
     Response, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
 use std::fmt::Write;
+use std::future::Future;
 use std::time::Duration;
 use store::write::now;
 
-use crate::core::SMTP;
 use crate::outbound::client::from_error_status;
+use crate::reporting::SmtpReporting;
 
+use super::spool::SmtpSpool;
 use super::{
     Domain, Error, ErrorDetails, HostResponse, Message, MessageSource, QueueEnvelope, Recipient,
     Status, RCPT_DSN_SENT, RCPT_STATUS_CHANGED,
 };
 
-impl SMTP {
-    pub async fn send_dsn(&self, message: &mut Message) {
+pub trait SendDsn: Sync + Send {
+    fn send_dsn(&self, message: &mut Message) -> impl Future<Output = ()> + Send;
+    fn log_dsn(&self, message: &Message) -> impl Future<Output = ()> + Send;
+}
+
+impl SendDsn for Server {
+    async fn send_dsn(&self, message: &mut Message) {
         // Send DSN events
         self.log_dsn(message).await;
 
@@ -152,8 +160,8 @@ impl SMTP {
 }
 
 impl Message {
-    pub async fn build_dsn(&mut self, core: &SMTP) -> Option<Vec<u8>> {
-        let config = &core.core.smtp.queue;
+    pub async fn build_dsn(&mut self, server: &Server) -> Option<Vec<u8>> {
+        let config = &server.core.smtp.queue;
         let now = now();
 
         let mut txt_success = String::new();
@@ -314,8 +322,7 @@ impl Message {
                 {
                     let envelope = QueueEnvelope::new(self, domain_idx);
 
-                    if let Some(next_notify) = core
-                        .core
+                    if let Some(next_notify) = server
                         .eval_if::<Vec<Duration>, _>(&config.notify, &envelope, self.span_id)
                         .await
                         .and_then(|notify| {
@@ -337,19 +344,16 @@ impl Message {
         }
 
         // Obtain hostname and sender addresses
-        let from_name = core
-            .core
+        let from_name = server
             .eval_if(&config.dsn.name, self, self.span_id)
             .await
             .unwrap_or_else(|| String::from("Mail Delivery Subsystem"));
-        let from_addr = core
-            .core
+        let from_addr = server
             .eval_if(&config.dsn.address, self, self.span_id)
             .await
             .unwrap_or_else(|| String::from("MAILER-DAEMON@localhost"));
-        let reporting_mta = core
-            .core
-            .eval_if(&core.core.smtp.report.submitter, self, self.span_id)
+        let reporting_mta = server
+            .eval_if(&server.core.smtp.report.submitter, self, self.span_id)
             .await
             .unwrap_or_else(|| String::from("localhost"));
 
@@ -359,10 +363,8 @@ impl Message {
         let dsn = dsn_header + dsn.as_str();
 
         // Fetch up to 1024 bytes of message headers
-        let headers = match core
-            .core
-            .storage
-            .blob
+        let headers = match server
+            .blob_store()
             .get_blob(self.blob_hash.as_slice(), 0..1024)
             .await
         {

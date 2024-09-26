@@ -6,9 +6,10 @@
 
 use std::sync::Arc;
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use rand::distributions::Standard;
 use serde_json::json;
+use std::future::Future;
 use store::{
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     write::Bincode,
@@ -18,7 +19,6 @@ use store::{
 use crate::{
     api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
     auth::oauth::OAuthStatus,
-    JMAP,
 };
 
 use super::{
@@ -26,8 +26,23 @@ use super::{
     MAX_POST_LEN, USER_CODE_ALPHABET, USER_CODE_LEN,
 };
 
-impl JMAP {
-    pub async fn handle_oauth_api_request(
+pub trait OAuthApiHandler: Sync + Send {
+    fn handle_oauth_api_request(
+        &self,
+        access_token: Arc<AccessToken>,
+        body: Option<Vec<u8>>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn handle_device_auth(
+        &self,
+        req: &mut HttpRequest,
+        base_url: impl AsRef<str> + Send,
+        session_id: u64,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl OAuthApiHandler for Server {
+    async fn handle_oauth_api_request(
         &self,
         access_token: Arc<AccessToken>,
         body: Option<Vec<u8>>,
@@ -143,7 +158,7 @@ impl JMAP {
         Ok(JsonResponse::new(response).into_http_response())
     }
 
-    pub async fn handle_device_auth(
+    async fn handle_device_auth(
         &self,
         req: &mut HttpRequest,
         base_url: impl AsRef<str>,

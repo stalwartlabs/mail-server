@@ -8,10 +8,10 @@ use std::time::Duration;
 
 use mail_auth::hickory_resolver::proto::op::ResponseCode;
 
-use smtp::queue::{Domain, Message, Schedule, Status};
+use smtp::queue::{spool::SmtpSpool, Domain, Message, Schedule, Status};
 use store::write::now;
 
-use crate::smtp::outbound::TestServer;
+use crate::smtp::TestSMTP;
 
 const CONFIG: &str = r#"
 [session.ehlo]
@@ -26,9 +26,9 @@ async fn queue_due() {
     // Enable logging
     crate::enable_logging();
 
-    let local = TestServer::new("smtp_queue_due_test", CONFIG, true).await;
+    let local = TestSMTP::new("smtp_queue_due_test", CONFIG).await;
     let core = local.build_smtp();
-    let qr = &local.qr;
+    let qr = &local.queue_receiver;
 
     let mut message = new_message(0);
     message.domains.push(domain("c", 3, 8, 9));

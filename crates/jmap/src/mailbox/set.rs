@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, config::jmap::settings::SpecialUse};
+use common::{auth::AccessToken, config::jmap::settings::SpecialUse, Server};
 use directory::Permission;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
@@ -36,13 +36,19 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{auth::acl::EffectiveAcl, JMAP};
+use crate::{
+    auth::acl::{AclMethods, EffectiveAcl},
+    changes::write::ChangeLog,
+    email::delete::EmailDeletion,
+    JmapMethods,
+};
 
+use super::{get::MailboxGet, ARCHIVE_ID, DRAFTS_ID, SENT_ID};
 #[allow(unused_imports)]
 use super::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
-use super::{ARCHIVE_ID, DRAFTS_ID, SENT_ID};
+use std::future::Future;
 
-struct SetContext<'x> {
+pub struct SetContext<'x> {
     account_id: u32,
     access_token: &'x AccessToken,
     is_shared: bool,
@@ -69,9 +75,44 @@ pub static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::Acl).index_as(IndexAs::Acl),
 ];
 
-impl JMAP {
+pub trait MailboxSet: Sync + Send {
+    fn mailbox_set(
+        &self,
+        request: SetRequest<SetArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+
+    fn mailbox_destroy(
+        &self,
+        account_id: u32,
+        document_id: u32,
+        changes: &mut ChangeLogBuilder,
+        access_token: &AccessToken,
+        remove_emails: bool,
+    ) -> impl Future<Output = trc::Result<Result<bool, SetError>>> + Send;
+
+    fn mailbox_set_item(
+        &self,
+        changes_: Object<SetValue>,
+        update: Option<(u32, HashedValue<Object<Value>>)>,
+        ctx: &SetContext,
+    ) -> impl Future<Output = trc::Result<Result<ObjectIndexBuilder, SetError>>> + Send;
+
+    fn mailbox_get_or_create(
+        &self,
+        account_id: u32,
+    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
+
+    fn mailbox_create_path(
+        &self,
+        account_id: u32,
+        path: &str,
+    ) -> impl Future<Output = trc::Result<Option<(u32, Option<u64>)>>> + Send;
+}
+
+impl MailboxSet for Server {
     #[allow(clippy::blocks_in_conditions)]
-    pub async fn mailbox_set(
+    async fn mailbox_set(
         &self,
         mut request: SetRequest<SetArguments>,
         access_token: &AccessToken,
@@ -283,7 +324,7 @@ impl JMAP {
         Ok(ctx.response)
     }
 
-    pub async fn mailbox_destroy(
+    async fn mailbox_destroy(
         &self,
         account_id: u32,
         document_id: u32,
@@ -761,7 +802,7 @@ impl JMAP {
             .validate())
     }
 
-    pub async fn mailbox_get_or_create(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
+    async fn mailbox_get_or_create(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
         let mut mailbox_ids = self
             .get_document_ids(account_id, Collection::Mailbox)
             .await?
@@ -828,7 +869,7 @@ impl JMAP {
             .map(|_| mailbox_ids)
     }
 
-    pub async fn mailbox_create_path(
+    async fn mailbox_create_path(
         &self,
         account_id: u32,
         path: &str,

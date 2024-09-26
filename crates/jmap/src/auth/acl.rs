@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use std::future::Future;
+
+use common::{auth::AccessToken, Server};
 use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     error::set::SetError,
@@ -25,10 +27,77 @@ use store::{
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
-use crate::JMAP;
+use crate::JmapMethods;
 
-impl JMAP {
-    pub async fn shared_documents(
+pub trait AclMethods: Sync + Send {
+    fn shared_documents(
+        &self,
+        access_token: &AccessToken,
+        to_account_id: u32,
+        to_collection: Collection,
+        check_acls: impl Into<Bitmap<Acl>> + Send,
+    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
+
+    fn shared_messages(
+        &self,
+        access_token: &AccessToken,
+        to_account_id: u32,
+        check_acls: impl Into<Bitmap<Acl>> + Send,
+    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
+
+    fn owned_or_shared_documents(
+        &self,
+        access_token: &AccessToken,
+        account_id: u32,
+        collection: Collection,
+        check_acls: impl Into<Bitmap<Acl>> + Send,
+    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
+
+    fn owned_or_shared_messages(
+        &self,
+        access_token: &AccessToken,
+        account_id: u32,
+        check_acls: impl Into<Bitmap<Acl>> + Send,
+    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
+
+    fn has_access_to_document(
+        &self,
+        access_token: &AccessToken,
+        to_account_id: u32,
+        to_collection: impl Into<u8> + Send,
+        to_document_id: u32,
+        check_acls: impl Into<Bitmap<Acl>> + Send,
+    ) -> impl Future<Output = trc::Result<bool>> + Send;
+
+    fn acl_set(
+        &self,
+        changes: &mut Object<Value>,
+        current: Option<&HashedValue<Object<Value>>>,
+        acl_changes: MaybePatchValue,
+    ) -> impl Future<Output = Result<(), SetError>> + Send;
+
+    fn acl_get(
+        &self,
+        value: &[AclGrant],
+        access_token: &AccessToken,
+        account_id: u32,
+    ) -> impl Future<Output = Value> + Send;
+
+    fn refresh_acls(&self, changes: &Object<Value>, current: &Option<HashedValue<Object<Value>>>);
+
+    fn map_acl_set(
+        &self,
+        acl_set: Vec<Value>,
+    ) -> impl Future<Output = Result<Vec<AclGrant>, SetError>> + Send;
+
+    fn map_acl_patch(
+        &self,
+        acl_patch: Vec<Value>,
+    ) -> impl Future<Output = Result<(AclGrant, Option<bool>), SetError>> + Send;
+}
+
+impl AclMethods for Server {
+    async fn shared_documents(
         &self,
         access_token: &AccessToken,
         to_account_id: u32,
@@ -66,7 +135,7 @@ impl JMAP {
         Ok(document_ids)
     }
 
-    pub async fn shared_messages(
+    async fn shared_messages(
         &self,
         access_token: &AccessToken,
         to_account_id: u32,
@@ -97,7 +166,7 @@ impl JMAP {
         Ok(shared_messages)
     }
 
-    pub async fn owned_or_shared_documents(
+    async fn owned_or_shared_documents(
         &self,
         access_token: &AccessToken,
         account_id: u32,
@@ -117,7 +186,7 @@ impl JMAP {
         Ok(document_ids)
     }
 
-    pub async fn owned_or_shared_messages(
+    async fn owned_or_shared_messages(
         &self,
         access_token: &AccessToken,
         account_id: u32,
@@ -136,7 +205,7 @@ impl JMAP {
         Ok(document_ids)
     }
 
-    pub async fn has_access_to_document(
+    async fn has_access_to_document(
         &self,
         access_token: &AccessToken,
         to_account_id: u32,
@@ -179,7 +248,7 @@ impl JMAP {
         Ok(false)
     }
 
-    pub async fn acl_set(
+    async fn acl_set(
         &self,
         changes: &mut Object<Value>,
         current: Option<&HashedValue<Object<Value>>>,
@@ -251,7 +320,7 @@ impl JMAP {
         Ok(())
     }
 
-    pub async fn acl_get(
+    async fn acl_get(
         &self,
         value: &[AclGrant],
         access_token: &AccessToken,
@@ -287,13 +356,9 @@ impl JMAP {
         }
     }
 
-    pub fn refresh_acls(
-        &self,
-        changes: &Object<Value>,
-        current: &Option<HashedValue<Object<Value>>>,
-    ) {
+    fn refresh_acls(&self, changes: &Object<Value>, current: &Option<HashedValue<Object<Value>>>) {
         if let Value::Acl(acl_changes) = changes.get(&Property::Acl) {
-            let access_tokens = &self.core.security.access_tokens;
+            let access_tokens = &self.inner.data.access_tokens;
             if let Some(Value::Acl(acl_current)) = current
                 .as_ref()
                 .and_then(|current| current.inner.properties.get(&Property::Acl))

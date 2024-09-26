@@ -6,12 +6,14 @@
 
 use std::sync::Arc;
 
-use common::listener::{stream::NullIo, SessionData, SessionManager, SessionResult, SessionStream};
+use common::{
+    core::BuildServer,
+    listener::{stream::NullIo, SessionData, SessionManager, SessionResult, SessionStream},
+};
 use imap_proto::{
     protocol::{ProtocolVersion, SerializeResponse},
     receiver::Receiver,
 };
-use jmap::JMAP;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rustls::server::TlsStream;
 
@@ -51,9 +53,9 @@ impl<T: SessionStream> Session<T> {
             tokio::select! {
                 result = tokio::time::timeout(
                     if !matches!(self.state, State::NotAuthenticated {..}) {
-                        self.jmap.core.imap.timeout_auth
+                        self.server.core.imap.timeout_auth
                     } else {
-                        self.jmap.core.imap.timeout_unauth
+                        self.server.core.imap.timeout_unauth
                     },
                     self.stream_rx.read(&mut buf)) => {
                     match result {
@@ -138,17 +140,16 @@ impl<T: SessionStream> Session<T> {
 
         // Split stream into read and write halves
         let (stream_rx, stream_tx) = tokio::io::split(session.stream);
-        let jmap = JMAP::from(manager.imap.jmap_instance);
+        let server = manager.inner.build_server();
 
         Ok(Session {
-            receiver: Receiver::with_max_request_size(jmap.core.imap.max_request_size),
+            receiver: Receiver::with_max_request_size(server.core.imap.max_request_size),
             version: ProtocolVersion::Rev1,
             state: State::NotAuthenticated { auth_failures: 0 },
             is_tls,
             is_condstore: false,
             is_qresync: false,
-            jmap,
-            imap: manager.imap.imap_inner,
+            server,
             instance: session.instance,
             session_id: session.session_id,
             in_flight: session.in_flight,
@@ -196,8 +197,7 @@ impl<T: SessionStream> Session<T> {
         let stream_tx = Arc::new(tokio::sync::Mutex::new(stream_tx));
 
         Ok(Session {
-            jmap: self.jmap,
-            imap: self.imap,
+            server: self.server,
             instance: self.instance,
             receiver: self.receiver,
             version: self.version,

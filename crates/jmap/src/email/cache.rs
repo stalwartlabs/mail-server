@@ -4,25 +4,29 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
+use common::{Server, Threads};
 use jmap_proto::types::{collection::Collection, property::Property};
+use std::future::Future;
 use trc::AddContext;
 use utils::lru_cache::LruCached;
 
-use crate::JMAP;
+use crate::JmapMethods;
 
-#[derive(Debug, Default)]
-pub struct Threads {
-    pub threads: HashMap<u32, u32>,
-    pub modseq: Option<u64>,
-}
-
-impl JMAP {
-    pub async fn get_cached_thread_ids(
+pub trait ThreadCache: Sync + Send {
+    fn get_cached_thread_ids(
         &self,
         account_id: u32,
-        message_ids: impl Iterator<Item = u32>,
+        message_ids: impl Iterator<Item = u32> + Send,
+    ) -> impl Future<Output = trc::Result<Vec<(u32, u32)>>> + Send;
+}
+
+impl ThreadCache for Server {
+    async fn get_cached_thread_ids(
+        &self,
+        account_id: u32,
+        message_ids: impl Iterator<Item = u32> + Send,
     ) -> trc::Result<Vec<(u32, u32)>> {
         // Obtain current state
         let modseq = self
@@ -34,8 +38,12 @@ impl JMAP {
             .caused_by(trc::location!())?;
 
         // Lock the cache
-        let thread_cache = if let Some(thread_cache) =
-            self.inner.cache_threads.get(&account_id).and_then(|t| {
+        let thread_cache = if let Some(thread_cache) = self
+            .inner
+            .data
+            .threads_cache
+            .get(&account_id)
+            .and_then(|t| {
                 if t.modseq.unwrap_or(0) >= modseq.unwrap_or(0) {
                     Some(t)
                 } else {
@@ -58,7 +66,8 @@ impl JMAP {
                 modseq,
             });
             self.inner
-                .cache_threads
+                .data
+                .threads_cache
                 .insert(account_id, thread_cache.clone());
             thread_cache
         };

@@ -6,7 +6,7 @@
 
 use std::sync::{atomic::Ordering, Arc};
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use directory::{
     backend::internal::{
         lookup::DirectoryStore,
@@ -21,12 +21,10 @@ use serde_json::json;
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    JMAP,
-};
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 use super::decode_path_element;
+use std::future::Future;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
@@ -47,8 +45,32 @@ pub struct AccountAuthResponse {
     pub app_passwords: Vec<String>,
 }
 
-impl JMAP {
-    pub async fn handle_manage_principal(
+pub trait PrincipalManager: Sync + Send {
+    fn handle_manage_principal(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        body: Option<Vec<u8>>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn handle_account_auth_get(
+        &self,
+        access_token: Arc<AccessToken>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn handle_account_auth_post(
+        &self,
+        req: &HttpRequest,
+        access_token: Arc<AccessToken>,
+        body: Option<Vec<u8>>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn assert_supported_directory(&self) -> trc::Result<()>;
+}
+
+impl PrincipalManager for Server {
+    async fn handle_manage_principal(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
@@ -297,13 +319,16 @@ impl JMAP {
                         }
 
                         // Remove entries from cache
-                        self.inner.sessions.retain(|_, id| id.item != account_id);
+                        self.inner
+                            .data
+                            .http_auth_cache
+                            .retain(|_, id| id.item != account_id);
 
                         if matches!(typ, Type::Role | Type::Tenant) {
                             // Update permissions cache
-                            self.core.security.permissions.clear();
-                            self.core
-                                .security
+                            self.inner.data.permissions.clear();
+                            self.inner
+                                .data
                                 .permissions_version
                                 .fetch_add(1, Ordering::Relaxed);
                         }
@@ -399,20 +424,23 @@ impl JMAP {
 
                         if expire_session {
                             // Remove entries from cache
-                            self.inner.sessions.retain(|_, id| id.item != account_id);
+                            self.inner
+                                .data
+                                .http_auth_cache
+                                .retain(|_, id| id.item != account_id);
                         }
 
                         if is_role_change {
                             // Update permissions cache
-                            self.core.security.permissions.clear();
-                            self.core
-                                .security
+                            self.inner.data.permissions.clear();
+                            self.inner
+                                .data
                                 .permissions_version
                                 .fetch_add(1, Ordering::Relaxed);
                         }
 
                         if expire_token {
-                            self.core.security.access_tokens.remove(&account_id);
+                            self.inner.data.access_tokens.remove(&account_id);
                         }
 
                         Ok(JsonResponse::new(json!({
@@ -428,7 +456,7 @@ impl JMAP {
         }
     }
 
-    pub async fn handle_account_auth_get(
+    async fn handle_account_auth_get(
         &self,
         access_token: Arc<AccessToken>,
     ) -> trc::Result<HttpResponse> {
@@ -463,7 +491,7 @@ impl JMAP {
         .into_http_response())
     }
 
-    pub async fn handle_account_auth_post(
+    async fn handle_account_auth_post(
         &self,
         req: &HttpRequest,
         access_token: Arc<AccessToken>,
@@ -513,7 +541,10 @@ impl JMAP {
                         .await?;
 
                     // Remove entries from cache
-                    self.inner.sessions.retain(|_, id| id.item != u32::MAX);
+                    self.inner
+                        .data
+                        .http_auth_cache
+                        .retain(|_, id| id.item != u32::MAX);
 
                     return Ok(JsonResponse::new(json!({
                         "data": (),
@@ -578,7 +609,8 @@ impl JMAP {
 
         // Remove entries from cache
         self.inner
-            .sessions
+            .data
+            .http_auth_cache
             .retain(|_, id| id.item != access_token.primary_id());
 
         Ok(JsonResponse::new(json!({
@@ -587,7 +619,7 @@ impl JMAP {
         .into_http_response())
     }
 
-    pub fn assert_supported_directory(&self) -> trc::Result<()> {
+    fn assert_supported_directory(&self) -> trc::Result<()> {
         let class = match &self.core.storage.directory.store {
             DirectoryInner::Internal(_) => return Ok(()),
             DirectoryInner::Ldap(_) => "LDAP",

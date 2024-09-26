@@ -11,7 +11,10 @@ use crate::{
     store::deflate_test_resource,
 };
 use common::auth::AccessToken;
-use jmap::email::ingest::{IngestEmail, IngestSource};
+use jmap::{
+    email::ingest::{EmailIngest, IngestEmail, IngestSource},
+    JmapMethods,
+};
 use jmap_client::{email, mailbox::Role};
 use jmap_proto::types::{collection::Collection, id::Id};
 use mail_parser::{mailbox::mbox::MessageIterator, MessageParser};

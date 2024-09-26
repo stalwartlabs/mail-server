@@ -4,11 +4,11 @@ use mail_auth::IpLookupStrategy;
 use store::{Deserialize, Rows, Value};
 use trc::AddContext;
 
-use crate::Core;
+use crate::Server;
 
 use super::*;
 
-impl Core {
+impl Server {
     pub(crate) async fn eval_fnc<'x>(
         &self,
         fnc_id: u32,
@@ -168,7 +168,8 @@ impl Core {
         let record_type = arguments.next_as_string();
 
         if record_type.eq_ignore_ascii_case("ip") {
-            self.smtp
+            self.core
+                .smtp
                 .resolvers
                 .dns
                 .ip_lookup(entry.as_ref(), IpLookupStrategy::Ipv4thenIpv6, 10)
@@ -182,7 +183,8 @@ impl Core {
                         .into()
                 })
         } else if record_type.eq_ignore_ascii_case("mx") {
-            self.smtp
+            self.core
+                .smtp
                 .resolvers
                 .dns
                 .mx_lookup(entry.as_ref())
@@ -205,7 +207,8 @@ impl Core {
                         .into()
                 })
         } else if record_type.eq_ignore_ascii_case("txt") {
-            self.smtp
+            self.core
+                .smtp
                 .resolvers
                 .dns
                 .txt_raw_lookup(entry.as_ref())
@@ -213,7 +216,8 @@ impl Core {
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
                 .map(|result| Variable::from(String::from_utf8(result).unwrap_or_default()))
         } else if record_type.eq_ignore_ascii_case("ptr") {
-            self.smtp
+            self.core
+                .smtp
                 .resolvers
                 .dns
                 .ptr_lookup(entry.parse::<IpAddr>().map_err(|err| {
@@ -232,7 +236,8 @@ impl Core {
                         .into()
                 })
         } else if record_type.eq_ignore_ascii_case("ipv4") {
-            self.smtp
+            self.core
+                .smtp
                 .resolvers
                 .dns
                 .ipv4_lookup(entry.as_ref())
@@ -246,7 +251,8 @@ impl Core {
                         .into()
                 })
         } else if record_type.eq_ignore_ascii_case("ipv6") {
-            self.smtp
+            self.core
+                .smtp
                 .resolvers
                 .dns
                 .ipv6_lookup(entry.as_ref())

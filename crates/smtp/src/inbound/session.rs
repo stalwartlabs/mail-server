@@ -84,10 +84,9 @@ impl<T: SessionStream> Session<T> {
                                 initial_response,
                             } => {
                                 let auth: u64 = self
-                                    .core
-                                    .core
+                                    .server
                                     .eval_if::<Mechanism, _>(
-                                        &self.core.core.smtp.session.auth.mechanisms,
+                                        &self.server.core.smtp.session.auth.mechanisms,
                                         self,
                                         self.data.session_id,
                                     )

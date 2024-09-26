@@ -6,18 +6,34 @@
 
 use std::fmt::Write;
 
-use common::manager::webadmin::Resource;
+use common::{manager::webadmin::Resource, Server};
 use directory::{backend::internal::PrincipalField, QueryBy};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use utils::url_params::UrlParams;
 
-use crate::{api::http::ToHttpResponse, JMAP};
+use crate::api::http::ToHttpResponse;
 
 use super::{HttpRequest, HttpResponse};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn handle_autoconfig_request(&self, req: &HttpRequest) -> trc::Result<HttpResponse> {
+pub trait Autoconfig: Sync + Send {
+    fn handle_autoconfig_request(
+        &self,
+        req: &HttpRequest,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+    fn handle_autodiscover_request(
+        &self,
+        body: Option<Vec<u8>>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+    fn autoconfig_parameters<'x>(
+        &self,
+        emailaddress: &'x str,
+    ) -> impl Future<Output = trc::Result<(String, String, &'x str)>> + Send;
+}
+
+impl Autoconfig for Server {
+    async fn handle_autoconfig_request(&self, req: &HttpRequest) -> trc::Result<HttpResponse> {
         // Obtain parameters
         let params = UrlParams::new(req.uri().query());
         let emailaddress = params
@@ -73,7 +89,7 @@ impl JMAP {
         )
     }
 
-    pub async fn handle_autodiscover_request(
+    async fn handle_autodiscover_request(
         &self,
         body: Option<Vec<u8>>,
     ) -> trc::Result<HttpResponse> {

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::Server;
 use directory::QueryBy;
 use jmap_proto::{
     method::query::{Filter, QueryRequest, QueryResponse, RequestArguments},
@@ -11,10 +12,19 @@ use jmap_proto::{
 };
 use store::{query::ResultSet, roaring::RoaringBitmap};
 
-use crate::{api::http::HttpSessionData, JMAP};
+use crate::{api::http::HttpSessionData, JmapMethods};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn principal_query(
+pub trait PrincipalQuery: Sync + Send {
+    fn principal_query(
+        &self,
+        request: QueryRequest<RequestArguments>,
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<QueryResponse>> + Send;
+}
+
+impl PrincipalQuery for Server {
+    async fn principal_query(
         &self,
         mut request: QueryRequest<RequestArguments>,
         session: &HttpSessionData,
@@ -51,7 +61,6 @@ impl JMAP {
                 Filter::Email(email) => {
                     let mut ids = RoaringBitmap::new();
                     for id in self
-                        .core
                         .email_to_ids(&self.core.storage.directory, &email, session.session_id)
                         .await?
                     {

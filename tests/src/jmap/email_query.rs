@@ -10,6 +10,7 @@ use crate::{
     jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, wait_for_index},
     store::{deflate_test_resource, query::FIELDS},
 };
+use jmap::JmapMethods;
 use jmap_client::{
     client::Client,
     core::query::{Comparator, Filter},

@@ -4,17 +4,31 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::method::{
     changes::{self, ChangesRequest},
     query::{self, QueryRequest},
     query_changes::{AddedItem, QueryChangesRequest, QueryChangesResponse},
 };
+use std::future::Future;
 
-use crate::JMAP;
+use crate::{
+    email::query::EmailQuery, mailbox::query::MailboxQuery, quota::query::QuotaQuery,
+    submission::query::EmailSubmissionQuery,
+};
 
-impl JMAP {
-    pub async fn query_changes(
+use super::get::ChangesLookup;
+
+pub trait QueryChanges: Sync + Send {
+    fn query_changes(
+        &self,
+        request: QueryChangesRequest,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<QueryChangesResponse>> + Send;
+}
+
+impl QueryChanges for Server {
+    async fn query_changes(
         &self,
         request: QueryChangesRequest,
         access_token: &AccessToken,

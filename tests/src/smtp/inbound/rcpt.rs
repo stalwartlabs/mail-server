@@ -12,12 +12,11 @@ use smtp_proto::{RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_SUCCESS};
 use store::Stores;
 use utils::config::Config;
 
-use smtp::core::{Inner, Session, State};
+use smtp::core::{Session, State};
 
 use crate::smtp::{
-    build_smtp,
     session::{TestSession, VerifyResponse},
-    TempDir,
+    TempDir, TestSMTP,
 };
 
 const CONFIG: &str = r#"
@@ -94,7 +93,7 @@ async fn rcpt() {
     let core = Core::parse(&mut config, stores, Default::default()).await;
 
     // RCPT without MAIL FROM
-    let mut session = Session::test(build_smtp(core, Inner::default()));
+    let mut session = Session::test(TestSMTP::from_core(core).server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.ehlo("mx1.foobar.org").await;

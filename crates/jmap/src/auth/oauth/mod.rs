@@ -202,7 +202,7 @@ pub struct FormData {
 }
 
 impl FormData {
-    pub async fn from_request(
+    async fn from_request(
         req: &mut HttpRequest,
         max_len: usize,
         session_id: u64,

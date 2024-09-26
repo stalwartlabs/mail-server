@@ -25,6 +25,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
 
     Ok(if record_type.eq_ignore_ascii_case("ip") {
         match ctx
+            .server
             .core
             .smtp
             .resolvers
@@ -40,7 +41,15 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             Err(err) => err.short_error().into(),
         }
     } else if record_type.eq_ignore_ascii_case("mx") {
-        match ctx.core.smtp.resolvers.dns.mx_lookup(entry.as_ref()).await {
+        match ctx
+            .server
+            .core
+            .smtp
+            .resolvers
+            .dns
+            .mx_lookup(entry.as_ref())
+            .await
+        {
             Ok(result) => result
                 .iter()
                 .flat_map(|mx| {
@@ -61,6 +70,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         }
 
         match ctx
+            .server
             .core
             .smtp
             .resolvers
@@ -73,7 +83,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         }
     } else if record_type.eq_ignore_ascii_case("ptr") {
         if let Ok(addr) = entry.parse::<IpAddr>() {
-            match ctx.core.smtp.resolvers.dns.ptr_lookup(addr).await {
+            match ctx.server.core.smtp.resolvers.dns.ptr_lookup(addr).await {
                 Ok(result) => result
                     .iter()
                     .map(|host| Variable::from(host.to_string()))
@@ -94,6 +104,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         }
 
         match ctx
+            .server
             .core
             .smtp
             .resolvers
@@ -110,6 +121,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         }
     } else if record_type.eq_ignore_ascii_case("ipv6") {
         match ctx
+            .server
             .core
             .smtp
             .resolvers
@@ -135,6 +147,7 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> trc::Result<Variable> {
 
     Ok(if record_type.eq_ignore_ascii_case("ip") {
         match ctx
+            .server
             .core
             .smtp
             .resolvers
@@ -147,14 +160,22 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             Err(_) => -1,
         }
     } else if record_type.eq_ignore_ascii_case("mx") {
-        match ctx.core.smtp.resolvers.dns.mx_lookup(entry.as_ref()).await {
+        match ctx
+            .server
+            .core
+            .smtp
+            .resolvers
+            .dns
+            .mx_lookup(entry.as_ref())
+            .await
+        {
             Ok(result) => i64::from(result.iter().any(|mx| !mx.exchanges.is_empty())),
             Err(Error::DnsRecordNotFound(_)) => 0,
             Err(_) => -1,
         }
     } else if record_type.eq_ignore_ascii_case("ptr") {
         if let Ok(addr) = entry.parse::<IpAddr>() {
-            match ctx.core.smtp.resolvers.dns.ptr_lookup(addr).await {
+            match ctx.server.core.smtp.resolvers.dns.ptr_lookup(addr).await {
                 Ok(result) => i64::from(!result.is_empty()),
                 Err(Error::DnsRecordNotFound(_)) => 0,
                 Err(_) => -1,
@@ -171,6 +192,7 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         }
 
         match ctx
+            .server
             .core
             .smtp
             .resolvers
@@ -184,6 +206,7 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         }
     } else if record_type.eq_ignore_ascii_case("ipv6") {
         match ctx
+            .server
             .core
             .smtp
             .resolvers

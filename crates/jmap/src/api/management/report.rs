@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use std::future::Future;
+
+use common::{auth::AccessToken, Server};
 use directory::{
     backend::internal::{manage::ManageDirectory, PrincipalField},
     Permission, Type,
@@ -23,10 +25,7 @@ use store::{
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    JMAP,
-};
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 use super::decode_path_element;
 
@@ -36,8 +35,17 @@ enum ReportType {
     Arf,
 }
 
-impl JMAP {
-    pub async fn handle_manage_reports(
+pub trait ManageReports: Sync + Send {
+    fn handle_manage_reports(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl ManageReports for Server {
+    async fn handle_manage_reports(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,

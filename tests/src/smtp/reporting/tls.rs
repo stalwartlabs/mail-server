@@ -6,7 +6,7 @@
 
 use std::{io::Read, sync::Arc, time::Duration};
 
-use common::config::smtp::report::AggregateFrequency;
+use common::{config::smtp::report::AggregateFrequency, ipc::TlsEvent};
 use mail_auth::{
     common::parse::TxtRecordParser,
     flate2::read::GzDecoder,
@@ -15,12 +15,12 @@ use mail_auth::{
 };
 use store::write::QueueClass;
 
-use smtp::reporting::{tls::TLS_HTTP_REPORT, TlsEvent};
+use smtp::reporting::tls::{TlsReporting, TLS_HTTP_REPORT};
 
 use crate::smtp::{
     inbound::{sign::SIGNATURES, TestMessage},
-    outbound::TestServer,
     session::VerifyResponse,
+    TestSMTP,
 };
 
 const CONFIG: &str = r#"
@@ -46,14 +46,9 @@ async fn report_tls() {
     crate::enable_logging();
 
     // Create scheduler
-    let mut local = TestServer::new(
-        "smtp_report_tls_test",
-        CONFIG.to_string() + SIGNATURES,
-        true,
-    )
-    .await;
+    let mut local = TestSMTP::new("smtp_report_tls_test", CONFIG.to_string() + SIGNATURES).await;
     let core = local.build_smtp();
-    let qr = &mut local.qr;
+    let qr = &mut local.queue_receiver;
 
     // Schedule TLS reports to be delivered via email
     let tls_record = Arc::new(TlsRpt::parse(b"v=TLSRPTv1;rua=mailto:reports@foobar.org").unwrap());
@@ -62,7 +57,7 @@ async fn report_tls() {
         // Add two successful records
         core.schedule_tls(Box::new(TlsEvent {
             domain: "foobar.org".to_string(),
-            policy: smtp::reporting::PolicyType::None,
+            policy: common::ipc::PolicyType::None,
             failure: None,
             tls_record: tls_record.clone(),
             interval: AggregateFrequency::Daily,
@@ -72,23 +67,20 @@ async fn report_tls() {
 
     for (policy, rt) in [
         (
-            smtp::reporting::PolicyType::None, // Quota limited at 1532 bytes, this should not be included in the report.
+            common::ipc::PolicyType::None, // Quota limited at 1532 bytes, this should not be included in the report.
             ResultType::CertificateExpired,
         ),
+        (common::ipc::PolicyType::Tlsa(None), ResultType::TlsaInvalid),
         (
-            smtp::reporting::PolicyType::Tlsa(None),
-            ResultType::TlsaInvalid,
-        ),
-        (
-            smtp::reporting::PolicyType::Sts(None),
+            common::ipc::PolicyType::Sts(None),
             ResultType::StsPolicyFetchError,
         ),
         (
-            smtp::reporting::PolicyType::Sts(None),
+            common::ipc::PolicyType::Sts(None),
             ResultType::StsPolicyInvalid,
         ),
         (
-            smtp::reporting::PolicyType::Sts(None),
+            common::ipc::PolicyType::Sts(None),
             ResultType::StsWebpkiInvalid,
         ),
     ] {
@@ -192,7 +184,7 @@ async fn report_tls() {
         // Add two successful records
         core.schedule_tls(Box::new(TlsEvent {
             domain: "foobar.org".to_string(),
-            policy: smtp::reporting::PolicyType::None,
+            policy: common::ipc::PolicyType::None,
             failure: None,
             tls_record: tls_record.clone(),
             interval: AggregateFrequency::Daily,

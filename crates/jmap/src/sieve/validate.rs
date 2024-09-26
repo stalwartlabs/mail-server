@@ -4,16 +4,25 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::validate::{ValidateSieveScriptRequest, ValidateSieveScriptResponse},
 };
+use std::future::Future;
 
-use crate::JMAP;
+use crate::blob::download::BlobDownload;
 
-impl JMAP {
-    pub async fn sieve_script_validate(
+pub trait SieveScriptValidate: Sync + Send {
+    fn sieve_script_validate(
+        &self,
+        request: ValidateSieveScriptRequest,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<ValidateSieveScriptResponse>> + Send;
+}
+
+impl SieveScriptValidate for Server {
+    async fn sieve_script_validate(
         &self,
         request: ValidateSieveScriptRequest,
         access_token: &AccessToken,

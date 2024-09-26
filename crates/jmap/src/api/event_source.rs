@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use http_body_util::{combinators::BoxBody, StreamBody};
 use hyper::{
     body::{Bytes, Frame},
@@ -18,9 +18,10 @@ use hyper::{
 use jmap_proto::types::type_state::DataType;
 use utils::map::bitmap::Bitmap;
 
-use crate::{JMAP, LONG_SLUMBER};
+use crate::{services::state::StateManager, LONG_SLUMBER};
 
 use super::{HttpRequest, HttpResponse, HttpResponseBody, StateChangeResponse};
+use std::future::Future;
 
 struct Ping {
     interval: Duration,
@@ -28,8 +29,16 @@ struct Ping {
     payload: Bytes,
 }
 
-impl JMAP {
-    pub async fn handle_event_source(
+pub trait EventSourceHandler: Sync + Send {
+    fn handle_event_source(
+        &self,
+        req: HttpRequest,
+        access_token: Arc<AccessToken>,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl EventSourceHandler for Server {
+    async fn handle_event_source(
         &self,
         req: HttpRequest,
         access_token: Arc<AccessToken>,

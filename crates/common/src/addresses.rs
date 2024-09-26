@@ -14,10 +14,10 @@ use crate::{
     expr::{
         functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap, Variable, V_RECIPIENT,
     },
-    Core,
+    Server,
 };
 
-impl Core {
+impl Server {
     pub async fn email_to_ids(
         &self,
         directory: &Directory,
@@ -25,6 +25,7 @@ impl Core {
         session_id: u64,
     ) -> trc::Result<Vec<u32>> {
         let mut address = self
+            .core
             .smtp
             .session
             .rcpt
@@ -38,6 +39,7 @@ impl Core {
             if !result.is_empty() {
                 return Ok(result);
             } else if let Some(catch_all) = self
+                .core
                 .smtp
                 .session
                 .rcpt
@@ -62,6 +64,7 @@ impl Core {
     ) -> trc::Result<bool> {
         // Expand subaddress
         let mut address = self
+            .core
             .smtp
             .session
             .rcpt
@@ -73,6 +76,7 @@ impl Core {
             if directory.rcpt(address.as_ref()).await? {
                 return Ok(true);
             } else if let Some(catch_all) = self
+                .core
                 .smtp
                 .session
                 .rcpt
@@ -97,7 +101,8 @@ impl Core {
     ) -> trc::Result<Vec<String>> {
         directory
             .vrfy(
-                self.smtp
+                self.core
+                    .smtp
                     .session
                     .rcpt
                     .subaddressing
@@ -116,7 +121,8 @@ impl Core {
     ) -> trc::Result<Vec<String>> {
         directory
             .expn(
-                self.smtp
+                self.core
+                    .smtp
                     .session
                     .rcpt
                     .subaddressing
@@ -170,7 +176,7 @@ impl ResolveVariable for Address<'_> {
 impl AddressMapping {
     pub async fn to_subaddress<'x, 'y: 'x>(
         &'x self,
-        core: &Core,
+        core: &Server,
         address: &'y str,
         session_id: u64,
     ) -> Cow<'x, str> {
@@ -198,7 +204,7 @@ impl AddressMapping {
 
     pub async fn to_catch_all<'x, 'y: 'x>(
         &'x self,
-        core: &Core,
+        core: &Server,
         address: &'y str,
         session_id: u64,
     ) -> Option<Cow<'x, str>> {

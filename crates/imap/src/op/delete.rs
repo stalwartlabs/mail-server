@@ -15,6 +15,7 @@ use directory::Permission;
 use imap_proto::{
     protocol::delete::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
 };
+use jmap::{changes::write::ChangeLog, mailbox::set::MailboxSet, services::state::StateManager};
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::write::log::ChangeLogBuilder;
 
@@ -76,7 +77,7 @@ impl<T: SessionStream> SessionData<T> {
             .imap_ctx(&arguments.tag, trc::location!())?;
         let mut changelog = ChangeLogBuilder::new();
         let did_remove_emails = match self
-            .jmap
+            .server
             .mailbox_destroy(account_id, mailbox_id, &mut changelog, &access_token, true)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?
@@ -93,13 +94,13 @@ impl<T: SessionStream> SessionData<T> {
 
         // Write changes
         let change_id = self
-            .jmap
+            .server
             .commit_changes(account_id, changelog)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Broadcast changes
-        self.jmap
+        self.server
             .broadcast_state_change(if did_remove_emails {
                 StateChange::new(account_id)
                     .with_change(DataType::Mailbox, change_id)

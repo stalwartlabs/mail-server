@@ -18,14 +18,16 @@ use mail_auth::MX;
 use ::smtp::outbound::NextHop;
 use mail_parser::DateTime;
 use smtp::{
-    core::Inner,
-    outbound::{lookup::ToNextHop, mta_sts::parse::ParsePolicy},
+    outbound::{
+        lookup::{DnsLookup, ToNextHop},
+        mta_sts::parse::ParsePolicy,
+    },
     queue::RecipientDomain,
     reporting::AggregateTimestamp,
 };
 use utils::config::Config;
 
-use crate::smtp::build_smtp;
+use crate::smtp::TestSMTP;
 
 const CONFIG_V4: &str = r#"
 [queue.outbound.source-ip]
@@ -65,11 +67,9 @@ async fn lookup_ip() {
         "10.0.0.4".parse().unwrap(),
     ];
     let mut config = Config::new(CONFIG_V4).unwrap();
-    let core = build_smtp(
-        Core::parse(&mut config, Default::default(), Default::default()).await,
-        Inner::default(),
-    );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    let test =
+        TestSMTP::from_core(Core::parse(&mut config, Default::default(), Default::default()).await);
+    test.server.core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec![
             "172.168.0.100".parse().unwrap(),
@@ -77,14 +77,15 @@ async fn lookup_ip() {
         ],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv6_add(
+    test.server.core.smtp.resolvers.dns.ipv6_add(
         "mx.foobar.org",
         vec!["e:f::a".parse().unwrap(), "e:f::b".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
 
     // Ipv4 strategy
-    let resolve_result = core
+    let resolve_result = test
+        .server
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),
             &RecipientDomain::new("envelope"),
@@ -103,11 +104,9 @@ async fn lookup_ip() {
 
     // Ipv6 strategy
     let mut config = Config::new(CONFIG_V6).unwrap();
-    let core = build_smtp(
-        Core::parse(&mut config, Default::default(), Default::default()).await,
-        Inner::default(),
-    );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    let test =
+        TestSMTP::from_core(Core::parse(&mut config, Default::default(), Default::default()).await);
+    test.server.core.smtp.resolvers.dns.ipv4_add(
         "mx.foobar.org",
         vec![
             "172.168.0.100".parse().unwrap(),
@@ -115,12 +114,13 @@ async fn lookup_ip() {
         ],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv6_add(
+    test.server.core.smtp.resolvers.dns.ipv6_add(
         "mx.foobar.org",
         vec!["e:f::a".parse().unwrap(), "e:f::b".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
-    let resolve_result = core
+    let resolve_result = test
+        .server
         .resolve_host(
             &NextHop::MX("mx.foobar.org"),
             &RecipientDomain::new("envelope"),

@@ -5,7 +5,7 @@
  */
 
 use base64::{engine::general_purpose, Engine};
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -19,18 +19,27 @@ use jmap_proto::{
         value::{MaybePatchValue, Value},
     },
 };
+use std::future::Future;
 use store::{
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     write::{now, BatchBuilder, F_CLEAR, F_VALUE},
 };
 
-use crate::JMAP;
+use crate::{services::state::StateManager, JmapMethods};
 
 const EXPIRES_MAX: i64 = 7 * 24 * 3600; // 7 days
 const VERIFICATION_CODE_LEN: usize = 32;
 
-impl JMAP {
-    pub async fn push_subscription_set(
+pub trait PushSubscriptionSet: Sync + Send {
+    fn push_subscription_set(
+        &self,
+        request: SetRequest<RequestArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+}
+
+impl PushSubscriptionSet for Server {
+    async fn push_subscription_set(
         &self,
         mut request: SetRequest<RequestArguments>,
         access_token: &AccessToken,

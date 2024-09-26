@@ -10,14 +10,13 @@ use utils::config::Config;
 
 use crate::{
     smtp::{
-        build_smtp,
         inbound::TestMessage,
         session::{load_test_message, TestSession, VerifyResponse},
         TempDir, TestSMTP,
     },
     AssertConfig,
 };
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 
 const CONFIG: &str = r#"
 [storage]
@@ -105,17 +104,16 @@ async fn data() {
     crate::enable_logging();
 
     // Create temp dir for queue
-    let mut inner = Inner::default();
     let tmp_dir = TempDir::new("smtp_data_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     config.assert_no_errors();
-    let mut qr = inner.init_test_queue(&core);
 
     // Test queue message builder
-    let core = build_smtp(core, inner);
-    let mut session = Session::test(core.clone());
+    let test = TestSMTP::from_core(core);
+    let mut qr = test.queue_receiver;
+    let mut session = Session::test(test.server.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
     session.test_builder().await;
@@ -197,7 +195,7 @@ async fn data() {
         .await;
 
     // Release quota
-    qr.clear_queue(&core).await;
+    qr.clear_queue(&test.server).await;
 
     // Only 1500 bytes are allowed in the queue to domain foobar.org
     session
@@ -236,10 +234,9 @@ async fn data() {
         .await;
 
     // Make sure store is empty
-    qr.clear_queue(&core).await;
-    core.core
-        .storage
-        .data
-        .assert_is_empty(core.core.storage.blob.clone())
+    qr.clear_queue(&test.server).await;
+    test.server
+        .store()
+        .assert_is_empty(test.server.blob_store().clone())
         .await;
 }

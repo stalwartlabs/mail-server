@@ -9,7 +9,7 @@ use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 use hyper::StatusCode;
 use trc::EvalEvent;
 
-use crate::Core;
+use crate::Server;
 
 use super::{
     functions::{ResolveVariable, FUNCTIONS},
@@ -17,7 +17,7 @@ use super::{
     BinaryOperator, Constant, Expression, ExpressionItem, UnaryOperator, Variable,
 };
 
-impl Core {
+impl Server {
     pub async fn eval_if<'x, R: TryFrom<Variable<'x>>, V: ResolveVariable>(
         &self,
         if_block: &'x IfBlock,
@@ -123,7 +123,7 @@ impl IfBlock {
     pub async fn eval<'x, V: ResolveVariable>(
         &'x self,
         resolver: &'x V,
-        core: &Core,
+        core: &Server,
         session_id: u64,
     ) -> trc::Result<Variable<'x>> {
         let mut captures = Vec::new();
@@ -152,7 +152,7 @@ impl Expression {
     async fn eval<'x, 'y, V: ResolveVariable>(
         &'x self,
         resolver: &'x V,
-        core: &Core,
+        core: &Server,
         captures: &'y mut Vec<String>,
         session_id: u64,
     ) -> trc::Result<Variable<'x>> {

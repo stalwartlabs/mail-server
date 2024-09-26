@@ -20,6 +20,7 @@ use imap_proto::{
 };
 
 use common::listener::SessionStream;
+use jmap::{changes::get::ChangesLookup, services::state::StateManager};
 use jmap_proto::types::{collection::Collection, type_state::DataType};
 use store::query::log::Query;
 use tokio::io::AsyncReadExt;
@@ -53,7 +54,7 @@ impl<T: SessionStream> Session<T> {
 
         // Register with state manager
         let mut change_rx = self
-            .jmap
+            .server
             .subscribe_state_manager(data.account_id, types)
             .await
             .imap_ctx(&request.tag, trc::location!())?;
@@ -72,7 +73,7 @@ impl<T: SessionStream> Session<T> {
         let mut buf = vec![0; 4];
         loop {
             tokio::select! {
-                result = tokio::time::timeout(self.jmap.core.imap.timeout_idle, self.stream_rx.read_exact(&mut buf)) => {
+                result = tokio::time::timeout(self.server.core.imap.timeout_idle, self.stream_rx.read_exact(&mut buf)) => {
                     match result {
                         Ok(Ok(bytes_read)) => {
                             if bytes_read > 0 {
@@ -202,7 +203,7 @@ impl<T: SessionStream> SessionData<T> {
 
                 // Obtain changed messages
                 let changelog = self
-                    .jmap
+                    .server
                     .changes_(
                         mailbox.id.account_id,
                         Collection::Email,

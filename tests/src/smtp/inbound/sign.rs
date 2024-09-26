@@ -16,12 +16,11 @@ use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
-    build_smtp,
     inbound::TestMessage,
     session::{TestSession, VerifyResponse},
     TempDir, TestSMTP,
 };
-use smtp::core::{Inner, Session};
+use smtp::core::Session;
 
 pub const SIGNATURES: &str = "
 [signature.rsa]
@@ -131,10 +130,6 @@ async fn sign_and_seal() {
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
-    let mut inner = Inner::default();
-
-    // Create temp dir for queue
-    let mut qr = inner.init_test_queue(&core);
 
     // Add SPF, DKIM and DMARC records
     core.smtp.resolvers.dns.txt_add(
@@ -176,7 +171,9 @@ async fn sign_and_seal() {
     );
 
     // Test DKIM signing
-    let mut session = Session::test(build_smtp(core, inner));
+    let test = TestSMTP::from_core(core);
+    let mut qr = test.queue_receiver;
+    let mut session = Session::test(test.server);
     session.data.remote_ip_str = "10.0.0.2".to_string();
     session.eval_session_params().await;
     session.ehlo("mx.example.com").await;

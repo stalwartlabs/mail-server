@@ -35,7 +35,7 @@ impl<T: SessionStream> Session<T> {
         stage: Stage,
         message: Option<&AuthenticatedMessage<'_>>,
     ) -> Result<Vec<Modification>, FilterResponse> {
-        let milters = &self.core.core.smtp.session.milters;
+        let milters = &self.server.core.smtp.session.milters;
         if milters.is_empty() {
             return Ok(Vec::new());
         }
@@ -44,8 +44,7 @@ impl<T: SessionStream> Session<T> {
         for milter in milters {
             if !milter.run_on_stage.contains(&stage)
                 || !self
-                    .core
-                    .core
+                    .server
                     .eval_if(&milter.enable, self, self.data.session_id)
                     .await
                     .unwrap_or(false)
@@ -170,9 +169,9 @@ impl<T: SessionStream> Session<T> {
                 client
                     .into_tls(
                         if !milter.tls_allow_invalid_certs {
-                            &self.core.inner.connectors.pki_verify
+                            &self.server.inner.data.smtp_connectors.pki_verify
                         } else {
-                            &self.core.inner.connectors.dummy_verify
+                            &self.server.inner.data.smtp_connectors.dummy_verify
                         },
                         &milter.hostname,
                     )

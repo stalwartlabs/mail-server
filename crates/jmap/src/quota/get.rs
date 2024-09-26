@@ -4,17 +4,26 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
     types::{id::Id, property::Property, state::State, type_state::DataType, value::Value},
 };
+use std::future::Future;
 
-use crate::JMAP;
+use crate::JmapMethods;
 
-impl JMAP {
-    pub async fn quota_get(
+pub trait QuotaGet: Sync + Send {
+    fn quota_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+}
+
+impl QuotaGet for Server {
+    async fn quota_get(
         &self,
         mut request: GetRequest<RequestArguments>,
         access_token: &AccessToken,

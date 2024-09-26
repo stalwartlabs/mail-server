@@ -4,34 +4,33 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use ahash::{AHashMap, RandomState};
-use common::Core;
-use mail_auth::dmarc::Dmarc;
+use ahash::AHashMap;
+use common::{core::BuildServer, ipc::ReportingEvent, Inner, Server};
 
-use std::time::{Duration, Instant, SystemTime};
+use std::{
+    future::Future,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 use store::{
     write::{now, BatchBuilder, QueueClass, ReportEvent, ValueClass},
-    Deserialize, IterateParams, Key, Serialize, ValueKey,
+    Deserialize, IterateParams, Key, Serialize, Store, ValueKey,
 };
 use tokio::sync::mpsc;
 
-use crate::{
-    core::{SmtpInstance, SMTP},
-    queue::{manager::LONG_WAIT, spool::LOCK_EXPIRY},
-};
+use crate::queue::{manager::LONG_WAIT, spool::LOCK_EXPIRY};
 
-use super::{Event, ReportLock};
+use super::{dmarc::DmarcReporting, tls::TlsReporting, ReportLock};
 
-impl SpawnReport for mpsc::Receiver<Event> {
-    fn spawn(mut self, core: SmtpInstance) {
+impl SpawnReport for mpsc::Receiver<ReportingEvent> {
+    fn spawn(mut self, inner: Arc<Inner>) {
         tokio::spawn(async move {
-            let mut last_cleanup = Instant::now();
             let mut next_wake_up;
 
             loop {
                 // Read events
                 let now = now();
-                let events = next_report_event(&core.core.load_full()).await;
+                let events = next_report_event(inner.shared_core.load().storage.data.clone()).await;
                 next_wake_up = events
                     .last()
                     .and_then(|e| match e {
@@ -44,15 +43,15 @@ impl SpawnReport for mpsc::Receiver<Event> {
                     })
                     .unwrap_or(LONG_WAIT);
 
-                let core = SMTP::from(core.clone());
-                let core_ = core.clone();
+                let server = inner.build_server();
+                let server_ = server.clone();
                 tokio::spawn(async move {
                     let mut tls_reports = AHashMap::new();
                     for report_event in events {
                         match report_event {
                             QueueClass::DmarcReportHeader(event) if event.due <= now => {
-                                if core_.try_lock_report(QueueClass::dmarc_lock(&event)).await {
-                                    core_.send_dmarc_aggregate_report(event).await;
+                                if server.try_lock_report(QueueClass::dmarc_lock(&event)).await {
+                                    server.send_dmarc_aggregate_report(event).await;
                                 }
                             }
                             QueueClass::TlsReportHeader(event) if event.due <= now => {
@@ -66,40 +65,34 @@ impl SpawnReport for mpsc::Receiver<Event> {
                     }
 
                     for (_, tls_report) in tls_reports {
-                        if core_
+                        if server
                             .try_lock_report(QueueClass::tls_lock(tls_report.first().unwrap()))
                             .await
                         {
-                            core_.send_tls_aggregate_report(tls_report).await;
+                            server.send_tls_aggregate_report(tls_report).await;
                         }
                     }
                 });
 
                 match tokio::time::timeout(next_wake_up, self.recv()).await {
                     Ok(Some(event)) => match event {
-                        Event::Dmarc(event) => {
-                            core.schedule_dmarc(event).await;
+                        ReportingEvent::Dmarc(event) => {
+                            server_.schedule_dmarc(event).await;
                         }
-                        Event::Tls(event) => {
-                            core.schedule_tls(event).await;
+                        ReportingEvent::Tls(event) => {
+                            server_.schedule_tls(event).await;
                         }
-                        Event::Stop => break,
+                        ReportingEvent::Stop => break,
                     },
                     Ok(None) => break,
-                    Err(_) => {
-                        // Cleanup expired throttles
-                        if last_cleanup.elapsed().as_secs() >= 86400 {
-                            last_cleanup = Instant::now();
-                            core.cleanup();
-                        }
-                    }
+                    Err(_) => {}
                 }
             }
         });
     }
 }
 
-async fn next_report_event(core: &Core) -> Vec<QueueClass> {
+async fn next_report_event(store: Store) -> Vec<QueueClass> {
     let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
         ReportEvent {
             due: 0,
@@ -119,9 +112,7 @@ async fn next_report_event(core: &Core) -> Vec<QueueClass> {
 
     let mut events = Vec::new();
     let now = now();
-    let result = core
-        .storage
-        .data
+    let result = store
         .iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
@@ -150,13 +141,15 @@ async fn next_report_event(core: &Core) -> Vec<QueueClass> {
     events
 }
 
-impl SMTP {
-    pub async fn try_lock_report(&self, lock: QueueClass) -> bool {
+pub trait LockReport: Sync + Send {
+    fn try_lock_report(&self, lock: QueueClass) -> impl Future<Output = bool> + Send;
+}
+
+impl LockReport for Server {
+    async fn try_lock_report(&self, lock: QueueClass) -> bool {
         let now = now();
         match self
-            .core
-            .storage
-            .data
+            .store()
             .get_value::<u64>(ValueKey::from(ValueClass::Queue(lock.clone())))
             .await
         {
@@ -216,22 +209,6 @@ impl SMTP {
     }
 }
 
-pub trait ToHash {
-    fn to_hash(&self) -> u64;
-}
-
-impl ToHash for Dmarc {
-    fn to_hash(&self) -> u64 {
-        RandomState::with_seeds(1, 9, 7, 9).hash_one(self)
-    }
-}
-
-impl ToHash for super::PolicyType {
-    fn to_hash(&self) -> u64 {
-        RandomState::with_seeds(1, 9, 7, 9).hash_one(self)
-    }
-}
-
 pub trait ToTimestamp {
     fn to_timestamp(&self) -> u64;
 }
@@ -246,5 +223,5 @@ impl ToTimestamp for Duration {
 }
 
 pub trait SpawnReport {
-    fn spawn(self, core: SmtpInstance);
+    fn spawn(self, core: Arc<Inner>);
 }

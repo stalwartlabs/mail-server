@@ -6,14 +6,13 @@
 
 use std::time::Duration;
 
-use common::{config::server::ServerProtocol, manager::boot::BootManager, Ipc, IPC_CHANNEL_BUFFER};
+use common::{config::server::ServerProtocol, core::BuildServer, manager::boot::BootManager};
 use directory::backend::internal::MigrateDirectory;
-use imap::core::{ImapSessionManager, IMAP};
-use jmap::{api::JmapSessionManager, services::gossip::spawn::GossiperBuilder, JMAP};
+use imap::core::ImapSessionManager;
+use jmap::{api::JmapSessionManager, services::gossip::spawn::GossiperBuilder, StartServices};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
-use smtp::core::{SmtpSessionManager, SMTP};
-use tokio::sync::mpsc;
+use smtp::{core::SmtpSessionManager, StartQueueManager};
 use trc::Collector;
 use utils::wait_for_shutdown;
 
@@ -27,72 +26,61 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     // Load config and apply macros
-    let init = BootManager::init().await;
+    let mut init = BootManager::init().await;
 
-    // Parse core
-    let mut config = init.config;
-    let core = init.core;
-
-    // Setup IPC channels
-    let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
-    let ipc = Ipc { delivery_tx };
-
-    // Init servers
-    let smtp = SMTP::init(
-        &mut config,
-        core.clone(),
-        ipc,
-        init.servers.span_id_gen.clone(),
-    )
-    .await;
-    let jmap = JMAP::init(&mut config, delivery_rx, core.clone(), smtp.inner.clone()).await;
-    let imap = IMAP::init(&mut config, jmap.clone()).await;
-    let gossiper = GossiperBuilder::try_parse(&mut config);
+    // Init services
+    init.start_services().await;
+    init.start_queue_manager();
+    let gossiper = GossiperBuilder::try_parse(&mut init.config);
 
     // Log configuration errors
-    config.log_errors();
-    config.log_warnings();
+    init.config.log_errors();
+    init.config.log_warnings();
 
-    // Log licensing information
-    #[cfg(feature = "enterprise")]
-    core.load().as_ref().log_license_details();
+    {
+        let server = init.inner.build_server();
 
-    // Migrate directory
-    if let Err(err) = core.load().storage.data.migrate_directory().await {
-        trc::error!(err.details("Directory migration failed"));
-        std::process::exit(1);
+        // Log licensing information
+        #[cfg(feature = "enterprise")]
+        server.log_license_details();
+
+        // Migrate directory
+        if let Err(err) = server.store().migrate_directory().await {
+            trc::error!(err.details("Directory migration failed"));
+            std::process::exit(1);
+        }
     }
 
     // Spawn servers
     let (shutdown_tx, shutdown_rx) = init.servers.spawn(|server, acceptor, shutdown_rx| {
         match &server.protocol {
             ServerProtocol::Smtp | ServerProtocol::Lmtp => server.spawn(
-                SmtpSessionManager::new(smtp.clone()),
-                core.clone(),
+                SmtpSessionManager::new(init.inner.clone()),
+                init.inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Http => server.spawn(
-                JmapSessionManager::new(jmap.clone()),
-                core.clone(),
+                JmapSessionManager::new(init.inner.clone()),
+                init.inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Imap => server.spawn(
-                ImapSessionManager::new(imap.clone()),
-                core.clone(),
+                ImapSessionManager::new(init.inner.clone()),
+                init.inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::Pop3 => server.spawn(
-                Pop3SessionManager::new(imap.clone()),
-                core.clone(),
+                Pop3SessionManager::new(init.inner.clone()),
+                init.inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
             ServerProtocol::ManageSieve => server.spawn(
-                ManageSieveSessionManager::new(imap.clone()),
-                core.clone(),
+                ManageSieveSessionManager::new(init.inner.clone()),
+                init.inner.clone(),
                 acceptor,
                 shutdown_rx,
             ),
@@ -101,7 +89,7 @@ async fn main() -> std::io::Result<()> {
 
     // Spawn gossip
     if let Some(gossiper) = gossiper {
-        gossiper.spawn(jmap, shutdown_rx.clone()).await;
+        gossiper.spawn(init.inner, shutdown_rx.clone()).await;
     }
 
     // Wait for shutdown signal

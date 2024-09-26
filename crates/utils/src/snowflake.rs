@@ -87,3 +87,13 @@ impl Default for SnowflakeIdGenerator {
         Self::new()
     }
 }
+
+impl Clone for SnowflakeIdGenerator {
+    fn clone(&self) -> Self {
+        Self {
+            epoch: self.epoch,
+            node_id: self.node_id,
+            sequence: 0.into(),
+        }
+    }
+}

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::{mailbox::QueryArguments, Object},
@@ -16,10 +16,21 @@ use store::{
     roaring::RoaringBitmap,
 };
 
-use crate::{UpdateResults, JMAP};
+use crate::{auth::acl::AclMethods, JmapMethods, UpdateResults};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn mailbox_query(
+use super::set::MailboxSet;
+
+pub trait MailboxQuery: Sync + Send {
+    fn mailbox_query(
+        &self,
+        request: QueryRequest<QueryArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<QueryResponse>> + Send;
+}
+
+impl MailboxQuery for Server {
+    async fn mailbox_query(
         &self,
         mut request: QueryRequest<QueryArguments>,
         access_token: &AccessToken,

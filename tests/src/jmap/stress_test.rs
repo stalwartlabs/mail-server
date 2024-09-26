@@ -7,9 +7,10 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
+use common::Server;
 use directory::backend::internal::manage::ManageDirectory;
 use futures::future::join_all;
-use jmap::{mailbox::UidMailbox, JMAP};
+use jmap::{mailbox::UidMailbox, JmapMethods};
 use jmap_client::{
     client::Client,
     core::set::{SetErrorType, SetObject},
@@ -23,7 +24,7 @@ use super::assert_is_empty;
 const TEST_USER_ID: u32 = 1;
 const NUM_PASSES: usize = 1;
 
-pub async fn test(server: Arc<JMAP>, mut client: Client) {
+pub async fn test(server: Server, mut client: Client) {
     println!("Running concurrency stress tests...");
     server
         .core
@@ -38,7 +39,7 @@ pub async fn test(server: Arc<JMAP>, mut client: Client) {
     mailbox_tests(server.clone(), client.clone()).await;
 }
 
-async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
+async fn email_tests(server: Server, client: Arc<Client>) {
     for pass in 0..NUM_PASSES {
         println!(
             "----------------- EMAIL STRESS TEST {} -----------------",
@@ -270,7 +271,7 @@ async fn email_tests(server: Arc<JMAP>, client: Arc<Client>) {
     }
 }
 
-async fn mailbox_tests(server: Arc<JMAP>, client: Arc<Client>) {
+async fn mailbox_tests(server: Server, client: Arc<Client>) {
     let mailboxes = Arc::new(vec![
         "test/test1/test2/test3".to_string(),
         "test1/test2/test3".to_string(),

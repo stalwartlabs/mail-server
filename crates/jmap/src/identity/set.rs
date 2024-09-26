@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use common::Server;
 use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::{
     error::set::SetError,
@@ -16,12 +17,20 @@ use jmap_proto::{
         value::{MaybePatchValue, Value},
     },
 };
+use std::future::Future;
 use store::write::{log::ChangeLogBuilder, BatchBuilder, F_CLEAR, F_VALUE};
 
-use crate::JMAP;
+use crate::{changes::write::ChangeLog, JmapMethods};
 
-impl JMAP {
-    pub async fn identity_set(
+pub trait IdentitySet: Sync + Send {
+    fn identity_set(
+        &self,
+        request: SetRequest<RequestArguments>,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+}
+
+impl IdentitySet for Server {
+    async fn identity_set(
         &self,
         mut request: SetRequest<RequestArguments>,
     ) -> trc::Result<SetResponse> {

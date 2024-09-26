@@ -26,7 +26,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         let script = request.tokens.into_iter().next().unwrap().unwrap_bytes();
-        self.jmap
+        self.server
             .core
             .sieve
             .untrusted_compiler

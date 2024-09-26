@@ -19,7 +19,7 @@ use utils::{config::ipmask::IpAddrMask, snowflake::SnowflakeIdGenerator};
 use crate::{
     config::server::ServerProtocol,
     expr::{functions::ResolveVariable, *},
-    Core,
+    Server,
 };
 
 use self::limiter::{ConcurrencyLimiter, InFlight};
@@ -91,7 +91,7 @@ pub trait SessionManager: Sync + Send + 'static + Clone {
         &self,
         mut session: SessionData<T>,
         is_tls: bool,
-        acme_core: Option<Arc<Core>>,
+        acme_core: Option<Server>,
         span_start: EventType,
         span_end: EventType,
     ) {

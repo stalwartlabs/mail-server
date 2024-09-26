@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use common::{
     config::smtp::session::Stage,
+    core::BuildServer,
     listener::{self, SessionManager, SessionStream},
 };
 use tokio_rustls::server::TlsStream;
@@ -15,7 +16,6 @@ use trc::{SecurityEvent, SmtpEvent};
 
 use crate::{
     core::{Session, SessionData, SessionParameters, SmtpSessionManager, State},
-    queue, reporting,
     scripts::ScriptResult,
 };
 
@@ -27,7 +27,7 @@ impl SessionManager for SmtpSessionManager {
         // Create session
         let mut session = Session {
             hostname: String::new(),
-            core: self.inner.into(),
+            server: self.inner.build_server(),
             instance: session.instance,
             state: State::default(),
             stream: session.stream,
@@ -59,19 +59,23 @@ impl SessionManager for SmtpSessionManager {
     #[allow(clippy::manual_async_fn)]
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {
-            let _ = self.inner.inner.queue_tx.send(queue::Event::Stop).await;
             let _ = self
                 .inner
-                .inner
-                .report_tx
-                .send(reporting::Event::Stop)
+                .ipc
+                .queue_tx
+                .send(common::ipc::QueueEvent::Stop)
                 .await;
             let _ = self
                 .inner
+                .ipc
+                .report_tx
+                .send(common::ipc::ReportingEvent::Stop)
+                .await;
+            let _ = self
                 .inner
                 .ipc
                 .delivery_tx
-                .send(common::DeliveryEvent::Stop)
+                .send(common::ipc::DeliveryEvent::Stop)
                 .await;
         }
     }
@@ -81,17 +85,15 @@ impl<T: SessionStream> Session<T> {
     pub async fn init_conn(&mut self) -> bool {
         self.eval_session_params().await;
 
-        let config = &self.core.core.smtp.session.connect;
+        let config = &self.server.core.smtp.session.connect;
 
         // Sieve filtering
         if let Some((script, script_id)) = self
-            .core
-            .core
+            .server
             .eval_if::<String, _>(&config.script, self, self.data.session_id)
             .await
             .and_then(|name| {
-                self.core
-                    .core
+                self.server
                     .get_trusted_sieve_script(&name, self.data.session_id)
                     .map(|s| (s, name))
             })
@@ -123,8 +125,7 @@ impl<T: SessionStream> Session<T> {
 
         // Obtain hostname
         self.hostname = self
-            .core
-            .core
+            .server
             .eval_if::<String, _>(&config.hostname, self, self.data.session_id)
             .await
             .unwrap_or_default();
@@ -138,8 +139,7 @@ impl<T: SessionStream> Session<T> {
 
         // Obtain greeting
         let greeting = self
-            .core
-            .core
+            .server
             .eval_if::<String, _>(&config.greeting, self, self.data.session_id)
             .await
             .filter(|g| !g.is_empty())
@@ -194,10 +194,7 @@ impl<T: SessionStream> Session<T> {
                                             .await
                                             .ok();
 
-                                        match self
-                                            .core
-                                            .core
-                                            .is_loiter_fail2banned(self.data.remote_ip)
+                                        match self.server.is_loiter_fail2banned(self.data.remote_ip)
                                             .await
                                         {
                                             Ok(true) => {
@@ -277,7 +274,7 @@ impl<T: SessionStream> Session<T> {
             state: self.state,
             data: self.data,
             instance: self.instance,
-            core: self.core,
+            server: self.server,
             in_flight: self.in_flight,
             params: self.params,
         })

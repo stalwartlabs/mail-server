@@ -11,12 +11,13 @@ use crate::{
         mailbox::destroy_all_mailboxes, test_account_login,
     },
 };
-use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID};
+use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID, JmapMethods};
 use jmap_client::{
     core::set::{SetErrorType, SetObject},
     email::EmailBodyPart,
 };
 use jmap_proto::types::{collection::Collection, id::Id};
+use smtp::queue::spool::SmtpSpool;
 
 use super::JMAPTest;
 
@@ -338,13 +339,12 @@ pub async fn test(params: &mut JMAPTest) {
         params.client.set_default_account_id(account_id.to_string());
         destroy_all_mailboxes(params).await;
     }
-    for event in server.smtp.next_event().await {
+    for event in server.next_event().await {
         server
-            .smtp
             .read_message(event.queue_id)
             .await
             .unwrap()
-            .remove(&server.smtp, event.due)
+            .remove(&server, event.due)
             .await;
     }
     assert_is_empty(server).await;

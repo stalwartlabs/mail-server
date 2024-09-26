@@ -8,10 +8,12 @@ use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use common::{
     auth::AccessToken,
+    core::BuildServer,
     expr::{functions::ResolveVariable, *},
+    ipc::StateEvent,
     listener::{ServerInstance, SessionData, SessionManager, SessionStream},
     manager::webadmin::Resource,
-    Core,
+    Inner, Server,
 };
 use directory::Permission;
 use http_body_util::{BodyExt, Full};
@@ -29,17 +31,26 @@ use jmap_proto::{
     response::Response,
     types::{blob::BlobId, id::Id},
 };
+use std::future::Future;
 
 use crate::{
-    auth::{authenticate::HttpHeaders, oauth::OAuthMetadata},
-    blob::{DownloadResponse, UploadResponse},
-    services::state,
-    JmapInstance, JMAP,
+    api::management::enterprise::telemetry::TelemetryApi,
+    auth::{
+        authenticate::{Authenticator, HttpHeaders},
+        oauth::{auth::OAuthApiHandler, token::TokenHandler, OAuthMetadata},
+        rate_limit::RateLimiter,
+    },
+    blob::{download::BlobDownload, upload::BlobUpload, DownloadResponse, UploadResponse},
+    websocket::upgrade::WebSocketUpgrade,
 };
 
 use super::{
-    management::ManagementApiError, HtmlResponse, HttpRequest, HttpResponse, HttpResponseBody,
-    JmapSessionManager, JsonResponse,
+    autoconfig::Autoconfig,
+    event_source::EventSourceHandler,
+    management::{ManagementApi, ManagementApiError},
+    request::RequestHandler,
+    session::SessionHandler,
+    HtmlResponse, HttpRequest, HttpResponse, HttpResponseBody, JmapSessionManager, JsonResponse,
 };
 
 pub struct HttpSessionData {
@@ -52,8 +63,16 @@ pub struct HttpSessionData {
     pub session_id: u64,
 }
 
-impl JMAP {
-    pub async fn parse_http_request(
+pub trait ParseHttp: Sync + Send {
+    fn parse_http_request(
+        &self,
+        req: HttpRequest,
+        session: HttpSessionData,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl ParseHttp for Server {
+    async fn parse_http_request(
         &self,
         mut req: HttpRequest,
         session: HttpSessionData,
@@ -63,7 +82,7 @@ impl JMAP {
 
         // Validate endpoint access
         let ctx = HttpContext::new(&session, &req);
-        match ctx.has_endpoint_access(&self.core).await {
+        match ctx.has_endpoint_access(self).await {
             StatusCode::OK => (),
             status => {
                 // Allow loopback address to avoid lockouts
@@ -198,10 +217,7 @@ impl JMAP {
                         self.authenticate_headers(&req, &session).await?;
 
                     return Ok(self
-                        .handle_session_resource(
-                            ctx.resolve_response_url(&self.core).await,
-                            access_token,
-                        )
+                        .handle_session_resource(ctx.resolve_response_url(self).await, access_token)
                         .await?
                         .into_http_response());
                 }
@@ -210,11 +226,11 @@ impl JMAP {
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
                     return Ok(JsonResponse::new(OAuthMetadata::new(
-                        ctx.resolve_response_url(&self.core).await,
+                        ctx.resolve_response_url(self).await,
                     ))
                     .into_http_response());
                 }
-                ("acme-challenge", &Method::GET) if self.core.has_acme_http_providers() => {
+                ("acme-challenge", &Method::GET) if self.has_acme_http_providers() => {
                     if let Some(token) = path.next() {
                         return match self
                             .core
@@ -230,7 +246,7 @@ impl JMAP {
                     }
                 }
                 ("mta-sts.txt", &Method::GET) => {
-                    if let Some(policy) = self.core.build_mta_sts_policy() {
+                    if let Some(policy) = self.build_mta_sts_policy() {
                         return Ok(Resource::new("text/plain", policy.to_string().into_bytes())
                             .into_http_response());
                     } else {
@@ -256,7 +272,7 @@ impl JMAP {
                 ("device", &Method::POST) => {
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
-                    let url = ctx.resolve_response_url(&self.core).await;
+                    let url = ctx.resolve_response_url(self).await;
                     return self
                         .handle_device_auth(&mut req, url, session.session_id)
                         .await;
@@ -389,7 +405,7 @@ impl JMAP {
 
                         return Ok(Resource::new(
                             "text/plain; version=0.0.4",
-                            self.core.export_prometheus_metrics().await?.into_bytes(),
+                            self.export_prometheus_metrics().await?.into_bytes(),
                         )
                         .into_http_response());
                     }
@@ -400,13 +416,12 @@ impl JMAP {
                 _ => (),
             },
             #[cfg(feature = "enterprise")]
-            "logo.svg" if self.core.is_enterprise_edition() => {
+            "logo.svg" if self.is_enterprise_edition() => {
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL
 
                 match self
-                    .core
                     .logo_resource(
                         req.headers()
                             .get(header::HOST)
@@ -425,7 +440,7 @@ impl JMAP {
                     }
                 }
 
-                let resource = self.inner.webadmin.get("logo.svg").await?;
+                let resource = self.inner.data.webadmin.get("logo.svg").await?;
 
                 return if !resource.is_empty() {
                     Ok(resource.into_http_response())
@@ -439,6 +454,7 @@ impl JMAP {
                 let path = req.uri().path();
                 let resource = self
                     .inner
+                    .data
                     .webadmin
                     .get(path.strip_prefix('/').unwrap_or(path))
                     .await?;
@@ -455,166 +471,156 @@ impl JMAP {
     }
 }
 
-impl JmapInstance {
-    async fn handle_session<T: SessionStream>(self, session: SessionData<T>) {
-        let _in_flight = session.in_flight;
-        let is_tls = session.stream.is_tls();
+async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionData<T>) {
+    let _in_flight = session.in_flight;
+    let is_tls = session.stream.is_tls();
 
-        if let Err(http_err) = http1::Builder::new()
-            .keep_alive(true)
-            .serve_connection(
-                TokioIo::new(session.stream),
-                service_fn(|req: hyper::Request<body::Incoming>| {
-                    let jmap_instance = self.clone();
-                    let instance = session.instance.clone();
+    if let Err(http_err) = http1::Builder::new()
+        .keep_alive(true)
+        .serve_connection(
+            TokioIo::new(session.stream),
+            service_fn(|req: hyper::Request<body::Incoming>| {
+                let instance = session.instance.clone();
+                let inner = inner.clone();
 
-                    async move {
-                        let jmap = JMAP::from(jmap_instance);
+                async move {
+                    let server = inner.build_server();
 
-                        // Obtain remote IP
-                        let remote_ip = if !jmap.core.jmap.http_use_forwarded {
-                            trc::event!(
-                                Http(trc::HttpEvent::RequestUrl),
-                                SpanId = session.session_id,
-                                Url = req.uri().to_string(),
-                            );
-
-                            session.remote_ip
-                        } else if let Some(forwarded_for) = req
-                            .headers()
-                            .get(header::FORWARDED)
-                            .and_then(|h| h.to_str().ok())
-                            .and_then(|h| {
-                                let h = h.to_ascii_lowercase();
-                                h.split_once("for=").and_then(|(_, rest)| {
-                                    let mut start_ip = usize::MAX;
-                                    let mut end_ip = usize::MAX;
-
-                                    for (pos, ch) in rest.char_indices() {
-                                        match ch {
-                                            '0'..='9' | 'a'..='f' | ':' | '.' => {
-                                                if start_ip == usize::MAX {
-                                                    start_ip = pos;
-                                                }
-                                                end_ip = pos;
-                                            }
-                                            '"' | '[' | ' ' if start_ip == usize::MAX => {}
-                                            _ => {
-                                                break;
-                                            }
-                                        }
-                                    }
-
-                                    rest.get(start_ip..=end_ip)
-                                        .and_then(|h| h.parse::<IpAddr>().ok())
-                                })
-                            })
-                            .or_else(|| {
-                                req.headers()
-                                    .get("X-Forwarded-For")
-                                    .and_then(|h| h.to_str().ok())
-                                    .map(|h| h.split_once(',').map_or(h, |(ip, _)| ip).trim())
-                                    .and_then(|h| h.parse::<IpAddr>().ok())
-                            })
-                        {
-                            trc::event!(
-                                Http(trc::HttpEvent::RequestUrl),
-                                SpanId = session.session_id,
-                                RemoteIp = forwarded_for,
-                                Url = req.uri().to_string(),
-                            );
-
-                            forwarded_for
-                        } else {
-                            trc::event!(
-                                Http(trc::HttpEvent::XForwardedMissing),
-                                SpanId = session.session_id,
-                            );
-                            session.remote_ip
-                        };
-
-                        // Parse HTTP request
-                        let response = match jmap
-                            .parse_http_request(
-                                req,
-                                HttpSessionData {
-                                    instance,
-                                    local_ip: session.local_ip,
-                                    local_port: session.local_port,
-                                    remote_ip,
-                                    remote_port: session.remote_port,
-                                    is_tls,
-                                    session_id: session.session_id,
-                                },
-                            )
-                            .await
-                        {
-                            Ok(response) => response,
-                            Err(err) => {
-                                let response = err.into_http_response();
-                                trc::error!(err.span_id(session.session_id));
-                                response
-                            }
-                        };
-
+                    // Obtain remote IP
+                    let remote_ip = if !server.core.jmap.http_use_forwarded {
                         trc::event!(
-                            Http(trc::HttpEvent::ResponseBody),
+                            Http(trc::HttpEvent::RequestUrl),
                             SpanId = session.session_id,
-                            Contents = match &response.body {
-                                HttpResponseBody::Text(value) => trc::Value::String(value.clone()),
-                                HttpResponseBody::Binary(_) => trc::Value::Static("[binary data]"),
-                                HttpResponseBody::Stream(_) => trc::Value::Static("[stream]"),
-                                _ => trc::Value::None,
-                            },
-                            Code = response.status.as_u16(),
-                            Size = response.size(),
+                            Url = req.uri().to_string(),
                         );
 
-                        // Build response
-                        let mut response = response.build();
+                        session.remote_ip
+                    } else if let Some(forwarded_for) = req
+                        .headers()
+                        .get(header::FORWARDED)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|h| {
+                            let h = h.to_ascii_lowercase();
+                            h.split_once("for=").and_then(|(_, rest)| {
+                                let mut start_ip = usize::MAX;
+                                let mut end_ip = usize::MAX;
 
-                        // Add custom headers
-                        if !jmap.core.jmap.http_headers.is_empty() {
-                            let headers = response.headers_mut();
+                                for (pos, ch) in rest.char_indices() {
+                                    match ch {
+                                        '0'..='9' | 'a'..='f' | ':' | '.' => {
+                                            if start_ip == usize::MAX {
+                                                start_ip = pos;
+                                            }
+                                            end_ip = pos;
+                                        }
+                                        '"' | '[' | ' ' if start_ip == usize::MAX => {}
+                                        _ => {
+                                            break;
+                                        }
+                                    }
+                                }
 
-                            for (header, value) in &jmap.core.jmap.http_headers {
-                                headers.insert(header.clone(), value.clone());
-                            }
+                                rest.get(start_ip..=end_ip)
+                                    .and_then(|h| h.parse::<IpAddr>().ok())
+                            })
+                        })
+                        .or_else(|| {
+                            req.headers()
+                                .get("X-Forwarded-For")
+                                .and_then(|h| h.to_str().ok())
+                                .map(|h| h.split_once(',').map_or(h, |(ip, _)| ip).trim())
+                                .and_then(|h| h.parse::<IpAddr>().ok())
+                        })
+                    {
+                        trc::event!(
+                            Http(trc::HttpEvent::RequestUrl),
+                            SpanId = session.session_id,
+                            RemoteIp = forwarded_for,
+                            Url = req.uri().to_string(),
+                        );
+
+                        forwarded_for
+                    } else {
+                        trc::event!(
+                            Http(trc::HttpEvent::XForwardedMissing),
+                            SpanId = session.session_id,
+                        );
+                        session.remote_ip
+                    };
+
+                    // Parse HTTP request
+                    let response = match server
+                        .parse_http_request(
+                            req,
+                            HttpSessionData {
+                                instance,
+                                local_ip: session.local_ip,
+                                local_port: session.local_port,
+                                remote_ip,
+                                remote_port: session.remote_port,
+                                is_tls,
+                                session_id: session.session_id,
+                            },
+                        )
+                        .await
+                    {
+                        Ok(response) => response,
+                        Err(err) => {
+                            let response = err.into_http_response();
+                            trc::error!(err.span_id(session.session_id));
+                            response
                         }
+                    };
 
-                        Ok::<_, hyper::Error>(response)
+                    trc::event!(
+                        Http(trc::HttpEvent::ResponseBody),
+                        SpanId = session.session_id,
+                        Contents = match &response.body {
+                            HttpResponseBody::Text(value) => trc::Value::String(value.clone()),
+                            HttpResponseBody::Binary(_) => trc::Value::Static("[binary data]"),
+                            HttpResponseBody::Stream(_) => trc::Value::Static("[stream]"),
+                            _ => trc::Value::None,
+                        },
+                        Code = response.status.as_u16(),
+                        Size = response.size(),
+                    );
+
+                    // Build response
+                    let mut response = response.build();
+
+                    // Add custom headers
+                    if !server.core.jmap.http_headers.is_empty() {
+                        let headers = response.headers_mut();
+
+                        for (header, value) in &server.core.jmap.http_headers {
+                            headers.insert(header.clone(), value.clone());
+                        }
                     }
-                }),
-            )
-            .with_upgrades()
-            .await
-        {
-            trc::event!(
-                Http(trc::HttpEvent::Error),
-                SpanId = session.session_id,
-                Reason = http_err.to_string(),
-            );
-        }
+
+                    Ok::<_, hyper::Error>(response)
+                }
+            }),
+        )
+        .with_upgrades()
+        .await
+    {
+        trc::event!(
+            Http(trc::HttpEvent::Error),
+            SpanId = session.session_id,
+            Reason = http_err.to_string(),
+        );
     }
 }
 
 impl SessionManager for JmapSessionManager {
-    fn handle<T: SessionStream>(
-        self,
-        session: SessionData<T>,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        self.inner.handle_session(session)
+    fn handle<T: SessionStream>(self, session: SessionData<T>) -> impl Future<Output = ()> + Send {
+        handle_session(self.inner, session)
     }
 
     #[allow(clippy::manual_async_fn)]
     fn shutdown(&self) -> impl std::future::Future<Output = ()> + Send {
         async {
-            let _ = self
-                .inner
-                .jmap_inner
-                .state_tx
-                .send(state::Event::Stop)
-                .await;
+            let _ = self.inner.ipc.state_tx.send(StateEvent::Stop).await;
         }
     }
 }
@@ -629,31 +635,33 @@ impl<'x> HttpContext<'x> {
         Self { session, req }
     }
 
-    pub async fn resolve_response_url(&self, core: &Core) -> String {
-        core.eval_if(
-            &core.network.http_response_url,
-            self,
-            self.session.session_id,
-        )
-        .await
-        .unwrap_or_else(|| {
-            format!(
-                "http{}://{}:{}",
-                if self.session.is_tls { "s" } else { "" },
-                self.session.local_ip,
-                self.session.local_port
+    async fn resolve_response_url(&self, server: &Server) -> String {
+        server
+            .eval_if(
+                &server.core.network.http_response_url,
+                self,
+                self.session.session_id,
             )
-        })
+            .await
+            .unwrap_or_else(|| {
+                format!(
+                    "http{}://{}:{}",
+                    if self.session.is_tls { "s" } else { "" },
+                    self.session.local_ip,
+                    self.session.local_port
+                )
+            })
     }
 
-    pub async fn has_endpoint_access(&self, core: &Core) -> StatusCode {
-        core.eval_if(
-            &core.network.http_allowed_endpoint,
-            self,
-            self.session.session_id,
-        )
-        .await
-        .unwrap_or(StatusCode::OK)
+    async fn has_endpoint_access(&self, server: &Server) -> StatusCode {
+        server
+            .eval_if(
+                &server.core.network.http_allowed_endpoint,
+                self,
+                self.session.session_id,
+            )
+            .await
+            .unwrap_or(StatusCode::OK)
     }
 }
 

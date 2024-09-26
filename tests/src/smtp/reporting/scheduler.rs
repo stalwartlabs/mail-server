@@ -6,7 +6,10 @@
 
 use std::sync::Arc;
 
-use common::config::smtp::report::AggregateFrequency;
+use common::{
+    config::smtp::report::AggregateFrequency,
+    ipc::{DmarcEvent, PolicyType, TlsEvent},
+};
 use mail_auth::{
     common::parse::TxtRecordParser,
     dmarc::{Dmarc, URI},
@@ -15,8 +18,12 @@ use mail_auth::{
 };
 use store::write::QueueClass;
 
-use crate::smtp::outbound::TestServer;
-use smtp::reporting::{dmarc::DmarcFormat, DmarcEvent, PolicyType, TlsEvent};
+use smtp::reporting::{
+    dmarc::{DmarcFormat, DmarcReporting},
+    tls::TlsReporting,
+};
+
+use crate::smtp::TestSMTP;
 
 const CONFIG: &str = r#"
 [session.rcpt]
@@ -37,9 +44,9 @@ async fn report_scheduler() {
     crate::enable_logging();
 
     // Create scheduler
-    let local = TestServer::new("smtp_report_queue_test", CONFIG, true).await;
+    let local = TestSMTP::new("smtp_report_queue_test", CONFIG).await;
     let core = local.build_smtp();
-    let qr = &local.qr;
+    let qr = &local.queue_receiver;
 
     // Schedule two events with a same policy and another one with a different policy
     let dmarc_record =

@@ -12,84 +12,38 @@ use std::{
 };
 
 use common::{
-    config::{scripts::ScriptCache, smtp::auth::VerifyStrategy},
+    config::smtp::auth::VerifyStrategy,
     listener::{
         limiter::{ConcurrencyLimiter, InFlight},
         ServerInstance,
     },
-    Core, Ipc, SharedCore,
+    Inner, Server,
 };
-use dashmap::DashMap;
 use directory::Directory;
 use mail_auth::{IprevOutput, SpfOutput};
 use smtp_proto::request::receiver::{
     BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver, RequestReceiver,
 };
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    sync::mpsc,
-};
-use tokio_rustls::TlsConnector;
+use tokio::io::{AsyncRead, AsyncWrite};
 use utils::snowflake::SnowflakeIdGenerator;
 
 use crate::{
     inbound::auth::SaslToken,
-    queue::{self, DomainPart, QueueId},
-    reporting,
+    queue::{DomainPart, QueueId},
 };
-
-use self::throttle::{ThrottleKey, ThrottleKeyHasherBuilder};
 
 pub mod params;
 pub mod throttle;
 
 #[derive(Clone)]
-pub struct SmtpInstance {
-    pub inner: Arc<Inner>,
-    pub core: SharedCore,
-}
-
-impl SmtpInstance {
-    pub fn new(core: SharedCore, inner: impl Into<Arc<Inner>>) -> Self {
-        Self {
-            core,
-            inner: inner.into(),
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct SmtpSessionManager {
-    pub inner: SmtpInstance,
+    pub inner: Arc<Inner>,
 }
 
 impl SmtpSessionManager {
-    pub fn new(inner: SmtpInstance) -> Self {
+    pub fn new(inner: Arc<Inner>) -> Self {
         Self { inner }
     }
-}
-
-#[derive(Clone)]
-pub struct SMTP {
-    pub core: Arc<Core>,
-    pub inner: Arc<Inner>,
-}
-
-pub struct Inner {
-    pub session_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
-    pub queue_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
-    pub queue_tx: mpsc::Sender<queue::Event>,
-    pub report_tx: mpsc::Sender<reporting::Event>,
-    pub queue_id_gen: SnowflakeIdGenerator,
-    pub span_id_gen: Arc<SnowflakeIdGenerator>,
-    pub connectors: TlsConnectors,
-    pub ipc: Ipc,
-    pub script_cache: ScriptCache,
-}
-
-pub struct TlsConnectors {
-    pub pki_verify: TlsConnector,
-    pub dummy_verify: TlsConnector,
 }
 
 pub enum State {
@@ -107,7 +61,7 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
     pub hostname: String,
     pub state: State,
     pub instance: Arc<ServerInstance>,
-    pub core: SMTP,
+    pub server: Server,
     pub stream: T,
     pub data: SessionData,
     pub params: SessionParameters,
@@ -260,15 +214,6 @@ impl PartialOrd for SessionAddress {
     }
 }
 
-impl From<SmtpInstance> for SMTP {
-    fn from(value: SmtpInstance) -> Self {
-        SMTP {
-            core: value.core.load_full(),
-            inner: value.inner,
-        }
-    }
-}
-
 static SIEVE: LazyLock<Arc<ServerInstance>> = LazyLock::new(|| {
     Arc::new(ServerInstance {
         id: "sieve".to_string(),
@@ -282,12 +227,16 @@ static SIEVE: LazyLock<Arc<ServerInstance>> = LazyLock::new(|| {
 });
 
 impl Session<common::listener::stream::NullIo> {
-    pub fn local(core: SMTP, instance: std::sync::Arc<ServerInstance>, data: SessionData) -> Self {
+    pub fn local(
+        server: Server,
+        instance: std::sync::Arc<ServerInstance>,
+        data: SessionData,
+    ) -> Self {
         Session {
             hostname: "localhost".to_string(),
             state: State::None,
             instance,
-            core,
+            server,
             stream: common::listener::stream::NullIo::default(),
             data,
             params: SessionParameters {
@@ -315,14 +264,14 @@ impl Session<common::listener::stream::NullIo> {
     }
 
     pub fn sieve(
-        core: SMTP,
+        server: Server,
         mail_from: SessionAddress,
         rcpt_to: Vec<SessionAddress>,
         message: Vec<u8>,
         session_id: u64,
     ) -> Self {
         Self::local(
-            core,
+            server,
             SIEVE.clone(),
             SessionData::local(mail_from.into(), rcpt_to, message, session_id),
         )
@@ -395,28 +344,6 @@ impl SessionAddress {
             address,
             flags: 0,
             dsn_info: None,
-        }
-    }
-}
-
-#[cfg(feature = "test_mode")]
-impl Default for Inner {
-    fn default() -> Self {
-        Self {
-            session_throttle: Default::default(),
-            queue_throttle: Default::default(),
-            queue_tx: mpsc::channel(1).0,
-            report_tx: mpsc::channel(1).0,
-            queue_id_gen: Default::default(),
-            span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
-            connectors: TlsConnectors {
-                pki_verify: mail_send::smtp::tls::build_tls_connector(false),
-                dummy_verify: mail_send::smtp::tls::build_tls_connector(true),
-            },
-            ipc: Ipc {
-                delivery_tx: mpsc::channel(1).0,
-            },
-            script_cache: Default::default(),
         }
     }
 }

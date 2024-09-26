@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::{AccessToken, ResourceToken};
+use common::{
+    auth::{AccessToken, ResourceToken},
+    Server,
+};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
@@ -34,9 +37,15 @@ use store::{
     BlobClass,
 };
 
-use crate::{api::http::HttpSessionData, JMAP};
+use crate::{
+    api::http::HttpSessionData,
+    blob::{download::BlobDownload, upload::BlobUpload},
+    changes::write::ChangeLog,
+    JmapMethods,
+};
+use std::future::Future;
 
-struct SetContext<'x> {
+pub struct SetContext<'x> {
     resource_token: ResourceToken,
     access_token: &'x AccessToken,
     response: SetResponse,
@@ -53,8 +62,38 @@ pub static SCHEMA: &[IndexProperty] = &[
     IndexProperty::new(Property::IsActive).index_as(IndexAs::Integer),
 ];
 
-impl JMAP {
-    pub async fn sieve_script_set(
+pub trait SieveScriptSet: Sync + Send {
+    fn sieve_script_set(
+        &self,
+        request: SetRequest<SetArguments>,
+        access_token: &AccessToken,
+        session: &HttpSessionData,
+    ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
+
+    fn sieve_script_delete(
+        &self,
+        resource_token: &ResourceToken,
+        document_id: u32,
+        fail_if_active: bool,
+    ) -> impl Future<Output = trc::Result<bool>> + Send;
+
+    fn sieve_set_item(
+        &self,
+        changes_: Object<SetValue>,
+        update: Option<(u32, HashedValue<Object<Value>>)>,
+        ctx: &SetContext,
+        session_id: u64,
+    ) -> impl Future<Output = trc::Result<Result<(ObjectIndexBuilder, Option<Vec<u8>>), SetError>>> + Send;
+
+    fn sieve_activate_script(
+        &self,
+        account_id: u32,
+        activate_id: Option<u32>,
+    ) -> impl Future<Output = trc::Result<Vec<(u32, bool)>>> + Send;
+}
+
+impl SieveScriptSet for Server {
+    async fn sieve_script_set(
         &self,
         mut request: SetRequest<SetArguments>,
         access_token: &AccessToken,
@@ -343,7 +382,7 @@ impl JMAP {
         Ok(ctx.response)
     }
 
-    pub async fn sieve_script_delete(
+    async fn sieve_script_delete(
         &self,
         resource_token: &ResourceToken,
         document_id: u32,
@@ -581,7 +620,7 @@ impl JMAP {
             .map(|obj| (obj, blob_update)))
     }
 
-    pub async fn sieve_activate_script(
+    async fn sieve_activate_script(
         &self,
         account_id: u32,
         mut activate_id: Option<u32>,

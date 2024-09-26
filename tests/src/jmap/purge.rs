@@ -5,11 +5,13 @@
  */
 
 use ahash::AHashSet;
+use common::Server;
 use directory::{backend::internal::manage::ManageDirectory, QueryBy};
 use imap_proto::ResponseType;
 use jmap::{
+    email::delete::EmailDeletion,
     mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
-    JMAP,
+    JmapMethods,
 };
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 use store::{
@@ -205,7 +207,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_is_empty(server).await;
 }
 
-async fn get_changes(server: &JMAP) -> AHashSet<(u64, u8)> {
+async fn get_changes(server: &Server) -> AHashSet<(u64, u8)> {
     let mut changes = AHashSet::new();
     server
         .core

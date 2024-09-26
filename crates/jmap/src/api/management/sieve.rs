@@ -6,18 +6,16 @@
 
 use std::time::SystemTime;
 
-use common::{auth::AccessToken, scripts::ScriptModification, IntoString};
+use common::{auth::AccessToken, scripts::ScriptModification, IntoString, Server};
 use directory::Permission;
 use hyper::Method;
 use serde_json::json;
 use sieve::{runtime::Variable, Envelope};
-use smtp::scripts::{ScriptParameters, ScriptResult};
+use smtp::scripts::{event_loop::RunScript, ScriptParameters, ScriptResult};
+use std::future::Future;
 use utils::url_params::UrlParams;
 
-use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
-    JMAP,
-};
+use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
 
 #[derive(Debug, serde::Serialize)]
 #[serde(tag = "action")]
@@ -36,8 +34,18 @@ pub enum Response {
     Discard,
 }
 
-impl JMAP {
-    pub async fn handle_run_sieve(
+pub trait SieveHandler: Sync + Send {
+    fn handle_run_sieve(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        body: Option<Vec<u8>>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+}
+
+impl SieveHandler for Server {
+    async fn handle_run_sieve(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
@@ -103,7 +111,7 @@ impl JMAP {
         }
 
         // Run script
-        let result = match self.smtp.run_script(script_id, script, params, 0).await {
+        let result = match self.run_script(script_id, script, params, 0).await {
             ScriptResult::Accept { modifications } => Response::Accept { modifications },
             ScriptResult::Replace {
                 message,

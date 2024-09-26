@@ -12,7 +12,6 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use arc_swap::ArcSwap;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use dns_update::{providers::rfc2136::DnsAddress, DnsUpdater, TsigAlgorithm};
 use rcgen::generate_simple_self_signed;
@@ -33,20 +32,15 @@ use x509_parser::{
 
 use crate::listener::{
     acme::{directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeProvider, ChallengeSettings},
-    tls::TlsManager,
+    tls::AcmeProviders,
 };
 
 pub static TLS13_VERSION: &[&SupportedProtocolVersion] = &[&TLS13];
 pub static TLS12_VERSION: &[&SupportedProtocolVersion] = &[&TLS12];
 
-impl TlsManager {
+impl AcmeProviders {
     pub fn parse(config: &mut Config) -> Self {
-        let mut certificates = AHashMap::new();
-        let mut acme_providers = AHashMap::new();
-        let mut subject_names = AHashSet::new();
-
-        // Parse certificates
-        parse_certificates(config, &mut certificates, &mut subject_names);
+        let mut providers = AHashMap::new();
 
         // Parse ACME providers
         'outer: for acme_id in config
@@ -140,9 +134,6 @@ impl TlsManager {
                 .property::<bool>(("acme", acme_id, "default"))
                 .unwrap_or_default();
 
-            // Add domains for self-signed certificate
-            subject_names.extend(domains.iter().cloned());
-
             if !domains.is_empty() {
                 match AcmeProvider::new(
                     acme_id.to_string(),
@@ -154,7 +145,7 @@ impl TlsManager {
                     default,
                 ) {
                     Ok(acme_provider) => {
-                        acme_providers.insert(acme_id.to_string(), acme_provider);
+                        providers.insert(acme_id.to_string(), acme_provider);
                     }
                     Err(err) => {
                         config.new_build_error(format!("acme.{acme_id}"), err.to_string());
@@ -163,21 +154,7 @@ impl TlsManager {
             }
         }
 
-        if subject_names.is_empty() {
-            subject_names.insert("localhost".to_string());
-        }
-
-        TlsManager {
-            certificates: ArcSwap::from_pointee(certificates),
-            acme_providers,
-            self_signed_cert: build_self_signed_cert(subject_names.into_iter().collect::<Vec<_>>())
-                .or_else(|err| {
-                    config.new_build_error("certificate.self-signed", err);
-                    build_self_signed_cert(vec!["localhost".to_string()])
-                })
-                .ok()
-                .map(Arc::new),
-        }
+        AcmeProviders { providers }
     }
 }
 

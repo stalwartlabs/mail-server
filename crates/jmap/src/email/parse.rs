@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     method::parse::{ParseEmailRequest, ParseEmailResponse},
     object::Object,
@@ -13,9 +13,10 @@ use jmap_proto::{
 use mail_parser::{
     decoders::html::html_to_text, parsers::preview::preview_text, MessageParser, PartType,
 };
+use std::future::Future;
 use utils::map::vec_map::VecMap;
 
-use crate::JMAP;
+use crate::blob::download::BlobDownload;
 
 use super::{
     body::{ToBodyPart, TruncateBody},
@@ -23,8 +24,16 @@ use super::{
     index::PREVIEW_LENGTH,
 };
 
-impl JMAP {
-    pub async fn email_parse(
+pub trait EmailParse: Sync + Send {
+    fn email_parse(
+        &self,
+        request: ParseEmailRequest,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<ParseEmailResponse>> + Send;
+}
+
+impl EmailParse for Server {
+    async fn email_parse(
         &self,
         request: ParseEmailRequest,
         access_token: &AccessToken,

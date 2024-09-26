@@ -4,18 +4,32 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     method::changes::{ChangesRequest, ChangesResponse, RequestArguments},
     types::{collection::Collection, property::Property, state::State},
 };
+use std::future::Future;
 use store::query::log::{Change, Changes, Query};
 use trc::AddContext;
 
-use crate::JMAP;
+pub trait ChangesLookup: Sync + Send {
+    fn changes(
+        &self,
+        request: ChangesRequest,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<ChangesResponse>> + Send;
 
-impl JMAP {
-    pub async fn changes(
+    fn changes_(
+        &self,
+        account_id: u32,
+        collection: Collection,
+        query: Query,
+    ) -> impl Future<Output = trc::Result<Changes>> + Send;
+}
+
+impl ChangesLookup for Server {
+    async fn changes(
         &self,
         request: ChangesRequest,
         access_token: &AccessToken,
@@ -160,7 +174,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn changes_(
+    async fn changes_(
         &self,
         account_id: u32,
         collection: Collection,

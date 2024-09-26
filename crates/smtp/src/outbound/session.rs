@@ -5,6 +5,7 @@
  */
 
 use common::config::smtp::queue::RequireOptional;
+use common::Server;
 use mail_send::Credentials;
 use smtp_proto::{
     EhloResponse, Severity, EXT_CHUNKING, EXT_DSN, EXT_REQUIRE_TLS, EXT_SIZE, EXT_SMTP_UTF8,
@@ -17,17 +18,14 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use trc::DeliveryEvent;
 
 use crate::outbound::client::{from_error_status, from_mail_send_error};
-use crate::{
-    core::SMTP,
-    queue::{ErrorDetails, HostResponse, RCPT_STATUS_CHANGED},
-};
+use crate::queue::{ErrorDetails, HostResponse, RCPT_STATUS_CHANGED};
 
 use crate::queue::{Error, Message, Recipient, Status};
 
 use super::{client::SmtpClient, TlsStrategy};
 
 pub struct SessionParams<'x> {
-    pub core: &'x SMTP,
+    pub server: &'x Server,
     pub hostname: &'x str,
     pub credentials: Option<&'x Credentials<String>>,
     pub is_smtp: bool,

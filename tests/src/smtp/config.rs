@@ -8,11 +8,11 @@ use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use common::{
     config::{
-        server::{Listener, Server, ServerProtocol, Servers},
+        server::{Listener, Listeners, ServerProtocol, TcpListener},
         smtp::{throttle::parse_throttle, *},
     },
     expr::{functions::ResolveVariable, if_block::*, tokenizer::TokenMap, *},
-    Core,
+    Server,
 };
 use tokio::net::TcpSocket;
 
@@ -301,13 +301,13 @@ fn parse_servers() {
 
     // Parse servers
     let mut config = Config::new(toml).unwrap();
-    let servers = Servers::parse(&mut config).servers;
+    let servers = Listeners::parse(&mut config).servers;
     let id_generator = Arc::new(utils::snowflake::SnowflakeIdGenerator::new());
     let expected_servers = vec![
-        Server {
+        Listener {
             id: "smtp".to_string(),
             protocol: ServerProtocol::Smtp,
-            listeners: vec![Listener {
+            listeners: vec![TcpListener {
                 socket: TcpSocket::new_v4().unwrap(),
                 addr: "127.0.0.1:9925".parse().unwrap(),
                 ttl: 3600.into(),
@@ -319,11 +319,11 @@ fn parse_servers() {
             proxy_networks: vec![],
             span_id_gen: id_generator.clone(),
         },
-        Server {
+        Listener {
             id: "smtps".to_string(),
             protocol: ServerProtocol::Smtp,
             listeners: vec![
-                Listener {
+                TcpListener {
                     socket: TcpSocket::new_v4().unwrap(),
                     addr: "127.0.0.1:9465".parse().unwrap(),
                     ttl: 4096.into(),
@@ -331,7 +331,7 @@ fn parse_servers() {
                     linger: None,
                     nodelay: true,
                 },
-                Listener {
+                TcpListener {
                     socket: TcpSocket::new_v4().unwrap(),
                     addr: "127.0.0.1:9466".parse().unwrap(),
                     ttl: 4096.into(),
@@ -344,10 +344,10 @@ fn parse_servers() {
             proxy_networks: vec![],
             span_id_gen: id_generator.clone(),
         },
-        Server {
+        Listener {
             id: "submission".to_string(),
             protocol: ServerProtocol::Smtp,
-            listeners: vec![Listener {
+            listeners: vec![TcpListener {
                 socket: TcpSocket::new_v4().unwrap(),
                 addr: "127.0.0.1:9991".parse().unwrap(),
                 ttl: 3600.into(),
@@ -416,7 +416,7 @@ async fn eval_if() {
         V_PRIORITY,
         V_MX,
     ]);
-    let core = Core::default();
+    let core = Server::default();
 
     for (key, _) in config.keys.clone() {
         if !key.starts_with("rule.") {
@@ -466,7 +466,7 @@ async fn eval_dynvalue() {
         V_PRIORITY,
         V_MX,
     ]);
-    let core = Core::default();
+    let core = Server::default();
 
     for test_name in config
         .sub_keys("eval", "")

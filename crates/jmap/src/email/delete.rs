@@ -6,6 +6,7 @@
 
 use std::time::Duration;
 
+use common::Server;
 use jmap_proto::types::{
     collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
     type_state::DataType,
@@ -23,15 +24,41 @@ use trc::{AddContext, StoreEvent};
 use utils::codec::leb128::Leb128Reader;
 
 use crate::{
+    changes::write::ChangeLog,
     mailbox::{UidMailbox, JUNK_ID, TOMBSTONE_ID, TRASH_ID},
-    JMAP,
+    services::state::StateManager,
+    JmapMethods,
 };
 
 use super::{index::EmailIndexBuilder, metadata::MessageMetadata};
 use rand::prelude::SliceRandom;
+use std::future::Future;
 
-impl JMAP {
-    pub async fn emails_tombstone(
+pub trait EmailDeletion: Sync + Send {
+    fn emails_tombstone(
+        &self,
+        account_id: u32,
+        document_ids: RoaringBitmap,
+    ) -> impl Future<Output = trc::Result<(ChangeLogBuilder, RoaringBitmap)>> + Send;
+
+    fn purge_accounts(&self) -> impl Future<Output = ()> + Send;
+
+    fn purge_account(&self, account_id: u32) -> impl Future<Output = ()> + Send;
+
+    fn emails_auto_expunge(
+        &self,
+        account_id: u32,
+        period: Duration,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+
+    fn emails_purge_tombstoned(
+        &self,
+        account_id: u32,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
+}
+
+impl EmailDeletion for Server {
+    async fn emails_tombstone(
         &self,
         account_id: u32,
         mut document_ids: RoaringBitmap,
@@ -208,7 +235,7 @@ impl JMAP {
         Ok((changes, document_ids))
     }
 
-    pub async fn purge_accounts(&self) {
+    async fn purge_accounts(&self) {
         if let Ok(Some(account_ids)) = self.get_document_ids(u32::MAX, Collection::Principal).await
         {
             let mut account_ids: Vec<u32> = account_ids.into_iter().collect();
@@ -222,7 +249,7 @@ impl JMAP {
         }
     }
 
-    pub async fn purge_account(&self, account_id: u32) {
+    async fn purge_account(&self, account_id: u32) {
         // Lock account
         match self
             .core
@@ -290,7 +317,7 @@ impl JMAP {
         }
     }
 
-    pub async fn emails_auto_expunge(&self, account_id: u32, period: Duration) -> trc::Result<()> {
+    async fn emails_auto_expunge(&self, account_id: u32, period: Duration) -> trc::Result<()> {
         let deletion_candidates = self
             .get_tag(
                 account_id,
@@ -313,7 +340,7 @@ impl JMAP {
         if deletion_candidates.is_empty() {
             return Ok(());
         }
-        let reference_cid = self.inner.snowflake_id.past_id(period).ok_or_else(|| {
+        let reference_cid = self.inner.data.jmap_id_gen.past_id(period).ok_or_else(|| {
             trc::StoreEvent::UnexpectedError
                 .into_err()
                 .caused_by(trc::location!())
@@ -364,7 +391,7 @@ impl JMAP {
         Ok(())
     }
 
-    pub async fn emails_purge_tombstoned(&self, account_id: u32) -> trc::Result<()> {
+    async fn emails_purge_tombstoned(&self, account_id: u32) -> trc::Result<()> {
         // Obtain tombstoned messages
         let tombstoned_ids = self
             .core
@@ -401,7 +428,6 @@ impl JMAP {
 
         // Obtain tenant id
         let tenant_id = self
-            .core
             .get_cached_access_token(account_id)
             .await
             .caused_by(trc::location!())?

@@ -7,7 +7,7 @@
 use std::borrow::Cow;
 
 use ahash::AHashMap;
-use common::{expr::functions::ResolveVariable, scripts::ScriptModification, Core};
+use common::{expr::functions::ResolveVariable, scripts::ScriptModification, Server};
 use sieve::{runtime::Variable, Envelope};
 
 pub mod envelope;
@@ -58,20 +58,23 @@ impl<'x> ScriptParameters<'x> {
 
     pub async fn with_envelope(
         mut self,
-        core: &Core,
+        server: &Server,
         vars: &impl ResolveVariable,
         session_id: u64,
     ) -> Self {
         for (variable, expr) in [
-            (&mut self.from_addr, &core.sieve.from_addr),
-            (&mut self.from_name, &core.sieve.from_name),
-            (&mut self.return_path, &core.sieve.return_path),
+            (&mut self.from_addr, &server.core.sieve.from_addr),
+            (&mut self.from_name, &server.core.sieve.from_name),
+            (&mut self.return_path, &server.core.sieve.return_path),
         ] {
-            if let Some(value) = core.eval_if(expr, vars, session_id).await {
+            if let Some(value) = server.eval_if(expr, vars, session_id).await {
                 *variable = value;
             }
         }
-        if let Some(value) = core.eval_if(&core.sieve.sign, vars, session_id).await {
+        if let Some(value) = server
+            .eval_if(&server.core.sieve.sign, vars, session_id)
+            .await
+        {
             self.sign = value;
         }
         self

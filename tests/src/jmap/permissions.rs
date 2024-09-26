@@ -7,12 +7,13 @@
 use ahash::AHashSet;
 use common::{
     auth::{AccessToken, TenantInfo},
-    DeliveryResult, IngestMessage,
+    ipc::{DeliveryResult, IngestMessage},
 };
 use directory::{
     backend::internal::{PrincipalField, PrincipalUpdate, PrincipalValue},
     Permission, Principal, Type,
 };
+use jmap::{services::ingest::MailDelivery, JmapMethods};
 use utils::BlobHash;
 
 use crate::jmap::assert_is_empty;
@@ -20,7 +21,7 @@ use crate::jmap::assert_is_empty;
 use super::{enterprise::List, JMAPTest, ManagementApi};
 
 pub async fn test(params: &JMAPTest) {
-    let core = params.server.core.clone();
+    println!("Running permissions tests...");
     let server = params.server.clone();
 
     // Prepare management API
@@ -41,7 +42,8 @@ pub async fn test(params: &JMAPTest) {
         .await
         .unwrap()
         .unwrap_data();
-    core.get_access_token(account_id)
+    server
+        .get_access_token(account_id)
         .await
         .unwrap()
         .validate_permissions(
@@ -122,7 +124,8 @@ pub async fn test(params: &JMAPTest) {
     .await
     .unwrap()
     .unwrap_data();
-    core.get_access_token(account_id)
+    server
+        .get_access_token(account_id)
         .await
         .unwrap()
         .validate_permissions([
@@ -330,7 +333,8 @@ pub async fn test(params: &JMAPTest) {
         .unwrap_data();
 
     // Verify permissions
-    core.get_access_token(tenant_admin_id)
+    server
+        .get_access_token(tenant_admin_id)
         .await
         .unwrap()
         .validate_permissions(Permission::all().filter(|p| p.is_tenant_admin_permission()))
@@ -425,7 +429,8 @@ pub async fn test(params: &JMAPTest) {
         .unwrap_data();
 
     // Although super user privileges were used and a different tenant name was provided, this should be ignored
-    core.get_access_token(tenant_user_id)
+    server
+        .get_access_token(tenant_user_id)
         .await
         .unwrap()
         .validate_permissions(
@@ -487,7 +492,8 @@ pub async fn test(params: &JMAPTest) {
         .unwrap_data();
 
     // Check updated permissions
-    core.get_access_token(tenant_user_id)
+    server
+        .get_access_token(tenant_user_id)
         .await
         .unwrap()
         .validate_permissions(Permission::all().filter(|p| {
@@ -588,8 +594,8 @@ pub async fn test(params: &JMAPTest) {
 
     // John should not be allowed to receive email
     let message_blob = BlobHash::from(TEST_MESSAGE.as_bytes());
-    core.storage
-        .blob
+    server
+        .blob_store()
         .put_blob(message_blob.as_ref(), TEST_MESSAGE.as_bytes())
         .await
         .unwrap();
@@ -621,7 +627,8 @@ pub async fn test(params: &JMAPTest) {
         .await
         .unwrap()
         .unwrap_data();
-    core.get_access_token(tenant_user_id)
+    server
+        .get_access_token(tenant_user_id)
         .await
         .unwrap()
         .validate_permissions(

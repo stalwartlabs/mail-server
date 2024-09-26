@@ -17,7 +17,7 @@ pub mod text;
 use mail_parser::Message;
 use sieve::{runtime::Variable, FunctionMap, Input};
 
-use crate::{config::scripts::ScriptCache, Core};
+use crate::{Core, Server};
 
 use super::ScriptModification;
 
@@ -25,8 +25,7 @@ type RegisterPluginFnc = fn(u32, &mut FunctionMap) -> ();
 
 pub struct PluginContext<'x> {
     pub session_id: u64,
-    pub core: &'x Core,
-    pub cache: &'x ScriptCache,
+    pub server: &'x Server,
     pub message: &'x Message<'x>,
     pub modifications: &'x mut Vec<ScriptModification>,
     pub arguments: Vec<Variable>,

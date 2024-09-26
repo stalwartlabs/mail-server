@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     object::Object,
@@ -13,12 +13,58 @@ use jmap_proto::{
 use store::{ahash::AHashSet, query::Filter, roaring::RoaringBitmap};
 use trc::AddContext;
 
-use crate::{auth::acl::EffectiveAcl, JMAP};
+use crate::{
+    auth::acl::{AclMethods, EffectiveAcl},
+    changes::state::StateManager,
+    email::cache::ThreadCache,
+    JmapMethods,
+};
 
-use super::INBOX_ID;
+use super::{set::MailboxSet, INBOX_ID};
+use std::future::Future;
 
-impl JMAP {
-    pub async fn mailbox_get(
+pub trait MailboxGet: Sync + Send {
+    fn mailbox_get(
+        &self,
+        request: GetRequest<RequestArguments>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<GetResponse>> + Send;
+
+    fn mailbox_count_threads(
+        &self,
+        account_id: u32,
+        document_ids: Option<RoaringBitmap>,
+    ) -> impl Future<Output = trc::Result<usize>> + Send;
+
+    fn mailbox_unread_tags(
+        &self,
+        account_id: u32,
+        document_id: u32,
+        message_ids: &Option<RoaringBitmap>,
+    ) -> impl Future<Output = trc::Result<Option<RoaringBitmap>>> + Send;
+
+    fn mailbox_expand_path<'x>(
+        &self,
+        account_id: u32,
+        path: &'x str,
+        exact_match: bool,
+    ) -> impl Future<Output = trc::Result<Option<ExpandPath<'x>>>> + Send;
+
+    fn mailbox_get_by_name(
+        &self,
+        account_id: u32,
+        path: &str,
+    ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
+
+    fn mailbox_get_by_role(
+        &self,
+        account_id: u32,
+        role: &str,
+    ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
+}
+
+impl MailboxGet for Server {
+    async fn mailbox_get(
         &self,
         mut request: GetRequest<RequestArguments>,
         access_token: &AccessToken,
@@ -257,7 +303,7 @@ impl JMAP {
         }
     }
 
-    pub async fn mailbox_unread_tags(
+    async fn mailbox_unread_tags(
         &self,
         account_id: u32,
         document_id: u32,
@@ -297,7 +343,7 @@ impl JMAP {
         }
     }
 
-    pub async fn mailbox_expand_path<'x>(
+    async fn mailbox_expand_path<'x>(
         &self,
         account_id: u32,
         path: &'x str,
@@ -376,11 +422,7 @@ impl JMAP {
         Ok(Some(ExpandPath { path, found_names }))
     }
 
-    pub async fn mailbox_get_by_name(
-        &self,
-        account_id: u32,
-        path: &str,
-    ) -> trc::Result<Option<u32>> {
+    async fn mailbox_get_by_name(&self, account_id: u32, path: &str) -> trc::Result<Option<u32>> {
         Ok(self
             .mailbox_expand_path(account_id, path, true)
             .await?
@@ -403,11 +445,7 @@ impl JMAP {
             }))
     }
 
-    pub async fn mailbox_get_by_role(
-        &self,
-        account_id: u32,
-        role: &str,
-    ) -> trc::Result<Option<u32>> {
+    async fn mailbox_get_by_role(&self, account_id: u32, role: &str) -> trc::Result<Option<u32>> {
         self.filter(
             account_id,
             Collection::Mailbox,

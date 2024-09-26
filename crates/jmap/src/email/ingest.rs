@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::auth::ResourceToken;
+use common::{auth::ResourceToken, Server};
 use jmap_proto::{
     object::Object,
     types::{
@@ -22,6 +22,7 @@ use mail_parser::{
 };
 
 use rand::Rng;
+use std::future::Future;
 use store::{
     ahash::AHashSet,
     query::Filter,
@@ -36,12 +37,16 @@ use trc::{AddContext, MessageIngestEvent};
 use utils::map::vec_map::VecMap;
 
 use crate::{
+    blob::upload::BlobUpload,
+    changes::write::ChangeLog,
     email::index::{IndexMessage, VisitValues, MAX_ID_LENGTH},
     mailbox::{UidMailbox, INBOX_ID, JUNK_ID},
-    JMAP,
+    services::index::Indexer,
+    JmapMethods,
 };
 
 use super::{
+    cache::ThreadCache,
     crypto::{EncryptMessage, EncryptMessageError, EncryptionParams},
     index::{TrimTextValue, MAX_SORT_FIELD_LENGTH},
 };
@@ -76,9 +81,27 @@ pub enum IngestSource {
 
 const MAX_RETRIES: u32 = 10;
 
-impl JMAP {
+pub trait EmailIngest: Sync + Send {
+    fn email_ingest(
+        &self,
+        params: IngestEmail,
+    ) -> impl Future<Output = trc::Result<IngestedEmail>> + Send;
+    fn find_or_merge_thread(
+        &self,
+        account_id: u32,
+        thread_name: &str,
+        references: &[&str],
+    ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
+    fn assign_imap_uid(
+        &self,
+        account_id: u32,
+        mailbox_id: u32,
+    ) -> impl Future<Output = trc::Result<u32>> + Send;
+}
+
+impl EmailIngest for Server {
     #[allow(clippy::blocks_in_conditions)]
-    pub async fn email_ingest(&self, mut params: IngestEmail<'_>) -> trc::Result<IngestedEmail> {
+    async fn email_ingest(&self, mut params: IngestEmail<'_>) -> trc::Result<IngestedEmail> {
         // Check quota
         let start_time = Instant::now();
         let account_id = params.resource.account_id;
@@ -338,7 +361,7 @@ impl JMAP {
         let id = Id::from_parts(thread_id, document_id);
 
         // Request FTS index
-        self.inner.request_fts_index();
+        self.request_fts_index();
 
         trc::event!(
             MessageIngest(match params.source {
@@ -379,7 +402,7 @@ impl JMAP {
         })
     }
 
-    pub async fn find_or_merge_thread(
+    async fn find_or_merge_thread(
         &self,
         account_id: u32,
         thread_name: &str,
@@ -519,7 +542,7 @@ impl JMAP {
         }
     }
 
-    pub async fn assign_imap_uid(&self, account_id: u32, mailbox_id: u32) -> trc::Result<u32> {
+    async fn assign_imap_uid(&self, account_id: u32, mailbox_id: u32) -> trc::Result<u32> {
         // Increment UID next
         let mut batch = BatchBuilder::new();
         batch

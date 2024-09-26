@@ -12,6 +12,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use common::Server;
 use mail_auth::{
     flate2::read::GzDecoder,
     report::{tlsrpt::TlsReport, ActionDisposition, DmarcResult, Feedback, Report},
@@ -24,8 +25,6 @@ use store::{
     Serialize,
 };
 use trc::IncomingReportEvent;
-
-use crate::core::SMTP;
 
 enum Compression {
     None,
@@ -53,8 +52,12 @@ pub struct IncomingReport<T> {
     pub report: T,
 }
 
-impl SMTP {
-    pub fn analyze_report(&self, message: Arc<Vec<u8>>, session_id: u64) {
+pub trait AnalyzeReport: Sync + Send {
+    fn analyze_report(&self, message: Arc<Vec<u8>>, session_id: u64);
+}
+
+impl AnalyzeReport for Server {
+    fn analyze_report(&self, message: Arc<Vec<u8>>, session_id: u64) {
         let core = self.clone();
         tokio::spawn(async move {
             let message = if let Some(message) = MessageParser::default().parse(message.as_ref()) {
@@ -282,7 +285,7 @@ impl SMTP {
                 // Store report
                 if let Some(expires_in) = &core.core.smtp.report.analysis.store {
                     let expires = now() + expires_in.as_secs();
-                    let id = core.inner.queue_id_gen.generate().unwrap_or(expires);
+                    let id = core.inner.data.queue_id_gen.generate().unwrap_or(expires);
 
                     let mut batch = BatchBuilder::new();
                     match report {

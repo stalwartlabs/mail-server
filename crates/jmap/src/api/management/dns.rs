@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use directory::{
     backend::internal::manage::{self},
     Permission,
@@ -17,27 +17,39 @@ use sha1::Digest;
 use utils::config::Config;
 use x509_parser::parse_x509_certificate;
 
-use crate::{
-    api::{
-        http::ToHttpResponse,
-        management::dkim::{obtain_dkim_public_key, Algorithm},
-        HttpRequest, HttpResponse, JsonResponse,
-    },
-    JMAP,
+use crate::api::{
+    http::ToHttpResponse,
+    management::dkim::{obtain_dkim_public_key, Algorithm},
+    HttpRequest, HttpResponse, JsonResponse,
 };
 
 use super::decode_path_element;
+use std::future::Future;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct DnsRecord {
+pub struct DnsRecord {
     #[serde(rename = "type")]
     typ: String,
     name: String,
     content: String,
 }
 
-impl JMAP {
-    pub async fn handle_manage_dns(
+pub trait DnsManagement: Sync + Send {
+    fn handle_manage_dns(
+        &self,
+        req: &HttpRequest,
+        path: Vec<&str>,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn build_dns_records(
+        &self,
+        domain_name: &str,
+    ) -> impl Future<Output = trc::Result<Vec<DnsRecord>>> + Send;
+}
+
+impl DnsManagement for Server {
+    async fn handle_manage_dns(
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
@@ -210,7 +222,7 @@ impl JMAP {
             });
 
             // Add MTA-STS records
-            if let Some(policy) = self.core.build_mta_sts_policy() {
+            if let Some(policy) = self.build_mta_sts_policy() {
                 records.push(DnsRecord {
                     typ: "CNAME".to_string(),
                     name: format!("mta-sts.{domain_name}."),
@@ -239,7 +251,7 @@ impl JMAP {
         });
 
         // Add TLSA records
-        for (name, key) in self.core.tls.certificates.load().iter() {
+        for (name, key) in self.inner.data.tls_certificates.load().iter() {
             if !name.ends_with(domain_name)
                 || name.starts_with("mta-sts.")
                 || name.starts_with("autoconfig.")

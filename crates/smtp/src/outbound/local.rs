@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{DeliveryEvent, DeliveryResult, IngestMessage};
+use common::ipc::{DeliveryEvent, DeliveryResult, IngestMessage};
 use smtp_proto::Response;
 use tokio::sync::{mpsc, oneshot};
 use trc::ServerEvent;

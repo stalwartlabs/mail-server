@@ -21,13 +21,13 @@ impl<T: SessionStream> Session<T> {
         if !self.stream.is_tls() {
             response.extend_from_slice(b"\"STARTTLS\"\r\n");
         }
-        if self.stream.is_tls() || self.jmap.core.imap.allow_plain_auth {
+        if self.stream.is_tls() || self.server.core.imap.allow_plain_auth {
             response.extend_from_slice(b"\"SASL\" \"PLAIN OAUTHBEARER\"\r\n");
         } else {
             response.extend_from_slice(b"\"SASL\" \"OAUTHBEARER\"\r\n");
         };
         if let Some(sieve) =
-            self.jmap
+            self.server
                 .core
                 .jmap
                 .capabilities
@@ -62,7 +62,7 @@ impl<T: SessionStream> Session<T> {
             ManageSieve(trc::ManageSieveEvent::Capabilities),
             SpanId = self.session_id,
             Tls = self.stream.is_tls(),
-            Strict = !self.jmap.core.imap.allow_plain_auth,
+            Strict = !self.server.core.imap.allow_plain_auth,
             Elapsed = op_start.elapsed()
         );
 

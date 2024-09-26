@@ -24,7 +24,7 @@ use mail_auth::{
 use parking_lot::Mutex;
 use utils::config::{utils::ParseValue, Config};
 
-use crate::Core;
+use crate::Server;
 
 pub struct Resolvers {
     pub dns: Resolver,
@@ -307,15 +307,27 @@ impl Policy {
     }
 }
 
-impl Core {
+impl Server {
     pub fn build_mta_sts_policy(&self) -> Option<Policy> {
-        self.smtp.session.mta_sts_policy.clone().and_then(|policy| {
-            policy.try_build(self.tls.certificates.load().keys().filter(|key| {
-                !key.starts_with("mta-sts.")
-                    && !key.starts_with("autoconfig.")
-                    && !key.starts_with("autodiscover.")
-            }))
-        })
+        self.core
+            .smtp
+            .session
+            .mta_sts_policy
+            .clone()
+            .and_then(|policy| {
+                policy.try_build(
+                    self.inner
+                        .data
+                        .tls_certificates
+                        .load()
+                        .keys()
+                        .filter(|key| {
+                            !key.starts_with("mta-sts.")
+                                && !key.starts_with("autoconfig.")
+                                && !key.starts_with("autodiscover.")
+                        }),
+                )
+            })
     }
 }
 

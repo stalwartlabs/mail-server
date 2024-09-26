@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use common::auth::AccessToken;
+use common::{auth::AccessToken, Server};
 use directory::Permission;
 use jmap_proto::{
     error::set::SetError,
@@ -23,16 +23,40 @@ use store::{
 use trc::AddContext;
 use utils::BlobHash;
 
-use crate::JMAP;
+use crate::{auth::rate_limit::RateLimiter, JmapMethods};
 
-use super::UploadResponse;
+use super::{download::BlobDownload, UploadResponse};
+use std::future::Future;
 
 #[cfg(feature = "test_mode")]
 pub static DISABLE_UPLOAD_QUOTA: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 
-impl JMAP {
-    pub async fn blob_upload_many(
+pub trait BlobUpload: Sync + Send {
+    fn blob_upload_many(
+        &self,
+        request: BlobUploadRequest,
+        access_token: &AccessToken,
+    ) -> impl Future<Output = trc::Result<BlobUploadResponse>> + Send;
+
+    fn blob_upload(
+        &self,
+        account_id: Id,
+        content_type: &str,
+        data: &[u8],
+        access_token: Arc<AccessToken>,
+    ) -> impl Future<Output = trc::Result<UploadResponse>> + Send;
+
+    fn put_blob(
+        &self,
+        account_id: u32,
+        data: &[u8],
+        set_quota: bool,
+    ) -> impl Future<Output = trc::Result<BlobId>> + Send;
+}
+
+impl BlobUpload for Server {
+    async fn blob_upload_many(
         &self,
         request: BlobUploadRequest,
         access_token: &AccessToken,
@@ -178,7 +202,7 @@ impl JMAP {
         Ok(response)
     }
 
-    pub async fn blob_upload(
+    async fn blob_upload(
         &self,
         account_id: Id,
         content_type: &str,
@@ -239,12 +263,7 @@ impl JMAP {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    pub async fn put_blob(
-        &self,
-        account_id: u32,
-        data: &[u8],
-        set_quota: bool,
-    ) -> trc::Result<BlobId> {
+    async fn put_blob(&self, account_id: u32, data: &[u8], set_quota: bool) -> trc::Result<BlobId> {
         // First reserve the hash
         let hash = BlobHash::from(data);
         let mut batch = BatchBuilder::new();

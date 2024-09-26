@@ -13,7 +13,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose, Engine};
-use common::{config::server::Servers, listener::SessionData, Core};
+use common::{config::server::Listeners, listener::SessionData, Core, Data, Inner};
 use ece::EcKeyComponents;
 use hyper::{body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn, StatusCode};
 use hyper_util::rt::TokioIo;
@@ -99,20 +99,28 @@ pub async fn test(params: &mut JMAPTest) {
     // Start mock push server
     let mut settings = Config::new(add_test_certs(SERVER)).unwrap();
     settings.resolve_all_macros().await;
-    let mock_core = Core::parse(&mut settings, Default::default(), Default::default())
-        .await
-        .into_shared();
+    let mock_inner = Arc::new(Inner {
+        shared_core: Core::parse(&mut settings, Default::default(), Default::default())
+            .await
+            .into_shared(),
+        data: Data::parse(&mut settings),
+        ..Default::default()
+    });
     settings.errors.clear();
     settings.warnings.clear();
-    let mut servers = Servers::parse(&mut settings);
-    servers.parse_tcp_acceptors(&mut settings, mock_core.clone());
+    let mut servers = Listeners::parse(&mut settings);
+    servers.parse_tcp_acceptors(&mut settings, mock_inner.clone());
 
     // Start JMAP server
-    let manager = SessionManager::from(push_server.clone());
     servers.bind_and_drop_priv(&mut settings);
     settings.assert_no_errors();
     let _shutdown_tx = servers.spawn(|server, acceptor, shutdown_rx| {
-        server.spawn(manager.clone(), mock_core.clone(), acceptor, shutdown_rx);
+        server.spawn(
+            SessionManager::from(push_server.clone()),
+            mock_inner.clone(),
+            acceptor,
+            shutdown_rx,
+        );
     });
 
     // Register push notification (no encryption)

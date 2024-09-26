@@ -8,10 +8,11 @@ use std::time::Duration;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
-    outbound::TestServer,
     session::{TestSession, VerifyResponse},
+    TestSMTP,
 };
-use smtp::queue::{DeliveryAttempt, Event};
+use common::ipc::QueueEvent;
+use smtp::queue::{spool::SmtpSpool, DeliveryAttempt};
 use store::write::now;
 
 const CONFIG: &str = r#"
@@ -39,12 +40,12 @@ async fn queue_retry() {
     crate::enable_logging();
 
     // Create temp dir for queue
-    let mut local = TestServer::new("smtp_queue_retry_test", CONFIG, true).await;
+    let mut local = TestSMTP::new("smtp_queue_retry_test", CONFIG).await;
 
     // Create test message
     let core = local.build_smtp();
     let mut session = local.new_session();
-    let qr = &mut local.qr;
+    let qr = &mut local.queue_receiver;
 
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.eval_session_params().await;
@@ -85,9 +86,9 @@ async fn queue_retry() {
     attempt.try_deliver(core.clone()).await;
     loop {
         match qr.try_read_event().await {
-            Some(Event::Reload) => {}
-            Some(Event::OnHold(_)) => unreachable!(),
-            None | Some(Event::Stop) => break,
+            Some(QueueEvent::Reload) => {}
+            Some(QueueEvent::OnHold(_)) => unreachable!(),
+            None | Some(QueueEvent::Stop) => break,
         }
 
         let now = now();
