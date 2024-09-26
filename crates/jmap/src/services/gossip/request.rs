@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::auth::SymmetricEncrypt;
-
 use super::{EpochId, PeerStatus};
 
+use common::auth::oauth::crypto::SymmetricEncrypt;
 use std::net::IpAddr;
 use utils::codec::leb128::Leb128_;
 

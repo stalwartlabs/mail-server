@@ -859,6 +859,7 @@ impl EventType {
             EventType::Smtp(SmtpEvent::MailFromNotAllowed) => 551,
             EventType::Security(SecurityEvent::Unauthorized) => 552,
             EventType::Limit(LimitEvent::TenantQuota) => 553,
+            EventType::Auth(AuthEvent::TokenExpired) => 554,
         }
     }
 
@@ -1458,6 +1459,7 @@ impl EventType {
             551 => Some(EventType::Smtp(SmtpEvent::MailFromNotAllowed)),
             552 => Some(EventType::Security(SecurityEvent::Unauthorized)),
             553 => Some(EventType::Limit(LimitEvent::TenantQuota)),
+            554 => Some(EventType::Auth(AuthEvent::TokenExpired)),
             _ => None,
         }
     }

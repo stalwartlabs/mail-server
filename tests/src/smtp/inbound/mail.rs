@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
+use std::time::{Duration, Instant, SystemTime};
 
 use common::Core;
 use mail_auth::{common::parse::TxtRecordParser, spf::Spf, IprevResult, SpfResult};
@@ -106,8 +103,8 @@ async fn mail() {
     );
 
     // Be rude and do not say EHLO
-    let core = Arc::new(core);
-    let mut session = Session::test(TestSMTP::from_core(core.clone()).server);
+    let server = TestSMTP::from_core(core).server;
+    let mut session = Session::test(server.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.eval_session_params().await;
@@ -197,7 +194,7 @@ async fn mail() {
         .unwrap();
     session.response().assert_code("550 5.7.25");
     session.data.iprev = None;
-    core.smtp.resolvers.dns.ipv4_add(
+    server.core.smtp.resolvers.dns.ipv4_add(
         "mx2.foobar.org.",
         vec!["10.0.0.2".parse().unwrap()],
         Instant::now() + Duration::from_secs(5),
@@ -209,7 +206,7 @@ async fn mail() {
         .await
         .unwrap();
     session.response().assert_code("550 5.7.23");
-    core.smtp.resolvers.dns.txt_add(
+    server.core.smtp.resolvers.dns.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),

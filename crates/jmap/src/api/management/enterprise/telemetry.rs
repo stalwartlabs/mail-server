@@ -38,12 +38,9 @@ use trc::{
 };
 use utils::{snowflake::SnowflakeIdGenerator, url_params::UrlParams};
 
-use crate::{
-    api::{
-        http::ToHttpResponse, management::Timestamp, HttpRequest, HttpResponse, HttpResponseBody,
-        JsonResponse,
-    },
-    auth::oauth::token::TokenHandler,
+use crate::api::{
+    http::ToHttpResponse, management::Timestamp, HttpRequest, HttpResponse, HttpResponseBody,
+    JsonResponse,
 };
 
 pub trait TelemetryApi: Sync + Send {

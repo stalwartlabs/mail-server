@@ -702,7 +702,7 @@ impl<T: SessionStream> Session<T> {
             let queue_id = message.queue_id;
 
             // Queue message
-            let source = if self.data.authenticated_as.is_empty() {
+            let source = if !self.is_authenticated() {
                 MessageSource::Unauthenticated
             } else {
                 MessageSource::Authenticated
@@ -928,14 +928,12 @@ impl<T: SessionStream> Session<T> {
         headers.extend_from_slice(b"by ");
         headers.extend_from_slice(self.hostname.as_bytes());
         headers.extend_from_slice(b" (Stalwart SMTP) with ");
-        headers.extend_from_slice(
-            match (self.stream.is_tls(), self.data.authenticated_as.is_empty()) {
-                (true, true) => b"ESMTPS",
-                (true, false) => b"ESMTPSA",
-                (false, true) => b"ESMTP",
-                (false, false) => b"ESMTPA",
-            },
-        );
+        headers.extend_from_slice(match (self.stream.is_tls(), !self.is_authenticated()) {
+            (true, true) => b"ESMTPS",
+            (true, false) => b"ESMTPSA",
+            (false, true) => b"ESMTP",
+            (false, false) => b"ESMTPA",
+        });
         headers.extend_from_slice(b" id ");
         headers.extend_from_slice(format!("{id:X}").as_bytes());
         headers.extend_from_slice(b";\r\n\t");

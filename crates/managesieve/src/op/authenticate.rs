@@ -5,6 +5,7 @@
  */
 
 use common::{
+    auth::AuthRequest,
     listener::{limiter::ConcurrencyLimiter, SessionStream},
     ConcurrencyLimiters,
 };
@@ -14,11 +15,8 @@ use imap_proto::{
     protocol::authenticate::Mechanism,
     receiver::{self, Request},
 };
-use jmap::auth::{
-    authenticate::Authenticator, oauth::token::TokenHandler, rate_limit::RateLimiter,
-};
+use jmap::auth::rate_limit::RateLimiter;
 use mail_parser::decoders::base64::base64_decode;
-use mail_send::Credentials;
 use std::sync::Arc;
 
 use crate::core::{Command, Session, State, StatusResponse};
@@ -74,41 +72,37 @@ impl<T: SessionStream> Session<T> {
         self.server.is_auth_allowed_soft(&self.remote_addr).await?;
 
         // Authenticate
-        let access_token = match credentials {
-            Credentials::Plain { username, secret } | Credentials::XOauth2 { username, secret } => {
-                self.server
-                    .authenticate_plain(&username, &secret, self.remote_addr, self.session_id)
-                    .await
-            }
-            Credentials::OAuthBearer { token } => {
-                match self
-                    .server
-                    .validate_access_token("access_token", &token)
-                    .await
-                {
-                    Ok((account_id, _, _)) => self.server.get_access_token(account_id).await,
-                    Err(err) => Err(err),
-                }
-            }
-        }
-        .map_err(|err| {
-            if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
-                match &self.state {
-                    State::NotAuthenticated { auth_failures }
-                        if *auth_failures < self.server.core.imap.max_auth_failures =>
-                    {
-                        self.state = State::NotAuthenticated {
-                            auth_failures: auth_failures + 1,
-                        };
-                    }
-                    _ => {
-                        return trc::AuthEvent::TooManyAttempts.into_err().caused_by(err);
+        let access_token = self
+            .server
+            .authenticate(&AuthRequest::from_credentials(
+                credentials,
+                self.session_id,
+                self.remote_addr,
+            ))
+            .await
+            .map_err(|err| {
+                if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
+                    match &self.state {
+                        State::NotAuthenticated { auth_failures }
+                            if *auth_failures < self.server.core.imap.max_auth_failures =>
+                        {
+                            self.state = State::NotAuthenticated {
+                                auth_failures: auth_failures + 1,
+                            };
+                        }
+                        _ => {
+                            return trc::AuthEvent::TooManyAttempts.into_err().caused_by(err);
+                        }
                     }
                 }
-            }
 
-            err
-        })?;
+                err
+            })
+            .and_then(|token| {
+                token
+                    .assert_has_permission(Permission::SieveAuthenticate)
+                    .map(|_| token)
+            })?;
 
         // Enforce concurrency limits
         let in_flight = match self
@@ -121,13 +115,6 @@ impl<T: SessionStream> Session<T> {
                 return Err(trc::LimitEvent::ConcurrentRequest.into_err());
             }
         };
-
-        // Validate access
-        access_token.assert_has_permission(Permission::SieveAuthenticate)?;
-
-        // Cache access token
-        let access_token = Arc::new(access_token);
-        self.server.cache_access_token(access_token.clone());
 
         // Create session
         self.state = State::Authenticated {

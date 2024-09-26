@@ -6,7 +6,13 @@
 
 use std::sync::Arc;
 
-use common::{auth::AccessToken, Server};
+use common::{
+    auth::{
+        oauth::{CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN, USER_CODE_ALPHABET, USER_CODE_LEN},
+        AccessToken,
+    },
+    Server,
+};
 use rand::distributions::Standard;
 use serde_json::json;
 use std::future::Future;
@@ -21,10 +27,7 @@ use crate::{
     auth::oauth::OAuthStatus,
 };
 
-use super::{
-    DeviceAuthResponse, FormData, OAuthCode, OAuthCodeRequest, CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN,
-    MAX_POST_LEN, USER_CODE_ALPHABET, USER_CODE_LEN,
-};
+use super::{DeviceAuthResponse, FormData, OAuthCode, OAuthCodeRequest, MAX_POST_LEN};
 
 pub trait OAuthApiHandler: Sync + Send {
     fn handle_oauth_api_request(

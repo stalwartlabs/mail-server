@@ -16,8 +16,7 @@ use opentelemetry::{
     InstrumentationLibrary, Key, KeyValue, Value,
 };
 use opentelemetry_sdk::{
-    export::{logs::LogData, trace::SpanData},
-    logs::LogRecord,
+    export::{logs::LogBatch, trace::SpanData},
     trace::{SpanEvents, SpanLinks},
     Resource,
 };
@@ -65,7 +64,7 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                         }
 
                         if otel.log_exporter_enable {
-                            pending_logs.push(build_log_record(&event, &instrumentation));
+                            pending_logs.push(build_log_record(&event));
                         }
                     }
                 }
@@ -97,17 +96,18 @@ pub(crate) fn spawn_otel_tracer(builder: SubscriberBuilder, mut otel: OtelTracer
                     }
 
                     if !pending_logs.is_empty() {
-                        if let Err(err) = otel
-                            .log_exporter
-                            .export(std::mem::take(&mut pending_logs))
-                            .await
-                        {
+                        let logs = pending_logs
+                            .iter()
+                            .map(|log| (log, &instrumentation))
+                            .collect::<Vec<_>>();
+                        if let Err(err) = otel.log_exporter.export(LogBatch::new(&logs)).await {
                             trc::event!(
                                 Telemetry(TelemetryEvent::OtelExporterError),
                                 Details = "Failed to export logs",
                                 Reason = err.to_string()
                             );
                         }
+                        pending_logs.clear();
                     }
                 }
             } else if !pending_logs.is_empty() || !pending_spans.is_empty() {
@@ -174,12 +174,10 @@ where
     }
 }
 
-fn build_log_record(
-    event: &Event<EventDetails>,
-    instrumentation: &InstrumentationLibrary,
-) -> Cow<'static, LogData> {
-    let mut record = LogRecord::default();
-    record.event_name = Cow::Borrowed(event.inner.typ.name()).into();
+fn build_log_record(event: &Event<EventDetails>) -> opentelemetry_sdk::logs::LogRecord {
+    use opentelemetry::logs::LogRecord;
+    let mut record = opentelemetry_sdk::logs::LogRecord::default();
+    record.event_name = event.inner.typ.name().into();
     record.severity_number = match event.inner.level {
         Level::Trace => Severity::Trace,
         Level::Debug => Severity::Debug,
@@ -189,22 +187,14 @@ fn build_log_record(
         Level::Disable => Severity::Error,
     }
     .into();
-    record.severity_text = Cow::Borrowed(event.inner.level.as_str()).into();
+    record.severity_text = event.inner.level.as_str().into();
     record.body = AnyValue::String(event.inner.typ.description().into()).into();
     record.timestamp = (UNIX_EPOCH + Duration::from_secs(event.inner.timestamp)).into();
     record.observed_timestamp = SystemTime::now().into();
-    record.attributes = (!event.keys.is_empty()).then(|| {
-        event
-            .keys
-            .iter()
-            .map(|(k, v)| (build_key(k), build_any_value(v)))
-            .collect()
-    });
-
-    Cow::Owned(LogData {
-        record,
-        instrumentation: instrumentation.clone(),
-    })
+    for (k, v) in &event.keys {
+        record.add_attribute(k.name(), build_any_value(v));
+    }
+    record
 }
 
 fn build_key_value(key_value: &(trc::Key, trc::Value)) -> Option<KeyValue> {
@@ -246,11 +236,11 @@ fn build_any_value(value: &trc::Value) -> AnyValue {
             AnyValue::String(DateTime::from_timestamp(*v as i64).to_rfc3339().into())
         }
         trc::Value::Duration(v) => AnyValue::Int(*v as i64),
-        trc::Value::Bytes(v) => AnyValue::Bytes(v.clone()),
+        trc::Value::Bytes(v) => AnyValue::Bytes(Box::new(v.clone())),
         trc::Value::Bool(v) => AnyValue::Boolean(*v),
         trc::Value::Ipv4(v) => AnyValue::String(v.to_string().into()),
         trc::Value::Ipv6(v) => AnyValue::String(v.to_string().into()),
-        trc::Value::Event(v) => AnyValue::Map(
+        trc::Value::Event(v) => AnyValue::Map(Box::new(
             [(
                 Key::from_static_str("eventName"),
                 AnyValue::String(v.inner.name().into()),
@@ -262,8 +252,10 @@ fn build_any_value(value: &trc::Value) -> AnyValue {
                     .map(|(k, v)| (build_key(k), build_any_value(v))),
             )
             .collect(),
-        ),
-        trc::Value::Array(v) => AnyValue::ListAny(v.iter().map(build_any_value).collect()),
+        )),
+        trc::Value::Array(v) => {
+            AnyValue::ListAny(Box::new(v.iter().map(build_any_value).collect()))
+        }
         trc::Value::None => AnyValue::Boolean(false),
     }
 }

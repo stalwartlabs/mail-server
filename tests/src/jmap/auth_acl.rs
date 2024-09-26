@@ -771,6 +771,7 @@ pub async fn test(params: &mut JMAPTest) {
         .remove_from_group("jdoe@example.com", "sales@example.com")
         .await;
     server.inner.data.http_auth_cache.clear();
+    server.inner.data.access_tokens.clear();
     assert_forbidden(
         john_client
             .set_default_account_id(sales_id.to_string())

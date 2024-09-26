@@ -104,6 +104,9 @@ impl Server {
             tenant,
             name: principal.take_str(PrincipalField::Name).unwrap_or_default(),
             description: principal.take_str(PrincipalField::Description),
+            emails: principal
+                .take_str_array(PrincipalField::Emails)
+                .unwrap_or_default(),
             quota: principal.quota(),
             permissions,
         })

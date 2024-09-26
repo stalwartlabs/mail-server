@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::auth::SymmetricEncrypt;
-
 use super::request::Request;
 use super::{Gossiper, Peer, UDP_MAX_PAYLOAD};
+use common::auth::oauth::crypto::SymmetricEncrypt;
 use common::{Inner, IPC_CHANNEL_BUFFER};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};

@@ -40,10 +40,10 @@ x509-parser = "0.16.0"
 pem = "3.0"
 chrono = { version = "0.4", features = ["serde"] }
 hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
-opentelemetry = { version = "0.24" }
-opentelemetry_sdk = { version = "0.24" }
-opentelemetry-otlp = { version = "0.17", features = ["http-proto", "reqwest-client"] }
-opentelemetry-semantic-conventions = { version = "0.16.0" }
+opentelemetry = { version = "0.25" }
+opentelemetry_sdk = { version = "0.25" }
+opentelemetry-otlp = { version = "0.25", features = ["http-proto", "reqwest-client"] }
+opentelemetry-semantic-conventions = { version = "0.25.0" }
 prometheus = { version = "0.13.4", default-features = false }
 imagesize = "0.13"
 sha1 = "0.10"
@@ -61,6 +61,7 @@ pwhash = "1.0.0"
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 psl = "2"
 dashmap = "6.0"
+aes-gcm-siv = "0.11.1"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"
@@ -70,3 +71,6 @@ libc = "0.2.126"
 test_mode = []
 enterprise = []
 foundation = []
+
+[dev-dependencies]
+tokio = { version = "1.23", features = ["full"] }

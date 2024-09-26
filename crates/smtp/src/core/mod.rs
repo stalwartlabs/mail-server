@@ -12,6 +12,7 @@ use std::{
 };
 
 use common::{
+    auth::AccessToken,
     config::smtp::auth::VerifyStrategy,
     listener::{
         limiter::{ConcurrencyLimiter, InFlight},
@@ -83,8 +84,7 @@ pub struct SessionData {
     pub rcpt_errors: usize,
     pub message: Vec<u8>,
 
-    pub authenticated_as: String,
-    pub authenticated_emails: Vec<String>,
+    pub authenticated_as: Option<Arc<AccessToken>>,
     pub auth_errors: usize,
 
     pub priority: i16,
@@ -160,8 +160,7 @@ impl SessionData {
             helo_domain: String::new(),
             mail_from: None,
             rcpt_to: Vec::new(),
-            authenticated_as: String::new(),
-            authenticated_emails: Vec::new(),
+            authenticated_as: None,
             priority: 0,
             valid_until: Instant::now(),
             rcpt_errors: 0,
@@ -312,8 +311,7 @@ impl SessionData {
             rcpt_to,
             rcpt_errors: 0,
             message,
-            authenticated_as: "local".into(),
-            authenticated_emails: vec![],
+            authenticated_as: Some(Arc::new(AccessToken::from_id(0))),
             auth_errors: 0,
             priority: 0,
             delivery_by: 0,

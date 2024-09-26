@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use common::{
     config::server::{Listeners, ServerProtocol},
     ipc::{QueueEvent, ReportingEvent},
     manager::boot::build_ipc,
-    Core, Inner, Server,
+    Core, Data, Inner, Server,
 };
 
 use jmap::api::JmapSessionManager;
@@ -140,31 +140,33 @@ path = "{TMP}/queue.db"
 "#;
 
 impl TestSMTP {
-    pub fn from_core(core: impl Into<Arc<Core>>) -> Self {
-        Self::from_core_and_tempdir(core, None)
+    pub fn from_core(core: Core) -> Self {
+        Self::from_core_and_tempdir(core, Default::default(), None)
     }
 
-    fn from_core_and_tempdir(core: impl Into<Arc<Core>>, temp_dir: Option<TempDir>) -> Self {
-        let core = core.into();
+    fn from_core_and_tempdir(core: Core, data: Data, temp_dir: Option<TempDir>) -> Self {
+        let store = core.storage.data.clone();
+        let blob_store = core.storage.blob.clone();
+        let shared_core = core.into_shared();
         let (ipc, mut ipc_rxs) = build_ipc();
 
         TestSMTP {
             queue_receiver: QueueReceiver {
-                store: core.storage.data.clone(),
-                blob_store: core.storage.blob.clone(),
+                store,
+                blob_store,
                 queue_rx: ipc_rxs.queue_rx.take().unwrap(),
             },
             report_receiver: ReportReceiver {
                 report_rx: ipc_rxs.report_rx.take().unwrap(),
             },
             server: Server {
+                core: shared_core.load_full(),
                 inner: Inner {
-                    shared_core: core.as_ref().clone().into_shared(),
-                    data: Default::default(),
+                    shared_core,
+                    data,
                     ipc,
                 }
                 .into(),
-                core,
             },
             temp_dir,
         }
@@ -177,8 +179,9 @@ impl TestSMTP {
         config.resolve_all_macros().await;
         let stores = Stores::parse_all(&mut config).await;
         let core = Core::parse(&mut config, stores, Default::default()).await;
+        let data = Data::parse(&mut config);
 
-        Self::from_core_and_tempdir(core, Some(temp_dir))
+        Self::from_core_and_tempdir(core, data, Some(temp_dir))
     }
 
     pub async fn start(&self, protocols: &[ServerProtocol]) -> watch::Sender<bool> {

@@ -3,11 +3,13 @@ use std::{
     collections::HashMap,
     fs,
     path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use ahash::AHashMap;
 use common::{
+    auth::AccessToken,
     scripts::{
         functions::html::{get_attribute, html_attr_tokens, html_img_area, html_to_tokens},
         ScriptModification,
@@ -298,7 +300,10 @@ async fn antispam() {
                             session.data.helo_domain = value.to_string();
                         }
                         "authenticated_as" => {
-                            session.data.authenticated_as = value.to_string();
+                            session.data.authenticated_as = Some(Arc::new(AccessToken {
+                                name: value.to_string(),
+                                ..Default::default()
+                            }));
                         }
                         "spf.result" | "spf_ehlo.result" => {
                             variables.insert(

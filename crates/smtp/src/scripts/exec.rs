@@ -22,7 +22,10 @@ impl<T: SessionStream> Session<T> {
             .set_variable("remote_ip", self.data.remote_ip.to_string())
             .set_variable("remote_ip.reverse", self.data.remote_ip.to_reverse_name())
             .set_variable("helo_domain", self.data.helo_domain.to_lowercase())
-            .set_variable("authenticated_as", self.data.authenticated_as.clone())
+            .set_variable(
+                "authenticated_as",
+                self.authenticated_as().unwrap_or_default().to_string(),
+            )
             .set_variable(
                 "now",
                 SystemTime::now()

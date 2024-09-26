@@ -142,7 +142,7 @@ async fn auth() {
         .assert_contains("FUTURERELEASE 86400");
 
     // Successful LOGIN authentication
-    session.data.authenticated_as.clear();
+    session.data.authenticated_as.take();
     session.cmd("AUTH LOGIN", "334").await;
     session.cmd("amFuZQ==", "334").await;
     session.cmd("cDRzc3cwcmQ=", "235 2.7.0").await;

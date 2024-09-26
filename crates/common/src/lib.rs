@@ -63,13 +63,12 @@ pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG
 
 pub const IPC_CHANNEL_BUFFER: usize = 1024;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Server {
     pub inner: Arc<Inner>,
     pub core: Arc<Core>,
 }
 
-#[derive(Default)]
 pub struct Inner {
     pub shared_core: ArcSwap<Core>,
     pub data: Data,
@@ -313,6 +312,29 @@ impl HttpLimitResponse for Response {
 impl ConcurrencyLimiters {
     pub fn is_active(&self) -> bool {
         self.concurrent_requests.is_active() || self.concurrent_uploads.is_active()
+    }
+}
+
+#[cfg(feature = "test_mode")]
+#[allow(clippy::derivable_impls)]
+impl Default for Server {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+            core: Default::default(),
+        }
+    }
+}
+
+#[cfg(feature = "test_mode")]
+#[allow(clippy::derivable_impls)]
+impl Default for Inner {
+    fn default() -> Self {
+        Self {
+            shared_core: Default::default(),
+            data: Default::default(),
+            ipc: Default::default(),
+        }
     }
 }
 

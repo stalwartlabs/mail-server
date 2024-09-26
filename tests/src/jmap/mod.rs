@@ -131,6 +131,10 @@ directory = "'{STORE}'"
 total = 5
 wait = "1ms"
 
+[session.auth]
+mechanisms = "[plain, login, oauthbearer]"
+directory = "'{STORE}'"
+
 [queue]
 path = "{TMP}"
 hash = 64
@@ -315,7 +319,7 @@ pub async fn jmap_tests() {
     )
     .await;
 
-    /*webhooks::test(&mut params).await;
+    webhooks::test(&mut params).await;
     email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
@@ -339,7 +343,7 @@ pub async fn jmap_tests() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;*/
+    blob::test(&mut params).await;
     permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;

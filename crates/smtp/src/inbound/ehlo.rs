@@ -203,7 +203,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Authentication
-        if self.data.authenticated_as.is_empty() {
+        if !self.is_authenticated() {
             response.auth_mechanisms = self
                 .server
                 .eval_if::<Mechanism, _>(&ac.mechanisms, self, self.data.session_id)

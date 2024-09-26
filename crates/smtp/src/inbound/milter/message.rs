@@ -231,10 +231,10 @@ impl<T: SessionStream> Session<T> {
                 .mail_from(
                     &format!("<{addr}>"),
                     None::<&[&str]>,
-                    if !self.data.authenticated_as.is_empty() {
+                    if let Some(name) = self.authenticated_as() {
                         Macros::new()
                             .with_mail_address(addr)
-                            .with_sasl_login_name(&self.data.authenticated_as)
+                            .with_sasl_login_name(name)
                     } else {
                         Macros::new().with_mail_address(addr)
                     },

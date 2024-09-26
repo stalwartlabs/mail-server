@@ -196,8 +196,8 @@ impl<T: SessionStream> Session<T> {
                         .then(|| self.data.helo_domain.clone()),
                     active_connections: 1,
                 },
-                sasl: (!self.data.authenticated_as.is_empty()).then(|| Sasl {
-                    login: self.data.authenticated_as.clone(),
+                sasl: self.authenticated_as().map(|name| Sasl {
+                    login: name.to_string(),
                     method: None,
                 }),
                 tls: (!tls_version.is_empty()).then(|| Tls {

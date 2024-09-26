@@ -6,6 +6,7 @@
 
 use std::time::{Duration, Instant};
 
+use base64::{engine::general_purpose, Engine};
 use bytes::Bytes;
 use jmap::auth::oauth::{
     DeviceAuthResponse, ErrorType, OAuthCodeRequest, OAuthMetadata, TokenResponse,
@@ -20,7 +21,9 @@ use store::ahash::AHashMap;
 
 use crate::{
     directory::internal::TestInternalDirectory,
-    jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, ManagementApi},
+    jmap::{
+        assert_is_empty, delivery::SmtpConnection, mailbox::destroy_all_mailboxes, ManagementApi,
+    },
 };
 
 use super::JMAPTest;
@@ -121,6 +124,27 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap()
         .ids()
         .is_empty());
+
+    // Try SMTP OAUTHBEARER auth
+    let mut smtp = SmtpConnection::connect().await;
+    smtp.send(&format!(
+        "AUTH OAUTHBEARER {}",
+        general_purpose::STANDARD.encode(format!(
+            "n,a={},\u{1}auth=Bearer {}\u{1}\u{1}",
+            "user@domain", "invalid_token"
+        ))
+    ))
+    .await;
+    smtp.read(1, 4).await;
+    smtp.send(&format!(
+        "AUTH OAUTHBEARER {}",
+        general_purpose::STANDARD.encode(format!(
+            "n,a={},\u{1}auth=Bearer {}\u{1}\u{1}",
+            "user@domain", token
+        ))
+    ))
+    .await;
+    smtp.read(1, 2).await;
 
     // ------------------------
     // Device code flow

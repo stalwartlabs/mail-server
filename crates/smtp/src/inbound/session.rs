@@ -100,11 +100,11 @@ impl<T: SessionStream> Session<T> {
                                     );
 
                                     self.write(b"503 5.5.1 AUTH not allowed.\r\n").await?;
-                                } else if !self.data.authenticated_as.is_empty() {
+                                } else if let Some(authenticated_as) = self.authenticated_as() {
                                     trc::event!(
                                         Smtp(SmtpEvent::AlreadyAuthenticated),
                                         SpanId = self.data.session_id,
-                                        AccountName = self.data.authenticated_as.clone(),
+                                        AccountName = authenticated_as.to_string(),
                                     );
 
                                     self.write(b"503 5.5.1 Already authenticated.\r\n").await?;
@@ -541,7 +541,7 @@ impl<T: SessionStream> ResolveVariable for Session<T> {
                 .unwrap_or_default()
                 .into(),
             V_HELO_DOMAIN => self.data.helo_domain.as_str().into(),
-            V_AUTHENTICATED_AS => self.data.authenticated_as.as_str().into(),
+            V_AUTHENTICATED_AS => self.authenticated_as().unwrap_or_default().into(),
             V_LISTENER => self.instance.id.as_str().into(),
             V_REMOTE_IP => self.data.remote_ip_str.as_str().into(),
             V_REMOTE_PORT => self.data.remote_port.into(),
