@@ -92,7 +92,10 @@ impl<K: Eq + PartialEq, V> VecMap<K, V> {
     }
 
     #[inline(always)]
-    pub fn remove(&mut self, key: &K) -> Option<V> {
+    pub fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q> + PartialEq<Q>,
+    {
         self.inner
             .iter()
             .position(|kv| kv.key == *key)

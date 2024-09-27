@@ -17,6 +17,7 @@ use auth::{roles::RolePermissions, AccessToken};
 use config::{
     imap::ImapConfig,
     jmap::settings::JmapConfig,
+    network::Network,
     scripts::{RemoteList, Scripting},
     smtp::SmtpConfig,
     storage::Storage,
@@ -24,7 +25,6 @@ use config::{
 };
 use dashmap::DashMap;
 
-use expr::if_block::IfBlock;
 use futures::StreamExt;
 use imap_proto::protocol::list::Attribute;
 use ipc::{DeliveryEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
@@ -208,14 +208,6 @@ pub struct Core {
     pub metrics: Metrics,
     #[cfg(feature = "enterprise")]
     pub enterprise: Option<enterprise::Enterprise>,
-}
-
-#[derive(Clone)]
-pub struct Network {
-    pub node_id: u64,
-    pub security: Security,
-    pub http_response_url: IfBlock,
-    pub http_allowed_endpoint: IfBlock,
 }
 
 pub trait IntoString: Sized {

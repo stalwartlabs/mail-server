@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::collections::HashMap;
-
 use hyper::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
+use utils::map::vec_map::VecMap;
 
 use crate::api::{http::fetch_body, HttpRequest};
 
@@ -191,11 +190,11 @@ impl TokenResponse {
 
 #[derive(Debug)]
 pub struct FormData {
-    fields: HashMap<String, Vec<u8>>,
+    fields: VecMap<String, String>,
 }
 
 impl FormData {
-    async fn from_request(
+    pub async fn from_request(
         req: &mut HttpRequest,
         max_len: usize,
         session_id: u64,
@@ -208,17 +207,18 @@ impl FormData {
             fetch_body(req, max_len, session_id).await,
         ) {
             (Some(content_type), Some(body)) => {
-                let mut fields = HashMap::new();
+                let mut fields = VecMap::new();
                 if let Some(boundary) = content_type.get_param(mime::BOUNDARY) {
                     for mut field in
                         form_data::FormData::new(&body[..], boundary.as_str()).flatten()
                     {
-                        let value = field.bytes().unwrap_or_default().to_vec();
-                        fields.insert(field.name, value);
+                        let value = String::from_utf8_lossy(&field.bytes().unwrap_or_default())
+                            .into_owned();
+                        fields.append(field.name, value);
                     }
                 } else {
                     for (key, value) in form_urlencoded::parse(&body) {
-                        fields.insert(key.into_owned(), value.into_owned().into_bytes());
+                        fields.append(key.into_owned(), value.into_owned());
                     }
                 }
                 Ok(FormData { fields })
@@ -230,22 +230,18 @@ impl FormData {
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.fields
-            .get(key)
-            .and_then(|v| std::str::from_utf8(v).ok())
+        self.fields.get(key).map(|v| v.as_str())
     }
 
     pub fn remove(&mut self, key: &str) -> Option<String> {
-        self.fields
-            .remove(key)
-            .and_then(|v| String::from_utf8(v).ok())
-    }
-
-    pub fn get_bytes(&self, key: &str) -> Option<&[u8]> {
-        self.fields.get(key).map(|v| v.as_slice())
-    }
-
-    pub fn remove_bytes(&mut self, key: &str) -> Option<Vec<u8>> {
         self.fields.remove(key)
+    }
+
+    pub fn has_field(&self, key: &str) -> bool {
+        self.fields.get(key).map_or(false, |v| !v.is_empty())
+    }
+
+    pub fn fields(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.fields.iter()
     }
 }

@@ -37,7 +37,7 @@ use crate::{
     api::management::enterprise::telemetry::TelemetryApi,
     auth::{
         authenticate::{Authenticator, HttpHeaders},
-        oauth::{auth::OAuthApiHandler, token::TokenHandler, OAuthMetadata},
+        oauth::{auth::OAuthApiHandler, token::TokenHandler, FormData, OAuthMetadata},
         rate_limit::RateLimiter,
     },
     blob::{download::BlobDownload, upload::BlobUpload, DownloadResponse, UploadResponse},
@@ -47,6 +47,7 @@ use crate::{
 use super::{
     autoconfig::Autoconfig,
     event_source::EventSourceHandler,
+    form::FormHandler,
     management::{ManagementApi, ManagementApiError},
     request::RequestHandler,
     session::SessionHandler,
@@ -449,6 +450,25 @@ impl ParseHttp for Server {
                 };
 
                 // SPDX-SnippetEnd
+            }
+            "form" => {
+                if let Some(form) = &self.core.network.contact_form {
+                    match *req.method() {
+                        Method::POST => {
+                            self.is_anonymous_allowed(&session.remote_ip).await?;
+
+                            let form_data =
+                                FormData::from_request(&mut req, form.max_size, session.session_id)
+                                    .await?;
+
+                            return self.handle_contact_form(&session, form, form_data).await;
+                        }
+                        Method::OPTIONS => {
+                            return Ok(StatusCode::NO_CONTENT.into_http_response());
+                        }
+                        _ => {}
+                    }
+                }
             }
             _ => {
                 let path = req.uri().path();

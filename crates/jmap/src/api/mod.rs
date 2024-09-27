@@ -14,6 +14,7 @@ use utils::map::vec_map::VecMap;
 
 pub mod autoconfig;
 pub mod event_source;
+pub mod form;
 pub mod http;
 pub mod management;
 pub mod request;
