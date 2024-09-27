@@ -69,7 +69,10 @@ impl Data {
             jmap_id_gen: id_generator.clone(),
             queue_id_gen: id_generator.clone(),
             span_id_gen: id_generator,
-            webadmin: WebAdminManager::new(),
+            webadmin: config
+                .value("webadmin.path")
+                .map(|path| WebAdminManager::new(path.into()))
+                .unwrap_or_default(),
             config_version: 0.into(),
             jmap_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
                 capacity,

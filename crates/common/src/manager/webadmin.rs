@@ -39,9 +39,9 @@ impl<T> Resource<T> {
 }
 
 impl WebAdminManager {
-    pub fn new() -> Self {
+    pub fn new(base_path: PathBuf) -> Self {
         Self {
-            bundle_path: TempDir::new(),
+            bundle_path: TempDir::new(base_path),
             routes: ArcSwap::from_pointee(Default::default()),
         }
     }
@@ -171,9 +171,9 @@ pub struct TempDir {
 }
 
 impl TempDir {
-    pub fn new() -> TempDir {
+    pub fn new(path: PathBuf) -> TempDir {
         TempDir {
-            path: std::env::temp_dir().join(std::str::from_utf8(WEBADMIN_KEY).unwrap()),
+            path: path.join(std::str::from_utf8(WEBADMIN_KEY).unwrap()),
         }
     }
 
@@ -193,13 +193,13 @@ fn unpack_error(err: std::io::Error) -> trc::Error {
 
 impl Default for WebAdminManager {
     fn default() -> Self {
-        Self::new()
+        Self::new(std::env::temp_dir())
     }
 }
 
 impl Default for TempDir {
     fn default() -> Self {
-        Self::new()
+        Self::new(std::env::temp_dir())
     }
 }
 
