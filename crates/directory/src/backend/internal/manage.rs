@@ -512,6 +512,7 @@ impl ManageDirectory for Store {
                             Type::Resource,
                             Type::Other,
                             Type::Location,
+                            Type::Domain,
                         ],
                         &[PrincipalField::Name],
                         0,
@@ -538,6 +539,60 @@ impl ManageDirectory for Store {
                     }
 
                     return Err(error("Tenant has members", message.into()));
+                }
+            }
+            Type::Domain => {
+                if let Some(tenant_id) = principal.tenant() {
+                    let name = principal.name();
+                    let tenant_members = self
+                        .list_principals(
+                            None,
+                            tenant_id.into(),
+                            &[
+                                Type::Individual,
+                                Type::Group,
+                                Type::Role,
+                                Type::List,
+                                Type::Resource,
+                                Type::Other,
+                                Type::Location,
+                            ],
+                            &[PrincipalField::Name],
+                            0,
+                            0,
+                        )
+                        .await
+                        .caused_by(trc::location!())?;
+                    let domain_members = tenant_members
+                        .items
+                        .iter()
+                        .filter(|v| {
+                            v.name()
+                                .rsplit_once('@')
+                                .map_or(false, |(_, d)| d.eq_ignore_ascii_case(name))
+                        })
+                        .collect::<Vec<_>>();
+                    let total_domain_members = domain_members.len();
+
+                    if total_domain_members > 0 {
+                        let mut message =
+                            String::from("Domains must have no members to be deleted: Found: ");
+
+                        for (num, principal) in domain_members.iter().enumerate() {
+                            if num > 0 {
+                                message.push_str(", ");
+                            }
+                            message.push_str(principal.name());
+                        }
+
+                        if total_domain_members > 5 {
+                            message.push_str(" and ");
+                            message.push_str(&(total_domain_members - 5).to_string());
+                            message.push_str(" others");
+                        }
+
+                        return Err(error("Domain has members", message.into()));
+                    }
                 }
             }
 
