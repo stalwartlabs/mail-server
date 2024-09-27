@@ -34,6 +34,7 @@ pub enum Capability {
     Sort,
     Thread,       //THREAD=REFERENCES
     ListExtended, //LIST-EXTENDED
+    ListStatus,   //LIST-STATUS
     ESort,
     SortDisplay,      //SORT=DISPLAY
     SpecialUse,       //SPECIAL-USE
@@ -86,6 +87,7 @@ impl Capability {
             Capability::Sort => b"SORT",
             Capability::Thread => b"THREAD=REFERENCES",
             Capability::ListExtended => b"LIST-EXTENDED",
+            Capability::ListStatus => b"LIST-STATUS",
             Capability::ESort => b"ESORT",
             Capability::SortDisplay => b"SORT=DISPLAY",
             Capability::SpecialUse => b"SPECIAL-USE",
@@ -122,6 +124,7 @@ impl Capability {
                 Capability::Sort,
                 Capability::Thread,
                 Capability::ListExtended,
+                Capability::ListStatus,
                 Capability::ESort,
                 Capability::SortDisplay,
                 Capability::SpecialUse,
