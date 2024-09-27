@@ -923,7 +923,7 @@ impl ManageDirectory for Store {
                     PrincipalField::Quota,
                     PrincipalValue::IntegerList(quotas),
                 ) if matches!(principal.inner.typ, Type::Tenant)
-                    && quotas.len() <= (Type::Role as usize + 1) =>
+                    && quotas.len() <= (Type::Role as usize + 2) =>
                 {
                     principal.inner.set(PrincipalField::Quota, quotas);
                 }
