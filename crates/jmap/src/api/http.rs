@@ -7,7 +7,7 @@
 use std::{borrow::Cow, net::IpAddr, sync::Arc};
 
 use common::{
-    auth::AccessToken,
+    auth::{oauth::GrantType, AccessToken},
     core::BuildServer,
     expr::{functions::ResolveVariable, *},
     ipc::StateEvent,
@@ -285,6 +285,15 @@ impl ParseHttp for Server {
                         .handle_token_request(&mut req, session.session_id)
                         .await;
                 }
+                ("introspect", &Method::POST) => {
+                    // Authenticate request
+                    let (_in_flight, access_token) =
+                        self.authenticate_headers(&req, &session).await?;
+
+                    return self
+                        .handle_token_introspect(&mut req, &access_token, session.session_id)
+                        .await;
+                }
                 (_, &Method::OPTIONS) => {
                     return Ok(StatusCode::NO_CONTENT.into_http_response());
                 }
@@ -321,21 +330,22 @@ impl ParseHttp for Server {
                                     .strip_prefix("/api/telemetry/")
                                     .and_then(|p| {
                                         p.strip_prefix("traces/live/")
-                                            .map(|t| ("traces", "live_tracing", t))
+                                            .map(|t| ("traces", GrantType::LiveTracing, t))
                                             .or_else(|| {
                                                 p.strip_prefix("metrics/live/")
-                                                    .map(|t| ("metrics", "live_metrics", t))
+                                                    .map(|t| ("metrics", GrantType::LiveMetrics, t))
                                             })
                                     })
                                 {
-                                    let (account_id, _, _) =
-                                        self.validate_access_token(grant_type, token).await?;
+                                    let token_info = self
+                                        .validate_access_token(grant_type.into(), token)
+                                        .await?;
 
                                     return self
                                         .handle_telemetry_api_request(
                                             &req,
                                             vec!["", live_path, "live"],
-                                            &AccessToken::from_id(account_id)
+                                            &AccessToken::from_id(token_info.account_id)
                                                 .with_permission(Permission::MetricsLive)
                                                 .with_permission(Permission::TracingLive),
                                         )

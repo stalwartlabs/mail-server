@@ -140,11 +140,12 @@ pub enum ErrorType {
 pub struct OAuthMetadata {
     pub issuer: String,
     pub token_endpoint: String,
-    pub grant_types_supported: Vec<String>,
+    pub authorization_endpoint: String,
     pub device_authorization_endpoint: String,
+    pub introspection_endpoint: String,
+    pub grant_types_supported: Vec<String>,
     pub response_types_supported: Vec<String>,
     pub scopes_supported: Vec<String>,
-    pub authorization_endpoint: String,
 }
 
 impl OAuthMetadata {
@@ -152,16 +153,17 @@ impl OAuthMetadata {
         let base_url = base_url.as_ref();
         OAuthMetadata {
             issuer: base_url.into(),
-            authorization_endpoint: format!("{}/authorize/code", base_url),
-            token_endpoint: format!("{}/auth/token", base_url),
+            authorization_endpoint: format!("{base_url}/authorize/code",),
+            token_endpoint: format!("{base_url}/auth/token"),
             grant_types_supported: vec![
                 "authorization_code".to_string(),
                 "implicit".to_string(),
                 "urn:ietf:params:oauth:grant-type:device_code".to_string(),
             ],
-            device_authorization_endpoint: format!("{}/auth/device", base_url),
+            device_authorization_endpoint: format!("{base_url}/auth/device"),
             response_types_supported: vec!["code".to_string(), "code token".to_string()],
             scopes_supported: vec!["offline_access".to_string()],
+            introspection_endpoint: format!("{base_url}/auth/introspect"),
         }
     }
 }

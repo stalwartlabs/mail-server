@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use imap::op::authenticate::decode_challenge_oauth;
+use common::auth::sasl::sasl_decode_challenge_oauth;
 use imap_proto::ResponseType;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
@@ -44,7 +44,7 @@ fn decode_challenge() {
     assert!(
         Credentials::OAuthBearer {
             token: "vF9dft4qmTc2Nvb3RlckBhbHRhdmlzdGEuY29tCg==".to_string()
-        } == decode_challenge_oauth(
+        } == sasl_decode_challenge_oauth(
             &base64_decode(
                 concat!(
                     "bixhPXVzZXJAZXhhbXBsZS5jb20sAWhv",

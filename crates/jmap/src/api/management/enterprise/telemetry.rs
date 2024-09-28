@@ -14,7 +14,7 @@ use std::{
 };
 
 use common::{
-    auth::AccessToken,
+    auth::{oauth::GrantType, AccessToken},
     telemetry::{
         metrics::store::{Metric, MetricsStore},
         tracers::store::{TracingQuery, TracingStore},
@@ -355,7 +355,7 @@ impl TelemetryApi for Server {
                 // Issue a live telemetry token valid for 60 seconds
 
                 Ok(JsonResponse::new(json!({
-                    "data": self.issue_custom_token(account_id, "live_tracing", "web", 60).await?,
+                    "data": self.encode_access_token(GrantType::LiveTracing, account_id,  "web", 60).await?,
             }))
             .into_http_response())
             }
@@ -366,7 +366,7 @@ impl TelemetryApi for Server {
                 // Issue a live telemetry token valid for 60 seconds
 
                 Ok(JsonResponse::new(json!({
-                    "data": self.issue_custom_token(account_id, "live_metrics", "web", 60).await?,
+                    "data": self.encode_access_token(GrantType::LiveMetrics, account_id, "web", 60).await?,
             }))
             .into_http_response())
             }

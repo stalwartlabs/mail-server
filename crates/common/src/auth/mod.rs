@@ -11,6 +11,7 @@ use directory::{
 };
 use jmap_proto::types::collection::Collection;
 use mail_send::Credentials;
+use oauth::GrantType;
 use utils::map::{bitmap::Bitmap, ttl_dashmap::TtlMap, vec_map::VecMap};
 
 use crate::Server;
@@ -18,6 +19,7 @@ use crate::Server;
 pub mod access_token;
 pub mod oauth;
 pub mod roles;
+pub mod sasl;
 
 #[derive(Debug, Clone, Default)]
 pub struct AccessToken {
@@ -58,8 +60,11 @@ impl Server {
         // Validate credentials
         match &req.credentials {
             Credentials::OAuthBearer { token } => {
-                match self.validate_access_token("access_token", token).await {
-                    Ok((account_id, _, _)) => self.get_cached_access_token(account_id).await,
+                match self
+                    .validate_access_token(GrantType::AccessToken.into(), token)
+                    .await
+                {
+                    Ok(token_into) => self.get_cached_access_token(token_into.account_id).await,
                     Err(err) => Err(err),
                 }
             }

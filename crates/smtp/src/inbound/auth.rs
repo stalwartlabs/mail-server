@@ -5,7 +5,12 @@
  */
 
 use common::{
-    auth::{oauth::extract_oauth_bearer, AuthRequest},
+    auth::{
+        sasl::{
+            sasl_decode_challenge_oauth, sasl_decode_challenge_plain, sasl_decode_challenge_xoauth,
+        },
+        AuthRequest,
+    },
     listener::SessionStream,
 };
 use directory::Permission;
@@ -74,30 +79,9 @@ impl<T: SessionStream> Session<T> {
             }
         } else if let Some(response) = base64_decode(response) {
             match (token.mechanism, &mut token.credentials) {
-                (AUTH_PLAIN, Credentials::Plain { username, secret }) => {
-                    let mut b_username = Vec::new();
-                    let mut b_secret = Vec::new();
-                    let mut arg_num = 0;
-                    for ch in response {
-                        if ch != 0 {
-                            if arg_num == 1 {
-                                b_username.push(ch);
-                            } else if arg_num == 2 {
-                                b_secret.push(ch);
-                            }
-                        } else {
-                            arg_num += 1;
-                        }
-                    }
-                    match (String::from_utf8(b_username), String::from_utf8(b_secret)) {
-                        (Ok(s_username), Ok(s_secret)) if !s_username.is_empty() => {
-                            *username = s_username;
-                            *secret = s_secret;
-                            return self
-                                .authenticate(std::mem::take(&mut token.credentials))
-                                .await;
-                        }
-                        _ => (),
+                (AUTH_PLAIN, _) => {
+                    if let Some(credentials) = sasl_decode_challenge_plain(&response) {
+                        return self.authenticate(credentials).await;
                     }
                 }
                 (AUTH_LOGIN, Credentials::Plain { username, secret }) => {
@@ -111,45 +95,14 @@ impl<T: SessionStream> Session<T> {
                             .await
                     };
                 }
-                (AUTH_OAUTHBEARER, Credentials::OAuthBearer { token: token_ }) => {
-                    if let Some(bearer) = extract_oauth_bearer(&response) {
-                        *token_ = bearer.to_string();
-                        return self
-                            .authenticate(std::mem::take(&mut token.credentials))
-                            .await;
+                (AUTH_OAUTHBEARER, _) => {
+                    if let Some(credentials) = sasl_decode_challenge_oauth(&response) {
+                        return self.authenticate(credentials).await;
                     }
                 }
-                (AUTH_XOAUTH2, Credentials::XOauth2 { username, secret }) => {
-                    let mut b_username = Vec::new();
-                    let mut b_secret = Vec::new();
-                    let mut arg_num = 0;
-                    let mut in_arg = false;
-
-                    for ch in response {
-                        if in_arg {
-                            if ch != 1 {
-                                if arg_num == 1 {
-                                    b_username.push(ch);
-                                } else if arg_num == 2 {
-                                    b_secret.push(ch);
-                                }
-                            } else {
-                                in_arg = false;
-                            }
-                        } else if ch == b'=' {
-                            arg_num += 1;
-                            in_arg = true;
-                        }
-                    }
-                    match (String::from_utf8(b_username), String::from_utf8(b_secret)) {
-                        (Ok(s_username), Ok(s_secret)) if !s_username.is_empty() => {
-                            *username = s_username;
-                            *secret = s_secret;
-                            return self
-                                .authenticate(std::mem::take(&mut token.credentials))
-                                .await;
-                        }
-                        _ => (),
+                (AUTH_XOAUTH2, _) => {
+                    if let Some(credentials) = sasl_decode_challenge_xoauth(&response) {
+                        return self.authenticate(credentials).await;
                     }
                 }
 
@@ -210,7 +163,13 @@ impl<T: SessionStream> Session<T> {
                             .await;
                         }
                         trc::EventType::Security(trc::SecurityEvent::Unauthorized) => {
-                            self.write(b"550 5.7.1 Your account is not authorized to use this service.\r\n")
+                            self.write(
+                                concat!(
+                                    "550 5.7.1 Your account is not authorized ",
+                                    "to use this service.\r\n"
+                                )
+                                .as_bytes(),
+                            )
                             .await?;
                             return Ok(false);
                         }

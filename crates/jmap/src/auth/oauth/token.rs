@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::Server;
+use common::{
+    auth::{oauth::GrantType, AccessToken},
+    Server,
+};
 use hyper::StatusCode;
 use std::future::Future;
 use store::write::Bincode;
@@ -22,12 +25,19 @@ pub trait TokenHandler: Sync + Send {
         session_id: u64,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 
+    fn handle_token_introspect(
+        &self,
+        req: &mut HttpRequest,
+        access_token: &AccessToken,
+        session_id: u64,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
     fn issue_token(
         &self,
         account_id: u32,
         client_id: &str,
         with_refresh_token: bool,
-    ) -> impl Future<Output = Result<OAuthResponse, &'static str>> + Send;
+    ) -> impl Future<Output = trc::Result<OAuthResponse>> + Send;
 }
 
 impl TokenHandler for Server {
@@ -139,14 +149,15 @@ impl TokenHandler for Server {
         } else if grant_type.eq_ignore_ascii_case("refresh_token") {
             if let Some(refresh_token) = params.get("refresh_token") {
                 response = match self
-                    .validate_access_token("refresh_token", refresh_token)
+                    .validate_access_token(GrantType::RefreshToken.into(), refresh_token)
                     .await
                 {
-                    Ok((account_id, client_id, time_left)) => self
+                    Ok(token_info) => self
                         .issue_token(
-                            account_id,
-                            &client_id,
-                            time_left <= self.core.jmap.oauth_expiry_refresh_token_renew,
+                            token_info.account_id,
+                            &token_info.client_id,
+                            token_info.expires_in
+                                <= self.core.jmap.oauth_expiry_refresh_token_renew,
                         )
                         .await
                         .map(TokenResponse::Granted)
@@ -180,32 +191,52 @@ impl TokenHandler for Server {
         .into_http_response())
     }
 
+    async fn handle_token_introspect(
+        &self,
+        req: &mut HttpRequest,
+        access_token: &AccessToken,
+        session_id: u64,
+    ) -> trc::Result<HttpResponse> {
+        // Parse token
+        let token = FormData::from_request(req, 1024, session_id)
+            .await?
+            .remove("token")
+            .ok_or_else(|| {
+                trc::ResourceEvent::BadParameters
+                    .into_err()
+                    .details("Client ID is missing.")
+            })?;
+
+        self.introspect_access_token(&token, access_token)
+            .await
+            .map(|response| JsonResponse::new(response).into_http_response())
+    }
+
     async fn issue_token(
         &self,
         account_id: u32,
         client_id: &str,
         with_refresh_token: bool,
-    ) -> Result<OAuthResponse, &'static str> {
-        let password_hash = self.password_hash(account_id).await?;
-
+    ) -> trc::Result<OAuthResponse> {
         Ok(OAuthResponse {
-            access_token: self.encode_access_token(
-                "access_token",
-                account_id,
-                &password_hash,
-                client_id,
-                self.core.jmap.oauth_expiry_token,
-            )?,
+            access_token: self
+                .encode_access_token(
+                    GrantType::AccessToken,
+                    account_id,
+                    client_id,
+                    self.core.jmap.oauth_expiry_token,
+                )
+                .await?,
             token_type: "bearer".to_string(),
             expires_in: self.core.jmap.oauth_expiry_token,
             refresh_token: if with_refresh_token {
                 self.encode_access_token(
-                    "refresh_token",
+                    GrantType::RefreshToken,
                     account_id,
-                    &password_hash,
                     client_id,
                     self.core.jmap.oauth_expiry_refresh_token,
-                )?
+                )
+                .await?
                 .into()
             } else {
                 None

@@ -5,12 +5,14 @@
  */
 
 use common::{
-    auth::AuthRequest,
+    auth::{
+        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
+        AuthRequest,
+    },
     listener::{limiter::ConcurrencyLimiter, SessionStream},
     ConcurrencyLimiters,
 };
 use directory::Permission;
-use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use jmap::auth::rate_limit::RateLimiter;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
@@ -31,15 +33,18 @@ impl<T: SessionStream> Session<T> {
             Mechanism::Plain | Mechanism::OAuthBearer => {
                 if !params.is_empty() {
                     let credentials = base64_decode(params.pop().unwrap().as_bytes())
-                        .ok_or("Failed to decode challenge.")
                         .and_then(|challenge| {
                             if mechanism == Mechanism::Plain {
-                                decode_challenge_plain(&challenge)
+                                sasl_decode_challenge_plain(&challenge)
                             } else {
-                                decode_challenge_oauth(&challenge)
+                                sasl_decode_challenge_oauth(&challenge)
                             }
                         })
-                        .map_err(|err| trc::AuthEvent::Error.into_err().details(err))?;
+                        .ok_or_else(|| {
+                            trc::AuthEvent::Error
+                                .into_err()
+                                .details("Invalid SASL challenge")
+                        })?;
 
                     self.handle_auth(credentials).await
                 } else {

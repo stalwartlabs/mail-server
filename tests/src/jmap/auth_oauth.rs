@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose, Engine};
 use bytes::Bytes;
+use common::auth::oauth::introspect::OAuthIntrospect;
+use imap_proto::ResponseType;
 use jmap::auth::oauth::{
     DeviceAuthResponse, ErrorType, OAuthCodeRequest, OAuthMetadata, TokenResponse,
 };
@@ -21,6 +23,10 @@ use store::ahash::AHashMap;
 
 use crate::{
     directory::internal::TestInternalDirectory,
+    imap::{
+        pop::{self, Pop3Connection},
+        ImapConnection, Type,
+    },
     jmap::{
         assert_is_empty, delivery::SmtpConnection, mailbox::destroy_all_mailboxes, ManagementApi,
     },
@@ -108,7 +114,8 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Obtain token
     token_params.insert("redirect_uri".to_string(), "https://localhost".to_string());
-    let (token, _, _) = unwrap_token_response(post(&metadata.token_endpoint, &token_params).await);
+    let (token, refresh_token, _) =
+        unwrap_token_response(post(&metadata.token_endpoint, &token_params).await);
 
     // Connect to account using token and attempt to search
     let john_client = Client::new()
@@ -125,26 +132,61 @@ pub async fn test(params: &mut JMAPTest) {
         .ids()
         .is_empty());
 
+    // Introspect token
+    let access_introspect: OAuthIntrospect = post_with_auth::<OAuthIntrospect>(
+        &metadata.introspection_endpoint,
+        token.as_str().into(),
+        &AHashMap::from_iter([("token".to_string(), token.to_string())]),
+    )
+    .await;
+    assert_eq!(access_introspect.username.unwrap(), "jdoe@example.com");
+    assert_eq!(access_introspect.token_type.unwrap(), "bearer");
+    assert_eq!(access_introspect.client_id.unwrap(), "OAuthyMcOAuthFace");
+    assert!(access_introspect.active);
+    let refresh_introspect = post_with_auth::<OAuthIntrospect>(
+        &metadata.introspection_endpoint,
+        token.as_str().into(),
+        &AHashMap::from_iter([("token".to_string(), refresh_token.unwrap())]),
+    )
+    .await;
+    assert_eq!(refresh_introspect.username.unwrap(), "jdoe@example.com");
+    assert_eq!(refresh_introspect.client_id.unwrap(), "OAuthyMcOAuthFace");
+    assert!(refresh_introspect.active);
+    assert_eq!(
+        refresh_introspect.iat.unwrap(),
+        access_introspect.iat.unwrap()
+    );
+
     // Try SMTP OAUTHBEARER auth
+    let oauth_bearer_invalid_sasl = general_purpose::STANDARD.encode(format!(
+        "n,a={},\u{1}auth=Bearer {}\u{1}\u{1}",
+        "user@domain", "invalid_token"
+    ));
+    let oauth_bearer_sasl = general_purpose::STANDARD.encode(format!(
+        "n,a={},\u{1}auth=Bearer {}\u{1}\u{1}",
+        "user@domain", token
+    ));
     let mut smtp = SmtpConnection::connect().await;
-    smtp.send(&format!(
-        "AUTH OAUTHBEARER {}",
-        general_purpose::STANDARD.encode(format!(
-            "n,a={},\u{1}auth=Bearer {}\u{1}\u{1}",
-            "user@domain", "invalid_token"
-        ))
-    ))
-    .await;
+    smtp.send(&format!("AUTH OAUTHBEARER {oauth_bearer_invalid_sasl}",))
+        .await;
     smtp.read(1, 4).await;
-    smtp.send(&format!(
-        "AUTH OAUTHBEARER {}",
-        general_purpose::STANDARD.encode(format!(
-            "n,a={},\u{1}auth=Bearer {}\u{1}\u{1}",
-            "user@domain", token
-        ))
-    ))
-    .await;
+    smtp.send(&format!("AUTH OAUTHBEARER {oauth_bearer_sasl}",))
+        .await;
     smtp.read(1, 2).await;
+
+    // Try IMAP OAUTHBEARER auth
+    let mut imap = ImapConnection::connect(b"_x ").await;
+    imap.assert_read(Type::Untagged, ResponseType::Ok).await;
+    imap.send(&format!("AUTHENTICATE OAUTHBEARER {oauth_bearer_sasl}"))
+        .await;
+    imap.assert_read(Type::Tagged, ResponseType::Ok).await;
+
+    // Try POP3 OAUTHBEARER auth
+    let mut pop3 = Pop3Connection::connect().await;
+    pop3.assert_read(pop::ResponseType::Ok).await;
+    pop3.send(&format!("AUTH OAUTHBEARER {oauth_bearer_sasl}"))
+        .await;
+    pop3.assert_read(pop::ResponseType::Ok).await;
 
     // ------------------------
     // Device code flow
@@ -315,13 +357,23 @@ pub async fn test(params: &mut JMAPTest) {
     assert_is_empty(server).await;
 }
 
-async fn post_bytes(url: &str, params: &AHashMap<String, String>) -> Bytes {
-    reqwest::Client::builder()
+async fn post_bytes(
+    url: &str,
+    auth_token: Option<&str>,
+    params: &AHashMap<String, String>,
+) -> Bytes {
+    let mut client = reqwest::Client::builder()
         .timeout(Duration::from_millis(500))
         .danger_accept_invalid_certs(true)
         .build()
         .unwrap_or_default()
-        .post(url)
+        .post(url);
+
+    if let Some(auth_token) = auth_token {
+        client = client.bearer_auth(auth_token);
+    }
+
+    client
         .form(params)
         .send()
         .await
@@ -332,7 +384,14 @@ async fn post_bytes(url: &str, params: &AHashMap<String, String>) -> Bytes {
 }
 
 async fn post<T: DeserializeOwned>(url: &str, params: &AHashMap<String, String>) -> T {
-    serde_json::from_slice(&post_bytes(url, params).await).unwrap()
+    post_with_auth(url, None, params).await
+}
+async fn post_with_auth<T: DeserializeOwned>(
+    url: &str,
+    auth_token: Option<&str>,
+    params: &AHashMap<String, String>,
+) -> T {
+    serde_json::from_slice(&post_bytes(url, auth_token, params).await).unwrap()
 }
 
 async fn get_bytes(url: &str) -> Bytes {

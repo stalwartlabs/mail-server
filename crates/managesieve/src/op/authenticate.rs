@@ -5,12 +5,14 @@
  */
 
 use common::{
-    auth::AuthRequest,
+    auth::{
+        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
+        AuthRequest,
+    },
     listener::{limiter::ConcurrencyLimiter, SessionStream},
     ConcurrencyLimiters,
 };
 use directory::Permission;
-use imap::op::authenticate::{decode_challenge_oauth, decode_challenge_plain};
 use imap_proto::{
     protocol::authenticate::Mechanism,
     receiver::{self, Request},
@@ -39,18 +41,19 @@ impl<T: SessionStream> Session<T> {
         let credentials = match mechanism {
             Mechanism::Plain | Mechanism::OAuthBearer => {
                 if !params.is_empty() {
-                    let challenge =
-                        base64_decode(params.pop().unwrap().as_bytes()).ok_or_else(|| {
+                    base64_decode(params.pop().unwrap().as_bytes())
+                        .and_then(|challenge| {
+                            if mechanism == Mechanism::Plain {
+                                sasl_decode_challenge_plain(&challenge)
+                            } else {
+                                sasl_decode_challenge_oauth(&challenge)
+                            }
+                        })
+                        .ok_or_else(|| {
                             trc::AuthEvent::Error
                                 .into_err()
                                 .details("Failed to decode challenge.")
-                        })?;
-                    (if mechanism == Mechanism::Plain {
-                        decode_challenge_plain(&challenge)
-                    } else {
-                        decode_challenge_oauth(&challenge)
-                    }
-                    .map_err(|err| trc::AuthEvent::Error.into_err().details(err)))?
+                        })?
                 } else {
                     self.receiver.request = receiver::Request {
                         tag: String::new(),

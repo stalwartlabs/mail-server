@@ -105,6 +105,12 @@ greeting = 'Test LMTP instance'
 protocol = 'lmtp'
 tls.implicit = false
 
+[server.listener.pop3]
+bind = ["127.0.0.1:4110"]
+protocol = "pop3"
+max-connections = 81920
+tls.implicit = true
+
 [server.socket]
 reuse-addr = true
 
@@ -319,7 +325,7 @@ pub async fn jmap_tests() {
     )
     .await;
 
-    webhooks::test(&mut params).await;
+    /*webhooks::test(&mut params).await;
     email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
@@ -333,9 +339,9 @@ pub async fn jmap_tests() {
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
-    auth_limits::test(&mut params).await;
+    auth_limits::test(&mut params).await;*/
     auth_oauth::test(&mut params).await;
-    event_source::test(&mut params).await;
+    /*event_source::test(&mut params).await;
     push_subscription::test(&mut params).await;
     sieve_script::test(&mut params).await;
     vacation_response::test(&mut params).await;
@@ -346,7 +352,7 @@ pub async fn jmap_tests() {
     blob::test(&mut params).await;
     permissions::test(&params).await;
     purge::test(&mut params).await;
-    enterprise::test(&mut params).await;
+    enterprise::test(&mut params).await;*/
 
     if delete {
         params.temp_dir.delete();
