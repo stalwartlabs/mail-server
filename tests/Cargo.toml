@@ -61,6 +61,7 @@ num_cpus = "1.15.0"
 async-trait = "0.1.68"
 chrono = "0.4"
 ring = { version = "0.17" }
+biscuit = "0.7.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 jemallocator = "0.5.0"

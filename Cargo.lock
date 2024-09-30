@@ -582,6 +582,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "biscuit"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e28fc7c56c61743a01d0d1b73e4fed68b8a4f032ea3a2d4bb8c6520a33fc05a"
+dependencies = [
+ "chrono",
+ "data-encoding",
+ "num-bigint",
+ "num-traits",
+ "once_cell",
+ "ring 0.17.8",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1043,6 +1059,7 @@ dependencies = [
  "arc-swap",
  "base64 0.22.1",
  "bincode",
+ "biscuit",
  "chrono",
  "dashmap",
  "decancer",
@@ -1067,6 +1084,8 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
+ "p256",
+ "p384",
  "parking_lot",
  "pem",
  "privdrop",
@@ -1078,6 +1097,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.7",
  "ring 0.17.8",
+ "rsa",
  "rustls 0.23.13",
  "rustls-pemfile 2.1.3",
  "rustls-pki-types",
@@ -5838,6 +5858,7 @@ version = "1.0.128"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ff5456707a1de34e7e37f2a6fd3d3f808c318259cbd01ab6377795054b483d8"
 dependencies = [
+ "indexmap 2.5.0",
  "itoa",
  "memchr",
  "ryu",
@@ -6418,6 +6439,7 @@ dependencies = [
  "ahash 0.8.11",
  "async-trait",
  "base64 0.22.1",
+ "biscuit",
  "bytes",
  "chrono",
  "common",

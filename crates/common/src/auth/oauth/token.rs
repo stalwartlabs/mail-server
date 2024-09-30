@@ -55,7 +55,7 @@ impl Server {
             String::new()
         };
 
-        let key = &self.core.jmap.oauth_key;
+        let key = &self.core.oauth.oauth_key;
         let context = format!(
             "{} {} {} {}",
             grant_type.as_str(),
@@ -165,7 +165,7 @@ impl Server {
         };
 
         // Build context
-        let key = self.core.jmap.oauth_key.clone();
+        let key = self.core.oauth.oauth_key.clone();
         let context = format!(
             "{} {} {} {}",
             grant_type.as_str(),

@@ -7,11 +7,13 @@
 use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose, Engine};
+use biscuit::{jwk::JWKSet, SingleOrMultiple, JWT};
 use bytes::Bytes;
 use common::auth::oauth::introspect::OAuthIntrospect;
 use imap_proto::ResponseType;
 use jmap::auth::oauth::{
-    DeviceAuthResponse, ErrorType, OAuthCodeRequest, OAuthMetadata, TokenResponse,
+    auth::OAuthMetadata, openid::OpenIdMetadata, DeviceAuthResponse, ErrorType, OAuthCodeRequest,
+    TokenResponse,
 };
 use jmap_client::{
     client::{Client, Credentials},
@@ -47,20 +49,18 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create test account
     let server = params.server.clone();
-    let john_id = Id::from(
-        server
-            .core
-            .storage
-            .data
-            .create_test_user(
-                "jdoe@example.com",
-                "12345",
-                "John Doe",
-                &["jdoe@example.com"],
-            )
-            .await,
-    )
-    .to_string();
+    let john_int_id = server
+        .core
+        .storage
+        .data
+        .create_test_user(
+            "jdoe@example.com",
+            "12345",
+            "John Doe",
+            &["jdoe@example.com"],
+        )
+        .await;
+    let john_id = Id::from(john_int_id).to_string();
 
     // Build API
     let api = ManagementApi::new(8899, "jdoe@example.com", "12345");
@@ -68,7 +68,13 @@ pub async fn test(params: &mut JMAPTest) {
     // Obtain OAuth metadata
     let metadata: OAuthMetadata =
         get("https://127.0.0.1:8899/.well-known/oauth-authorization-server").await;
-    //println!("OAuth metadata: {:#?}", metadata);
+    let oidc_metadata: OpenIdMetadata =
+        get("https://127.0.0.1:8899/.well-known/openid-configuration").await;
+    let jwk_set: JWKSet<()> = get(&oidc_metadata.jwks_uri).await;
+
+    /*println!("OAuth metadata: {:#?}", metadata);
+    println!("OpenID metadata: {:#?}", oidc_metadata);
+    println!("JWKSet: {:#?}", jwk_set);*/
 
     // ------------------------
     // Authorization code flow
@@ -114,8 +120,8 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Obtain token
     token_params.insert("redirect_uri".to_string(), "https://localhost".to_string());
-    let (token, refresh_token, _) =
-        unwrap_token_response(post(&metadata.token_endpoint, &token_params).await);
+    let (token, refresh_token, id_token) =
+        unwrap_oidc_token_response(post(&metadata.token_endpoint, &token_params).await);
 
     // Connect to account using token and attempt to search
     let john_client = Client::new()
@@ -131,6 +137,18 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap()
         .ids()
         .is_empty());
+
+    // Verify ID token using the JWK set
+    let id_token = JWT::<(), biscuit::Empty>::new_encoded(&id_token)
+        .decode_with_jwks(&jwk_set, None)
+        .unwrap();
+    let claims = &id_token.payload().unwrap().registered;
+    assert_eq!(claims.issuer, Some(oidc_metadata.issuer));
+    assert_eq!(claims.subject, Some(john_int_id.to_string()));
+    assert_eq!(
+        claims.audience,
+        Some(SingleOrMultiple::Single("OAuthyMcOAuthFace".to_string()))
+    );
 
     // Introspect token
     let access_introspect: OAuthIntrospect = post_with_auth::<OAuthIntrospect>(
@@ -436,6 +454,20 @@ fn unwrap_token_response(response: TokenResponse) -> (String, Option<String>, u6
                 granted.access_token,
                 granted.refresh_token,
                 granted.expires_in,
+            )
+        }
+        TokenResponse::Error { error } => panic!("Expected granted, got {:?}", error),
+    }
+}
+
+fn unwrap_oidc_token_response(response: TokenResponse) -> (String, Option<String>, String) {
+    match response {
+        TokenResponse::Granted(granted) => {
+            assert_eq!(granted.token_type, "bearer");
+            (
+                granted.access_token,
+                granted.refresh_token,
+                granted.id_token.unwrap(),
             )
         }
         TokenResponse::Error { error } => panic!("Expected granted, got {:?}", error),

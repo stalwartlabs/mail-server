@@ -8,12 +8,14 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use directory::{Directories, Directory};
+use ring::signature::{EcdsaKeyPair, RsaKeyPair};
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use telemetry::Metrics;
 use utils::config::Config;
 
 use crate::{
-    expr::*, listener::tls::AcmeProviders, manager::config::ConfigManager, Core, Network, Security,
+    auth::oauth::config::OAuthConfig, expr::*, listener::tls::AcmeProviders,
+    manager::config::ConfigManager, Core, Network, Security,
 };
 
 use self::{
@@ -163,6 +165,7 @@ impl Core {
             smtp: SmtpConfig::parse(config).await,
             jmap: JmapConfig::parse(config),
             imap: ImapConfig::parse(config),
+            oauth: OAuthConfig::parse(config),
             acme: AcmeProviders::parse(config),
             metrics: Metrics::parse(config),
             storage: Storage {
@@ -184,5 +187,38 @@ impl Core {
 
     pub fn into_shared(self) -> ArcSwap<Self> {
         ArcSwap::from_pointee(self)
+    }
+}
+
+pub fn build_rsa_keypair(pem: &str) -> Result<RsaKeyPair, String> {
+    match rustls_pemfile::read_one(&mut pem.as_bytes()) {
+        Ok(Some(rustls_pemfile::Item::Pkcs1Key(key))) => {
+            RsaKeyPair::from_der(key.secret_pkcs1_der())
+                .map_err(|err| format!("Failed to parse PKCS1 RSA key: {err}"))
+        }
+        Ok(Some(rustls_pemfile::Item::Pkcs8Key(key))) => {
+            RsaKeyPair::from_pkcs8(key.secret_pkcs8_der())
+                .map_err(|err| format!("Failed to parse PKCS8 RSA key: {err}"))
+        }
+        Err(err) => Err(format!("Failed to read PEM: {err}")),
+        Ok(Some(key)) => Err(format!("Unsupported key type: {key:?}")),
+        Ok(None) => Err("No RSA key found in PEM".to_string()),
+    }
+}
+
+pub fn build_ecdsa_pem(
+    alg: &'static ring::signature::EcdsaSigningAlgorithm,
+    pem: &str,
+) -> Result<EcdsaKeyPair, String> {
+    match rustls_pemfile::read_one(&mut pem.as_bytes()) {
+        Ok(Some(rustls_pemfile::Item::Pkcs8Key(key))) => EcdsaKeyPair::from_pkcs8(
+            alg,
+            key.secret_pkcs8_der(),
+            &ring::rand::SystemRandom::new(),
+        )
+        .map_err(|err| format!("Failed to parse PKCS8 ECDSA key: {err}")),
+        Err(err) => Err(format!("Failed to read PEM: {err}")),
+        Ok(Some(key)) => Err(format!("Unsupported key type: {key:?}")),
+        Ok(None) => Err("No ECDSA key found in PEM".to_string()),
     }
 }

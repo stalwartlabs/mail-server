@@ -47,7 +47,7 @@ pub struct LicenseKey {
 #[derive(Debug)]
 pub enum LicenseError {
     Expired,
-    HostnameMismatch { issued_to: String, current: String },
+    DomainMismatch { issued_to: String, current: String },
     Parse,
     Validation,
     Decode,
@@ -175,10 +175,12 @@ impl LicenseKey {
     }
 
     pub fn into_validated_key(self, hostname: impl AsRef<str>) -> Result<Self, LicenseError> {
-        if self.hostname != hostname.as_ref() {
-            Err(LicenseError::HostnameMismatch {
-                issued_to: self.hostname.clone(),
-                current: hostname.as_ref().to_string(),
+        let local_domain = psl::domain_str(hostname.as_ref()).unwrap_or("invalid-hostname");
+        let license_domain = psl::domain_str(&self.hostname).expect("Invalid license hostname");
+        if local_domain != license_domain {
+            Err(LicenseError::DomainMismatch {
+                issued_to: license_domain.to_string(),
+                current: local_domain.to_string(),
             })
         } else {
             Ok(self)
@@ -213,11 +215,10 @@ impl Display for LicenseError {
             LicenseError::Validation => write!(f, "Failed to validate license key"),
             LicenseError::Decode => write!(f, "Failed to decode license key"),
             LicenseError::InvalidParameters => write!(f, "Invalid license key parameters"),
-            LicenseError::HostnameMismatch { issued_to, current } => {
+            LicenseError::DomainMismatch { issued_to, current } => {
                 write!(
                     f,
-                    "License issued to {} does not match {}",
-                    issued_to, current
+                    "License issued to domain {issued_to:?} does not match {current:?}",
                 )
             }
         }

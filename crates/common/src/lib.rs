@@ -13,7 +13,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use arc_swap::ArcSwap;
-use auth::{roles::RolePermissions, AccessToken};
+use auth::{oauth::config::OAuthConfig, roles::RolePermissions, AccessToken};
 use config::{
     imap::ImapConfig,
     jmap::settings::JmapConfig,
@@ -202,6 +202,7 @@ pub struct Core {
     pub sieve: Scripting,
     pub network: Network,
     pub acme: AcmeProviders,
+    pub oauth: OAuthConfig,
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
     pub imap: ImapConfig,

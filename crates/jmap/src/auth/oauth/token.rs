@@ -12,7 +12,10 @@ use hyper::StatusCode;
 use std::future::Future;
 use store::write::Bincode;
 
-use crate::api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse};
+use crate::api::{
+    http::{HttpContext, HttpSessionData, ToHttpResponse},
+    HttpRequest, HttpResponse, JsonResponse,
+};
 
 use super::{
     ErrorType, FormData, OAuthCode, OAuthResponse, OAuthStatus, TokenResponse, MAX_POST_LEN,
@@ -22,7 +25,7 @@ pub trait TokenHandler: Sync + Send {
     fn handle_token_request(
         &self,
         req: &mut HttpRequest,
-        session_id: u64,
+        session: HttpSessionData,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 
     fn handle_token_introspect(
@@ -36,6 +39,7 @@ pub trait TokenHandler: Sync + Send {
         &self,
         account_id: u32,
         client_id: &str,
+        issuer: String,
         with_refresh_token: bool,
     ) -> impl Future<Output = trc::Result<OAuthResponse>> + Send;
 }
@@ -45,13 +49,17 @@ impl TokenHandler for Server {
     async fn handle_token_request(
         &self,
         req: &mut HttpRequest,
-        session_id: u64,
+        session: HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         // Parse form
-        let params = FormData::from_request(req, MAX_POST_LEN, session_id).await?;
+        let params = FormData::from_request(req, MAX_POST_LEN, session.session_id).await?;
         let grant_type = params.get("grant_type").unwrap_or_default();
 
         let mut response = TokenResponse::error(ErrorType::InvalidGrant);
+
+        let issuer = HttpContext::new(&session, req)
+            .resolve_response_url(self)
+            .await;
 
         if grant_type.eq_ignore_ascii_case("authorization_code") {
             response = if let (Some(code), Some(client_id), Some(redirect_uri)) = (
@@ -80,7 +88,7 @@ impl TokenHandler for Server {
                                 .await?;
 
                             // Issue token
-                            self.issue_token(oauth.account_id, &oauth.client_id, true)
+                            self.issue_token(oauth.account_id, &oauth.client_id, issuer, true)
                                 .await
                                 .map(TokenResponse::Granted)
                                 .map_err(|err| {
@@ -126,7 +134,7 @@ impl TokenHandler for Server {
                                     .await?;
 
                                 // Issue token
-                                self.issue_token(oauth.account_id, &oauth.client_id, true)
+                                self.issue_token(oauth.account_id, &oauth.client_id, issuer, true)
                                     .await
                                     .map(TokenResponse::Granted)
                                     .map_err(|err| {
@@ -156,8 +164,9 @@ impl TokenHandler for Server {
                         .issue_token(
                             token_info.account_id,
                             &token_info.client_id,
+                            issuer,
                             token_info.expires_in
-                                <= self.core.jmap.oauth_expiry_refresh_token_renew,
+                                <= self.core.oauth.oauth_expiry_refresh_token_renew,
                         )
                         .await
                         .map(TokenResponse::Granted)
@@ -171,7 +180,7 @@ impl TokenHandler for Server {
                         trc::error!(err
                             .caused_by(trc::location!())
                             .details("Failed to validate refresh token")
-                            .span_id(session_id));
+                            .span_id(session.session_id));
                         TokenResponse::error(ErrorType::InvalidGrant)
                     }
                 };
@@ -216,6 +225,7 @@ impl TokenHandler for Server {
         &self,
         account_id: u32,
         client_id: &str,
+        issuer: String,
         with_refresh_token: bool,
     ) -> trc::Result<OAuthResponse> {
         Ok(OAuthResponse {
@@ -224,22 +234,29 @@ impl TokenHandler for Server {
                     GrantType::AccessToken,
                     account_id,
                     client_id,
-                    self.core.jmap.oauth_expiry_token,
+                    self.core.oauth.oauth_expiry_token,
                 )
                 .await?,
             token_type: "bearer".to_string(),
-            expires_in: self.core.jmap.oauth_expiry_token,
+            expires_in: self.core.oauth.oauth_expiry_token,
             refresh_token: if with_refresh_token {
                 self.encode_access_token(
                     GrantType::RefreshToken,
                     account_id,
                     client_id,
-                    self.core.jmap.oauth_expiry_refresh_token,
+                    self.core.oauth.oauth_expiry_refresh_token,
                 )
                 .await?
                 .into()
             } else {
                 None
+            },
+            id_token: match self.issue_id_token(account_id.to_string(), issuer, client_id) {
+                Ok(id_token) => Some(id_token),
+                Err(err) => {
+                    trc::error!(err);
+                    None
+                }
             },
             scope: None,
         })

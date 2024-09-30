@@ -62,6 +62,10 @@ xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 psl = "2"
 dashmap = "6.0"
 aes-gcm-siv = "0.11.1"
+biscuit = "0.7.0"
+rsa = "0.9.2"
+p256 = { version = "0.13", features = ["ecdh"] }
+p384 = { version = "0.13", features = ["ecdh"] }
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

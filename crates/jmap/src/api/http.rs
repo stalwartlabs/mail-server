@@ -37,7 +37,7 @@ use crate::{
     api::management::enterprise::telemetry::TelemetryApi,
     auth::{
         authenticate::{Authenticator, HttpHeaders},
-        oauth::{auth::OAuthApiHandler, token::TokenHandler, FormData, OAuthMetadata},
+        oauth::{auth::OAuthApiHandler, openid::OpenIdHandler, token::TokenHandler, FormData},
         rate_limit::RateLimiter,
     },
     blob::{download::BlobDownload, upload::BlobUpload, DownloadResponse, UploadResponse},
@@ -217,19 +217,22 @@ impl ParseHttp for Server {
                     let (_in_flight, access_token) =
                         self.authenticate_headers(&req, &session).await?;
 
-                    return Ok(self
+                    return self
                         .handle_session_resource(ctx.resolve_response_url(self).await, access_token)
-                        .await?
-                        .into_http_response());
+                        .await
+                        .map(|s| s.into_http_response());
                 }
                 ("oauth-authorization-server", &Method::GET) => {
                     // Limit anonymous requests
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
-                    return Ok(JsonResponse::new(OAuthMetadata::new(
-                        ctx.resolve_response_url(self).await,
-                    ))
-                    .into_http_response());
+                    return self.handle_oauth_metadata(req, session).await;
+                }
+                ("openid-configuration", &Method::GET) => {
+                    // Limit anonymous requests
+                    self.is_anonymous_allowed(&session.remote_ip).await?;
+
+                    return self.handle_oidc_metadata(req, session).await;
                 }
                 ("acme-challenge", &Method::GET) if self.has_acme_http_providers() => {
                     if let Some(token) = path.next() {
@@ -273,17 +276,12 @@ impl ParseHttp for Server {
                 ("device", &Method::POST) => {
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
-                    let url = ctx.resolve_response_url(self).await;
-                    return self
-                        .handle_device_auth(&mut req, url, session.session_id)
-                        .await;
+                    return self.handle_device_auth(&mut req, session).await;
                 }
                 ("token", &Method::POST) => {
                     self.is_anonymous_allowed(&session.remote_ip).await?;
 
-                    return self
-                        .handle_token_request(&mut req, session.session_id)
-                        .await;
+                    return self.handle_token_request(&mut req, session).await;
                 }
                 ("introspect", &Method::POST) => {
                     // Authenticate request
@@ -293,6 +291,19 @@ impl ParseHttp for Server {
                     return self
                         .handle_token_introspect(&mut req, &access_token, session.session_id)
                         .await;
+                }
+                ("userinfo", &Method::GET) => {
+                    // Authenticate request
+                    let (_in_flight, access_token) =
+                        self.authenticate_headers(&req, &session).await?;
+
+                    return self.handle_userinfo_request(&access_token).await;
+                }
+                ("jwks.json", &Method::GET) => {
+                    // Limit anonymous requests
+                    self.is_anonymous_allowed(&session.remote_ip).await?;
+
+                    return Ok(self.core.oauth.oidc_jwks.clone().into_http_response());
                 }
                 (_, &Method::OPTIONS) => {
                     return Ok(StatusCode::NO_CONTENT.into_http_response());
@@ -655,17 +666,17 @@ impl SessionManager for JmapSessionManager {
     }
 }
 
-struct HttpContext<'x> {
-    session: &'x HttpSessionData,
-    req: &'x HttpRequest,
+pub struct HttpContext<'x> {
+    pub session: &'x HttpSessionData,
+    pub req: &'x HttpRequest,
 }
 
 impl<'x> HttpContext<'x> {
-    fn new(session: &'x HttpSessionData, req: &'x HttpRequest) -> Self {
+    pub fn new(session: &'x HttpSessionData, req: &'x HttpRequest) -> Self {
         Self { session, req }
     }
 
-    async fn resolve_response_url(&self, server: &Server) -> String {
+    pub async fn resolve_response_url(&self, server: &Server) -> String {
         server
             .eval_if(
                 &server.core.network.http_response_url,
@@ -683,7 +694,7 @@ impl<'x> HttpContext<'x> {
             })
     }
 
-    async fn has_endpoint_access(&self, server: &Server) -> StatusCode {
+    pub async fn has_endpoint_access(&self, server: &Server) -> StatusCode {
         server
             .eval_if(
                 &server.core.network.http_allowed_endpoint,

@@ -14,6 +14,7 @@ use common::{
     Server,
 };
 use rand::distributions::Standard;
+use serde::Deserialize;
 use serde_json::json;
 use std::future::Future;
 use store::{
@@ -23,11 +24,26 @@ use store::{
 };
 
 use crate::{
-    api::{http::ToHttpResponse, HttpRequest, HttpResponse, JsonResponse},
+    api::{
+        http::{HttpContext, HttpSessionData, ToHttpResponse},
+        HttpRequest, HttpResponse, JsonResponse,
+    },
     auth::oauth::OAuthStatus,
 };
 
 use super::{DeviceAuthResponse, FormData, OAuthCode, OAuthCodeRequest, MAX_POST_LEN};
+
+#[derive(Debug, serde::Serialize, Deserialize)]
+pub struct OAuthMetadata {
+    pub issuer: String,
+    pub token_endpoint: String,
+    pub authorization_endpoint: String,
+    pub device_authorization_endpoint: String,
+    pub introspection_endpoint: String,
+    pub grant_types_supported: Vec<String>,
+    pub response_types_supported: Vec<String>,
+    pub scopes_supported: Vec<String>,
+}
 
 pub trait OAuthApiHandler: Sync + Send {
     fn handle_oauth_api_request(
@@ -39,8 +55,13 @@ pub trait OAuthApiHandler: Sync + Send {
     fn handle_device_auth(
         &self,
         req: &mut HttpRequest,
-        base_url: impl AsRef<str> + Send,
-        session_id: u64,
+        session: HttpSessionData,
+    ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
+
+    fn handle_oauth_metadata(
+        &self,
+        req: HttpRequest,
+        session: HttpSessionData,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
 }
 
@@ -98,7 +119,7 @@ impl OAuthApiHandler for Server {
                     .key_set(
                         format!("oauth:{client_code}").into_bytes(),
                         value,
-                        self.core.jmap.oauth_expiry_auth_code.into(),
+                        self.core.oauth.oauth_expiry_auth_code.into(),
                     )
                     .await?;
 
@@ -146,7 +167,7 @@ impl OAuthApiHandler for Server {
                             .key_set(
                                 format!("oauth:{device_code}").into_bytes(),
                                 auth_code.serialize(),
-                                self.core.jmap.oauth_expiry_auth_code.into(),
+                                self.core.oauth.oauth_expiry_auth_code.into(),
                             )
                             .await?;
                     }
@@ -164,11 +185,10 @@ impl OAuthApiHandler for Server {
     async fn handle_device_auth(
         &self,
         req: &mut HttpRequest,
-        base_url: impl AsRef<str>,
-        session_id: u64,
+        session: HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         // Parse form
-        let client_id = FormData::from_request(req, MAX_POST_LEN, session_id)
+        let client_id = FormData::from_request(req, MAX_POST_LEN, session.session_id)
             .await?
             .remove("client_id")
             .filter(|client_id| client_id.len() < CLIENT_ID_MAX_LEN)
@@ -215,7 +235,7 @@ impl OAuthApiHandler for Server {
             .key_set(
                 format!("oauth:{device_code}").into_bytes(),
                 oauth_code.clone(),
-                self.core.jmap.oauth_expiry_user_code.into(),
+                self.core.oauth.oauth_expiry_user_code.into(),
             )
             .await?;
 
@@ -226,19 +246,52 @@ impl OAuthApiHandler for Server {
             .key_set(
                 format!("oauth:{user_code}").into_bytes(),
                 oauth_code,
-                self.core.jmap.oauth_expiry_user_code.into(),
+                self.core.oauth.oauth_expiry_user_code.into(),
             )
             .await?;
 
         // Build response
-        let base_url = base_url.as_ref();
+        let base_url = HttpContext::new(&session, req)
+            .resolve_response_url(self)
+            .await;
         Ok(JsonResponse::new(DeviceAuthResponse {
-            verification_uri: format!("{}/authorize", base_url),
-            verification_uri_complete: format!("{}/authorize/?code={}", base_url, user_code),
+            verification_uri: format!("{base_url}/authorize"),
+            verification_uri_complete: format!("{base_url}/authorize/?code={user_code}"),
             device_code,
             user_code,
-            expires_in: self.core.jmap.oauth_expiry_user_code,
+            expires_in: self.core.oauth.oauth_expiry_user_code,
             interval: 5,
+        })
+        .into_http_response())
+    }
+
+    async fn handle_oauth_metadata(
+        &self,
+        req: HttpRequest,
+        session: HttpSessionData,
+    ) -> trc::Result<HttpResponse> {
+        let base_url = HttpContext::new(&session, &req)
+            .resolve_response_url(self)
+            .await;
+
+        Ok(JsonResponse::new(OAuthMetadata {
+            authorization_endpoint: format!("{base_url}/authorize/code",),
+            token_endpoint: format!("{base_url}/auth/token"),
+            grant_types_supported: vec![
+                "authorization_code".to_string(),
+                "implicit".to_string(),
+                "urn:ietf:params:oauth:grant-type:device_code".to_string(),
+            ],
+            device_authorization_endpoint: format!("{base_url}/auth/device"),
+            response_types_supported: vec![
+                "code".to_string(),
+                "id_token".to_string(),
+                "code token".to_string(),
+                "id_token token".to_string(),
+            ],
+            scopes_supported: vec!["openid".to_string(), "offline_access".to_string()],
+            introspection_endpoint: format!("{base_url}/auth/introspect"),
+            issuer: base_url,
         })
         .into_http_response())
     }
