@@ -860,6 +860,7 @@ impl EventType {
             EventType::Security(SecurityEvent::Unauthorized) => 552,
             EventType::Limit(LimitEvent::TenantQuota) => 553,
             EventType::Auth(AuthEvent::TokenExpired) => 554,
+            EventType::Auth(AuthEvent::ClientRegistration) => 555,
         }
     }
 
@@ -1460,6 +1461,7 @@ impl EventType {
             552 => Some(EventType::Security(SecurityEvent::Unauthorized)),
             553 => Some(EventType::Limit(LimitEvent::TenantQuota)),
             554 => Some(EventType::Auth(AuthEvent::TokenExpired)),
+            555 => Some(EventType::Auth(AuthEvent::ClientRegistration)),
             _ => None,
         }
     }

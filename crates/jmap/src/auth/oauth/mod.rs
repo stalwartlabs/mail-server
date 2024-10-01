@@ -12,6 +12,7 @@ use crate::api::{http::fetch_body, HttpRequest};
 
 pub mod auth;
 pub mod openid;
+pub mod registration;
 pub mod token;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

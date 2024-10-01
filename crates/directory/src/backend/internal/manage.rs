@@ -15,7 +15,9 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{Permission, Principal, QueryBy, Type, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER};
+use crate::{
+    Permission, Principal, QueryBy, Type, MAX_TYPE_ID, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER,
+};
 
 use super::{
     lookup::DirectoryStore, PrincipalAction, PrincipalField, PrincipalInfo, PrincipalUpdate,
@@ -271,16 +273,7 @@ impl ManageDirectory for Store {
 
             principal.set(PrincipalField::Tenant, tenant_id);
 
-            if matches!(
-                principal.typ,
-                Type::Individual
-                    | Type::Group
-                    | Type::List
-                    | Type::Role
-                    | Type::Location
-                    | Type::Resource
-                    | Type::Other
-            ) {
+            if !matches!(principal.typ, Type::Tenant | Type::Domain) {
                 if let Some(domain) = name.split('@').nth(1) {
                     if self
                         .get_principal_info(domain)
@@ -513,6 +506,7 @@ impl ManageDirectory for Store {
                             Type::Other,
                             Type::Location,
                             Type::Domain,
+                            Type::ApiKey,
                         ],
                         &[PrincipalField::Name],
                         0,
@@ -771,7 +765,12 @@ impl ManageDirectory for Store {
                 Type::Other,
             ][..],
             Type::List => &[Type::Individual, Type::Group][..],
-            Type::Other | Type::Domain | Type::Tenant | Type::Individual => &[][..],
+            Type::Other
+            | Type::Domain
+            | Type::Tenant
+            | Type::Individual
+            | Type::ApiKey
+            | Type::OauthClient => &[][..],
             Type::Role => &[Type::Role][..],
         };
         let mut valid_domains = AHashSet::new();
@@ -784,16 +783,7 @@ impl ManageDirectory for Store {
                     let new_name = new_name.to_lowercase();
                     if principal.inner.name() != new_name {
                         if tenant_id.is_some()
-                            && matches!(
-                                principal.inner.typ,
-                                Type::Individual
-                                    | Type::Group
-                                    | Type::List
-                                    | Type::Role
-                                    | Type::Location
-                                    | Type::Resource
-                                    | Type::Other
-                            )
+                            && !matches!(principal.inner.typ, Type::Tenant | Type::Domain)
                         {
                             if let Some(domain) = new_name.split('@').nth(1) {
                                 if self
@@ -978,7 +968,7 @@ impl ManageDirectory for Store {
                     PrincipalField::Quota,
                     PrincipalValue::IntegerList(quotas),
                 ) if matches!(principal.inner.typ, Type::Tenant)
-                    && quotas.len() <= (Type::Role as usize + 2) =>
+                    && quotas.len() <= (MAX_TYPE_ID + 2) =>
                 {
                     principal.inner.set(PrincipalField::Quota, quotas);
                 }

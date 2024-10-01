@@ -1742,6 +1742,7 @@ impl AuthEvent {
             AuthEvent::TooManyAttempts => "Too many authentication attempts",
             AuthEvent::Error => "Authentication error",
             AuthEvent::TokenExpired => "OAuth token expired",
+            AuthEvent::ClientRegistration => "OAuth Client registration",
         }
     }
 
@@ -1753,6 +1754,7 @@ impl AuthEvent {
             AuthEvent::TooManyAttempts => "Too many authentication attempts have been made",
             AuthEvent::Error => "An error occurred with authentication",
             AuthEvent::TokenExpired => "OAuth authentication token has expired",
+            AuthEvent::ClientRegistration => "OAuth client successfully registered",
         }
     }
 }

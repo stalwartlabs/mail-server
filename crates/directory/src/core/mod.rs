@@ -183,6 +183,18 @@ impl Permission {
             Permission::SieveRenameScript => "Rename Sieve scripts",
             Permission::SieveCheckScript => "Validate Sieve scripts",
             Permission::SieveHaveSpace => "Check available space for Sieve scripts",
+            Permission::OauthClientRegistration => "Register OAuth clients",
+            Permission::OauthClientOverride => "Override OAuth client settings",
+            Permission::ApiKeyList => "View API keys",
+            Permission::ApiKeyGet => "Retrieve specific API keys",
+            Permission::ApiKeyCreate => "Create new API keys",
+            Permission::ApiKeyUpdate => "Modify API keys",
+            Permission::ApiKeyDelete => "Remove API keys",
+            Permission::OauthClientList => "View OAuth clients",
+            Permission::OauthClientGet => "Retrieve specific OAuth clients",
+            Permission::OauthClientCreate => "Create new OAuth clients",
+            Permission::OauthClientUpdate => "Modify OAuth clients",
+            Permission::OauthClientDelete => "Remove OAuth clients",
         }
     }
 }

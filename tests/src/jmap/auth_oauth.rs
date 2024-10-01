@@ -9,7 +9,10 @@ use std::time::{Duration, Instant};
 use base64::{engine::general_purpose, Engine};
 use biscuit::{jwk::JWKSet, SingleOrMultiple, JWT};
 use bytes::Bytes;
-use common::auth::oauth::introspect::OAuthIntrospect;
+use common::auth::oauth::{
+    introspect::OAuthIntrospect,
+    registration::{ClientRegistrationRequest, ClientRegistrationResponse},
+};
 use imap_proto::ResponseType;
 use jmap::auth::oauth::{
     auth::OAuthMetadata, openid::OpenIdMetadata, DeviceAuthResponse, ErrorType, OAuthCodeRequest,
@@ -20,7 +23,7 @@ use jmap_client::{
     mailbox::query::Filter,
 };
 use jmap_proto::types::id::Id;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 use store::ahash::AHashMap;
 
 use crate::{
@@ -72,6 +75,18 @@ pub async fn test(params: &mut JMAPTest) {
         get("https://127.0.0.1:8899/.well-known/openid-configuration").await;
     let jwk_set: JWKSet<()> = get(&oidc_metadata.jwks_uri).await;
 
+    // Register client
+    let registration: ClientRegistrationResponse = post_json(
+        &metadata.registration_endpoint,
+        None,
+        &ClientRegistrationRequest {
+            redirect_uris: vec!["https://localhost".to_string()],
+            ..Default::default()
+        },
+    )
+    .await;
+    let client_id = registration.client_id;
+
     /*println!("OAuth metadata: {:#?}", metadata);
     println!("OpenID metadata: {:#?}", oidc_metadata);
     println!("JWKSet: {:#?}", jwk_set);*/
@@ -85,7 +100,7 @@ pub async fn test(params: &mut JMAPTest) {
         .post::<OAuthCodeResponse>(
             "/api/oauth",
             &OAuthCodeRequest::Code {
-                client_id: "OAuthyMcOAuthFace".to_string(),
+                client_id: client_id.to_string(),
                 redirect_uri: "https://localhost".to_string().into(),
             },
         )
@@ -106,7 +121,7 @@ pub async fn test(params: &mut JMAPTest) {
             error: ErrorType::InvalidClient
         }
     );
-    token_params.insert("client_id".to_string(), "OAuthyMcOAuthFace".to_string());
+    token_params.insert("client_id".to_string(), client_id.to_string());
     token_params.insert(
         "redirect_uri".to_string(),
         "https://some-other.url".to_string(),
@@ -147,7 +162,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_eq!(claims.subject, Some(john_int_id.to_string()));
     assert_eq!(
         claims.audience,
-        Some(SingleOrMultiple::Single("OAuthyMcOAuthFace".to_string()))
+        Some(SingleOrMultiple::Single(client_id.to_string()))
     );
 
     // Introspect token
@@ -159,7 +174,7 @@ pub async fn test(params: &mut JMAPTest) {
     .await;
     assert_eq!(access_introspect.username.unwrap(), "jdoe@example.com");
     assert_eq!(access_introspect.token_type.unwrap(), "bearer");
-    assert_eq!(access_introspect.client_id.unwrap(), "OAuthyMcOAuthFace");
+    assert_eq!(access_introspect.client_id.unwrap(), client_id);
     assert!(access_introspect.active);
     let refresh_introspect = post_with_auth::<OAuthIntrospect>(
         &metadata.introspection_endpoint,
@@ -168,7 +183,7 @@ pub async fn test(params: &mut JMAPTest) {
     )
     .await;
     assert_eq!(refresh_introspect.username.unwrap(), "jdoe@example.com");
-    assert_eq!(refresh_introspect.client_id.unwrap(), "OAuthyMcOAuthFace");
+    assert_eq!(refresh_introspect.client_id.unwrap(), client_id);
     assert!(refresh_introspect.active);
     assert_eq!(
         refresh_introspect.iat.unwrap(),
@@ -211,14 +226,15 @@ pub async fn test(params: &mut JMAPTest) {
     // ------------------------
 
     // Request a device code
-    let device_code_params = AHashMap::from_iter([("client_id".to_string(), "1234".to_string())]);
+    let device_code_params =
+        AHashMap::from_iter([("client_id".to_string(), client_id.to_string())]);
     let device_response: DeviceAuthResponse =
         post(&metadata.device_authorization_endpoint, &device_code_params).await;
     //println!("Device response: {:#?}", device_response);
 
     // Status should be pending
     let mut token_params = AHashMap::from_iter([
-        ("client_id".to_string(), "1234".to_string()),
+        ("client_id".to_string(), client_id.to_string()),
         (
             "grant_type".to_string(),
             "urn:ietf:params:oauth:grant-type:device_code".to_string(),
@@ -313,7 +329,7 @@ pub async fn test(params: &mut JMAPTest) {
         post::<TokenResponse>(
             &metadata.token_endpoint,
             &AHashMap::from_iter([
-                ("client_id".to_string(), "1234".to_string()),
+                ("client_id".to_string(), client_id.to_string()),
                 ("grant_type".to_string(), "refresh_token".to_string()),
                 ("refresh_token".to_string(), token),
             ]),
@@ -326,7 +342,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Refreshing the access token before expiration should not include a new refresh token
     let refresh_params = AHashMap::from_iter([
-        ("client_id".to_string(), "1234".to_string()),
+        ("client_id".to_string(), client_id.to_string()),
         ("grant_type".to_string(), "refresh_token".to_string()),
         ("refresh_token".to_string(), refresh_token),
     ]);
@@ -399,6 +415,35 @@ async fn post_bytes(
         .bytes()
         .await
         .unwrap()
+}
+
+async fn post_json<D: DeserializeOwned>(
+    url: &str,
+    auth_token: Option<&str>,
+    body: &impl Serialize,
+) -> D {
+    let mut client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(500))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap_or_default()
+        .post(url);
+
+    if let Some(auth_token) = auth_token {
+        client = client.bearer_auth(auth_token);
+    }
+
+    serde_json::from_slice(
+        &client
+            .body(serde_json::to_string(body).unwrap().into_bytes())
+            .send()
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap(),
+    )
+    .unwrap()
 }
 
 async fn post<T: DeserializeOwned>(url: &str, params: &AHashMap<String, String>) -> T {

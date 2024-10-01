@@ -39,6 +39,7 @@ pub struct OAuthMetadata {
     pub token_endpoint: String,
     pub authorization_endpoint: String,
     pub device_authorization_endpoint: String,
+    pub registration_endpoint: String,
     pub introspection_endpoint: String,
     pub grant_types_supported: Vec<String>,
     pub response_types_supported: Vec<String>,
@@ -191,7 +192,7 @@ impl OAuthApiHandler for Server {
         let client_id = FormData::from_request(req, MAX_POST_LEN, session.session_id)
             .await?
             .remove("client_id")
-            .filter(|client_id| client_id.len() < CLIENT_ID_MAX_LEN)
+            .filter(|client_id| client_id.len() <= CLIENT_ID_MAX_LEN)
             .ok_or_else(|| {
                 trc::ResourceEvent::BadParameters
                     .into_err()
@@ -277,12 +278,14 @@ impl OAuthApiHandler for Server {
         Ok(JsonResponse::new(OAuthMetadata {
             authorization_endpoint: format!("{base_url}/authorize/code",),
             token_endpoint: format!("{base_url}/auth/token"),
+            device_authorization_endpoint: format!("{base_url}/auth/device"),
+            introspection_endpoint: format!("{base_url}/auth/introspect"),
+            registration_endpoint: format!("{base_url}/auth/register"),
             grant_types_supported: vec![
                 "authorization_code".to_string(),
                 "implicit".to_string(),
                 "urn:ietf:params:oauth:grant-type:device_code".to_string(),
             ],
-            device_authorization_endpoint: format!("{base_url}/auth/device"),
             response_types_supported: vec![
                 "code".to_string(),
                 "id_token".to_string(),
@@ -290,7 +293,6 @@ impl OAuthApiHandler for Server {
                 "id_token token".to_string(),
             ],
             scopes_supported: vec!["openid".to_string(), "offline_access".to_string()],
-            introspection_endpoint: format!("{base_url}/auth/introspect"),
             issuer: base_url,
         })
         .into_http_response())

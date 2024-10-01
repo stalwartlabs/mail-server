@@ -39,7 +39,10 @@ use stores::ManageStore;
 
 use crate::{auth::oauth::auth::OAuthApiHandler, email::crypto::CryptoHandler};
 
-use super::{http::HttpSessionData, HttpRequest, HttpResponse};
+use super::{
+    http::{fetch_body, HttpSessionData},
+    HttpRequest, HttpResponse,
+};
 use std::future::Future;
 
 #[derive(Serialize)]
@@ -69,8 +72,7 @@ pub enum ManagementApiError<'x> {
 pub trait ManagementApi: Sync + Send {
     fn handle_api_manage_request(
         &self,
-        req: &HttpRequest,
-        body: Option<Vec<u8>>,
+        req: &mut HttpRequest,
         access_token: Arc<AccessToken>,
         session: &HttpSessionData,
     ) -> impl Future<Output = trc::Result<HttpResponse>> + Send;
@@ -80,11 +82,11 @@ impl ManagementApi for Server {
     #[allow(unused_variables)]
     async fn handle_api_manage_request(
         &self,
-        req: &HttpRequest,
-        body: Option<Vec<u8>>,
+        req: &mut HttpRequest,
         access_token: Arc<AccessToken>,
         session: &HttpSessionData,
     ) -> trc::Result<HttpResponse> {
+        let body = fetch_body(req, 1024 * 1024, session.session_id).await;
         let path = req.uri().path().split('/').skip(2).collect::<Vec<_>>();
 
         match path.first().copied().unwrap_or_default() {

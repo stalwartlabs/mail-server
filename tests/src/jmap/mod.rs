@@ -289,6 +289,10 @@ token = "1s"
 refresh-token = "3s"
 refresh-token-renew = "2s"
 
+[oauth.client-registration]
+anonymous = true
+required = true
+
 [oauth.oidc]
 signature-key = '''-----BEGIN PRIVATE KEY-----
 MIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQDMXJI1bL3z8gaF
@@ -339,7 +343,7 @@ type = "console"
 level = "{LEVEL}"
 multiline = false
 ansi = true
-disabled-events = ["network.*"]
+disabled-events = ["network.*", "telemetry.webhook-error"]
 
 [webhook."test"]
 url = "http://127.0.0.1:8821/hook"

@@ -36,6 +36,9 @@ pub struct OAuthConfig {
     pub oauth_expiry_refresh_token_renew: u64,
     pub oauth_max_auth_attempts: u32,
 
+    pub allow_anonymous_client_registration: bool,
+    pub require_client_authentication: bool,
+
     pub oidc_expiry_id_token: u64,
     pub oidc_signing_secret: Secret,
     pub oidc_signature_algorithm: SignatureAlgorithm,
@@ -179,6 +182,12 @@ impl OAuthConfig {
                 .property_or_default::<Duration>("oauth.oidc.expiry.id-token", "15m")
                 .unwrap_or_else(|| Duration::from_secs(15 * 60))
                 .as_secs(),
+            allow_anonymous_client_registration: config
+                .property_or_default("oauth.client-registration.anonymous", "false")
+                .unwrap_or(false),
+            require_client_authentication: config
+                .property_or_default("oauth.client-registration.required", "false")
+                .unwrap_or(true),
             oidc_signing_secret,
             oidc_signature_algorithm,
             oidc_jwks,
@@ -197,6 +206,8 @@ impl Default for OAuthConfig {
             oauth_expiry_refresh_token_renew: Default::default(),
             oauth_max_auth_attempts: Default::default(),
             oidc_expiry_id_token: Default::default(),
+            allow_anonymous_client_registration: Default::default(),
+            require_client_authentication: Default::default(),
             oidc_signing_secret: Secret::Bytes("secret".to_string().into_bytes()),
             oidc_signature_algorithm: SignatureAlgorithm::HS256,
             oidc_jwks: Resource {

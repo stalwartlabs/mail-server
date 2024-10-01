@@ -95,6 +95,8 @@ impl PrincipalManager for Server {
                     Type::Domain => Permission::DomainCreate,
                     Type::Tenant => Permission::TenantCreate,
                     Type::Role => Permission::RoleCreate,
+                    Type::ApiKey => Permission::ApiKeyCreate,
+                    Type::OauthClient => Permission::OauthClientCreate,
                     Type::Resource | Type::Location | Type::Other => Permission::PrincipalCreate,
                 })?;
 
@@ -175,6 +177,8 @@ impl PrincipalManager for Server {
                         Type::Tenant,
                         Type::Role,
                         Type::Other,
+                        Type::ApiKey,
+                        Type::OauthClient,
                     ]
                 };
                 for typ in validate_types {
@@ -185,6 +189,8 @@ impl PrincipalManager for Server {
                         Type::Domain => Permission::DomainList,
                         Type::Tenant => Permission::TenantList,
                         Type::Role => Permission::RoleList,
+                        Type::ApiKey => Permission::ApiKeyList,
+                        Type::OauthClient => Permission::OauthClientList,
                         Type::Resource | Type::Location | Type::Other => Permission::PrincipalList,
                     })?;
                 }
@@ -266,6 +272,8 @@ impl PrincipalManager for Server {
                             Type::Domain => Permission::DomainGet,
                             Type::Tenant => Permission::TenantGet,
                             Type::Role => Permission::RoleGet,
+                            Type::ApiKey => Permission::ApiKeyGet,
+                            Type::OauthClient => Permission::OauthClientGet,
                             Type::Resource | Type::Location | Type::Other => {
                                 Permission::PrincipalGet
                             }
@@ -301,6 +309,8 @@ impl PrincipalManager for Server {
                             Type::Domain => Permission::DomainDelete,
                             Type::Tenant => Permission::TenantDelete,
                             Type::Role => Permission::RoleDelete,
+                            Type::ApiKey => Permission::ApiKeyDelete,
+                            Type::OauthClient => Permission::OauthClientDelete,
                             Type::Resource | Type::Location | Type::Other => {
                                 Permission::PrincipalDelete
                             }
@@ -347,6 +357,8 @@ impl PrincipalManager for Server {
                             Type::Domain => Permission::DomainUpdate,
                             Type::Tenant => Permission::TenantUpdate,
                             Type::Role => Permission::RoleUpdate,
+                            Type::ApiKey => Permission::ApiKeyUpdate,
+                            Type::OauthClient => Permission::OauthClientUpdate,
                             Type::Resource | Type::Location | Type::Other => {
                                 Permission::PrincipalUpdate
                             }
@@ -382,7 +394,8 @@ impl PrincipalManager for Server {
                                 | PrincipalField::Picture
                                 | PrincipalField::MemberOf
                                 | PrincipalField::Members
-                                | PrincipalField::Lists => (),
+                                | PrincipalField::Lists
+                                | PrincipalField::Urls => (),
                                 PrincipalField::Tenant => {
                                     // Tenants are not allowed to change their tenantId
                                     if access_token.tenant.is_some() {

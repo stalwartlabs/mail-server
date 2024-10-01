@@ -8,6 +8,7 @@ pub mod config;
 pub mod crypto;
 pub mod introspect;
 pub mod oidc;
+pub mod registration;
 pub mod token;
 
 pub const DEVICE_CODE_LEN: usize = 40;

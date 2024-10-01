@@ -926,6 +926,7 @@ pub enum AuthEvent {
     TokenExpired,
     MissingTotp,
     TooManyAttempts,
+    ClientRegistration,
     Error,
 }
 

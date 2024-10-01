@@ -18,7 +18,8 @@ use crate::api::{
 };
 
 use super::{
-    ErrorType, FormData, OAuthCode, OAuthResponse, OAuthStatus, TokenResponse, MAX_POST_LEN,
+    registration::ClientRegistrationHandler, ErrorType, FormData, OAuthCode, OAuthResponse,
+    OAuthStatus, TokenResponse, MAX_POST_LEN,
 };
 
 pub trait TokenHandler: Sync + Send {
@@ -80,23 +81,35 @@ impl TokenHandler for Server {
                         if client_id != oauth.client_id || redirect_uri != oauth.params {
                             TokenResponse::error(ErrorType::InvalidClient)
                         } else if oauth.status == OAuthStatus::Authorized {
-                            // Mark this token as issued
-                            self.core
-                                .storage
-                                .lookup
-                                .key_delete(format!("oauth:{code}").into_bytes())
-                                .await?;
+                            // Validate client id
+                            if let Some(error) = self
+                                .validate_client_registration(
+                                    client_id,
+                                    redirect_uri.into(),
+                                    oauth.account_id,
+                                )
+                                .await?
+                            {
+                                TokenResponse::error(error)
+                            } else {
+                                // Mark this token as issued
+                                self.core
+                                    .storage
+                                    .lookup
+                                    .key_delete(format!("oauth:{code}").into_bytes())
+                                    .await?;
 
-                            // Issue token
-                            self.issue_token(oauth.account_id, &oauth.client_id, issuer, true)
-                                .await
-                                .map(TokenResponse::Granted)
-                                .map_err(|err| {
-                                    trc::AuthEvent::Error
-                                        .into_err()
-                                        .details(err)
-                                        .caused_by(trc::location!())
-                                })?
+                                // Issue token
+                                self.issue_token(oauth.account_id, &oauth.client_id, issuer, true)
+                                    .await
+                                    .map(TokenResponse::Granted)
+                                    .map_err(|err| {
+                                        trc::AuthEvent::Error
+                                            .into_err()
+                                            .details(err)
+                                            .caused_by(trc::location!())
+                                    })?
+                            }
                         } else {
                             TokenResponse::error(ErrorType::InvalidGrant)
                         }
@@ -126,15 +139,26 @@ impl TokenHandler for Server {
                     } else {
                         match oauth.status {
                             OAuthStatus::Authorized => {
-                                // Mark this token as issued
-                                self.core
-                                    .storage
-                                    .lookup
-                                    .key_delete(format!("oauth:{device_code}").into_bytes())
-                                    .await?;
+                                if let Some(error) = self
+                                    .validate_client_registration(client_id, None, oauth.account_id)
+                                    .await?
+                                {
+                                    TokenResponse::error(error)
+                                } else {
+                                    // Mark this token as issued
+                                    self.core
+                                        .storage
+                                        .lookup
+                                        .key_delete(format!("oauth:{device_code}").into_bytes())
+                                        .await?;
 
-                                // Issue token
-                                self.issue_token(oauth.account_id, &oauth.client_id, issuer, true)
+                                    // Issue token
+                                    self.issue_token(
+                                        oauth.account_id,
+                                        &oauth.client_id,
+                                        issuer,
+                                        true,
+                                    )
                                     .await
                                     .map(TokenResponse::Granted)
                                     .map_err(|err| {
@@ -143,6 +167,7 @@ impl TokenHandler for Server {
                                             .details(err)
                                             .caused_by(trc::location!())
                                     })?
+                                }
                             }
                             OAuthStatus::Pending => {
                                 TokenResponse::error(ErrorType::AuthorizationPending)

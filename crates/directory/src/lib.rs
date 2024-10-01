@@ -52,7 +52,11 @@ pub enum Type {
     Domain = 7,
     Tenant = 8,
     Role = 9,
+    ApiKey = 10,
+    OauthClient = 11,
 }
+
+pub const MAX_TYPE_ID: usize = 11;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, EnumMethods,
@@ -240,6 +244,24 @@ pub enum Permission {
     SieveRenameScript,
     SieveCheckScript,
     SieveHaveSpace,
+
+    // API keys
+    ApiKeyList,
+    ApiKeyGet,
+    ApiKeyCreate,
+    ApiKeyUpdate,
+    ApiKeyDelete,
+
+    // OAuth clients
+    OauthClientList,
+    OauthClientGet,
+    OauthClientCreate,
+    OauthClientUpdate,
+    OauthClientDelete,
+
+    // OAuth client registration
+    OauthClientRegistration,
+    OauthClientOverride,
     // WARNING: add new ids at the end (TODO: use static ids)
 }
 

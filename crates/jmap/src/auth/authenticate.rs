@@ -24,6 +24,7 @@ pub trait Authenticator: Sync + Send {
         &self,
         req: &HttpRequest,
         session: &HttpSessionData,
+        allow_api_access: bool,
     ) -> impl Future<Output = trc::Result<(InFlight, Arc<AccessToken>)>> + Send;
 }
 
@@ -32,6 +33,7 @@ impl Authenticator for Server {
         &self,
         req: &HttpRequest,
         session: &HttpSessionData,
+        allow_api_access: bool,
     ) -> trc::Result<(InFlight, Arc<AccessToken>)> {
         if let Some((mechanism, token)) = req.authorization() {
             let access_token =
@@ -43,29 +45,24 @@ impl Authenticator for Server {
                         self.is_auth_allowed_soft(&session.remote_ip).await?;
 
                         // Decode the base64 encoded credentials
-                        if let Some((username, secret)) = base64_decode(token.as_bytes())
-                            .and_then(|token| String::from_utf8(token).ok())
-                            .and_then(|token| {
-                                token.split_once(':').map(|(login, secret)| {
-                                    (login.trim().to_lowercase(), secret.to_string())
-                                })
-                            })
-                        {
-                            Credentials::Plain { username, secret }
-                        } else {
-                            return Err(trc::AuthEvent::Error
+                        decode_plain_auth(token).ok_or_else(|| {
+                            trc::AuthEvent::Error
                                 .into_err()
                                 .details("Failed to decode Basic auth request.")
                                 .id(token.to_string())
-                                .caused_by(trc::location!()));
-                        }
+                                .caused_by(trc::location!())
+                        })?
                     } else if mechanism.eq_ignore_ascii_case("bearer") {
                         // Enforce anonymous rate limit
                         self.is_anonymous_allowed(&session.remote_ip).await?;
 
-                        Credentials::OAuthBearer {
-                            token: token.to_string(),
-                        }
+                        decode_bearer_token(token, allow_api_access).ok_or_else(|| {
+                            trc::AuthEvent::Error
+                                .into_err()
+                                .details("Failed to decode Bearer token.")
+                                .id(token.to_string())
+                                .caused_by(trc::location!())
+                        })?
                     } else {
                         // Enforce anonymous rate limit
                         self.is_anonymous_allowed(&session.remote_ip).await?;
@@ -138,4 +135,29 @@ impl HttpHeaders for HttpRequest {
             }
         })
     }
+}
+
+fn decode_plain_auth(token: &str) -> Option<Credentials<String>> {
+    base64_decode(token.as_bytes())
+        .and_then(|token| String::from_utf8(token).ok())
+        .and_then(|token| {
+            token
+                .split_once(':')
+                .map(|(login, secret)| Credentials::Plain {
+                    username: login.trim().to_lowercase(),
+                    secret: secret.to_string(),
+                })
+        })
+}
+
+fn decode_bearer_token(token: &str, allow_api_access: bool) -> Option<Credentials<String>> {
+    if allow_api_access {
+        if let Some(token) = token.strip_prefix("api_") {
+            return decode_plain_auth(token);
+        }
+    }
+
+    Some(Credentials::OAuthBearer {
+        token: token.to_string(),
+    })
 }

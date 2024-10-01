@@ -591,6 +591,8 @@ impl Type {
             Self::Tenant => "tenant",
             Self::Role => "role",
             Self::Domain => "domain",
+            Self::ApiKey => "api-key",
+            Self::OauthClient => "oauth-client",
         }
     }
 
@@ -605,6 +607,8 @@ impl Type {
             Self::Other => "Other",
             Self::Role => "Role",
             Self::Domain => "Domain",
+            Self::ApiKey => "API Key",
+            Self::OauthClient => "OAuth Client",
         }
     }
 
@@ -619,6 +623,8 @@ impl Type {
             "superuser" => Some(Type::Individual), // legacy
             "role" => Some(Type::Role),
             "domain" => Some(Type::Domain),
+            "api-key" => Some(Type::ApiKey),
+            "oauth-client" => Some(Type::OauthClient),
             _ => None,
         }
     }
@@ -635,6 +641,8 @@ impl Type {
             7 => Type::Domain,
             8 => Type::Tenant,
             9 => Type::Role,
+            10 => Type::ApiKey,
+            11 => Type::OauthClient,
             _ => Type::Other,
         }
     }
@@ -835,18 +843,17 @@ impl<'de> serde::Deserialize<'de> for Principal {
                         | PrincipalField::Roles
                         | PrincipalField::Lists
                         | PrincipalField::EnabledPermissions
-                        | PrincipalField::DisabledPermissions => {
-                            match map.next_value::<StringOrMany>()? {
-                                StringOrMany::One(v) => PrincipalValue::StringList(vec![v]),
-                                StringOrMany::Many(v) => {
-                                    if !v.is_empty() {
-                                        PrincipalValue::StringList(v)
-                                    } else {
-                                        continue;
-                                    }
+                        | PrincipalField::DisabledPermissions
+                        | PrincipalField::Urls => match map.next_value::<StringOrMany>()? {
+                            StringOrMany::One(v) => PrincipalValue::StringList(vec![v]),
+                            StringOrMany::Many(v) => {
+                                if !v.is_empty() {
+                                    PrincipalValue::StringList(v)
+                                } else {
+                                    continue;
                                 }
                             }
-                        }
+                        },
                         PrincipalField::UsedQuota => {
                             // consume and ignore
                             map.next_value::<IgnoredAny>()?;

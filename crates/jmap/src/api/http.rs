@@ -37,7 +37,10 @@ use crate::{
     api::management::enterprise::telemetry::TelemetryApi,
     auth::{
         authenticate::{Authenticator, HttpHeaders},
-        oauth::{auth::OAuthApiHandler, openid::OpenIdHandler, token::TokenHandler, FormData},
+        oauth::{
+            auth::OAuthApiHandler, openid::OpenIdHandler, registration::ClientRegistrationHandler,
+            token::TokenHandler, FormData,
+        },
         rate_limit::RateLimiter,
     },
     blob::{download::BlobDownload, upload::BlobUpload, DownloadResponse, UploadResponse},
@@ -99,7 +102,7 @@ impl ParseHttp for Server {
                     ("", &Method::POST) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, &session).await?;
+                            self.authenticate_headers(&req, &session, false).await?;
 
                         let request = fetch_body(
                             &mut req,
@@ -128,7 +131,7 @@ impl ParseHttp for Server {
                     ("download", &Method::GET) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, &session).await?;
+                            self.authenticate_headers(&req, &session, false).await?;
 
                         if let (Some(_), Some(blob_id), Some(name)) = (
                             path.next().and_then(|p| Id::from_bytes(p.as_bytes())),
@@ -157,7 +160,7 @@ impl ParseHttp for Server {
                     ("upload", &Method::POST) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, &session).await?;
+                            self.authenticate_headers(&req, &session, false).await?;
 
                         if let Some(account_id) =
                             path.next().and_then(|p| Id::from_bytes(p.as_bytes()))
@@ -192,14 +195,14 @@ impl ParseHttp for Server {
                     ("eventsource", &Method::GET) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, &session).await?;
+                            self.authenticate_headers(&req, &session, false).await?;
 
                         return self.handle_event_source(req, access_token).await;
                     }
                     ("ws", &Method::GET) => {
                         // Authenticate request
                         let (_in_flight, access_token) =
-                            self.authenticate_headers(&req, &session).await?;
+                            self.authenticate_headers(&req, &session, false).await?;
 
                         return self
                             .upgrade_websocket_connection(req, access_token, session)
@@ -215,7 +218,7 @@ impl ParseHttp for Server {
                 ("jmap", &Method::GET) => {
                     // Authenticate request
                     let (_in_flight, access_token) =
-                        self.authenticate_headers(&req, &session).await?;
+                        self.authenticate_headers(&req, &session, false).await?;
 
                     return self
                         .handle_session_resource(ctx.resolve_response_url(self).await, access_token)
@@ -286,7 +289,7 @@ impl ParseHttp for Server {
                 ("introspect", &Method::POST) => {
                     // Authenticate request
                     let (_in_flight, access_token) =
-                        self.authenticate_headers(&req, &session).await?;
+                        self.authenticate_headers(&req, &session, false).await?;
 
                     return self
                         .handle_token_introspect(&mut req, &access_token, session.session_id)
@@ -295,9 +298,14 @@ impl ParseHttp for Server {
                 ("userinfo", &Method::GET) => {
                     // Authenticate request
                     let (_in_flight, access_token) =
-                        self.authenticate_headers(&req, &session).await?;
+                        self.authenticate_headers(&req, &session, false).await?;
 
                     return self.handle_userinfo_request(&access_token).await;
+                }
+                ("register", &Method::POST) => {
+                    return self
+                        .handle_oauth_registration_request(&mut req, session)
+                        .await;
                 }
                 ("jwks.json", &Method::GET) => {
                     // Limit anonymous requests
@@ -317,11 +325,10 @@ impl ParseHttp for Server {
                 }
 
                 // Authenticate user
-                match self.authenticate_headers(&req, &session).await {
+                match self.authenticate_headers(&req, &session, true).await {
                     Ok((_, access_token)) => {
-                        let body = fetch_body(&mut req, 1024 * 1024, session.session_id).await;
                         return self
-                            .handle_api_manage_request(&req, body, access_token, &session)
+                            .handle_api_manage_request(&mut req, access_token, &session)
                             .await;
                     }
                     Err(err) => {
