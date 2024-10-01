@@ -291,7 +291,7 @@ refresh-token-renew = "2s"
 
 [oauth.client-registration]
 anonymous = true
-required = true
+require = true
 
 [oauth.oidc]
 signature-key = '''-----BEGIN PRIVATE KEY-----

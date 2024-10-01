@@ -591,8 +591,8 @@ impl Type {
             Self::Tenant => "tenant",
             Self::Role => "role",
             Self::Domain => "domain",
-            Self::ApiKey => "api-key",
-            Self::OauthClient => "oauth-client",
+            Self::ApiKey => "apiKey",
+            Self::OauthClient => "oauthClient",
         }
     }
 
@@ -623,8 +623,8 @@ impl Type {
             "superuser" => Some(Type::Individual), // legacy
             "role" => Some(Type::Role),
             "domain" => Some(Type::Domain),
-            "api-key" => Some(Type::ApiKey),
-            "oauth-client" => Some(Type::OauthClient),
+            "apiKey" => Some(Type::ApiKey),
+            "oauthClient" => Some(Type::OauthClient),
             _ => None,
         }
     }
@@ -1141,6 +1141,11 @@ impl Permission {
                 | Permission::JmapPrincipalGet
                 | Permission::JmapPrincipalQueryChanges
                 | Permission::JmapPrincipalQuery
+                | Permission::ApiKeyList
+                | Permission::ApiKeyGet
+                | Permission::ApiKeyCreate
+                | Permission::ApiKeyUpdate
+                | Permission::ApiKeyDelete
         ) || self.is_user_permission()
     }
 

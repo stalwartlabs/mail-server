@@ -186,7 +186,7 @@ impl OAuthConfig {
                 .property_or_default("oauth.client-registration.anonymous", "false")
                 .unwrap_or(false),
             require_client_authentication: config
-                .property_or_default("oauth.client-registration.required", "false")
+                .property_or_default("oauth.client-registration.require", "false")
                 .unwrap_or(true),
             oidc_signing_secret,
             oidc_signature_algorithm,

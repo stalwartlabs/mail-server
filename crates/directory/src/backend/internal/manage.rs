@@ -359,18 +359,20 @@ impl ManageDirectory for Store {
         }
 
         // Make sure the e-mail is not taken and validate domain
-        for email in principal.iter_mut_str(PrincipalField::Emails) {
-            *email = email.to_lowercase();
-            if self.rcpt(email).await.caused_by(trc::location!())? {
-                return Err(err_exists(PrincipalField::Emails, email.to_string()));
-            }
-            if let Some(domain) = email.split('@').nth(1) {
-                if valid_domains.insert(domain.to_string()) {
-                    self.get_principal_info(domain)
-                        .await
-                        .caused_by(trc::location!())?
-                        .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
-                        .ok_or_else(|| not_found(domain.to_string()))?;
+        if principal.typ != Type::OauthClient {
+            for email in principal.iter_mut_str(PrincipalField::Emails) {
+                *email = email.to_lowercase();
+                if self.rcpt(email).await.caused_by(trc::location!())? {
+                    return Err(err_exists(PrincipalField::Emails, email.to_string()));
+                }
+                if let Some(domain) = email.split('@').nth(1) {
+                    if valid_domains.insert(domain.to_string()) {
+                        self.get_principal_info(domain)
+                            .await
+                            .caused_by(trc::location!())?
+                            .filter(|v| v.typ == Type::Domain && v.has_tenant_access(tenant_id))
+                            .ok_or_else(|| not_found(domain.to_string()))?;
+                    }
                 }
             }
         }
@@ -678,7 +680,6 @@ impl ManageDirectory for Store {
         };
         let changes = params.changes;
         let tenant_id = params.tenant_id;
-        let validate = params.validate;
 
         // Fetch principal
         let mut principal = self
@@ -689,6 +690,7 @@ impl ManageDirectory for Store {
             .caused_by(trc::location!())?
             .ok_or_else(|| not_found(principal_id))?;
         principal.inner.id = principal_id;
+        let validate_emails = params.validate && principal.inner.typ != Type::OauthClient;
 
         // Obtain members and memberOf
         let mut member_of = self
@@ -986,7 +988,7 @@ impl ManageDirectory for Store {
                         .collect::<Vec<_>>();
                     for email in &emails {
                         if !principal.inner.has_str_value(PrincipalField::Emails, email) {
-                            if validate {
+                            if validate_emails {
                                 if self.rcpt(email).await.caused_by(trc::location!())? {
                                     return Err(err_exists(
                                         PrincipalField::Emails,
@@ -1032,7 +1034,7 @@ impl ManageDirectory for Store {
                         .inner
                         .has_str_value(PrincipalField::Emails, &email)
                     {
-                        if validate {
+                        if validate_emails {
                             if self.rcpt(&email).await.caused_by(trc::location!())? {
                                 return Err(err_exists(PrincipalField::Emails, email));
                             }
@@ -1393,6 +1395,27 @@ impl ManageDirectory for Store {
                     principal
                         .inner
                         .retain_int(change.field, |v| *v != permission);
+                }
+                (PrincipalAction::Set, PrincipalField::Urls, PrincipalValue::StringList(urls)) => {
+                    if !urls.is_empty() {
+                        principal.inner.set(change.field, urls);
+                    } else {
+                        principal.inner.remove(change.field);
+                    }
+                }
+                (PrincipalAction::AddItem, PrincipalField::Urls, PrincipalValue::String(url)) => {
+                    if !principal.inner.has_str_value(change.field, &url) {
+                        principal.inner.append_str(change.field, url);
+                    }
+                }
+                (
+                    PrincipalAction::RemoveItem,
+                    PrincipalField::Urls,
+                    PrincipalValue::String(url),
+                ) => {
+                    if principal.inner.has_str_value(change.field, &url) {
+                        principal.inner.retain_str(change.field, |v| *v != url);
+                    }
                 }
 
                 (_, field, value) => {

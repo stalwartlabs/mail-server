@@ -86,7 +86,7 @@ pub async fn test(params: &mut JMAPTest) {
         license: LicenseKey {
             valid_to: now() + 3600,
             valid_from: now() - 3600,
-            hostname: String::new(),
+            domain: String::new(),
             accounts: 100,
         },
         undelete: Undelete {
@@ -162,7 +162,7 @@ impl EnterpriseCore for Core {
             license: LicenseKey {
                 valid_to: now() + 3600,
                 valid_from: now() - 3600,
-                hostname: String::new(),
+                domain: String::new(),
                 accounts: 100,
             },
             undelete: None,

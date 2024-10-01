@@ -292,7 +292,14 @@ impl OAuthApiHandler for Server {
                 "code token".to_string(),
                 "id_token token".to_string(),
             ],
-            scopes_supported: vec!["openid".to_string(), "offline_access".to_string()],
+            scopes_supported: vec![
+                "openid".to_string(),
+                "offline_access".to_string(),
+                "urn:ietf:params:jmap:core".to_string(),
+                "urn:ietf:params:jmap:mail".to_string(),
+                "urn:ietf:params:jmap:submission".to_string(),
+                "urn:ietf:params:jmap:vacationresponse".to_string(),
+            ],
             issuer: base_url,
         })
         .into_http_response())

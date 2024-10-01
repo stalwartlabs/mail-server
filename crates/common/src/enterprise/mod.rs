@@ -121,7 +121,7 @@ impl Server {
             trc::event!(
                 Server(trc::ServerEvent::Licensing),
                 Details = "Stalwart Enterprise Edition license key is valid",
-                Hostname = enterprise.license.hostname.clone(),
+                Domain = enterprise.license.domain.clone(),
                 Total = enterprise.license.accounts,
                 ValidFrom =
                     DateTime::from_timestamp(enterprise.license.valid_from as i64).to_rfc3339(),

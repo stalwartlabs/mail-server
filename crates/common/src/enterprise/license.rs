@@ -40,7 +40,7 @@ pub struct LicenseGenerator {
 pub struct LicenseKey {
     pub valid_to: u64,
     pub valid_from: u64,
-    pub hostname: String,
+    pub domain: String,
     pub accounts: u32,
 }
 
@@ -93,27 +93,27 @@ impl LicenseValidator {
                 .try_into()
                 .unwrap(),
         );
-        let hostname_len = u32::from_le_bytes(
+        let domain_len = u32::from_le_bytes(
             key.get((U64_LEN * 2) + U32_LEN..(U64_LEN * 2) + (U32_LEN * 2))
                 .ok_or(LicenseError::Parse)?
                 .try_into()
                 .unwrap(),
         ) as usize;
-        let hostname = String::from_utf8(
-            key.get((U64_LEN * 2) + (U32_LEN * 2)..(U64_LEN * 2) + (U32_LEN * 2) + hostname_len)
+        let domain = String::from_utf8(
+            key.get((U64_LEN * 2) + (U32_LEN * 2)..(U64_LEN * 2) + (U32_LEN * 2) + domain_len)
                 .ok_or(LicenseError::Parse)?
                 .to_vec(),
         )
         .map_err(|_| LicenseError::Parse)?;
         let signature = key
-            .get((U64_LEN * 2) + (U32_LEN * 2) + hostname_len..)
+            .get((U64_LEN * 2) + (U32_LEN * 2) + domain_len..)
             .ok_or(LicenseError::Parse)?;
 
         if valid_from == 0
             || valid_to == 0
             || valid_from >= valid_to
             || accounts == 0
-            || hostname.is_empty()
+            || domain.is_empty()
         {
             return Err(LicenseError::InvalidParameters);
         }
@@ -121,7 +121,7 @@ impl LicenseValidator {
         // Validate signature
         self.public_key
             .verify(
-                &key[..(U64_LEN * 2) + (U32_LEN * 2) + hostname_len],
+                &key[..(U64_LEN * 2) + (U32_LEN * 2) + domain_len],
                 signature,
             )
             .map_err(|_| LicenseError::Validation)?;
@@ -129,7 +129,7 @@ impl LicenseValidator {
         let key = LicenseKey {
             valid_from,
             valid_to,
-            hostname,
+            domain,
             accounts,
         };
 
@@ -142,7 +142,7 @@ impl LicenseValidator {
 }
 
 impl LicenseKey {
-    pub fn new(hostname: String, accounts: u32, expires_in: u64) -> Self {
+    pub fn new(domain: String, accounts: u32, expires_in: u64) -> Self {
         let now = SystemTime::UNIX_EPOCH
             .elapsed()
             .unwrap_or_default()
@@ -150,7 +150,7 @@ impl LicenseKey {
         LicenseKey {
             valid_from: now - 300,
             valid_to: now + expires_in + 300,
-            hostname,
+            domain,
             accounts,
         }
     }
@@ -176,7 +176,7 @@ impl LicenseKey {
 
     pub fn into_validated_key(self, hostname: impl AsRef<str>) -> Result<Self, LicenseError> {
         let local_domain = psl::domain_str(hostname.as_ref()).unwrap_or("invalid-hostname");
-        let license_domain = psl::domain_str(&self.hostname).expect("Invalid license hostname");
+        let license_domain = psl::domain_str(&self.domain).expect("Invalid license domain");
         if local_domain != license_domain {
             Err(LicenseError::DomainMismatch {
                 issued_to: license_domain.to_string(),
@@ -200,8 +200,8 @@ impl LicenseGenerator {
         bytes.extend_from_slice(&key.valid_from.to_le_bytes());
         bytes.extend_from_slice(&key.valid_to.to_le_bytes());
         bytes.extend_from_slice(&key.accounts.to_le_bytes());
-        bytes.extend_from_slice(&(key.hostname.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(key.hostname.as_bytes());
+        bytes.extend_from_slice(&(key.domain.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(key.domain.as_bytes());
         bytes.extend_from_slice(self.key_pair.sign(&bytes).as_ref());
         STANDARD.encode(&bytes)
     }
