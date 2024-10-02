@@ -331,11 +331,8 @@ async fn internal_directory() {
                 description: Some("John Doe".to_string()),
                 secrets: vec!["secret".to_string(), "secret2".to_string()],
                 emails: vec!["john@example.org".to_string()],
-                member_of: vec![
-                    "list".to_string(),
-                    "sales".to_string(),
-                    "support".to_string()
-                ],
+                member_of: vec!["sales".to_string(), "support".to_string()],
+                lists: vec!["list".to_string()],
                 ..Default::default()
             }
         );
@@ -379,7 +376,8 @@ async fn internal_directory() {
                 description: Some("John Doe".to_string()),
                 secrets: vec!["secret".to_string(), "secret2".to_string()],
                 emails: vec!["john@example.org".to_string()],
-                member_of: vec!["list".to_string(), "sales".to_string()],
+                member_of: vec!["sales".to_string()],
+                lists: vec!["list".to_string()],
                 ..Default::default()
             }
         );
@@ -430,7 +428,8 @@ async fn internal_directory() {
                 emails: vec!["john.doe@example.org".to_string()],
                 quota: 1024,
                 typ: Type::Individual,
-                member_of: vec!["list".to_string(), "sales".to_string()],
+                member_of: vec!["sales".to_string()],
+                lists: vec!["list".to_string()],
                 ..Default::default()
             }
         );

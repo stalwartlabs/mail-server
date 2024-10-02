@@ -25,7 +25,12 @@ use crate::{
 use super::cache::CachedDirectory;
 
 impl Directories {
-    pub async fn parse(config: &mut Config, stores: &Stores, data_store: Store) -> Self {
+    pub async fn parse(
+        config: &mut Config,
+        stores: &Stores,
+        data_store: Store,
+        is_enterprise: bool,
+    ) -> Self {
         let mut directories = AHashMap::new();
 
         for id in config
@@ -44,9 +49,12 @@ impl Directories {
                     continue;
                 }
             }
-            let protocol = config.value_require(("directory", id, "type")).unwrap();
+            let protocol = config
+                .value_require(("directory", id, "type"))
+                .unwrap()
+                .to_string();
             let prefix = ("directory", id);
-            let store = match protocol {
+            let store = match protocol.as_str() {
                 "internal" => Some(DirectoryInner::Internal(
                     if let Some(store_id) = config.value_require(("directory", id, "store")) {
                         if let Some(data) = stores.stores.get(store_id) {
@@ -76,6 +84,13 @@ impl Directories {
                 "memory" => MemoryDirectory::from_config(config, prefix, data_store.clone())
                     .await
                     .map(DirectoryInner::Memory),
+                #[cfg(feature = "enterprise")]
+                "oidc" => crate::backend::oidc::OpenIdDirectory::from_config(
+                    config,
+                    prefix,
+                    data_store.clone(),
+                )
+                .map(DirectoryInner::OpenId),
                 unknown => {
                     let err = format!("Unknown directory type: {unknown:?}");
                     config.new_parse_error(("directory", id, "type"), err);
@@ -85,6 +100,14 @@ impl Directories {
 
             // Build directory
             if let Some(store) = store {
+                #[cfg(feature = "enterprise")]
+                if store.is_enterprise_directory() && !is_enterprise {
+                    let message =
+                        format!("Directory {protocol:?} is an Enterprise Edition feature");
+                    config.new_parse_error(("directory", id, "type"), message);
+                    continue;
+                }
+
                 let directory = Arc::new(Directory {
                     store,
                     cache: CachedDirectory::try_from_config(config, ("directory", id)),

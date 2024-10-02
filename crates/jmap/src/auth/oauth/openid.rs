@@ -59,6 +59,7 @@ impl OpenIdHandler for Server {
             email_verified: !access_token.emails.is_empty(),
             ..Default::default()
         })
+        .no_cache()
         .into_http_response())
     }
 

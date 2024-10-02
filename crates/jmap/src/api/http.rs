@@ -891,11 +891,18 @@ impl HttpResponse {
 
 impl<T: serde::Serialize> ToHttpResponse for JsonResponse<T> {
     fn into_http_response(self) -> HttpResponse {
-        HttpResponse::new_text(
-            self.status,
-            "application/json; charset=utf-8",
-            serde_json::to_string(&self.inner).unwrap_or_default(),
-        )
+        HttpResponse {
+            status: self.status,
+            content_type: "application/json; charset=utf-8".into(),
+            content_disposition: "".into(),
+            cache_control: if !self.no_cache {
+                ""
+            } else {
+                "no-store, no-cache, must-revalidate"
+            }
+            .into(),
+            body: HttpResponseBody::Text(serde_json::to_string(&self.inner).unwrap_or_default()),
+        }
     }
 }
 
@@ -1012,11 +1019,21 @@ impl<T: serde::Serialize> JsonResponse<T> {
         JsonResponse {
             inner,
             status: StatusCode::OK,
+            no_cache: false,
         }
     }
 
     pub fn with_status(status: StatusCode, inner: T) -> Self {
-        JsonResponse { inner, status }
+        JsonResponse {
+            inner,
+            status,
+            no_cache: false,
+        }
+    }
+
+    pub fn no_cache(mut self) -> Self {
+        self.no_cache = true;
+        self
     }
 }
 

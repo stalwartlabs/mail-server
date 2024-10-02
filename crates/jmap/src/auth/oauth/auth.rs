@@ -90,7 +90,7 @@ impl OAuthApiHandler for Server {
                         .details("Client ID is invalid."));
                 } else if redirect_uri
                     .as_ref()
-                    .map_or(false, |uri| !uri.starts_with("https://"))
+                    .map_or(false, |uri| uri.starts_with("http://"))
                 {
                     return Err(trc::ManageEvent::Error
                         .into_err()
@@ -180,7 +180,7 @@ impl OAuthApiHandler for Server {
             }
         };
 
-        Ok(JsonResponse::new(response).into_http_response())
+        Ok(JsonResponse::new(response).no_cache().into_http_response())
     }
 
     async fn handle_device_auth(
@@ -262,7 +262,7 @@ impl OAuthApiHandler for Server {
             user_code,
             expires_in: self.core.oauth.oauth_expiry_user_code,
             interval: 5,
-        })
+        }).no_cache()
         .into_http_response())
     }
 

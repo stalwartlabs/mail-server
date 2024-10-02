@@ -34,6 +34,7 @@ impl JmapSessionManager {
 pub struct JsonResponse<T: Serialize> {
     status: StatusCode,
     inner: T,
+    no_cache: bool,
 }
 
 pub struct HtmlResponse {

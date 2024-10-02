@@ -7,6 +7,7 @@
 pub mod imap;
 pub mod internal;
 pub mod ldap;
+pub mod oidc;
 pub mod smtp;
 pub mod sql;
 
@@ -244,6 +245,65 @@ name = "support"
 class = "group"
 description = "Support Team"
 
+##############################################################################
+
+[directory."oidc-userinfo"]
+type = "oidc"
+store = "rocksdb"
+timeout = "1s"
+endpoint.url = "https://127.0.0.1:9090/userinfo"
+endpoint.method = "userinfo"
+fields.email = "email"
+fields.username = "preferred_username"
+fields.full-name = "name"
+
+[directory."oidc-introspect-none"]
+type = "oidc"
+store = "rocksdb"
+timeout = "1s"
+endpoint.url = "https://127.0.0.1:9090/introspect-none"
+endpoint.method = "introspect"
+auth.method = "none"
+fields.email = "email"
+fields.username = "preferred_username"
+fields.full-name = "name"
+
+[directory."oidc-introspect-user-token"]
+type = "oidc"
+store = "rocksdb"
+timeout = "1s"
+endpoint.url = "https://127.0.0.1:9090/introspect-user-token"
+endpoint.method = "introspect"
+auth.method = "user-token"
+fields.email = "email"
+fields.username = "preferred_username"
+fields.full-name = "name"
+
+[directory."oidc-introspect-token"]
+type = "oidc"
+store = "rocksdb"
+timeout = "1s"
+endpoint.url = "https://127.0.0.1:9090/introspect-token"
+endpoint.method = "introspect"
+auth.method = "token"
+auth.token = "token_of_gratitude"
+fields.email = "email"
+fields.username = "preferred_username"
+fields.full-name = "name"
+
+[directory."oidc-introspect-basic"]
+type = "oidc"
+store = "rocksdb"
+timeout = "1s"
+endpoint.url = "https://127.0.0.1:9090/introspect-basic"
+endpoint.method = "introspect"
+auth.method = "basic"
+auth.username = "myuser"
+auth.secret = "mypass"
+fields.email = "email"
+fields.username = "preferred_username"
+fields.full-name = "name"
+
 "#;
 
 pub struct DirectoryStore {
@@ -267,6 +327,7 @@ pub struct TestPrincipal {
     pub emails: Vec<String>,
     pub member_of: Vec<String>,
     pub roles: Vec<String>,
+    pub lists: Vec<String>,
     pub description: Option<String>,
 }
 
@@ -298,6 +359,7 @@ impl DirectoryTest {
             id_store
                 .map(|id| stores.stores.get(id).unwrap().clone())
                 .unwrap_or_default(),
+            true,
         )
         .await;
         config.assert_no_errors();
@@ -464,6 +526,9 @@ impl From<Principal> for TestPrincipal {
             roles: value
                 .take_str_array(PrincipalField::Roles)
                 .unwrap_or_default(),
+            lists: value
+                .take_str_array(PrincipalField::Lists)
+                .unwrap_or_default(),
             description: value.take_str(PrincipalField::Description),
         }
     }
@@ -477,6 +542,7 @@ impl From<TestPrincipal> for Principal {
             .with_field(PrincipalField::Secrets, value.secrets)
             .with_field(PrincipalField::Emails, value.emails)
             .with_field(PrincipalField::MemberOf, value.member_of)
+            .with_field(PrincipalField::Lists, value.lists)
             .with_opt_field(PrincipalField::Description, value.description)
     }
 }

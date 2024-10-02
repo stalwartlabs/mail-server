@@ -57,9 +57,12 @@ pub struct AuthRequest<'x> {
 
 impl Server {
     pub async fn authenticate(&self, req: &AuthRequest<'_>) -> trc::Result<Arc<AccessToken>> {
+        // Resolve directory
+        let directory = req.directory.unwrap_or(&self.core.storage.directory);
+
         // Validate credentials
         match &req.credentials {
-            Credentials::OAuthBearer { token } => {
+            Credentials::OAuthBearer { token } if !directory.has_bearer_token_support() => {
                 match self
                     .validate_access_token(GrantType::AccessToken.into(), token)
                     .await
@@ -68,7 +71,7 @@ impl Server {
                     Err(err) => Err(err),
                 }
             }
-            _ => match self.authenticate_plain(req).await {
+            _ => match self.authenticate_credentials(req, directory).await {
                 Ok(principal) => {
                     if let Some(access_token) =
                         self.inner.data.access_tokens.get_with_ttl(&principal.id())
@@ -94,9 +97,11 @@ impl Server {
         })
     }
 
-    async fn authenticate_plain(&self, req: &AuthRequest<'_>) -> trc::Result<Principal> {
-        let directory = req.directory.unwrap_or(&self.core.storage.directory);
-
+    async fn authenticate_credentials(
+        &self,
+        req: &AuthRequest<'_>,
+        directory: &Directory,
+    ) -> trc::Result<Principal> {
         // First try to authenticate the user against the default directory
         let result = match directory
             .query(QueryBy::Credentials(&req.credentials), req.return_member_of)
@@ -105,10 +110,9 @@ impl Server {
             Ok(Some(principal)) => {
                 trc::event!(
                     Auth(trc::AuthEvent::Success),
-                    AccountName = req.credentials.login().to_string(),
+                    AccountName = principal.name().to_string(),
                     AccountId = principal.id(),
                     SpanId = req.session_id,
-                    Type = principal.typ().as_str(),
                 );
 
                 return Ok(principal);
@@ -176,16 +180,19 @@ impl Server {
                 Err(trc::SecurityEvent::AuthenticationBan
                     .into_err()
                     .ctx(trc::Key::RemoteIp, req.remote_ip)
-                    .ctx(trc::Key::AccountName, login.to_string()))
+                    .ctx_opt(trc::Key::AccountName, login.map(|s| s.to_string())))
             } else {
                 Err(trc::AuthEvent::Failed
                     .ctx(trc::Key::RemoteIp, req.remote_ip)
-                    .ctx(trc::Key::AccountName, login.to_string()))
+                    .ctx_opt(trc::Key::AccountName, login.map(|s| s.to_string())))
             }
         } else {
             Err(trc::AuthEvent::Failed
                 .ctx(trc::Key::RemoteIp, req.remote_ip)
-                .ctx(trc::Key::AccountName, req.credentials.login().to_string()))
+                .ctx_opt(
+                    trc::Key::AccountName,
+                    req.credentials.login().map(|s| s.to_string()),
+                ))
         }
     }
 
@@ -241,15 +248,16 @@ impl<'x> AuthRequest<'x> {
 }
 
 pub(crate) trait CredentialsUsername {
-    fn login(&self) -> &str;
+    fn login(&self) -> Option<&str>;
 }
 
 impl CredentialsUsername for Credentials<String> {
-    fn login(&self) -> &str {
+    fn login(&self) -> Option<&str> {
         match self {
-            Credentials::Plain { username, .. }
-            | Credentials::XOauth2 { username, .. }
-            | Credentials::OAuthBearer { token: username } => username,
+            Credentials::Plain { username, .. } | Credentials::XOauth2 { username, .. } => {
+                username.as_str().into()
+            }
+            Credentials::OAuthBearer { .. } => None,
         }
     }
 }

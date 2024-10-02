@@ -200,7 +200,7 @@ impl LdapDirectory {
                 .update_principal(
                     UpdatePrincipal::by_id(principal.id)
                         .with_updates(changes)
-                        .no_validate(),
+                        .create_domains(),
                 )
                 .await
                 .caused_by(trc::location!())?;

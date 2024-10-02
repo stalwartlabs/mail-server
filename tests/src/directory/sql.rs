@@ -36,6 +36,7 @@ async fn sql_directory() {
         let core = config.server;
 
         // Create tables
+        base_store.destroy().await;
         store.create_test_directory().await;
 
         // Create test users

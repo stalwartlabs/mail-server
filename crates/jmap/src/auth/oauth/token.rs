@@ -243,7 +243,7 @@ impl TokenHandler for Server {
 
         self.introspect_access_token(&token, access_token)
             .await
-            .map(|response| JsonResponse::new(response).into_http_response())
+            .map(|response| JsonResponse::new(response).no_cache().into_http_response())
     }
 
     async fn issue_token(

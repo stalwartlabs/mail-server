@@ -62,6 +62,9 @@ impl Core {
             })
             .unwrap_or_default();
 
+        #[cfg(not(feature = "enterprise"))]
+        let is_enterprise = false;
+
         // SPDX-SnippetBegin
         // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
         // SPDX-License-Identifier: LicenseRef-SEL
@@ -69,7 +72,10 @@ impl Core {
         let enterprise = crate::enterprise::Enterprise::parse(config, &stores, &data).await;
 
         #[cfg(feature = "enterprise")]
-        if enterprise.is_none() {
+        let is_enterprise = enterprise.is_some();
+
+        #[cfg(feature = "enterprise")]
+        if is_enterprise {
             if data.is_enterprise_store() {
                 config
                     .new_build_error("storage.data", "SQL read replicas is an Enterprise feature");
@@ -121,7 +127,8 @@ impl Core {
                 }
             })
             .unwrap_or_default();
-        let mut directories = Directories::parse(config, &stores, data.clone()).await;
+        let mut directories =
+            Directories::parse(config, &stores, data.clone(), is_enterprise).await;
         let directory = config
             .value_require("storage.directory")
             .map(|id| id.to_string())

@@ -125,19 +125,21 @@ impl Server {
         Ok(false)
     }
 
-    pub async fn is_auth_fail2banned(&self, ip: IpAddr, login: &str) -> trc::Result<bool> {
+    pub async fn is_auth_fail2banned(&self, ip: IpAddr, login: Option<&str>) -> trc::Result<bool> {
         if let Some(rate) = &self.core.network.security.auth_fail_rate {
+            let login = login.unwrap_or_default();
             let is_allowed = self.is_ip_allowed(&ip)
                 || (self
                     .lookup_store()
                     .is_rate_allowed(format!("b:{ip}").as_bytes(), rate, false)
                     .await?
                     .is_none()
-                    && self
-                        .lookup_store()
-                        .is_rate_allowed(format!("b:{login}").as_bytes(), rate, false)
-                        .await?
-                        .is_none());
+                    && (login.is_empty()
+                        || self
+                            .lookup_store()
+                            .is_rate_allowed(format!("b:{login}").as_bytes(), rate, false)
+                            .await?
+                            .is_none()));
             if !is_allowed {
                 return self.block_ip(ip).await.map(|_| true);
             }

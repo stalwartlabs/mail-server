@@ -96,6 +96,7 @@ impl ClientRegistrationHandler for Server {
             request,
             ..Default::default()
         })
+        .no_cache()
         .into_http_response())
     }
 
