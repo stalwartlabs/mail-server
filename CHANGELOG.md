@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.10.2] - 2024-10-02
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+### Added
+- OpenID Connect server (#298).
+- OpenID Connect backend support (Enterprise feature).
+- OpenID Connect Dynamic Client Registration (#4)
+- OAuth 2.0 Dynamic Client Registration Protocol ([RFC7591](https://datatracker.ietf.org/doc/html/rfc7591)) (#136)
+- OAuth 2.0 Token Introspection ([RFC7662](https://datatracker.ietf.org/doc/html/rfc7662)).
+- Contact form submission handling.
+- `webadmin.path` setting to override unpack directory (#792).
+
+### Changed
+
+### Fixed
+- Missing `LIST-STATUS` from RFC5819 in IMAP capability responses (#816).
+- Do not allow tenant domains to be deleted if they have members (#812).
+- Tenant principal limits (#810).
+
 ## [0.10.1] - 2024-09-26
 
 To upgrade replace the `stalwart-mail` binary.

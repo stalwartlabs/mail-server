@@ -63,7 +63,7 @@ Key features:
 - **Flexible and scalable**:
   - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Redis** and **ElasticSearch** support.
   - **Clustering** support with node autodiscovery and partition-tolerant failure detection.
-  - Built-in, **LDAP** or **SQL** authentication backend support.
+  - Built-in, **OpenID**, **LDAP** or **SQL** authentication backend support.
   - Full-text search available in 17 languages.
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
@@ -73,7 +73,7 @@ Key features:
 - **Secure and robust**:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
   - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555) using `TLS-ALPN-01`, `DNS-01` or `HTTP-01` challenges.
-  - OAuth 2.0 [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
+  - OpenID Connect, OAuth 2.0 authentication with [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
   - Two-factor authentication with Time-based One-Time Passwords (`2FA-TOTP`) 
   - Application passwords (App Passwords).
   - Automated blocking of hosts that perform brute-force attacks or scans (aka **fail2ban**).

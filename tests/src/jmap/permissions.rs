@@ -717,11 +717,11 @@ pub async fn test(params: &JMAPTest) {
     // Delete tenant information
     for query in [
         "/api/principal/no-mail-for-you@foobar.com",
+        "/api/principal/admin@foobar.org",
         "/api/principal/foobar.org",
         "/api/principal/foobar.com",
-        "/api/principal/admin@foobar.org",
     ] {
-        tenant_api.delete::<()>(query).await.unwrap().unwrap_data();
+        api.delete::<()>(query).await.unwrap().unwrap_data();
     }
 
     // Delete tenant
