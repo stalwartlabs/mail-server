@@ -41,6 +41,7 @@ pub trait TokenHandler: Sync + Send {
         account_id: u32,
         client_id: &str,
         issuer: String,
+        nonce: Option<String>,
         with_refresh_token: bool,
     ) -> impl Future<Output = trc::Result<OAuthResponse>> + Send;
 }
@@ -63,10 +64,11 @@ impl TokenHandler for Server {
             .await;
 
         if grant_type.eq_ignore_ascii_case("authorization_code") {
-            response = if let (Some(code), Some(client_id), Some(redirect_uri)) = (
+            response = if let (Some(code), Some(client_id), Some(redirect_uri), nonce) = (
                 params.get("code"),
                 params.get("client_id"),
                 params.get("redirect_uri"),
+                params.get("nonce"),
             ) {
                 // Obtain code
                 match self
@@ -100,15 +102,21 @@ impl TokenHandler for Server {
                                     .await?;
 
                                 // Issue token
-                                self.issue_token(oauth.account_id, &oauth.client_id, issuer, true)
-                                    .await
-                                    .map(TokenResponse::Granted)
-                                    .map_err(|err| {
-                                        trc::AuthEvent::Error
-                                            .into_err()
-                                            .details(err)
-                                            .caused_by(trc::location!())
-                                    })?
+                                self.issue_token(
+                                    oauth.account_id,
+                                    &oauth.client_id,
+                                    issuer,
+                                    nonce.map(Into::into),
+                                    true,
+                                )
+                                .await
+                                .map(TokenResponse::Granted)
+                                .map_err(|err| {
+                                    trc::AuthEvent::Error
+                                        .into_err()
+                                        .details(err)
+                                        .caused_by(trc::location!())
+                                })?
                             }
                         } else {
                             TokenResponse::error(ErrorType::InvalidGrant)
@@ -122,9 +130,11 @@ impl TokenHandler for Server {
         } else if grant_type.eq_ignore_ascii_case("urn:ietf:params:oauth:grant-type:device_code") {
             response = TokenResponse::error(ErrorType::ExpiredToken);
 
-            if let (Some(device_code), Some(client_id)) =
-                (params.get("device_code"), params.get("client_id"))
-            {
+            if let (Some(device_code), Some(client_id), nonce) = (
+                params.get("device_code"),
+                params.get("client_id"),
+                params.get("nonce"),
+            ) {
                 // Obtain code
                 if let Some(auth_code) = self
                     .core
@@ -157,6 +167,7 @@ impl TokenHandler for Server {
                                         oauth.account_id,
                                         &oauth.client_id,
                                         issuer,
+                                        nonce.map(Into::into),
                                         true,
                                     )
                                     .await
@@ -190,6 +201,7 @@ impl TokenHandler for Server {
                             token_info.account_id,
                             &token_info.client_id,
                             issuer,
+                            None,
                             token_info.expires_in
                                 <= self.core.oauth.oauth_expiry_refresh_token_renew,
                         )
@@ -251,6 +263,7 @@ impl TokenHandler for Server {
         account_id: u32,
         client_id: &str,
         issuer: String,
+        nonce: Option<String>,
         with_refresh_token: bool,
     ) -> trc::Result<OAuthResponse> {
         Ok(OAuthResponse {
@@ -276,7 +289,7 @@ impl TokenHandler for Server {
             } else {
                 None
             },
-            id_token: match self.issue_id_token(account_id.to_string(), issuer, client_id) {
+            id_token: match self.issue_id_token(account_id.to_string(), issuer, client_id, nonce) {
                 Ok(id_token) => Some(id_token),
                 Err(err) => {
                     trc::error!(err);

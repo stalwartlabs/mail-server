@@ -78,12 +78,20 @@ pub struct Userinfo {
     pub updated_at: Option<i64>,
 }
 
+#[derive(Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+pub struct Nonce {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub nonce: Option<String>,
+}
+
 impl Server {
     pub fn issue_id_token(
         &self,
         subject: impl Into<String>,
         issuer: impl Into<String>,
         audience: impl Into<String>,
+        nonce: Option<impl Into<String>>,
     ) -> trc::Result<String> {
         let now = now() as i64;
 
@@ -93,7 +101,7 @@ impl Server {
                 key_id: Some("default".into()),
                 ..Default::default()
             }),
-            ClaimsSet::<()> {
+            ClaimsSet::<Nonce> {
                 registered: RegisteredClaims {
                     issuer: Some(issuer.into()),
                     subject: Some(subject.into()),
@@ -103,7 +111,9 @@ impl Server {
                     expiry: Some((now + self.core.oauth.oidc_expiry_id_token as i64).into()),
                     ..Default::default()
                 },
-                private: (),
+                private: Nonce {
+                    nonce: nonce.map(Into::into),
+                },
             },
         )
         .into_encoded(&self.core.oauth.oidc_signing_secret)

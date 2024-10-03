@@ -262,7 +262,8 @@ impl OAuthApiHandler for Server {
             user_code,
             expires_in: self.core.oauth.oauth_expiry_user_code,
             interval: 5,
-        }).no_cache()
+        })
+        .no_cache()
         .into_http_response())
     }
 
