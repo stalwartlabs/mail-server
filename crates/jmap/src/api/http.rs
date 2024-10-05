@@ -33,8 +33,10 @@ use jmap_proto::{
 };
 use std::future::Future;
 
+#[cfg(feature = "enterprise")]
+use crate::api::management::enterprise::telemetry::TelemetryApi;
+
 use crate::{
-    api::management::enterprise::telemetry::TelemetryApi,
     auth::{
         authenticate::{Authenticator, HttpHeaders},
         oauth::{

@@ -27,7 +27,9 @@ use crate::{
     services::index::Indexer,
 };
 
-use super::{decode_path_element, enterprise::undelete::UndeleteApi};
+use super::decode_path_element;
+#[cfg(feature = "enterprise")]
+use super::enterprise::undelete::UndeleteApi;
 use std::future::Future;
 
 pub trait ManageStore: Sync + Send {
