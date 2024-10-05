@@ -861,6 +861,8 @@ impl EventType {
             EventType::Limit(LimitEvent::TenantQuota) => 553,
             EventType::Auth(AuthEvent::TokenExpired) => 554,
             EventType::Auth(AuthEvent::ClientRegistration) => 555,
+            EventType::Ai(AiEvent::LlmResponse) => 556,
+            EventType::Ai(AiEvent::ApiError) => 557,
         }
     }
 
@@ -1462,6 +1464,8 @@ impl EventType {
             553 => Some(EventType::Limit(LimitEvent::TenantQuota)),
             554 => Some(EventType::Auth(AuthEvent::TokenExpired)),
             555 => Some(EventType::Auth(AuthEvent::ClientRegistration)),
+            556 => Some(EventType::Ai(AiEvent::LlmResponse)),
+            557 => Some(EventType::Ai(AiEvent::ApiError)),
             _ => None,
         }
     }

@@ -191,6 +191,25 @@ pub fn fn_rsplit<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
         .into()
 }
 
+pub fn fn_split_n<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
+    let value = v[0].to_string();
+    let arg = v[1].to_string();
+    let num = v[2].to_integer() as usize;
+    let mut result = Vec::new();
+
+    let mut s = value.as_ref();
+    for _ in 0..num {
+        if let Some((a, b)) = s.split_once(arg.as_ref()) {
+            result.push(Variable::from(a.to_string()));
+            s = b;
+        } else {
+            break;
+        }
+    }
+    result.push(Variable::from(s.to_string()));
+    result.into()
+}
+
 pub fn fn_split_once<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].to_string()
         .split_once(v[1].to_string().as_ref())

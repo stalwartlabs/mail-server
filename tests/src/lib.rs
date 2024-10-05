@@ -18,6 +18,8 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[cfg(test)]
 pub mod directory;
 #[cfg(test)]
+pub mod http_server;
+#[cfg(test)]
 pub mod imap;
 #[cfg(test)]
 pub mod jmap;

@@ -11,15 +11,18 @@
 pub mod alerts;
 pub mod config;
 pub mod license;
+pub mod llm;
 pub mod undelete;
 
 use std::time::Duration;
 
+use ahash::AHashMap;
 use directory::{
     backend::internal::{lookup::DirectoryStore, PrincipalField},
     QueryBy, Type,
 };
 use license::LicenseKey;
+use llm::AiApiConfig;
 use mail_parser::DateTime;
 use store::Store;
 use trc::{AddContext, EventType, MetricType};
@@ -35,6 +38,7 @@ pub struct Enterprise {
     pub trace_store: Option<TraceStore>,
     pub metrics_store: Option<MetricStore>,
     pub metrics_alerts: Vec<MetricAlert>,
+    pub ai_apis: AHashMap<String, AiApiConfig>,
 }
 
 #[derive(Clone)]

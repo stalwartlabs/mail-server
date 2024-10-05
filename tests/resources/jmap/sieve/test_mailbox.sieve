@@ -1,4 +1,4 @@
-require ["fileinto", "mailbox", "mailboxid", "special-use", "ihave", "imap4flags"];
+require ["fileinto", "mailbox", "mailboxid", "special-use", "ihave", "imap4flags", "vnd.stalwart.expressions"];
 
 # SpecialUse extension tests
 if not specialuse_exists ["inbox", "trash"] {
@@ -61,3 +61,6 @@ if not mailboxexists "My" {
     error "'My' not found.";
 }
 
+if eval "llm_prompt('echo-test', 'hello world') != 'hello world'" {
+    error "llm_prompt is unavailable.";
+}

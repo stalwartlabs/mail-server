@@ -132,9 +132,9 @@ impl<T: SessionStream> Session<T> {
                 script_id,
                 script,
                 params
+                    .with_session_id(self.data.session_id)
                     .with_envelope(&self.server, self, self.data.session_id)
                     .await,
-                self.data.session_id,
             )
             .await
     }

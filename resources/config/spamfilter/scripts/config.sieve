@@ -33,3 +33,12 @@ let "DOMAIN_DIRECTORY" "key_get('spam-config', 'directory')";
 
 # Store to use for Bayes tokens and ids (leave empty for default)
 let "SPAM_DB" "key_get('spam-config', 'lookup')";
+
+# LLM model to use for spam classification
+let "LLM_MODEL" "key_get('spam-config', 'llm-model')";
+
+# LLM prompt to use for spam classification
+let "LLM_PROMPT_TEXT" "key_get('spam-config', 'llm-prompt')";
+
+# Whether to add an X-Spam-Llm-Result header
+let "ADD_HEADER_LLM" "key_get('spam-config', 'add-llm-result')";

@@ -262,6 +262,8 @@ pub enum Permission {
     // OAuth client registration
     OauthClientRegistration,
     OauthClientOverride,
+
+    AiModelInteract,
     // WARNING: add new ids at the end (TODO: use static ids)
 }
 

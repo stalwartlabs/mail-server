@@ -197,6 +197,7 @@ impl Permission {
             Permission::OauthClientCreate => "Create new OAuth clients",
             Permission::OauthClientUpdate => "Modify OAuth clients",
             Permission::OauthClientDelete => "Remove OAuth clients",
+            Permission::AiModelInteract => "Interact with AI models",
         }
     }
 }

@@ -31,6 +31,7 @@ scripts = {
                "url.sieve",
                "rbl.sieve",
                "pyzor.sieve",
+               "llm.sieve",
                "composites.sieve",
                "scores.sieve",
                "reputation.sieve",
@@ -80,7 +81,7 @@ def read_file(file):
         return f.read() + "\n"
 
 def build_spam_filters(scripts):
-    spam_filter = "[version]\nspam-filter = \"1.1\"\n\n"
+    spam_filter = "[version]\nspam-filter = \"1.2\"\n\n"
     for script_name, file_list in scripts.items():
         script_content = read_and_concatenate(file_list).replace("'''", "\\'\\'\\'")
         script_description = script_names[script_name]

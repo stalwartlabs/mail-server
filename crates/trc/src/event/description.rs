@@ -51,6 +51,7 @@ impl EventType {
             EventType::Telemetry(event) => event.description(),
             EventType::MessageIngest(event) => event.description(),
             EventType::Security(event) => event.description(),
+            EventType::Ai(event) => event.description(),
         }
     }
 
@@ -98,6 +99,7 @@ impl EventType {
             EventType::Telemetry(event) => event.explain(),
             EventType::MessageIngest(event) => event.explain(),
             EventType::Security(event) => event.explain(),
+            EventType::Ai(event) => event.explain(),
         }
     }
 }
@@ -1803,6 +1805,22 @@ impl SecurityEvent {
             SecurityEvent::LoiterBan => "IP address was banned due to multiple loitering events",
             SecurityEvent::IpBlocked => "Rejected connection from blocked IP address",
             SecurityEvent::Unauthorized => "Account does not have permission to access resource",
+        }
+    }
+}
+
+impl AiEvent {
+    pub fn description(&self) -> &'static str {
+        match self {
+            AiEvent::LlmResponse => "LLM response",
+            AiEvent::ApiError => "AI API error",
+        }
+    }
+
+    pub fn explain(&self) -> &'static str {
+        match self {
+            AiEvent::LlmResponse => "An LLM response has been received",
+            AiEvent::ApiError => "An AI API error occurred",
         }
     }
 }

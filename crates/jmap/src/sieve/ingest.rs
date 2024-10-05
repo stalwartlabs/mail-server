@@ -6,7 +6,9 @@
 
 use std::borrow::Cow;
 
-use common::{auth::AccessToken, listener::stream::NullIo, Server};
+use common::{
+    auth::AccessToken, listener::stream::NullIo, scripts::plugins::PluginContext, Server,
+};
 use directory::{backend::internal::PrincipalField, QueryBy};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
@@ -398,11 +400,26 @@ impl SieveScriptIngest for Server {
                         }
                     }
                     Event::ListContains { .. }
-                    | Event::Function { .. }
                     | Event::Notify { .. }
                     | Event::SetEnvelope { .. } => {
                         // Not allowed
                         input = false.into();
+                    }
+                    Event::Function { id, arguments } => {
+                        input = self
+                            .core
+                            .run_plugin(
+                                id,
+                                PluginContext {
+                                    session_id,
+                                    server: self,
+                                    message: instance.message(),
+                                    modifications: &mut Vec::new(),
+                                    access_token: access_token.into(),
+                                    arguments,
+                                },
+                            )
+                            .await;
                     }
                     Event::CreatedMessage { message, .. } => {
                         messages.push(SieveMessage {

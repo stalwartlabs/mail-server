@@ -76,6 +76,7 @@ pub(crate) const FUNCTIONS: &[(&str, fn(Vec<Variable>) -> Variable, u32)] = &[
     ("rsplit", text::fn_rsplit, 2),
     ("split_once", text::fn_split_once, 2),
     ("rsplit_once", text::fn_rsplit_once, 2),
+    ("split_n", text::fn_split_n, 3),
     ("split_words", text::fn_split_words, 1),
 ];
 

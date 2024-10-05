@@ -111,7 +111,10 @@ impl SieveHandler for Server {
         }
 
         // Run script
-        let result = match self.run_script(script_id, script, params, 0).await {
+        let result = match self
+            .run_script(script_id, script, params.with_access_token(access_token))
+            .await
+        {
             ScriptResult::Accept { modifications } => Response::Accept { modifications },
             ScriptResult::Replace {
                 message,

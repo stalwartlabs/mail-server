@@ -183,6 +183,7 @@ pub enum EventType {
     OutgoingReport(OutgoingReportEvent),
     Telemetry(TelemetryEvent),
     Security(SecurityEvent),
+    Ai(AiEvent),
 }
 
 #[event_type]
@@ -937,6 +938,12 @@ pub enum ResourceEvent {
     Error,
     DownloadExternal,
     WebadminUnpacked,
+}
+
+#[event_type]
+pub enum AiEvent {
+    LlmResponse,
+    ApiError,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

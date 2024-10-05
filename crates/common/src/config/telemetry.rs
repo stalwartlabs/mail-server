@@ -8,10 +8,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use base64::{engine::general_purpose::STANDARD, Engine};
-use hyper::{
-    header::{HeaderName, HeaderValue, AUTHORIZATION, CONTENT_TYPE},
-    HeaderMap,
-};
+use hyper::{header::CONTENT_TYPE, HeaderMap};
 use opentelemetry::{InstrumentationLibrary, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
@@ -26,6 +23,8 @@ use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION
 use store::Stores;
 use trc::{ipc::subscriber::Interests, EventType, Level, TelemetryEvent};
 use utils::config::{utils::ParseValue, Config};
+
+use super::parse_http_headers;
 
 #[derive(Debug)]
 pub struct TelemetrySubscriber {
@@ -753,45 +752,8 @@ fn parse_webhook(
     id: &str,
     global_interests: &mut Interests,
 ) -> Option<TelemetrySubscriber> {
-    let mut headers = HeaderMap::new();
-
-    for (header, value) in config
-        .values(("webhook", id, "headers"))
-        .map(|(_, v)| {
-            if let Some((k, v)) = v.split_once(':') {
-                Ok((
-                    HeaderName::from_str(k.trim()).map_err(|err| {
-                        format!("Invalid header found in property \"webhook.{id}.headers\": {err}",)
-                    })?,
-                    HeaderValue::from_str(v.trim()).map_err(|err| {
-                        format!("Invalid header found in property \"webhook.{id}.headers\": {err}",)
-                    })?,
-                ))
-            } else {
-                Err(format!(
-                    "Invalid header found in property \"webhook.{id}.headers\": {v}",
-                ))
-            }
-        })
-        .collect::<Result<Vec<(HeaderName, HeaderValue)>, String>>()
-        .map_err(|e| config.new_parse_error(("webhook", id, "headers"), e))
-        .unwrap_or_default()
-    {
-        headers.insert(header, value);
-    }
-
+    let mut headers = parse_http_headers(config, ("webhook", id));
     headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
-    if let (Some(name), Some(secret)) = (
-        config.value(("webhook", id, "auth.username")),
-        config.value(("webhook", id, "auth.secret")),
-    ) {
-        headers.insert(
-            AUTHORIZATION,
-            format!("Basic {}", STANDARD.encode(format!("{}:{}", name, secret)))
-                .parse()
-                .unwrap(),
-        );
-    }
 
     // Build tracer
     let mut tracer = TelemetrySubscriber {

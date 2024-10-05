@@ -533,6 +533,10 @@ impl EventType {
                 MessageIngestEvent::Error => Level::Error,
             },
             EventType::Security(_) => Level::Info,
+            EventType::Ai(event) => match event {
+                AiEvent::LlmResponse => Level::Trace,
+                AiEvent::ApiError => Level::Warn,
+            },
         }
     }
 }

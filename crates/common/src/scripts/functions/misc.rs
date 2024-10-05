@@ -94,7 +94,7 @@ pub fn fn_hash<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     })
 }
 
-pub fn fn_is_var_names<'x>(ctx: &'x Context<'x>, _: Vec<Variable>) -> Variable {
+pub fn fn_get_var_names<'x>(ctx: &'x Context<'x>, _: Vec<Variable>) -> Variable {
     Variable::Array(
         ctx.global_variable_names()
             .map(|v| Variable::from(v.to_uppercase()))

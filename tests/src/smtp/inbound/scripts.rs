@@ -177,7 +177,7 @@ async fn sieve_scripts() {
             .await;
         match test
             .server
-            .run_script(name.to_string(), script, params, 0)
+            .run_script(name.to_string(), script, params)
             .await
         {
             ScriptResult::Accept { .. } => (),

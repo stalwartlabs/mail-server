@@ -10,12 +10,17 @@ use std::{
 use ahash::AHashMap;
 use common::{
     auth::AccessToken,
+    enterprise::llm::{
+        AiApiConfig, ChatCompletionChoice, ChatCompletionRequest, ChatCompletionResponse, Message,
+    },
     scripts::{
         functions::html::{get_attribute, html_attr_tokens, html_img_area, html_to_tokens},
         ScriptModification,
     },
     Core,
 };
+use hyper::Method;
+use jmap::api::{http::ToHttpResponse, JsonResponse};
 use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, IprevResult, SpfResult, MX};
 use sieve::runtime::Variable;
 use smtp::{
@@ -26,7 +31,11 @@ use smtp::{
 use store::Stores;
 use utils::config::Config;
 
-use crate::smtp::{session::TestSession, TempDir, TestSMTP};
+use crate::{
+    http_server::{spawn_mock_http_server, HttpMessage},
+    jmap::enterprise::EnterpriseCore,
+    smtp::{session::TestSession, TempDir, TestSMTP},
+};
 
 const CONFIG: &str = r#"
 [spam.header]
@@ -46,6 +55,10 @@ threshold-discard = 0
 threshold-reject = 0
 directory = ""
 lookup = ""
+llm-model = "dummy"
+llm-prompt = "You are an AI assistant specialized in analyzing email content to detect unsolicited, commercial, or harmful messages. Format your response as follows, separated by commas: Category,Confidence,Explanation
+Here's the email to analyze, please provide your analysis based on the above instructions, ensuring your response is in the specified comma-separated format:"
+add-llm-result = false
 
 [session.rcpt]
 relay = true
@@ -70,6 +83,11 @@ data = "spamdb"
 lookup = "spamdb"
 blob = "spamdb"
 fts = "spamdb"
+directory = "spamdb"
+
+[directory."spamdb"]
+type = "internal"
+store = "spamdb"
 
 [store."spamdb"]
 type = "sqlite"
@@ -78,6 +96,12 @@ path = "{PATH}/test_antispam.db"
 #[store."redis"]
 #type = "redis"
 #url = "redis://127.0.0.1"
+
+[enterprise.ai.dummy]
+endpoint = "https://127.0.0.1:9090/v1/chat/completions"
+type = "chat"
+model = "gpt-dummy"
+allow-invalid-certs = true
 
 [lookup]
 "spam-free" = {"gmail.com", "googlemail.com", "yahoomail.com", "*freemail.org"}
@@ -93,9 +117,6 @@ path = "{PATH}/test_antispam.db"
                 "hta" = "BAD|NZ" }
 "spam-trap" = {"spamtrap@*"}
 "spam-allow" = {"stalw.art"}
-
-[resolver]
-public-suffix = "file://{LIST_PATH}/public-suffix.dat"
 
 [sieve.trusted.scripts]
 "#;
@@ -129,6 +150,7 @@ async fn antispam() {
         "bayes_classify",
         "reputation",
         "pyzor",
+        "llm",
     ];
     let tmp_dir = TempDir::new("smtp_antispam_test", true);
     let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -192,8 +214,14 @@ async fn antispam() {
     let mut config = Config::new(&config).unwrap();
     config.resolve_all_macros().await;
     let stores = Stores::parse_all(&mut config).await;
-    let core = Core::parse(&mut config, stores, Default::default()).await;
-    //config.assert_no_errors();
+    let mut core = Core::parse(&mut config, stores, Default::default())
+        .await
+        .enable_enterprise();
+    core.enterprise.as_mut().unwrap().ai_apis.insert(
+        "dummy".to_string(),
+        AiApiConfig::parse(&mut config, "dummy").unwrap(),
+    );
+    crate::AssertConfig::assert_no_errors(config);
 
     // Add mock DNS entries
     for (domain, ip) in [
@@ -251,6 +279,34 @@ async fn antispam() {
     }
 
     let server = TestSMTP::from_core(core).server;
+
+    // Spawn mock OpenAI server
+    let _tx = spawn_mock_http_server(Arc::new(|req: HttpMessage| {
+        assert_eq!(req.uri.path(), "/v1/chat/completions");
+        assert_eq!(req.method, Method::POST);
+        let req =
+            serde_json::from_slice::<ChatCompletionRequest>(req.body.as_ref().unwrap()).unwrap();
+        assert_eq!(req.model, "gpt-dummy");
+        let message = &req.messages[0].content;
+        assert!(message.contains("You are an AI assistant specialized in analyzing email"));
+
+        JsonResponse::new(&ChatCompletionResponse {
+            created: 0,
+            object: String::new(),
+            id: String::new(),
+            model: req.model,
+            choices: vec![ChatCompletionChoice {
+                index: 0,
+                finish_reason: "stop".to_string(),
+                message: Message {
+                    role: "assistant".to_string(),
+                    content: message.split_once("Subject: ").unwrap().1.to_string(),
+                },
+            }],
+        })
+        .into_http_response()
+    }))
+    .await;
 
     // Run tests
     let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -420,10 +476,7 @@ async fn antispam() {
             // Run script
             let server_ = server.clone();
             let script = script.clone();
-            match server_
-                .run_script("test".to_string(), script, params, 0)
-                .await
-            {
+            match server_.run_script("test".to_string(), script, params).await {
                 ScriptResult::Accept { modifications } => {
                     if modifications.len() != expected_headers.len() {
                         panic!(

@@ -1,0 +1,72 @@
+expect LLM_UNSOLICITED_HIGH
+
+Subject: Unsolicited,High,Test
+
+Test
+
+<!-- NEXT TEST -->
+expect LLM_COMMERCIAL_HIGH
+
+Subject: Commercial,High,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_HARMFUL_HIGH
+
+Subject: Harmful,High,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_LEGITIMATE_HIGH
+
+Subject: Legitimate,High,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_UNSOLICITED_MEDIUM
+
+Subject: Unsolicited,Medium,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_COMMERCIAL_MEDIUM
+
+Subject: Commercial,Medium,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_HARMFUL_MEDIUM
+
+Subject: Harmful,Medium,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_LEGITIMATE_MEDIUM
+
+Subject: Legitimate,Medium,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_UNSOLICITED_LOW
+
+Subject: Unsolicited,Low,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_COMMERCIAL_LOW
+
+Subject: Commercial,Low,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_HARMFUL_LOW
+
+Subject: Harmful,Low,Test
+
+Test
+<!-- NEXT TEST -->
+expect LLM_LEGITIMATE_LOW
+
+Subject: Legitimate,Low,Test
+
+Test

@@ -31,7 +31,6 @@ pub trait RunScript: Sync + Send {
         script_id: String,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
-        session_id: u64,
     ) -> impl Future<Output = ScriptResult> + Send;
 }
 
@@ -41,7 +40,6 @@ impl RunScript for Server {
         script_id: String,
         script: Arc<Sieve>,
         params: ScriptParameters<'_>,
-        session_id: u64,
     ) -> ScriptResult {
         // Create filter instance
         let time = Instant::now();
@@ -56,6 +54,7 @@ impl RunScript for Server {
             .with_user_full_name(&params.from_name);
         let mut input = Input::script("__script", script);
         let mut messages: Vec<Vec<u8>> = Vec::new();
+        let session_id = params.session_id;
 
         let mut reject_reason = None;
         let mut modifications = vec![];
@@ -124,6 +123,7 @@ impl RunScript for Server {
                                     server: self,
                                     message: instance.message(),
                                     modifications: &mut modifications,
+                                    access_token: params.access_token,
                                     arguments,
                                 },
                             )

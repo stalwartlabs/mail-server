@@ -239,6 +239,36 @@ pub(crate) fn fn_rsplit(v: Vec<Variable>) -> Variable {
     }
 }
 
+pub(crate) fn fn_split_n(v: Vec<Variable>) -> Variable {
+    let mut v = v.into_iter();
+    let value = v.next().unwrap().into_string();
+    let arg = v.next().unwrap().into_string();
+    let num = v.next().unwrap().to_integer().unwrap_or_default() as usize;
+
+    fn split_n<'x, 'y>(s: &'x str, arg: &'y str, num: usize, mut f: impl FnMut(&'x str)) {
+        let mut s = s;
+        for _ in 0..num {
+            if let Some((a, b)) = s.split_once(arg) {
+                f(a);
+                s = b;
+            } else {
+                break;
+            }
+        }
+        f(s);
+    }
+
+    let mut result = Vec::new();
+    match value {
+        Cow::Borrowed(s) => split_n(s, arg.as_ref(), num, |s| result.push(Variable::from(s))),
+        Cow::Owned(s) => split_n(&s, arg.as_ref(), num, |s| {
+            result.push(Variable::from(s.to_string()))
+        }),
+    }
+
+    result.into()
+}
+
 pub(crate) fn fn_split_once(v: Vec<Variable>) -> Variable {
     let mut v = v.into_iter();
     let value = v.next().unwrap().into_string();

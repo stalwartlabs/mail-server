@@ -4,14 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use arc_swap::ArcSwap;
+use base64::{engine::general_purpose, Engine};
 use directory::{Directories, Directory};
+use hyper::{
+    header::{HeaderName, HeaderValue, AUTHORIZATION},
+    HeaderMap,
+};
 use ring::signature::{EcdsaKeyPair, RsaKeyPair};
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use telemetry::Metrics;
-use utils::config::Config;
+use utils::config::{utils::AsKey, Config};
 
 use crate::{
     auth::oauth::config::OAuthConfig, expr::*, listener::tls::AcmeProviders,
@@ -228,4 +233,53 @@ pub fn build_ecdsa_pem(
         Ok(Some(key)) => Err(format!("Unsupported key type: {key:?}")),
         Ok(None) => Err("No ECDSA key found in PEM".to_string()),
     }
+}
+
+pub(crate) fn parse_http_headers(config: &mut Config, prefix: impl AsKey) -> HeaderMap {
+    let prefix = prefix.as_key();
+    let mut headers = HeaderMap::new();
+
+    for (header, value) in config
+        .values((&prefix, "headers"))
+        .map(|(_, v)| {
+            if let Some((k, v)) = v.split_once(':') {
+                Ok((
+                    HeaderName::from_str(k.trim()).map_err(|err| {
+                        format!("Invalid header found in property \"{prefix}.headers\": {err}",)
+                    })?,
+                    HeaderValue::from_str(v.trim()).map_err(|err| {
+                        format!("Invalid header found in property \"{prefix}.headers\": {err}",)
+                    })?,
+                ))
+            } else {
+                Err(format!(
+                    "Invalid header found in property \"{prefix}.headers\": {v}",
+                ))
+            }
+        })
+        .collect::<Result<Vec<(HeaderName, HeaderValue)>, String>>()
+        .map_err(|e| config.new_parse_error((&prefix, "headers"), e))
+        .unwrap_or_default()
+    {
+        headers.insert(header, value);
+    }
+
+    if let (Some(name), Some(secret)) = (
+        config.value((&prefix, "auth.username")),
+        config.value((&prefix, "auth.secret")),
+    ) {
+        headers.insert(
+            AUTHORIZATION,
+            format!(
+                "Basic {}",
+                general_purpose::STANDARD.encode(format!("{}:{}", name, secret))
+            )
+            .parse()
+            .unwrap(),
+        );
+    } else if let Some(token) = config.value((&prefix, "auth.token")) {
+        headers.insert(AUTHORIZATION, format!("Bearer {}", token).parse().unwrap());
+    }
+
+    headers
 }
