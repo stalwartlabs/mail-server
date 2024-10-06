@@ -36,11 +36,9 @@
 
 Key features:
 
-- **JMAP** server:
-  - [JMAP Core](https://datatracker.ietf.org/doc/html/rfc8620) and [JMAP Mail](https://datatracker.ietf.org/doc/html/rfc8621) full compliance.
-  - [JMAP for Sieve Scripts](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-22.html) extension for managing Sieve scripts.
-  - [JMAP for WebSocket](https://datatracker.ietf.org/doc/html/rfc8887), [JMAP Blob Management](https://www.rfc-editor.org/rfc/rfc9404.html) and [JMAP for Quotas](https://www.rfc-editor.org/rfc/rfc9425.html) extensions.
-- **IMAP4**, **POP3** and **ManageSieve** server:
+- **JMAP**, **IMAP4**, **POP3** and **ManageSieve** server:
+  - [JMAP](https://datatracker.ietf.org/doc/html/rfc8621) server with
+   [Sieve Scripts](https://www.ietf.org/archive/id/draft-ietf-jmap-sieve-22.html), [WebSocket](https://datatracker.ietf.org/doc/html/rfc8887), [Blob Management](https://www.rfc-editor.org/rfc/rfc9404.html) and [Quotas](https://www.rfc-editor.org/rfc/rfc9425.html) extensions.
   - [IMAP4rev2](https://datatracker.ietf.org/doc/html/rfc9051) and [IMAP4rev1](https://datatracker.ietf.org/doc/html/rfc3501) server with support for [numerous extensions](https://stalw.art/docs/development/rfcs#imap4-and-extensions).
   - [POP3](https://datatracker.ietf.org/doc/html/rfc1939) server with [extensions](https://datatracker.ietf.org/doc/html/rfc2449), [STLS](https://datatracker.ietf.org/doc/html/rfc2595) and [SASL](https://datatracker.ietf.org/doc/html/rfc5034) support.
   - [ManageSieve](https://datatracker.ietf.org/doc/html/rfc5804) server for managing Sieve scripts.
@@ -50,8 +48,9 @@ Key features:
   - Inbound throttling and filtering with granular configuration rules, sieve scripting, MTA hooks and milter integration.
   - Distributed virtual queues with delayed delivery, priority delivery, quotas, routing rules and throttling support.
   - Envelope rewriting and message modification.
-- **Spam and Phishing** filter:
+- Built-in **Spam and Phishing** filter:
   - Comprehensive set of filtering **rules** on par with popular solutions.
+  - LLM-driven spam filtering and message analysis.
   - Statistical **spam classifier** with automatic training capabilities.
   - DNS Blocklists (**DNSBLs**) checking of IP addresses, domains, and hashes.
   - Collaborative digest-based spam filtering with **Pyzor**.
@@ -63,7 +62,6 @@ Key features:
 - **Flexible and scalable**:
   - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Redis** and **ElasticSearch** support.
   - **Clustering** support with node autodiscovery and partition-tolerant failure detection.
-  - Built-in, **OpenID**, **LDAP** or **SQL** authentication backend support.
   - Full-text search available in 17 languages.
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
@@ -73,14 +71,18 @@ Key features:
 - **Secure and robust**:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
   - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555) using `TLS-ALPN-01`, `DNS-01` or `HTTP-01` challenges.
-  - OpenID Connect, OAuth 2.0 authentication with [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
-  - Two-factor authentication with Time-based One-Time Passwords (`2FA-TOTP`) 
-  - Application passwords (App Passwords).
   - Automated blocking of hosts that perform brute-force attacks or scans (aka **fail2ban**).
-  - Roles, permissions and Access Control Lists (ACLs).
   - Rate limiting.
   - Security audited (read the [report](https://stalw.art/blog/security-audit)).
   - Memory safe (thanks to Rust).
+- **Authentication and Authorization**:
+  - **OpenID Connect** authentication.
+  - OAuth 2.0 authorization with [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
+  - **LDAP**, **OIDC**, **SQL** or built-in authentication backend support.
+  - Two-factor authentication with Time-based One-Time Passwords (`2FA-TOTP`) 
+  - Application passwords (App Passwords).
+  - Roles and permissions.
+  - Access Control Lists (ACLs).
 - **Observability**:
   - Logging and tracing with **OpenTelemetry**, journald, log files and console support.
   - Metrics with **OpenTelemetry** and **Prometheus** integration.

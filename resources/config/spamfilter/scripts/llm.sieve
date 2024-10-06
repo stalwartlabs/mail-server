@@ -1,5 +1,5 @@
 if eval "LLM_MODEL && LLM_PROMPT_TEXT" {
-    let "llm_result" "trim(split_n(llm_prompt(LLM_MODEL, LLM_PROMPT_TEXT + '\n\nSubject: ' + subject_clean + '\n\n' + text_body), ',', 3))";
+    let "llm_result" "trim(split_n(llm_prompt(LLM_MODEL, LLM_PROMPT_TEXT + '\n\nSubject: ' + subject_clean + '\n\n' + text_body, 0.5), ',', 3))";
 
     if eval "eq_ignore_case(llm_result[0], 'Unsolicited')" {
         if eval "eq_ignore_case(llm_result[1], 'High')" {

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.10.3] - 2024-10-07
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin. Enterprise users wishing to use the new LLM-powered spam filter should also upgrade the spam filter rules.
+
+### Added
+- AI-powered Spam filtering and Sieve scripting (Enterprise feature).
+
+### Changed
+
+### Fixed
+- S3-compatible backends: Retry on `5xx` errors.
+- OIDC: Include `nonce` parameter in `id_token` response.
+
 ## [0.10.2] - 2024-10-02
 
 To upgrade first upgrade the webadmin and then replace the `stalwart-mail` binary. If you read these instructions too late, you can upgrade to the latest web-admin using `curl -k -u admin:yourpass https://yourserver/api/update/webadmin`.

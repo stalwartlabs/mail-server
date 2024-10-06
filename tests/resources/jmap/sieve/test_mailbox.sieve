@@ -61,6 +61,6 @@ if not mailboxexists "My" {
     error "'My' not found.";
 }
 
-if eval "llm_prompt('echo-test', 'hello world') != 'hello world'" {
+if eval "llm_prompt('echo-test', 'hello world', 0.5) != 'hello world'" {
     error "llm_prompt is unavailable.";
 }

@@ -7,13 +7,13 @@
 use std::time::Instant;
 
 use directory::Permission;
-use sieve::{runtime::Variable, FunctionMap};
+use sieve::{compiler::Number, runtime::Variable, FunctionMap};
 use trc::{AiEvent, SecurityEvent};
 
 use super::PluginContext;
 
 pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
-    fnc_map.set_external_function("llm_prompt", plugin_id, 2);
+    fnc_map.set_external_function("llm_prompt", plugin_id, 3);
 }
 
 pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
@@ -29,6 +29,10 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         if name.as_ref() == "echo-test" {
             return Ok(prompt.to_string().into());
         }
+        let temperature = ctx.arguments[2].to_number_checked().map(|n| match n {
+            Number::Integer(n) => (n as f64).clamp(0.0, 1.0),
+            Number::Float(n) => n.clamp(0.0, 1.0),
+        });
 
         if let Some(ai_api) = ctx.server.core.enterprise.as_ref().and_then(|e| {
             if ctx.access_token.map_or(true, |token| {
@@ -54,7 +58,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             }
         }) {
             let time = Instant::now();
-            match ai_api.send_request(prompt.as_ref(), None).await {
+            match ai_api.send_request(prompt.as_ref(), temperature).await {
                 Ok(response) => {
                     trc::event!(
                         Ai(AiEvent::LlmResponse),

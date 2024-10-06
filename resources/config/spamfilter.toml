@@ -1,5 +1,5 @@
 [version]
-spam-filter = "1.1"
+spam-filter = "1.2"
 
 [sieve.trusted.scripts.spam-filter]
 name = "Spam Filter"
@@ -42,6 +42,15 @@ let "DOMAIN_DIRECTORY" "key_get('spam-config', 'directory')";
 
 # Store to use for Bayes tokens and ids (leave empty for default)
 let "SPAM_DB" "key_get('spam-config', 'lookup')";
+
+# LLM model to use for spam classification
+let "LLM_MODEL" "key_get('spam-config', 'llm-model')";
+
+# LLM prompt to use for spam classification
+let "LLM_PROMPT_TEXT" "key_get('spam-config', 'llm-prompt')";
+
+# Whether to add an X-Spam-Llm-Result header
+let "ADD_HEADER_LLM" "key_get('spam-config', 'add-llm-result')";
 
 
 #### Script prelude.sieve ####
@@ -2098,6 +2107,51 @@ if eval "!is_empty(pyzor_response) && pyzor_response[0] == 200" {
 }
 
 
+#### Script llm.sieve ####
+
+if eval "LLM_MODEL && LLM_PROMPT_TEXT" {
+    let "llm_result" "trim(split_n(llm_prompt(LLM_MODEL, LLM_PROMPT_TEXT + '\n\nSubject: ' + subject_clean + '\n\n' + text_body, 0.5), ',', 3))";
+
+    if eval "eq_ignore_case(llm_result[0], 'Unsolicited')" {
+        if eval "eq_ignore_case(llm_result[1], 'High')" {
+            let "t.LLM_UNSOLICITED_HIGH" "1";
+        } elsif eval "eq_ignore_case(llm_result[1], 'Medium')" {
+            let "t.LLM_UNSOLICITED_MEDIUM" "1";
+        } else {
+            let "t.LLM_UNSOLICITED_LOW" "1";
+        }
+    } elsif eval "eq_ignore_case(llm_result[0], 'Commercial')" {
+        if eval "eq_ignore_case(llm_result[1], 'High')" {
+            let "t.LLM_COMMERCIAL_HIGH" "1";
+        } elsif eval "eq_ignore_case(llm_result[1], 'Medium')" {
+            let "t.LLM_COMMERCIAL_MEDIUM" "1";
+        } else {
+            let "t.LLM_COMMERCIAL_LOW" "1";
+        }
+    } elsif eval "eq_ignore_case(llm_result[0], 'Harmful')" {
+        if eval "eq_ignore_case(llm_result[1], 'High')" {
+            let "t.LLM_HARMFUL_HIGH" "1";
+        } elsif eval "eq_ignore_case(llm_result[1], 'Medium')" {
+            let "t.LLM_HARMFUL_MEDIUM" "1";
+        } else {
+            let "t.LLM_HARMFUL_LOW" "1";
+        }
+    } elsif eval "eq_ignore_case(llm_result[0], 'Legitimate')" {
+        if eval "eq_ignore_case(llm_result[1], 'High')" {
+            let "t.LLM_LEGITIMATE_HIGH" "1";
+        } elsif eval "eq_ignore_case(llm_result[1], 'Medium')" {
+            let "t.LLM_LEGITIMATE_MEDIUM" "1";
+        } else {
+            let "t.LLM_LEGITIMATE_LOW" "1";
+        }
+    }
+
+    if eval "ADD_HEADER_LLM && count(llm_result) > 2" {
+        eval "add_header('X-Spam-Llm-Result', 'Category=' + llm_result[0] + '; Confidence=' + llm_result[1] + '; Explanation=' + llm_result[2])";
+    }
+}
+
+
 #### Script composites.sieve ####
 
 if eval "t.MISSING_ESSENTIAL_HEADERS && t.SINGLE_SHORT_PART" {
@@ -2369,6 +2423,15 @@ let "DOMAIN_DIRECTORY" "key_get('spam-config', 'directory')";
 # Store to use for Bayes tokens and ids (leave empty for default)
 let "SPAM_DB" "key_get('spam-config', 'lookup')";
 
+# LLM model to use for spam classification
+let "LLM_MODEL" "key_get('spam-config', 'llm-model')";
+
+# LLM prompt to use for spam classification
+let "LLM_PROMPT_TEXT" "key_get('spam-config', 'llm-prompt')";
+
+# Whether to add an X-Spam-Llm-Result header
+let "ADD_HEADER_LLM" "key_get('spam-config', 'add-llm-result')";
+
 
 #### Script replies_out.sieve ####
 
@@ -2429,6 +2492,15 @@ let "DOMAIN_DIRECTORY" "key_get('spam-config', 'directory')";
 # Store to use for Bayes tokens and ids (leave empty for default)
 let "SPAM_DB" "key_get('spam-config', 'lookup')";
 
+# LLM model to use for spam classification
+let "LLM_MODEL" "key_get('spam-config', 'llm-model')";
+
+# LLM prompt to use for spam classification
+let "LLM_PROMPT_TEXT" "key_get('spam-config', 'llm-prompt')";
+
+# Whether to add an X-Spam-Llm-Result header
+let "ADD_HEADER_LLM" "key_get('spam-config', 'add-llm-result')";
+
 
 #### Script greylist.sieve ####
 
@@ -2486,6 +2558,15 @@ let "DOMAIN_DIRECTORY" "key_get('spam-config', 'directory')";
 # Store to use for Bayes tokens and ids (leave empty for default)
 let "SPAM_DB" "key_get('spam-config', 'lookup')";
 
+# LLM model to use for spam classification
+let "LLM_MODEL" "key_get('spam-config', 'llm-model')";
+
+# LLM prompt to use for spam classification
+let "LLM_PROMPT_TEXT" "key_get('spam-config', 'llm-prompt')";
+
+# Whether to add an X-Spam-Llm-Result header
+let "ADD_HEADER_LLM" "key_get('spam-config', 'add-llm-result')";
+
 
 #### Script train.sieve ####
 
@@ -2518,7 +2599,32 @@ spam-config = {
 "threshold-discard" = "0.0",
 "threshold-reject" = "0.0",
 "directory" = "",
-"lookup" = ""
+"lookup" = "",
+"llm-model" = "",
+"llm-prompt" = "You are an AI assistant specialized in analyzing email content to detect unsolicited, commercial, or harmful messages. Your task is to examine the provided email, including its subject line, and determine if it falls into any of these categories. Please follow these steps:
+
+- Carefully read the entire email content, including the subject line.
+- Look for indicators of unsolicited messages, such as:
+   * Lack of prior relationship or consent
+   * Mass-mailing characteristics
+   * Vague or misleading sender information
+- Identify commercial content by checking for:
+   * Promotional language
+   * Product or service offerings
+   * Call-to-action for purchases
+- Detect potentially harmful content by searching for:
+   * Phishing attempts (requests for personal information, suspicious links)
+   * Malware indicators (suspicious attachments, urgent calls to action)
+   * Scams or fraudulent schemes
+- Analyze the overall tone, intent, and legitimacy of the email.
+- Determine the most appropriate single category for the email: Unsolicited, Commercial, Harmful, or Legitimate.
+- Assess your confidence level in this determination: High, Medium, or Low.
+- Provide a brief explanation for your determination.
+- Format your response as follows, separated by commas: Category,Confidence,Explanation
+  * Example: Unsolicited,High,The email contains mass-mailing characteristics without any prior relationship context.
+
+Here's the email to analyze, please provide your analysis based on the above instructions, ensuring your response is in the specified comma-separated format:",
+"add-llm-result" = true
 }
 
 spam-scores = {"ABUSE_SURBL" = "5.0",
@@ -2884,7 +2990,19 @@ spam-scores = {"ABUSE_SURBL" = "5.0",
 "SHORT_PART_BAD_HEADERS" = "7.0",
 "MISSING_ESSENTIAL_HEADERS" = "7.0",
 "SINGLE_SHORT_PART" = "0.0",
-"COMPLETELY_EMPTY" = "7.0"}
+"COMPLETELY_EMPTY" = "7.0",
+"LLM_UNSOLICITED_HIGH" = "3.0",
+"LLM_UNSOLICITED_MEDIUM" = "2.0",
+"LLM_UNSOLICITED_LOW" = "0.5",
+"LLM_COMMERCIAL_HIGH" = "3.0",
+"LLM_COMMERCIAL_MEDIUM" = "2.0",
+"LLM_COMMERCIAL_LOW" = "0.5",
+"LLM_HARMFUL_HIGH" = "3.0",
+"LLM_HARMFUL_MEDIUM" = "2.0",
+"LLM_HARMFUL_LOW" = "0.5",
+"LLM_LEGITIMATE_HIGH" = "-3.0",
+"LLM_LEGITIMATE_MEDIUM" = "-2.0",
+"LLM_LEGITIMATE_LOW" = "-0.5"}
 
 spam-dmarc = {"18f.gov",
 "1password.com",
