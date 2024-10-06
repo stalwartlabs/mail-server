@@ -1,0 +1,59 @@
+#include <tunables/global>
+
+profile stalwart-mail flags=(attach_disconnected) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+  #include <abstractions/openssl>
+
+  # Allow network access
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+
+  # Outgoing access to port 25 and 443
+  network tcp,
+  network udp,
+  owner /proc/*/net/if_inet6 r,
+  owner /proc/*/net/ipv6_route r,
+
+  # Full write access to /opt/stalwart-mail
+  /opt/stalwart-mail/** rwk,
+
+  # Allow creating directories under /tmp
+  /tmp/ r,
+  /tmp/** rwk,
+
+  # Allow binding to specific ports
+  network inet stream bind port 25,
+  network inet stream bind port 587,
+  network inet stream bind port 465,
+  network inet stream bind port 143,
+  network inet stream bind port 993,
+  network inet stream bind port 110,
+  network inet stream bind port 995,
+  network inet stream bind port 4190,
+  network inet stream bind port 443,
+  network inet stream bind port 8080,
+  network inet6 stream bind port 25,
+  network inet6 stream bind port 587,
+  network inet6 stream bind port 465,
+  network inet6 stream bind port 143,
+  network inet6 stream bind port 993,
+  network inet6 stream bind port 110,
+  network inet6 stream bind port 995,
+  network inet6 stream bind port 4190,
+  network inet6 stream bind port 443,
+  network inet6 stream bind port 8080,
+
+  # Allow UDP port 7911
+  network inet dgram bind port 7911,
+  network inet6 dgram bind port 7911,
+
+  # Basic system access
+  /usr/bin/stalwart-mail rix,
+  /etc/stalwart-mail/** r,
+  /var/log/stalwart-mail/** w,
+
+  # Additional permissions might be needed depending on specific requirements
+}

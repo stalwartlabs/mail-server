@@ -10,6 +10,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 - AI-powered Spam filtering and Sieve scripting (Enterprise feature).
 
 ### Changed
+- The untrusted Sieve interpreter now has the `vnd.stalwart.expressions` extension enabled by default. This allows Sieve users to use the `eval` function to evaluate expressions in their scripts. If you would like to disable this extension, you can do so by adding `vnd.stalwart.expressions` to `sieve.untrusted.disabled-capabilities`.
 
 ### Fixed
 - S3-compatible backends: Retry on `5xx` errors.
