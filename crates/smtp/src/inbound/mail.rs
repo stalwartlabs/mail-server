@@ -542,6 +542,25 @@ impl<T: SessionStream> Session<T> {
                 )
                 .await,
         ) {
+            // Do not send SPF auth failures to local domains, as they are likely relay attempts (which are blocked later on)
+            match self
+                .server
+                .core
+                .storage
+                .directory
+                .is_local_domain(recipient.domain_part())
+                .await
+            {
+                Ok(true) => return Ok(result),
+                Ok(false) => (),
+                Err(err) => {
+                    trc::error!(err
+                        .caused_by(trc::location!())
+                        .span_id(self.data.session_id)
+                        .details("Failed to lookup local domain"));
+                }
+            }
+
             self.send_spf_report(recipient, &rate, !result, spf_output)
                 .await;
         }

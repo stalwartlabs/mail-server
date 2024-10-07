@@ -304,33 +304,36 @@ impl<T: SessionStream> Session<T> {
     async fn rcpt_error(&mut self, response: &[u8]) -> Result<(), ()> {
         tokio::time::sleep(self.params.rcpt_errors_wait).await;
         self.data.rcpt_errors += 1;
-        self.write(response).await?;
-        if self.data.rcpt_errors < self.params.rcpt_errors_max {
-            Ok(())
-        } else {
-            match self.server.is_rcpt_fail2banned(self.data.remote_ip).await {
-                Ok(true) => {
-                    trc::event!(
-                        Security(SecurityEvent::BruteForceBan),
-                        SpanId = self.data.session_id,
-                        RemoteIp = self.data.remote_ip,
-                    );
-                }
-                Ok(false) => {
+        let has_too_many_errors = self.data.rcpt_errors >= self.params.rcpt_errors_max;
+
+        match self.server.is_rcpt_fail2banned(self.data.remote_ip).await {
+            Ok(true) => {
+                trc::event!(
+                    Security(SecurityEvent::BruteForceBan),
+                    SpanId = self.data.session_id,
+                    RemoteIp = self.data.remote_ip,
+                );
+            }
+            Ok(false) => {
+                if has_too_many_errors {
                     trc::event!(
                         Smtp(SmtpEvent::TooManyInvalidRcpt),
                         SpanId = self.data.session_id,
                         Limit = self.params.rcpt_errors_max,
                     );
                 }
-                Err(err) => {
-                    trc::error!(err
-                        .span_id(self.data.session_id)
-                        .caused_by(trc::location!())
-                        .details("Failed to check if IP should be banned."));
-                }
             }
+            Err(err) => {
+                trc::error!(err
+                    .span_id(self.data.session_id)
+                    .caused_by(trc::location!())
+                    .details("Failed to check if IP should be banned."));
+            }
+        }
 
+        if !has_too_many_errors {
+            self.write(response).await
+        } else {
             self.write(b"421 4.3.0 Too many errors, disconnecting.\r\n")
                 .await?;
             Err(())

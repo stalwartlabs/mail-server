@@ -103,6 +103,7 @@ pub async fn test(params: &mut JMAPTest) {
             &OAuthCodeRequest::Code {
                 client_id: client_id.to_string(),
                 redirect_uri: "https://localhost".to_string().into(),
+                nonce: "abc1234".to_string().into(),
             },
         )
         .await
@@ -136,7 +137,6 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Obtain token
     token_params.insert("redirect_uri".to_string(), "https://localhost".to_string());
-    token_params.insert("nonce".to_string(), "abc1234".to_string());
     let (token, refresh_token, id_token) =
         unwrap_oidc_token_response(post(&metadata.token_endpoint, &token_params).await);
 
