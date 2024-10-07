@@ -40,6 +40,7 @@ pub struct OAuthCode {
     pub status: OAuthStatus,
     pub account_id: u32,
     pub client_id: String,
+    pub nonce: Option<String>,
     pub params: String,
 }
 
@@ -146,6 +147,8 @@ pub enum OAuthCodeRequest {
     Code {
         client_id: String,
         redirect_uri: Option<String>,
+        #[serde(default)]
+        nonce: Option<String>,
     },
     Device {
         code: String,

@@ -82,6 +82,7 @@ impl OAuthApiHandler for Server {
             OAuthCodeRequest::Code {
                 client_id,
                 redirect_uri,
+                nonce,
             } => {
                 // Validate clientId
                 if client_id.len() > CLIENT_ID_MAX_LEN {
@@ -109,6 +110,7 @@ impl OAuthApiHandler for Server {
                     status: OAuthStatus::Authorized,
                     account_id: access_token.primary_id(),
                     client_id,
+                    nonce,
                     params: redirect_uri.unwrap_or_default(),
                 })
                 .serialize();
@@ -189,8 +191,8 @@ impl OAuthApiHandler for Server {
         session: HttpSessionData,
     ) -> trc::Result<HttpResponse> {
         // Parse form
-        let client_id = FormData::from_request(req, MAX_POST_LEN, session.session_id)
-            .await?
+        let mut form_data = FormData::from_request(req, MAX_POST_LEN, session.session_id).await?;
+        let client_id = form_data
             .remove("client_id")
             .filter(|client_id| client_id.len() <= CLIENT_ID_MAX_LEN)
             .ok_or_else(|| {
@@ -198,6 +200,7 @@ impl OAuthApiHandler for Server {
                     .into_err()
                     .details("Client ID is missing.")
             })?;
+        let nonce = form_data.remove("nonce");
 
         // Generate device code
         let device_code = thread_rng()
@@ -225,6 +228,7 @@ impl OAuthApiHandler for Server {
             status: OAuthStatus::Pending,
             account_id: u32::MAX,
             client_id,
+            nonce,
             params: device_code.clone(),
         })
         .serialize();
