@@ -370,9 +370,12 @@ impl MigrateDirectory for Store {
                     key: [3u8].iter().chain(domain.as_bytes()).copied().collect(),
                 }));
 
-            self.write(batch.build())
-                .await
-                .caused_by(trc::location!())?;
+            if let Err(err) = self.write(batch.build()).await {
+                trc::error!(err
+                    .caused_by(trc::location!())
+                    .details("Failed to migrate domain, probably a principal already exists")
+                    .ctx(trc::Key::Domain, domain));
+            }
         }
 
         if total_domain_count > 0 || total_principal_count > 0 {
