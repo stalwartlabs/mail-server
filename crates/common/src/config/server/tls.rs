@@ -12,7 +12,10 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{
+    engine::general_purpose::{self, STANDARD},
+    Engine,
+};
 use dns_update::{providers::rfc2136::DnsAddress, DnsUpdater, TsigAlgorithm};
 use rcgen::generate_simple_self_signed;
 use rustls::{
@@ -31,7 +34,9 @@ use x509_parser::{
 };
 
 use crate::listener::{
-    acme::{directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeProvider, ChallengeSettings},
+    acme::{
+        directory::LETS_ENCRYPT_PRODUCTION_DIRECTORY, AcmeProvider, ChallengeSettings, EabSettings,
+    },
     tls::AcmeProviders,
 };
 
@@ -129,6 +134,34 @@ impl AcmeProviders {
                 continue 'outer;
             }
 
+            // Obtain EAB settings
+            let eab = if let (Some(eab_kid), Some(eab_hmac_key)) = (
+                config
+                    .value(("acme", acme_id, "eab.kid"))
+                    .filter(|s| !s.is_empty()),
+                config
+                    .value(("acme", acme_id, "eab.hmac-key"))
+                    .filter(|s| !s.is_empty()),
+            ) {
+                if let Ok(hmac_key) =
+                    general_purpose::URL_SAFE_NO_PAD.decode(eab_hmac_key.trim().as_bytes())
+                {
+                    EabSettings {
+                        kid: eab_kid.to_string(),
+                        hmac_key,
+                    }
+                    .into()
+                } else {
+                    config.new_build_error(
+                        format!("acme.{acme_id}.eab.hmac-key"),
+                        "Failed to base64 decode HMAC key",
+                    );
+                    None
+                }
+            } else {
+                None
+            };
+
             // This ACME manager is the default when SNI is not available
             let default = config
                 .property::<bool>(("acme", acme_id, "default"))
@@ -141,6 +174,7 @@ impl AcmeProviders {
                     domains,
                     contact,
                     challenge,
+                    eab,
                     renew_before,
                     default,
                 ) {

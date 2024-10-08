@@ -26,9 +26,16 @@ pub struct AcmeProvider {
     pub domains: Vec<String>,
     pub contact: Vec<String>,
     pub challenge: ChallengeSettings,
+    pub eab: Option<EabSettings>,
     renew_before: chrono::Duration,
     account_key: ArcSwap<Vec<u8>>,
     default: bool,
+}
+
+#[derive(Clone)]
+pub struct EabSettings {
+    pub kid: String,
+    pub hmac_key: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -49,12 +56,14 @@ pub struct StaticResolver {
 }
 
 impl AcmeProvider {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         directory_url: String,
         domains: Vec<String>,
         contact: Vec<String>,
         challenge: ChallengeSettings,
+        eab: Option<EabSettings>,
         renew_before: Duration,
         default: bool,
     ) -> trc::Result<Self> {
@@ -75,6 +84,7 @@ impl AcmeProvider {
             domains,
             account_key: Default::default(),
             challenge,
+            eab,
             default,
         })
     }
@@ -142,6 +152,7 @@ impl Clone for AcmeProvider {
             challenge: self.challenge.clone(),
             renew_before: self.renew_before,
             account_key: ArcSwap::from_pointee(self.account_key.load().as_ref().clone()),
+            eab: self.eab.clone(),
             default: self.default,
         }
     }

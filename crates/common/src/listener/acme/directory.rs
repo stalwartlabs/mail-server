@@ -10,14 +10,16 @@ use reqwest::{Method, Response};
 use ring::rand::SystemRandom;
 use ring::signature::{EcdsaKeyPair, EcdsaSigningAlgorithm, ECDSA_P256_SHA256_FIXED_SIGNING};
 use serde::Deserialize;
-use serde_json::json;
 use store::write::Bincode;
 use store::Serialize;
 use trc::event::conv::AssertSuccess;
+use trc::AddContext;
 
 use super::jose::{
-    key_authorization, key_authorization_sha256, key_authorization_sha256_base64, sign,
+    eab_sign, key_authorization, key_authorization_sha256, key_authorization_sha256_base64, sign,
+    Body,
 };
+use super::AcmeProvider;
 
 pub const LETS_ENCRYPT_STAGING_DIRECTORY: &str =
     "https://acme-staging-v02.api.letsencrypt.org/directory";
@@ -32,6 +34,16 @@ pub struct Account {
     pub kid: String,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct NewAccountPayload<'x> {
+    #[serde(rename = "termsOfServiceAgreed")]
+    tos_agreed: bool,
+    contact: &'x [String],
+    #[serde(rename = "externalAccountBinding")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    eab: Option<Body>,
+}
+
 static ALG: &EcdsaSigningAlgorithm = &ECDSA_P256_SHA256_FIXED_SIGNING;
 
 impl Account {
@@ -42,35 +54,39 @@ impl Account {
             .to_vec()
     }
 
-    pub async fn create<'a, S, I>(directory: Directory, contact: I) -> trc::Result<Self>
-    where
-        S: AsRef<str> + 'a,
-        I: IntoIterator<Item = &'a S>,
-    {
-        Self::create_with_keypair(directory, contact, &Self::generate_key_pair()).await
+    pub async fn create(directory: Directory, provider: &AcmeProvider) -> trc::Result<Self> {
+        Self::create_with_keypair(directory, provider).await
     }
 
-    pub async fn create_with_keypair<'a, S, I>(
+    pub async fn create_with_keypair(
         directory: Directory,
-        contact: I,
-        key_pair: &[u8],
-    ) -> trc::Result<Self>
-    where
-        S: AsRef<str> + 'a,
-        I: IntoIterator<Item = &'a S>,
-    {
-        let key_pair =
-            EcdsaKeyPair::from_pkcs8(ALG, key_pair, &SystemRandom::new()).map_err(|err| {
-                trc::EventType::Acme(trc::AcmeEvent::Error)
-                    .reason(err)
-                    .caused_by(trc::location!())
-            })?;
-        let contact: Vec<&'a str> = contact.into_iter().map(AsRef::<str>::as_ref).collect();
-        let payload = json!({
-            "termsOfServiceAgreed": true,
-            "contact": contact,
+        provider: &AcmeProvider,
+    ) -> trc::Result<Self> {
+        let key_pair = EcdsaKeyPair::from_pkcs8(
+            ALG,
+            provider.account_key.load().as_slice(),
+            &SystemRandom::new(),
+        )
+        .map_err(|err| {
+            trc::EventType::Acme(trc::AcmeEvent::Error)
+                .reason(err)
+                .caused_by(trc::location!())
+        })?;
+        let eab = if let Some(eab) = &provider.eab {
+            eab_sign(&key_pair, &eab.kid, &eab.hmac_key, &directory.new_account)
+                .caused_by(trc::location!())?
+                .into()
+        } else {
+            None
+        };
+
+        let payload = serde_json::to_string(&NewAccountPayload {
+            tos_agreed: true,
+            contact: &provider.contact,
+            eab,
         })
-        .to_string();
+        .unwrap_or_default();
+
         let body = sign(
             &key_pair,
             None,
