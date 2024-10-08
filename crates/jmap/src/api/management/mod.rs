@@ -23,6 +23,7 @@ use common::{auth::AccessToken, Server};
 use directory::{backend::internal::manage, Permission};
 use dkim::DkimManagement;
 use dns::DnsManagement;
+#[cfg(feature = "enterprise")]
 use enterprise::telemetry::TelemetryApi;
 use hyper::Method;
 use log::LogManagement;
