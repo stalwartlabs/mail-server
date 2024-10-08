@@ -140,6 +140,12 @@ impl Event<EventType> {
         self.inner == EventType::Store(StoreEvent::AssertValueFailed)
     }
 
+    pub fn key(&self, key: Key) -> Option<&Value> {
+        self.keys
+            .iter()
+            .find_map(|(k, v)| if *k == key { Some(v) } else { None })
+    }
+
     #[inline(always)]
     pub fn is_jmap_method_error(&self) -> bool {
         !matches!(

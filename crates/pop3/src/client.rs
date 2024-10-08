@@ -6,7 +6,7 @@
 
 use common::listener::{SessionResult, SessionStream};
 use mail_send::Credentials;
-use trc::AddContext;
+use trc::{AddContext, SecurityEvent};
 
 use crate::{
     protocol::{request::Error, Command, Mechanism},
@@ -49,6 +49,27 @@ impl<T: SessionStream> Session<T> {
                     break;
                 }
                 Err(Error::Parse(err)) => {
+                    // Check for port scanners
+                    if matches!(&self.state, State::NotAuthenticated { .. },) {
+                        match self.server.is_scanner_fail2banned(self.remote_addr).await {
+                            Ok(true) => {
+                                trc::event!(
+                                    Security(SecurityEvent::ScanBan),
+                                    SpanId = self.session_id,
+                                    RemoteIp = self.remote_addr,
+                                    Reason = "Invalid POP3 command",
+                                );
+
+                                return SessionResult::Close;
+                            }
+                            Ok(false) => {}
+                            Err(err) => {
+                                trc::error!(err
+                                    .span_id(self.session_id)
+                                    .details("Failed to check for fail2ban"));
+                            }
+                        }
+                    }
                     requests.push(Err(trc::Pop3Event::Error.into_err().details(err)));
                 }
             }

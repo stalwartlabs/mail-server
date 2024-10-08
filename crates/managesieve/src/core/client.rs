@@ -9,7 +9,7 @@ use imap_proto::receiver::{self, Request};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::query::Filter;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use trc::AddContext;
+use trc::{AddContext, SecurityEvent};
 
 use super::{Command, ResponseCode, SerializeResponse, Session, State};
 
@@ -46,6 +46,34 @@ impl<T: SessionStream> Session<T> {
                     break;
                 }
                 Err(receiver::Error::Error { response }) => {
+                    // Check for port scanners
+                    if matches!(
+                        (&self.state, response.key(trc::Key::Code)),
+                        (
+                            State::NotAuthenticated { .. },
+                            Some(trc::Value::Static("PARSE"))
+                        )
+                    ) {
+                        match self.server.is_scanner_fail2banned(self.remote_addr).await {
+                            Ok(true) => {
+                                trc::event!(
+                                    Security(SecurityEvent::ScanBan),
+                                    SpanId = self.session_id,
+                                    RemoteIp = self.remote_addr,
+                                    Reason = "Invalid ManageSieve command",
+                                );
+
+                                return SessionResult::Close;
+                            }
+                            Ok(false) => {}
+                            Err(err) => {
+                                trc::error!(err
+                                    .span_id(self.session_id)
+                                    .details("Failed to check for fail2ban"));
+                            }
+                        }
+                    }
+
                     if let Err(err) = self.write_error(response).await {
                         trc::error!(err.span_id(self.session_id));
                         return SessionResult::Close;

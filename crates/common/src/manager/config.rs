@@ -40,8 +40,8 @@ enum Pattern {
     Exclude(MatchType),
 }
 
-#[derive(Debug)]
-enum MatchType {
+#[derive(Debug, Clone)]
+pub enum MatchType {
     Equal(String),
     StartsWith(String),
     EndsWith(String),
@@ -469,17 +469,7 @@ impl Patterns {
             if value.is_empty() {
                 continue;
             }
-            let match_type = if value == "*" {
-                MatchType::All
-            } else if let Some(value) = value.strip_suffix('*') {
-                MatchType::StartsWith(value.to_string())
-            } else if let Some(value) = value.strip_prefix('*') {
-                MatchType::EndsWith(value.to_string())
-            } else if value.contains('*') {
-                MatchType::Matches(GlobPattern::compile(&value, false))
-            } else {
-                MatchType::Equal(value.to_string())
-            };
+            let match_type = MatchType::parse(&value);
 
             cfg_local_patterns.push(if is_include {
                 Pattern::Include(match_type)
@@ -541,7 +531,21 @@ impl Patterns {
 }
 
 impl MatchType {
-    fn matches(&self, value: &str) -> bool {
+    pub fn parse(value: &str) -> Self {
+        if value == "*" {
+            MatchType::All
+        } else if let Some(value) = value.strip_suffix('*') {
+            MatchType::StartsWith(value.to_string())
+        } else if let Some(value) = value.strip_prefix('*') {
+            MatchType::EndsWith(value.to_string())
+        } else if value.contains('*') {
+            MatchType::Matches(GlobPattern::compile(value, false))
+        } else {
+            MatchType::Equal(value.to_string())
+        }
+    }
+
+    pub fn matches(&self, value: &str) -> bool {
         match self {
             MatchType::Equal(pattern) => value == pattern,
             MatchType::StartsWith(pattern) => value.starts_with(pattern),

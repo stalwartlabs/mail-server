@@ -200,7 +200,8 @@ pub enum HttpEvent {
 #[event_type]
 pub enum SecurityEvent {
     AuthenticationBan,
-    BruteForceBan,
+    AbuseBan,
+    ScanBan,
     LoiterBan,
     IpBlocked,
     Unauthorized,

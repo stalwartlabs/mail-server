@@ -1787,9 +1787,10 @@ impl SecurityEvent {
     pub fn description(&self) -> &'static str {
         match self {
             SecurityEvent::AuthenticationBan => "Banned due to authentication errors",
-            SecurityEvent::BruteForceBan => "Banned due to brute force attack",
+            SecurityEvent::AbuseBan => "Banned due to abuse",
             SecurityEvent::LoiterBan => "Banned due to loitering",
             SecurityEvent::IpBlocked => "Blocked IP address",
+            SecurityEvent::ScanBan => "Banned due to scan",
             SecurityEvent::Unauthorized => "Unauthorized access",
         }
     }
@@ -1799,9 +1800,10 @@ impl SecurityEvent {
             SecurityEvent::AuthenticationBan => {
                 "IP address was banned due to multiple authentication errors"
             }
-            SecurityEvent::BruteForceBan => {
-                "IP address was banned due to possible brute force attack"
+            SecurityEvent::AbuseBan => {
+                "IP address was banned due to abuse, such as RCPT TO attacks"
             }
+            SecurityEvent::ScanBan => "IP address was banned due to exploit scanning",
             SecurityEvent::LoiterBan => "IP address was banned due to multiple loitering events",
             SecurityEvent::IpBlocked => "Rejected connection from blocked IP address",
             SecurityEvent::Unauthorized => "Account does not have permission to access resource",

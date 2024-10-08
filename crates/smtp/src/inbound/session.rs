@@ -17,7 +17,7 @@ use smtp_proto::{
     *,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use trc::{NetworkEvent, SmtpEvent};
+use trc::{NetworkEvent, SecurityEvent, SmtpEvent};
 
 use crate::core::{Session, State};
 
@@ -236,6 +236,32 @@ impl<T: SessionStream> Session<T> {
                         Err(err) => match err {
                             Error::NeedsMoreData { .. } => break 'outer,
                             Error::UnknownCommand | Error::InvalidResponse { .. } => {
+                                // Check for port scanners
+                                if !self.is_authenticated() {
+                                    match self
+                                        .server
+                                        .is_scanner_fail2banned(self.data.remote_ip)
+                                        .await
+                                    {
+                                        Ok(true) => {
+                                            trc::event!(
+                                                Security(SecurityEvent::ScanBan),
+                                                SpanId = self.data.session_id,
+                                                RemoteIp = self.data.remote_ip,
+                                                Reason = "Invalid SMTP command",
+                                            );
+
+                                            return Err(());
+                                        }
+                                        Ok(false) => {}
+                                        Err(err) => {
+                                            trc::error!(err
+                                                .span_id(self.data.session_id)
+                                                .details("Failed to check for fail2ban"));
+                                        }
+                                    }
+                                }
+
                                 trc::event!(
                                     Smtp(SmtpEvent::InvalidCommand),
                                     SpanId = self.data.session_id,

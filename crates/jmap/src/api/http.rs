@@ -32,6 +32,7 @@ use jmap_proto::{
     types::{blob::BlobId, id::Id},
 };
 use std::future::Future;
+use trc::SecurityEvent;
 
 use crate::{
     api::management::enterprise::telemetry::TelemetryApi,
@@ -253,12 +254,12 @@ impl ParseHttp for Server {
                     }
                 }
                 ("mta-sts.txt", &Method::GET) => {
-                    if let Some(policy) = self.build_mta_sts_policy() {
-                        return Ok(Resource::new("text/plain", policy.to_string().into_bytes())
-                            .into_http_response());
+                    return if let Some(policy) = self.build_mta_sts_policy() {
+                        Ok(Resource::new("text/plain", policy.to_string().into_bytes())
+                            .into_http_response())
                     } else {
-                        return Err(trc::ResourceEvent::NotFound.into_err());
-                    }
+                        Err(trc::ResourceEvent::NotFound.into_err())
+                    };
                 }
                 ("mail-v1.xml", &Method::GET) => {
                     return self.handle_autoconfig_request(&req).await;
@@ -471,11 +472,9 @@ impl ParseHttp for Server {
 
                 let resource = self.inner.data.webadmin.get("logo.svg").await?;
 
-                return if !resource.is_empty() {
-                    Ok(resource.into_http_response())
-                } else {
-                    Err(trc::ResourceEvent::NotFound.into_err())
-                };
+                if !resource.is_empty() {
+                    return Ok(resource.into_http_response());
+                }
 
                 // SPDX-SnippetEnd
             }
@@ -507,12 +506,21 @@ impl ParseHttp for Server {
                     .get(path.strip_prefix('/').unwrap_or(path))
                     .await?;
 
-                return if !resource.is_empty() {
-                    Ok(resource.into_http_response())
-                } else {
-                    Err(trc::ResourceEvent::NotFound.into_err())
-                };
+                if !resource.is_empty() {
+                    return Ok(resource.into_http_response());
+                }
             }
+        }
+
+        // Block dangerous URLs
+        let path = req.uri().path();
+        if self.is_http_banned_path(path, session.remote_ip).await? {
+            trc::event!(
+                Security(SecurityEvent::ScanBan),
+                SpanId = session.session_id,
+                RemoteIp = session.remote_ip,
+                Path = path.to_string(),
+            );
         }
 
         Err(trc::ResourceEvent::NotFound.into_err())
@@ -652,11 +660,32 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
         .with_upgrades()
         .await
     {
-        trc::event!(
-            Http(trc::HttpEvent::Error),
-            SpanId = session.session_id,
-            Reason = http_err.to_string(),
-        );
+        match inner
+            .build_server()
+            .is_scanner_fail2banned(session.remote_ip)
+            .await
+        {
+            Ok(true) => {
+                trc::event!(
+                    Security(SecurityEvent::ScanBan),
+                    SpanId = session.session_id,
+                    RemoteIp = session.remote_ip,
+                    Reason = http_err.to_string(),
+                );
+            }
+            Ok(false) => {
+                trc::event!(
+                    Http(trc::HttpEvent::Error),
+                    SpanId = session.session_id,
+                    Reason = http_err.to_string(),
+                );
+            }
+            Err(err) => {
+                trc::error!(err
+                    .span_id(session.session_id)
+                    .details("Failed to check for fail2ban"));
+            }
+        }
     }
 }
 
@@ -994,7 +1023,8 @@ impl ToRequestError for trc::Error {
             },
             trc::EventType::Security(cause) => match cause {
                 trc::SecurityEvent::AuthenticationBan
-                | trc::SecurityEvent::BruteForceBan
+                | trc::SecurityEvent::ScanBan
+                | trc::SecurityEvent::AbuseBan
                 | trc::SecurityEvent::LoiterBan
                 | trc::SecurityEvent::IpBlocked => RequestError::too_many_auth_attempts(),
                 trc::SecurityEvent::Unauthorized => RequestError::forbidden(),

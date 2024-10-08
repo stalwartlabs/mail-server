@@ -14,6 +14,7 @@ use imap_proto::{
     receiver::{self, Request},
     Command, ResponseType, StatusResponse,
 };
+use trc::SecurityEvent;
 
 use super::{SelectedMailbox, Session, SessionData, State};
 
@@ -50,6 +51,34 @@ impl<T: SessionStream> Session<T> {
                     break;
                 }
                 Err(receiver::Error::Error { response }) => {
+                    // Check for port scanners
+                    if matches!(
+                        (&self.state, response.key(trc::Key::Code)),
+                        (
+                            State::NotAuthenticated { .. },
+                            Some(trc::Value::Static("PARSE"))
+                        )
+                    ) {
+                        match self.server.is_scanner_fail2banned(self.remote_addr).await {
+                            Ok(true) => {
+                                trc::event!(
+                                    Security(SecurityEvent::ScanBan),
+                                    SpanId = self.session_id,
+                                    RemoteIp = self.remote_addr,
+                                    Reason = "Invalid IMAP command",
+                                );
+
+                                return SessionResult::Close;
+                            }
+                            Ok(false) => {}
+                            Err(err) => {
+                                trc::error!(err
+                                    .span_id(self.session_id)
+                                    .details("Failed to check for fail2ban"));
+                            }
+                        }
+                    }
+
                     if !self.write_error(response).await {
                         return SessionResult::Close;
                     }

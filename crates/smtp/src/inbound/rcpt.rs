@@ -209,9 +209,12 @@ impl<T: SessionStream> Session<T> {
                                         To = rcpt.address_lcase.clone(),
                                     );
 
-                                    self.data.rcpt_to.pop();
+                                    let rcpt_to = self.data.rcpt_to.pop().unwrap().address_lcase;
                                     return self
-                                        .rcpt_error(b"550 5.1.2 Mailbox does not exist.\r\n")
+                                        .rcpt_error(
+                                            b"550 5.1.2 Mailbox does not exist.\r\n",
+                                            rcpt_to,
+                                        )
                                         .await;
                                 }
                             }
@@ -243,8 +246,10 @@ impl<T: SessionStream> Session<T> {
                             To = rcpt.address_lcase.clone(),
                         );
 
-                        self.data.rcpt_to.pop();
-                        return self.rcpt_error(b"550 5.1.2 Relay not allowed.\r\n").await;
+                        let rcpt_to = self.data.rcpt_to.pop().unwrap().address_lcase;
+                        return self
+                            .rcpt_error(b"550 5.1.2 Relay not allowed.\r\n", rcpt_to)
+                            .await;
                     }
                 }
                 Err(err) => {
@@ -275,8 +280,10 @@ impl<T: SessionStream> Session<T> {
                 To = rcpt.address_lcase.clone(),
             );
 
-            self.data.rcpt_to.pop();
-            return self.rcpt_error(b"550 5.1.2 Relay not allowed.\r\n").await;
+            let rcpt_to = self.data.rcpt_to.pop().unwrap().address_lcase;
+            return self
+                .rcpt_error(b"550 5.1.2 Relay not allowed.\r\n", rcpt_to)
+                .await;
         }
 
         if self.is_allowed().await {
@@ -301,17 +308,22 @@ impl<T: SessionStream> Session<T> {
         self.write(b"250 2.1.5 OK\r\n").await
     }
 
-    async fn rcpt_error(&mut self, response: &[u8]) -> Result<(), ()> {
+    async fn rcpt_error(&mut self, response: &[u8], rcpt: String) -> Result<(), ()> {
         tokio::time::sleep(self.params.rcpt_errors_wait).await;
         self.data.rcpt_errors += 1;
         let has_too_many_errors = self.data.rcpt_errors >= self.params.rcpt_errors_max;
 
-        match self.server.is_rcpt_fail2banned(self.data.remote_ip).await {
+        match self
+            .server
+            .is_rcpt_fail2banned(self.data.remote_ip, &rcpt)
+            .await
+        {
             Ok(true) => {
                 trc::event!(
-                    Security(SecurityEvent::BruteForceBan),
+                    Security(SecurityEvent::AbuseBan),
                     SpanId = self.data.session_id,
                     RemoteIp = self.data.remote_ip,
+                    To = rcpt,
                 );
             }
             Ok(false) => {
@@ -320,6 +332,7 @@ impl<T: SessionStream> Session<T> {
                         Smtp(SmtpEvent::TooManyInvalidRcpt),
                         SpanId = self.data.session_id,
                         Limit = self.params.rcpt_errors_max,
+                        To = rcpt,
                     );
                 }
             }
