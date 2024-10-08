@@ -79,7 +79,7 @@ impl Security {
 
         // Parse blocked HTTP paths
         let mut http_banned_paths = config
-            .values("server.fail2ban.http-banned-paths")
+            .values("server.auto-ban.scan.paths")
             .filter_map(|(_, v)| {
                 let v = v.trim();
                 if !v.is_empty() {
@@ -117,17 +117,17 @@ impl Security {
             allowed_ip_addresses,
             allowed_ip_networks,
             auth_fail_rate: config
-                .property_or_default::<Option<Rate>>("server.fail2ban.authentication", "100/1d")
+                .property_or_default::<Option<Rate>>("server.auto-ban.auth.rate", "100/1d")
                 .unwrap_or_default(),
             rcpt_fail_rate: config
-                .property_or_default::<Option<Rate>>("server.fail2ban.invalid-rcpt", "35/1d")
+                .property_or_default::<Option<Rate>>("server.auto-ban.abuse.rate", "35/1d")
                 .unwrap_or_default(),
             loiter_fail_rate: config
-                .property_or_default::<Option<Rate>>("server.fail2ban.loitering", "150/1d")
+                .property_or_default::<Option<Rate>>("server.auto-ban.loiter.rate", "150/1d")
                 .unwrap_or_default(),
             http_banned_paths,
             scanner_fail_rate: config
-                .property_or_default::<Option<Rate>>("server.fail2ban.scanner", "30/1d")
+                .property_or_default::<Option<Rate>>("server.auto-ban.scan.rate", "30/1d")
                 .unwrap_or_default(),
         }
     }

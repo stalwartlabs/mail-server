@@ -69,7 +69,7 @@ Key features:
 - **Secure and robust**:
   - Encryption at rest with **S/MIME** or **OpenPGP**.
   - Automatic TLS certificate provisioning with [ACME](https://datatracker.ietf.org/doc/html/rfc8555) using `TLS-ALPN-01`, `DNS-01` or `HTTP-01` challenges.
-  - Automated blocking of hosts that perform brute-force attacks or scans (aka **fail2ban**).
+  - Automated blocking of IP addresses that attack, abuse or scan the server for exploits.
   - Rate limiting.
   - Security audited (read the [report](https://stalw.art/blog/security-audit)).
   - Memory safe (thanks to Rust).

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.10.4] - 2024-10-08
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin. 
+
+### Added
+- Detect and ban port scanners as well as other forms of abuse (#820).
+- ACME External Account Binding support (#379).
+
+### Changed
+- The settings `server.fail2ban.*` have been moved to `server.auto-ban.*`.
+- The event `security.brute-force-ban` is now `security.scan-ban`.
+
+### Fixed
+- Do not send SPF failures reports to local domains.
+- Allow `nonce` in OAuth code requests.
+- Warn when there are errors migrating domains rather than aborting migration.
+
 ## [0.10.3] - 2024-10-07
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin. Enterprise users wishing to use the new LLM-powered spam filter should also upgrade the spam filter rules.

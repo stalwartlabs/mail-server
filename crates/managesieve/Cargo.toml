@@ -1,6 +1,6 @@
 [package]
 name = "managesieve"
-version = "0.10.3"
+version = "0.10.4"
 edition = "2021"
 resolver = "2"
 
