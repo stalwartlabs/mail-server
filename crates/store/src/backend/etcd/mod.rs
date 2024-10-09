@@ -9,6 +9,12 @@ pub mod main;
 pub mod read;
 pub mod write;
 
+// See: https://etcd.io/docs/v3.4/dev-guide/limit/
+// maximum size of any request is 1.5 MiB
+
+// The default storage size limit is 2 GiB, configurable with --quota-backend-bytes flag. 8 GiB is a suggested maximum size for normal environments and etcd warns at startup if the configured value exceeds it.
+const MAX_VALUE_SIZE: usize = 2147483648;// 2 GiB
+
 #[allow(dead_code)]
 pub struct EtcdStore {
     client: KvClient,
