@@ -12,7 +12,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 
 ### Changed
 - The settings `server.fail2ban.*` have been moved to `server.auto-ban.*`.
-- The event `security.brute-force-ban` is now `security.scan-ban`.
+- The event `security.brute-force-ban` is now `security.abuse-ban`.
 
 ### Fixed
 - Do not send SPF failures reports to local domains.
