@@ -98,7 +98,7 @@ path = "{PATH}/test_antispam.db"
 #url = "redis://127.0.0.1"
 
 [enterprise.ai.dummy]
-endpoint = "https://127.0.0.1:9090/v1/chat/completions"
+url = "https://127.0.0.1:9090/v1/chat/completions"
 type = "chat"
 model = "gpt-dummy"
 allow-invalid-certs = true

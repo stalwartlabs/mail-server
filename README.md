@@ -129,8 +129,8 @@ These are some of our open-source sponsors:
 
 ## Roadmap
 
+- [ ] CalDAV, CardDAV and WebDAV support
 - [ ] JMAP Calendar, Contacts and Tasks support
-- [ ] CalDAV and CardDAV support
 - [ ] ActiveSync support
 
 See the [enhancement requests](https://github.com/stalwartlabs/mail-server/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc+label%3Aenhancement) page for a full list of proposed features by the community.
@@ -139,7 +139,7 @@ See the [enhancement requests](https://github.com/stalwartlabs/mail-server/issue
 
 Part of the development of this project was funded through the [NGI0 Entrust Fund](https://nlnet.nl/entrust), a fund established by [NLnet](https://nlnet.nl/) with financial support from the European Commission's [Next Generation Internet](https://ngi.eu/) programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 101069594.
 
-If you find the project useful you can help by [becoming a sponsor](https://liberapay.com/stalwartlabs). Thank you!
+If you find the project useful you can help by [becoming a sponsor](https://opencollective.com/stalwart). Thank you!
 
 ## License
 

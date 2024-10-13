@@ -728,7 +728,6 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     #[allow(unused_variables)]
-
     pub async fn assert_is_empty(&self, blob_store: crate::BlobStore) {
         use utils::codec::leb128::Leb128Iterator;
 

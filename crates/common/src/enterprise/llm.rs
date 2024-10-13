@@ -16,7 +16,7 @@ use utils::config::Config;
 
 use crate::config::parse_http_headers;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AiApiConfig {
     pub id: String,
     pub api_type: ApiType,
@@ -28,7 +28,7 @@ pub struct AiApiConfig {
     pub default_temperature: f64,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ApiType {
     ChatCompletion,
     TextCompletion,
@@ -199,7 +199,7 @@ impl AiApiConfig {
     }
 
     pub fn parse(config: &mut Config, id: &str) -> Option<Self> {
-        let url = config.value(("enterprise.ai", id, "endpoint"))?.to_string();
+        let url = config.value(("enterprise.ai", id, "url"))?.to_string();
         let api_type = match config.value(("enterprise.ai", id, "type"))? {
             "chat" => ApiType::ChatCompletion,
             "text" => ApiType::TextCompletion,
