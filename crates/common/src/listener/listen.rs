@@ -318,9 +318,13 @@ impl Listeners {
         #[cfg(not(target_env = "msvc"))]
         {
             if let Ok(run_as_user) = std::env::var("RUN_AS_USER") {
-                let mut pd = privdrop::PrivDrop::default().user(run_as_user);
+                let mut pd = privdrop::PrivDrop::default()
+                    .user(run_as_user)
+                    .fallback_to_ids_if_names_are_numeric();
                 if let Ok(run_as_group) = std::env::var("RUN_AS_GROUP") {
-                    pd = pd.group(run_as_group);
+                    pd = pd
+                        .group(run_as_group)
+                        .fallback_to_ids_if_names_are_numeric();
                 }
                 pd.apply().failed("Failed to drop privileges");
             }
