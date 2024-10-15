@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.10.5] - 2024-10-15
+
+To upgrade replace the `stalwart-mail` binary. 
+
+### Added
+- Data store CLI.
+
+### Changed
+
+### Fixed
+- Tokenizer performance issue (#863)
+- Incorrect AI model endpoint setting.
+
 ## [0.10.4] - 2024-10-08
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin. 

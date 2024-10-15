@@ -1,6 +1,6 @@
 [package]
 name = "jmap"
-version = "0.10.4"
+version = "0.10.5"
 edition = "2021"
 resolver = "2"
 
