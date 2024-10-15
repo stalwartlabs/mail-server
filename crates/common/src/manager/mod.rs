@@ -13,6 +13,7 @@ use self::config::ConfigManager;
 pub mod backup;
 pub mod boot;
 pub mod config;
+pub mod console;
 pub mod reload;
 pub mod restore;
 pub mod webadmin;

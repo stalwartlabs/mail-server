@@ -27,6 +27,7 @@ use crate::{
 use super::{
     backup::BackupParams,
     config::{ConfigManager, Patterns},
+    console::store_console,
     WEBADMIN_KEY,
 };
 
@@ -56,6 +57,7 @@ Options:
   -c, --config <PATH>              Start server with the specified configuration file
   -e, --export <PATH>              Export all store data to a specific path
   -i, --import <PATH>              Import store data from a specific path
+  -o, --console                    Open the store console
   -I, --init <PATH>                Initialize a new server at a specific path
   -h, --help                       Print help
   -V, --version                    Print version
@@ -63,16 +65,17 @@ Options:
 );
 
 #[derive(PartialEq, Eq)]
-enum ImportExport {
+enum StoreOp {
     Export(BackupParams),
     Import(PathBuf),
+    Console,
     None,
 }
 
 impl BootManager {
     pub async fn init() -> Self {
         let mut config_path = std::env::var("CONFIG_PATH").ok();
-        let mut import_export = ImportExport::None;
+        let mut import_export = StoreOp::None;
 
         if config_path.is_none() {
             let mut args = std::env::args().skip(1);
@@ -105,10 +108,13 @@ impl BootManager {
                         std::process::exit(0);
                     }
                     ("export" | "e", Some(value)) => {
-                        import_export = ImportExport::Export(BackupParams::new(value.into()));
+                        import_export = StoreOp::Export(BackupParams::new(value.into()));
                     }
                     ("import" | "i", Some(value)) => {
-                        import_export = ImportExport::Import(value.into());
+                        import_export = StoreOp::Import(value.into());
+                    }
+                    ("console" | "o", None) => {
+                        import_export = StoreOp::Console;
                     }
                     (_, None) => {
                         failed(&format!("Unrecognized command '{key}', try '--help'."));
@@ -120,7 +126,7 @@ impl BootManager {
             }
 
             if config_path.is_none() {
-                if import_export == ImportExport::None {
+                if import_export == StoreOp::None {
                     eprintln!("{HELP}");
                 } else {
                     eprintln!("Missing '--config' argument for import/export.")
@@ -181,7 +187,7 @@ impl BootManager {
         let telemetry = Telemetry::parse(&mut config, &stores);
 
         match import_export {
-            ImportExport::None => {
+            StoreOp::None => {
                 // Add hostname lookup if missing
                 let mut insert_keys = Vec::new();
                 if config
@@ -357,7 +363,7 @@ impl BootManager {
                     ipc_rxs,
                 }
             }
-            ImportExport::Export(path) => {
+            StoreOp::Export(path) => {
                 // Enable telemetry
                 telemetry.enable(false);
 
@@ -368,7 +374,7 @@ impl BootManager {
                     .await;
                 std::process::exit(0);
             }
-            ImportExport::Import(path) => {
+            StoreOp::Import(path) => {
                 // Enable telemetry
                 telemetry.enable(false);
 
@@ -377,6 +383,11 @@ impl BootManager {
                     .await
                     .restore(path)
                     .await;
+                std::process::exit(0);
+            }
+            StoreOp::Console => {
+                // Store console
+                store_console(Core::parse(&mut config, stores, manager).await.storage.data).await;
                 std::process::exit(0);
             }
         }
