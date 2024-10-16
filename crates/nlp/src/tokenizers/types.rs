@@ -68,12 +68,7 @@ impl<'x> Iterator for TypesTokenizer<'x> {
         }
 
         // Try parsing email
-        if self.tokenize_emails && token.word.is_email_atom()
-        /*&& self.peek_has_tokens(
-            &[TokenType::Punctuation('@'), TokenType::Punctuation('.')],
-            TokenType::Space,
-        )*/
-        {
+        if self.tokenize_emails && token.word.is_email_atom() {
             self.peek_rewind();
             if let Some(email) = self.try_parse_email() {
                 self.peek_advance();
@@ -83,9 +78,7 @@ impl<'x> Iterator for TypesTokenizer<'x> {
         }
 
         // Try parsing URL without scheme
-        if self.tokenize_urls_without_scheme && token.word.is_domain_atom(true)
-        //&& self.peek_has_tokens(&[TokenType::Punctuation('.')], TokenType::Space)
-        {
+        if self.tokenize_urls_without_scheme && token.word.is_domain_atom(true) {
             self.peek_rewind();
             if let Some(url) = self.try_parse_url(None) {
                 self.peek_advance();
@@ -246,30 +239,6 @@ impl<'x> TypesTokenizer<'x> {
     fn peek_rewind(&mut self) {
         self.peek_pos = 0;
     }
-
-    /*fn peek_has_tokens(
-        &mut self,
-        tokens: &[TokenType<&'_ str>],
-        stop_token: impl Fn(&TokenType<&'_ str>) -> bool,
-    ) -> bool {
-        let mut tokens = tokens.iter().copied();
-        let mut token = tokens.next().unwrap();
-        while let Some(t) = self.peek() {
-            if t.word == token {
-                if let Some(next_token) = tokens.next() {
-                    token = next_token;
-                } else {
-                    self.peek_rewind();
-                    return true;
-                }
-            } else if stop_token(&t.word) {
-                break;
-            }
-        }
-
-        self.peek_rewind();
-        false
-    }*/
 
     fn try_parse_url(
         &mut self,
@@ -498,6 +467,9 @@ impl<'x> TypesTokenizer<'x> {
         // Find local part
         loop {
             let token = self.peek()?;
+            if token.to - start_token.from > 255 {
+                return None;
+            }
             match token.word {
                 word if word.is_email_atom() => {
                     last_is_dot = false;
@@ -585,6 +557,10 @@ impl<'x> TypesTokenizer<'x> {
             }
             end_pos = token.to;
             restore_pos = self.peek_pos;
+
+            if end_pos - start_pos > 255 {
+                return None;
+            }
         }
         self.peek_pos = restore_pos;
 
