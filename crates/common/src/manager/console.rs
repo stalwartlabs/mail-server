@@ -56,17 +56,23 @@ pub async fn store_console(store: Store) {
                     println!("Scanning from {:?} to {:?}", from_key, to_key);
                     let mut from_key = from_key.into_iter();
                     let mut to_key = to_key.into_iter();
-                    let subspace = from_key.next().unwrap();
+                    let from_subspace = from_key.next().unwrap();
+                    let to_subspace = to_key.next().unwrap();
+
+                    if from_subspace != to_subspace {
+                        println!("Keys must be in the same subspace.");
+                        return;
+                    }
 
                     store
                         .iterate(
                             IterateParams::new(
                                 AnyKey {
-                                    subspace,
+                                    subspace: from_subspace,
                                     key: from_key.collect::<Vec<_>>(),
                                 },
                                 AnyKey {
-                                    subspace: to_key.next().unwrap(),
+                                    subspace: to_subspace,
                                     key: to_key.collect::<Vec<_>>(),
                                 },
                             )
@@ -77,9 +83,10 @@ pub async fn store_console(store: Store) {
                                     SUBSPACE_BITMAP_TAG,
                                     SUBSPACE_BITMAP_TEXT,
                                 ]
-                                .contains(&subspace),
+                                .contains(&from_subspace),
                             ),
                             |key, value| {
+                                print!("{}", char::from(from_subspace));
                                 print_escaped(key);
                                 print!(" : ");
                                 print_escaped(value);
@@ -92,18 +99,68 @@ pub async fn store_console(store: Store) {
                 }
             }
             "delete" => {
-                if parts.len() != 2 {
-                    println!("Usage: delete <key>");
+                if ![2, 3].contains(&parts.len()) {
+                    println!("Usage: delete <from_key> [<to_key>]");
                 } else if let Some(key) = parse_key(parts[1]) {
-                    println!("Deleting key: {:?}", key);
-                    let mut key = key.into_iter();
-                    let mut batch = BatchBuilder::new();
-                    batch.clear(ValueClass::Any(AnyClass {
-                        subspace: key.next().unwrap(),
-                        key: key.collect(),
-                    }));
-                    if let Err(err) = store.write(batch.build()).await {
-                        println!("Failed to delete key: {}", err);
+                    if let Some(to_key) = parse_key(parts[2]) {
+                        let mut from_key = key.into_iter();
+                        let mut to_key = to_key.into_iter();
+
+                        let from_key = AnyKey {
+                            subspace: from_key.next().unwrap(),
+                            key: from_key.collect::<Vec<_>>(),
+                        };
+                        let to_key = AnyKey {
+                            subspace: to_key.next().unwrap(),
+                            key: to_key.collect::<Vec<_>>(),
+                        };
+
+                        if from_key.subspace != to_key.subspace {
+                            println!("Keys must be in the same subspace.");
+                            return;
+                        }
+
+                        let mut total = 0;
+                        store
+                            .iterate(
+                                IterateParams::new(from_key.clone(), to_key.clone()).no_values(),
+                                |_, _| {
+                                    total += 1;
+                                    Ok(true)
+                                },
+                            )
+                            .await
+                            .expect("Failed to scan keys");
+
+                        if total > 0 {
+                            print!("Are you sure you want to delete {total} keys? (y/N): ");
+                            io::stdout().flush().unwrap();
+                            let mut response = String::new();
+                            io::stdin().read_line(&mut response).unwrap();
+                            if !response.trim().eq_ignore_ascii_case("y") {
+                                println!("Aborted.");
+                                return;
+                            }
+
+                            store
+                                .delete_range(from_key, to_key)
+                                .await
+                                .expect("Failed to delete keys");
+                            println!("Deleted {total} keys.");
+                        } else {
+                            println!("No keys found.");
+                        }
+                    } else {
+                        println!("Deleting key: {:?}", key);
+                        let mut key = key.into_iter();
+                        let mut batch = BatchBuilder::new();
+                        batch.clear(ValueClass::Any(AnyClass {
+                            subspace: key.next().unwrap(),
+                            key: key.collect(),
+                        }));
+                        if let Err(err) = store.write(batch.build()).await {
+                            println!("Failed to delete key: {}", err);
+                        }
                     }
                 }
             }
@@ -246,7 +303,7 @@ fn print_escaped(bytes: &[u8]) {
 fn print_help() {
     println!("Available commands:");
     println!("  scan <from_key> <to_key>");
-    println!("  delete <key>");
+    println!("  delete <from_key> [<to_key>]");
     println!("  get <key>");
     println!("  put <key> [<value>]");
     println!("  help");
