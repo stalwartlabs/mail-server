@@ -30,7 +30,7 @@ use store::{
     write::{now, BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, Serialize, ValueKey,
 };
-use trc::OutgoingReportEvent;
+use trc::{AddContext, OutgoingReportEvent};
 
 use crate::{queue::RecipientDomain, reporting::SmtpReporting};
 
@@ -366,7 +366,7 @@ impl TlsReporting for Server {
                         Ok(true)
                     }
                 })
-                .await?;
+                .await.caused_by(trc::location!())?;
 
             // Add policy
             report.policies.push(Policy {

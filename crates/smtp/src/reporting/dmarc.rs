@@ -24,7 +24,7 @@ use store::{
     write::{now, BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, Serialize, ValueKey,
 };
-use trc::OutgoingReportEvent;
+use trc::{AddContext, OutgoingReportEvent};
 use utils::config::Rate;
 
 use crate::{
@@ -559,7 +559,7 @@ impl DmarcReporting for Server {
                     }
                 },
             )
-            .await?;
+            .await.caused_by(trc::location!())?;
 
         for (record, count) in record_map {
             report = report.with_record(record.with_count(count));

@@ -12,6 +12,7 @@ use std::{
 use ahash::AHashMap;
 use nlp::language::stemmer::Stemmer;
 use roaring::RoaringBitmap;
+use trc::AddContext;
 
 use crate::{
     backend::MAX_TOKEN_LENGTH,
@@ -381,7 +382,8 @@ impl Store {
                     Ok(true)
                 },
             )
-            .await?;
+            .await
+            .caused_by(trc::location!())?;
 
             if is_intersect {
                 if is_first {

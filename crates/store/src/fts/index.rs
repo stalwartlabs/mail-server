@@ -15,6 +15,7 @@ use nlp::{
     },
     tokenizers::word::WordTokenizer,
 };
+use trc::AddContext;
 
 use crate::{
     backend::MAX_TOKEN_LENGTH,
@@ -294,7 +295,8 @@ impl Store {
                 Ok(true)
             },
         )
-        .await?;
+        .await
+        .caused_by(trc::location!())?;
 
         // Remove keys
         let mut batch = BatchBuilder::new();

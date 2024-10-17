@@ -135,7 +135,7 @@ impl DirectoryStore for Store {
                     Ok(true)
                 },
             )
-            .await?;
+            .await.caused_by(trc::location!())?;
         }
 
         Ok(results)

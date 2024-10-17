@@ -703,12 +703,14 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> De
         lz4_flex::decompress_size_prepended(bytes)
             .map_err(|err| {
                 trc::StoreEvent::DecompressError
+                    .ctx(trc::Key::Value, bytes)
                     .caused_by(trc::location!())
                     .reason(err)
             })
             .and_then(|result| {
                 bincode::deserialize(&result).map_err(|err| {
                     trc::StoreEvent::DataCorruption
+                        .ctx(trc::Key::Value, bytes)
                         .caused_by(trc::location!())
                         .reason(err)
                 })

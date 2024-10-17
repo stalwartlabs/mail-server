@@ -16,6 +16,7 @@ use store::{
     write::{BatchBuilder, ValueClass},
     Deserialize, IterateParams, Store, ValueKey,
 };
+use trc::AddContext;
 use utils::{
     config::{Config, ConfigKey},
     glob::GlobPattern,
@@ -166,7 +167,8 @@ impl ConfigManager {
                     Ok(true)
                 },
             )
-            .await?;
+            .await
+            .caused_by(trc::location!())?;
 
         Ok(results)
     }

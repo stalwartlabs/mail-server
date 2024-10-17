@@ -168,6 +168,7 @@ impl Server {
                 },
             )
             .await
+            .caused_by(trc::location!())
             .map(|_| total)
     }
 
