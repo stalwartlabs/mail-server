@@ -80,7 +80,7 @@ impl Core {
         let is_enterprise = enterprise.is_some();
 
         #[cfg(feature = "enterprise")]
-        if is_enterprise {
+        if !is_enterprise {
             if data.is_enterprise_store() {
                 config
                     .new_build_error("storage.data", "SQL read replicas is an Enterprise feature");
