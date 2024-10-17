@@ -118,7 +118,9 @@ impl Indexer for Server {
             )
             .await
             .map_err(|err| {
-                trc::error!(err.caused_by(trc::location!()).details("Failed to iterate over index emails"));
+                trc::error!(err
+                    .caused_by(trc::location!())
+                    .details("Failed to iterate over index emails"));
             });
 
         // Add entries to the index

@@ -366,7 +366,8 @@ impl TlsReporting for Server {
                         Ok(true)
                     }
                 })
-                .await.caused_by(trc::location!())?;
+                .await
+                .caused_by(trc::location!())?;
 
             // Add policy
             report.policies.push(Policy {

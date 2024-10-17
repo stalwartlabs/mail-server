@@ -206,7 +206,9 @@ impl QueueManagement for Server {
                     .iterate(
                         IterateParams::new(from_key, to_key).ascending(),
                         |key, value| {
-                            let message = Bincode::<queue::Message>::deserialize(value)?.inner;
+                            let message = Bincode::<queue::Message>::deserialize(value)
+                                .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?
+                                .inner;
                             let matches = tenant_domains
                                 .as_ref()
                                 .map_or(true, |domains| message.has_domain(domains))

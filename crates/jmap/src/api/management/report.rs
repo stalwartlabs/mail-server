@@ -227,7 +227,8 @@ impl ManageReports for Server {
                             Ok(max_total == 0 || total < max_total)
                         },
                     )
-                    .await.caused_by(trc::location!())?;
+                    .await
+                    .caused_by(trc::location!())?;
 
                 Ok(JsonResponse::new(json!({
                         "data": {
