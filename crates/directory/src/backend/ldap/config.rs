@@ -12,7 +12,7 @@ use utils::config::{utils::AsKey, Config};
 
 use crate::core::config::build_pool;
 
-use super::{Bind, LdapConnectionManager, LdapDirectory, LdapFilter, LdapMappings};
+use super::{AuthBind, Bind, LdapConnectionManager, LdapDirectory, LdapFilter, LdapMappings};
 
 impl LdapDirectory {
     pub fn from_config(config: &mut Config, prefix: impl AsKey, data_store: Store) -> Option<Self> {
@@ -107,7 +107,11 @@ impl LdapDirectory {
             .property_or_default::<bool>((&prefix, "bind.auth.enable"), "false")
             .unwrap_or_default()
         {
-            LdapFilter::from_config(config, (&prefix, "bind.auth.dn")).into()
+            let filter = LdapFilter::from_config(config, (&prefix, "bind.auth.dn"));
+            let search = config
+                .property_or_default::<bool>((&prefix, "bind.auth.search"), "true")
+                .unwrap_or(true);
+            Some(AuthBind { filter, search })
         } else {
             None
         };
