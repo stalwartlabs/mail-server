@@ -70,16 +70,16 @@ impl LdapDirectory {
                 };
 
                 if let Some(auth_bind) = &self.auth_bind {
-                    let (conn, mut ldap) = LdapConnAsync::with_settings(
+                    let (auth_bind_conn, mut ldap) = LdapConnAsync::with_settings(
                         self.pool.manager().settings.clone(),
                         &self.pool.manager().address,
                     )
                     .await
                     .map_err(|err| err.into_error().caused_by(trc::location!()))?;
 
-                    ldap3::drive!(conn);
+                    ldap3::drive!(auth_bind_conn);
 
-                    let dn = auth_bind.build(username);
+                    let dn = auth_bind.filter.build(username);
 
                     trc::event!(Store(trc::StoreEvent::LdapBind), Details = dn.clone());
 
@@ -93,10 +93,13 @@ impl LdapDirectory {
                         return Ok(None);
                     }
 
-                    match self
-                        .find_principal(&mut ldap, &self.mappings.filter_name.build(username))
-                        .await
-                    {
+                    let filter = &self.mappings.filter_name.build(username);
+                    let principal = if auth_bind.search {
+                        self.find_principal(&mut ldap, filter).await
+                    } else {
+                        self.find_principal(&mut conn, filter).await
+                    };
+                    match principal {
                         Ok(Some(principal)) => (
                             principal.with_field(PrincipalField::Name, username.to_string()),
                             None,

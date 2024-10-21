@@ -15,7 +15,7 @@ pub mod pool;
 pub struct LdapDirectory {
     pool: Pool<LdapConnectionManager>,
     mappings: LdapMappings,
-    auth_bind: Option<LdapFilter>,
+    auth_bind: Option<AuthBind>,
     pub(crate) data_store: Store,
 }
 
@@ -75,4 +75,9 @@ impl Bind {
     pub fn new(dn: String, password: String) -> Self {
         Self { dn, password }
     }
+}
+
+pub(crate) struct AuthBind {
+    filter: LdapFilter,
+    search: bool,
 }
