@@ -79,10 +79,18 @@ pub struct Userinfo {
 }
 
 #[derive(Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
-pub struct Nonce {
+pub struct StandardClaims {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub nonce: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub preferred_username: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 impl Server {
@@ -91,7 +99,7 @@ impl Server {
         subject: impl Into<String>,
         issuer: impl Into<String>,
         audience: impl Into<String>,
-        nonce: Option<impl Into<String>>,
+        claims: StandardClaims,
     ) -> trc::Result<String> {
         let now = now() as i64;
 
@@ -101,7 +109,7 @@ impl Server {
                 key_id: Some("default".into()),
                 ..Default::default()
             }),
-            ClaimsSet::<Nonce> {
+            ClaimsSet::<StandardClaims> {
                 registered: RegisteredClaims {
                     issuer: Some(issuer.into()),
                     subject: Some(subject.into()),
@@ -111,9 +119,7 @@ impl Server {
                     expiry: Some((now + self.core.oauth.oidc_expiry_id_token as i64).into()),
                     ..Default::default()
                 },
-                private: Nonce {
-                    nonce: nonce.map(Into::into),
-                },
+                private: claims,
             },
         )
         .into_encoded(&self.core.oauth.oidc_signing_secret)

@@ -11,7 +11,7 @@ use biscuit::{jwk::JWKSet, SingleOrMultiple, JWT};
 use bytes::Bytes;
 use common::auth::oauth::{
     introspect::OAuthIntrospect,
-    oidc::Nonce,
+    oidc::StandardClaims,
     registration::{ClientRegistrationRequest, ClientRegistrationResponse},
 };
 use imap_proto::ResponseType;
@@ -156,7 +156,7 @@ pub async fn test(params: &mut JMAPTest) {
         .is_empty());
 
     // Verify ID token using the JWK set
-    let id_token = JWT::<Nonce, biscuit::Empty>::new_encoded(&id_token)
+    let id_token = JWT::<StandardClaims, biscuit::Empty>::new_encoded(&id_token)
         .decode_with_jwks(&jwk_set, None)
         .unwrap();
     let claims = id_token.payload().unwrap();
@@ -169,6 +169,11 @@ pub async fn test(params: &mut JMAPTest) {
         Some(SingleOrMultiple::Single(client_id.to_string()))
     );
     assert_eq!(private_claims.nonce, Some("abc1234".to_string()));
+    assert_eq!(
+        private_claims.preferred_username,
+        Some("jdoe@example.com".to_string())
+    );
+    assert_eq!(private_claims.email, Some("jdoe@example.com".to_string()));
 
     // Introspect token
     let access_introspect: OAuthIntrospect = post_with_auth::<OAuthIntrospect>(

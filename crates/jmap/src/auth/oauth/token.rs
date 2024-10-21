@@ -5,12 +5,16 @@
  */
 
 use common::{
-    auth::{oauth::GrantType, AccessToken},
+    auth::{
+        oauth::{oidc::StandardClaims, GrantType},
+        AccessToken,
+    },
     Server,
 };
 use hyper::StatusCode;
 use std::future::Future;
 use store::write::Bincode;
+use trc::AddContext;
 
 use crate::api::{
     http::{HttpContext, HttpSessionData, ToHttpResponse},
@@ -292,7 +296,22 @@ impl TokenHandler for Server {
                 None
             },
             id_token: if with_id_token {
-                match self.issue_id_token(account_id.to_string(), issuer, client_id, nonce) {
+                // Obtain access token
+                let access_token = self
+                    .get_cached_access_token(account_id)
+                    .await
+                    .caused_by(trc::location!())?;
+
+                match self.issue_id_token(
+                    account_id.to_string(),
+                    issuer,
+                    client_id,
+                    StandardClaims {
+                        nonce,
+                        preferred_username: access_token.name.clone().into(),
+                        email: access_token.emails.first().cloned(),
+                    },
+                ) {
                     Ok(id_token) => Some(id_token),
                     Err(err) => {
                         trc::error!(err);
