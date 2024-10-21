@@ -16,7 +16,8 @@ use store::{
 use trc::AddContext;
 
 use crate::{
-    Permission, Principal, QueryBy, Type, MAX_TYPE_ID, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER,
+    Permission, Permissions, Principal, QueryBy, Type, MAX_TYPE_ID, ROLE_ADMIN, ROLE_TENANT_ADMIN,
+    ROLE_USER,
 };
 
 use super::{
@@ -37,6 +38,7 @@ pub struct PrincipalList {
 
 pub struct UpdatePrincipal<'x> {
     query: QueryBy<'x>,
+    allowed_permissions: Option<&'x Permissions>,
     changes: Vec<PrincipalUpdate>,
     tenant_id: Option<u32>,
     create_domains: bool,
@@ -54,6 +56,7 @@ pub trait ManageDirectory: Sized {
         &self,
         principal: Principal,
         tenant_id: Option<u32>,
+        allowed_permissions: Option<&Permissions>,
     ) -> trc::Result<u32>;
     async fn update_principal(&self, params: UpdatePrincipal<'_>) -> trc::Result<()>;
     async fn delete_principal(&self, by: QueryBy<'_>) -> trc::Result<()>;
@@ -192,6 +195,7 @@ impl ManageDirectory for Store {
         &self,
         mut principal: Principal,
         mut tenant_id: Option<u32>,
+        allowed_permissions: Option<&Permissions>,
     ) -> trc::Result<u32> {
         // Make sure the principal has a name
         let name = principal.name().to_lowercase();
@@ -358,7 +362,18 @@ impl ManageDirectory for Store {
                         .id() as u64;
 
                     if !permissions.contains(&permission) {
-                        permissions.push(permission);
+                        if allowed_permissions
+                            .as_ref()
+                            .map_or(true, |p| p.get(permission as usize))
+                            || field == PrincipalField::DisabledPermissions
+                        {
+                            permissions.push(permission);
+                        } else {
+                            return Err(error(
+                                "Invalid permission",
+                                format!("Your account cannot grant the {name:?} permission").into(),
+                            ));
+                        }
                     }
                 }
 
@@ -1339,7 +1354,20 @@ impl ManageDirectory for Store {
                             .id() as u64;
 
                         if !permissions.contains(&permission) {
-                            permissions.push(permission);
+                            if params
+                                .allowed_permissions
+                                .as_ref()
+                                .map_or(true, |p| p.get(permission as usize))
+                                || change.field == PrincipalField::DisabledPermissions
+                            {
+                                permissions.push(permission);
+                            } else {
+                                return Err(error(
+                                    "Invalid permission",
+                                    format!("Your account cannot grant the {name:?} permission")
+                                        .into(),
+                                ));
+                            }
                         }
                     }
 
@@ -1363,7 +1391,19 @@ impl ManageDirectory for Store {
                         })?
                         .id() as u64;
 
-                    principal.inner.append_int(change.field, permission);
+                    if params
+                        .allowed_permissions
+                        .as_ref()
+                        .map_or(true, |p| p.get(permission as usize))
+                        || change.field == PrincipalField::DisabledPermissions
+                    {
+                        principal.inner.append_int(change.field, permission);
+                    } else {
+                        return Err(error(
+                            "Invalid permission",
+                            format!("Your account cannot grant the {name:?} permission").into(),
+                        ));
+                    }
                 }
                 (
                     PrincipalAction::RemoveItem,
@@ -1810,6 +1850,7 @@ impl ValidateDirectory for Store {
                             .with_field(PrincipalField::Name, domain.to_string())
                             .with_field(PrincipalField::Description, domain.to_string()),
                         tenant_id,
+                        None,
                     )
                     .await
                     .caused_by(trc::location!())
@@ -1859,6 +1900,7 @@ impl<'x> UpdatePrincipal<'x> {
             changes: Vec::new(),
             create_domains: false,
             tenant_id: None,
+            allowed_permissions: None,
         }
     }
 
@@ -1868,6 +1910,7 @@ impl<'x> UpdatePrincipal<'x> {
             changes: Vec::new(),
             create_domains: false,
             tenant_id: None,
+            allowed_permissions: None,
         }
     }
 
@@ -1878,6 +1921,11 @@ impl<'x> UpdatePrincipal<'x> {
 
     pub fn with_updates(mut self, changes: Vec<PrincipalUpdate>) -> Self {
         self.changes = changes;
+        self
+    }
+
+    pub fn with_allowed_permissions(mut self, permissions: &'x Permissions) -> Self {
+        self.allowed_permissions = permissions.into();
         self
     }
 

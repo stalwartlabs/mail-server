@@ -33,7 +33,9 @@ async fn internal_directory() {
 
         // A principal without name should fail
         assert_eq!(
-            store.create_principal(Principal::default(), None).await,
+            store
+                .create_principal(Principal::default(), None, None)
+                .await,
             Err(manage::err_missing(PrincipalField::Name))
         );
 
@@ -48,6 +50,7 @@ async fn internal_directory() {
                 }
                 .into(),
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -61,6 +64,7 @@ async fn internal_directory() {
                         ..Default::default()
                     }
                     .into(),
+                    None,
                     None
                 )
                 .await,
@@ -77,6 +81,7 @@ async fn internal_directory() {
                         ..Default::default()
                     }
                     .into(),
+                    None,
                     None
                 )
                 .await,
@@ -92,6 +97,7 @@ async fn internal_directory() {
                     ..Default::default()
                 }
                 .into(),
+                None,
                 None,
             )
             .await
@@ -142,6 +148,7 @@ async fn internal_directory() {
                     ..Default::default()
                 }
                 .into(),
+                None,
                 None,
             )
             .await
@@ -201,6 +208,7 @@ async fn internal_directory() {
                         ..Default::default()
                     }
                     .into(),
+                    None,
                     None
                 )
                 .await,
@@ -220,6 +228,7 @@ async fn internal_directory() {
                     ..Default::default()
                 }
                 .into(),
+                None,
                 None,
             )
             .await
@@ -284,6 +293,7 @@ async fn internal_directory() {
                 }
                 .into(),
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -296,6 +306,7 @@ async fn internal_directory() {
                     ..Default::default()
                 }
                 .into(),
+                None,
                 None,
             )
             .await
@@ -755,6 +766,7 @@ impl TestInternalDirectory for Store {
                         PrincipalValue::StringList(vec![role.to_string()]),
                     ),
                 None,
+                None,
             )
             .await
             .unwrap()
@@ -779,6 +791,7 @@ impl TestInternalDirectory for Store {
                         PrincipalValue::StringList(vec!["user".to_string()]),
                     ),
                 None,
+                None,
             )
             .await
             .unwrap()
@@ -802,6 +815,7 @@ impl TestInternalDirectory for Store {
                         PrincipalField::Emails,
                         PrincipalValue::StringList(vec![login.to_string()]),
                     ),
+                None,
                 None,
             )
             .await
@@ -862,6 +876,7 @@ impl TestInternalDirectory for Store {
                 self.create_principal(
                     Principal::new(0, Type::Domain)
                         .with_field(PrincipalField::Name, domain.to_string()),
+                    None,
                     None,
                 )
                 .await

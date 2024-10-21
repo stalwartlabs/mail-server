@@ -167,6 +167,12 @@ impl RolePermissions {
         self.enabled.difference(&self.disabled);
         self.enabled
     }
+
+    pub fn finalize_as_ref(&self) -> Permissions {
+        let mut enabled = self.enabled.clone();
+        enabled.difference(&self.disabled);
+        enabled
+    }
 }
 
 fn tenant_admin_permissions() -> Arc<RolePermissions> {

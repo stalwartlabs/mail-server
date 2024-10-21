@@ -119,12 +119,39 @@ impl PrincipalManager for Server {
                     self.assert_supported_directory()?;
                 }
 
+                // Validate roles
+                let tenant_id = access_token.tenant.map(|t| t.id);
+                for name in principal
+                    .get_str_array(PrincipalField::Roles)
+                    .unwrap_or_default()
+                {
+                    if let Some(pinfo) = self
+                        .store()
+                        .get_principal_info(name)
+                        .await
+                        .caused_by(trc::location!())?
+                        .filter(|v| v.typ == Type::Role && v.has_tenant_access(tenant_id))
+                        .or_else(|| PrincipalField::Roles.map_internal_roles(name))
+                    {
+                        let role_permissions =
+                            self.get_role_permissions(pinfo.id).await?.finalize_as_ref();
+                        let mut allowed_permissions = role_permissions.clone();
+                        allowed_permissions.intersection(&access_token.permissions);
+                        if allowed_permissions != role_permissions {
+                            return Err(manage::error(
+                                "Invalid role",
+                                format!("Your account cannot grant the {name:?} role").into(),
+                            ));
+                        }
+                    }
+                }
+
                 // Create principal
                 let result = self
                     .core
                     .storage
                     .data
-                    .create_principal(principal, access_token.tenant.map(|t| t.id))
+                    .create_principal(principal, tenant_id, Some(&access_token.permissions))
                     .await?;
 
                 Ok(JsonResponse::new(json!({
@@ -416,6 +443,53 @@ impl PrincipalManager for Server {
                                     } else {
                                         expire_token = true;
                                     }
+
+                                    if change.field == PrincipalField::Roles
+                                        && matches!(
+                                            change.action,
+                                            PrincipalAction::AddItem | PrincipalAction::Set
+                                        )
+                                    {
+                                        let roles = match &change.value {
+                                            PrincipalValue::String(v) => std::slice::from_ref(v),
+                                            PrincipalValue::StringList(vec) => vec,
+                                            PrincipalValue::Integer(_)
+                                            | PrincipalValue::IntegerList(_) => continue,
+                                        };
+
+                                        // Validate roles
+                                        let tenant_id = access_token.tenant.map(|t| t.id);
+                                        for name in roles {
+                                            if let Some(pinfo) = self
+                                                .store()
+                                                .get_principal_info(name)
+                                                .await
+                                                .caused_by(trc::location!())?
+                                                .filter(|v| {
+                                                    v.typ == Type::Role
+                                                        && v.has_tenant_access(tenant_id)
+                                                })
+                                                .or_else(|| {
+                                                    PrincipalField::Roles.map_internal_roles(name)
+                                                })
+                                            {
+                                                let role_permissions = self
+                                                    .get_role_permissions(pinfo.id)
+                                                    .await?
+                                                    .finalize_as_ref();
+                                                let mut allowed_permissions =
+                                                    role_permissions.clone();
+                                                allowed_permissions
+                                                    .intersection(&access_token.permissions);
+                                                if allowed_permissions != role_permissions {
+                                                    return Err(manage::error(
+                                                        "Invalid role",
+                                                        format!("Your account cannot grant the {name:?} role").into(),
+                                                    ));
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -431,7 +505,8 @@ impl PrincipalManager for Server {
                             .update_principal(
                                 UpdatePrincipal::by_id(account_id)
                                     .with_updates(changes)
-                                    .with_tenant(access_token.tenant.map(|t| t.id)),
+                                    .with_tenant(access_token.tenant.map(|t| t.id))
+                                    .with_allowed_permissions(&access_token.permissions),
                             )
                             .await?;
 

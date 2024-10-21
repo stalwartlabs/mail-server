@@ -81,6 +81,7 @@ impl ClientRegistrationHandler for Server {
                     .with_field(PrincipalField::Emails, request.contacts.clone())
                     .with_opt_field(PrincipalField::Picture, request.logo_uri.clone()),
                 None,
+                None,
             )
             .await
             .caused_by(trc::location!())?;
