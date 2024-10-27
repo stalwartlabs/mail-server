@@ -8,6 +8,7 @@ use etcd_client::{KvClient, KvClientPrefix, Error as EtcdError};
 pub mod main;
 pub mod read;
 pub mod write;
+pub mod blob;
 
 // See: https://etcd.io/docs/v3.4/dev-guide/limit/
 // maximum size of any request is 1.5 MiB

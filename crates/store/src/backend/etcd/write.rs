@@ -256,8 +256,6 @@ impl EtcdStore {
                             (&result).into(),
                         );
 
-                        ;
-
                         let matches = match client.get(key, None).await {
                             Ok(res) => match res.kvs().first() {
                                 Some(value) => assert_value.matches(value.value()),
