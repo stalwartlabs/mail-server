@@ -98,12 +98,11 @@ pub async fn store_console(store: Store) {
                         .expect("Failed to scan keys");
                 }
             }
-            "delete" => {
-                if ![2, 3].contains(&parts.len()) {
-                    println!("Usage: delete <from_key> [<to_key>]");
-                } else if let Some(key) = parse_key(parts[1]) {
-                    if let Some(to_key) = parse_key(parts[2]) {
-                        let mut from_key = key.into_iter();
+            "delete" => match (parts.get(1), parts.get(2)) {
+                (Some(from_key), Some(to_key)) => {
+                    if let (Some(from_key), Some(to_key)) = (parse_key(from_key), parse_key(to_key))
+                    {
+                        let mut from_key = from_key.into_iter();
                         let mut to_key = to_key.into_iter();
 
                         let from_key = AnyKey {
@@ -150,7 +149,10 @@ pub async fn store_console(store: Store) {
                         } else {
                             println!("No keys found.");
                         }
-                    } else {
+                    }
+                }
+                (Some(key), None) => {
+                    if let Some(key) = parse_key(key) {
                         println!("Deleting key: {:?}", key);
                         let mut key = key.into_iter();
                         let mut batch = BatchBuilder::new();
@@ -163,7 +165,10 @@ pub async fn store_console(store: Store) {
                         }
                     }
                 }
-            }
+                _ => {
+                    println!("Usage: delete <from_key> [<to_key>]");
+                }
+            },
             "get" => {
                 if parts.len() != 2 {
                     println!("Usage: get <key>");
