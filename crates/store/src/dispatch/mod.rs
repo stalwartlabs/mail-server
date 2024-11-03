@@ -18,6 +18,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(_) => "sqlite",
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(_) => "rqlite",
             #[cfg(feature = "foundation")]
             Self::FoundationDb(_) => "foundationdb",
             #[cfg(feature = "postgres")]

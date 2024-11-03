@@ -43,6 +43,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_value(key).await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.get_value(key).await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.get_value(key).await,
             #[cfg(feature = "postgres")]
@@ -65,6 +67,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_bitmap(key).await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.get_bitmap(key).await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.get_bitmap(key).await,
             #[cfg(feature = "postgres")]
@@ -111,6 +115,8 @@ impl Store {
         let result = match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.iterate(params, cb).await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.iterate(params, cb).await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.iterate(params, cb).await,
             #[cfg(feature = "postgres")]
@@ -140,6 +146,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_counter(key).await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.get_counter(key).await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.get_counter(key).await,
             #[cfg(feature = "postgres")]
@@ -230,8 +238,10 @@ impl Store {
             }
 
             match self {
+                #[cfg(feature = "rqlite")]
+                Sel::SQLiRe(store) => store.write(batch).await,
                 #[cfg(feature = "sqlite")]
-                Self::SQLite(store) => store.write(batch).await,
+                    Self::SQLite(store) => store.write(batch).await,
                 #[cfg(feature = "foundation")]
                 Self::FoundationDb(store) => store.write(batch).await,
                 #[cfg(feature = "postgres")]
@@ -279,6 +289,8 @@ impl Store {
         let result = match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.write(batch).await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.write(batch).await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.write(batch).await,
             #[cfg(feature = "postgres")]
@@ -335,6 +347,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.purge_store().await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.purge_store().await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.purge_store().await,
             #[cfg(feature = "postgres")]
@@ -354,6 +368,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.delete_range(from, to).await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.delete_range(from, to).await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.delete_range(from, to).await,
             #[cfg(feature = "postgres")]
@@ -527,6 +543,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.get_blob(key, range).await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.get_blob(key, range).await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.get_blob(key, range).await,
             #[cfg(feature = "postgres")]
@@ -546,6 +564,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.put_blob(key, data).await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.put_blob(key, data).await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.put_blob(key, data).await,
             #[cfg(feature = "postgres")]
@@ -565,6 +585,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(store) => store.delete_blob(key).await,
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(store) => store.delete_blob(key).await,
             #[cfg(feature = "foundation")]
             Self::FoundationDb(store) => store.delete_blob(key).await,
             #[cfg(feature = "postgres")]

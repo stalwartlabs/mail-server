@@ -5,9 +5,10 @@ edition = "2021"
 resolver = "2"
 
 [features]
-#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
+#default = ["sqlite", "rqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
 default = ["rocks"]
 sqlite = ["store/sqlite"]
+rqlite = ["store/rqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
 postgres = ["store/postgres"]
 mysql = ["store/mysql"]

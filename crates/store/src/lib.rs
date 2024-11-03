@@ -35,6 +35,9 @@ use backend::mysql::MysqlStore;
 #[cfg(feature = "sqlite")]
 use backend::sqlite::SqliteStore;
 
+#[cfg(feature = "rqlite")]
+use backend::rqlite::RqliteStore;
+
 #[cfg(feature = "foundation")]
 use backend::foundationdb::FdbStore;
 
@@ -180,6 +183,8 @@ pub struct Stores {
 pub enum Store {
     #[cfg(feature = "sqlite")]
     SQLite(Arc<SqliteStore>),
+    #[cfg(feature = "rqlite")]
+    RQLite(Arc<RqliteStore>),
     #[cfg(feature = "foundation")]
     FoundationDb(Arc<FdbStore>),
     #[cfg(feature = "postgres")]
@@ -240,6 +245,13 @@ pub enum InMemoryStore {
 impl From<SqliteStore> for Store {
     fn from(store: SqliteStore) -> Self {
         Self::SQLite(Arc::new(store))
+    }
+}
+
+#[cfg(feature = "rqlite")]
+impl From<RqliteStore> for Store {
+    fn from(store: RqliteStore) -> Self {
+        Self::RQLite(Arc::new(store))
     }
 }
 
@@ -692,6 +704,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Store::SQLite(_) => true,
+            #[cfg(feature = "rqlite")]
+            Store::RQLite(_) => true,
             #[cfg(feature = "postgres")]
             Store::PostgreSQL(_) => true,
             #[cfg(feature = "mysql")]
@@ -706,6 +720,8 @@ impl Store {
         match self {
             #[cfg(feature = "sqlite")]
             Store::SQLite(_) => true,
+            #[cfg(feature = "rqlite")]
+            Store::RQLite(_) => true,
             #[cfg(feature = "postgres")]
             Store::PostgreSQL(_) => true,
             _ => false,
@@ -732,6 +748,8 @@ impl std::fmt::Debug for Store {
         match self {
             #[cfg(feature = "sqlite")]
             Self::SQLite(_) => f.debug_tuple("SQLite").finish(),
+            #[cfg(feature = "rqlite")]
+            Self::RQLite(_) => f.debug_tuple("RQLite").finish(),
             #[cfg(feature = "foundation")]
             Self::FoundationDb(_) => f.debug_tuple("FoundationDb").finish(),
             #[cfg(feature = "postgres")]

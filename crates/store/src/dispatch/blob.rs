@@ -22,6 +22,8 @@ impl BlobStore {
             BlobBackend::Store(store) => match store {
                 #[cfg(feature = "sqlite")]
                 Store::SQLite(store) => store.get_blob(key, read_range).await,
+                #[cfg(feature = "rqlite")]
+                Store::RQLite(store) => store.get_blob(key, read_range).await,
                 #[cfg(feature = "foundation")]
                 Store::FoundationDb(store) => store.get_blob(key, read_range).await,
                 #[cfg(feature = "postgres")]
@@ -104,6 +106,8 @@ impl BlobStore {
             BlobBackend::Store(store) => match store {
                 #[cfg(feature = "sqlite")]
                 Store::SQLite(store) => store.put_blob(key, data.as_ref()).await,
+                #[cfg(feature = "rqlite")]
+                Store::RQLite(store) => store.put_blob(key, data.as_ref()).await,
                 #[cfg(feature = "foundation")]
                 Store::FoundationDb(store) => store.put_blob(key, data.as_ref()).await,
                 #[cfg(feature = "postgres")]
@@ -142,6 +146,8 @@ impl BlobStore {
             BlobBackend::Store(store) => match store {
                 #[cfg(feature = "sqlite")]
                 Store::SQLite(store) => store.delete_blob(key).await,
+                #[cfg(feature = "rqlite")]
+                Store::RQLite(store) => store.delete_blob(key).await,
                 #[cfg(feature = "foundation")]
                 Store::FoundationDb(store) => store.delete_blob(key).await,
                 #[cfg(feature = "postgres")]
