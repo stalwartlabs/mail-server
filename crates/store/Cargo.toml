@@ -11,6 +11,7 @@ trc = { path = "../trc" }
 rocksdb = { version = "0.23", optional = true, features = ["multi-threaded-cf"] }
 foundationdb = { version = "0.9.0", features = ["embedded-fdb-include", "fdb-7_1"], optional = true }
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+rqlite-rs = { version = "0.3.20", optional = true }
 rust-s3 = { version = "=0.35.0-alpha.2", default-features = false, features = ["tokio-rustls-tls", "no-verify-ssl"], optional = true }
 azure_core = { version = "0.21.0", optional = true }
 azure_storage = { version = "0.21.0", default-features = false, features = ["enable_reqwest_rustls", "hmac_rust"], optional = true }
@@ -56,6 +57,7 @@ tokio = { version = "1.23", features = ["full"] }
 [features]
 rocks = ["rocksdb", "rayon", "num_cpus"]
 sqlite = ["rusqlite", "rayon", "r2d2", "num_cpus", "lru-cache"]
+rqlite = ["rqlite-rs"]
 postgres = ["tokio-postgres", "deadpool-postgres", "tokio-rustls", "rustls", "ring", "rustls-pki-types", "futures", "bytes"]
 elastic = ["elasticsearch", "serde_json"]
 mysql = ["mysql_async", "futures"]
@@ -67,5 +69,3 @@ redis = ["dep:redis", "deadpool"]
 enterprise = []
 
 test_mode = []
-
-
