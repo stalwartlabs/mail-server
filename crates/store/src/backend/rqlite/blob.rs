@@ -8,9 +8,9 @@ use std::ops::Range;
 
 use rusqlite::OptionalExtension;
 
-use super::{into_error, SqliteStore};
+use super::{into_error, RqliteStore};
 
-impl SqliteStore {
+impl RqliteStore {
     pub(crate) async fn get_blob(
         &self,
         key: &[u8],
@@ -19,12 +19,14 @@ impl SqliteStore {
         let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
             let mut result = conn
-                .prepare_cached("SELECT v FROM t WHERE k = ?")
+                .exec(rqlite_rs::query!("SELECT v FROM t WHERE k = ?", key))
+                .await
                 .map_err(into_error)?;
             result
-                .query_row([&key], |row| {
+                .first()
+                .map(|row| {
                     Ok({
-                        let bytes = row.get_ref(0)?.as_bytes()?;
+                        let bytes = row.get_by_index(0)?.as_bytes()?;
                         if range.start == 0 && range.end == usize::MAX {
                             bytes.to_vec()
                         } else {
@@ -35,7 +37,6 @@ impl SqliteStore {
                         }
                     })
                 })
-                .optional()
                 .map_err(into_error)
         })
         .await
@@ -44,11 +45,14 @@ impl SqliteStore {
     pub(crate) async fn put_blob(&self, key: &[u8], data: &[u8]) -> trc::Result<()> {
         let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
-            conn.prepare_cached("INSERT OR REPLACE INTO t (k, v) VALUES (?, ?)")
-                .map_err(into_error)?
-                .execute([key, data])
-                .map_err(into_error)
-                .map(|_| ())
+            conn.exec(rqlite_rs::query!(
+                "INSERT OR REPLACE INTO t (k, v) VALUES (?, ?)",
+                key,
+                data
+            ))
+            .await
+            .map_err(into_error)
+            .map(|_| ())
         })
         .await
     }
@@ -56,9 +60,8 @@ impl SqliteStore {
     pub(crate) async fn delete_blob(&self, key: &[u8]) -> trc::Result<bool> {
         let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
-            conn.prepare_cached("DELETE FROM t WHERE k = ?")
-                .map_err(into_error)?
-                .execute([key])
+            conn.exec(rqlite_rs::query!("DELETE FROM t WHERE k = ?", key))
+                .await
                 .map_err(into_error)
                 .map(|_| true)
         })

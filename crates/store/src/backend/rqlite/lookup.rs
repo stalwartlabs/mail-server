@@ -3,14 +3,14 @@
  *
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
-
-use rusqlite::{types::FromSql, Row, Rows, ToSql};
+use rqlite_rs::query::arguments::RqliteArgument;
+use rqlite_rs::query::{Operation, RqliteQuery};
 
 use crate::{IntoRows, QueryResult, QueryType, Value};
 
-use super::{into_error, SqliteStore};
+use super::{into_error, RqliteStore};
 
-impl SqliteStore {
+impl RqliteStore {
     pub(crate) async fn query<T: QueryResult>(
         &self,
         query: &str,
@@ -18,26 +18,36 @@ impl SqliteStore {
     ) -> trc::Result<T> {
         let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
-            let mut s = conn.prepare_cached(query).map_err(into_error)?;
-            let params = params_
-                .iter()
-                .map(|v| v as &(dyn rusqlite::types::ToSql))
-                .collect::<Vec<_>>();
+            let params: Vec<RqliteArgument> =
+                params_.iter().map(|v| (&v.to_owned()).into()).collect();
+
+            let mut query = RqliteQuery {
+                query: query.to_string(),
+                args: params,
+                op: Operation::Select,
+            };
 
             match T::query_type() {
-                QueryType::Execute => s
-                    .execute(params.as_slice())
+                QueryType::Execute => conn
+                    .exec(query)
+                    .await
+                    .map_err(into_error)?
                     .map_or_else(|e| Err(into_error(e)), |r| Ok(T::from_exec(r))),
-                QueryType::Exists => s
-                    .exists(params.as_slice())
+                QueryType::Exists => conn
+                    .fetch(query)
+                    .await
+                    .map_err(into_error)?
+                    .first()
                     .map(T::from_exists)
                     .map_err(into_error),
-                QueryType::QueryOne => s
-                    .query(params.as_slice())
-                    .and_then(|mut rows| Ok(T::from_query_one(rows.next()?)))
+                QueryType::QueryOne => conn
+                    .fetch(query)
+                    .await
+                    .map_err(into_error)?
+                    .and_then(|mut rows| Ok(T::from_query_one(rows.first()?)))
                     .map_err(into_error),
                 QueryType::QueryAll => Ok(T::from_query_all(
-                    s.query(params.as_slice()).map_err(into_error)?,
+                    conn.fetch(query).await.map_err(into_error)?,
                 )),
             }
         })
@@ -45,21 +55,20 @@ impl SqliteStore {
     }
 }
 
-impl ToSql for Value<'_> {
-    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
-        match self {
-            Value::Integer(value) => value.to_sql(),
-            Value::Bool(value) => value.to_sql(),
-            Value::Float(value) => value.to_sql(),
-            Value::Text(value) => value.to_sql(),
-            Value::Blob(value) => value.to_sql(),
-            Value::Null => Ok(rusqlite::types::ToSqlOutput::Owned(
-                rusqlite::types::Value::Null,
-            )),
+impl From<&Value<'_>> for RqliteArgument {
+    fn from(value: &Value<'_>) -> RqliteArgument {
+        match value {
+            Value::Integer(u) => RqliteArgument::I64(*u as i64),
+            Value::Bool(b) => RqliteArgument::Bool(*b),
+            Value::Float(f) => RqliteArgument::F64(*f as f64),
+            Value::Text(s) => RqliteArgument::String(s.to_string()),
+            Value::Blob(blob) => RqliteArgument::Blob(blob.to_vec()),
+            Value::Null => RqliteArgument::Null,
         }
     }
 }
 
+/*
 impl FromSql for Value<'static> {
     fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
         Ok(match value {
@@ -72,8 +81,9 @@ impl FromSql for Value<'static> {
             rusqlite::types::ValueRef::Blob(v) => Value::Blob(v.to_vec().into()),
         })
     }
-}
+} */
 
+/*
 impl IntoRows for Rows<'_> {
     fn into_rows(mut self) -> crate::Rows {
         let column_count = self.as_ref().map(|s| s.column_count()).unwrap_or_default();
@@ -124,7 +134,8 @@ impl IntoRows for Rows<'_> {
         unreachable!()
     }
 }
-
+*/
+/*
 impl IntoRows for Option<&Row<'_>> {
     fn into_row(self) -> Option<crate::Row> {
         self.map(|row| crate::Row {
@@ -142,3 +153,4 @@ impl IntoRows for Option<&Row<'_>> {
         unreachable!()
     }
 }
+*/

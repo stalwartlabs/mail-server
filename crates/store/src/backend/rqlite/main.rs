@@ -10,11 +10,17 @@ use utils::config::{utils::AsKey, Config};
 
 use crate::*;
 
-use super::{into_error, pool::SqliteConnectionManager, SqliteStore};
+use super::{into_error, pool::RqliteConnectionManager, RqliteStore};
 
-impl SqliteStore {
-    pub fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
+impl RqliteStore {
+    pub async fn open(config: &mut Config, prefix: impl AsKey) -> Option<Self> {
         let prefix = prefix.as_key();
+        let endpoints = config
+            .properties::<String>((&prefix, "endpoints"))
+            .into_iter()
+            .map(|(_key, addr_str)| addr_str)
+            .collect::<Vec<String>>();
+
         let db = Self {
             conn_pool: Pool::builder()
                 .max_size(
@@ -22,17 +28,7 @@ impl SqliteStore {
                         .property((&prefix, "pool.max-connections"))
                         .unwrap_or_else(|| (num_cpus::get() * 4) as u32),
                 )
-                .build(
-                    SqliteConnectionManager::file(config.value_require((&prefix, "path"))?)
-                        .with_init(|c| {
-                            c.execute_batch(concat!(
-                                "PRAGMA journal_mode = WAL; ",
-                                "PRAGMA synchronous = NORMAL; ",
-                                "PRAGMA temp_store = memory;",
-                                "PRAGMA busy_timeout = 30000;"
-                            ))
-                        }),
-                )
+                .build(RqliteConnectionManager::endpoints(endpoints))
                 .map_err(|err| {
                     config.new_build_error(
                         prefix.as_str(),
@@ -58,40 +54,20 @@ impl SqliteStore {
                 .ok()?,
         };
 
-        if let Err(err) = db.create_tables() {
+        if let Err(err) = db.create_tables().await {
             config.new_build_error(prefix.as_str(), format!("Failed to create tables: {err}"));
         }
 
         Some(db)
     }
 
-    #[cfg(feature = "test_mode")]
-    pub fn open_memory() -> trc::Result<Self> {
-        use super::into_error;
-
-        let db = Self {
-            conn_pool: Pool::builder()
-                .max_size(1)
-                .build(SqliteConnectionManager::memory())
-                .map_err(into_error)?,
-            worker_pool: rayon::ThreadPoolBuilder::new()
-                .num_threads(num_cpus::get())
-                .build()
-                .map_err(|err| {
-                    into_error(err).ctx(trc::Key::Reason, "Failed to build worker pool")
-                })?,
-        };
-        db.create_tables()?;
-        Ok(db)
-    }
-
-    pub(super) fn create_tables(&self) -> trc::Result<()> {
+    pub(crate) async fn create_tables(&self) -> trc::Result<()> {
         let conn = self.conn_pool.get().map_err(into_error)?;
 
         for table in [
             SUBSPACE_ACL,
             SUBSPACE_DIRECTORY,
-            SUBSPACE_FTS_QUEUE,
+            SUBSPACE_TASK_QUEUE,
             SUBSPACE_BLOB_RESERVE,
             SUBSPACE_BLOB_LINK,
             SUBSPACE_LOOKUP_VALUE,
@@ -103,23 +79,32 @@ impl SqliteStore {
             SUBSPACE_REPORT_IN,
             SUBSPACE_FTS_INDEX,
             SUBSPACE_LOGS,
-            SUBSPACE_BLOBS,
             SUBSPACE_TELEMETRY_SPAN,
             SUBSPACE_TELEMETRY_METRIC,
             SUBSPACE_TELEMETRY_INDEX,
         ] {
             let table = char::from(table);
-            conn.execute(
-                &format!(
-                    "CREATE TABLE IF NOT EXISTS {table} (
-                        k BLOB PRIMARY KEY,
-                        v BLOB NOT NULL
-                    )"
-                ),
-                [],
-            )
+            conn.exec(rqlite_rs::query!(&format!(
+                "CREATE TABLE IF NOT EXISTS {table} (
+                            k TINYBLOB,
+                            v MEDIUMBLOB NOT NULL,
+                            PRIMARY KEY (k(255))
+                        ) ENGINE=InnoDB"
+            )))
+            .await
             .map_err(into_error)?;
         }
+
+        conn.exec(rqlite_rs::query!(&format!(
+            "CREATE TABLE IF NOT EXISTS {} (
+                        k TINYBLOB,
+                        v LONGBLOB NOT NULL,
+                        PRIMARY KEY (k(255))
+                    ) ENGINE=InnoDB",
+            char::from(SUBSPACE_BLOBS),
+        )))
+        .await
+        .map_err(into_error)?;
 
         for table in [
             SUBSPACE_INDEXES,
@@ -128,28 +113,26 @@ impl SqliteStore {
             SUBSPACE_BITMAP_TEXT,
         ] {
             let table = char::from(table);
-            conn.execute(
-                &format!(
-                    "CREATE TABLE IF NOT EXISTS {table} (
-                        k BLOB PRIMARY KEY
-                    )"
-                ),
-                [],
-            )
+            conn.exec(rqlite_rs::query!(&format!(
+                "CREATE TABLE IF NOT EXISTS {table} (
+                            k BLOB,
+                            PRIMARY KEY (k(400))
+                        ) ENGINE=InnoDB"
+            )))
+            .await
             .map_err(into_error)?;
         }
 
         for table in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
-            conn.execute(
-                &format!(
-                    "CREATE TABLE IF NOT EXISTS {} (
-                    k BLOB PRIMARY KEY,
-                    v INTEGER NOT NULL DEFAULT 0
-                )",
-                    char::from(table)
-                ),
-                [],
-            )
+            conn.exec(rqlite_rs::query!(&format!(
+                "CREATE TABLE IF NOT EXISTS {} (
+                            k TINYBLOB,
+                            v BIGINT NOT NULL DEFAULT 0,
+                            PRIMARY KEY (k(255))
+                        ) ENGINE=InnoDB",
+                char::from(table)
+            )))
+            .await
             .map_err(into_error)?;
         }
 

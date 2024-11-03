@@ -5,7 +5,7 @@
  */
 
 use roaring::RoaringBitmap;
-use rusqlite::{params, OptionalExtension, TransactionBehavior};
+use rqlite_rs::query::RqliteQuery;
 
 use crate::{
     write::{
@@ -15,9 +15,9 @@ use crate::{
     BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
 };
 
-use super::{into_error, SqliteStore};
+use super::{into_error, RqliteStore};
 
-impl SqliteStore {
+impl RqliteStore {
     pub(crate) async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
         let mut conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
@@ -25,9 +25,7 @@ impl SqliteStore {
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;
             let mut change_id = u64::MAX;
-            let trx = conn
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(into_error)?;
+            let queries: Vec<RqliteQuery> = vec![];
             let mut result = AssignedIds::default();
 
             for op in &batch.ops {
@@ -64,55 +62,75 @@ impl SqliteStore {
 
                         match op {
                             ValueOp::Set(value) => {
-                                trx.prepare_cached(&format!(
-                                    "INSERT OR REPLACE INTO {} (k, v) VALUES (?, ?)",
-                                    table
-                                ))
-                                .map_err(into_error)?
-                                .execute([&key, value.resolve(&result)?.as_ref()])
-                                .map_err(into_error)?;
+                                queries.push(
+                                    rqlite_rs::query!(
+                                        &format!(
+                                            "INSERT OR REPLACE INTO {} (k, v) VALUES (?, ?)",
+                                            table
+                                        ),
+                                        key,
+                                        value.resolve(&result)?.as_ref()
+                                    )
+                                    .await,
+                                );
                             }
                             ValueOp::AtomicAdd(by) => {
                                 if *by >= 0 {
-                                    trx.prepare_cached(&format!(
-                                        concat!(
-                                            "INSERT INTO {} (k, v) VALUES (?, ?) ",
-                                            "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
-                                        ),
-                                        table
-                                    ))
-                                    .map_err(into_error)?
-                                    .execute(params![&key, *by])
-                                    .map_err(into_error)?;
+                                    queries.push(
+                                        rqlite_rs::query!(
+                                            &format!(
+                                                concat!(
+                                                "INSERT INTO {} (k, v) VALUES (?, ?) ",
+                                                "ON CONFLICT(k) DO UPDATE SET v = v + excluded.v"
+                                            ),
+                                                table
+                                            ),
+                                            key,
+                                            *by
+                                        )
+                                        .await,
+                                    );
                                 } else {
-                                    trx.prepare_cached(&format!(
-                                        "UPDATE {table} SET v = v + ? WHERE k = ?"
-                                    ))
-                                    .map_err(into_error)?
-                                    .execute(params![*by, &key])
-                                    .map_err(into_error)?;
+                                    queries.push(
+                                        rqlite_rs::query!(
+                                            &format!("UPDATE {table} SET v = v + ? WHERE k = ?"),
+                                            *by,
+                                            key
+                                        )
+                                        .await,
+                                    );
                                 }
                             }
                             ValueOp::AddAndGet(by) => {
+                                // NOTE: escapes the transaction
                                 result.push_counter_id(
-                                    trx.prepare_cached(&format!(
-                                        concat!(
-                                            "INSERT INTO {} (k, v) VALUES (?, ?) ",
-                                            "ON CONFLICT(k) DO UPDATE SET v = v + ",
-                                            "excluded.v RETURNING v"
-                                        ),
-                                        table
-                                    ))
+                                    conn.fetch(
+                                        rqlite_rs::query!(
+                                            &format!(
+                                                concat!(
+                                                    "INSERT INTO {} (k, v) VALUES (?, ?) ",
+                                                    "ON CONFLICT(k) DO UPDATE SET v = v + ",
+                                                    "excluded.v RETURNING v"
+                                                ),
+                                                table
+                                            ),
+                                            key,
+                                            *by
+                                        )
+                                        .await,
+                                    )
+                                    .await
                                     .map_err(into_error)?
-                                    .query_row(params![&key, &by], |row| row.get::<_, i64>(0))
+                                    .first()
+                                    .map(|row| row.get::<_, i64>(0))
                                     .map_err(into_error)?,
                                 );
                             }
                             ValueOp::Clear => {
-                                trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))
-                                    .map_err(into_error)?
-                                    .execute([&key])
-                                    .map_err(into_error)?;
+                                queries.push(rqlite_rs::query!(
+                                    &format!("DELETE FROM {} WHERE k = ?", table),
+                                    key
+                                ));
                             }
                         }
                     }
@@ -127,15 +145,12 @@ impl SqliteStore {
                         .serialize(0);
 
                         if *set {
-                            trx.prepare_cached("INSERT OR IGNORE INTO i (k) VALUES (?)")
-                                .map_err(into_error)?
-                                .execute([&key])
-                                .map_err(into_error)?;
+                            queries.push(
+                                rqlite_rs::query!("INSERT OR IGNORE INTO i (k) VALUES (?)", key)
+                                    .await,
+                            );
                         } else {
-                            trx.prepare_cached("DELETE FROM i WHERE k = ?")
-                                .map_err(into_error)?
-                                .execute([&key])
-                                .map_err(into_error)?;
+                            queries.push(rqlite_rs::query!("DELETE FROM i WHERE k = ?", key).await);
                         }
                     }
                     Operation::Bitmap { class, set } => {
@@ -158,14 +173,19 @@ impl SqliteStore {
                             .serialize(0);
                             let key_len = begin.len();
 
-                            let mut query = trx
-                                .prepare_cached("SELECT k FROM b WHERE k >= ? AND k <= ?")
-                                .map_err(into_error)?;
-                            let mut rows = query.query([&begin, &end]).map_err(into_error)?;
+                            // NOTE: escapes the transaction
+                            let rows = rqlite_rs::query!(
+                                "SELECT k FROM b WHERE k >= ? AND k <= ?",
+                                begin,
+                                end
+                            )
+                            .await
+                            .map_err(into_error)?;
+
                             let mut found_ids = RoaringBitmap::new();
-                            while let Some(row) = rows.next().map_err(into_error)? {
+                            for row in rows {
                                 let key = row
-                                    .get_ref(0)
+                                    .get_by_index(0)
                                     .map_err(into_error)?
                                     .as_bytes()
                                     .map_err(into_error)?;
@@ -188,24 +208,26 @@ impl SqliteStore {
 
                         if *set {
                             if is_document_id {
-                                trx.prepare_cached("INSERT INTO b (k) VALUES (?)")
-                                    .map_err(into_error)?
-                                    .execute(params![&key])
-                                    .map_err(into_error)?;
+                                queries.push(
+                                    rqlite_rs::query!("INSERT INTO b (k) VALUES (?)", key).await,
+                                );
                             } else {
-                                trx.prepare_cached(&format!(
-                                    "INSERT OR IGNORE INTO {} (k) VALUES (?)",
-                                    table
-                                ))
-                                .map_err(into_error)?
-                                .execute(params![&key])
-                                .map_err(into_error)?;
+                                queries.push(
+                                    rqlite_rs::query!(
+                                        &format!("INSERT OR IGNORE INTO {} (k) VALUES (?)", table),
+                                        key
+                                    )
+                                    .await,
+                                );
                             }
                         } else {
-                            trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))
-                                .map_err(into_error)?
-                                .execute(params![&key])
-                                .map_err(into_error)?;
+                            queries.push(
+                                rqlite_rs::query!(
+                                    &format!("DELETE FROM {} WHERE k = ?", table),
+                                    key
+                                )
+                                .await,
+                            );
                         };
                     }
                     Operation::Log { set } => {
@@ -216,10 +238,14 @@ impl SqliteStore {
                         }
                         .serialize(0);
 
-                        trx.prepare_cached("INSERT OR REPLACE INTO l (k, v) VALUES (?, ?)")
-                            .map_err(into_error)?
-                            .execute([&key, set.resolve(&result).map_err(into_error)?.as_ref()])
-                            .map_err(into_error)?;
+                        queries.push(
+                            rqlite_rs::query!(
+                                "INSERT OR REPLACE INTO l (k, v) VALUES (?, ?)",
+                                key,
+                                set.resolve(&result).map_err(into_error)?.as_ref()
+                            )
+                            .await,
+                        );
                     }
                     Operation::AssertValue {
                         class,
@@ -234,24 +260,30 @@ impl SqliteStore {
                         );
                         let table = char::from(class.subspace(collection));
 
-                        let matches = trx
-                            .prepare_cached(&format!("SELECT v FROM {} WHERE k = ?", table))
+                        // NOTE: escapes the transaction
+                        let matches = conn
+                            .fetch(
+                                rqlite_rs::query!(
+                                    &format!("SELECT v FROM {} WHERE k = ?", table),
+                                    key
+                                )
+                                .await,
+                            )
+                            .await
                             .map_err(into_error)?
-                            .query_row([&key], |row| {
-                                Ok(assert_value.matches(row.get_ref(0)?.as_bytes()?))
-                            })
-                            .optional()
+                            .first()
+                            .map(|row| Ok(assert_value.matches(row.get_by_index(0)?.as_bytes()?)))
                             .map_err(into_error)?
                             .unwrap_or_else(|| assert_value.is_none());
+
                         if !matches {
-                            trx.rollback().map_err(into_error)?;
                             return Err(trc::StoreEvent::AssertValueFailed.into());
                         }
                     }
                 }
             }
 
-            trx.commit().map(|_| result).map_err(into_error)
+            conn.transaction(queries).await.map_err(into_error)?;
         })
         .await
     }
@@ -260,10 +292,12 @@ impl SqliteStore {
         let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
             for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
-                conn.prepare_cached(&format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))
-                    .map_err(into_error)?
-                    .execute([])
-                    .map_err(into_error)?;
+                conn.exec(rqlite_rs::query!(&format!(
+                    "DELETE FROM {} WHERE v = 0",
+                    char::from(subspace),
+                )))
+                .await
+                .map_err(into_error)?;
             }
 
             Ok(())
@@ -274,10 +308,11 @@ impl SqliteStore {
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
         let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
-            conn.prepare_cached(&format!(
+            conn.exec(rqlite_rs::query!(&format!(
                 "DELETE FROM {} WHERE k >= ? AND k < ?",
                 char::from(from.subspace()),
-            ))
+            )))
+            .await
             .map_err(into_error)?
             .execute([from.serialize(0), to.serialize(0)])
             .map_err(into_error)?;

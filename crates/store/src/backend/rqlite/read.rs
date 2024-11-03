@@ -12,29 +12,23 @@ use crate::{
     BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
 };
 
-use super::{into_error, SqliteStore};
+use super::{into_error, RqliteStore};
 
-impl SqliteStore {
+impl RqliteStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
     where
         U: Deserialize + 'static,
     {
         let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
-            let mut result = conn
-                .prepare_cached(&format!(
-                    "SELECT v FROM {} WHERE k = ?",
-                    char::from(key.subspace())
-                ))
-                .map_err(into_error)?;
-            let key = key.serialize(0);
-            result
-                .query_row([&key], |row| {
-                    U::deserialize(row.get_ref(0)?.as_bytes()?)
-                        .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into()))
-                })
-                .optional()
-                .map_err(into_error)
+            let query = rqlite_rs::query!(
+                &format!("SELECT v FROM {} WHERE k = ?", char::from(key.subspace())),
+                key.serialize(0)
+            );
+            match conn.fetch(query).await.map_err(into_error) {
+                Ok(rows) => U::deserialize(rows.get_by_index_opt(0)?.as_bytes()?)
+                    .map_err(|err| rusqlite::Error::ToSqlConversionFailure(err.into())),
+            }
         })
         .await
     }
@@ -52,14 +46,18 @@ impl SqliteStore {
 
         self.spawn_worker(move || {
             let mut bm = RoaringBitmap::new();
-            let mut query = conn
-                .prepare_cached(&format!("SELECT k FROM {table} WHERE k >= ? AND k <= ?"))
+            let mut rows = conn
+                .fetch(rqlite_rs::query!(
+                    &format!("SELECT k FROM {table} WHERE k >= ? AND k <= ?"),
+                    begin,
+                    end
+                ))
+                .await
                 .map_err(into_error)?;
-            let mut rows = query.query([&begin, &end]).map_err(into_error)?;
 
             while let Some(row) = rows.next().map_err(into_error)? {
                 let key = row
-                    .get_ref(0)
+                    .get_by_index(0)
                     .map_err(into_error)?
                     .as_bytes()
                     .map_err(into_error)?;
@@ -86,7 +84,7 @@ impl SqliteStore {
             let keys = if params.values { "k, v" } else { "k" };
 
             let mut query = conn
-                .prepare_cached(&match (params.first, params.ascending) {
+                .fetch(rqlite_rs::query!(&match (params.first, params.ascending) {
                     (true, true) => {
                         format!(
                         "SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC LIMIT 1"
@@ -105,19 +103,20 @@ impl SqliteStore {
                             "SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC"
                         )
                     }
-                })
+                }))
+                .await
                 .map_err(into_error)?;
             let mut rows = query.query([&begin, &end]).map_err(into_error)?;
 
             if params.values {
                 while let Some(row) = rows.next().map_err(into_error)? {
                     let key = row
-                        .get_ref(0)
+                        .get_by_index(0)
                         .map_err(into_error)?
                         .as_bytes()
                         .map_err(into_error)?;
                     let value = row
-                        .get_ref(1)
+                        .get_by_index(1)
                         .map_err(into_error)?
                         .as_bytes()
                         .map_err(into_error)?;
@@ -129,7 +128,7 @@ impl SqliteStore {
             } else {
                 while let Some(row) = rows.next().map_err(into_error)? {
                     if !cb(
-                        row.get_ref(0)
+                        row.get_by_index(0)
                             .map_err(into_error)?
                             .as_bytes()
                             .map_err(into_error)?,
@@ -155,7 +154,10 @@ impl SqliteStore {
         let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
             match conn
-                .prepare_cached(&format!("SELECT v FROM {table} WHERE k = ?"))
+                .fetch(rqlite_rs::query!(&format!(
+                    "SELECT v FROM {table} WHERE k = ?"
+                )))
+                .await
                 .map_err(into_error)?
                 .query_row([&key], |row| row.get::<_, i64>(0))
             {

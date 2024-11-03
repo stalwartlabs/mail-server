@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 use r2d2::Pool;
 
-use self::pool::SqliteConnectionManager;
+use self::pool::RqliteConnectionManager;
 
 pub mod blob;
 pub mod lookup;
@@ -17,12 +17,12 @@ pub mod pool;
 pub mod read;
 pub mod write;
 
-pub struct SqliteStore {
-    pub(crate) conn_pool: Pool<SqliteConnectionManager>,
+pub struct RqliteStore {
+    pub(crate) conn_pool: Pool<RqliteConnectionManager>,
     pub(crate) worker_pool: rayon::ThreadPool,
 }
 
 #[inline(always)]
 fn into_error(err: impl Display) -> trc::Error {
-    trc::StoreEvent::SqliteError.reason(err)
+    trc::StoreEvent::RqliteError.reason(err)
 }

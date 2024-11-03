@@ -241,7 +241,7 @@ impl Store {
                 #[cfg(feature = "rqlite")]
                 Sel::SQLiRe(store) => store.write(batch).await,
                 #[cfg(feature = "sqlite")]
-                    Self::SQLite(store) => store.write(batch).await,
+                Self::SQLite(store) => store.write(batch).await,
                 #[cfg(feature = "foundation")]
                 Self::FoundationDb(store) => store.write(batch).await,
                 #[cfg(feature = "postgres")]

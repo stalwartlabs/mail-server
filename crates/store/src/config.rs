@@ -203,14 +203,14 @@ impl Stores {
                         continue;
                     }
 
-                    if let Some(db) = RqliteStore::open(config, prefix).map(Store::from) {
+                    if let Some(db) = RqliteStore::open(config, prefix).await.map(Store::from) {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id.clone(), db.into());
+                        self.in_memory_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 "fs" => {
