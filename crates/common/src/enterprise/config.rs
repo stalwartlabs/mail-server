@@ -17,29 +17,92 @@ use trc::{EventType, MetricType, TOTAL_EVENT_COUNT};
 use utils::config::{
     cron::SimpleCron,
     utils::{AsKey, ParseValue},
-    Config,
+    Config, ConfigKey,
 };
 
-use crate::expr::{tokenizer::TokenMap, Expression};
+use crate::{
+    expr::{tokenizer::TokenMap, Expression},
+    manager::config::ConfigManager,
+};
 
 use super::{
-    license::LicenseValidator, llm::AiApiConfig, AlertContent, AlertContentToken, AlertMethod,
+    license::LicenseKey, llm::AiApiConfig, AlertContent, AlertContentToken, AlertMethod,
     Enterprise, MetricAlert, MetricStore, TraceStore, Undelete,
 };
 
 impl Enterprise {
-    pub async fn parse(config: &mut Config, stores: &Stores, data: &Store) -> Option<Self> {
-        let license = match LicenseValidator::new()
-            .try_parse(config.value("enterprise.license-key")?)
-            .and_then(|key| {
-                key.into_validated_key(config.value("lookup.default.hostname").unwrap_or_default())
-            }) {
-            Ok(key) => key,
+    pub async fn parse(
+        config: &mut Config,
+        config_manager: &ConfigManager,
+        stores: &Stores,
+        data: &Store,
+    ) -> Option<Self> {
+        let server_hostname = config.value("lookup.default.hostname")?;
+        let mut update_license = None;
+
+        let license_result = match (
+            config.value("enterprise.license-key"),
+            config.value("enterprise.api-key"),
+        ) {
+            (Some(license_key), maybe_api_key) => {
+                match (LicenseKey::new(license_key, server_hostname), maybe_api_key) {
+                    (Ok(license), Some(api_key)) if license.is_near_expiration() => Ok(license
+                        .try_renew(api_key)
+                        .await
+                        .map(|result| {
+                            update_license = Some(result.encoded_key);
+                            result.key
+                        })
+                        .unwrap_or(license)),
+                    (Ok(license), None) => Ok(license),
+                    (Err(_), Some(api_key)) => LicenseKey::invalid(server_hostname)
+                        .try_renew(api_key)
+                        .await
+                        .map(|result| {
+                            update_license = Some(result.encoded_key);
+                            result.key
+                        }),
+                    (maybe_license, _) => maybe_license,
+                }
+            }
+            (None, Some(api_key)) => LicenseKey::invalid(server_hostname)
+                .try_renew(api_key)
+                .await
+                .map(|result| {
+                    update_license = Some(result.encoded_key);
+                    result.key
+                }),
+            (None, None) => {
+                return None;
+            }
+        };
+
+        // Report error
+        let license = match license_result {
+            Ok(license) => license,
             Err(err) => {
                 config.new_build_warning("enterprise.license-key", err.to_string());
                 return None;
             }
         };
+
+        // Update the license if a new one was obtained
+        if let Some(license) = update_license {
+            config
+                .keys
+                .insert("enterprise.license-key".to_string(), license.clone());
+            if let Err(err) = config_manager
+                .set([ConfigKey {
+                    key: "enterprise.license-key".to_string(),
+                    value: license.to_string(),
+                }])
+                .await
+            {
+                trc::error!(err
+                    .caused_by(trc::location!())
+                    .details("Failed to update license key"));
+            }
+        }
 
         match data
             .count_principals(None, Type::Individual.into(), None)

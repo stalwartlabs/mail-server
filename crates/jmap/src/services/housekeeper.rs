@@ -50,7 +50,7 @@ enum ActionClass {
     #[cfg(feature = "enterprise")]
     AlertMetrics,
     #[cfg(feature = "enterprise")]
-    ValidateLicense,
+    RenewLicense,
 }
 
 #[derive(Default)]
@@ -123,8 +123,8 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
             #[cfg(feature = "enterprise")]
             if let Some(enterprise) = &server.core.enterprise {
                 queue.schedule(
-                    Instant::now() + enterprise.license.expires_in(),
-                    ActionClass::ValidateLicense,
+                    Instant::now() + enterprise.license.renew_in(),
+                    ActionClass::RenewLicense,
                 );
 
                 if let Some(metrics_store) = enterprise.metrics_store.as_ref() {
@@ -173,10 +173,10 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                         // SPDX-License-Identifier: LicenseRef-SEL
                         #[cfg(feature = "enterprise")]
                         if let Some(enterprise) = &server.core.enterprise {
-                            if !queue.has_action(&ActionClass::ValidateLicense) {
+                            if !queue.has_action(&ActionClass::RenewLicense) {
                                 queue.schedule(
-                                    Instant::now() + enterprise.license.expires_in(),
-                                    ActionClass::ValidateLicense,
+                                    Instant::now() + enterprise.license.renew_in(),
+                                    ActionClass::RenewLicense,
                                 );
                             }
 
@@ -616,15 +616,29 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                             }
 
                             #[cfg(feature = "enterprise")]
-                            ActionClass::ValidateLicense => {
+                            ActionClass::RenewLicense => {
                                 match server.reload().await {
                                     Ok(result) => {
                                         if let Some(new_core) = result.new_core {
                                             if let Some(enterprise) = &new_core.enterprise {
+                                                let renew_in =
+                                                    if enterprise.license.is_near_expiration() {
+                                                        // Something went wrong during renewal, try again in 1 day or 1 hour,
+                                                        // depending on the time left on the license
+                                                        if enterprise.license.expires_in()
+                                                            < Duration::from_secs(86400)
+                                                        {
+                                                            Duration::from_secs(3600)
+                                                        } else {
+                                                            Duration::from_secs(86400)
+                                                        }
+                                                    } else {
+                                                        enterprise.license.renew_in()
+                                                    };
+
                                                 queue.schedule(
-                                                    Instant::now()
-                                                        + enterprise.license.expires_in(),
-                                                    ActionClass::ValidateLicense,
+                                                    Instant::now() + renew_in,
+                                                    ActionClass::RenewLicense,
                                                 );
                                             }
 

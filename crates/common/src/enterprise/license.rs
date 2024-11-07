@@ -21,19 +21,24 @@
 
 use std::{
     fmt::{Display, Formatter},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
-use ring::signature::{Ed25519KeyPair, UnparsedPublicKey, ED25519};
+use hyper::{header::AUTHORIZATION, HeaderMap};
+use ring::signature::{UnparsedPublicKey, ED25519};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
+use store::write::now;
+use trc::ServerEvent;
+
+use crate::manager::fetch_resource;
+
+//const LICENSING_API: &str = "https://localhost:444/api/license/";
+const LICENSING_API: &str = "https://license.stalw.art/api/license/";
+const RENEW_THRESHOLD: u64 = 60 * 60 * 24 * 4; // 4 days
 
 pub struct LicenseValidator {
     public_key: UnparsedPublicKey<Vec<u8>>,
-}
-
-pub struct LicenseGenerator {
-    key_pair: Ed25519KeyPair,
 }
 
 #[derive(Debug, Clone)]
@@ -47,11 +52,18 @@ pub struct LicenseKey {
 #[derive(Debug)]
 pub enum LicenseError {
     Expired,
+    InvalidDomain { domain: String },
     DomainMismatch { issued_to: String, current: String },
     Parse,
     Validation,
     Decode,
     InvalidParameters,
+    RenewalFailed { reason: String },
+}
+
+pub struct RenewedLicense {
+    pub key: LicenseKey,
+    pub encoded_key: String,
 }
 
 const U64_LEN: usize = std::mem::size_of::<u64>();
@@ -142,68 +154,102 @@ impl LicenseValidator {
 }
 
 impl LicenseKey {
-    pub fn new(domain: String, accounts: u32, expires_in: u64) -> Self {
-        let now = SystemTime::UNIX_EPOCH
-            .elapsed()
-            .unwrap_or_default()
-            .as_secs();
+    pub fn new(
+        license_key: impl AsRef<str>,
+        hostname: impl AsRef<str>,
+    ) -> Result<Self, LicenseError> {
+        LicenseValidator::new()
+            .try_parse(license_key)
+            .and_then(|key| {
+                let local_domain = Self::base_domain(hostname)?;
+                let license_domain = Self::base_domain(&key.domain)?;
+                if local_domain == license_domain {
+                    Ok(key)
+                } else {
+                    Err(LicenseError::DomainMismatch {
+                        issued_to: license_domain,
+                        current: local_domain,
+                    })
+                }
+            })
+    }
+
+    pub fn invalid(domain: impl AsRef<str>) -> Self {
         LicenseKey {
-            valid_from: now - 300,
-            valid_to: now + expires_in + 300,
-            domain,
-            accounts,
+            valid_from: 0,
+            valid_to: 0,
+            domain: Self::base_domain(domain).unwrap_or_default(),
+            accounts: 0,
         }
+    }
+
+    pub async fn try_renew(&self, api_key: &str) -> Result<RenewedLicense, LicenseError> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            format!("Bearer {api_key}")
+                .parse()
+                .map_err(|_| LicenseError::Validation)?,
+        );
+
+        trc::event!(
+            Server(ServerEvent::Licensing),
+            Details = "Attempting to renew Enterprise license from license.stalw.art",
+        );
+
+        match fetch_resource(&format!("{}{}", LICENSING_API, self.domain), headers.into())
+            .await
+            .and_then(|bytes| {
+                String::from_utf8(bytes)
+                    .map_err(|_| String::from("Failed to UTF-8 decode server response"))
+            }) {
+            Ok(encoded_key) => match LicenseKey::new(&encoded_key, &self.domain) {
+                Ok(key) => Ok(RenewedLicense { key, encoded_key }),
+                Err(err) => {
+                    trc::event!(
+                        Server(ServerEvent::Licensing),
+                        Details = "Failed to decode license renewal",
+                        Reason = err.to_string(),
+                    );
+                    Err(err)
+                }
+            },
+            Err(err) => {
+                trc::event!(
+                    Server(ServerEvent::Licensing),
+                    Details = "Failed to renew Enterprise license",
+                    Reason = err.clone(),
+                );
+                Err(LicenseError::RenewalFailed { reason: err })
+            }
+        }
+    }
+
+    pub fn is_near_expiration(&self) -> bool {
+        let now = now();
+        self.valid_to.saturating_sub(now) <= RENEW_THRESHOLD
     }
 
     pub fn expires_in(&self) -> Duration {
-        Duration::from_secs(
-            self.valid_to.saturating_sub(
-                SystemTime::UNIX_EPOCH
-                    .elapsed()
-                    .unwrap_or_default()
-                    .as_secs(),
-            ),
-        )
+        Duration::from_secs(self.valid_to.saturating_sub(now()))
+    }
+
+    pub fn renew_in(&self) -> Duration {
+        Duration::from_secs(self.valid_to.saturating_sub(now() + RENEW_THRESHOLD))
     }
 
     pub fn is_expired(&self) -> bool {
-        let now = SystemTime::UNIX_EPOCH
-            .elapsed()
-            .unwrap_or_default()
-            .as_secs();
+        let now = now();
         now >= self.valid_to || now < self.valid_from
     }
 
-    pub fn into_validated_key(self, hostname: impl AsRef<str>) -> Result<Self, LicenseError> {
-        let local_domain = psl::domain_str(hostname.as_ref()).unwrap_or("invalid-hostname");
-        let license_domain = psl::domain_str(&self.domain).expect("Invalid license domain");
-        if local_domain != license_domain {
-            Err(LicenseError::DomainMismatch {
-                issued_to: license_domain.to_string(),
-                current: local_domain.to_string(),
+    pub fn base_domain(domain: impl AsRef<str>) -> Result<String, LicenseError> {
+        let domain = domain.as_ref();
+        psl::domain_str(domain)
+            .map(|d| d.to_string())
+            .ok_or(LicenseError::InvalidDomain {
+                domain: domain.to_string(),
             })
-        } else {
-            Ok(self)
-        }
-    }
-}
-
-impl LicenseGenerator {
-    pub fn new(pkcs8_der: impl AsRef<[u8]>) -> Self {
-        Self {
-            key_pair: Ed25519KeyPair::from_pkcs8(pkcs8_der.as_ref()).unwrap(),
-        }
-    }
-
-    pub fn generate(&self, key: LicenseKey) -> String {
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&key.valid_from.to_le_bytes());
-        bytes.extend_from_slice(&key.valid_to.to_le_bytes());
-        bytes.extend_from_slice(&key.accounts.to_le_bytes());
-        bytes.extend_from_slice(&(key.domain.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(key.domain.as_bytes());
-        bytes.extend_from_slice(self.key_pair.sign(&bytes).as_ref());
-        STANDARD.encode(&bytes)
     }
 }
 
@@ -220,6 +266,12 @@ impl Display for LicenseError {
                     f,
                     "License issued to domain {issued_to:?} does not match {current:?}",
                 )
+            }
+            LicenseError::InvalidDomain { domain } => {
+                write!(f, "Invalid domain {domain:?}")
+            }
+            LicenseError::RenewalFailed { reason } => {
+                write!(f, "Failed to renew license: {reason}")
             }
         }
     }

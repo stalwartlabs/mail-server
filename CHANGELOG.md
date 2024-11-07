@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.10.6] - 2024-11-07
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+### Added
+- Enterprise license automatic renewals before expiration (disabled by default).
+- Allow to LDAP search using bind dn instead of auth bind connection when bind auth is enabled (#873)
+
+### Changed
+
+### Fixed
+- Include `preferred_username` and `email` in OIDC `id_token`.
+- Verify roles and permissions when creating or modifying accounts (#874)
+
 ## [0.10.5] - 2024-10-15
 
 To upgrade replace the `stalwart-mail` binary. 
