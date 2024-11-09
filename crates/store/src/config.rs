@@ -379,6 +379,8 @@ impl IsActiveStore for Config {
             "storage.blob",
             "storage.lookup",
             "storage.fts",
+            "tracing.history.store",
+            "metrics.history.store",
         ] {
             if let Some(store_id) = self.value(key) {
                 if store_id == id {
