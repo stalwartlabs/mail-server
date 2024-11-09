@@ -307,6 +307,7 @@ impl StoreEvent {
             Self::ElasticsearchError => "ElasticSearch error",
             Self::RedisError => "Redis error",
             Self::S3Error => "S3 error",
+            Self::AzureError => "Azure error",
             Self::FilesystemError => "Filesystem error",
             Self::PoolError => "Connection pool error",
             Self::DataCorruption => "Data corruption",

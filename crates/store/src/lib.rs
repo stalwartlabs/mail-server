@@ -46,6 +46,9 @@ use backend::elastic::ElasticSearchStore;
 #[cfg(feature = "redis")]
 use backend::redis::RedisStore;
 
+#[cfg(feature = "azure")]
+use backend::azure::AzureStore;
+
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self>;
 }
@@ -208,6 +211,8 @@ pub enum BlobBackend {
     Fs(Arc<FsStore>),
     #[cfg(feature = "s3")]
     S3(Arc<S3Store>),
+    #[cfg(feature = "azure")]
+    Azure(Arc<AzureStore>),
     #[cfg(feature = "enterprise")]
     Composite(Arc<backend::composite::distributed_blob::DistributedBlob>),
 }
@@ -283,6 +288,16 @@ impl From<S3Store> for BlobStore {
     fn from(store: S3Store) -> Self {
         BlobStore {
             backend: BlobBackend::S3(Arc::new(store)),
+            compression: CompressionAlgo::None,
+        }
+    }
+}
+
+#[cfg(feature = "azure")]
+impl From<AzureStore> for BlobStore {
+    fn from(store: AzureStore) -> Self {
+        BlobStore {
+            backend: BlobBackend::Azure(Arc::new(store)),
             compression: CompressionAlgo::None,
         }
     }

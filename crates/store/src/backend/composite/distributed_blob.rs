@@ -81,6 +81,8 @@ impl DistributedBlob {
                 BlobBackend::Fs(store) => store.get_blob(key, read_range).await,
                 #[cfg(feature = "s3")]
                 BlobBackend::S3(store) => store.get_blob(key, read_range).await,
+                #[cfg(feature = "azure")]
+                BlobBackend::Azure(store) => store.get_blob(key, read_range).await,
                 BlobBackend::Composite(_) => unimplemented!(),
             }
         })
@@ -111,6 +113,8 @@ impl DistributedBlob {
                 BlobBackend::Fs(store) => store.put_blob(key, data).await,
                 #[cfg(feature = "s3")]
                 BlobBackend::S3(store) => store.put_blob(key, data).await,
+                #[cfg(feature = "azure")]
+                BlobBackend::Azure(store) => store.put_blob(key, data).await,
                 BlobBackend::Composite(_) => unimplemented!(),
             }
         })
@@ -141,6 +145,8 @@ impl DistributedBlob {
                 BlobBackend::Fs(store) => store.delete_blob(key).await,
                 #[cfg(feature = "s3")]
                 BlobBackend::S3(store) => store.delete_blob(key).await,
+                #[cfg(feature = "azure")]
+                BlobBackend::Azure(store) => store.delete_blob(key).await,
                 BlobBackend::Composite(_) => unimplemented!(),
             }
         })

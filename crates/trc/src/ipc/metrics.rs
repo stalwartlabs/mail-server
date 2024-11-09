@@ -440,6 +440,7 @@ impl EventType {
                 | StoreEvent::ElasticsearchError
                 | StoreEvent::RedisError
                 | StoreEvent::S3Error
+                | StoreEvent::AzureError
                 | StoreEvent::FilesystemError
                 | StoreEvent::PoolError
                 | StoreEvent::DataCorruption

@@ -5,7 +5,7 @@ edition = "2021"
 resolver = "2"
 
 [features]
-default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "foundationdb"]
+default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
 #default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "foundationdb"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
@@ -15,6 +15,7 @@ rocks = ["store/rocks"]
 elastic = ["store/elastic"]
 s3 = ["store/s3"]
 redis = ["store/redis"]
+azure = ["store/azure"]
 
 [dev-dependencies]
 store = { path = "../crates/store", features = ["test_mode", "enterprise"] }
