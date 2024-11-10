@@ -42,8 +42,7 @@ pub async fn test(server: Server, mut client: Client) {
 async fn email_tests(server: Server, client: Arc<Client>) {
     for pass in 0..NUM_PASSES {
         println!(
-            "----------------- EMAIL STRESS TEST {} -----------------",
-            pass
+            "----------------- EMAIL STRESS TEST {pass} -----------------"
         );
         let mailboxes = Arc::new(vec![
             client
@@ -125,11 +124,11 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                                             //println!("Concurrent update, trying again.");
                                         }
                                         _ => {
-                                            panic!("Unexpected error: {:?}", err);
+                                            panic!("Unexpected error: {err:?}");
                                         }
                                     },
                                     Err(err) => {
-                                        panic!("Unexpected error: {:?}", err);
+                                        panic!("Unexpected error: {err:?}");
                                     }
                                 }
                             } else {
@@ -162,7 +161,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                             let message = &emails[rand::thread_rng().gen_range(0..emails.len())];
                             let message_id = message.id().unwrap();
                             let mailbox_ids = message.mailbox_ids();
-                            assert_eq!(mailbox_ids.len(), 1, "{:#?}", message);
+                            assert_eq!(mailbox_ids.len(), 1, "{message:#?}");
                             let mailbox_id = mailbox_ids.last().unwrap();
                             loop {
                                 let new_mailbox_id =
@@ -241,8 +240,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                 {
                     if mailbox_tags.len() != 1 {
                         panic!(
-                        "Email ORM has more than one mailbox {:?}! Id {} in mailbox {} with messages {:?}",
-                        mailbox_tags, email_id, mailbox_id, email_ids_in_mailbox
+                        "Email ORM has more than one mailbox {mailbox_tags:?}! Id {email_id} in mailbox {mailbox_id} with messages {email_ids_in_mailbox:?}"
                     );
                     }
                     let mailbox_tag = mailbox_tags[0];
@@ -258,8 +256,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                     }
                 } else {
                     panic!(
-                        "Email tags not found! Id {} in mailbox {} with messages {:?}",
-                        email_id, mailbox_id, email_ids_in_mailbox
+                        "Email tags not found! Id {email_id} in mailbox {mailbox_id} with messages {email_ids_in_mailbox:?}"
                     );
                 }
             }
@@ -424,7 +421,7 @@ async fn delete_mailbox(client: &Client, mailbox_id: &str) {
                     let backoff = rand::thread_rng().gen_range(50..=300);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
                 }
-                _ => panic!("Failed: {:?}", err),
+                _ => panic!("Failed: {err:?}"),
             },
         }
     }

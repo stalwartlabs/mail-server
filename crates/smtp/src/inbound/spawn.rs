@@ -143,7 +143,7 @@ impl<T: SessionStream> Session<T> {
             .eval_if::<String, _>(&config.greeting, self, self.data.session_id)
             .await
             .filter(|g| !g.is_empty())
-            .map(|g| format!("220 {}\r\n", g))
+            .map(|g| format!("220 {g}\r\n"))
             .unwrap_or_else(|| "220 Stalwart ESMTP at your service.\r\n".to_string());
 
         if self.write(greeting.as_bytes()).await.is_err() {

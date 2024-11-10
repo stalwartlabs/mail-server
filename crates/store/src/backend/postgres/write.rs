@@ -121,14 +121,12 @@ impl PostgresStore {
                             let s = if let Some(exists) = asserted_values.get(&key) {
                                 if *exists {
                                     trx.prepare_cached(&format!(
-                                        "UPDATE {} SET v = $2 WHERE k = $1",
-                                        table
+                                        "UPDATE {table} SET v = $2 WHERE k = $1"
                                     ))
                                     .await?
                                 } else {
                                     trx.prepare_cached(&format!(
-                                        "INSERT INTO {} (k, v) VALUES ($1, $2)",
-                                        table
+                                        "INSERT INTO {table} (k, v) VALUES ($1, $2)"
                                     ))
                                     .await?
                                 }
@@ -190,7 +188,7 @@ impl PostgresStore {
                         }
                         ValueOp::Clear => {
                             let s = trx
-                                .prepare_cached(&format!("DELETE FROM {} WHERE k = $1", table))
+                                .prepare_cached(&format!("DELETE FROM {table} WHERE k = $1"))
                                 .await?;
                             trx.execute(&s, &[&key]).await?;
                         }
@@ -265,13 +263,12 @@ impl PostgresStore {
                             trx.prepare_cached("INSERT INTO b (k) VALUES ($1)").await?
                         } else {
                             trx.prepare_cached(&format!(
-                                "INSERT INTO {} (k) VALUES ($1) ON CONFLICT (k) DO NOTHING",
-                                table
+                                "INSERT INTO {table} (k) VALUES ($1) ON CONFLICT (k) DO NOTHING"
                             ))
                             .await?
                         }
                     } else {
-                        trx.prepare_cached(&format!("DELETE FROM {} WHERE k = $1", table))
+                        trx.prepare_cached(&format!("DELETE FROM {table} WHERE k = $1"))
                             .await?
                     };
 
@@ -311,7 +308,7 @@ impl PostgresStore {
                     let table = char::from(class.subspace(collection));
 
                     let s = trx
-                        .prepare_cached(&format!("SELECT v FROM {} WHERE k = $1 FOR UPDATE", table))
+                        .prepare_cached(&format!("SELECT v FROM {table} WHERE k = $1 FOR UPDATE"))
                         .await?;
                     let (exists, matches) = trx
                         .query_opt(&s, &[&key])

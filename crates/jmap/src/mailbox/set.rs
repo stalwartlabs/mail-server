@@ -718,8 +718,7 @@ impl MailboxSet for Server {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(Property::Role)
                         .with_description(format!(
-                            "A mailbox with role '{}' already exists.",
-                            mailbox_role
+                            "A mailbox with role '{mailbox_role}' already exists."
                         ))));
                 }
 
@@ -782,8 +781,7 @@ impl MailboxSet for Server {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(Property::Name)
                         .with_description(format!(
-                            "A mailbox with name '{}' already exists.",
-                            mailbox_name
+                            "A mailbox with name '{mailbox_name}' already exists."
                         ))));
                 }
             }

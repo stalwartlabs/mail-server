@@ -250,8 +250,7 @@ mod tests {
                     .parse_append(ProtocolVersion::Rev1)
                     .expect(command),
                 arguments,
-                "{:?}",
-                command
+                "{command:?}"
             );
         }
 
@@ -324,7 +323,7 @@ mod tests {
                 }
                 Err(err) => match err {
                     Error::NeedsMoreData | Error::NeedsLiteral { .. } => (),
-                    Error::Error { response } => panic!("{:?}", response),
+                    Error::Error { response } => panic!("{response:?}"),
                 },
             }
         }

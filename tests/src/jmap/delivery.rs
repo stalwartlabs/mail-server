@@ -212,8 +212,7 @@ pub async fn test(params: &mut JMAPTest) {
                 .unwrap()
                 .len(),
             num_messages,
-            "for {}",
-            account_id
+            "for {account_id}"
         );
     }
 
@@ -252,8 +251,7 @@ pub async fn test(params: &mut JMAPTest) {
                 .unwrap()
                 .len(),
             num_messages,
-            "for {}",
-            account_id
+            "for {account_id}"
         );
     }
 
@@ -290,8 +288,7 @@ pub async fn test(params: &mut JMAPTest) {
                 .unwrap()
                 .len(),
             num_messages,
-            "for {}",
-            account_id
+            "for {account_id}"
         );
     }
 
@@ -381,22 +378,22 @@ impl SmtpConnection {
     }
 
     pub async fn mail_from(&mut self, sender: &str, code: u8) -> Vec<String> {
-        self.send(&format!("MAIL FROM:<{}>", sender)).await;
+        self.send(&format!("MAIL FROM:<{sender}>")).await;
         self.read(1, code).await
     }
 
     pub async fn rcpt_to(&mut self, rcpt: &str, code: u8) -> Vec<String> {
-        self.send(&format!("RCPT TO:<{}>", rcpt)).await;
+        self.send(&format!("RCPT TO:<{rcpt}>")).await;
         self.read(1, code).await
     }
 
     pub async fn vrfy(&mut self, rcpt: &str, code: u8) -> Vec<String> {
-        self.send(&format!("VRFY {}", rcpt)).await;
+        self.send(&format!("VRFY {rcpt}")).await;
         self.read(1, code).await
     }
 
     pub async fn expn(&mut self, rcpt: &str, code: u8) -> Vec<String> {
-        self.send(&format!("EXPN {}", rcpt)).await;
+        self.send(&format!("EXPN {rcpt}")).await;
         self.read(1, code).await
     }
 
@@ -460,7 +457,7 @@ impl SmtpConnection {
                         if code != u8::MAX {
                             for line in &lines {
                                 if line.as_bytes()[0] - b'0' != code {
-                                    panic!("Expected completion code {}, got {:?}.", code, lines);
+                                    panic!("Expected completion code {code}, got {lines:?}.");
                                 }
                             }
                         }
@@ -468,12 +465,12 @@ impl SmtpConnection {
                     }
                 }
                 Ok(Ok(None)) => {
-                    panic!("Invalid response: {:?}.", lines);
+                    panic!("Invalid response: {lines:?}.");
                 }
                 Ok(Err(err)) => {
-                    panic!("Connection broken: {} ({:?})", err, lines);
+                    panic!("Connection broken: {err} ({lines:?})");
                 }
-                Err(_) => panic!("Timeout while waiting for server response: {:?}", lines),
+                Err(_) => panic!("Timeout while waiting for server response: {lines:?}"),
             }
         }
     }
@@ -503,7 +500,7 @@ impl AssertResult for Vec<String> {
                 return self;
             }
         }
-        panic!("Expected response to contain {:?}, got {:?}", text, self);
+        panic!("Expected response to contain {text:?}, got {self:?}");
     }
 
     fn assert_count(self, text: &str, occurrences: usize) -> Self {
@@ -524,6 +521,6 @@ impl AssertResult for Vec<String> {
                 return self;
             }
         }
-        panic!("Expected response to be {:?}, got {:?}", text, self);
+        panic!("Expected response to be {text:?}, got {self:?}");
     }
 }

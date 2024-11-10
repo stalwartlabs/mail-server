@@ -507,8 +507,7 @@ impl SieveScriptSet for Server {
                             return Ok(Err(SetError::already_exists()
                                 .with_existing_id(id.into())
                                 .with_description(format!(
-                                    "A sieve script with name '{}' already exists.",
-                                    value
+                                    "A sieve script with name '{value}' already exists."
                                 ))));
                         }
                     }

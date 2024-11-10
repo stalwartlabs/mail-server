@@ -534,7 +534,7 @@ fn milter_frame_receiver() {
             }
         }
 
-        assert_eq!(frame_num, 100, "chunk_size: {}", chunk_size);
+        assert_eq!(frame_num, 100, "chunk_size: {chunk_size}");
     }
 }
 
@@ -580,27 +580,27 @@ async fn milter_client_test() {
         )
         .await
         .unwrap();
-    println!("CONNECT: {:?}", r);
+    println!("CONNECT: {r:?}");
     let r = client
         .mail_from("john@gmail.com", None::<&[&str]>, Macros::new())
         .await
         .unwrap();
-    println!("MAIL FROM: {:?}", r);
+    println!("MAIL FROM: {r:?}");
     let r = client
         .rcpt_to("user@gmail.com", None::<&[&str]>, Macros::new())
         .await
         .unwrap();
-    println!("RCPT TO: {:?}", r);
+    println!("RCPT TO: {r:?}");
 
     let r = client.data().await.unwrap();
-    println!("DATA: {:?}", r);
+    println!("DATA: {r:?}");
     let r = client.headers(message.headers_raw()).await.unwrap();
-    println!("HEADERS: {:?}", r);
+    println!("HEADERS: {r:?}");
     let r = client
         .body(&message.raw_message()[message.root_part().raw_body_offset()..])
         .await
         .unwrap();
-    println!("BODY: {:?}", r);
+    println!("BODY: {r:?}");
 
     client.quit().await.unwrap();
 }

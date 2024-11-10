@@ -433,7 +433,7 @@ impl SieveScriptIngest for Server {
 
                 #[cfg(feature = "test_mode")]
                 Err(sieve::runtime::RuntimeError::ScriptErrorMessage(err)) => {
-                    panic!("Sieve test failed: {}", err);
+                    panic!("Sieve test failed: {err}");
                 }
 
                 Err(err) => {

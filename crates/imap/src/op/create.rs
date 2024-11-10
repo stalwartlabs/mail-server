@@ -201,7 +201,7 @@ impl<T: SessionStream> SessionData<T> {
             mailbox_ids.into_iter().zip(params.path.iter()).enumerate()
         {
             mailbox_name = if !mailbox_name.is_empty() {
-                format!("{}/{}", mailbox_name, path_item)
+                format!("{mailbox_name}/{path_item}")
             } else {
                 path_item.to_string()
             };
@@ -335,7 +335,7 @@ impl<T: SessionStream> SessionData<T> {
             if account.mailbox_names.contains_key(&full_path) {
                 return Err(trc::ImapEvent::Error
                     .into_err()
-                    .details(format!("Mailbox '{}' already exists.", full_path)));
+                    .details(format!("Mailbox '{full_path}' already exists.")));
             }
 
             (

@@ -547,14 +547,12 @@ mod tests {
                 if let Some(expected_value) = expected.get(key) {
                     if value != expected_value {
                         panic!(
-                            "Expected value {:?} for key {:?} but found {:?}.",
-                            expected_value, key, value
+                            "Expected value {expected_value:?} for key {key:?} but found {value:?}."
                         );
                     }
                 } else {
                     panic!(
-                        "Unexpected key {:?} found in config with value {:?}.",
-                        key, value
+                        "Unexpected key {key:?} found in config with value {value:?}."
                     );
                 }
             }
@@ -563,14 +561,12 @@ mod tests {
                 if let Some(config_value) = config.keys.get(key) {
                     if value != config_value {
                         panic!(
-                            "Expected value {:?} for key {:?} but found {:?}.",
-                            value, key, config_value
+                            "Expected value {value:?} for key {key:?} but found {config_value:?}."
                         );
                     }
                 } else {
                     panic!(
-                        "Expected key {:?} not found in config with value {:?}.",
-                        key, value
+                        "Expected key {key:?} not found in config with value {value:?}."
                     );
                 }
             }

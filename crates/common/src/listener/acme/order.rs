@@ -233,7 +233,7 @@ impl Server {
                     } => {
                         let dns_proof = account.dns_proof(challenge)?;
                         let domain = domain.strip_prefix("*.").unwrap_or(&domain);
-                        let name = format!("_acme-challenge.{}", domain);
+                        let name = format!("_acme-challenge.{domain}");
                         let origin = origin
                             .as_deref()
                             .or_else(|| psl::domain_str(domain))

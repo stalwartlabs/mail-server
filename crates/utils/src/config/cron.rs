@@ -110,8 +110,7 @@ impl ParseValue for SimpleCron {
                     })?;
                     if !(1..=7).contains(&hour) {
                         return Err(format!(
-                            "Invalid cron key: failed to parse weekday, invalid value: {}, range is 1 (Monday) to 7 (Sunday).",
-                            hour,
+                            "Invalid cron key: failed to parse weekday, invalid value: {hour}, range is 1 (Monday) to 7 (Sunday).",
                         ));
                     }
 

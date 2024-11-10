@@ -218,8 +218,7 @@ mod tests {
                     .parse_acl(ProtocolVersion::Rev1)
                     .unwrap(),
                 arguments,
-                "{:?}",
-                command
+                "{command:?}"
             );
         }
     }

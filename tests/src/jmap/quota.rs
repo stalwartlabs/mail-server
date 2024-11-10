@@ -86,7 +86,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap_err()
     {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
-        other => panic!("Unexpected error: {:?}", other),
+        other => panic!("Unexpected error: {other:?}"),
     }
     server.core.storage.data.blob_expire_all().await;
 
@@ -107,7 +107,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap_err()
     {
         jmap_client::Error::Problem(err) if err.detail().unwrap().contains("quota") => (),
-        other => panic!("Unexpected error: {:?}", other),
+        other => panic!("Unexpected error: {other:?}"),
     }
     server.core.storage.data.blob_expire_all().await;
 
@@ -322,7 +322,7 @@ pub async fn test(params: &mut JMAPTest) {
         .get_used_quota(account_id.document_id())
         .await
         .unwrap();
-    assert!(quota > 0 && quota <= 1024, "Quota is {}", quota);
+    assert!(quota > 0 && quota <= 1024, "Quota is {quota}");
     assert_eq!(
         server
             .get_document_ids(account_id.document_id(), Collection::Email)
@@ -352,16 +352,15 @@ pub async fn test(params: &mut JMAPTest) {
 
 fn assert_over_quota<T: std::fmt::Debug>(result: Result<T, jmap_client::Error>) {
     match result {
-        Ok(result) => panic!("Expected error, got {:?}", result),
+        Ok(result) => panic!("Expected error, got {result:?}"),
         Err(jmap_client::Error::Set(err)) if err.error() == &SetErrorType::OverQuota => (),
-        Err(err) => panic!("Expected OverQuota SetError, got {:?}", err),
+        Err(err) => panic!("Expected OverQuota SetError, got {err:?}"),
     }
 }
 
 fn create_message_with_size(from: &str, to: &str, subject: &str, size: usize) -> Vec<u8> {
     let mut message = format!(
-        "From: {}\r\nTo: {}\r\nSubject: {}\r\n\r\n",
-        from, to, subject
+        "From: {from}\r\nTo: {to}\r\nSubject: {subject}\r\n\r\n"
     );
     for _ in 0..size - message.len() {
         message.push('A');

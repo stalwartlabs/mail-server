@@ -132,11 +132,11 @@ mod tests {
                     match receiver.parse(&mut bytes) {
                         Ok(request) => requests.push(request),
                         Err(Error::NeedsMoreData | Error::NeedsLiteral { .. }) => break,
-                        Err(err) => panic!("{:?} for frames {:#?}", err, frames),
+                        Err(err) => panic!("{err:?} for frames {frames:#?}"),
                     }
                 }
             }
-            assert_eq!(requests, expected_requests, "{:#?}", frames);
+            assert_eq!(requests, expected_requests, "{frames:#?}");
         }
     }
 }

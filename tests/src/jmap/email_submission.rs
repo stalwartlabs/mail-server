@@ -110,7 +110,7 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap_err()
     {
         Error::Set(err) => assert_eq!(err.error(), &SetErrorType::InvalidProperties),
-        err => panic!("Unexpected error: {:?}", err),
+        err => panic!("Unexpected error: {err:?}"),
     }
 
     // Create an identity
@@ -502,7 +502,7 @@ pub fn spawn_mock_smtp_server() -> (mpsc::Receiver<MockMessage>, Arc<Mutex<MockS
         let listener = TcpListener::bind("127.0.0.1:9999")
             .await
             .unwrap_or_else(|e| {
-                panic!("Failed to bind mock SMTP server to 127.0.0.1:9999: {}", e);
+                panic!("Failed to bind mock SMTP server to 127.0.0.1:9999: {e}");
             });
 
         while let Ok((mut stream, _)) = listener.accept().await {
@@ -612,7 +612,7 @@ pub async fn expect_message_delivery(event_rx: &mut mpsc::Receiver<MockMessage>)
             message
         }
         result => {
-            panic!("Timeout waiting for message, got: {:?}", result);
+            panic!("Timeout waiting for message, got: {result:?}");
         }
     }
 }
@@ -647,7 +647,7 @@ pub async fn expect_nothing(event_rx: &mut mpsc::Receiver<MockMessage>) {
     match tokio::time::timeout(Duration::from_millis(500), event_rx.recv()).await {
         Err(_) => {}
         message => {
-            panic!("Received a message when expecting nothing: {:?}", message);
+            panic!("Received a message when expecting nothing: {message:?}");
         }
     }
 }

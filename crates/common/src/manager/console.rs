@@ -53,7 +53,7 @@ pub async fn store_console(store: Store) {
                 } else if let (Some(from_key), Some(to_key)) =
                     (parse_key(parts[1]), parse_key(parts[2]))
                 {
-                    println!("Scanning from {:?} to {:?}", from_key, to_key);
+                    println!("Scanning from {from_key:?} to {to_key:?}");
                     let mut from_key = from_key.into_iter();
                     let mut to_key = to_key.into_iter();
                     let from_subspace = from_key.next().unwrap();
@@ -153,7 +153,7 @@ pub async fn store_console(store: Store) {
                 }
                 (Some(key), None) => {
                     if let Some(key) = parse_key(key) {
-                        println!("Deleting key: {:?}", key);
+                        println!("Deleting key: {key:?}");
                         let mut key = key.into_iter();
                         let mut batch = BatchBuilder::new();
                         batch.clear(ValueClass::Any(AnyClass {
@@ -161,7 +161,7 @@ pub async fn store_console(store: Store) {
                             key: key.collect(),
                         }));
                         if let Err(err) = store.write(batch.build()).await {
-                            println!("Failed to delete key: {}", err);
+                            println!("Failed to delete key: {err}");
                         }
                     }
                 }
@@ -189,7 +189,7 @@ pub async fn store_console(store: Store) {
                             println!("Key not found.");
                         }
                         Err(err) => {
-                            println!("Failed to retrieve key: {}", err);
+                            println!("Failed to retrieve key: {err}");
                         }
                     }
                 }
@@ -211,7 +211,7 @@ pub async fn store_console(store: Store) {
                         value,
                     );
                     if let Err(err) = store.write(batch.build()).await {
-                        println!("Failed to insert key: {}", err);
+                        println!("Failed to insert key: {err}");
                     }
                 }
             }
@@ -300,7 +300,7 @@ fn print_escaped(bytes: &[u8]) {
         if ch.is_ascii() && !ch.is_ascii_control() && *ch != b'\\' {
             print!("{}", *ch as char);
         } else {
-            print!("\\x{:02x}", ch);
+            print!("\\x{ch:02x}");
         }
     }
 }

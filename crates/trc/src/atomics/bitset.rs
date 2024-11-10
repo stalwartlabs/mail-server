@@ -85,22 +85,22 @@ mod tests {
     #[test]
     fn test_atomic_bitset() {
         for i in 0..TEST_SIZE {
-            assert!(!BITSET.get(i), "Bit {} should be unset in new BITSET", i);
+            assert!(!BITSET.get(i), "Bit {i} should be unset in new BITSET");
         }
 
         for i in 0..TEST_SIZE {
-            assert!(!BITSET.get(i), "Bit {} should be initially unset", i);
+            assert!(!BITSET.get(i), "Bit {i} should be initially unset");
             BITSET.set(i);
-            assert!(BITSET.get(i), "Bit {} should be set after setting", i);
+            assert!(BITSET.get(i), "Bit {i} should be set after setting");
         }
 
         BITSET.clear_all();
 
         for i in 0..TEST_SIZE {
             BITSET.set(i);
-            assert!(BITSET.get(i), "Bit {} should be set before clearing", i);
+            assert!(BITSET.get(i), "Bit {i} should be set before clearing");
             BITSET.clear(i);
-            assert!(!BITSET.get(i), "Bit {} should be unset after clearing", i);
+            assert!(!BITSET.get(i), "Bit {i} should be unset after clearing");
         }
 
         BITSET.clear_all();
@@ -113,9 +113,9 @@ mod tests {
         // Check all bits
         for i in 0..TEST_SIZE {
             if i % 2 == 0 {
-                assert!(BITSET.get(i), "Even bit {} should be set", i);
+                assert!(BITSET.get(i), "Even bit {i} should be set");
             } else {
-                assert!(!BITSET.get(i), "Odd bit {} should be unset", i);
+                assert!(!BITSET.get(i), "Odd bit {i} should be unset");
             }
         }
 
@@ -131,9 +131,9 @@ mod tests {
         // Check all bits again
         for i in 0..TEST_SIZE {
             if i % 2 == 0 {
-                assert!(!BITSET.get(i), "Even bit {} should now be unset", i);
+                assert!(!BITSET.get(i), "Even bit {i} should now be unset");
             } else {
-                assert!(BITSET.get(i), "Odd bit {} should now be set", i);
+                assert!(BITSET.get(i), "Odd bit {i} should now be set");
             }
         }
     }

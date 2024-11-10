@@ -52,7 +52,7 @@ impl Request<Command> {
                     _ => {
                         return Err(bad(
                             self.tag.to_string(),
-                            format!("Unsupported parameter '{}'.", token),
+                            format!("Unsupported parameter '{token}'."),
                         ));
                     }
                 }

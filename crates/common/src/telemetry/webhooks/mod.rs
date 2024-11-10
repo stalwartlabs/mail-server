@@ -135,7 +135,7 @@ async fn post_webhook_events(
 ) -> Result<(), String> {
     // Serialize body
     let body = serde_json::to_string(events)
-        .map_err(|err| format!("Failed to serialize events: {}", err))?;
+        .map_err(|err| format!("Failed to serialize events: {err}"))?;
 
     // Add HMAC-SHA256 signature
     let mut headers = settings.headers.clone();
@@ -154,7 +154,7 @@ async fn post_webhook_events(
         .timeout(settings.timeout)
         .danger_accept_invalid_certs(settings.tls_allow_invalid_certs)
         .build()
-        .map_err(|err| format!("Failed to create HTTP client: {}", err))?
+        .map_err(|err| format!("Failed to create HTTP client: {err}"))?
         .post(&settings.url)
         .headers(headers)
         .body(body)

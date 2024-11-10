@@ -797,6 +797,6 @@ pub fn assert_forbidden<T: Debug>(result: Result<T, jmap_client::Error>) {
             ..
         }))
     ) {
-        panic!("Expected forbidden, got {:?}", result);
+        panic!("Expected forbidden, got {result:?}");
     }
 }

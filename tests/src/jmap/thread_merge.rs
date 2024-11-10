@@ -156,9 +156,7 @@ async fn test_single_thread(params: &mut JMAPTest) {
             assert_eq!(
                 result.ids().len(),
                 total_messages,
-                "test# {}/{}",
-                base_test_num,
-                test_num
+                "test# {base_test_num}/{test_num}"
             );
 
             let thread_ids: AHashSet<u32> = result
@@ -170,10 +168,7 @@ async fn test_single_thread(params: &mut JMAPTest) {
             assert_eq!(
                 thread_ids.len(),
                 messages_per_thread.len(),
-                "{:?}: test# {}/{}",
-                thread_ids,
-                base_test_num,
-                test_num
+                "{thread_ids:?}: test# {base_test_num}/{test_num}"
             );
 
             let mut messages_per_thread_db = Vec::new();
@@ -192,7 +187,7 @@ async fn test_single_thread(params: &mut JMAPTest) {
             messages_per_thread_db.sort_unstable();
 
             assert_eq!(messages_per_thread_db, messages_per_thread);
-            println!("passed test# {}/{}", base_test_num, test_num);
+            println!("passed test# {base_test_num}/{test_num}");
         }
 
         all_mailboxes.insert(base_test_num as usize, mailbox_ids);
@@ -265,7 +260,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                             retry_count += 1;
                             continue;
                         }
-                        panic!("Failed to ingest message: {:?}", err);
+                        panic!("Failed to ingest message: {err:?}");
                     }
                 }
             }
@@ -273,7 +268,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
     }
     // Wait for all tasks to complete
     let messages = handles.len();
-    println!("Waiting for {} tasks to complete...", messages);
+    println!("Waiting for {messages} tasks to complete...");
     for handle in handles {
         handle.await.expect("Task panicked");
     }
@@ -295,13 +290,11 @@ async fn test_multi_thread(params: &mut JMAPTest) {
 fn build_message(message: usize, in_reply_to: Option<usize>, thread_num: usize) -> String {
     if let Some(in_reply_to) = in_reply_to {
         format!(
-            "Message-ID: <{}>\nReferences: <{}>\nSubject: re: T{}\n\nreply\n",
-            message, in_reply_to, thread_num
+            "Message-ID: <{message}>\nReferences: <{in_reply_to}>\nSubject: re: T{thread_num}\n\nreply\n"
         )
     } else {
         format!(
-            "Message-ID: <{}>\nSubject: T{}\n\nmsg\n",
-            message, thread_num
+            "Message-ID: <{message}>\nSubject: T{thread_num}\n\nmsg\n"
         )
     }
 }

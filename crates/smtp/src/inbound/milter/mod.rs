@@ -269,7 +269,7 @@ impl Display for Command<'_> {
                 }
                 write!(f, ")")
             }
-            Command::OptionNegotiation(opt) => write!(f, "OPTNEG ({})", opt),
+            Command::OptionNegotiation(opt) => write!(f, "OPTNEG ({opt})"),
             Command::Quit => write!(f, "QUIT"),
             Command::Data => write!(f, "DATA"),
             Command::QuitNewConnection => write!(f, "QUIT_NC"),
@@ -280,10 +280,10 @@ impl Display for Command<'_> {
 impl Display for Response {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Response::Action(action) => write!(f, "ACTION ({})", action),
-            Response::Modification(modification) => write!(f, "MODIFICATION ({})", modification),
+            Response::Action(action) => write!(f, "ACTION ({action})"),
+            Response::Modification(modification) => write!(f, "MODIFICATION ({modification})"),
             Response::Progress => write!(f, "PROGRESS"),
-            Response::OptionNegotiation(opt) => write!(f, "OPTNEG ({})", opt),
+            Response::OptionNegotiation(opt) => write!(f, "OPTNEG ({opt})"),
             Response::Skip => write!(f, "SKIP"),
             Response::SetSymbols => write!(f, "SET_SYMBOLS"),
         }
@@ -299,7 +299,7 @@ impl Display for Action {
             Action::Reject => write!(f, "REJECT"),
             Action::TempFail => write!(f, "TEMPFAIL"),
             Action::ReplyCode { code, text } => {
-                write!(f, "REPLYCODE (code: {:?}, text: {})", code, text)
+                write!(f, "REPLYCODE (code: {code:?}, text: {text})")
             }
             Action::Shutdown => write!(f, "SHUTDOWN"),
             Action::ConnectionFailure => write!(f, "CONN_FAIL"),
@@ -311,26 +311,26 @@ impl Display for Modification {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Modification::AddRcpt { recipient, args } => {
-                write!(f, "ADD_RCPT (recipient: {}, args: {})", recipient, args)
+                write!(f, "ADD_RCPT (recipient: {recipient}, args: {args})")
             }
             Modification::DeleteRcpt { recipient } => {
-                write!(f, "DEL_RCPT (recipient: {})", recipient)
+                write!(f, "DEL_RCPT (recipient: {recipient})")
             }
             Modification::ReplaceBody { value } => {
                 write!(f, "REPLACE_BODY ({} bytes)", value.len())
             }
             Modification::AddHeader { name, value } => {
-                write!(f, "ADD_HEADER ({}: {})", name, value)
+                write!(f, "ADD_HEADER ({name}: {value})")
             }
             Modification::ChangeHeader { index, name, value } => {
-                write!(f, "CHANGE_HEADER (index: {}, {}: {})", index, name, value)
+                write!(f, "CHANGE_HEADER (index: {index}, {name}: {value})")
             }
-            Modification::Quarantine { reason } => write!(f, "QUARANTINE ({})", reason),
+            Modification::Quarantine { reason } => write!(f, "QUARANTINE ({reason})"),
             Modification::ChangeFrom { sender, args } => {
-                write!(f, "CHANGE_FROM (<{}> {})", sender, args)
+                write!(f, "CHANGE_FROM (<{sender}> {args})")
             }
             Modification::InsertHeader { index, name, value } => {
-                write!(f, "INSERT_HEADER (index: {}, {}: {})", index, name, value)
+                write!(f, "INSERT_HEADER (index: {index}, {name}: {value})")
             }
         }
     }
@@ -471,16 +471,16 @@ impl Display for Options {
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Io(err) => write!(f, "IO error: {}", err),
+            Error::Io(err) => write!(f, "IO error: {err}"),
             Error::FrameTooLarge(size) => {
-                write!(f, "Milter response of {} bytes is too large.", size)
+                write!(f, "Milter response of {size} bytes is too large.")
             }
             Error::FrameInvalid(frame) => write!(
                 f,
                 "Invalid milter response: {:?}",
                 frame.get(0..100).unwrap_or(frame.as_ref())
             ),
-            Error::Unexpected(response) => write!(f, "Unexpected response: {}", response),
+            Error::Unexpected(response) => write!(f, "Unexpected response: {response}"),
             Error::Timeout => write!(f, "Connection timed out"),
             Error::TLSInvalidName => write!(f, "Invalid TLS name"),
             Error::Disconnected => write!(f, "Disconnected unexpectedly"),

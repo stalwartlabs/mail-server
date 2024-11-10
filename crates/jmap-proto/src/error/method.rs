@@ -43,20 +43,20 @@ impl From<trc::Error> for MethodErrorWrapper {
 impl Display for MethodError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            MethodError::InvalidArguments(err) => write!(f, "Invalid arguments: {}", err),
+            MethodError::InvalidArguments(err) => write!(f, "Invalid arguments: {err}"),
             MethodError::RequestTooLarge => write!(f, "Request too large"),
             MethodError::StateMismatch => write!(f, "State mismatch"),
             MethodError::AnchorNotFound => write!(f, "Anchor not found"),
-            MethodError::UnsupportedFilter(err) => write!(f, "Unsupported filter: {}", err),
-            MethodError::UnsupportedSort(err) => write!(f, "Unsupported sort: {}", err),
-            MethodError::ServerFail(err) => write!(f, "Server error: {}", err),
-            MethodError::UnknownMethod(err) => write!(f, "Unknown method: {}", err),
+            MethodError::UnsupportedFilter(err) => write!(f, "Unsupported filter: {err}"),
+            MethodError::UnsupportedSort(err) => write!(f, "Unsupported sort: {err}"),
+            MethodError::ServerFail(err) => write!(f, "Server error: {err}"),
+            MethodError::UnknownMethod(err) => write!(f, "Unknown method: {err}"),
             MethodError::ServerUnavailable => write!(f, "Server unavailable"),
             MethodError::ServerPartialFail => write!(f, "Server partial fail"),
             MethodError::InvalidResultReference(err) => {
-                write!(f, "Invalid result reference: {}", err)
+                write!(f, "Invalid result reference: {err}")
             }
-            MethodError::Forbidden(err) => write!(f, "Forbidden: {}", err),
+            MethodError::Forbidden(err) => write!(f, "Forbidden: {err}"),
             MethodError::AccountNotFound => write!(f, "Account not found"),
             MethodError::AccountNotSupportedByMethod => {
                 write!(f, "Account not supported by method")

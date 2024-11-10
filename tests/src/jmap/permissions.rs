@@ -767,7 +767,7 @@ impl ValidatePrincipalList for List<Principal> {
             }
         }
 
-        panic!("Principal not found: {}", name);
+        panic!("Principal not found: {name}");
     }
 
     fn assert_count(self, count: usize) -> Self {
@@ -833,8 +833,7 @@ impl ValidatePermissions for AccessToken {
         for permission in &permissions {
             assert!(
                 expected_permissions.contains(permission),
-                "Permission {:?} failed validation",
-                permission
+                "Permission {permission:?} failed validation"
             );
         }
         assert_eq!(
@@ -846,8 +845,7 @@ impl ValidatePermissions for AccessToken {
             if self.has_permission(permission) {
                 assert!(
                     expected_permissions.contains(&permission),
-                    "Permission {:?} failed validation",
-                    permission
+                    "Permission {permission:?} failed validation"
                 );
             }
         }

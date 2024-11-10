@@ -28,7 +28,7 @@ async fn internal_directory() {
     let config = DirectoryTest::new(None).await;
 
     for (store_id, store) in config.stores.stores {
-        println!("Testing internal directory with store {:?}", store_id);
+        println!("Testing internal directory with store {store_id:?}");
         store.destroy().await;
 
         // A principal without name should fail

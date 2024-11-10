@@ -75,7 +75,7 @@ pub async fn test(params: &mut JMAPTest) {
         if let Err(jmap_client::Error::Problem(problem)) = Client::new()
             .credentials(Credentials::basic(
                 "not_an_account@example.com",
-                &format!("brute_force{}", n),
+                &format!("brute_force{n}"),
             ))
             .accept_invalid_certs(true)
             .connect("https://127.0.0.1:8899")

@@ -20,7 +20,7 @@ pub fn fn_uri_part<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
                 "scheme_host" => uri
                     .scheme_str()
                     .and_then(|s| (s, uri.host()?).into())
-                    .map(|(s, h)| Variable::from(format!("{}://{}", s, h))),
+                    .map(|(s, h)| Variable::from(format!("{s}://{h}"))),
                 "path" => Variable::from(uri.path().to_string()).into(),
                 "port" => uri.port_u16().map(|port| Variable::Integer(port as i64)),
                 "query" => uri.query().map(|s| Variable::from(s.to_string())),

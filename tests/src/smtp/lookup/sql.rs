@@ -186,8 +186,7 @@ async fn lookup_sql() {
                 .await
                 .unwrap(),
             config.value(("test", test_name, "expect")).unwrap(),
-            "failed for '{}'",
-            test_name
+            "failed for '{test_name}'"
         );
     }
 

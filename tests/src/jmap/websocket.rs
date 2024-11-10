@@ -129,10 +129,10 @@ async fn expect_response(
     match tokio::time::timeout(Duration::from_millis(100), stream_rx.recv()).await {
         Ok(Some(message)) => match message {
             WebSocketMessage::Response(response) => response,
-            _ => panic!("Expected response, got: {:?}", message),
+            _ => panic!("Expected response, got: {message:?}"),
         },
         result => {
-            panic!("Timeout waiting for websocket: {:?}", result);
+            panic!("Timeout waiting for websocket: {result:?}");
         }
     }
 }
@@ -154,10 +154,10 @@ async fn assert_state(
                     state.iter().collect::<AHashSet<&TypeState>>()
                 );
             }
-            _ => panic!("Expected state change, got: {:?}", message),
+            _ => panic!("Expected state change, got: {message:?}"),
         },
         result => {
-            panic!("Timeout waiting for websocket: {:?}", result);
+            panic!("Timeout waiting for websocket: {result:?}");
         }
     }
 }
@@ -166,7 +166,7 @@ async fn expect_nothing(stream_rx: &mut mpsc::Receiver<WebSocketMessage>) {
     match tokio::time::timeout(Duration::from_millis(1000), stream_rx.recv()).await {
         Err(_) => {}
         message => {
-            panic!("Received a message when expecting nothing: {:?}", message);
+            panic!("Received a message when expecting nothing: {message:?}");
         }
     }
 }

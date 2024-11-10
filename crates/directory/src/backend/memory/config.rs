@@ -54,8 +54,7 @@ impl MemoryDirectory {
                     config.new_build_error(
                         prefix.as_str(),
                         format!(
-                            "Failed to obtain id for principal {} ({}): {:?}",
-                            name, lookup_id, err
+                            "Failed to obtain id for principal {name} ({lookup_id}): {err:?}"
                         ),
                     )
                 })
@@ -88,8 +87,7 @@ impl MemoryDirectory {
                             config.new_build_error(
                                 prefix.as_str(),
                                 format!(
-                                    "Failed to obtain id for principal {} ({}): {:?}",
-                                    name, lookup_id, err
+                                    "Failed to obtain id for principal {name} ({lookup_id}): {err:?}"
                                 ),
                             )
                         })

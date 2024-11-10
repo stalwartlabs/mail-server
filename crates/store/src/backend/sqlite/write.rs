@@ -65,8 +65,7 @@ impl SqliteStore {
                         match op {
                             ValueOp::Set(value) => {
                                 trx.prepare_cached(&format!(
-                                    "INSERT OR REPLACE INTO {} (k, v) VALUES (?, ?)",
-                                    table
+                                    "INSERT OR REPLACE INTO {table} (k, v) VALUES (?, ?)"
                                 ))
                                 .map_err(into_error)?
                                 .execute([&key, value.resolve(&result)?.as_ref()])
@@ -109,7 +108,7 @@ impl SqliteStore {
                                 );
                             }
                             ValueOp::Clear => {
-                                trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))
+                                trx.prepare_cached(&format!("DELETE FROM {table} WHERE k = ?"))
                                     .map_err(into_error)?
                                     .execute([&key])
                                     .map_err(into_error)?;
@@ -194,15 +193,14 @@ impl SqliteStore {
                                     .map_err(into_error)?;
                             } else {
                                 trx.prepare_cached(&format!(
-                                    "INSERT OR IGNORE INTO {} (k) VALUES (?)",
-                                    table
+                                    "INSERT OR IGNORE INTO {table} (k) VALUES (?)"
                                 ))
                                 .map_err(into_error)?
                                 .execute(params![&key])
                                 .map_err(into_error)?;
                             }
                         } else {
-                            trx.prepare_cached(&format!("DELETE FROM {} WHERE k = ?", table))
+                            trx.prepare_cached(&format!("DELETE FROM {table} WHERE k = ?"))
                                 .map_err(into_error)?
                                 .execute(params![&key])
                                 .map_err(into_error)?;
@@ -235,7 +233,7 @@ impl SqliteStore {
                         let table = char::from(class.subspace(collection));
 
                         let matches = trx
-                            .prepare_cached(&format!("SELECT v FROM {} WHERE k = ?", table))
+                            .prepare_cached(&format!("SELECT v FROM {table} WHERE k = ?"))
                             .map_err(into_error)?
                             .query_row([&key], |row| {
                                 Ok(assert_value.matches(row.get_ref(0)?.as_bytes()?))

@@ -108,19 +108,18 @@ impl MysqlStore {
                             let exists = asserted_values.get(&key);
                             let s = if let Some(exists) = exists {
                                 if *exists {
-                                    trx.prep(format!("UPDATE {} SET v = :v WHERE k = :k", table))
+                                    trx.prep(format!("UPDATE {table} SET v = :v WHERE k = :k"))
                                         .await?
                                 } else {
                                     trx.prep(format!(
-                                        "INSERT INTO {} (k, v) VALUES (:k, :v)",
-                                        table
+                                        "INSERT INTO {table} (k, v) VALUES (:k, :v)"
                                     ))
                                     .await?
                                 }
                             } else {
                                 trx
                             .prep(
-                                format!("INSERT INTO {} (k, v) VALUES (:k, :v) ON DUPLICATE KEY UPDATE v = VALUES(v)", table),
+                                format!("INSERT INTO {table} (k, v) VALUES (:k, :v) ON DUPLICATE KEY UPDATE v = VALUES(v)"),
                             )
                             .await?
                             };
@@ -190,7 +189,7 @@ impl MysqlStore {
                         }
                         ValueOp::Clear => {
                             let s = trx
-                                .prep(format!("DELETE FROM {} WHERE k = ?", table))
+                                .prep(format!("DELETE FROM {table} WHERE k = ?"))
                                 .await?;
                             trx.exec_drop(&s, (key,)).await?;
                         }
@@ -256,11 +255,11 @@ impl MysqlStore {
                         if is_document_id {
                             trx.prep("INSERT INTO b (k) VALUES (?)").await?
                         } else {
-                            trx.prep(format!("INSERT IGNORE INTO {} (k) VALUES (?)", table))
+                            trx.prep(format!("INSERT IGNORE INTO {table} (k) VALUES (?)"))
                                 .await?
                         }
                     } else {
-                        trx.prep(format!("DELETE FROM {} WHERE k = ?", table))
+                        trx.prep(format!("DELETE FROM {table} WHERE k = ?"))
                             .await?
                     };
 
@@ -301,7 +300,7 @@ impl MysqlStore {
                     let table = char::from(class.subspace(collection));
 
                     let s = trx
-                        .prep(format!("SELECT v FROM {} WHERE k = ? FOR UPDATE", table))
+                        .prep(format!("SELECT v FROM {table} WHERE k = ? FOR UPDATE"))
                         .await?;
                     let (exists, matches) = trx
                         .exec_first::<Vec<u8>, _, _>(&s, (&key,))

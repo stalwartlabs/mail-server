@@ -161,7 +161,7 @@ impl Display for Keyword {
             Keyword::Deleted => write!(f, "$deleted"),
             Keyword::Forwarded => write!(f, "$forwarded"),
             Keyword::MdnSent => write!(f, "$mdnsent"),
-            Keyword::Other(s) => write!(f, "{}", s),
+            Keyword::Other(s) => write!(f, "{s}"),
         }
     }
 }

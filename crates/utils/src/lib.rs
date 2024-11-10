@@ -41,7 +41,7 @@ impl BlobHash {
     pub fn to_hex(&self) -> String {
         let mut hex = String::with_capacity(BLOB_HASH_LEN * 2);
         for byte in self.0.iter() {
-            hex.push_str(&format!("{:02x}", byte));
+            hex.push_str(&format!("{byte:02x}"));
         }
         hex
     }

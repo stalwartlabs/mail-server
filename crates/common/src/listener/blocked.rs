@@ -232,7 +232,7 @@ impl Server {
             .storage
             .config
             .set([ConfigKey {
-                key: format!("{}.{}", BLOCKED_IP_KEY, ip),
+                key: format!("{BLOCKED_IP_KEY}.{ip}"),
                 value: String::new(),
             }])
             .await?;

@@ -388,8 +388,7 @@ mod tests {
             assert_eq!(
                 parser.parse(&mut b"\r\n".iter()),
                 Ok(request.clone()),
-                "{:?}",
-                cmd
+                "{cmd:?}"
             );
             chunked.push_str(cmd);
             chunked.push_str("\r\n");
@@ -415,7 +414,7 @@ mod tests {
                 }
             }
 
-            assert_eq!(requests, chunked_expected, "Chunk size: {}", chunk_size);
+            assert_eq!(requests, chunked_expected, "Chunk size: {chunk_size}");
         }
 
         for cmd in [
@@ -449,7 +448,7 @@ mod tests {
                 Err(Error::NeedsMoreData)
             );
             let result = parser.parse(&mut b"\r\n".iter());
-            assert!(result.is_err(), "{:?}", result);
+            assert!(result.is_err(), "{result:?}");
         }
     }
 }

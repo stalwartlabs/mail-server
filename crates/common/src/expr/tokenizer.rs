@@ -94,7 +94,7 @@ impl<'x> Tokenizer<'x> {
                         let stop_ch = self.find_char(b"\"'")?;
                         let regex_str = self.parse_string(stop_ch)?;
                         let regex = Regex::new(&regex_str).map_err(|e| {
-                            format!("Invalid regular expression {:?}: {}", regex_str, e)
+                            format!("Invalid regular expression {regex_str:?}: {e}")
                         })?;
                         self.has_alpha = false;
                         self.buf.clear();
@@ -275,11 +275,11 @@ impl<'x> Tokenizer<'x> {
 
                 buf.parse::<f64>()
                     .map(|f| Token::Constant(Constant::Float(f)))
-                    .map_err(|_| format!("Invalid float value {}", buf,))
+                    .map_err(|_| format!("Invalid float value {buf}",))
             } else {
                 buf.parse::<i64>()
                     .map(|i| Token::Constant(Constant::Integer(i)))
-                    .map_err(|_| format!("Invalid integer value {}", buf,))
+                    .map_err(|_| format!("Invalid integer value {buf}",))
             }
         } else {
             let has_dot = self.has_dot;

@@ -201,7 +201,7 @@ impl StatusResponse {
     }
 
     pub fn completed(command: Command) -> Self {
-        StatusResponse::ok(format!("{} completed", command))
+        StatusResponse::ok(format!("{command} completed"))
     }
 
     pub fn with_code(mut self, code: ResponseCode) -> Self {

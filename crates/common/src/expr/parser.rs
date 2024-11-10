@@ -77,8 +77,7 @@ impl<'x> ExpressionParser<'x> {
                             if got_args != *num_args as i32 {
                                 return Err(if *id != u32::MAX {
                                     format!(
-                                        "Expression function {:?} expected {} arguments, got {}",
-                                        name, num_args, got_args
+                                        "Expression function {name:?} expected {num_args} arguments, got {got_args}"
                                     )
                                 } else {
                                     "Missing array index".to_string()

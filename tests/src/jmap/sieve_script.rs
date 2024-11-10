@@ -184,8 +184,7 @@ pub async fn test(params: &mut JMAPTest) {
             .unwrap();
         assert!(
             !response.ids().is_empty(),
-            "Mailbox {} was not created.",
-            mailbox
+            "Mailbox {mailbox} was not created."
         );
         mailbox_ids.extend(response.take_ids());
     }
@@ -197,7 +196,7 @@ pub async fn test(params: &mut JMAPTest) {
         .await
         .unwrap()
         .take_ids();
-    assert_eq!(message_ids.len(), 1, "too many messages {:?}", message_ids);
+    assert_eq!(message_ids.len(), 1, "too many messages {message_ids:?}");
     let email = client
         .email_get(
             message_ids.last().unwrap(),
@@ -466,8 +465,7 @@ pub async fn test(params: &mut JMAPTest) {
     assert_eq!(
         emails.len(),
         3,
-        "Two new messages were expected: {:#?}.",
-        emails
+        "Two new messages were expected: {emails:#?}."
     );
 
     'outer: for (subject, folder, keywords) in [
@@ -481,7 +479,7 @@ pub async fn test(params: &mut JMAPTest) {
         for email in &emails {
             if email.subject().unwrap().eq(subject) {
                 if !keywords.is_empty() && !email.keywords().contains(&keywords) {
-                    panic!("Keyword {:?} not found in: {:#?}", keywords, email);
+                    panic!("Keyword {keywords:?} not found in: {email:#?}");
                 }
 
                 let mailbox_id = client
@@ -493,19 +491,18 @@ pub async fn test(params: &mut JMAPTest) {
                     .unwrap()
                     .take_ids()
                     .pop()
-                    .unwrap_or_else(|| panic!("Mailbox {:?} not found", folder));
+                    .unwrap_or_else(|| panic!("Mailbox {folder:?} not found"));
 
                 if !email.mailbox_ids().contains(&mailbox_id.as_str()) {
                     panic!(
-                        "Mailbox {:?} ({}) not found in: {:#?}",
-                        folder, mailbox_id, email
+                        "Mailbox {folder:?} ({mailbox_id}) not found in: {email:#?}"
                     );
                 }
 
                 continue 'outer;
             }
         }
-        panic!("Email {:?} not found in: {:#?}", subject, emails);
+        panic!("Email {subject:?} not found in: {emails:#?}");
     }
 
     // Remove test data
@@ -524,6 +521,6 @@ fn get_script(name: &str) -> Vec<u8> {
     script_path.push("resources");
     script_path.push("jmap");
     script_path.push("sieve");
-    script_path.push(format!("{}.sieve", name));
+    script_path.push(format!("{name}.sieve"));
     fs::read(script_path).unwrap()
 }

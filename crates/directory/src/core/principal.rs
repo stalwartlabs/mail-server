@@ -803,7 +803,7 @@ impl<'de> serde::Deserialize<'de> for Principal {
                             }
                         })
                         .ok_or_else(|| {
-                            serde::de::Error::custom(format!("invalid principal field: {}", key))
+                            serde::de::Error::custom(format!("invalid principal field: {key}"))
                         })?;
 
                     let value = match key {

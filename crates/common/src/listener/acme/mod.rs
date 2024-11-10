@@ -74,7 +74,7 @@ impl AcmeProvider {
                 .into_iter()
                 .map(|c| {
                     if !c.starts_with("mailto:") {
-                        format!("mailto:{}", c)
+                        format!("mailto:{c}")
                     } else {
                         c
                     }

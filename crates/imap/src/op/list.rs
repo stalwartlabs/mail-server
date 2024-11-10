@@ -161,7 +161,7 @@ impl<T: SessionStream> SessionData<T> {
         // Append reference name
         if !patterns.is_empty() && !reference_name.is_empty() {
             patterns.iter_mut().for_each(|item| {
-                *item = format!("{}{}", reference_name, item);
+                *item = format!("{reference_name}{item}");
             })
         }
 
@@ -205,7 +205,7 @@ impl<T: SessionStream> SessionData<T> {
                     let mailbox = account.mailbox_state.get(mailbox_id).unwrap();
                     let mut has_recursive_match = false;
                     if recursive_match {
-                        let prefix = format!("{}/", mailbox_name);
+                        let prefix = format!("{mailbox_name}/");
                         for (mailbox_name, mailbox_id) in &account.mailbox_names {
                             if mailbox_name.starts_with(&prefix)
                                 && account.mailbox_state.get(mailbox_id).unwrap().is_subscribed

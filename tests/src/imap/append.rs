@@ -83,13 +83,11 @@ pub async fn assert_append_message(
 fn build_message(message: usize, in_reply_to: Option<usize>, thread_num: usize) -> String {
     if let Some(in_reply_to) = in_reply_to {
         format!(
-            "Message-ID: <{}@domain>\nReferences: <{}@domain>\nSubject: re: T{}\n\nreply\n",
-            message, in_reply_to, thread_num
+            "Message-ID: <{message}@domain>\nReferences: <{in_reply_to}@domain>\nSubject: re: T{thread_num}\n\nreply\n"
         )
     } else {
         format!(
-            "Message-ID: <{}@domain>\nSubject: T{}\n\nmsg\n",
-            message, thread_num
+            "Message-ID: <{message}@domain>\nSubject: T{thread_num}\n\nmsg\n"
         )
     }
 }

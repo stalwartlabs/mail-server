@@ -27,7 +27,7 @@ async fn sql_directory() {
         // Parse config
         let mut config = DirectoryTest::new(directory_id.into()).await;
 
-        println!("Testing SQL directory {:?}", directory_id);
+        println!("Testing SQL directory {directory_id:?}");
         let handle = config.directories.directories.remove(directory_id).unwrap();
         let store = DirectoryStore {
             store: config.stores.lookup_stores.remove(directory_id).unwrap(),

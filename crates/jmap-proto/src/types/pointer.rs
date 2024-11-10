@@ -170,14 +170,14 @@ impl Display for JSONPointer {
         match self {
             JSONPointer::Root => write!(f, "/"),
             JSONPointer::Wildcard => write!(f, "*"),
-            JSONPointer::String(s) => write!(f, "{}", s),
-            JSONPointer::Number(n) => write!(f, "{}", n),
+            JSONPointer::String(s) => write!(f, "{s}"),
+            JSONPointer::Number(n) => write!(f, "{n}"),
             JSONPointer::Path(path) => {
                 for (i, ptr) in path.iter().enumerate() {
                     if i > 0 {
                         write!(f, "/")?;
                     }
-                    write!(f, "{}", ptr)?;
+                    write!(f, "{ptr}")?;
                 }
                 Ok(())
             }

@@ -323,8 +323,7 @@ impl AccessToken {
             Ok(self)
         } else {
             Err(trc::JmapEvent::Forbidden.into_err().details(format!(
-                "You do not have access to account {}",
-                to_account_id
+                "You do not have access to account {to_account_id}"
             )))
         }
     }
@@ -335,7 +334,7 @@ impl AccessToken {
         } else {
             Err(trc::JmapEvent::Forbidden
                 .into_err()
-                .details(format!("You are not an owner of account {}", account_id)))
+                .details(format!("You are not an owner of account {account_id}")))
         }
     }
 

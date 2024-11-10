@@ -684,7 +684,7 @@ pub async fn jmap_raw_request(body: impl AsRef<str>, username: &str, secret: &st
         header::AUTHORIZATION,
         header::HeaderValue::from_str(&format!(
             "Basic {}",
-            general_purpose::STANDARD.encode(format!("{}:{}", username, secret))
+            general_purpose::STANDARD.encode(format!("{username}:{secret}"))
         ))
         .unwrap(),
     );
@@ -755,7 +755,7 @@ pub fn replace_boundaries(string: String) -> String {
             string,
             &values,
             &(0..values.len())
-                .map(|i| format!("boundary_{}", i))
+                .map(|i| format!("boundary_{i}"))
                 .collect::<Vec<_>>(),
         )
     } else {
@@ -770,7 +770,7 @@ pub fn replace_blob_ids(string: String) -> String {
             string,
             &values,
             &(0..values.len())
-                .map(|i| format!("blob_{}", i))
+                .map(|i| format!("blob_{i}"))
                 .collect::<Vec<_>>(),
         )
     } else {

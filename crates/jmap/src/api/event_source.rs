@@ -90,8 +90,7 @@ impl EventSourceHandler for Server {
                 interval: Duration::from_millis(interval as u64),
                 last_ping: Instant::now() - Duration::from_millis(interval as u64),
                 payload: Bytes::from(format!(
-                    "event: ping\ndata: {{\"interval\": {}}}\n\n",
-                    interval
+                    "event: ping\ndata: {{\"interval\": {interval}}}\n\n"
                 )),
             }
             .into()

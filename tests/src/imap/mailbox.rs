@@ -374,6 +374,6 @@ fn mailbox_matches_pattern() {
                 matched_mailboxes.push(mailbox);
             }
         }
-        assert_eq!(matched_mailboxes, expected_match, "for pattern {}", pattern);
+        assert_eq!(matched_mailboxes, expected_match, "for pattern {pattern}");
     }
 }

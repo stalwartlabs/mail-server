@@ -80,7 +80,7 @@ mod tests {
                         .replace("0000_", "")
                 );
             }
-            println!(" => Property::{},", label);
+            println!(" => Property::{label},");
         }
     }
 }

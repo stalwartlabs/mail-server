@@ -253,7 +253,7 @@ impl<T: SessionStream> Session<T> {
 
         if let Some(needs_literal) = needs_literal {
             if let Err(err) = self
-                .write_bytes(format!("+ Ready for {} bytes.\r\n", needs_literal).into_bytes())
+                .write_bytes(format!("+ Ready for {needs_literal} bytes.\r\n").into_bytes())
                 .await
             {
                 self.write_error(err).await;

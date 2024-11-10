@@ -145,9 +145,7 @@ pub(crate) fn build_pool<M: Manager>(
         .build()
         .map_err(|err| {
             format!(
-                "Failed to build pool for {prefix:?}: {err}",
-                prefix = prefix,
-                err = err
+                "Failed to build pool for {prefix:?}: {err}"
             )
         })
 }

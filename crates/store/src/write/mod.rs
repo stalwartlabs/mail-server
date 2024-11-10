@@ -826,7 +826,7 @@ impl ResolveId for MaybeDynamicId {
 impl std::fmt::Debug for MaybeDynamicValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            MaybeDynamicValue::Static(value) => write!(f, "{:?}", value),
+            MaybeDynamicValue::Static(value) => write!(f, "{value:?}"),
             MaybeDynamicValue::Dynamic(_) => write!(f, "Dynamic"),
         }
     }

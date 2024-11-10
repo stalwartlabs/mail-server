@@ -184,7 +184,7 @@ impl AddressMapping {
             AddressMapping::Enable => {
                 if let Some((local_part, domain_part)) = address.rsplit_once('@') {
                     if let Some((local_part, _)) = local_part.split_once('+') {
-                        return format!("{}@{}", local_part, domain_part).into();
+                        return format!("{local_part}@{domain_part}").into();
                     }
                 }
             }
@@ -211,7 +211,7 @@ impl AddressMapping {
         match self {
             AddressMapping::Enable => address
                 .rsplit_once('@')
-                .map(|(_, domain_part)| format!("@{}", domain_part))
+                .map(|(_, domain_part)| format!("@{domain_part}"))
                 .map(Cow::Owned),
             AddressMapping::Custom(if_block) => core
                 .eval_if::<String, _>(if_block, &Address(address), session_id)

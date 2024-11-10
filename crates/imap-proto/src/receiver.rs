@@ -188,8 +188,7 @@ impl<T: CommandParser> Receiver<T> {
                                         let command =
                                             String::from_utf8_lossy(&self.buf).into_owned();
                                         self.error_reset(format!(
-                                            "Unrecognized command '{}'.",
-                                            command
+                                            "Unrecognized command '{command}'."
                                         ))
                                     })?;
                                 self.buf.clear();
@@ -990,11 +989,11 @@ mod tests {
                     match receiver.parse(&mut bytes) {
                         Ok(request) => requests.push(request),
                         Err(Error::NeedsMoreData | Error::NeedsLiteral { .. }) => break,
-                        Err(err) => panic!("{:?} for frames {:#?}", err, frames),
+                        Err(err) => panic!("{err:?} for frames {frames:#?}"),
                     }
                 }
             }
-            assert_eq!(requests, expected_requests, "{:#?}", frames);
+            assert_eq!(requests, expected_requests, "{frames:#?}");
         }
     }
 
@@ -1012,7 +1011,7 @@ mod tests {
         ] {
             match receiver.parse(&mut invalid.as_bytes().iter()) {
                 Err(Error::Error { .. }) => {}
-                result => panic!("Expecter error, got: {:?}", result),
+                result => panic!("Expecter error, got: {result:?}"),
             }
         }
     }

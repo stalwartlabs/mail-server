@@ -191,8 +191,7 @@ pub async fn test(params: &mut JMAPTest) {
     for change in changes {
         assert!(
             !new_changes.contains(&change),
-            "Change {:?} was not purged",
-            change
+            "Change {change:?} was not purged"
         );
     }
 

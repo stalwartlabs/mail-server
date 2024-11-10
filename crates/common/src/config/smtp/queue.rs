@@ -541,7 +541,7 @@ impl ParseValue for RequireOptional {
             "optional" => Ok(RequireOptional::Optional),
             "require" | "required" => Ok(RequireOptional::Require),
             "disable" | "disabled" | "none" | "false" => Ok(RequireOptional::Disable),
-            _ => Err(format!("Invalid TLS option value {:?}.", value,)),
+            _ => Err(format!("Invalid TLS option value {value:?}.",)),
         }
     }
 }

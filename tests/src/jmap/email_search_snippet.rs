@@ -37,7 +37,7 @@ pub async fn test(params: &mut JMAPTest) {
         "text_plain_chinese",
     ] {
         let mut file_name = test_dir.clone();
-        file_name.push(format!("{}.eml", email_name));
+        file_name.push(format!("{email_name}.eml"));
         let email_id = params
             .client
             .email_import(
@@ -155,7 +155,7 @@ pub async fn test(params: &mut JMAPTest) {
             .unwrap();
         let snippet = response
             .snippet(email_ids.get(email_name).unwrap())
-            .unwrap_or_else(|| panic!("No snippet for {}", email_name));
+            .unwrap_or_else(|| panic!("No snippet for {email_name}"));
         assert_eq!(snippet_subject, snippet.subject());
         assert_eq!(snippet_preview, snippet.preview());
         assert!(

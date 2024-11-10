@@ -153,8 +153,7 @@ impl EncryptMessage for Message<'_> {
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|err| {
                         EncryptMessageError::Error(format!(
-                            "Failed to parse OpenPGP public key: {}",
-                            err
+                            "Failed to parse OpenPGP public key: {err}"
                         ))
                     })?;
 
@@ -186,7 +185,7 @@ impl EncryptMessage for Message<'_> {
                     let message = stream::Armorer::new(stream::Message::new(&mut sink))
                         .build()
                         .map_err(|err| {
-                            EncryptMessageError::Error(format!("Failed to create armorer: {}", err))
+                            EncryptMessageError::Error(format!("Failed to create armorer: {err}"))
                         })?;
                     let message = stream::Encryptor2::for_recipients(message, keys)
                         .symmetric_algo(match algo {
@@ -196,39 +195,35 @@ impl EncryptMessage for Message<'_> {
                         .build()
                         .map_err(|err| {
                             EncryptMessageError::Error(format!(
-                                "Failed to build encryptor: {}",
-                                err
+                                "Failed to build encryptor: {err}"
                             ))
                         })?;
                     let mut message =
                         stream::LiteralWriter::new(message).build().map_err(|err| {
                             EncryptMessageError::Error(format!(
-                                "Failed to create literal writer: {}",
-                                err
+                                "Failed to create literal writer: {err}"
                             ))
                         })?;
                     std::io::copy(&mut Cursor::new(inner_message), &mut message).map_err(
                         |err| {
                             EncryptMessageError::Error(format!(
-                                "Failed to encrypt message: {}",
-                                err
+                                "Failed to encrypt message: {err}"
                             ))
                         },
                     )?;
                     message.finalize().map_err(|err| {
-                        EncryptMessageError::Error(format!("Failed to finalize message: {}", err))
+                        EncryptMessageError::Error(format!("Failed to finalize message: {err}"))
                     })?;
 
                     String::from_utf8(sink).map_err(|err| {
                         EncryptMessageError::Error(format!(
-                            "Failed to convert encrypted message to UTF-8: {}",
-                            err
+                            "Failed to convert encrypted message to UTF-8: {err}"
                         ))
                     })
                 })
                 .await
                 .map_err(|err| {
-                    EncryptMessageError::Error(format!("Failed to encrypt message: {}", err))
+                    EncryptMessageError::Error(format!("Failed to encrypt message: {err}"))
                 })??;
                 outer_message.extend_from_slice(encrypted_contents.as_bytes());
                 outer_message.extend_from_slice(b"\r\n--");
@@ -252,7 +247,7 @@ impl EncryptMessage for Message<'_> {
                 })
                 .await
                 .map_err(|err| {
-                    EncryptMessageError::Error(format!("Failed to encrypt message: {}", err))
+                    EncryptMessageError::Error(format!("Failed to encrypt message: {err}"))
                 })?;
 
                 // Encrypt key using public keys
@@ -262,8 +257,7 @@ impl EncryptMessage for Message<'_> {
                     let cert =
                         rasn::der::decode::<rasn_pkix::Certificate>(cert).map_err(|err| {
                             EncryptMessageError::Error(format!(
-                                "Failed to parse certificate: {}",
-                                err
+                                "Failed to parse certificate: {err}"
                             ))
                         })?;
 
@@ -274,12 +268,12 @@ impl EncryptMessage for Message<'_> {
                             .as_raw_slice(),
                     )
                     .map_err(|err| {
-                        EncryptMessageError::Error(format!("Failed to parse public key: {}", err))
+                        EncryptMessageError::Error(format!("Failed to parse public key: {err}"))
                     })?;
                     let encrypted_key = public_key
                         .encrypt(&mut rng, Pkcs1v15Encrypt, &key[..])
                         .map_err(|err| {
-                            EncryptMessageError::Error(format!("Failed to encrypt key: {}", err))
+                            EncryptMessageError::Error(format!("Failed to encrypt key: {err}"))
                         })
                         .unwrap();
 
@@ -298,8 +292,7 @@ impl EncryptMessage for Message<'_> {
                                     rasn::der::encode(&())
                                         .map_err(|err| {
                                             EncryptMessageError::Error(format!(
-                                                "Failed to encode RSA algorithm identifier: {}",
-                                                err
+                                                "Failed to encode RSA algorithm identifier: {err}"
                                             ))
                                         })?
                                         .into(),
@@ -325,8 +318,7 @@ impl EncryptMessage for Message<'_> {
                                         rasn::der::encode(&OctetString::from(iv))
                                             .map_err(|err| {
                                                 EncryptMessageError::Error(format!(
-                                                    "Failed to encode IV: {}",
-                                                    err
+                                                    "Failed to encode IV: {err}"
                                                 ))
                                             })?
                                             .into(),
@@ -338,15 +330,14 @@ impl EncryptMessage for Message<'_> {
                         })
                         .map_err(|err| {
                             EncryptMessageError::Error(format!(
-                                "Failed to encode EnvelopedData: {}",
-                                err
+                                "Failed to encode EnvelopedData: {err}"
                             ))
                         })?
                         .into(),
                     ),
                 })
                 .map_err(|err| {
-                    EncryptMessageError::Error(format!("Failed to encode ContentInfo: {}", err))
+                    EncryptMessageError::Error(format!("Failed to encode ContentInfo: {err}"))
                 })?;
 
                 // Generate message
@@ -362,7 +353,7 @@ impl EncryptMessage for Message<'_> {
                     .as_bytes(),
                 );
                 base64_encode_mime(&pkcs7, &mut outer_message, false).map_err(|err| {
-                    EncryptMessageError::Error(format!("Failed to base64 encode PKCS7: {}", err))
+                    EncryptMessageError::Error(format!("Failed to base64 encode PKCS7: {err}"))
                 })?;
             }
         }

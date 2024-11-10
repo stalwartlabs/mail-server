@@ -66,7 +66,7 @@ impl OAuthConfig {
                 _ => {
                     config.new_parse_error(
                         "oauth.oidc.signature-algorithm",
-                        format!("Invalid OIDC signature algorithm: {}", alg),
+                        format!("Invalid OIDC signature algorithm: {alg}"),
                     );
                     SignatureAlgorithm::HS256
                 }
@@ -226,7 +226,7 @@ fn parse_rsa_key(config: &mut Config) -> Option<(Secret, AlgorithmParameters)> {
         Err(err) => {
             config.new_build_error(
                 "oauth.oidc.signature-key",
-                format!("Failed to build RSA key: {}", err),
+                format!("Failed to build RSA key: {err}"),
             );
             return None;
         }
@@ -237,7 +237,7 @@ fn parse_rsa_key(config: &mut Config) -> Option<(Secret, AlgorithmParameters)> {
         Err(err) => {
             config.new_build_error(
                 "oauth.oidc.signature-key",
-                format!("Failed to obtain RSA public key: {}", err),
+                format!("Failed to obtain RSA public key: {err}"),
             );
             return None;
         }
@@ -279,7 +279,7 @@ fn parse_ecdsa_key(
             Err(err) => {
                 config.new_build_error(
                     "oauth.oidc.signature-key",
-                    format!("Failed to build ECDSA key: {}", err),
+                    format!("Failed to build ECDSA key: {err}"),
                 );
                 return None;
             }
@@ -294,7 +294,7 @@ fn parse_ecdsa_key(
                 Err(err) => {
                     config.new_build_error(
                         "oauth.oidc.signature-key",
-                        format!("Failed to parse ECDSA key: {}", err),
+                        format!("Failed to parse ECDSA key: {err}"),
                     );
                     return None;
                 }
@@ -311,7 +311,7 @@ fn parse_ecdsa_key(
                 Err(err) => {
                     config.new_build_error(
                         "oauth.oidc.signature-key",
-                        format!("Failed to parse ECDSA key: {}", err),
+                        format!("Failed to parse ECDSA key: {err}"),
                     );
                     return None;
                 }

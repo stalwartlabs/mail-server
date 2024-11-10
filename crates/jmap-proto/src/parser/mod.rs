@@ -147,9 +147,9 @@ impl<T> Display for Token<T> {
             Token::DictEnd => write!(f, "}}"),
             Token::ArrayStart => write!(f, "["),
             Token::ArrayEnd => write!(f, "]"),
-            Token::Integer(i) => write!(f, "{}", i),
-            Token::Float(v) => write!(f, "{}", v),
-            Token::Boolean(b) => write!(f, "{}", b),
+            Token::Integer(i) => write!(f, "{i}"),
+            Token::Float(v) => write!(f, "{v}"),
+            Token::Boolean(b) => write!(f, "{b}"),
             Token::Null => write!(f, "null"),
             Token::String(_) => write!(f, "string"),
         }

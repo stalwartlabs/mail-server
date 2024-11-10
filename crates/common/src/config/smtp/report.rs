@@ -220,7 +220,7 @@ impl ParseValue for AggregateFrequency {
             "hourly" | "hour" => Ok(AggregateFrequency::Hourly),
             "weekly" | "week" => Ok(AggregateFrequency::Weekly),
             "never" | "disable" | "false" => Ok(AggregateFrequency::Never),
-            _ => Err(format!("Invalid aggregate frequency value {:?}.", value,)),
+            _ => Err(format!("Invalid aggregate frequency value {value:?}.",)),
         }
     }
 }
@@ -279,6 +279,6 @@ impl ParseValue for AddressMatch {
         } else if value.contains('@') {
             return Ok(AddressMatch::Equals(value.trim().to_lowercase()));
         }
-        Err(format!("Invalid address match value {:?}.", value,))
+        Err(format!("Invalid address match value {value:?}.",))
     }
 }

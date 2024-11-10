@@ -114,8 +114,8 @@ impl Display for ResultReference {
 impl<V: Display, R: Display> Display for MaybeReference<V, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MaybeReference::Value(id) => write!(f, "{}", id),
-            MaybeReference::Reference(str) => write!(f, "#{}", str),
+            MaybeReference::Value(id) => write!(f, "{id}"),
+            MaybeReference::Reference(str) => write!(f, "#{str}"),
         }
     }
 }
@@ -128,7 +128,7 @@ impl serde::Serialize for MaybeReference<Id, String> {
     {
         match self {
             MaybeReference::Value(id) => id.serialize(serializer),
-            MaybeReference::Reference(str) => serializer.serialize_str(&format!("#{}", str)),
+            MaybeReference::Reference(str) => serializer.serialize_str(&format!("#{str}")),
         }
     }
 }
