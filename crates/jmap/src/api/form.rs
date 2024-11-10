@@ -122,6 +122,11 @@ impl FormHandler for Server {
             }
         }
 
+        // Discard empty forms
+        if failure.is_none() && form_data.fields().all(|(_, value)| value.trim().is_empty()) {
+            failure = Some(Cow::Borrowed("Empty form"));
+        }
+
         if failure.is_none() {
             // Build body
             let mut body = String::with_capacity(1024);
