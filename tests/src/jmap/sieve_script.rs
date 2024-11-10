@@ -494,9 +494,7 @@ pub async fn test(params: &mut JMAPTest) {
                     .unwrap_or_else(|| panic!("Mailbox {folder:?} not found"));
 
                 if !email.mailbox_ids().contains(&mailbox_id.as_str()) {
-                    panic!(
-                        "Mailbox {folder:?} ({mailbox_id}) not found in: {email:#?}"
-                    );
+                    panic!("Mailbox {folder:?} ({mailbox_id}) not found in: {email:#?}");
                 }
 
                 continue 'outer;

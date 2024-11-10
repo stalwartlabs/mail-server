@@ -479,9 +479,7 @@ async fn antispam() {
             match server_.run_script("test".to_string(), script, params).await {
                 ScriptResult::Accept { modifications } => {
                     if modifications.len() != expected_headers.len() {
-                        panic!(
-                            "Expected {expected_headers:?} headers, got {modifications:?}"
-                        );
+                        panic!("Expected {expected_headers:?} headers, got {modifications:?}");
                     }
                     for modification in modifications {
                         if let ScriptModification::AddHeader { name, value } = modification {

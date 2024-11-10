@@ -226,9 +226,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     imap_bill.send("NOOP").await;
     imap_bill.assert_read(Type::Tagged, ResponseType::Ok).await;
 
-    imap_bill
-        .send(&format!("UID FETCH {uid} (PREVIEW)"))
-        .await;
+    imap_bill.send(&format!("UID FETCH {uid} (PREVIEW)")).await;
     imap_bill
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
@@ -237,9 +235,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     imap_jane.send("SELECT INBOX").await;
     imap_jane.assert_read(Type::Tagged, ResponseType::Ok).await;
 
-    imap_jane
-        .send(&format!("UID FETCH {uid} (PREVIEW)"))
-        .await;
+    imap_jane.send(&format!("UID FETCH {uid} (PREVIEW)")).await;
     imap_jane
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
@@ -253,17 +249,13 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
         .into_copy_uid();
 
     // Both Jane and Bill should not see the message on Jane's Inbox anymore
-    imap_bill
-        .send(&format!("UID FETCH {uid} (PREVIEW)"))
-        .await;
+    imap_bill.send(&format!("UID FETCH {uid} (PREVIEW)")).await;
     imap_bill
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_count("copy test", 0);
 
-    imap_jane
-        .send(&format!("UID FETCH {uid} (PREVIEW)"))
-        .await;
+    imap_jane.send(&format!("UID FETCH {uid} (PREVIEW)")).await;
     imap_jane
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await

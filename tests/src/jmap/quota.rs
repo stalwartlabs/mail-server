@@ -359,9 +359,7 @@ fn assert_over_quota<T: std::fmt::Debug>(result: Result<T, jmap_client::Error>) 
 }
 
 fn create_message_with_size(from: &str, to: &str, subject: &str, size: usize) -> Vec<u8> {
-    let mut message = format!(
-        "From: {from}\r\nTo: {to}\r\nSubject: {subject}\r\n\r\n"
-    );
+    let mut message = format!("From: {from}\r\nTo: {to}\r\nSubject: {subject}\r\n\r\n");
     for _ in 0..size - message.len() {
         message.push('A');
     }

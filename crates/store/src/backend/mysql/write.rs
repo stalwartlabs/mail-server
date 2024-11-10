@@ -111,10 +111,8 @@ impl MysqlStore {
                                     trx.prep(format!("UPDATE {table} SET v = :v WHERE k = :k"))
                                         .await?
                                 } else {
-                                    trx.prep(format!(
-                                        "INSERT INTO {table} (k, v) VALUES (:k, :v)"
-                                    ))
-                                    .await?
+                                    trx.prep(format!("INSERT INTO {table} (k, v) VALUES (:k, :v)"))
+                                        .await?
                                 }
                             } else {
                                 trx
@@ -188,9 +186,7 @@ impl MysqlStore {
                             );
                         }
                         ValueOp::Clear => {
-                            let s = trx
-                                .prep(format!("DELETE FROM {table} WHERE k = ?"))
-                                .await?;
+                            let s = trx.prep(format!("DELETE FROM {table} WHERE k = ?")).await?;
                             trx.exec_drop(&s, (key,)).await?;
                         }
                     }
@@ -259,8 +255,7 @@ impl MysqlStore {
                                 .await?
                         }
                     } else {
-                        trx.prep(format!("DELETE FROM {table} WHERE k = ?"))
-                            .await?
+                        trx.prep(format!("DELETE FROM {table} WHERE k = ?")).await?
                     };
 
                     if let Err(err) = trx.exec_drop(&s, (key,)).await {

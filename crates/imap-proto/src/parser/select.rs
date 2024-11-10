@@ -150,10 +150,7 @@ impl Request<Command> {
                                 break;
                             }
                             _ => {
-                                return Err(bad(
-                                    self.tag,
-                                    format!("Unexpected value '{token}'."),
-                                ));
+                                return Err(bad(self.tag, format!("Unexpected value '{token}'.")));
                             }
                         }
                     }
@@ -336,13 +333,9 @@ mod tests {
             assert_eq!(
                 receiver
                     .parse(&mut command.as_bytes().iter())
-                    .unwrap_or_else(|err| panic!(
-                        "Failed to parse command '{command}': {err:?}"
-                    ))
+                    .unwrap_or_else(|err| panic!("Failed to parse command '{command}': {err:?}"))
                     .parse_select(ProtocolVersion::Rev2)
-                    .unwrap_or_else(|err| panic!(
-                        "Failed to parse command '{command}': {err:?}"
-                    )),
+                    .unwrap_or_else(|err| panic!("Failed to parse command '{command}': {err:?}")),
                 arguments,
                 "Failed to parse {command}"
             );

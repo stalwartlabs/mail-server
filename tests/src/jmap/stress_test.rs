@@ -41,9 +41,7 @@ pub async fn test(server: Server, mut client: Client) {
 
 async fn email_tests(server: Server, client: Arc<Client>) {
     for pass in 0..NUM_PASSES {
-        println!(
-            "----------------- EMAIL STRESS TEST {pass} -----------------"
-        );
+        println!("----------------- EMAIL STRESS TEST {pass} -----------------");
         let mailboxes = Arc::new(vec![
             client
                 .mailbox_create("Stress 1", None::<String>, Role::None)

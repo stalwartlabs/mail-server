@@ -322,9 +322,9 @@ impl AccessToken {
         if self.has_access(to_account_id.document_id(), to_collection) {
             Ok(self)
         } else {
-            Err(trc::JmapEvent::Forbidden.into_err().details(format!(
-                "You do not have access to account {to_account_id}"
-            )))
+            Err(trc::JmapEvent::Forbidden
+                .into_err()
+                .details(format!("You do not have access to account {to_account_id}")))
         }
     }
 

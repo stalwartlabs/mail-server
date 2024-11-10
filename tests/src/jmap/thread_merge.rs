@@ -293,9 +293,7 @@ fn build_message(message: usize, in_reply_to: Option<usize>, thread_num: usize) 
             "Message-ID: <{message}>\nReferences: <{in_reply_to}>\nSubject: re: T{thread_num}\n\nreply\n"
         )
     } else {
-        format!(
-            "Message-ID: <{message}>\nSubject: T{thread_num}\n\nmsg\n"
-        )
+        format!("Message-ID: <{message}>\nSubject: T{thread_num}\n\nmsg\n")
     }
 }
 

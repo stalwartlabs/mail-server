@@ -194,9 +194,7 @@ impl EncryptMessage for Message<'_> {
                         })
                         .build()
                         .map_err(|err| {
-                            EncryptMessageError::Error(format!(
-                                "Failed to build encryptor: {err}"
-                            ))
+                            EncryptMessageError::Error(format!("Failed to build encryptor: {err}"))
                         })?;
                     let mut message =
                         stream::LiteralWriter::new(message).build().map_err(|err| {
@@ -206,9 +204,7 @@ impl EncryptMessage for Message<'_> {
                         })?;
                     std::io::copy(&mut Cursor::new(inner_message), &mut message).map_err(
                         |err| {
-                            EncryptMessageError::Error(format!(
-                                "Failed to encrypt message: {err}"
-                            ))
+                            EncryptMessageError::Error(format!("Failed to encrypt message: {err}"))
                         },
                     )?;
                     message.finalize().map_err(|err| {

@@ -174,11 +174,7 @@ fn build_pool<M: Manager>(
                 .unwrap_or_default(),
         )
         .build()
-        .map_err(|err| {
-            format!(
-                "Failed to build pool for {prefix:?}: {err}"
-            )
-        })
+        .map_err(|err| format!("Failed to build pool for {prefix:?}: {err}"))
 }
 
 #[inline(always)]

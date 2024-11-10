@@ -53,9 +53,7 @@ impl MockWebhookEndpoint {
 
         for string in expected {
             if !events.contains(string) {
-                panic!(
-                    "Expected events to contain '{string}', but it did not. Events: {events}"
-                );
+                panic!("Expected events to contain '{string}', but it did not. Events: {events}");
             }
         }
     }

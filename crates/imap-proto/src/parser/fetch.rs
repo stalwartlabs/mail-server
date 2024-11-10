@@ -212,9 +212,7 @@ impl Request<Command> {
                                 _ => {
                                     return Err(bad(
                                         self.tag,
-                                        format!(
-                                            "Invalid token {token:?} found in section-spect."
-                                        ),
+                                        format!("Invalid token {token:?} found in section-spect."),
                                     ))
                                 }
                             }

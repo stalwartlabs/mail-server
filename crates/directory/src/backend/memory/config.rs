@@ -53,9 +53,7 @@ impl MemoryDirectory {
                 .map_err(|err| {
                     config.new_build_error(
                         prefix.as_str(),
-                        format!(
-                            "Failed to obtain id for principal {name} ({lookup_id}): {err:?}"
-                        ),
+                        format!("Failed to obtain id for principal {name} ({lookup_id}): {err:?}"),
                     )
                 })
                 .ok()?;

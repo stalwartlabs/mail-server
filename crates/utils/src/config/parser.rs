@@ -551,9 +551,7 @@ mod tests {
                         );
                     }
                 } else {
-                    panic!(
-                        "Unexpected key {key:?} found in config with value {value:?}."
-                    );
+                    panic!("Unexpected key {key:?} found in config with value {value:?}.");
                 }
             }
 
@@ -565,9 +563,7 @@ mod tests {
                         );
                     }
                 } else {
-                    panic!(
-                        "Expected key {key:?} not found in config with value {value:?}."
-                    );
+                    panic!("Expected key {key:?} not found in config with value {value:?}.");
                 }
             }
         }
