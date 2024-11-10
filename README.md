@@ -58,7 +58,7 @@ Key features:
   - **Greylisting** to temporarily defer unknown senders.
   - **Spam traps** to set up decoy email addresses that catch and analyze spam.
 - **Flexible and scalable**:
-  - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Redis** and **ElasticSearch** support.
+  - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Azure**, **Redis** and **ElasticSearch** support.
   - **Clustering** support with node autodiscovery and partition-tolerant failure detection.
   - Full-text search available in 17 languages.
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).

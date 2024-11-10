@@ -51,7 +51,11 @@ impl AzureStore {
             _ => {
                 config.new_build_error(
                     prefix.as_str(),
-                    format!("Failed to create credentials: exactly one of 'access-key' and 'sas-token' must be specified"));
+                    concat!(
+                        "Failed to create credentials: exactly one of ",
+                        "'access-key' and 'sas-token' must be specified"
+                    ),
+                );
                 return None;
             }
         };
@@ -140,7 +144,7 @@ impl AzureStore {
                 ) {
                     Ok(None)
                 } else {
-                    Err(trc::StoreEvent::S3Error.reason(e))
+                    Err(trc::StoreEvent::AzureError.reason(e))
                 };
             }
         }
@@ -178,7 +182,7 @@ impl AzureStore {
             ) {
                 Ok(false)
             } else {
-                Err(trc::StoreEvent::S3Error.reason(e))
+                Err(trc::StoreEvent::AzureError.reason(e))
             }
         } else {
             Ok(true)
@@ -200,5 +204,5 @@ impl AzureStore {
 
 #[inline(always)]
 fn into_error(err: impl Display) -> trc::Error {
-    trc::StoreEvent::S3Error.reason(err)
+    trc::StoreEvent::AzureError.reason(err)
 }
