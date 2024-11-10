@@ -345,6 +345,20 @@ impl BootManager {
                     Version = env!("CARGO_PKG_VERSION"),
                 );
 
+                // Webadmin auto-update
+                if config
+                    .property_or_default::<bool>("webadmin.auto-update", "false")
+                    .unwrap_or_default()
+                {
+                    if let Err(err) = data.webadmin.update(&core).await {
+                        trc::event!(
+                            Resource(trc::ResourceEvent::Error),
+                            Details = "Failed to update webadmin",
+                            CausedBy = err
+                        );
+                    }
+                }
+
                 // Build shared inner
                 let (ipc, ipc_rxs) = build_ipc();
                 let inner = Arc::new(Inner {
