@@ -38,6 +38,9 @@ use crate::backend::elastic::ElasticSearchStore;
 #[cfg(feature = "redis")]
 use crate::backend::redis::RedisStore;
 
+#[cfg(feature = "azure")]
+use crate::backend::azure::AzureStore;
+
 impl Stores {
     pub async fn parse_all(config: &mut Config) -> Self {
         let mut stores = Self::parse(config).await;
@@ -215,6 +218,13 @@ impl Stores {
                 #[cfg(feature = "enterprise")]
                 "sql-read-replica" | "distributed-blob" => {
                     composite_stores.push((store_id, protocol));
+                }
+                #[cfg(feature = "azure")]
+                "azure" => {
+                    if let Some(db) = AzureStore::open(config, prefix).await.map(BlobStore::from) {
+                        self.blob_stores
+                            .insert(store_id, db.with_compression(compression_algo));
+                    }
                 }
                 unknown => {
                     config.new_parse_warning(
