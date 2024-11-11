@@ -252,6 +252,7 @@ impl<T: SessionStream> Session<T> {
                     size: message.raw_message().len(),
                 }
             }),
+            
         };
 
         /* 
