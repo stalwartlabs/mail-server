@@ -589,6 +589,7 @@ pub enum MtaHookEvent {
     ActionReject,
     ActionQuarantine,
     Error,
+    // RequestDebug, // 新增的事件类型
 }
 
 #[event_type]

@@ -185,7 +185,7 @@ impl<T: SessionStream> Session<T> {
                 client: Client {
                     ip: self.data.remote_ip.to_string(),
                     port: self.data.remote_port,
-                    ptr: self
+                    ptr: self 
                         .data
                         .iprev
                         .as_ref()
@@ -232,23 +232,37 @@ impl<T: SessionStream> Session<T> {
                     })
                     .collect(),
             }),
-            message: message.map(|message| Message {
-                headers: message
-                    .raw_parsed_headers()
-                    .iter()
-                    .map(|(k, v)| {
-                        (
-                            String::from_utf8_lossy(k).into_owned(),
-                            String::from_utf8_lossy(v).into_owned(),
-                        )
-                    })
-                    .collect(),
-                server_headers: vec![],
-                contents: String::from_utf8_lossy(message.raw_body()).into_owned(),
-                size: message.raw_message().len(),
+            message: message.map(|message| {
+                // Debug print message content
+                println!("Debug - Message Body: {}", String::from_utf8_lossy(message.raw_body()));
+                
+                Message {
+                    headers: message
+                        .raw_parsed_headers()
+                        .iter()
+                        .map(|(k, v)| {
+                            (
+                                String::from_utf8_lossy(k).into_owned(),
+                                String::from_utf8_lossy(v).into_owned(),
+                            )
+                        })
+                        .collect(),
+                    server_headers: vec![],
+                    contents: String::from_utf8_lossy(message.raw_body()).into_owned(),
+                    size: message.raw_message().len(),
+                }
             }),
         };
 
+        /* 
+        // Add debug logging for the request
+        trc::event!(
+            MtaHook(MtaHookEvent::RequestDebug),
+            SpanId = self.data.session_id,
+            Id = mta_hook.id.clone(),
+            Request = serde_json::to_string(&request).unwrap_or_default(),
+        );
+        */
         send_mta_hook_request(mta_hook, request).await
     }
 }
