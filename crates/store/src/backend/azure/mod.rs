@@ -32,7 +32,7 @@ impl AzureStore {
         let container = config.value_require((&prefix, "container"))?.to_string();
 
         let credentials = match (
-            config.value((&prefix, "access-key")),
+            config.value((&prefix, "azure-access-key")),
             config.value((&prefix, "sas-token")),
         ) {
             (Some(access_key), None) => {
@@ -53,7 +53,7 @@ impl AzureStore {
                     prefix.as_str(),
                     concat!(
                         "Failed to create credentials: exactly one of ",
-                        "'access-key' and 'sas-token' must be specified"
+                        "'azure-access-key' and 'sas-token' must be specified"
                     ),
                 );
                 return None;
@@ -126,6 +126,7 @@ impl AzureStore {
                             }
                             Err(e) => {
                                 err = Some(e);
+                                break;
                             }
                         }
                     }
