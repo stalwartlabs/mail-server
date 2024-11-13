@@ -6,7 +6,10 @@
 
 use mail_send::Credentials;
 
-use crate::{backend::internal::PrincipalField, Principal, QueryBy};
+use crate::{
+    backend::{internal::PrincipalField, RcptType},
+    Principal, QueryBy,
+};
 
 use super::{EmailType, MemoryDirectory};
 
@@ -48,25 +51,19 @@ impl MemoryDirectory {
         Ok(None)
     }
 
-    pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
-        Ok(self
-            .emails_to_ids
-            .get(address)
-            .map(|names| {
-                names
-                    .iter()
-                    .map(|t| match t {
-                        EmailType::Primary(uid) | EmailType::Alias(uid) | EmailType::List(uid) => {
-                            *uid
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default())
+    pub async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>> {
+        Ok(self.emails_to_ids.get(address).and_then(|names| {
+            names
+                .iter()
+                .map(|t| match t {
+                    EmailType::Primary(uid) | EmailType::Alias(uid) | EmailType::List(uid) => *uid,
+                })
+                .next()
+        }))
     }
 
-    pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
-        Ok(self.emails_to_ids.contains_key(address))
+    pub async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {
+        Ok(self.emails_to_ids.contains_key(address).into())
     }
 
     pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {

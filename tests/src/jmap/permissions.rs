@@ -414,7 +414,10 @@ pub async fn test(params: &JMAPTest) {
             "/api/principal",
             &Principal::new(u32::MAX, Type::Individual)
                 .with_field(PrincipalField::Name, "john@foobar.org")
-                .with_field(PrincipalField::Roles, vec!["admin".to_string()])
+                .with_field(
+                    PrincipalField::Roles,
+                    vec!["tenant-admin".to_string(), "user".to_string()],
+                )
                 .with_field(
                     PrincipalField::Secrets,
                     PrincipalValue::String("tenantpass".to_string()),
@@ -571,7 +574,7 @@ pub async fn test(params: &JMAPTest) {
             [
                 (
                     PrincipalField::Roles,
-                    &["admin", "no-mail-for-you@foobar.com"][..],
+                    &["tenant-admin", "no-mail-for-you@foobar.com", "user"][..],
                 ),
                 (PrincipalField::Members, &[][..]),
                 (PrincipalField::EnabledPermissions, &[][..]),

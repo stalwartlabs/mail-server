@@ -60,8 +60,8 @@ impl PrincipalQuery for Server {
                 }
                 Filter::Email(email) => {
                     let mut ids = RoaringBitmap::new();
-                    for id in self
-                        .email_to_ids(&self.core.storage.directory, &email, session.session_id)
+                    if let Some(id) = self
+                        .email_to_id(&self.core.storage.directory, &email, session.session_id)
                         .await?
                     {
                         ids.insert(id);

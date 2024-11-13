@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use common::listener::limiter::{ConcurrencyLimiter, InFlight};
-use directory::QueryBy;
+use directory::{backend::RcptType, QueryBy};
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use tokio::{
@@ -78,7 +78,9 @@ async fn lmtp_directory() {
 
     for (item, expected) in &tests {
         let result: LookupResult = match item {
-            Item::IsAccount(v) => core.rcpt(&handle, v, 0).await.unwrap().into(),
+            Item::IsAccount(v) => {
+                (core.rcpt(&handle, v, 0).await.unwrap() == RcptType::Mailbox).into()
+            }
             Item::Authenticate(v) => handle
                 .query(QueryBy::Credentials(v), true)
                 .await
@@ -122,7 +124,9 @@ async fn lmtp_directory() {
         requests.push((
             tokio::spawn(async move {
                 let result: LookupResult = match &item {
-                    Item::IsAccount(v) => core.rcpt(&handle, v, 0).await.unwrap().into(),
+                    Item::IsAccount(v) => {
+                        (core.rcpt(&handle, v, 0).await.unwrap() == RcptType::Mailbox).into()
+                    }
                     Item::Authenticate(v) => handle
                         .query(QueryBy::Credentials(v), true)
                         .await
@@ -182,7 +186,9 @@ async fn lmtp_directory() {
             requests.push((
                 tokio::spawn(async move {
                     let result: LookupResult = match &item {
-                        Item::IsAccount(v) => core.rcpt(&handle, v, 0).await.unwrap().into(),
+                        Item::IsAccount(v) => {
+                            (core.rcpt(&handle, v, 0).await.unwrap() == RcptType::Mailbox).into()
+                        }
                         _ => unreachable!(),
                     };
 

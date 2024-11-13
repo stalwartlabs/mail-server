@@ -11,6 +11,10 @@ use common::{
     Core,
 };
 
+use directory::{
+    backend::internal::{manage::ManageDirectory, PrincipalField, PrincipalValue},
+    Principal, QueryBy, Type,
+};
 use mail_auth::MX;
 use store::Stores;
 use utils::config::Config;
@@ -136,7 +140,7 @@ async fn lookup_sql() {
     handle
         .create_test_user_with_email("mike@foobar.net", "098765", "Mike")
         .await;
-    handle
+    /*handle
         .link_test_address("jane@foobar.org", "sales@foobar.org", "list")
         .await;
     handle
@@ -147,7 +151,7 @@ async fn lookup_sql() {
         .await;
     handle
         .link_test_address("mike@foobar.net", "support@foobar.org", "list")
-        .await;
+        .await;*/
 
     for query in [
         "CREATE TABLE domains (name TEXT PRIMARY KEY, description TEXT);",
@@ -162,6 +166,53 @@ async fn lookup_sql() {
             .await
             .unwrap();
     }
+
+    // Create local domains
+    let internal_store = &test.server.core.storage.data;
+    for name in ["foobar.org", "foobar.net"] {
+        internal_store
+            .create_principal(
+                Principal::new(0, Type::Domain).with_field(PrincipalField::Name, name),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+    }
+
+    // Create lists
+    internal_store
+        .create_principal(
+            Principal::new(0, Type::List)
+                .with_field(PrincipalField::Name, "support@foobar.org")
+                .with_field(PrincipalField::Emails, "support@foobar.org")
+                .with_field(
+                    PrincipalField::ExternalMembers,
+                    PrincipalValue::StringList(vec!["mike@foobar.net".to_string()]),
+                ),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    internal_store
+        .create_principal(
+            Principal::new(0, Type::List)
+                .with_field(PrincipalField::Name, "sales@foobar.org")
+                .with_field(PrincipalField::Emails, "sales@foobar.org")
+                .with_field(
+                    PrincipalField::ExternalMembers,
+                    PrincipalValue::StringList(vec![
+                        "jane@foobar.org".to_string(),
+                        "john@foobar.org".to_string(),
+                        "bill@foobar.org".to_string(),
+                    ]),
+                ),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
     // Test expression functions
     let token_map = TokenMap::default().with_variables(&[
@@ -220,6 +271,9 @@ async fn lookup_sql() {
     session.rcpt_to("john@foobar.org", "250").await;
     session.rcpt_to("bill@foobar.org", "250").await;
 
+    // Lists
+    session.rcpt_to("sales@foobar.org", "250").await;
+
     // Test EXPN
     session
         .cmd("EXPN sales@foobar.org", "250")
@@ -234,6 +288,24 @@ async fn lookup_sql() {
     session.cmd("EXPN marketing@foobar.org", "550 5.1.2").await;
 
     // Test VRFY
+    session
+        .server
+        .core
+        .storage
+        .directory
+        .query(QueryBy::Name("john@foobar.org"), true)
+        .await
+        .unwrap()
+        .unwrap();
+    session
+        .server
+        .core
+        .storage
+        .directory
+        .query(QueryBy::Name("jane@foobar.org"), true)
+        .await
+        .unwrap()
+        .unwrap();
     session
         .cmd("VRFY john", "250")
         .await

@@ -6,7 +6,7 @@
 
 use std::borrow::Cow;
 
-use directory::Directory;
+use directory::{backend::RcptType, Directory};
 use utils::config::{utils::AsKey, Config};
 
 use crate::{
@@ -18,12 +18,12 @@ use crate::{
 };
 
 impl Server {
-    pub async fn email_to_ids(
+    pub async fn email_to_id(
         &self,
         directory: &Directory,
         email: &str,
         session_id: u64,
-    ) -> trc::Result<Vec<u32>> {
+    ) -> trc::Result<Option<u32>> {
         let mut address = self
             .core
             .smtp
@@ -34,9 +34,9 @@ impl Server {
             .await;
 
         for _ in 0..2 {
-            let result = directory.email_to_ids(address.as_ref()).await?;
+            let result = directory.email_to_id(address.as_ref()).await?;
 
-            if !result.is_empty() {
+            if result.is_some() {
                 return Ok(result);
             } else if let Some(catch_all) = self
                 .core
@@ -53,7 +53,7 @@ impl Server {
             }
         }
 
-        Ok(vec![])
+        Ok(None)
     }
 
     pub async fn rcpt(
@@ -61,7 +61,7 @@ impl Server {
         directory: &Directory,
         email: &str,
         session_id: u64,
-    ) -> trc::Result<bool> {
+    ) -> trc::Result<RcptType> {
         // Expand subaddress
         let mut address = self
             .core
@@ -73,8 +73,9 @@ impl Server {
             .await;
 
         for _ in 0..2 {
-            if directory.rcpt(address.as_ref()).await? {
-                return Ok(true);
+            let rcpt_type = directory.rcpt(address.as_ref()).await?;
+            if rcpt_type != RcptType::Invalid {
+                return Ok(rcpt_type);
             } else if let Some(catch_all) = self
                 .core
                 .smtp
@@ -90,7 +91,7 @@ impl Server {
             }
         }
 
-        Ok(false)
+        Ok(RcptType::Invalid)
     }
 
     pub async fn vrfy(

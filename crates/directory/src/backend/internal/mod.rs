@@ -412,6 +412,7 @@ pub enum PrincipalField {
     DisabledPermissions,
     Picture,
     Urls,
+    ExternalMembers,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -491,6 +492,7 @@ impl PrincipalField {
             PrincipalField::UsedQuota => 13,
             PrincipalField::Picture => 14,
             PrincipalField::Urls => 15,
+            PrincipalField::ExternalMembers => 16,
         }
     }
 
@@ -512,6 +514,7 @@ impl PrincipalField {
             13 => Some(PrincipalField::UsedQuota),
             14 => Some(PrincipalField::Picture),
             15 => Some(PrincipalField::Urls),
+            16 => Some(PrincipalField::ExternalMembers),
             _ => None,
         }
     }
@@ -534,6 +537,7 @@ impl PrincipalField {
             PrincipalField::DisabledPermissions => "disabledPermissions",
             PrincipalField::Picture => "picture",
             PrincipalField::Urls => "urls",
+            PrincipalField::ExternalMembers => "externalMembers",
         }
     }
 
@@ -555,6 +559,7 @@ impl PrincipalField {
             "disabledPermissions" => Some(PrincipalField::DisabledPermissions),
             "picture" => Some(PrincipalField::Picture),
             "urls" => Some(PrincipalField::Urls),
+            "externalMembers" => Some(PrincipalField::ExternalMembers),
             _ => None,
         }
     }

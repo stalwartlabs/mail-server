@@ -5,6 +5,7 @@
  */
 
 use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
+use directory::backend::RcptType;
 use smtp_proto::{
     RcptTo, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
@@ -71,6 +72,7 @@ impl<T: SessionStream> Session<T> {
                 SpanId = self.data.session_id,
                 To = rcpt.address_lcase,
             );
+            self.data.rcpt_oks += 1;
             return self.write(b"250 2.1.5 OK\r\n").await;
         }
         self.data.rcpt_to.push(rcpt);
@@ -177,12 +179,14 @@ impl<T: SessionStream> Session<T> {
                     To = rcpt.address_lcase.clone(),
                 );
                 self.data.rcpt_to.pop();
+                self.data.rcpt_oks += 1;
                 return self.write(b"250 2.1.5 OK\r\n").await;
             }
         }
 
         // Verify address
         let rcpt = self.data.rcpt_to.last().unwrap();
+        let mut rcpt_members = None;
         if let Some(directory) = self
             .server
             .eval_if::<String, _>(
@@ -194,43 +198,43 @@ impl<T: SessionStream> Session<T> {
             .and_then(|name| self.server.get_directory(&name))
         {
             match directory.is_local_domain(&rcpt.domain).await {
-                Ok(is_local_domain) => {
-                    if is_local_domain {
-                        match self
-                            .server
-                            .rcpt(directory, &rcpt.address_lcase, self.data.session_id)
-                            .await
-                        {
-                            Ok(is_local_address) => {
-                                if !is_local_address {
-                                    trc::event!(
-                                        Smtp(SmtpEvent::MailboxDoesNotExist),
-                                        SpanId = self.data.session_id,
-                                        To = rcpt.address_lcase.clone(),
-                                    );
-
-                                    let rcpt_to = self.data.rcpt_to.pop().unwrap().address_lcase;
-                                    return self
-                                        .rcpt_error(
-                                            b"550 5.1.2 Mailbox does not exist.\r\n",
-                                            rcpt_to,
-                                        )
-                                        .await;
-                                }
-                            }
-                            Err(err) => {
-                                trc::error!(err
-                                    .span_id(self.data.session_id)
-                                    .caused_by(trc::location!())
-                                    .details("Failed to verify address."));
-
-                                self.data.rcpt_to.pop();
-                                return self
-                                    .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
-                                    .await;
-                            }
+                Ok(true) => {
+                    match self
+                        .server
+                        .rcpt(directory, &rcpt.address_lcase, self.data.session_id)
+                        .await
+                    {
+                        Ok(RcptType::Mailbox) => {}
+                        Ok(RcptType::List(members)) => {
+                            rcpt_members = Some(members);
                         }
-                    } else if !self
+                        Ok(RcptType::Invalid) => {
+                            trc::event!(
+                                Smtp(SmtpEvent::MailboxDoesNotExist),
+                                SpanId = self.data.session_id,
+                                To = rcpt.address_lcase.clone(),
+                            );
+
+                            let rcpt_to = self.data.rcpt_to.pop().unwrap().address_lcase;
+                            return self
+                                .rcpt_error(b"550 5.1.2 Mailbox does not exist.\r\n", rcpt_to)
+                                .await;
+                        }
+                        Err(err) => {
+                            trc::error!(err
+                                .span_id(self.data.session_id)
+                                .caused_by(trc::location!())
+                                .details("Failed to verify address."));
+
+                            self.data.rcpt_to.pop();
+                            return self
+                                .write(b"451 4.4.3 Unable to verify address at this time.\r\n")
+                                .await;
+                        }
+                    }
+                }
+                Ok(false) => {
+                    if !self
                         .server
                         .eval_if(
                             &self.server.core.smtp.session.rcpt.relay,
@@ -305,6 +309,23 @@ impl<T: SessionStream> Session<T> {
                 .await;
         }
 
+        // Expand list
+        if let Some(members) = rcpt_members {
+            let list_addr = self.data.rcpt_to.pop().unwrap();
+            let orcpt = format!("rfc822;{}", list_addr.address_lcase);
+            for member in members {
+                let mut member_addr = SessionAddress::new(member);
+                if !self.data.rcpt_to.contains(&member_addr)
+                    && member_addr.address_lcase != list_addr.address_lcase
+                {
+                    member_addr.dsn_info = orcpt.clone().into();
+                    member_addr.flags = list_addr.flags;
+                    self.data.rcpt_to.push(member_addr);
+                }
+            }
+        }
+
+        self.data.rcpt_oks += 1;
         self.write(b"250 2.1.5 OK\r\n").await
     }
 

@@ -6,10 +6,15 @@
 
 use std::fmt::Debug;
 
-use directory::{backend::internal::manage::ManageDirectory, QueryBy, Type, ROLE_USER};
+use directory::{
+    backend::{internal::manage::ManageDirectory, RcptType},
+    QueryBy, Type, ROLE_USER,
+};
 use mail_send::Credentials;
 
-use crate::directory::{map_account_ids, DirectoryTest, IntoTestPrincipal, TestPrincipal};
+use crate::directory::{
+    map_account_id, map_account_ids, DirectoryTest, IntoTestPrincipal, TestPrincipal,
+};
 
 #[tokio::test]
 async fn ldap_directory() {
@@ -149,41 +154,29 @@ async fn ldap_directory() {
     );
 
     // Ids by email
-    compare_sorted(
-        core.email_to_ids(&handle, "jane@example.org", 0)
+    assert_eq!(
+        core.email_to_id(&handle, "jane@example.org", 0)
             .await
             .unwrap(),
-        map_account_ids(base_store, vec!["jane"]).await,
-    );
-    compare_sorted(
-        core.email_to_ids(&handle, "jane+alias@example.org", 0)
-            .await
-            .unwrap(),
-        map_account_ids(base_store, vec!["jane"]).await,
-    );
-    compare_sorted(
-        core.email_to_ids(&handle, "info@example.org", 0)
-            .await
-            .unwrap(),
-        map_account_ids(base_store, vec!["bill", "jane", "john"]).await,
-    );
-    compare_sorted(
-        core.email_to_ids(&handle, "info+alias@example.org", 0)
-            .await
-            .unwrap(),
-        map_account_ids(base_store, vec!["bill", "jane", "john"]).await,
-    );
-    compare_sorted(
-        core.email_to_ids(&handle, "unknown@example.org", 0)
-            .await
-            .unwrap(),
-        Vec::<u32>::new(),
+        Some(map_account_id(base_store, "jane").await),
     );
     assert_eq!(
-        core.email_to_ids(&handle, "anything@catchall.org", 0)
+        core.email_to_id(&handle, "jane+alias@example.org", 0)
             .await
             .unwrap(),
-        map_account_ids(base_store, vec!["robert"]).await
+        Some(map_account_id(base_store, "jane").await),
+    );
+    assert_eq!(
+        core.email_to_id(&handle, "unknown@example.org", 0)
+            .await
+            .unwrap(),
+        None,
+    );
+    assert_eq!(
+        core.email_to_id(&handle, "anything@catchall.org", 0)
+            .await
+            .unwrap(),
+        Some(map_account_id(base_store, "robert").await)
     );
 
     // Domain validation
@@ -191,21 +184,36 @@ async fn ldap_directory() {
     assert!(!handle.is_local_domain("other.org").await.unwrap());
 
     // RCPT TO
-    assert!(core.rcpt(&handle, "jane@example.org", 0).await.unwrap());
-    assert!(core.rcpt(&handle, "info@example.org", 0).await.unwrap());
-    assert!(core
-        .rcpt(&handle, "jane+alias@example.org", 0)
-        .await
-        .unwrap());
-    assert!(core
-        .rcpt(&handle, "info+alias@example.org", 0)
-        .await
-        .unwrap());
-    assert!(core
-        .rcpt(&handle, "random_user@catchall.org", 0)
-        .await
-        .unwrap());
-    assert!(!core.rcpt(&handle, "invalid@example.org", 0).await.unwrap());
+    assert_eq!(
+        core.rcpt(&handle, "jane@example.org", 0).await.unwrap(),
+        RcptType::Mailbox
+    );
+    assert_eq!(
+        core.rcpt(&handle, "info@example.org", 0).await.unwrap(),
+        RcptType::Mailbox
+    );
+    assert_eq!(
+        core.rcpt(&handle, "jane+alias@example.org", 0)
+            .await
+            .unwrap(),
+        RcptType::Mailbox
+    );
+    assert_eq!(
+        core.rcpt(&handle, "info+alias@example.org", 0)
+            .await
+            .unwrap(),
+        RcptType::Mailbox
+    );
+    assert_eq!(
+        core.rcpt(&handle, "random_user@catchall.org", 0)
+            .await
+            .unwrap(),
+        RcptType::Mailbox
+    );
+    assert_eq!(
+        core.rcpt(&handle, "invalid@example.org", 0).await.unwrap(),
+        RcptType::Invalid
+    );
 
     // VRFY
     compare_sorted(
@@ -214,7 +222,10 @@ async fn ldap_directory() {
     );
     compare_sorted(
         core.vrfy(&handle, "john", 0).await.unwrap(),
-        vec!["john@example.org".to_string()],
+        vec![
+            "john@example.org".to_string(),
+            "john.doe@example.org".to_string(),
+        ],
     );
     compare_sorted(
         core.vrfy(&handle, "jane+alias@example", 0).await.unwrap(),
@@ -230,7 +241,8 @@ async fn ldap_directory() {
     );
 
     // EXPN
-    compare_sorted(
+    // Now handled by the internal directory
+    /*compare_sorted(
         core.expn(&handle, "info@example.org", 0).await.unwrap(),
         vec![
             "bill@example.org".to_string(),
@@ -241,7 +253,7 @@ async fn ldap_directory() {
     compare_sorted(
         core.expn(&handle, "john@example.org", 0).await.unwrap(),
         Vec::<String>::new(),
-    );
+    );*/
 }
 
 fn compare_sorted<T: Eq + Debug>(v1: Vec<T>, v2: Vec<T>) {

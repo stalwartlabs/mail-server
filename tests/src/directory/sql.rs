@@ -4,11 +4,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use directory::{backend::internal::manage::ManageDirectory, QueryBy, Type, ROLE_USER};
+use directory::{
+    backend::{internal::manage::ManageDirectory, RcptType},
+    QueryBy, Type, ROLE_USER,
+};
 use mail_send::Credentials;
+
+#[allow(unused_imports)]
 use store::{LookupStore, Store};
 
-use crate::directory::{map_account_ids, DirectoryTest, IntoTestPrincipal, TestPrincipal};
+use crate::directory::{
+    map_account_id, map_account_ids, DirectoryTest, IntoTestPrincipal, TestPrincipal,
+};
 
 use super::DirectoryStore;
 
@@ -243,40 +250,28 @@ async fn sql_directory() {
 
         // Ids by email
         assert_eq!(
-            core.email_to_ids(&handle, "jane@example.org", 0)
+            core.email_to_id(&handle, "jane@example.org", 0)
                 .await
                 .unwrap(),
-            map_account_ids(base_store, vec!["jane"]).await
+            Some(map_account_id(base_store, "jane").await)
         );
         assert_eq!(
-            core.email_to_ids(&handle, "info@example.org", 0)
+            core.email_to_id(&handle, "jane+alias@example.org", 0)
                 .await
                 .unwrap(),
-            map_account_ids(base_store, vec!["bill", "jane", "john"]).await
+            Some(map_account_id(base_store, "jane").await)
         );
         assert_eq!(
-            core.email_to_ids(&handle, "jane+alias@example.org", 0)
+            core.email_to_id(&handle, "unknown@example.org", 0)
                 .await
                 .unwrap(),
-            map_account_ids(base_store, vec!["jane"]).await
+            None
         );
         assert_eq!(
-            core.email_to_ids(&handle, "info+alias@example.org", 0)
+            core.email_to_id(&handle, "anything@catchall.org", 0)
                 .await
                 .unwrap(),
-            map_account_ids(base_store, vec!["bill", "jane", "john"]).await
-        );
-        assert_eq!(
-            core.email_to_ids(&handle, "unknown@example.org", 0)
-                .await
-                .unwrap(),
-            Vec::<u32>::new()
-        );
-        assert_eq!(
-            core.email_to_ids(&handle, "anything@catchall.org", 0)
-                .await
-                .unwrap(),
-            map_account_ids(base_store, vec!["robert"]).await
+            Some(map_account_id(base_store, "robert").await)
         );
 
         // Domain validation
@@ -284,21 +279,36 @@ async fn sql_directory() {
         assert!(!handle.is_local_domain("other.org").await.unwrap());
 
         // RCPT TO
-        assert!(core.rcpt(&handle, "jane@example.org", 0).await.unwrap());
-        assert!(core.rcpt(&handle, "info@example.org", 0).await.unwrap());
-        assert!(core
-            .rcpt(&handle, "jane+alias@example.org", 0)
-            .await
-            .unwrap());
-        assert!(core
-            .rcpt(&handle, "info+alias@example.org", 0)
-            .await
-            .unwrap());
-        assert!(core
-            .rcpt(&handle, "random_user@catchall.org", 0)
-            .await
-            .unwrap());
-        assert!(!core.rcpt(&handle, "invalid@example.org", 0).await.unwrap());
+        assert_eq!(
+            core.rcpt(&handle, "jane@example.org", 0).await.unwrap(),
+            RcptType::Mailbox
+        );
+        assert_eq!(
+            core.rcpt(&handle, "info@example.org", 0).await.unwrap(),
+            RcptType::Mailbox
+        );
+        assert_eq!(
+            core.rcpt(&handle, "jane+alias@example.org", 0)
+                .await
+                .unwrap(),
+            RcptType::Mailbox
+        );
+        assert_eq!(
+            core.rcpt(&handle, "info+alias@example.org", 0)
+                .await
+                .unwrap(),
+            RcptType::Mailbox
+        );
+        assert_eq!(
+            core.rcpt(&handle, "random_user@catchall.org", 0)
+                .await
+                .unwrap(),
+            RcptType::Mailbox
+        );
+        assert_eq!(
+            core.rcpt(&handle, "invalid@example.org", 0).await.unwrap(),
+            RcptType::Invalid
+        );
 
         // VRFY
         assert_eq!(
@@ -307,7 +317,10 @@ async fn sql_directory() {
         );
         assert_eq!(
             core.vrfy(&handle, "john", 0).await.unwrap(),
-            vec!["john@example.org".to_string()]
+            vec![
+                "john.doe@example.org".to_string(),
+                "john@example.org".to_string(),
+            ]
         );
         assert_eq!(
             core.vrfy(&handle, "jane+alias@example", 0).await.unwrap(),
@@ -322,8 +335,8 @@ async fn sql_directory() {
             Vec::<String>::new()
         );
 
-        // EXPN
-        assert_eq!(
+        // EXPN (now handled by the internal store)
+        /*assert_eq!(
             core.expn(&handle, "info@example.org", 0).await.unwrap(),
             vec![
                 "bill@example.org".to_string(),
@@ -334,7 +347,7 @@ async fn sql_directory() {
         assert_eq!(
             core.expn(&handle, "john@example.org", 0).await.unwrap(),
             Vec::<String>::new()
-        );
+        );*/
     }
 }
 

@@ -21,6 +21,7 @@ use crate::{
             PrincipalField,
         },
         oidc::{Authentication, EndpointType},
+        RcptType,
     },
     Principal, QueryBy, Type, ROLE_USER,
 };
@@ -140,11 +141,11 @@ impl OpenIdDirectory {
         }
     }
 
-    pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
-        self.data_store.email_to_ids(address).await
+    pub async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>> {
+        self.data_store.email_to_id(address).await
     }
 
-    pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
+    pub async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {
         self.data_store.rcpt(address).await
     }
 

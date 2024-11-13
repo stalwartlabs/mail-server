@@ -19,6 +19,7 @@ use jmap_proto::{
 };
 use std::future::Future;
 use store::write::{log::ChangeLogBuilder, BatchBuilder, F_CLEAR, F_VALUE};
+use utils::sanitize_email;
 
 use crate::{changes::write::ChangeLog, JmapMethods};
 
@@ -255,40 +256,4 @@ fn validate_identity_value(
                 .with_description("Field could not be set."));
         }
     })
-}
-
-// Basic email sanitizer
-pub fn sanitize_email(email: &str) -> Option<String> {
-    let mut result = String::with_capacity(email.len());
-    let mut found_local = false;
-    let mut found_domain = false;
-    let mut last_ch = char::from(0);
-
-    for ch in email.chars() {
-        if !ch.is_whitespace() {
-            if ch == '@' {
-                if !result.is_empty() && !found_local {
-                    found_local = true;
-                } else {
-                    return None;
-                }
-            } else if ch == '.' {
-                if !(last_ch.is_alphanumeric() || last_ch == '-' || last_ch == '_') {
-                    return None;
-                } else if found_local {
-                    found_domain = true;
-                }
-            }
-            last_ch = ch;
-            for ch in ch.to_lowercase() {
-                result.push(ch);
-            }
-        }
-    }
-
-    if found_domain && last_ch != '.' {
-        Some(result)
-    } else {
-        None
-    }
 }

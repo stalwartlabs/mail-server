@@ -52,9 +52,6 @@ impl LdapDirectory {
             base_dn: config.value_require((&prefix, "base-dn"))?.to_string(),
             filter_name: LdapFilter::from_config(config, (&prefix, "filter.name")),
             filter_email: LdapFilter::from_config(config, (&prefix, "filter.email")),
-            filter_verify: LdapFilter::from_config(config, (&prefix, "filter.verify")),
-            filter_expand: LdapFilter::from_config(config, (&prefix, "filter.expand")),
-            filter_domains: LdapFilter::from_config(config, (&prefix, "filter.domains")),
             attr_name: config
                 .values((&prefix, "attributes.name"))
                 .map(|(_, v)| v.to_string())

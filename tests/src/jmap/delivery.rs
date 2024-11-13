@@ -482,6 +482,7 @@ impl SmtpConnection {
         //let c = println!("-> {:?}", text);
         self.writer.write_all(text.as_bytes()).await.unwrap();
         self.writer.write_all(b"\r\n").await.unwrap();
+        self.writer.flush().await.unwrap();
     }
 
     pub async fn send_raw(&mut self, text: &str) {

@@ -69,47 +69,54 @@ impl MailDelivery for Server {
         };
 
         // Obtain the UIDs for each recipient
-        let mut recipients = Vec::with_capacity(message.recipients.len());
-        let mut deliver_names = AHashMap::with_capacity(message.recipients.len());
-        for rcpt in &message.recipients {
-            match self
-                .email_to_ids(&self.core.storage.directory, rcpt, message.session_id)
+        let mut uids: AHashMap<u32, usize> = AHashMap::with_capacity(message.recipients.len());
+        let mut results = Vec::with_capacity(message.recipients.len());
+        for rcpt in message.recipients {
+            let uid = match self
+                .email_to_id(&self.core.storage.directory, &rcpt, message.session_id)
                 .await
             {
-                Ok(uids) => {
-                    for uid in &uids {
-                        deliver_names.insert(*uid, (DeliveryResult::Success, rcpt));
-                    }
-                    recipients.push(uids);
+                Ok(Some(uid)) => uid,
+                Ok(None) => {
+                    // Something went wrong
+                    results.push(DeliveryResult::PermanentFailure {
+                        code: [5, 5, 0],
+                        reason: "Mailbox not found.".into(),
+                    });
+                    continue;
                 }
                 Err(err) => {
                     trc::error!(err
                         .details("Failed to lookup recipient.")
-                        .ctx(trc::Key::To, rcpt.to_string())
+                        .ctx(trc::Key::To, rcpt)
                         .span_id(message.session_id)
                         .caused_by(trc::location!()));
-                    recipients.push(vec![]);
+                    results.push(DeliveryResult::TemporaryFailure {
+                        reason: "Address lookup failed.".into(),
+                    });
+                    continue;
                 }
+            };
+            if let Some(result) = uids.get(&uid).and_then(|pos| results.get(*pos)) {
+                results.push(result.clone());
+                continue;
             }
-        }
 
-        // Deliver to each recipient
-        for (uid, (status, rcpt)) in &mut deliver_names {
             // Obtain access token
-            let result = match self.get_cached_access_token(*uid).await.and_then(|token| {
+            let result = match self.get_cached_access_token(uid).await.and_then(|token| {
                 token
                     .assert_has_permission(Permission::EmailReceive)
                     .map(|_| token)
             }) {
                 Ok(access_token) => {
                     // Check if there is an active sieve script
-                    match self.sieve_script_get_active(*uid).await {
+                    match self.sieve_script_get_active(uid).await {
                         Ok(Some(active_script)) => {
                             self.sieve_script_ingest(
                                 &access_token,
                                 &raw_message,
                                 &message.sender_address,
-                                rcpt,
+                                &rcpt,
                                 message.session_id,
                                 active_script,
                             )
@@ -137,12 +144,12 @@ impl MailDelivery for Server {
                 Err(err) => Err(err),
             };
 
-            match result {
+            let result = match result {
                 Ok(ingested_message) => {
                     // Notify state change
                     if ingested_message.change_id != u64::MAX {
                         self.broadcast_state_change(
-                            StateChange::new(*uid)
+                            StateChange::new(uid)
                                 .with_change(DataType::EmailDelivery, ingested_message.change_id)
                                 .with_change(DataType::Email, ingested_message.change_id)
                                 .with_change(DataType::Mailbox, ingested_message.change_id)
@@ -150,27 +157,29 @@ impl MailDelivery for Server {
                         )
                         .await;
                     }
+
+                    DeliveryResult::Success
                 }
                 Err(err) => {
-                    match err.as_ref() {
+                    let result = match err.as_ref() {
                         trc::EventType::Limit(trc::LimitEvent::Quota) => {
-                            *status = DeliveryResult::TemporaryFailure {
+                            DeliveryResult::TemporaryFailure {
                                 reason: "Mailbox over quota.".into(),
                             }
                         }
                         trc::EventType::Limit(trc::LimitEvent::TenantQuota) => {
-                            *status = DeliveryResult::TemporaryFailure {
+                            DeliveryResult::TemporaryFailure {
                                 reason: "Organization over quota.".into(),
                             }
                         }
                         trc::EventType::Security(trc::SecurityEvent::Unauthorized) => {
-                            *status = DeliveryResult::PermanentFailure {
+                            DeliveryResult::PermanentFailure {
                                 code: [5, 5, 0],
                                 reason: "This account is not authorized to receive email.".into(),
                             }
                         }
                         trc::EventType::MessageIngest(trc::MessageIngestEvent::Error) => {
-                            *status = DeliveryResult::PermanentFailure {
+                            DeliveryResult::PermanentFailure {
                                 code: err
                                     .value(trc::Key::Code)
                                     .and_then(|v| v.to_uint())
@@ -185,62 +194,25 @@ impl MailDelivery for Server {
                                     .into(),
                             }
                         }
-                        _ => {
-                            *status = DeliveryResult::TemporaryFailure {
-                                reason: "Transient server failure.".into(),
-                            }
-                        }
-                    }
+                        _ => DeliveryResult::TemporaryFailure {
+                            reason: "Transient server failure.".into(),
+                        },
+                    };
 
                     trc::error!(err
                         .ctx(trc::Key::To, rcpt.to_string())
                         .span_id(message.session_id));
+
+                    result
                 }
-            }
+            };
+
+            // Cache response for UID to avoid duplicate deliveries
+            uids.insert(uid, results.len());
+
+            results.push(result);
         }
 
-        // Build result
-        recipients
-            .into_iter()
-            .map(|names| {
-                match names.len() {
-                    1 => {
-                        // Delivery to single recipient
-                        deliver_names.get(&names[0]).unwrap().0.clone()
-                    }
-                    0 => {
-                        // Something went wrong
-                        DeliveryResult::TemporaryFailure {
-                            reason: "Address lookup failed.".into(),
-                        }
-                    }
-                    _ => {
-                        // Delivery to list, count number of successes and failures
-                        let mut success = 0;
-                        let mut temp_failures = 0;
-                        for uid in names {
-                            match deliver_names.get(&uid).unwrap().0 {
-                                DeliveryResult::Success => success += 1,
-                                DeliveryResult::TemporaryFailure { .. } => temp_failures += 1,
-                                DeliveryResult::PermanentFailure { .. } => {}
-                            }
-                        }
-                        if success > temp_failures {
-                            DeliveryResult::Success
-                        } else if temp_failures > 0 {
-                            DeliveryResult::TemporaryFailure {
-                                reason: "Delivery to one or more recipients failed temporarily."
-                                    .into(),
-                            }
-                        } else {
-                            DeliveryResult::PermanentFailure {
-                                code: [5, 5, 0],
-                                reason: "Delivery to all recipients failed.".into(),
-                            }
-                        }
-                    }
-                }
-            })
-            .collect()
+        results
     }
 }

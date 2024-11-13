@@ -844,16 +844,19 @@ impl<'de> serde::Deserialize<'de> for Principal {
                         | PrincipalField::Lists
                         | PrincipalField::EnabledPermissions
                         | PrincipalField::DisabledPermissions
-                        | PrincipalField::Urls => match map.next_value::<StringOrMany>()? {
-                            StringOrMany::One(v) => PrincipalValue::StringList(vec![v]),
-                            StringOrMany::Many(v) => {
-                                if !v.is_empty() {
-                                    PrincipalValue::StringList(v)
-                                } else {
-                                    continue;
+                        | PrincipalField::Urls
+                        | PrincipalField::ExternalMembers => {
+                            match map.next_value::<StringOrMany>()? {
+                                StringOrMany::One(v) => PrincipalValue::StringList(vec![v]),
+                                StringOrMany::Many(v) => {
+                                    if !v.is_empty() {
+                                        PrincipalValue::StringList(v)
+                                    } else {
+                                        continue;
+                                    }
                                 }
                             }
-                        },
+                        }
                         PrincipalField::UsedQuota => {
                             // consume and ignore
                             map.next_value::<IgnoredAny>()?;

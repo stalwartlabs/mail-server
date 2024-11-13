@@ -6,10 +6,13 @@
 
 use ahash::AHashSet;
 use directory::{
-    backend::internal::{
-        lookup::DirectoryStore,
-        manage::{self, ManageDirectory, UpdatePrincipal},
-        PrincipalField, PrincipalUpdate, PrincipalValue,
+    backend::{
+        internal::{
+            lookup::DirectoryStore,
+            manage::{self, ManageDirectory, UpdatePrincipal},
+            PrincipalField, PrincipalUpdate, PrincipalValue,
+        },
+        RcptType,
     },
     Principal, QueryBy, Type,
 };
@@ -117,10 +120,13 @@ async fn internal_directory() {
                 .await,
             Ok(())
         );
-        assert!(store.rcpt("john@example.org").await.unwrap());
         assert_eq!(
-            store.email_to_ids("john@example.org").await.unwrap(),
-            vec![john_id]
+            store.rcpt("john@example.org").await.unwrap(),
+            RcptType::Mailbox
+        );
+        assert_eq!(
+            store.email_to_id("john@example.org").await.unwrap(),
+            Some(john_id)
         );
 
         // Using non-existent domain should fail
@@ -154,11 +160,17 @@ async fn internal_directory() {
             .await
             .unwrap();
 
-        assert!(store.rcpt("jane@example.org").await.unwrap());
-        assert!(!store.rcpt("jane@otherdomain.org").await.unwrap());
         assert_eq!(
-            store.email_to_ids("jane@example.org").await.unwrap(),
-            vec![jane_id]
+            store.rcpt("jane@example.org").await.unwrap(),
+            RcptType::Mailbox
+        );
+        assert_eq!(
+            store.rcpt("jane@otherdomain.org").await.unwrap(),
+            RcptType::Invalid
+        );
+        assert_eq!(
+            store.email_to_id("jane@example.org").await.unwrap(),
+            Some(jane_id)
         );
         assert_eq!(store.vrfy("jane").await.unwrap(), vec!["jane@example.org"]);
         assert_eq!(
@@ -239,21 +251,31 @@ async fn internal_directory() {
                     PrincipalUpdate::set(
                         PrincipalField::Members,
                         PrincipalValue::StringList(vec!["john".to_string(), "jane".to_string()]),
+                    ),
+                    PrincipalUpdate::set(
+                        PrincipalField::ExternalMembers,
+                        PrincipalValue::StringList(vec![
+                            "mike@other.org".to_string(),
+                            "lucy@foobar.net".to_string()
+                        ]),
                     )
                 ]))
                 .await,
             Ok(())
         );
-        assert!(store.rcpt("list@example.org").await.unwrap());
-        assert_eq!(
-            store
-                .email_to_ids("list@example.org")
-                .await
-                .unwrap()
-                .into_iter()
-                .collect::<AHashSet<_>>(),
-            [john_id, jane_id].into_iter().collect::<AHashSet<_>>(),
-        );
+
+        assert_list_members(
+            &store,
+            "list@example.org",
+            [
+                "john@example.org",
+                "mike@other.org",
+                "lucy@foobar.net",
+                "jane@example.org",
+            ],
+        )
+        .await;
+
         assert_eq!(
             store
                 .query(QueryBy::Name("list"), true)
@@ -276,10 +298,15 @@ async fn internal_directory() {
                 .unwrap()
                 .into_iter()
                 .collect::<AHashSet<_>>(),
-            ["john@example.org", "jane@example.org"]
-                .into_iter()
-                .map(|s| s.to_string())
-                .collect::<AHashSet<_>>()
+            [
+                "john@example.org",
+                "mike@other.org",
+                "lucy@foobar.net",
+                "jane@example.org"
+            ]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect::<AHashSet<_>>()
         );
 
         // Create groups
@@ -445,8 +472,14 @@ async fn internal_directory() {
             }
         );
         assert_eq!(store.get_principal_id("john").await.unwrap(), None);
-        assert!(!store.rcpt("john@example.org").await.unwrap());
-        assert!(store.rcpt("john.doe@example.org").await.unwrap());
+        assert_eq!(
+            store.rcpt("john@example.org").await.unwrap(),
+            RcptType::Invalid
+        );
+        assert_eq!(
+            store.rcpt("john.doe@example.org").await.unwrap(),
+            RcptType::Mailbox
+        );
 
         // Remove a member from a mailing list and then add it back
         assert_eq!(
@@ -460,10 +493,12 @@ async fn internal_directory() {
                 .await,
             Ok(())
         );
-        assert_eq!(
-            store.email_to_ids("list@example.org").await.unwrap(),
-            vec![jane_id]
-        );
+        assert_list_members(
+            &store,
+            "list@example.org",
+            ["jane@example.org", "mike@other.org", "lucy@foobar.net"],
+        )
+        .await;
         assert_eq!(
             store
                 .update_principal(UpdatePrincipal::by_name("list").with_updates(vec![
@@ -475,15 +510,17 @@ async fn internal_directory() {
                 .await,
             Ok(())
         );
-        assert_eq!(
-            store
-                .email_to_ids("list@example.org")
-                .await
-                .unwrap()
-                .into_iter()
-                .collect::<AHashSet<_>>(),
-            [john_id, jane_id].into_iter().collect::<AHashSet<_>>()
-        );
+        assert_list_members(
+            &store,
+            "list@example.org",
+            [
+                "john.doe@example.org",
+                "jane@example.org",
+                "mike@other.org",
+                "lucy@foobar.net",
+            ],
+        )
+        .await;
 
         // Field validation
         assert_eq!(
@@ -619,10 +656,13 @@ async fn internal_directory() {
         store.delete_principal(QueryBy::Id(john_id)).await.unwrap();
         assert_eq!(store.get_principal_id("john.doe").await.unwrap(), None);
         assert_eq!(
-            store.email_to_ids("john.doe@example.org").await.unwrap(),
-            Vec::<u32>::new()
+            store.email_to_id("john.doe@example.org").await.unwrap(),
+            None
         );
-        assert!(!store.rcpt("john.doe@example.org").await.unwrap());
+        assert_eq!(
+            store.rcpt("john.doe@example.org").await.unwrap(),
+            RcptType::Invalid
+        );
         assert_eq!(
             store
                 .list_principals(
@@ -672,10 +712,13 @@ async fn internal_directory() {
         // Make sure Jane's records are still there
         assert_eq!(store.get_principal_id("jane").await.unwrap(), Some(jane_id));
         assert_eq!(
-            store.email_to_ids("jane@example.org").await.unwrap(),
-            vec![jane_id]
+            store.email_to_id("jane@example.org").await.unwrap(),
+            Some(jane_id)
         );
-        assert!(store.rcpt("jane@example.org").await.unwrap());
+        assert_eq!(
+            store.rcpt("jane@example.org").await.unwrap(),
+            RcptType::Mailbox
+        );
         assert_eq!(
             store
                 .get_bitmap(BitmapKey {
@@ -883,5 +926,24 @@ impl TestInternalDirectory for Store {
                 .unwrap();
             }
         }
+    }
+}
+
+async fn assert_list_members(
+    store: &Store,
+    list_addr: &str,
+    members: impl IntoIterator<Item = &str>,
+) {
+    match store.rcpt(list_addr).await.unwrap() {
+        RcptType::List(items) => {
+            assert_eq!(
+                items.into_iter().collect::<AHashSet<_>>(),
+                members
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect::<AHashSet<_>>()
+            );
+        }
+        other => panic!("invalid {other:?}"),
     }
 }

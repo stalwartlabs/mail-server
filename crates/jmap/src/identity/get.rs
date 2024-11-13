@@ -16,10 +16,10 @@ use store::{
     write::{BatchBuilder, F_VALUE},
 };
 use trc::AddContext;
+use utils::sanitize_email;
 
 use crate::{changes::state::StateManager, JmapMethods};
 
-use super::set::sanitize_email;
 use std::future::Future;
 
 pub trait IdentityGet: Sync + Send {

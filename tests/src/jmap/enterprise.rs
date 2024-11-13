@@ -80,6 +80,7 @@ test
 
 pub async fn test(params: &mut JMAPTest) {
     // Enable Enterprise
+    println!("Running Enterprise tests...");
     let mut core = params.server.inner.shared_core.load_full().as_ref().clone();
     let mut config = Config::new(METRICS_CONFIG).unwrap();
     core.enterprise = Enterprise {

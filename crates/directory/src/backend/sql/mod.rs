@@ -19,13 +19,12 @@ pub struct SqlDirectory {
 pub(crate) struct SqlMappings {
     query_name: String,
     query_members: String,
-    query_recipients: String,
     query_emails: String,
-    query_domains: String,
-    query_verify: String,
-    query_expand: String,
+    query_recipients: String,
+    query_secrets: String,
     column_description: String,
-    column_secret: Vec<String>,
+    column_secret: String,
+    column_email: String,
     column_quota: String,
     column_type: String,
 }

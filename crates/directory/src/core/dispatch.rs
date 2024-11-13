@@ -7,7 +7,8 @@
 use trc::AddContext;
 
 use crate::{
-    backend::internal::lookup::DirectoryStore, Directory, DirectoryInner, Principal, QueryBy,
+    backend::{internal::lookup::DirectoryStore, RcptType},
+    Directory, DirectoryInner, Principal, QueryBy,
 };
 
 impl Directory {
@@ -29,16 +30,16 @@ impl Directory {
         .caused_by(trc::location!())
     }
 
-    pub async fn email_to_ids(&self, email: &str) -> trc::Result<Vec<u32>> {
+    pub async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>> {
         match &self.store {
-            DirectoryInner::Internal(store) => store.email_to_ids(email).await,
-            DirectoryInner::Ldap(store) => store.email_to_ids(email).await,
-            DirectoryInner::Sql(store) => store.email_to_ids(email).await,
-            DirectoryInner::Imap(store) => store.email_to_ids(email).await,
-            DirectoryInner::Smtp(store) => store.email_to_ids(email).await,
-            DirectoryInner::Memory(store) => store.email_to_ids(email).await,
+            DirectoryInner::Internal(store) => store.email_to_id(address).await,
+            DirectoryInner::Ldap(store) => store.email_to_id(address).await,
+            DirectoryInner::Sql(store) => store.email_to_id(address).await,
+            DirectoryInner::Imap(store) => store.email_to_id(address).await,
+            DirectoryInner::Smtp(store) => store.email_to_id(address).await,
+            DirectoryInner::Memory(store) => store.email_to_id(address).await,
             #[cfg(feature = "enterprise")]
-            DirectoryInner::OpenId(store) => store.email_to_ids(email).await,
+            DirectoryInner::OpenId(store) => store.email_to_id(address).await,
         }
         .caused_by(trc::location!())
     }
@@ -71,7 +72,7 @@ impl Directory {
         Ok(result)
     }
 
-    pub async fn rcpt(&self, email: &str) -> trc::Result<bool> {
+    pub async fn rcpt(&self, email: &str) -> trc::Result<RcptType> {
         // Check cache
         if let Some(cache) = &self.cache {
             if let Some(result) = cache.get_rcpt(email) {
@@ -93,7 +94,7 @@ impl Directory {
 
         // Update cache
         if let Some(cache) = &self.cache {
-            cache.set_rcpt(email, result);
+            cache.set_rcpt(email, &result);
         }
 
         Ok(result)

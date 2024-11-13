@@ -338,15 +338,15 @@ impl<T: SessionStream> Session<T> {
                 State::Data(receiver) => {
                     if self.data.message.len() + bytes.len() < self.params.max_message_size {
                         if receiver.ingest(&mut iter, &mut self.data.message) {
-                            let num_rcpts = self.data.rcpt_to.len();
                             let message = self.queue_message().await;
+                            let num_responses = if self.instance.protocol == ServerProtocol::Smtp {
+                                1
+                            } else {
+                                self.data.rcpt_oks
+                            };
                             if !message.is_empty() {
-                                if self.instance.protocol == ServerProtocol::Smtp {
+                                for _ in 0..num_responses {
                                     self.write(message.as_ref()).await?;
-                                } else {
-                                    for _ in 0..num_rcpts {
-                                        self.write(message.as_ref()).await?;
-                                    }
                                 }
                                 self.reset();
                                 state = State::default();
@@ -365,15 +365,16 @@ impl<T: SessionStream> Session<T> {
                     if receiver.ingest(&mut iter, &mut self.data.message) {
                         if self.can_send_data().await? {
                             if receiver.is_last {
-                                let num_rcpts = self.data.rcpt_to.len();
                                 let message = self.queue_message().await;
                                 if !message.is_empty() {
-                                    if self.instance.protocol == ServerProtocol::Smtp {
+                                    let num_responses =
+                                        if self.instance.protocol == ServerProtocol::Smtp {
+                                            1
+                                        } else {
+                                            self.data.rcpt_oks
+                                        };
+                                    for _ in 0..num_responses {
                                         self.write(message.as_ref()).await?;
-                                    } else {
-                                        for _ in 0..num_rcpts {
-                                            self.write(message.as_ref()).await?;
-                                        }
                                     }
                                     self.reset();
                                 } else {
@@ -464,6 +465,7 @@ impl<T: AsyncWrite + AsyncRead + Unpin> Session<T> {
         self.data.priority = 0;
         self.data.delivery_by = 0;
         self.data.future_release = 0;
+        self.data.rcpt_oks = 0;
     }
 
     #[inline(always)]

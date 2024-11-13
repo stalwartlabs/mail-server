@@ -7,7 +7,7 @@
 use mail_send::{smtp::AssertReply, Credentials};
 use smtp_proto::Severity;
 
-use crate::{IntoError, Principal, QueryBy};
+use crate::{backend::RcptType, IntoError, Principal, QueryBy};
 
 use super::{SmtpClient, SmtpDirectory};
 
@@ -25,11 +25,11 @@ impl SmtpDirectory {
         }
     }
 
-    pub async fn email_to_ids(&self, _address: &str) -> trc::Result<Vec<u32>> {
+    pub async fn email_to_id(&self, _address: &str) -> trc::Result<Option<u32>> {
         Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
-    pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
+    pub async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {
         let mut conn = self
             .pool
             .get()
@@ -57,9 +57,9 @@ impl SmtpDirectory {
                     conn.num_rcpts = 0;
                     conn.sent_mail_from = false;
                 }
-                Ok(true)
+                Ok(RcptType::Mailbox)
             }
-            Severity::PermanentNegativeCompletion => Ok(false),
+            Severity::PermanentNegativeCompletion => Ok(RcptType::Invalid),
             _ => Err(trc::StoreEvent::UnexpectedError
                 .ctx(trc::Key::Code, reply.code())
                 .ctx(trc::Key::Details, reply.message)),

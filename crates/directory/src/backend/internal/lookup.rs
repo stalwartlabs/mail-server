@@ -11,7 +11,7 @@ use store::{
 };
 use trc::AddContext;
 
-use crate::{Principal, QueryBy, Type};
+use crate::{backend::RcptType, Principal, QueryBy, Type};
 
 use super::{manage::ManageDirectory, PrincipalField, PrincipalInfo};
 
@@ -22,11 +22,12 @@ pub trait DirectoryStore: Sync + Send {
         by: QueryBy<'_>,
         return_member_of: bool,
     ) -> trc::Result<Option<Principal>>;
-    async fn email_to_ids(&self, email: &str) -> trc::Result<Vec<u32>>;
+    async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>>;
     async fn is_local_domain(&self, domain: &str) -> trc::Result<bool>;
-    async fn rcpt(&self, address: &str) -> trc::Result<bool>;
+    async fn rcpt(&self, address: &str) -> trc::Result<RcptType>;
     async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>>;
     async fn expn(&self, address: &str) -> trc::Result<Vec<String>>;
+    async fn expn_by_id(&self, id: u32) -> trc::Result<Vec<String>>;
 }
 
 impl DirectoryStore for Store {
@@ -77,21 +78,12 @@ impl DirectoryStore for Store {
         Ok(None)
     }
 
-    async fn email_to_ids(&self, email: &str) -> trc::Result<Vec<u32>> {
-        if let Some(ptype) = self
-            .get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
-                DirectoryClass::EmailToId(email.as_bytes().to_vec()),
-            )))
-            .await?
-        {
-            if ptype.typ != Type::List {
-                Ok(vec![ptype.id])
-            } else {
-                self.get_members(ptype.id).await
-            }
-        } else {
-            Ok(Vec::new())
-        }
+    async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>> {
+        self.get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
+            DirectoryClass::EmailToId(address.as_bytes().to_vec()),
+        )))
+        .await
+        .map(|ptype| ptype.map(|ptype| ptype.id))
     }
 
     async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
@@ -102,12 +94,21 @@ impl DirectoryStore for Store {
         .map(|p| p.map_or(false, |p| p.typ == Type::Domain))
     }
 
-    async fn rcpt(&self, address: &str) -> trc::Result<bool> {
-        self.get_value::<()>(ValueKey::from(ValueClass::Directory(
-            DirectoryClass::EmailToId(address.as_bytes().to_vec()),
-        )))
-        .await
-        .map(|ids| ids.is_some())
+    async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {
+        if let Some(pinfo) = self
+            .get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
+                DirectoryClass::EmailToId(address.as_bytes().to_vec()),
+            )))
+            .await?
+        {
+            if pinfo.typ != Type::List {
+                Ok(RcptType::Mailbox)
+            } else {
+                self.expn_by_id(pinfo.id).await.map(RcptType::List)
+            }
+        } else {
+            Ok(RcptType::Invalid)
+        }
     }
 
     async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
@@ -143,7 +144,6 @@ impl DirectoryStore for Store {
     }
 
     async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
-        let mut results = Vec::new();
         if let Some(ptype) = self
             .get_value::<PrincipalInfo>(ValueKey::from(ValueClass::Directory(
                 DirectoryClass::EmailToId(address.as_bytes().to_vec()),
@@ -151,15 +151,30 @@ impl DirectoryStore for Store {
             .await?
             .filter(|p| p.typ == Type::List)
         {
-            for account_id in self.get_members(ptype.id).await? {
-                if let Some(email) = self
-                    .get_principal(account_id)
-                    .await?
-                    .and_then(|mut p| p.take_str(PrincipalField::Emails))
-                {
-                    results.push(email);
-                }
+            self.expn_by_id(ptype.id).await
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    async fn expn_by_id(&self, list_id: u32) -> trc::Result<Vec<String>> {
+        let mut results = Vec::new();
+        for account_id in self.get_members(list_id).await? {
+            if let Some(email) = self
+                .get_principal(account_id)
+                .await?
+                .and_then(|mut p| p.take_str(PrincipalField::Emails))
+            {
+                results.push(email);
             }
+        }
+
+        if let Some(emails) = self
+            .get_principal(list_id)
+            .await?
+            .and_then(|mut p| p.take_str_array(PrincipalField::ExternalMembers))
+        {
+            results.extend(emails);
         }
 
         Ok(results)

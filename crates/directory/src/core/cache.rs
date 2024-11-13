@@ -13,6 +13,8 @@ use std::{
 use parking_lot::Mutex;
 use utils::config::{utils::AsKey, Config};
 
+use crate::backend::RcptType;
+
 pub struct CachedDirectory {
     cached_domains: Mutex<LookupCache<String>>,
     cached_rcpts: Mutex<LookupCache<String>>,
@@ -52,15 +54,15 @@ impl CachedDirectory {
         })
     }
 
-    pub fn get_rcpt(&self, address: &str) -> Option<bool> {
-        self.cached_rcpts.lock().get(address)
+    pub fn get_rcpt(&self, address: &str) -> Option<RcptType> {
+        self.cached_rcpts.lock().get(address).map(Into::into)
     }
 
-    pub fn set_rcpt(&self, address: &str, exists: bool) {
-        if exists {
-            self.cached_rcpts.lock().insert_pos(address.to_string());
-        } else {
-            self.cached_rcpts.lock().insert_neg(address.to_string());
+    pub fn set_rcpt(&self, address: &str, exists: &RcptType) {
+        match exists {
+            RcptType::Mailbox => self.cached_rcpts.lock().insert_pos(address.to_string()),
+            RcptType::Invalid => self.cached_rcpts.lock().insert_neg(address.to_string()),
+            RcptType::List(_) => {}
         }
     }
 

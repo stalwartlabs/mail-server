@@ -7470,6 +7470,7 @@ dependencies = [
  "parking_lot",
  "pem",
  "privdrop",
+ "psl",
  "rand 0.8.5",
  "rcgen 0.13.1",
  "regex",

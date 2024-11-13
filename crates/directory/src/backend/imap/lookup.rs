@@ -7,7 +7,7 @@
 use mail_send::Credentials;
 use smtp_proto::{AUTH_CRAM_MD5, AUTH_LOGIN, AUTH_OAUTHBEARER, AUTH_PLAIN, AUTH_XOAUTH2};
 
-use crate::{IntoError, Principal, QueryBy};
+use crate::{backend::RcptType, IntoError, Principal, QueryBy};
 
 use super::{ImapDirectory, ImapError};
 
@@ -60,11 +60,11 @@ impl ImapDirectory {
         }
     }
 
-    pub async fn email_to_ids(&self, _address: &str) -> trc::Result<Vec<u32>> {
+    pub async fn email_to_id(&self, _address: &str) -> trc::Result<Option<u32>> {
         Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 
-    pub async fn rcpt(&self, _address: &str) -> trc::Result<bool> {
+    pub async fn rcpt(&self, _address: &str) -> trc::Result<RcptType> {
         Err(trc::StoreEvent::NotSupported.caused_by(trc::location!()))
     }
 

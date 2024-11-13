@@ -32,9 +32,13 @@ impl SqlDirectory {
                 .unwrap_or_default()
                 .to_string(),
             column_secret: config
-                .values((&prefix, "columns.secret"))
-                .map(|(_, v)| v.to_string())
-                .collect(),
+                .value((&prefix, "columns.secret"))
+                .unwrap_or_default()
+                .to_string(),
+            column_email: config
+                .value((&prefix, "columns.email"))
+                .unwrap_or_default()
+                .to_string(),
             column_quota: config
                 .value((&prefix, "columns.quota"))
                 .unwrap_or_default()
@@ -49,11 +53,9 @@ impl SqlDirectory {
         for (query_id, query) in [
             ("name", &mut mappings.query_name),
             ("members", &mut mappings.query_members),
-            ("recipients", &mut mappings.query_recipients),
             ("emails", &mut mappings.query_emails),
-            ("verify", &mut mappings.query_verify),
-            ("expand", &mut mappings.query_expand),
-            ("domains", &mut mappings.query_domains),
+            ("recipients", &mut mappings.query_recipients),
+            ("secrets", &mut mappings.query_secrets),
         ] {
             *query = config
                 .value(("store", store_id.as_str(), "query", query_id))

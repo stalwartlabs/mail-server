@@ -9,10 +9,13 @@ use store::{NamedRows, Rows, Value};
 use trc::AddContext;
 
 use crate::{
-    backend::internal::{
-        lookup::DirectoryStore,
-        manage::{self, ManageDirectory, UpdatePrincipal},
-        PrincipalField, PrincipalValue,
+    backend::{
+        internal::{
+            lookup::DirectoryStore,
+            manage::{self, ManageDirectory, UpdatePrincipal},
+            PrincipalField, PrincipalValue,
+        },
+        RcptType,
     },
     Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
 };
@@ -143,6 +146,23 @@ impl SqlDirectory {
             );
         }
 
+        // Obtain secrets
+        if !self.mappings.query_secrets.is_empty() {
+            external_principal.set(
+                PrincipalField::Secrets,
+                PrincipalValue::StringList(
+                    self.store
+                        .query::<Rows>(
+                            &self.mappings.query_secrets,
+                            vec![external_principal.name().into()],
+                        )
+                        .await
+                        .caused_by(trc::location!())?
+                        .into(),
+                ),
+            );
+        }
+
         // Obtain account ID if not available
         let mut principal = if let Some(stored_principal) = stored_principal {
             stored_principal
@@ -176,66 +196,59 @@ impl SqlDirectory {
         Ok(Some(principal))
     }
 
-    pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
+    pub async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>> {
         let names = self
             .store
             .query::<Rows>(&self.mappings.query_recipients, vec![address.into()])
             .await
             .caused_by(trc::location!())?;
 
-        let mut ids = Vec::with_capacity(names.rows.len());
-
         for row in names.rows {
             if let Some(Value::Text(name)) = row.values.first() {
-                ids.push(
-                    self.data_store
-                        .get_or_create_principal_id(name, Type::Individual)
-                        .await
-                        .caused_by(trc::location!())?,
-                );
+                return self
+                    .data_store
+                    .get_or_create_principal_id(name, Type::Individual)
+                    .await
+                    .caused_by(trc::location!())
+                    .map(Some);
             }
         }
 
-        Ok(ids)
+        Ok(None)
     }
 
-    pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
-        self.store
+    pub async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {
+        let result = self
+            .store
             .query::<bool>(
                 &self.mappings.query_recipients,
                 vec![address.to_string().into()],
             )
-            .await
-            .map_err(Into::into)
+            .await?;
+
+        if result {
+            Ok(RcptType::Mailbox)
+        } else {
+            self.data_store.rcpt(address).await.map(|result| {
+                if matches!(result, RcptType::List(_)) {
+                    result
+                } else {
+                    RcptType::Invalid
+                }
+            })
+        }
     }
 
     pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
-        self.store
-            .query::<Rows>(
-                &self.mappings.query_verify,
-                vec![address.to_string().into()],
-            )
-            .await
-            .map(Into::into)
-            .map_err(Into::into)
+        self.data_store.vrfy(address).await
     }
 
     pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
-        self.store
-            .query::<Rows>(
-                &self.mappings.query_expand,
-                vec![address.to_string().into()],
-            )
-            .await
-            .map(Into::into)
-            .map_err(Into::into)
+        self.data_store.expn(address).await
     }
 
     pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
-        self.store
-            .query::<bool>(&self.mappings.query_domains, vec![domain.into()])
-            .await
-            .map_err(Into::into)
+        self.data_store.is_local_domain(domain).await
     }
 }
 
@@ -250,13 +263,9 @@ impl SqlMappings {
 
         if let Some(row) = rows.rows.into_iter().next() {
             for (name, value) in rows.names.into_iter().zip(row.values) {
-                if self
-                    .column_secret
-                    .iter()
-                    .any(|c| name.eq_ignore_ascii_case(c))
-                {
-                    if let Value::Text(secret) = value {
-                        principal.append_str(PrincipalField::Secrets, secret.into_owned());
+                if name.eq_ignore_ascii_case(&self.column_secret) {
+                    if let Value::Text(text) = value {
+                        principal.set(PrincipalField::Secrets, text.into_owned());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_type) {
                     match value.to_str().as_ref() {
@@ -273,6 +282,10 @@ impl SqlMappings {
                 } else if name.eq_ignore_ascii_case(&self.column_description) {
                     if let Value::Text(text) = value {
                         principal.set(PrincipalField::Description, text.into_owned());
+                    }
+                } else if name.eq_ignore_ascii_case(&self.column_email) {
+                    if let Value::Text(text) = value {
+                        principal.set(PrincipalField::Emails, text.into_owned());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_quota) {
                     if let Value::Integer(quota) = value {

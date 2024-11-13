@@ -38,11 +38,11 @@ use smtp::{
 };
 use smtp_proto::{request::parser::Rfc5321Parser, MailFrom, RcptTo};
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder, Bincode};
-use utils::map::vec_map::VecMap;
+use utils::{map::vec_map::VecMap, sanitize_email};
 
 use crate::{
     blob::download::BlobDownload, changes::write::ChangeLog, email::metadata::MessageMetadata,
-    identity::set::sanitize_email, JmapMethods,
+    JmapMethods,
 };
 use std::future::Future;
 

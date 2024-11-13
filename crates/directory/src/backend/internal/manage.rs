@@ -14,10 +14,11 @@ use store::{
     Deserialize, IterateParams, Serialize, Store, ValueKey, U32_LEN,
 };
 use trc::AddContext;
+use utils::sanitize_email;
 
 use crate::{
-    Permission, Permissions, Principal, QueryBy, Type, MAX_TYPE_ID, ROLE_ADMIN, ROLE_TENANT_ADMIN,
-    ROLE_USER,
+    backend::RcptType, Permission, Permissions, Principal, QueryBy, Type, MAX_TYPE_ID, ROLE_ADMIN,
+    ROLE_TENANT_ADMIN, ROLE_USER,
 };
 
 use super::{
@@ -387,7 +388,7 @@ impl ManageDirectory for Store {
         if principal.typ != Type::OauthClient {
             for email in principal.iter_mut_str(PrincipalField::Emails) {
                 *email = email.to_lowercase();
-                if self.rcpt(email).await.caused_by(trc::location!())? {
+                if self.rcpt(email).await.caused_by(trc::location!())? != RcptType::Invalid {
                     return Err(err_exists(PrincipalField::Emails, email.to_string()));
                 }
                 if let Some(domain) = email.split('@').nth(1) {
@@ -1423,25 +1424,62 @@ impl ManageDirectory for Store {
                         .inner
                         .retain_int(change.field, |v| *v != permission);
                 }
-                (PrincipalAction::Set, PrincipalField::Urls, PrincipalValue::StringList(urls)) => {
-                    if !urls.is_empty() {
-                        principal.inner.set(change.field, urls);
+                (
+                    PrincipalAction::Set,
+                    PrincipalField::Urls | PrincipalField::ExternalMembers,
+                    PrincipalValue::StringList(mut items),
+                ) => {
+                    if matches!(change.field, PrincipalField::ExternalMembers) {
+                        items = items
+                            .into_iter()
+                            .map(|item| {
+                                sanitize_email(&item).ok_or_else(|| {
+                                    error(
+                                        "Invalid email address",
+                                        format!(
+                                            "Invalid value {:?} for {}",
+                                            item,
+                                            change.field.as_str()
+                                        )
+                                        .into(),
+                                    )
+                                })
+                            })
+                            .collect::<trc::Result<_>>()?;
+                    }
+
+                    if !items.is_empty() {
+                        principal.inner.set(change.field, items);
                     } else {
                         principal.inner.remove(change.field);
                     }
                 }
-                (PrincipalAction::AddItem, PrincipalField::Urls, PrincipalValue::String(url)) => {
-                    if !principal.inner.has_str_value(change.field, &url) {
-                        principal.inner.append_str(change.field, url);
+                (
+                    PrincipalAction::AddItem,
+                    PrincipalField::Urls | PrincipalField::ExternalMembers,
+                    PrincipalValue::String(mut item),
+                ) => {
+                    if matches!(change.field, PrincipalField::ExternalMembers) {
+                        item = sanitize_email(&item).ok_or_else(|| {
+                            error(
+                                "Invalid email address",
+                                format!("Invalid value {:?} for {}", item, change.field.as_str())
+                                    .into(),
+                            )
+                        })?
+                    }
+
+                    if !principal.inner.has_str_value(change.field, &item) {
+                        principal.inner.append_str(change.field, item);
                     }
                 }
                 (
                     PrincipalAction::RemoveItem,
-                    PrincipalField::Urls,
-                    PrincipalValue::String(url),
+                    PrincipalField::Urls | PrincipalField::ExternalMembers,
+                    PrincipalValue::String(item),
                 ) => {
-                    if principal.inner.has_str_value(change.field, &url) {
-                        principal.inner.retain_str(change.field, |v| *v != url);
+                    if principal.inner.has_str_value(change.field, &item) {
+                        principal.inner.retain_str(change.field, |v| *v != item);
                     }
                 }
 
@@ -1835,7 +1873,7 @@ impl ValidateDirectory for Store {
         tenant_id: Option<u32>,
         create_if_missing: bool,
     ) -> trc::Result<()> {
-        if self.rcpt(email).await.caused_by(trc::location!())? {
+        if self.rcpt(email).await.caused_by(trc::location!())? != RcptType::Invalid {
             Err(err_exists(PrincipalField::Emails, email.to_string()))
         } else if let Some(domain) = email.split('@').nth(1) {
             match self

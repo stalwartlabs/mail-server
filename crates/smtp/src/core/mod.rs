@@ -82,6 +82,7 @@ pub struct SessionData {
     pub mail_from: Option<SessionAddress>,
     pub rcpt_to: Vec<SessionAddress>,
     pub rcpt_errors: usize,
+    pub rcpt_oks: usize,
     pub message: Vec<u8>,
 
     pub authenticated_as: Option<Arc<AccessToken>>,
@@ -101,7 +102,7 @@ pub struct SessionData {
     pub dnsbl_error: Option<Vec<u8>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SessionAddress {
     pub address: String,
     pub address_lcase: String,
@@ -164,6 +165,7 @@ impl SessionData {
             priority: 0,
             valid_until: Instant::now(),
             rcpt_errors: 0,
+            rcpt_oks: 0,
             message: Vec::with_capacity(0),
             auth_errors: 0,
             messages_sent: 0,
@@ -310,6 +312,7 @@ impl SessionData {
             mail_from,
             rcpt_to,
             rcpt_errors: 0,
+            rcpt_oks: 0,
             message,
             authenticated_as: Some(Arc::new(AccessToken::from_id(0))),
             auth_errors: 0,

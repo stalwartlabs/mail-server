@@ -269,10 +269,7 @@ struct KeyValue {
 
 impl Snapshot {
     async fn new(db: &Store) -> Self {
-        let is_sql = matches!(
-            db,
-            Store::SQLite(_) | Store::PostgreSQL(_) | Store::MySQL(_)
-        );
+        let is_sql = db.is_sql();
 
         let mut keys = AHashSet::new();
 

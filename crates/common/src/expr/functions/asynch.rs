@@ -1,5 +1,6 @@
 use std::{cmp::Ordering, net::IpAddr, vec::IntoIter};
 
+use directory::backend::RcptType;
 use mail_auth::IpLookupStrategy;
 use store::{Deserialize, Rows, Value};
 use trc::AddContext;
@@ -36,7 +37,7 @@ impl Server {
                     .rcpt(address.as_ref())
                     .await
                     .caused_by(trc::location!())
-                    .map(|v| v.into())
+                    .map(|v| (v != RcptType::Invalid).into())
             }
             F_KEY_GET => {
                 let store = params.next_as_string();

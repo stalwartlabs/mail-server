@@ -11,7 +11,7 @@ use utils::config::{cron::SimpleCron, utils::ParseValue, Config};
 use crate::{
     backend::fs::FsStore,
     write::purge::{PurgeSchedule, PurgeStore},
-    BlobStore, CompressionAlgo, FtsStore, LookupStore, QueryStore, Store, Stores,
+    BlobStore, CompressionAlgo, LookupStore, QueryStore, Store, Stores,
 };
 
 #[cfg(feature = "s3")]
@@ -201,7 +201,7 @@ impl Stores {
                 "elasticsearch" => {
                     if let Some(db) = ElasticSearchStore::open(config, prefix)
                         .await
-                        .map(FtsStore::from)
+                        .map(crate::FtsStore::from)
                     {
                         self.fts_stores.insert(store_id, db);
                     }
@@ -378,6 +378,7 @@ impl Stores {
     }
 }
 
+#[allow(dead_code)]
 trait IsActiveStore {
     fn is_active_store(&self, id: &str) -> bool;
 }

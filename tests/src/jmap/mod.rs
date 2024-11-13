@@ -343,7 +343,7 @@ type = "console"
 level = "{LEVEL}"
 multiline = false
 ansi = true
-disabled-events = ["network.*", "telemetry.webhook-error"]
+disabled-events = ["network.*", "telemetry.webhook-error", "http.request-body"]
 
 [webhook."test"]
 url = "http://127.0.0.1:8821/hook"
@@ -370,8 +370,8 @@ pub async fn jmap_tests() {
     )
     .await;
 
-    /*webhooks::test(&mut params).await;
-    email_query::test(&mut params, delete).await;
+    webhooks::test(&mut params).await;
+    /*email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -384,9 +384,9 @@ pub async fn jmap_tests() {
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
-    auth_limits::test(&mut params).await;*/
+    auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
-    /*event_source::test(&mut params).await;
+    event_source::test(&mut params).await;
     push_subscription::test(&mut params).await;
     sieve_script::test(&mut params).await;
     vacation_response::test(&mut params).await;
@@ -396,8 +396,8 @@ pub async fn jmap_tests() {
     crypto::test(&mut params).await;
     blob::test(&mut params).await;
     permissions::test(&params).await;
-    purge::test(&mut params).await;
-    enterprise::test(&mut params).await;*/
+    purge::test(&mut params).await;*/
+    enterprise::test(&mut params).await;
 
     if delete {
         params.temp_dir.delete();

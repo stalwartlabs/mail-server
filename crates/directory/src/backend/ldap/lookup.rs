@@ -9,10 +9,13 @@ use mail_send::Credentials;
 use trc::AddContext;
 
 use crate::{
-    backend::internal::{
-        lookup::DirectoryStore,
-        manage::{self, ManageDirectory, UpdatePrincipal},
-        PrincipalField,
+    backend::{
+        internal::{
+            lookup::DirectoryStore,
+            manage::{self, ManageDirectory, UpdatePrincipal},
+            PrincipalField,
+        },
+        RcptType,
     },
     IntoError, Principal, QueryBy, Type, ROLE_ADMIN, ROLE_USER,
 };
@@ -212,7 +215,7 @@ impl LdapDirectory {
         Ok(Some(principal))
     }
 
-    pub async fn email_to_ids(&self, address: &str) -> trc::Result<Vec<u32>> {
+    pub async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>> {
         let filter = self.mappings.filter_email.build(address.as_ref());
         let rs = self
             .pool
@@ -240,29 +243,28 @@ impl LdapDirectory {
                 .collect::<Vec<_>>()
         );
 
-        let mut ids = Vec::with_capacity(rs.len());
         for entry in rs {
             let entry = SearchEntry::construct(entry);
-            'outer: for attr in &self.mappings.attr_name {
+            for attr in &self.mappings.attr_name {
                 if let Some(name) = entry.attrs.get(attr).and_then(|v| v.first()) {
                     if !name.is_empty() {
-                        ids.push(
-                            self.data_store
-                                .get_or_create_principal_id(name, Type::Individual)
-                                .await?,
-                        );
-                        break 'outer;
+                        return self
+                            .data_store
+                            .get_or_create_principal_id(name, Type::Individual)
+                            .await
+                            .map(Some);
                     }
                 }
             }
         }
 
-        Ok(ids)
+        Ok(None)
     }
 
-    pub async fn rcpt(&self, address: &str) -> trc::Result<bool> {
+    pub async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {
         let filter = self.mappings.filter_email.build(address.as_ref());
-        self.pool
+        let result = self
+            .pool
             .get()
             .await
             .map_err(|err| err.into_error().caused_by(trc::location!()))?
@@ -277,7 +279,11 @@ impl LdapDirectory {
             .next()
             .await
             .map(|entry| {
-                let success = entry.is_some();
+                let result = if entry.is_some() {
+                    RcptType::Mailbox
+                } else {
+                    RcptType::Invalid
+                };
 
                 trc::event!(
                     Store(trc::StoreEvent::LdapQuery),
@@ -285,131 +291,33 @@ impl LdapDirectory {
                     Result = entry.map(|e| trc::Value::from(format!("{e:?}")))
                 );
 
-                success
+                result
             })
-            .map_err(|err| err.into_error().caused_by(trc::location!()))
+            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
+
+        if result != RcptType::Invalid {
+            Ok(result)
+        } else {
+            self.data_store.rcpt(address).await.map(|result| {
+                if matches!(result, RcptType::List(_)) {
+                    result
+                } else {
+                    RcptType::Invalid
+                }
+            })
+        }
     }
 
     pub async fn vrfy(&self, address: &str) -> trc::Result<Vec<String>> {
-        let filter = self.mappings.filter_verify.build(address);
-        let mut stream = self
-            .pool
-            .get()
-            .await
-            .map_err(|err| err.into_error().caused_by(trc::location!()))?
-            .streaming_search(
-                &self.mappings.base_dn,
-                Scope::Subtree,
-                &filter,
-                &self.mappings.attr_email_address,
-            )
-            .await
-            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
-
-        let mut emails = Vec::new();
-        while let Some(entry) = stream
-            .next()
-            .await
-            .map_err(|err| err.into_error().caused_by(trc::location!()))?
-        {
-            let entry = SearchEntry::construct(entry);
-            for attr in &self.mappings.attr_email_address {
-                if let Some(values) = entry.attrs.get(attr) {
-                    for email in values {
-                        if !email.is_empty() {
-                            emails.push(email.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        trc::event!(
-            Store(trc::StoreEvent::LdapQuery),
-            Details = filter,
-            Result = emails
-                .iter()
-                .map(|e| trc::Value::from(e.clone()))
-                .collect::<Vec<_>>()
-        );
-
-        Ok(emails)
+        self.data_store.vrfy(address).await
     }
 
     pub async fn expn(&self, address: &str) -> trc::Result<Vec<String>> {
-        let filter = self.mappings.filter_expand.build(address);
-        let mut stream = self
-            .pool
-            .get()
-            .await
-            .map_err(|err| err.into_error().caused_by(trc::location!()))?
-            .streaming_search(
-                &self.mappings.base_dn,
-                Scope::Subtree,
-                &filter,
-                &self.mappings.attr_email_address,
-            )
-            .await
-            .map_err(|err| err.into_error().caused_by(trc::location!()))?;
-
-        let mut emails = Vec::new();
-        while let Some(entry) = stream
-            .next()
-            .await
-            .map_err(|err| err.into_error().caused_by(trc::location!()))?
-        {
-            let entry = SearchEntry::construct(entry);
-            for attr in &self.mappings.attr_email_address {
-                if let Some(values) = entry.attrs.get(attr) {
-                    for email in values {
-                        if !email.is_empty() {
-                            emails.push(email.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        trc::event!(
-            Store(trc::StoreEvent::LdapQuery),
-            Details = filter,
-            Result = emails
-                .iter()
-                .map(|e| trc::Value::from(e.clone()))
-                .collect::<Vec<_>>()
-        );
-
-        Ok(emails)
+        self.data_store.expn(address).await
     }
 
     pub async fn is_local_domain(&self, domain: &str) -> trc::Result<bool> {
-        let filter = self.mappings.filter_domains.build(domain);
-        self.pool
-            .get()
-            .await
-            .map_err(|err| err.into_error().caused_by(trc::location!()))?
-            .streaming_search(
-                &self.mappings.base_dn,
-                Scope::Subtree,
-                &filter,
-                Vec::<String>::new(),
-            )
-            .await
-            .map_err(|err| err.into_error().caused_by(trc::location!()))?
-            .next()
-            .await
-            .map(|entry| {
-                let success = entry.is_some();
-
-                trc::event!(
-                    Store(trc::StoreEvent::LdapQuery),
-                    Details = filter,
-                    Result = entry.map(|e| trc::Value::from(format!("{e:?}")))
-                );
-
-                success
-            })
-            .map_err(|err| err.into_error().caused_by(trc::location!()))
+        self.data_store.is_local_domain(domain).await
     }
 }
 

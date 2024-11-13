@@ -10,6 +10,7 @@ use common::{manager::webadmin::Resource, Server};
 use directory::{backend::internal::PrincipalField, QueryBy};
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use trc::AddContext;
 use utils::url_params::UrlParams;
 
 use crate::api::http::ToHttpResponse;
@@ -193,13 +194,13 @@ impl Autoconfig for Server {
 
         // Find the account name by e-mail address
         let mut account_name = emailaddress.to_string();
-        for id in self
+        if let Some(id) = self
             .core
             .storage
             .directory
-            .email_to_ids(emailaddress)
+            .email_to_id(emailaddress)
             .await
-            .unwrap_or_default()
+            .caused_by(trc::location!())?
         {
             if let Ok(Some(mut principal)) = self
                 .core
@@ -209,7 +210,6 @@ impl Autoconfig for Server {
                 .await
             {
                 account_name = principal.take_str(PrincipalField::Name).unwrap_or_default();
-                break;
             }
         }
 
