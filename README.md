@@ -16,6 +16,8 @@
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg?label=license&style=flat-square" alt="License: AGPL v3"></a>
   &nbsp;
   <a href="https://stalw.art/docs/get-started/"><img src="https://img.shields.io/badge/read_the-docs-red?style=flat-square" alt="Documentation"></a>
+  &nbsp;
+  <a href="https://gurubase.io/g/stalwart"><img src="https://img.shields.io/badge/Gurubase-Ask%20Stalwart%20Guru-006BFF?style=flat-square" alt="Gurubase"></a>
 </p>
 <p align="center">
   <a href="https://mastodon.social/@stalwartlabs"><img src="https://img.shields.io/mastodon/follow/109929667531941122?style=flat-square&logo=mastodon&color=%236364ff&label=Follow%20on%20Mastodon" alt="Mastodon"></a>
