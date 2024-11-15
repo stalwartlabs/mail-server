@@ -24,8 +24,6 @@
 </p>
 <p align="center">
   <a href="https://discord.gg/jtgtCNj66U"><img src="https://img.shields.io/discord/923615863037390889?label=Join%20Discord&logo=discord&style=flat-square" alt="Discord"></a>
-  &nbsp;
-  <a href="https://matrix.to/#/#stalwart:matrix.org"><img src="https://img.shields.io/matrix/stalwartmail%3Amatrix.org?label=Join%20Matrix&logo=matrix&style=flat-square" alt="Matrix"></a>
 </p>
 
 ## Features
@@ -114,7 +112,7 @@ All documentation is available at [stalw.art/docs/get-started](https://stalw.art
 
 If you are having problems running Stalwart Mail Server, you found a bug or just have a question,
 do not hesitate to reach us on [GitHub Discussions](https://github.com/stalwartlabs/mail-server/discussions),
-[Reddit](https://www.reddit.com/r/stalwartlabs), [Discord](https://discord.gg/aVQr3jF8jd) or [Matrix](https://matrix.to/#/#stalwart:matrix.org).
+[Reddit](https://www.reddit.com/r/stalwartlabs) or [Discord](https://discord.gg/aVQr3jF8jd).
 Additionally you may purchase an [premium support](https://stalw.art/support) to obtain priority support from Stalwart Labs LLC.
 
 ## Sponsorship
