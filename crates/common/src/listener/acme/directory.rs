@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use hyper::header::USER_AGENT;
 use rcgen::{Certificate, CustomExtension, PKCS_ECDSA_P256_SHA256};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Method, Response};
@@ -330,7 +331,8 @@ async fn https(
     let mut request = builder
         .build()
         .map_err(|err| trc::EventType::Acme(trc::AcmeEvent::Error).from_http_error(err))?
-        .request(method, url);
+        .request(method, url)
+        .header(USER_AGENT, crate::USER_AGENT);
 
     if let Some(body) = body {
         request = request
