@@ -121,7 +121,9 @@ impl EmailIngest for Server {
 
         // Check for Spam headers
         let mut is_spam = false;
-        if let Some((header_name, header_value)) = &self.core.jmap.spam_header {
+        if let (IngestSource::Smtp, Some((header_name, header_value))) =
+            (params.source, &self.core.jmap.spam_header)
+        {
             if params.mailbox_ids == [INBOX_ID]
                 && message.root_part().headers().iter().any(|header| {
                     &header.name == header_name
