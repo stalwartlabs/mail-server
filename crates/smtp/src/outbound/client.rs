@@ -667,8 +667,8 @@ pub(crate) fn from_error_status(status: &Status<(), Error>) -> trc::Error {
             .details("DANE Error")
             .ctx(trc::Key::Reason, err.details.clone()),
         Error::MtaStsError(err) => event.details("MTA-STS Error").reason(err),
-        Error::RateLimited => todo!(),
-        Error::ConcurrencyLimited => todo!(),
+        Error::RateLimited => event.details("Rate Limited"),
+        Error::ConcurrencyLimited => event.details("Concurrency Limited"),
         Error::Io(err) => event.details("I/O Error").reason(err),
     }
 }
