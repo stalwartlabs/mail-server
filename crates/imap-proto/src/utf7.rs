@@ -20,20 +20,20 @@ static UTF_7_RANK: &[u8] = &[
 
 static UTF_7_MAP: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+,";
 
-pub fn utf7_decode(text: &[u8]) -> Option<String> {
+pub fn utf7_decode(text: &str) -> Option<String> {
     let mut bytes: Vec<u16> = Vec::with_capacity(text.len());
     let mut bits = 0;
     let mut v: u32 = 0;
     let mut shifted = false;
-    let mut text = text.iter().peekable();
+    let mut text = text.chars().peekable();
 
-    while let Some(&ch) = text.next() {
+    while let Some(ch) = text.next() {
         if shifted {
-            if ch == b'-' {
+            if ch == '-' {
                 shifted = false;
                 bits = 0;
                 v = 0;
-            } else if ch > 127 {
+            } else if ch as usize > 127 {
                 return None;
             } else {
                 let rank = *UTF_7_RANK.get(ch as usize)?;
@@ -50,9 +50,9 @@ pub fn utf7_decode(text: &[u8]) -> Option<String> {
                     bits -= 16;
                 }
             }
-        } else if ch == b'&' {
+        } else if ch == '&' {
             match text.peek() {
-                Some(b'-') => {
+                Some('-') => {
                     bytes.push(b'&' as u16);
                     text.next();
                 }
@@ -126,7 +126,7 @@ pub fn utf7_maybe_decode(text: String, version: ProtocolVersion) -> String {
     if version.is_rev2() {
         text
     } else {
-        utf7_decode(text.as_bytes()).unwrap_or(text)
+        utf7_decode(&text).unwrap_or(text)
     }
 }
 
@@ -159,9 +159,10 @@ mod tests {
                     "四書五經, 宋元人注, 北京:  中國書店, 1990."
                 ),
             ),
+            ("Test-ąęć-Test", "Test-ąęć-Test"),
         ] {
             assert_eq!(
-                super::utf7_decode(input.as_bytes()).expect(input),
+                super::utf7_decode(input).expect(input),
                 expected_result,
                 "while decoding {:?}",
                 input

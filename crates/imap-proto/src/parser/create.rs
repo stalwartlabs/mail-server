@@ -121,6 +121,14 @@ mod tests {
                     mailbox_role: Some("important"),
                 },
             ),
+            (
+                "A142 CREATE \"Test-ąęć-Test\"\r\n",
+                create::Arguments {
+                    tag: "A142".to_string(),
+                    mailbox_name: "Test-ąęć-Test".to_string(),
+                    mailbox_role: None,
+                },
+            ),
         ] {
             assert_eq!(
                 receiver

@@ -866,6 +866,14 @@ mod tests {
                 }],
             ),
             (
+                vec!["TAG3 CREATE \"Test-ąęć-Test\"\r\n"],
+                vec![Request {
+                    tag: "TAG3".to_string(),
+                    command: Command::Create,
+                    tokens: vec![Token::Argument("Test-ąęć-Test".as_bytes().to_vec())],
+                }],
+            ),
+            (
                 vec!["abc LOGIN {0}\r\n", "\r\n"],
                 vec![Request {
                     tag: "abc".to_string(),
