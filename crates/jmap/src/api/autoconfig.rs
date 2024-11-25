@@ -209,7 +209,13 @@ impl Autoconfig for Server {
                 .query(QueryBy::Id(id), false)
                 .await
             {
-                account_name = principal.take_str(PrincipalField::Name).unwrap_or_default();
+                if principal
+                    .get_str_array(PrincipalField::Emails)
+                    .and_then(|emails| emails.first())
+                    .map_or(false, |email| email.eq_ignore_ascii_case(emailaddress))
+                {
+                    account_name = principal.take_str(PrincipalField::Name).unwrap_or_default();
+                }
             }
         }
 
