@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use ldap3::{Ldap, LdapConnAsync, Scope, SearchEntry};
+use ldap3::{Ldap, LdapConnAsync, ResultEntry, Scope, SearchEntry};
 use mail_send::Credentials;
 use trc::AddContext;
 
@@ -237,10 +237,7 @@ impl LdapDirectory {
         trc::event!(
             Store(trc::StoreEvent::LdapQuery),
             Details = filter,
-            Result = rs
-                .iter()
-                .map(|e| trc::Value::from(format!("{e:?}")))
-                .collect::<Vec<_>>()
+            Result = rs.iter().map(result_to_trace).collect::<Vec<_>>()
         );
 
         for entry in rs {
@@ -288,7 +285,7 @@ impl LdapDirectory {
                 trc::event!(
                     Store(trc::StoreEvent::LdapQuery),
                     Details = filter,
-                    Result = entry.map(|e| trc::Value::from(format!("{e:?}")))
+                    Result = entry.as_ref().map(result_to_trace).unwrap_or_default()
                 );
 
                 result
@@ -340,10 +337,7 @@ impl LdapDirectory {
             trc::event!(
                 Store(trc::StoreEvent::LdapQuery),
                 Details = filter.to_string(),
-                Result = rs
-                    .iter()
-                    .map(|e| trc::Value::from(format!("{e:?}")))
-                    .collect::<Vec<_>>()
+                Result = rs.first().map(result_to_trace).unwrap_or_default()
             );
 
             rs.into_iter().next().map(|entry| {
@@ -415,4 +409,13 @@ impl LdapMappings {
 
         principal.with_field(PrincipalField::Roles, role)
     }
+}
+
+fn result_to_trace(rs: &ResultEntry) -> trc::Value {
+    SearchEntry::construct(rs.clone())
+        .attrs
+        .into_iter()
+        .map(|(k, v)| trc::Value::Array(vec![trc::Value::from(k), trc::Value::from(v.join(", "))]))
+        .collect::<Vec<_>>()
+        .into()
 }
