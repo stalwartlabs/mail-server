@@ -97,7 +97,7 @@ impl DnsManagement for Server {
                 }
                 _ => (),
             }
-            if !has_macros && value.contains("%%{") {
+            if !has_macros && value.contains("%{") {
                 has_macros = true;
             }
             keys.keys.insert(key, value);
