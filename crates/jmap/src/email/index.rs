@@ -406,7 +406,7 @@ impl<'x> EmailIndexBuilder<'x> {
     }
 }
 
-impl<'x> EmailIndexBuilder<'x> {
+impl EmailIndexBuilder<'_> {
     pub fn build(self, batch: &mut BatchBuilder, account_id: u32, tenant_id: Option<u32>) {
         let options = if self.set {
             // Serialize metadata

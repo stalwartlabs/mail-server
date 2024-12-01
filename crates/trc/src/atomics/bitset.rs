@@ -79,7 +79,7 @@ mod tests {
     use super::*;
 
     const TEST_SIZE: usize = 1000;
-    type TestBitset = AtomicBitset<{ (TEST_SIZE + USIZE_BITS - 1) / USIZE_BITS }>;
+    type TestBitset = AtomicBitset<{ TEST_SIZE.div_ceil(USIZE_BITS) }>;
     static BITSET: TestBitset = TestBitset::new();
 
     #[test]

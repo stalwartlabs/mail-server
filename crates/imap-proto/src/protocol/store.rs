@@ -28,7 +28,7 @@ pub struct Response<'x> {
     pub items: Vec<FetchItem<'x>>,
 }
 
-impl<'x> ImapResponse for Response<'x> {
+impl ImapResponse for Response<'_> {
     fn serialize(self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(64);
         for item in &self.items {

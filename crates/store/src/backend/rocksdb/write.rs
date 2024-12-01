@@ -152,7 +152,7 @@ enum CommitError {
     RocksDB(rocksdb::Error),
 }
 
-impl<'x> RocksDBTransaction<'x> {
+impl RocksDBTransaction<'_> {
     fn commit(&self) -> Result<AssignedIds, CommitError> {
         let mut account_id = u32::MAX;
         let mut collection = u8::MAX;

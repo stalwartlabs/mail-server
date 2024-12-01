@@ -139,7 +139,7 @@ where
 {
     struct AnyBoolVisitor;
 
-    impl<'de> Visitor<'de> for AnyBoolVisitor {
+    impl Visitor<'_> for AnyBoolVisitor {
         type Value = bool;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

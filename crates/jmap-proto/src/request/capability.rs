@@ -348,7 +348,7 @@ impl JsonObjectParser for Capability {
     }
 }
 
-impl<'x> Parser<'x> {
+impl Parser<'_> {
     fn error_capability(&mut self) -> trc::Error {
         if self.is_eof || self.skip_string() {
             trc::JmapEvent::UnknownCapability.into_err().details(

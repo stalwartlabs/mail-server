@@ -14,7 +14,7 @@ pub struct WordTokenizer<'x> {
     iterator: CharIndices<'x>,
 }
 
-impl<'x> WordTokenizer<'x> {
+impl WordTokenizer<'_> {
     pub fn new(text: &str, max_token_length: usize) -> WordTokenizer {
         WordTokenizer {
             max_token_length,

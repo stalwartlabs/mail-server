@@ -267,9 +267,7 @@ pub enum Permission {
     // WARNING: add new ids at the end (TODO: use static ids)
 }
 
-pub type Permissions = Bitset<
-    { (Permission::COUNT + std::mem::size_of::<usize>() - 1) / std::mem::size_of::<usize>() },
->;
+pub type Permissions = Bitset<{ Permission::COUNT.div_ceil(std::mem::size_of::<usize>()) }>;
 
 pub const ROLE_ADMIN: u32 = u32::MAX;
 pub const ROLE_TENANT_ADMIN: u32 = u32::MAX - 1;

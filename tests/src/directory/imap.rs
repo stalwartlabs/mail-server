@@ -152,12 +152,7 @@ async fn accept_imap(stream: TcpStream, acceptor: Arc<TlsAcceptor>, in_flight: O
 
     let mut buf_u8 = vec![0u8; 1024];
 
-    loop {
-        let br = if let Ok(br) = stream.read(&mut buf_u8).await {
-            br
-        } else {
-            break;
-        };
+    while let Ok(br) = stream.read(&mut buf_u8).await {
         let buf = std::str::from_utf8(&buf_u8[0..br]).unwrap();
         let (op, buf) = buf.split_once(' ').unwrap();
 

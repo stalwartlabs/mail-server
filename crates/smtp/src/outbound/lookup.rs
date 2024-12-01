@@ -194,7 +194,7 @@ pub trait ToNextHop {
         &'x self,
         domain: &'y str,
         max_mx: usize,
-    ) -> Option<Vec<NextHop<'_>>>;
+    ) -> Option<Vec<NextHop<'x>>>;
 }
 
 impl ToNextHop for Vec<MX> {
@@ -202,7 +202,7 @@ impl ToNextHop for Vec<MX> {
         &'x self,
         domain: &'y str,
         max_mx: usize,
-    ) -> Option<Vec<NextHop<'_>>> {
+    ) -> Option<Vec<NextHop<'x>>> {
         if !self.is_empty() {
             // Obtain max number of MX hosts to process
             let mut remote_hosts = Vec::with_capacity(max_mx);

@@ -888,7 +888,7 @@ impl<'de> serde::Deserialize<'de> for StringOrU64 {
     {
         struct StringOrU64Visitor;
 
-        impl<'de> Visitor<'de> for StringOrU64Visitor {
+        impl Visitor<'_> for StringOrU64Visitor {
             type Value = StringOrU64;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

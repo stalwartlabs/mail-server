@@ -77,6 +77,7 @@ pub trait SieveScriptSet: Sync + Send {
         fail_if_active: bool,
     ) -> impl Future<Output = trc::Result<bool>> + Send;
 
+    #[allow(clippy::type_complexity)]
     fn sieve_set_item(
         &self,
         changes_: Object<SetValue>,

@@ -21,8 +21,7 @@ use parking_lot::Mutex;
 
 use crate::*;
 
-pub(crate) type GlobalInterests =
-    AtomicBitset<{ (TOTAL_EVENT_COUNT + USIZE_BITS - 1) / USIZE_BITS }>;
+pub(crate) type GlobalInterests = AtomicBitset<{ TOTAL_EVENT_COUNT.div_ceil(USIZE_BITS) }>;
 
 pub(crate) static TRACE_INTERESTS: GlobalInterests = GlobalInterests::new();
 pub(crate) type CollectorThread = JoinHandle<()>;

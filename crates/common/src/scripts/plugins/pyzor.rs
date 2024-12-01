@@ -165,7 +165,7 @@ pub trait PyzorCheck {
     fn pyzor_check_message(&self) -> String;
 }
 
-impl<'x, W: Write> PyzorDigest<W> for Message<'x> {
+impl<W: Write> PyzorDigest<W> for Message<'_> {
     fn pyzor_digest(&self, writer: W) -> W {
         let parts = self
             .parts
@@ -181,7 +181,7 @@ impl<'x, W: Write> PyzorDigest<W> for Message<'x> {
     }
 }
 
-impl<'x> PyzorCheck for Message<'x> {
+impl PyzorCheck for Message<'_> {
     fn pyzor_check_message(&self) -> String {
         let time = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)

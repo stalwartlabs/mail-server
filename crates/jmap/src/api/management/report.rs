@@ -490,7 +490,7 @@ impl Contains for FailureDetails {
     }
 }
 
-impl<'x> Contains for Feedback<'x> {
+impl Contains for Feedback<'_> {
     fn contains(&self, text: &str) -> bool {
         // Check if any of the string fields contain the filter
         self.authentication_results()

@@ -344,7 +344,7 @@ async fn exec_remote_(ctx: &PluginContext<'_>) -> trc::Result<Variable> {
 
         // Update expiration
         list.expires = Instant::now() + expires;
-        return Ok(list.entries.contains(item.as_ref()).into());
+        Ok(list.entries.contains(item.as_ref()).into())
     } else {
         trc::bail!(trc::SieveEvent::RuntimeError
             .into_err()

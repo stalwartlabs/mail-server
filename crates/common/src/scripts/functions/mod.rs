@@ -144,7 +144,7 @@ pub trait ApplyString<'x> {
     fn transform(&self, f: impl Fn(&'_ str) -> Variable) -> Variable;
 }
 
-impl<'x> ApplyString<'x> for Variable {
+impl ApplyString<'_> for Variable {
     fn transform(&self, f: impl Fn(&'_ str) -> Variable) -> Variable {
         match self {
             Variable::String(s) => f(s),

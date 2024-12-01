@@ -218,7 +218,7 @@ pub enum NextHop<'x> {
     MX(&'x str),
 }
 
-impl<'x> NextHop<'x> {
+impl NextHop<'_> {
     #[inline(always)]
     fn hostname(&self) -> &str {
         match self {

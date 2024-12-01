@@ -108,7 +108,7 @@ impl Config {
         &'y self,
         prefix: impl AsKey,
         suffix: &'y str,
-    ) -> impl Iterator<Item = &str> + 'x {
+    ) -> impl Iterator<Item = &'x str> + 'x {
         let mut last_key = "";
         let prefix = prefix.as_prefix();
 
@@ -130,14 +130,17 @@ impl Config {
         })
     }
 
-    pub fn prefix<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &str> + 'x {
+    pub fn prefix<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &'x str> + 'x {
         let prefix = prefix.as_prefix();
         self.keys
             .keys()
             .filter_map(move |key| key.strip_prefix(&prefix))
     }
 
-    pub fn set_values<'x, 'y: 'x>(&'y self, prefix: impl AsKey) -> impl Iterator<Item = &str> + 'x {
+    pub fn set_values<'x, 'y: 'x>(
+        &'y self,
+        prefix: impl AsKey,
+    ) -> impl Iterator<Item = &'x str> + 'x {
         let prefix = prefix.as_prefix();
 
         #[cfg(debug_assertions)]

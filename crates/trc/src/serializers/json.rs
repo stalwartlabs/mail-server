@@ -127,7 +127,7 @@ impl<T: AsRef<Event<EventDetails>>> Serialize for JsonEventSerializer<T> {
     }
 }
 
-impl<'x> Serialize for JsonEventSerializer<Keys<'x>> {
+impl Serialize for JsonEventSerializer<Keys<'_>> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

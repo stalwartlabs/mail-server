@@ -706,7 +706,7 @@ impl JsonObjectParser for ObjectProperty {
     }
 }
 
-impl<'x> Parser<'x> {
+impl Parser<'_> {
     fn invalid_property(&mut self) -> trc::Result<Property> {
         if self.is_eof || self.skip_string() {
             Ok(Property::_T(

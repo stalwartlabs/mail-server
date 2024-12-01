@@ -744,7 +744,7 @@ impl<'x> HttpContext<'x> {
     }
 }
 
-impl<'x> ResolveVariable for HttpContext<'x> {
+impl ResolveVariable for HttpContext<'_> {
     fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
             V_REMOTE_IP => self.session.remote_ip.to_string().into(),

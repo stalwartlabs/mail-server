@@ -539,7 +539,7 @@ impl<'x> From<&'x str> for Value<'x> {
     }
 }
 
-impl<'x> From<String> for Value<'x> {
+impl From<String> for Value<'_> {
     fn from(value: String) -> Self {
         Self::Text(value.into())
     }
@@ -557,13 +557,13 @@ impl<'x> From<Cow<'x, str>> for Value<'x> {
     }
 }
 
-impl<'x> From<bool> for Value<'x> {
+impl From<bool> for Value<'_> {
     fn from(value: bool) -> Self {
         Self::Bool(value)
     }
 }
 
-impl<'x> From<i64> for Value<'x> {
+impl From<i64> for Value<'_> {
     fn from(value: i64) -> Self {
         Self::Integer(value)
     }
@@ -579,19 +579,19 @@ impl From<Value<'static>> for i64 {
     }
 }
 
-impl<'x> From<u64> for Value<'x> {
+impl From<u64> for Value<'_> {
     fn from(value: u64) -> Self {
         Self::Integer(value as i64)
     }
 }
 
-impl<'x> From<u32> for Value<'x> {
+impl From<u32> for Value<'_> {
     fn from(value: u32) -> Self {
         Self::Integer(value as i64)
     }
 }
 
-impl<'x> From<f64> for Value<'x> {
+impl From<f64> for Value<'_> {
     fn from(value: f64) -> Self {
         Self::Float(value)
     }
@@ -603,13 +603,13 @@ impl<'x> From<&'x [u8]> for Value<'x> {
     }
 }
 
-impl<'x> From<Vec<u8>> for Value<'x> {
+impl From<Vec<u8>> for Value<'_> {
     fn from(value: Vec<u8>) -> Self {
         Self::Blob(value.into())
     }
 }
 
-impl<'x> Value<'x> {
+impl Value<'_> {
     pub fn into_string(self) -> String {
         match self {
             Value::Text(s) => s.into_owned(),

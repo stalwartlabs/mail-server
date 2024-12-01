@@ -19,7 +19,7 @@ use super::{
 
 const MAX_BATCH_SIZE: usize = 32768;
 
-pub type Interests = Box<Bitset<{ (TOTAL_EVENT_COUNT + USIZE_BITS - 1) / USIZE_BITS }>>;
+pub type Interests = Box<Bitset<{ TOTAL_EVENT_COUNT.div_ceil(USIZE_BITS) }>>;
 pub type EventBatch = Vec<Arc<Event<EventDetails>>>;
 
 #[derive(Debug)]

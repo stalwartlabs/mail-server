@@ -43,7 +43,7 @@ impl<'x, 'y> JsonBase32Reader<'x, 'y> {
     }
 }
 
-impl<'x, 'y> Iterator for JsonBase32Reader<'x, 'y> {
+impl Iterator for JsonBase32Reader<'_, '_> {
     type Item = u8;
     fn next(&mut self) -> Option<Self::Item> {
         let pos = self.pos % 5;
@@ -62,4 +62,4 @@ impl<'x, 'y> Iterator for JsonBase32Reader<'x, 'y> {
     }
 }
 
-impl<'x, 'y> Leb128Iterator<u8> for JsonBase32Reader<'x, 'y> {}
+impl Leb128Iterator<u8> for JsonBase32Reader<'_, '_> {}
