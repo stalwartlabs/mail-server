@@ -353,7 +353,6 @@ impl TelemetryApi for Server {
                 access_token.assert_has_permission(Permission::TracingLive)?;
 
                 // Issue a live telemetry token valid for 60 seconds
-
                 Ok(JsonResponse::new(json!({
                     "data": self.encode_access_token(GrantType::LiveTracing, account_id,  "web", 60).await?,
             }))
@@ -364,7 +363,6 @@ impl TelemetryApi for Server {
                 access_token.assert_has_permission(Permission::MetricsLive)?;
 
                 // Issue a live telemetry token valid for 60 seconds
-
                 Ok(JsonResponse::new(json!({
                     "data": self.encode_access_token(GrantType::LiveMetrics, account_id, "web", 60).await?,
             }))

@@ -33,6 +33,7 @@ use jmap_proto::{
 };
 use std::future::Future;
 use trc::SecurityEvent;
+use utils::url_params::UrlParams;
 
 #[cfg(feature = "enterprise")]
 use crate::api::management::enterprise::telemetry::TelemetryApi;
@@ -54,7 +55,7 @@ use super::{
     autoconfig::Autoconfig,
     event_source::EventSourceHandler,
     form::FormHandler,
-    management::{ManagementApi, ManagementApiError},
+    management::{troubleshoot::TroubleshootApi, ManagementApi, ManagementApiError},
     request::RequestHandler,
     session::SessionHandler,
     HtmlResponse, HttpRequest, HttpResponse, HttpResponseBody, JmapSessionManager, JsonResponse,
@@ -335,45 +336,67 @@ impl ParseHttp for Server {
                             .await;
                     }
                     Err(err) => {
-                        #[cfg(feature = "enterprise")]
-                        {
-                            // SPDX-SnippetBegin
-                            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
-                            // SPDX-License-Identifier: LicenseRef-SEL
+                        if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
+                            let params = UrlParams::new(req.uri().query());
+                            let path = req.uri().path().split('/').skip(2).collect::<Vec<_>>();
 
-                            // Eventsource does not support authentication, validate the token instead
-                            if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed))
-                                && self.core.is_enterprise_edition()
-                            {
-                                if let Some((live_path, grant_type, token)) = req
-                                    .uri()
-                                    .path()
-                                    .strip_prefix("/api/telemetry/")
-                                    .and_then(|p| {
-                                        p.strip_prefix("traces/live/")
-                                            .map(|t| ("traces", GrantType::LiveTracing, t))
-                                            .or_else(|| {
-                                                p.strip_prefix("metrics/live/")
-                                                    .map(|t| ("metrics", GrantType::LiveMetrics, t))
-                                            })
-                                    })
+                            let (grant_type, token) = match (
+                                path.first().copied(),
+                                path.get(1).copied(),
+                                params.get("token"),
+                            ) {
+                                // SPDX-SnippetBegin
+                                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                                // SPDX-License-Identifier: LicenseRef-SEL
+                                #[cfg(feature = "enterprise")]
+                                (Some("telemetry"), Some("traces"), Some(token))
+                                    if self.core.is_enterprise_edition() =>
                                 {
-                                    let token_info = self
-                                        .validate_access_token(grant_type.into(), token)
-                                        .await?;
-
-                                    return self
-                                        .handle_telemetry_api_request(
-                                            &req,
-                                            vec!["", live_path, "live"],
-                                            &AccessToken::from_id(token_info.account_id)
-                                                .with_permission(Permission::MetricsLive)
-                                                .with_permission(Permission::TracingLive),
-                                        )
-                                        .await;
+                                    (GrantType::LiveTracing, token)
                                 }
-                            }
-                            // SPDX-SnippetEnd
+                                #[cfg(feature = "enterprise")]
+                                (Some("telemetry"), Some("metrics"), Some(token))
+                                    if self.core.is_enterprise_edition() =>
+                                {
+                                    (GrantType::LiveMetrics, token)
+                                }
+                                // SPDX-SnippetEnd
+                                (Some("troubleshoot"), _, Some(token)) => {
+                                    (GrantType::Troubleshoot, token)
+                                }
+                                _ => return Err(err),
+                            };
+                            let token_info =
+                                self.validate_access_token(grant_type.into(), token).await?;
+
+                            return match grant_type {
+                                // SPDX-SnippetBegin
+                                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                                // SPDX-License-Identifier: LicenseRef-SEL
+                                #[cfg(feature = "enterprise")]
+                                GrantType::LiveTracing | GrantType::LiveMetrics => {
+                                    self.handle_telemetry_api_request(
+                                        &req,
+                                        path,
+                                        &AccessToken::from_id(token_info.account_id)
+                                            .with_permission(Permission::MetricsLive)
+                                            .with_permission(Permission::TracingLive),
+                                    )
+                                    .await
+                                }
+                                // SPDX-SnippetEnd
+                                GrantType::Troubleshoot => {
+                                    self.handle_troubleshoot_api_request(
+                                        &req,
+                                        path,
+                                        &AccessToken::from_id(token_info.account_id)
+                                            .with_permission(Permission::Troubleshoot),
+                                        None,
+                                    )
+                                    .await
+                                }
+                                _ => unreachable!(),
+                            };
                         }
 
                         return Err(err);

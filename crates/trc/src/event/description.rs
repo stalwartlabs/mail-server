@@ -881,6 +881,7 @@ impl TlsRptEvent {
         match self {
             TlsRptEvent::RecordFetch => "Fetched TLS-RPT record",
             TlsRptEvent::RecordFetchError => "Error fetching TLS-RPT record",
+            TlsRptEvent::RecordNotFound => "TLS-RPT record not found",
         }
     }
 
@@ -888,6 +889,7 @@ impl TlsRptEvent {
         match self {
             TlsRptEvent::RecordFetch => "The TLS-RPT record has been fetched",
             TlsRptEvent::RecordFetchError => "An error occurred while fetching the TLS-RPT record",
+            TlsRptEvent::RecordNotFound => "No TLS-RPT records were found",
         }
     }
 }

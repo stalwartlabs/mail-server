@@ -360,6 +360,15 @@ impl DeliveryAttempt {
 
                             TlsRptOptions { record, interval }.into()
                         }
+                        Err(mail_auth::Error::DnsRecordNotFound(_)) => {
+                            trc::event!(
+                                TlsRpt(TlsRptEvent::RecordNotFound),
+                                SpanId = message.span_id,
+                                Domain = domain.domain.clone(),
+                                Elapsed = time.elapsed(),
+                            );
+                            None
+                        }
                         Err(err) => {
                             trc::event!(
                                 TlsRpt(TlsRptEvent::RecordFetchError),

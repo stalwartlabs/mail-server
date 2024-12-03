@@ -24,6 +24,7 @@ pub enum GrantType {
     RefreshToken,
     LiveTracing,
     LiveMetrics,
+    Troubleshoot,
 }
 
 impl GrantType {
@@ -33,6 +34,7 @@ impl GrantType {
             GrantType::RefreshToken => "refresh_token",
             GrantType::LiveTracing => "live_tracing",
             GrantType::LiveMetrics => "live_metrics",
+            GrantType::Troubleshoot => "troubleshoot",
         }
     }
 
@@ -42,6 +44,7 @@ impl GrantType {
             GrantType::RefreshToken => 1,
             GrantType::LiveTracing => 2,
             GrantType::LiveMetrics => 3,
+            GrantType::Troubleshoot => 4,
         }
     }
 
@@ -51,6 +54,7 @@ impl GrantType {
             1 => Some(GrantType::RefreshToken),
             2 => Some(GrantType::LiveTracing),
             3 => Some(GrantType::LiveMetrics),
+            4 => Some(GrantType::Troubleshoot),
             _ => None,
         }
     }

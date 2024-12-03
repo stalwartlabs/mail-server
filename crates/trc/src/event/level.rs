@@ -478,7 +478,9 @@ impl EventType {
                 }
             },
             EventType::TlsRpt(event) => match event {
-                TlsRptEvent::RecordFetch | TlsRptEvent::RecordFetchError => Level::Info,
+                TlsRptEvent::RecordFetch
+                | TlsRptEvent::RecordFetchError
+                | TlsRptEvent::RecordNotFound => Level::Info,
             },
             EventType::MtaSts(event) => match event {
                 MtaStsEvent::PolicyFetch

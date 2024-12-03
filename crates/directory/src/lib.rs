@@ -264,7 +264,7 @@ pub enum Permission {
     OauthClientOverride,
 
     AiModelInteract,
-    // WARNING: add new ids at the end (TODO: use static ids)
+    Troubleshoot, // WARNING: add new ids at the end (TODO: use static ids)
 }
 
 pub type Permissions = Bitset<{ Permission::COUNT.div_ceil(std::mem::size_of::<usize>()) }>;

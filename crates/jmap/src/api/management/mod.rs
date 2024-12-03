@@ -16,6 +16,7 @@ pub mod report;
 pub mod settings;
 pub mod sieve;
 pub mod stores;
+pub mod troubleshoot;
 
 use std::{borrow::Cow, str::FromStr, sync::Arc};
 
@@ -37,6 +38,7 @@ use settings::ManageSettings;
 use sieve::SieveHandler;
 use store::write::now;
 use stores::ManageStore;
+use troubleshoot::TroubleshootApi;
 
 use crate::{auth::oauth::auth::OAuthApiHandler, email::crypto::CryptoHandler};
 
@@ -155,6 +157,13 @@ impl ManagementApi for Server {
                 }
                 _ => Err(trc::ResourceEvent::NotFound.into_err()),
             },
+            "troubleshoot" => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::Troubleshoot)?;
+
+                self.handle_troubleshoot_api_request(req, path, &access_token, body)
+                    .await
+            }
             // SPDX-SnippetBegin
             // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
             // SPDX-License-Identifier: LicenseRef-SEL

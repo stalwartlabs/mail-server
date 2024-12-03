@@ -545,6 +545,7 @@ pub enum MtaStsEvent {
 pub enum TlsRptEvent {
     RecordFetch,
     RecordFetchError,
+    RecordNotFound,
 }
 
 #[event_type]

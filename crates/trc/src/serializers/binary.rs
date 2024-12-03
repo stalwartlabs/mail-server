@@ -865,6 +865,7 @@ impl EventType {
             EventType::Ai(AiEvent::ApiError) => 557,
             EventType::Security(SecurityEvent::ScanBan) => 558,
             EventType::Store(StoreEvent::AzureError) => 559,
+            EventType::TlsRpt(TlsRptEvent::RecordNotFound) => 560,
         }
     }
 
@@ -1470,6 +1471,7 @@ impl EventType {
             557 => Some(EventType::Ai(AiEvent::ApiError)),
             558 => Some(EventType::Security(SecurityEvent::ScanBan)),
             559 => Some(EventType::Store(StoreEvent::AzureError)),
+            560 => Some(EventType::TlsRpt(TlsRptEvent::RecordNotFound)),
             _ => None,
         }
     }

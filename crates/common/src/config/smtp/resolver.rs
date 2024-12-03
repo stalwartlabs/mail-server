@@ -22,6 +22,7 @@ use mail_auth::{
     Resolver,
 };
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use utils::config::{utils::ParseValue, Config};
 
 use crate::Server;
@@ -42,7 +43,7 @@ pub struct DnsRecordCache {
     pub mta_sts: LruCache<String, Arc<Policy>>,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TlsaEntry {
     pub is_end_entity: bool,
     pub is_sha256: bool,
@@ -50,14 +51,15 @@ pub struct TlsaEntry {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Tlsa {
     pub entries: Vec<TlsaEntry>,
     pub has_end_entities: bool,
     pub has_intermediates: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Default, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Default, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Mode {
     Enforce,
     Testing,
@@ -65,13 +67,14 @@ pub enum Mode {
     None,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum MxPattern {
     Equals(String),
     StartsWith(String),
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct Policy {
     pub id: String,
     pub mode: Mode,
