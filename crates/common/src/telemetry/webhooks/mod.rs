@@ -110,7 +110,7 @@ fn spawn_webhook_handler(
     tokio::spawn(async move {
         in_flight.store(true, Ordering::Relaxed);
         let wrapper = EventWrapper {
-            events: JsonEventSerializer::new(events).with_id(),
+            events: JsonEventSerializer::new(events).with_id().with_spans(),
         };
 
         if let Err(err) = post_webhook_events(&settings, &wrapper).await {
