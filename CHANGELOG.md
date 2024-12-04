@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.10.7] - 2024-12-04
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+### Added
+- Delivery and DMARC Troubleshooting (#420).
+- Support for external email addresses on mailing lists (#152).
+- Azure blob storage support.
+
+### Changed
+
+### Fixed
+- Some mails can't be moved out of the junk folder (#670).
+- Out of bound index error on Sieve script (#941).
+- Missing `User-Agent` header for ACME (#937).
+- UTF8 support in IMAP4rev1 (#948).
+- Account alias owner leak on autodiscover.
+- Include all events in OTEL traces + Include spanId in webhooks.
+- Implement `todo!()` causing panic on concurrency and rate limits.
+- Mark SQL store as active if used as a telemetry store.
+- Discard empty form submissions.
+
 ## [0.10.6] - 2024-11-07
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
