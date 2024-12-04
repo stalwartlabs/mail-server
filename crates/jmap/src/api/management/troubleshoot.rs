@@ -114,8 +114,8 @@ impl TroubleshootApi for Server {
                 })?;
                 let response = dmarc_troubleshoot(self, request).await.ok_or_else(|| {
                     manage::error(
-                        "Invalid message headers",
-                        "Failed to parse message headers".into(),
+                        "Invalid message body",
+                        "Failed to parse message body".into(),
                     )
                 })?;
 
@@ -783,7 +783,7 @@ struct DmarcTroubleshootRequest {
     ehlo_domain: String,
     #[serde(rename = "mailFrom")]
     mail_from: String,
-    headers: Option<String>,
+    body: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -895,10 +895,10 @@ async fn dmarc_troubleshoot(
             .await
     };
 
-    let headers = request
-        .headers
+    let body = request
+        .body
         .unwrap_or_else(|| format!("From: {mail_from}\r\nSubject: test\r\n\r\ntest"));
-    let auth_message = AuthenticatedMessage::parse_with_opts(headers.as_bytes(), true)?;
+    let auth_message = AuthenticatedMessage::parse_with_opts(body.as_bytes(), true)?;
 
     let dkim_output = server
         .core

@@ -7,7 +7,7 @@ homepage = "https://stalw.art"
 keywords = ["imap", "jmap", "smtp", "email", "mail", "server"]
 categories = ["email"]
 license = "AGPL-3.0-only OR LicenseRef-SEL"
-version = "0.10.6"
+version = "0.10.7"
 edition = "2021"
 resolver = "2"
 
@@ -35,7 +35,7 @@ jemallocator = "0.5.0"
 
 [features]
 default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "enterprise"]
-#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "foundationdb", "enterprise"]
+#default = ["rocks"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
 postgres = ["store/postgres"]
