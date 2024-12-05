@@ -281,7 +281,7 @@ impl<'x> Parser<'x> {
                 Token::Comma => (),
                 Token::DictEnd => return Ok(None),
                 token => {
-                    return Err(self.error(&format!("Expected object property, found {}", token)))
+                    return Err(self.error(&format!("Expected object property, found {token}")))
                 }
             }
         }

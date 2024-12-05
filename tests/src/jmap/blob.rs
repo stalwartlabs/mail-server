@@ -63,8 +63,7 @@ pub async fn test(params: &mut JMAPTest) {
             .and_then(|v| v.as_str())
             .unwrap_or_default(),
         "image/png",
-        "Response: {:?}",
-        response
+        "Response: {response:?}"
     );
     assert_eq!(
         response
@@ -72,8 +71,7 @@ pub async fn test(params: &mut JMAPTest) {
             .and_then(|v| v.as_i64())
             .unwrap_or_default(),
         95,
-        "Response: {:?}",
-        response
+        "Response: {response:?}"
     );
 
     // Blob/get simple test

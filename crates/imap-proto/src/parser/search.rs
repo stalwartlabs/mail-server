@@ -274,7 +274,7 @@ pub fn parse_filters(
                             }
                             Some(token) => {
                                 return Err(
-                                    format!("Unsupported MODSEQ parameter '{}'.", token).into()
+                                    format!("Unsupported MODSEQ parameter '{token}'.").into()
                                 );
                             }
                             None => {
@@ -750,8 +750,7 @@ mod tests {
                     .parse_search(ProtocolVersion::Rev2)
                     .expect(&command_str),
                 arguments,
-                "{}",
-                command_str
+                "{command_str}"
             );
         }
     }

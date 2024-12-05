@@ -113,7 +113,7 @@ impl ParseValue for IpAddrMask {
             }
         }
 
-        Err(format!("Invalid IP address {:?}", value,))
+        Err(format!("Invalid IP address {value:?}",))
     }
 }
 
@@ -131,7 +131,7 @@ impl ParseValue for SocketAddr {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid socket address {:?}.", value,))
+            .map_err(|_| format!("Invalid socket address {value:?}.",))
     }
 }
 
@@ -153,7 +153,7 @@ impl ParseValue for SupportedCipherSuite {
             "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256" => {
                 TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
             }
-            cipher => return Err(format!("Unsupported TLS cipher suite {:?}", cipher,)),
+            cipher => return Err(format!("Unsupported TLS cipher suite {cipher:?}",)),
         })
     }
 }

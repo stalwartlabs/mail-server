@@ -28,7 +28,7 @@ pub async fn lookup_tests() {
     };
 
     for (store_id, store) in stores.lookup_stores {
-        println!("Testing lookup store {}...", store_id);
+        println!("Testing lookup store {store_id}...");
         if let LookupStore::Store(store) = &store {
             store.destroy().await;
         } else {

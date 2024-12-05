@@ -376,7 +376,7 @@ impl ParseValue for u64 {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid integer value {:?}.", value,))
+            .map_err(|_| format!("Invalid integer value {value:?}.",))
     }
 }
 
@@ -384,7 +384,7 @@ impl ParseValue for f64 {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid floating point value {:?}.", value))
+            .map_err(|_| format!("Invalid floating point value {value:?}."))
     }
 }
 
@@ -392,7 +392,7 @@ impl ParseValue for u16 {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid integer value {:?}.", value))
+            .map_err(|_| format!("Invalid integer value {value:?}."))
     }
 }
 
@@ -400,7 +400,7 @@ impl ParseValue for i16 {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid integer value {:?}.", value))
+            .map_err(|_| format!("Invalid integer value {value:?}."))
     }
 }
 
@@ -408,7 +408,7 @@ impl ParseValue for u32 {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid integer value {:?}.", value))
+            .map_err(|_| format!("Invalid integer value {value:?}."))
     }
 }
 
@@ -416,7 +416,7 @@ impl ParseValue for i32 {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid integer value {:?}.", value))
+            .map_err(|_| format!("Invalid integer value {value:?}."))
     }
 }
 
@@ -424,7 +424,7 @@ impl ParseValue for IpAddr {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid IP address value {:?}.", value))
+            .map_err(|_| format!("Invalid IP address value {value:?}."))
     }
 }
 
@@ -432,7 +432,7 @@ impl ParseValue for usize {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid integer value {:?}.", value))
+            .map_err(|_| format!("Invalid integer value {value:?}."))
     }
 }
 
@@ -440,7 +440,7 @@ impl ParseValue for bool {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid boolean value {:?}.", value))
+            .map_err(|_| format!("Invalid boolean value {value:?}."))
     }
 }
 
@@ -448,7 +448,7 @@ impl ParseValue for Ipv4Addr {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid IPv4 value {:?}.", value))
+            .map_err(|_| format!("Invalid IPv4 value {value:?}."))
     }
 }
 
@@ -456,7 +456,7 @@ impl ParseValue for Ipv6Addr {
     fn parse_value(value: &str) -> super::Result<Self> {
         value
             .parse()
-            .map_err(|_| format!("Invalid IPv6 value {:?}.", value))
+            .map_err(|_| format!("Invalid IPv6 value {value:?}."))
     }
 }
 
@@ -478,7 +478,7 @@ impl ParseValue for MtPriority {
             "mixer" => Ok(MtPriority::Mixer),
             "stanag4406" => Ok(MtPriority::Stanag4406),
             "nsep" => Ok(MtPriority::Nsep),
-            _ => Err(format!("Invalid priority value {:?}.", value)),
+            _ => Err(format!("Invalid priority value {value:?}.")),
         }
     }
 }
@@ -488,7 +488,7 @@ impl ParseValue for Canonicalization {
         match value {
             "relaxed" => Ok(Canonicalization::Relaxed),
             "simple" => Ok(Canonicalization::Simple),
-            _ => Err(format!("Invalid canonicalization value {:?}.", value)),
+            _ => Err(format!("Invalid canonicalization value {value:?}.")),
         }
     }
 }
@@ -501,7 +501,7 @@ impl ParseValue for IpLookupStrategy {
             //"ipv4_and_ipv6" => IpLookupStrategy::Ipv4AndIpv6,
             "ipv6_then_ipv4" => IpLookupStrategy::Ipv6thenIpv4,
             "ipv4_then_ipv6" => IpLookupStrategy::Ipv4thenIpv6,
-            _ => return Err(format!("Invalid IP lookup strategy {:?}.", value)),
+            _ => return Err(format!("Invalid IP lookup strategy {value:?}.")),
         })
     }
 }
@@ -512,7 +512,7 @@ impl ParseValue for Algorithm {
             "ed25519-sha256" | "ed25519-sha-256" => Ok(Algorithm::Ed25519Sha256),
             "rsa-sha-256" | "rsa-sha256" => Ok(Algorithm::RsaSha256),
             "rsa-sha-1" | "rsa-sha1" => Ok(Algorithm::RsaSha1),
-            _ => Err(format!("Invalid algorithm {:?}.", value)),
+            _ => Err(format!("Invalid algorithm {value:?}.")),
         }
     }
 }
@@ -522,7 +522,7 @@ impl ParseValue for HashAlgorithm {
         match value {
             "sha256" | "sha-256" => Ok(HashAlgorithm::Sha256),
             "sha-1" | "sha1" => Ok(HashAlgorithm::Sha1),
-            _ => Err(format!("Invalid hash algorithm {:?}.", value)),
+            _ => Err(format!("Invalid hash algorithm {value:?}.")),
         }
     }
 }
@@ -546,7 +546,7 @@ impl ParseValue for Duration {
             "m" => 60 * 1000,
             "s" => 1000,
             "ms" | "" => 1,
-            _ => return Err(format!("Invalid duration value {:?}.", value)),
+            _ => return Err(format!("Invalid duration value {value:?}.")),
         };
 
         digits
@@ -559,7 +559,7 @@ impl ParseValue for Duration {
                     None
                 }
             })
-            .ok_or_else(|| format!("Invalid duration value {:?}.", value))
+            .ok_or_else(|| format!("Invalid duration value {value:?}."))
     }
 }
 
@@ -572,13 +572,13 @@ impl ParseValue for Rate {
                     .parse::<u64>()
                     .ok()
                     .and_then(|r| if r > 0 { Some(r) } else { None })
-                    .ok_or_else(|| format!("Invalid rate value {:?}.", value))?,
+                    .ok_or_else(|| format!("Invalid rate value {value:?}."))?,
                 period: std::cmp::max(Duration::parse_value(period)?, Duration::from_secs(1)),
             })
         } else if ["false", "none", "unlimited"].contains(&value) {
             Ok(Rate::default())
         } else {
-            Err(format!("Invalid rate value {:?}.", value))
+            Err(format!("Invalid rate value {value:?}."))
         }
     }
 }

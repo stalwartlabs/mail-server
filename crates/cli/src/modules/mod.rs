@@ -172,7 +172,7 @@ impl<T> UnwrapResult<T> for Option<T> {
         match self {
             Some(result) => result,
             None => {
-                eprintln!("Failed to {}", message);
+                eprintln!("Failed to {message}");
                 std::process::exit(1);
             }
         }
@@ -184,7 +184,7 @@ impl<T, E: Display> UnwrapResult<T> for Result<T, E> {
         match self {
             Ok(result) => result,
             Err(err) => {
-                eprintln!("Failed to {}: {}", message, err);
+                eprintln!("Failed to {message}: {err}");
                 std::process::exit(1);
             }
         }
@@ -206,7 +206,7 @@ pub fn read_file(path: &str) -> Vec<u8> {
         raw_message
     } else {
         std::fs::read(path).unwrap_or_else(|_| {
-            eprintln!("Failed to read file: {}", path);
+            eprintln!("Failed to read file: {path}");
             std::process::exit(1);
         })
     }
@@ -225,11 +225,11 @@ pub async fn name_to_id(client: &Client, name: &str) -> String {
     match response.ids().len() {
         1 => response.take_ids().pop().unwrap(),
         0 => {
-            eprintln!("Error: No principal found with name '{}'.", name);
+            eprintln!("Error: No principal found with name '{name}'.");
             std::process::exit(1);
         }
         _ => {
-            eprintln!("Error: Multiple principals found with name '{}'.", name);
+            eprintln!("Error: Multiple principals found with name '{name}'.");
             std::process::exit(1);
         }
     }
@@ -251,8 +251,8 @@ pub trait OAuthResponse {
 impl OAuthResponse for HashMap<String, serde_json::Value> {
     fn property(&self, name: &str) -> &str {
         self.get(name)
-            .unwrap_result(&format!("find '{}' in OAuth response", name))
+            .unwrap_result(&format!("find '{name}' in OAuth response"))
             .as_str()
-            .unwrap_result(&format!("invalid '{}' value", name))
+            .unwrap_result(&format!("invalid '{name}' value"))
     }
 }

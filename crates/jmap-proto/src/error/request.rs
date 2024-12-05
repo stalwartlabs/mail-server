@@ -104,8 +104,7 @@ impl<'x> RequestError<'x> {
             403,
             "Quota exceeded",
             format!(
-                "You have exceeded the blob upload quota of {} files or {} bytes.",
-                max_files, max_bytes
+                "You have exceeded the blob upload quota of {max_files} files or {max_bytes} bytes."
             ),
         )
     }

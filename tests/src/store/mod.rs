@@ -86,7 +86,7 @@ pub async fn store_tests() {
         .expect("Store not found")
         .clone();
 
-    println!("Testing store {}...", store_id);
+    println!("Testing store {store_id}...");
     if insert {
         store.destroy().await;
     }

@@ -91,7 +91,7 @@ impl RateLimiter for Server {
                 .core
                 .storage
                 .lookup
-                .is_rate_allowed(format!("jreq:{}", addr).as_bytes(), rate, false)
+                .is_rate_allowed(format!("jreq:{addr}").as_bytes(), rate, false)
                 .await
                 .caused_by(trc::location!())?
                 .is_some()
@@ -122,7 +122,7 @@ impl RateLimiter for Server {
                 .core
                 .storage
                 .lookup
-                .is_rate_allowed(format!("jauth:{}", addr).as_bytes(), rate, true)
+                .is_rate_allowed(format!("jauth:{addr}").as_bytes(), rate, true)
                 .await
                 .caused_by(trc::location!())?
                 .is_some()
@@ -139,7 +139,7 @@ impl RateLimiter for Server {
                 .core
                 .storage
                 .lookup
-                .is_rate_allowed(format!("jauth:{}", addr).as_bytes(), rate, false)
+                .is_rate_allowed(format!("jauth:{addr}").as_bytes(), rate, false)
                 .await
                 .caused_by(trc::location!())?
                 .is_some()

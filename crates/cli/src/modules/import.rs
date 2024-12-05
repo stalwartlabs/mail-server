@@ -392,7 +392,7 @@ impl ImportCommands {
                                 failures
                                     .lock()
                                     .unwrap()
-                                    .push(format!("I/O error reading message: {}", e));
+                                    .push(format!("I/O error reading message: {e}"));
                             }
                         }
                     }
@@ -414,7 +414,7 @@ impl ImportCommands {
                 if !failures.is_empty() {
                     eprintln!("There were {} failures:\n", failures.len());
                     for failure in failures.iter() {
-                        eprintln!("{}", failure);
+                        eprintln!("{failure}");
                     }
                 }
             }
@@ -645,22 +645,12 @@ async fn import_emails(
                 Ok(mut file) => match file.read_to_end(&mut contents).await {
                     Ok(_) => {}
                     Err(err) => {
-                        eprintln!(
-                            "Failed to read blob file for emailId {id} at {path:?}: {err}",
-                            id = id,
-                            path = path,
-                            err = err
-                        );
+                        eprintln!("Failed to read blob file for emailId {id} at {path:?}: {err}");
                         return;
                     }
                 },
                 Err(err) => {
-                    eprintln!(
-                        "Failed to open blob file for emailId {id} at {path:?}: {err}",
-                        id = id,
-                        path = path,
-                        err = err
-                    );
+                    eprintln!("Failed to open blob file for emailId {id} at {path:?}: {err}");
                     return;
                 }
             }
@@ -771,22 +761,12 @@ async fn import_sieve_scripts(
                 Ok(mut file) => match file.read_to_end(&mut contents).await {
                     Ok(_) => {}
                     Err(err) => {
-                        eprintln!(
-                            "Failed to read blob file for script {id} at {path:?}: {err}",
-                            id = id,
-                            path = path,
-                            err = err
-                        );
+                        eprintln!("Failed to read blob file for script {id} at {path:?}: {err}");
                         return;
                     }
                 },
                 Err(err) => {
-                    eprintln!(
-                        "Failed to open blob file for script {id} at {path:?}: {err}",
-                        id = id,
-                        path = path,
-                        err = err
-                    );
+                    eprintln!("Failed to open blob file for script {id} at {path:?}: {err}");
                     return;
                 }
             }

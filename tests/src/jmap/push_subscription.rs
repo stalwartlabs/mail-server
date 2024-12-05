@@ -357,7 +357,7 @@ async fn expect_push(event_rx: &mut mpsc::Receiver<PushMessage>) -> PushMessage 
             push
         }
         result => {
-            panic!("Timeout waiting for push: {:?}", result);
+            panic!("Timeout waiting for push: {result:?}");
         }
     }
 }
@@ -366,7 +366,7 @@ async fn expect_nothing(event_rx: &mut mpsc::Receiver<PushMessage>) {
     match tokio::time::timeout(Duration::from_millis(1000), event_rx.recv()).await {
         Err(_) => {}
         message => {
-            panic!("Received a message when expecting nothing: {:?}", message);
+            panic!("Received a message when expecting nothing: {message:?}");
         }
     }
 }
@@ -403,6 +403,6 @@ fn ece_roundtrip() {
         )
         .unwrap();
 
-        assert_eq!(bytes, decrypted_bytes, "len: {}", len);
+        assert_eq!(bytes, decrypted_bytes, "len: {len}");
     }
 }

@@ -21,12 +21,12 @@ pub async fn blob_tests() {
     let stores = Stores::parse_all(&mut config).await;
 
     for (store_id, blob_store) in &stores.blob_stores {
-        println!("Testing blob store {}...", store_id);
+        println!("Testing blob store {store_id}...");
         test_store(blob_store.clone()).await;
     }
 
     for (store_id, store) in stores.stores {
-        println!("Testing blob management on store {}...", store_id);
+        println!("Testing blob management on store {store_id}...");
 
         // Init store
         store.destroy().await;

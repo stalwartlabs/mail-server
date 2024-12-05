@@ -45,7 +45,7 @@ async fn create(client: &mut Client, mailbox_id: &str) {
         if file_name.extension().map_or(true, |e| e != "json") {
             continue;
         }
-        println!("Creating email from {:?}", file_name);
+        println!("Creating email from {file_name:?}");
 
         // Upload blobs
         let mut json_request = String::from_utf8(fs::read(&file_name).unwrap()).unwrap();

@@ -85,8 +85,7 @@ async fn ip_lookup_strategy() {
             let status = message.domains[0].status.to_string();
             assert!(
                 status.contains("Connection refused"),
-                "Message: {:?}",
-                message
+                "Message: {message:?}"
             );
         }
     }

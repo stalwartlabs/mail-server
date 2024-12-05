@@ -272,18 +272,15 @@ async fn smtp_delivery() {
 
         assert!(
             message.contains("This is a smuggled message"),
-            "message: {:?}",
-            message
+            "message: {message:?}"
         );
         assert!(
             message.contains("We lost the game."),
-            "message: {:?}",
-            message
+            "message: {message:?}"
         );
         assert!(
             message.contains(&format!("{separator}..\r\nMAIL FROM:<",)),
-            "message: {:?}",
-            message
+            "message: {message:?}"
         );
     }
 }

@@ -89,7 +89,7 @@ async fn oauth(url: &str) -> Credentials {
             .danger_accept_invalid_certs(is_localhost(url))
             .build()
             .unwrap_or_default()
-            .get(format!("{}/.well-known/oauth-authorization-server", url))
+            .get(format!("{url}/.well-known/oauth-authorization-server"))
             .send()
             .await
             .unwrap_result("send OAuth GET request")
@@ -285,22 +285,22 @@ impl Display for ManagementApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ManagementApiError::FieldAlreadyExists { field, value } => {
-                write!(f, "Field {} already exists with value {}.", field, value)
+                write!(f, "Field {field} already exists with value {value}.")
             }
             ManagementApiError::FieldMissing { field } => {
-                write!(f, "Field {} is missing.", field)
+                write!(f, "Field {field} is missing.")
             }
             ManagementApiError::NotFound { item } => {
-                write!(f, "{} not found.", item)
+                write!(f, "{item} not found.")
             }
             ManagementApiError::Unsupported { details } => {
-                write!(f, "Unsupported: {}", details)
+                write!(f, "Unsupported: {details}")
             }
             ManagementApiError::AssertFailed => {
                 write!(f, "Assertion failed.")
             }
             ManagementApiError::Other { details } => {
-                write!(f, "{}", details)
+                write!(f, "{details}")
             }
         }
     }

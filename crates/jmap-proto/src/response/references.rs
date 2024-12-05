@@ -689,15 +689,13 @@ mod tests {
             match response.resolve_references(&mut call.method) {
                 Ok(_) => assert!(
                     (0..3).contains(&test_num),
-                    "Unexpected invocation {}",
-                    test_num
+                    "Unexpected invocation {test_num}"
                 ),
                 Err(err) => {
                     assert_eq!(test_num, 3);
                     assert!(
                         err.matches(trc::EventType::Jmap(trc::JmapEvent::InvalidArguments)),
-                        "{:?}",
-                        err
+                        "{err:?}"
                     );
                     continue;
                 }

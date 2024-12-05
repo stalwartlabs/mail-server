@@ -464,7 +464,7 @@ async fn antispam() {
             // Build script params
             let mut expected = expected_variables.keys().collect::<Vec<_>>();
             expected.sort_unstable_by(|a, b| b.cmp(a));
-            println!("Testing tags {:?}", expected);
+            println!("Testing tags {expected:?}");
             let mut params = session
                 .build_script_parameters("data")
                 .with_expected_variables(expected_variables)
@@ -479,10 +479,7 @@ async fn antispam() {
             match server_.run_script("test".to_string(), script, params).await {
                 ScriptResult::Accept { modifications } => {
                     if modifications.len() != expected_headers.len() {
-                        panic!(
-                            "Expected {:?} headers, got {:?}",
-                            expected_headers, modifications
-                        );
+                        panic!("Expected {expected_headers:?} headers, got {modifications:?}");
                     }
                     for modification in modifications {
                         if let ScriptModification::AddHeader { name, value } = modification {
@@ -491,15 +488,14 @@ async fn antispam() {
                                     && !value.starts_with(expected_value.as_str())
                                 {
                                     panic!(
-                                        "Expected header {:?} to be {:?}, got {:?}",
-                                        name, expected_value, value
+                                        "Expected header {name:?} to be {expected_value:?}, got {value:?}"
                                     );
                                 }
                             } else {
-                                panic!("Unexpected header {:?}", name);
+                                panic!("Unexpected header {name:?}");
                             }
                         } else {
-                            panic!("Unexpected modification {:?}", modification);
+                            panic!("Unexpected modification {modification:?}");
                         }
                     }
                 }
@@ -641,7 +637,7 @@ fn html_tokens() {
             ],
         ),
     ] {
-        assert_eq!(html_to_tokens(input), expected, "Failed for '{:?}'", input);
+        assert_eq!(html_to_tokens(input), expected, "Failed for '{input:?}'");
     }
 
     for (input, expected) in [
@@ -702,8 +698,7 @@ fn html_tokens() {
         assert_eq!(
             html_attr_tokens(input, "a", vec![Cow::from("href")]),
             expected,
-            "Failed for '{:?}'",
-            input
+            "Failed for '{input:?}'"
         );
     }
 

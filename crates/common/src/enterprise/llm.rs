@@ -115,13 +115,13 @@ impl AiApiConfig {
                 }],
                 temperature: temperature.unwrap_or(self.default_temperature),
             })
-            .map_err(|err| format!("Failed to serialize request: {}", err))?,
+            .map_err(|err| format!("Failed to serialize request: {err}"))?,
             ApiType::TextCompletion => serde_json::to_string(&TextCompletionRequest {
                 model: self.model.to_string(),
                 prompt: prompt.into(),
                 temperature: temperature.unwrap_or(self.default_temperature),
             })
-            .map_err(|err| format!("Failed to serialize request: {}", err))?,
+            .map_err(|err| format!("Failed to serialize request: {err}"))?,
         };
 
         // Send request
@@ -129,7 +129,7 @@ impl AiApiConfig {
             .timeout(self.timeout)
             .danger_accept_invalid_certs(self.tls_allow_invalid_certs)
             .build()
-            .map_err(|err| format!("Failed to create HTTP client: {}", err))?
+            .map_err(|err| format!("Failed to create HTTP client: {err}"))?
             .post(&self.url)
             .headers(self.headers.clone())
             .body(body)

@@ -707,7 +707,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
             fields.body_id = part
                 .headers
                 .header_value(&HeaderName::ContentId)
-                .and_then(|id| id.as_text().map(|id| format!("<{}>", id).into()));
+                .and_then(|id| id.as_text().map(|id| format!("<{id}>").into()));
 
             fields.body_description = part
                 .headers
@@ -1092,7 +1092,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                 }
                 irt.into()
             }),
-            message_id: self.message_id().map(|id| format!("<{}>", id).into()),
+            message_id: self.message_id().map(|id| format!("<{id}>").into()),
         }
     }
 }

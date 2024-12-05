@@ -458,7 +458,7 @@ pub async fn imap_tests() {
 
     // Delete folders
     for mailbox in ["Drafts", "Junk Mail", "Sent Items"] {
-        imap.send(&format!("DELETE \"{}\"", mailbox)).await;
+        imap.send(&format!("DELETE \"{mailbox}\"")).await;
         imap.assert_read(Type::Tagged, ResponseType::Ok).await;
     }
 
@@ -545,7 +545,7 @@ impl ImapConnection {
         {
             lines
         } else {
-            panic!("Expected {:?}/{:?} from server but got: {:?}", t, rt, lines);
+            panic!("Expected {t:?}/{rt:?} from server but got: {lines:?}");
         }
     }
 
@@ -553,10 +553,10 @@ impl ImapConnection {
         match tokio::time::timeout(Duration::from_millis(1500), self.reader.next_line()).await {
             Ok(Ok(None)) => {}
             Ok(Ok(Some(line))) => {
-                panic!("Expected connection to be closed, but got {:?}", line);
+                panic!("Expected connection to be closed, but got {line:?}");
             }
             Ok(Err(err)) => {
-                panic!("Connection broken: {:?}", err);
+                panic!("Connection broken: {err:?}");
             }
             Err(_) => panic!("Timeout while waiting for server response."),
         }
@@ -579,12 +579,12 @@ impl ImapConnection {
                     }
                 }
                 Ok(Ok(None)) => {
-                    panic!("Invalid response: {:?}.", lines);
+                    panic!("Invalid response: {lines:?}.");
                 }
                 Ok(Err(err)) => {
-                    panic!("Connection broken: {} ({:?})", err, lines);
+                    panic!("Connection broken: {err} ({lines:?})");
                 }
-                Err(_) => panic!("Timeout while waiting for server response: {:?}", lines),
+                Err(_) => panic!("Timeout while waiting for server response: {lines:?}"),
             }
         }
     }
@@ -636,17 +636,17 @@ impl AssertResult for Vec<String> {
         let mut match_count = 0;
         'outer: for (mailbox_name, flags) in expected.into_iter() {
             for result in self.iter() {
-                if result.contains(&format!("\"{}\"", mailbox_name)) {
+                if result.contains(&format!("\"{mailbox_name}\"")) {
                     for flag in flags {
                         if !flag.is_empty() && !result.contains(flag) {
-                            panic!("Expected mailbox {} to have flag {}", mailbox_name, flag);
+                            panic!("Expected mailbox {mailbox_name} to have flag {flag}");
                         }
                     }
                     match_count += 1;
                     continue 'outer;
                 }
             }
-            panic!("Mailbox {} is not present.", mailbox_name);
+            panic!("Mailbox {mailbox_name} is not present.");
         }
         if match_all && match_count != self.len() - 1 {
             panic!(
@@ -659,7 +659,7 @@ impl AssertResult for Vec<String> {
     }
 
     fn assert_response_code(self, code: &str) -> Self {
-        if !self.last().unwrap().contains(&format!("[{}]", code)) {
+        if !self.last().unwrap().contains(&format!("[{code}]")) {
             panic!(
                 "Response code {:?} not found, got {:?}",
                 code,
@@ -675,7 +675,7 @@ impl AssertResult for Vec<String> {
                 return self;
             }
         }
-        panic!("Expected response to contain {:?}, got {:?}", text, self);
+        panic!("Expected response to contain {text:?}, got {self:?}");
     }
 
     fn assert_count(self, text: &str, occurrences: usize) -> Self {
@@ -697,7 +697,7 @@ impl AssertResult for Vec<String> {
                 return self;
             }
         }
-        panic!("Expected response to be {:?}, got {:?}", text, self);
+        panic!("Expected response to be {text:?}, got {self:?}");
     }
 
     fn into_response_code(self) -> String {
@@ -730,7 +730,7 @@ impl AssertResult for Vec<String> {
                 }
             }
         }
-        panic!("No COPYUID found in {:?}", self);
+        panic!("No COPYUID found in {self:?}");
     }
 
     fn into_highest_modseq(self) -> String {
@@ -741,11 +741,11 @@ impl AssertResult for Vec<String> {
                 } else if let Some((value, _)) = value.split_once(')') {
                     return value.to_string();
                 } else {
-                    panic!("No HIGHESTMODSEQ delimiter found in {:?}", line);
+                    panic!("No HIGHESTMODSEQ delimiter found in {line:?}");
                 }
             }
         }
-        panic!("No HIGHESTMODSEQ entries found in {:?}", self);
+        panic!("No HIGHESTMODSEQ entries found in {self:?}");
     }
 
     fn into_modseq(self) -> String {
@@ -754,11 +754,11 @@ impl AssertResult for Vec<String> {
                 if let Some((value, _)) = value.split_once(')') {
                     return value.to_string();
                 } else {
-                    panic!("No MODSEQ delimiter found in {:?}", line);
+                    panic!("No MODSEQ delimiter found in {line:?}");
                 }
             }
         }
-        panic!("No MODSEQ entries found in {:?}", self);
+        panic!("No MODSEQ entries found in {self:?}");
     }
 
     fn into_uid_validity(self) -> String {
@@ -769,11 +769,11 @@ impl AssertResult for Vec<String> {
                 } else if let Some((value, _)) = value.split_once(')') {
                     return value.to_string();
                 } else {
-                    panic!("No UIDVALIDITY delimiter found in {:?}", line);
+                    panic!("No UIDVALIDITY delimiter found in {line:?}");
                 }
             }
         }
-        panic!("No UIDVALIDITY entries found in {:?}", self);
+        panic!("No UIDVALIDITY entries found in {self:?}");
     }
 }
 
