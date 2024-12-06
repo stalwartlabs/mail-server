@@ -9,6 +9,7 @@ members = [
     "crates/smtp",
     "crates/managesieve",
     "crates/pop3",
+    "crates/spam-filter",
     "crates/nlp",
     "crates/store",
     "crates/directory",

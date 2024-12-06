@@ -5,25 +5,11 @@
  */
 
 use ahash::AHashMap;
-use utils::{config::Config, glob::GlobPattern};
+use utils::{config::Config, glob::GlobMap};
 
 use crate::{LookupStore, Stores, Value};
 
-#[derive(Debug, Default)]
-pub struct MemoryStore {
-    entries: AHashMap<String, Value<'static>>,
-    globs: Vec<(GlobPattern, Value<'static>)>,
-}
-
-impl MemoryStore {
-    pub fn get(&self, id: &str) -> Option<&Value<'static>> {
-        self.entries.get(id).or_else(|| {
-            self.globs
-                .iter()
-                .find_map(|(pattern, value)| pattern.matches(id).then_some(value))
-        })
-    }
-}
+pub type MemoryStore = GlobMap<Value<'static>>;
 
 impl Stores {
     pub fn parse_memory_stores(&mut self, config: &mut Config) {
@@ -35,24 +21,6 @@ impl Stores {
                 .split_once('.')
                 .filter(|(id, key)| !id.is_empty() && !key.is_empty())
             {
-                // Detect if the key is a glob pattern
-                let mut last_ch = '\0';
-                let mut has_escape = false;
-                let mut is_glob = false;
-                for ch in key.chars() {
-                    match ch {
-                        '\\' => {
-                            has_escape = true;
-                        }
-                        '*' | '?' if last_ch != '\\' => {
-                            is_glob = true;
-                        }
-                        _ => {}
-                    }
-
-                    last_ch = ch;
-                }
-
                 // Detect value type
                 let value = if !value.is_empty() {
                     let mut has_integers = false;
@@ -98,21 +66,10 @@ impl Stores {
                 };
 
                 // Add entry
-                let store = lookups
+                lookups
                     .entry(id.to_string())
-                    .or_insert_with(MemoryStore::default);
-                if is_glob {
-                    store.globs.push((GlobPattern::compile(key, false), value));
-                } else {
-                    store.entries.insert(
-                        if has_escape {
-                            key.replace('\\', "")
-                        } else {
-                            key.to_string()
-                        },
-                        value,
-                    );
-                }
+                    .or_insert_with(MemoryStore::default)
+                    .insert(key, value);
             } else {
                 errors.push(key.to_string());
             }

@@ -1,0 +1,24 @@
+[package]
+name = "spam-filter"
+version = "0.10.7"
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+utils = { path = "../utils" }
+nlp = { path = "../nlp" }
+store = { path = "../store" }
+trc = { path = "../trc" }
+common = { path =  "../common" }
+mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
+mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
+mail-auth = { version = "0.5" }
+mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
+psl = "2"
+
+[features]
+test_mode = []
+enterprise = []
+
+[dev-dependencies]
+tokio = { version = "1.23", features = ["full"] }

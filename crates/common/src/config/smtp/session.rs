@@ -799,14 +799,7 @@ impl Default for SessionConfig {
                 subaddressing: AddressMapping::Enable,
             },
             data: Data {
-                #[cfg(feature = "test_mode")]
                 script: IfBlock::empty("session.data.script"),
-                #[cfg(not(feature = "test_mode"))]
-                script: IfBlock::new::<()>(
-                    "session.data.script",
-                    [("is_empty(authenticated_as)", "'spam-filter'")],
-                    "'track-replies'",
-                ),
                 pipe_commands: Default::default(),
                 max_messages: IfBlock::new::<()>("session.data.limits.messages", [], "10"),
                 max_message_size: IfBlock::new::<()>("session.data.limits.size", [], "104857600"),

@@ -2134,7 +2134,7 @@ dependencies = [
 
 [[package]]
 name = "event_macro"
-version = "0.1.0"
+version = "0.10.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3254,7 +3254,7 @@ dependencies = [
 
 [[package]]
 name = "imap_proto"
-version = "0.1.0"
+version = "0.10.7"
 dependencies = [
  "ahash 0.8.11",
  "chrono",
@@ -4890,7 +4890,7 @@ dependencies = [
 
 [[package]]
 name = "proc_macros"
-version = "0.1.0"
+version = "0.10.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6443,6 +6443,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "spam-filter"
+version = "0.10.7"
+dependencies = [
+ "common",
+ "mail-auth",
+ "mail-builder",
+ "mail-parser",
+ "mail-send",
+ "nlp",
+ "psl",
+ "store",
+ "tokio",
+ "trc",
+ "utils",
+]
+
+[[package]]
 name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6712,7 +6729,7 @@ dependencies = [
 
 [[package]]
 name = "tests"
-version = "0.1.0"
+version = "0.10.7"
 dependencies = [
  "ahash 0.8.11",
  "async-trait",

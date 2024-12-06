@@ -20,6 +20,7 @@ use config::{
     network::Network,
     scripts::{RemoteList, Scripting},
     smtp::SmtpConfig,
+    spamfilter::SpamFilterConfig,
     storage::Storage,
     telemetry::Metrics,
 };
@@ -47,6 +48,7 @@ pub mod addresses;
 pub mod auth;
 pub mod config;
 pub mod core;
+pub mod dns;
 #[cfg(feature = "enterprise")]
 pub mod enterprise;
 pub mod expr;
@@ -205,6 +207,7 @@ pub struct Core {
     pub oauth: OAuthConfig,
     pub smtp: SmtpConfig,
     pub jmap: JmapConfig,
+    pub spam: SpamFilterConfig,
     pub imap: ImapConfig,
     pub metrics: Metrics,
     #[cfg(feature = "enterprise")]

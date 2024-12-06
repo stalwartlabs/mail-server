@@ -14,6 +14,7 @@ use hyper::{
     HeaderMap,
 };
 use ring::signature::{EcdsaKeyPair, RsaKeyPair};
+use spamfilter::SpamFilterConfig;
 use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
 use telemetry::Metrics;
 use utils::config::{utils::AsKey, Config};
@@ -35,6 +36,7 @@ pub mod network;
 pub mod scripts;
 pub mod server;
 pub mod smtp;
+pub mod spamfilter;
 pub mod storage;
 pub mod telemetry;
 
@@ -181,6 +183,7 @@ impl Core {
             oauth: OAuthConfig::parse(config),
             acme: AcmeProviders::parse(config),
             metrics: Metrics::parse(config),
+            spam: SpamFilterConfig::parse(config),
             storage: Storage {
                 data,
                 blob,

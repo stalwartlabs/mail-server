@@ -6,7 +6,7 @@
 
 use std::net::IpAddr;
 
-use mail_auth::{Error, IpLookupStrategy};
+use mail_auth::IpLookupStrategy;
 use sieve::{runtime::Variable, FunctionMap};
 
 use super::PluginContext;
@@ -145,44 +145,12 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let entry = ctx.arguments[0].to_string();
     let record_type = ctx.arguments[1].to_string();
 
-    Ok(if record_type.eq_ignore_ascii_case("ip") {
-        match ctx
-            .server
-            .core
-            .smtp
-            .resolvers
-            .dns
-            .ip_lookup(entry.as_ref(), IpLookupStrategy::Ipv4thenIpv6, 10)
-            .await
-        {
-            Ok(result) => i64::from(!result.is_empty()),
-            Err(Error::DnsRecordNotFound(_)) => 0,
-            Err(_) => -1,
-        }
+    let result = if record_type.eq_ignore_ascii_case("ip") {
+        ctx.server.core.dns_exists_ip(entry.as_ref()).await
     } else if record_type.eq_ignore_ascii_case("mx") {
-        match ctx
-            .server
-            .core
-            .smtp
-            .resolvers
-            .dns
-            .mx_lookup(entry.as_ref())
-            .await
-        {
-            Ok(result) => i64::from(result.iter().any(|mx| !mx.exchanges.is_empty())),
-            Err(Error::DnsRecordNotFound(_)) => 0,
-            Err(_) => -1,
-        }
+        ctx.server.core.dns_exists_mx(entry.as_ref()).await
     } else if record_type.eq_ignore_ascii_case("ptr") {
-        if let Ok(addr) = entry.parse::<IpAddr>() {
-            match ctx.server.core.smtp.resolvers.dns.ptr_lookup(addr).await {
-                Ok(result) => i64::from(!result.is_empty()),
-                Err(Error::DnsRecordNotFound(_)) => 0,
-                Err(_) => -1,
-            }
-        } else {
-            -1
-        }
+        ctx.server.core.dns_exists_ptr(entry.as_ref()).await
     } else if record_type.eq_ignore_ascii_case("ipv4") {
         #[cfg(feature = "test_mode")]
         {
@@ -191,37 +159,14 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             }
         }
 
-        match ctx
-            .server
-            .core
-            .smtp
-            .resolvers
-            .dns
-            .ipv4_lookup(entry.as_ref())
-            .await
-        {
-            Ok(result) => i64::from(!result.is_empty()),
-            Err(Error::DnsRecordNotFound(_)) => 0,
-            Err(_) => -1,
-        }
+        ctx.server.core.dns_exists_ipv4(entry.as_ref()).await
     } else if record_type.eq_ignore_ascii_case("ipv6") {
-        match ctx
-            .server
-            .core
-            .smtp
-            .resolvers
-            .dns
-            .ipv6_lookup(entry.as_ref())
-            .await
-        {
-            Ok(result) => i64::from(!result.is_empty()),
-            Err(Error::DnsRecordNotFound(_)) => 0,
-            Err(_) => -1,
-        }
+        ctx.server.core.dns_exists_ipv6(entry.as_ref()).await
     } else {
-        -1
-    }
-    .into())
+        return Ok((-1).into());
+    };
+
+    Ok(result.map(i64::from).unwrap_or(-1).into())
 }
 
 trait ShortError {
