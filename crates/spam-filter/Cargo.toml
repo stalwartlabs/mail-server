@@ -10,6 +10,7 @@ nlp = { path = "../nlp" }
 store = { path = "../store" }
 trc = { path = "../trc" }
 common = { path =  "../common" }
+smtp-proto = { version = "0.1", features = ["serde_support"] }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
 mail-auth = { version = "0.5" }

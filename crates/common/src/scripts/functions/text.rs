@@ -243,20 +243,24 @@ pub fn fn_levenshtein_distance<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Vari
     let a = v[0].to_string();
     let b = v[1].to_string();
 
+    levenshtein_distance(a.as_ref(), b.as_ref()).into()
+}
+
+pub fn levenshtein_distance(a: &str, b: &str) -> usize {
     let mut result = 0;
 
     /* Shortcut optimizations / degenerate cases. */
     if a == b {
-        return result.into();
+        return result;
     }
 
     let length_a = a.chars().count();
     let length_b = b.chars().count();
 
     if length_a == 0 {
-        return length_b.into();
+        return length_b;
     } else if length_b == 0 {
-        return length_a.into();
+        return length_a;
     }
 
     /* Initialize the vector.
@@ -297,7 +301,7 @@ pub fn fn_levenshtein_distance<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Vari
         }
     }
 
-    result.into()
+    result
 }
 
 pub fn fn_detect_language<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {

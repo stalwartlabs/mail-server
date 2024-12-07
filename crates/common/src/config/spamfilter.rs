@@ -10,6 +10,8 @@ use utils::{config::Config, glob::GlobSet};
 pub struct SpamFilterConfig {
     pub list_dmarc_allow: GlobSet,
     pub list_spf_dkim_allow: GlobSet,
+    pub list_freemail_providers: GlobSet,
+    pub list_disposable_providers: GlobSet,
 }
 
 impl SpamFilterConfig {

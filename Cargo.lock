@@ -6453,6 +6453,7 @@ dependencies = [
  "mail-send",
  "nlp",
  "psl",
+ "smtp-proto",
  "store",
  "tokio",
  "trc",

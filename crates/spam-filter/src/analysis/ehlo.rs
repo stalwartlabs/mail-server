@@ -15,11 +15,11 @@ impl SpamFilterAnalyzeEhlo for Core {
     async fn spam_filter_analyze_ehlo(&self, ctx: &mut SpamFilterContext<'_>) {
         if let Some(ehlo_ip) = ctx.output.ehlo_host.ip {
             // Helo host is bare ip
-            ctx.add_tag("HELO_BAREIP");
+            ctx.result.add_tag("HELO_BAREIP");
 
             if ehlo_ip != ctx.input.remote_ip {
                 // Helo A IP != hostname IP
-                ctx.add_tag("HELO_IP_A");
+                ctx.result.add_tag("HELO_IP_A");
             }
         } else if ctx.output.ehlo_host.sld.is_some() {
             if ctx
@@ -29,7 +29,7 @@ impl SpamFilterAnalyzeEhlo for Core {
                 .map_or(false, |ptr| ptr != &ctx.output.ehlo_host.fqdn)
             {
                 // Helo does not match reverse IP
-                ctx.add_tag("HELO_IPREV_MISMATCH");
+                ctx.result.add_tag("HELO_IPREV_MISMATCH");
             }
 
             if matches!(
@@ -40,16 +40,16 @@ impl SpamFilterAnalyzeEhlo for Core {
                 (Ok(false), Ok(false))
             ) {
                 // Helo no resolve to A or MX
-                ctx.add_tag("HELO_NORES_A_OR_MX");
+                ctx.result.add_tag("HELO_NORES_A_OR_MX");
             }
         } else {
             if ctx.output.ehlo_host.fqdn.contains("user") {
                 // Helo host contains 'user'
-                ctx.add_tag("RCVD_HELO_USER");
+                ctx.result.add_tag("RCVD_HELO_USER");
             }
 
             // Helo not FQDN
-            ctx.add_tag("HELO_NOT_FQDN");
+            ctx.result.add_tag("HELO_NOT_FQDN");
         }
     }
 }

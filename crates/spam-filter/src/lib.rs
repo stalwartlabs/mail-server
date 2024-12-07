@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod modules;
 
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 
@@ -30,41 +31,56 @@ pub struct SpamFilterInput<'x> {
     pub tls_cipher: &'x str,
 
     // Envelope
-    pub env_mail_from: &'x str,
+    pub env_from: &'x str,
+    pub env_from_flags: u64,
     pub env_rcpt_to: &'x [&'x str],
 }
 
 pub struct SpamFilterOutput {
-    pub tags: AHashSet<String>,
     pub ehlo_host: Hostname,
     pub iprev_ptr: Option<String>,
 
     pub env_from_addr: Email,
-    pub from_addr: Email,
-    pub from_name: String,
-    pub recipients: AHashSet<Email>,
+    pub env_from_postmaster: bool,
+    pub env_to_addr: HashSet<Email>,
+    pub from: Recipient,
+    pub recipients_to: Vec<Recipient>,
+    pub recipients_cc: Vec<Recipient>,
+    pub recipients_bcc: Vec<Recipient>,
+    pub reply_to: Option<Recipient>,
 
     pub subject: String,
     pub subject_thread: String,
 }
 
+pub struct SpamFilterResult {
+    pub tags: AHashSet<String>,
+}
+
 pub struct SpamFilterContext<'x> {
     pub input: SpamFilterInput<'x>,
     pub output: SpamFilterOutput,
+    pub result: SpamFilterResult,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Hostname {
     pub fqdn: String,
     pub ip: Option<IpAddr>,
     pub sld: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Email {
     pub address: String,
     pub local_part: String,
     pub domain_part: Hostname,
+}
+
+#[derive(Debug, Clone)]
+pub struct Recipient {
+    pub email: Email,
+    pub name: Option<String>,
 }
 
 impl PartialEq for Hostname {
@@ -92,5 +108,49 @@ impl Hash for Hostname {
 impl Hash for Email {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.address.hash(state)
+    }
+}
+
+impl Email {
+    pub fn is_valid(&self) -> bool {
+        self.domain_part.sld.is_some() && !self.local_part.is_empty()
+    }
+}
+
+impl PartialEq for Recipient {
+    fn eq(&self, other: &Self) -> bool {
+        self.email.eq(&other.email)
+    }
+}
+
+impl Eq for Recipient {}
+
+impl Hash for Recipient {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.email.hash(state)
+    }
+}
+
+impl PartialOrd for Email {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialOrd for Recipient {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Email {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.address.cmp(&other.address)
+    }
+}
+
+impl Ord for Recipient {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.email.cmp(&other.email)
     }
 }

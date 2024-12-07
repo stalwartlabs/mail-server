@@ -5,14 +5,14 @@ use store::write::now;
 
 use crate::SpamFilterContext;
 
-pub trait SpamFilterAnalyzeEhlo: Sync + Send {
+pub trait SpamFilterAnalyzeDate: Sync + Send {
     fn spam_filter_analyze_date(
         &self,
         ctx: &mut SpamFilterContext<'_>,
     ) -> impl Future<Output = ()> + Send;
 }
 
-impl SpamFilterAnalyzeEhlo for Core {
+impl SpamFilterAnalyzeDate for Core {
     async fn spam_filter_analyze_date(&self, ctx: &mut SpamFilterContext<'_>) {
         if let Some(date) = ctx.input.message.date() {
             let date = date.to_timestamp();
@@ -21,16 +21,16 @@ impl SpamFilterAnalyzeEhlo for Core {
 
                 if date_diff > 86400 {
                     // Older than a day
-                    ctx.add_tag("DATE_IN_PAST");
+                    ctx.result.add_tag("DATE_IN_PAST");
                 } else if -date_diff > 7200 {
                     //# More than 2 hours in the future
-                    ctx.add_tag("DATE_IN_FUTURE");
+                    ctx.result.add_tag("DATE_IN_FUTURE");
                 }
             } else {
-                ctx.add_tag("INVALID_DATE");
+                ctx.result.add_tag("INVALID_DATE");
             }
         } else {
-            ctx.add_tag("MISSING_DATE");
+            ctx.result.add_tag("MISSING_DATE");
         }
     }
 }
