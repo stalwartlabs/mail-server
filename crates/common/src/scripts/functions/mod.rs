@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-mod array;
+pub mod array;
 mod email;
 mod header;
 pub mod html;
-mod image;
-mod misc;
+pub mod image;
+pub mod misc;
 pub mod text;
-mod unicode;
-mod url;
+pub mod unicode;
+pub mod url;
 
 use sieve::{runtime::Variable, FunctionMap};
 

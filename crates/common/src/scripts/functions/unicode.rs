@@ -43,7 +43,7 @@ pub fn fn_has_obscured<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     .into()
 }
 
-trait CharUtils {
+pub trait CharUtils {
     fn is_zwsp(&self) -> bool;
     fn is_obscured(&self) -> bool;
 }

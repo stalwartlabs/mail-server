@@ -7,10 +7,13 @@ use std::net::IpAddr;
 
 use mail_auth::{dmarc::Policy, ArcOutput, DkimOutput, DmarcResult, IprevOutput, SpfOutput};
 use mail_parser::Message;
+use modules::html::HtmlToken;
+use nlp::tokenizers::types::TokenType;
 use store::ahash::AHashSet;
 
 pub struct SpamFilterInput<'x> {
     pub message: &'x Message<'x>,
+    pub span_id: u64,
 
     // Sender authentication
     pub arc_result: &'x ArcOutput<'x>,
@@ -36,7 +39,7 @@ pub struct SpamFilterInput<'x> {
     pub env_rcpt_to: &'x [&'x str],
 }
 
-pub struct SpamFilterOutput {
+pub struct SpamFilterOutput<'x> {
     pub ehlo_host: Hostname,
     pub iprev_ptr: Option<String>,
 
@@ -51,6 +54,23 @@ pub struct SpamFilterOutput {
 
     pub subject: String,
     pub subject_thread: String,
+    pub subject_tokens: Vec<TokenType<&'x str>>,
+
+    pub text_parts: Vec<TextPart<'x>>,
+    pub urls: HashSet<String>,
+}
+
+pub enum TextPart<'x> {
+    Plain {
+        text_body: &'x str,
+        tokens: Vec<TokenType<&'x str>>,
+    },
+    Html {
+        html_tokens: Vec<HtmlToken>,
+        text_body: String,
+        tokens: Vec<TokenType<String>>,
+    },
+    None,
 }
 
 pub struct SpamFilterResult {
@@ -59,7 +79,7 @@ pub struct SpamFilterResult {
 
 pub struct SpamFilterContext<'x> {
     pub input: SpamFilterInput<'x>,
-    pub output: SpamFilterOutput,
+    pub output: SpamFilterOutput<'x>,
     pub result: SpamFilterResult,
 }
 

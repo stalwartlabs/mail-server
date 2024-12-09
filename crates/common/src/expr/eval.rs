@@ -680,3 +680,21 @@ impl<'x> TryFrom<Variable<'x>> for StatusCode {
         }
     }
 }
+
+impl<'x> ResolveVariable for &'x str {
+    fn resolve_variable(&self, variable: u32) -> Variable<'x> {
+        match variable {
+            0 => Variable::String((*self).into()),
+            _ => Variable::Integer(0),
+        }
+    }
+}
+
+impl ResolveVariable for Vec<String> {
+    fn resolve_variable(&self, variable: u32) -> Variable<'_> {
+        match variable {
+            0 => Variable::Array(self.iter().map(|v| Variable::String(v.into())).collect()),
+            _ => Variable::Integer(0),
+        }
+    }
+}

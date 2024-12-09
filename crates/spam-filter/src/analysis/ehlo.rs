@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use common::Core;
+use common::Server;
 
 use crate::SpamFilterContext;
 
@@ -11,7 +11,7 @@ pub trait SpamFilterAnalyzeEhlo: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
-impl SpamFilterAnalyzeEhlo for Core {
+impl SpamFilterAnalyzeEhlo for Server {
     async fn spam_filter_analyze_ehlo(&self, ctx: &mut SpamFilterContext<'_>) {
         if let Some(ehlo_ip) = ctx.output.ehlo_host.ip {
             // Helo host is bare ip
@@ -34,8 +34,8 @@ impl SpamFilterAnalyzeEhlo for Core {
 
             if matches!(
                 (
-                    self.dns_exists_ip(&ctx.output.ehlo_host.fqdn).await,
-                    self.dns_exists_mx(&ctx.output.ehlo_host.fqdn).await
+                    self.core.dns_exists_ip(&ctx.output.ehlo_host.fqdn).await,
+                    self.core.dns_exists_mx(&ctx.output.ehlo_host.fqdn).await
                 ),
                 (Ok(false), Ok(false))
             ) {

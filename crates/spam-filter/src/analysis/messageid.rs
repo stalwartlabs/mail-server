@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use common::Core;
+use common::Server;
 use mail_parser::HeaderName;
 
 use crate::{Hostname, SpamFilterContext};
@@ -12,7 +12,7 @@ pub trait SpamFilterAnalyzeMid: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
-impl SpamFilterAnalyzeMid for Core {
+impl SpamFilterAnalyzeMid for Server {
     async fn spam_filter_analyze_message_id(&self, ctx: &mut SpamFilterContext<'_>) {
         let mid_raw = ctx
             .input

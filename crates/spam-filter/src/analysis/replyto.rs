@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use common::Core;
+use common::Server;
 use mail_parser::HeaderName;
 
 use crate::SpamFilterContext;
@@ -14,7 +14,7 @@ pub trait SpamFilterAnalyzeReplyTo: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
-impl SpamFilterAnalyzeReplyTo for Core {
+impl SpamFilterAnalyzeReplyTo for Server {
     async fn spam_filter_analyze_reply_to(&self, ctx: &mut SpamFilterContext<'_>) {
         let mut reply_to_raw = b"".as_slice();
         let mut is_from_list = false;
@@ -104,7 +104,12 @@ impl SpamFilterAnalyzeReplyTo for Core {
                 .sld
                 .as_deref()
                 .unwrap_or_default();
-            if self.spam.list_freemail_providers.contains(reply_to_sld) {
+            if self
+                .core
+                .spam
+                .list_freemail_providers
+                .contains(reply_to_sld)
+            {
                 ctx.result.add_tag("FREEMAIL_REPLYTO");
                 let from_domain_sld = ctx
                     .output
@@ -115,11 +120,20 @@ impl SpamFilterAnalyzeReplyTo for Core {
                     .as_deref()
                     .unwrap_or_default();
                 if reply_to_sld != from_domain_sld
-                    && self.spam.list_freemail_providers.contains(from_domain_sld)
+                    && self
+                        .core
+                        .spam
+                        .list_freemail_providers
+                        .contains(from_domain_sld)
                 {
                     ctx.result.add_tag("FREEMAIL_REPLYTO_NEQ_FROM_DOM");
                 }
-            } else if self.spam.list_disposable_providers.contains(reply_to_sld) {
+            } else if self
+                .core
+                .spam
+                .list_disposable_providers
+                .contains(reply_to_sld)
+            {
                 ctx.result.add_tag("DISPOSABLE_REPLYTO");
             }
 

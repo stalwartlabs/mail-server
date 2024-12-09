@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use common::Core;
+use common::Server;
 use mail_auth::{
     common::verify::VerifySignature, dmarc::Policy, DkimResult, DmarcResult, SpfResult,
 };
@@ -14,7 +14,7 @@ pub trait SpamFilterAnalyzeDmarc: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
-impl SpamFilterAnalyzeDmarc for Core {
+impl SpamFilterAnalyzeDmarc for Server {
     async fn spam_filter_analyze_dmarc(&self, ctx: &mut SpamFilterContext<'_>) {
         ctx.result
             .add_tag(match ctx.input.spf_mail_from_result.result() {
@@ -75,6 +75,7 @@ impl SpamFilterAnalyzeDmarc for Core {
         }
 
         if self
+            .core
             .spam
             .list_dmarc_allow
             .contains(&ctx.output.from.email.domain_part.fqdn)
@@ -85,6 +86,7 @@ impl SpamFilterAnalyzeDmarc for Core {
                 ctx.result.add_tag("BLOCKLIST_DMARC");
             }
         } else if self
+            .core
             .spam
             .list_spf_dkim_allow
             .contains(&ctx.output.from.email.domain_part.fqdn)

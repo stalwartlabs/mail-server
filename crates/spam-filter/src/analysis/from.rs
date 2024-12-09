@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use common::Core;
+use common::Server;
 use mail_parser::HeaderName;
 use smtp_proto::{MAIL_BODY_8BITMIME, MAIL_BODY_BINARYMIME, MAIL_SMTPUTF8};
 
@@ -26,7 +26,7 @@ const SERVICE_ACCOUNTS: [&str; 9] = [
 ];
 pub(crate) const TITLES: [&str; 7] = ["mr. ", "mrs. ", "ms. ", "dr. ", "prof. ", "rev. ", "hon. "];
 
-impl SpamFilterAnalyzeFrom for Core {
+impl SpamFilterAnalyzeFrom for Server {
     async fn spam_filter_analyze_from(&self, ctx: &mut SpamFilterContext<'_>) {
         let mut from_count = 0;
         let mut from_raw = b"".as_slice();
@@ -96,12 +96,14 @@ impl SpamFilterAnalyzeFrom for Core {
                     is_www_dot_domain = true;
                 }
                 if self
+                    .core
                     .spam
                     .list_freemail_providers
                     .contains(from_addr.domain_part.sld.as_deref().unwrap_or_default())
                 {
                     ctx.result.add_tag("FREEMAIL_FROM");
                 } else if self
+                    .core
                     .spam
                     .list_disposable_providers
                     .contains(from_addr.domain_part.sld.as_deref().unwrap_or_default())
@@ -238,7 +240,7 @@ impl SpamFilterAnalyzeFrom for Core {
                 if SERVICE_ACCOUNTS.contains(&ctx.output.env_from_addr.local_part.as_str()) {
                     ctx.result.add_tag("ENVFROM_SERVICE_ACCT");
                 }
-                if self.spam.list_freemail_providers.contains(
+                if self.core.spam.list_freemail_providers.contains(
                     ctx.output
                         .env_from_addr
                         .domain_part
@@ -247,7 +249,7 @@ impl SpamFilterAnalyzeFrom for Core {
                         .unwrap_or_default(),
                 ) {
                     ctx.result.add_tag("FREEMAIL_ENVFROM");
-                } else if self.spam.list_disposable_providers.contains(
+                } else if self.core.spam.list_disposable_providers.contains(
                     ctx.output
                         .env_from_addr
                         .domain_part
@@ -261,9 +263,11 @@ impl SpamFilterAnalyzeFrom for Core {
                 // Mail from no resolve to A or MX
                 if matches!(
                     (
-                        self.dns_exists_ip(&ctx.output.env_from_addr.domain_part.fqdn)
+                        self.core
+                            .dns_exists_ip(&ctx.output.env_from_addr.domain_part.fqdn)
                             .await,
-                        self.dns_exists_mx(&ctx.output.env_from_addr.domain_part.fqdn)
+                        self.core
+                            .dns_exists_mx(&ctx.output.env_from_addr.domain_part.fqdn)
                             .await
                     ),
                     (Ok(false), Ok(false))

@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use common::{scripts::functions::text::levenshtein_distance, Core};
+use common::{scripts::functions::text::levenshtein_distance, Server};
 use mail_parser::HeaderName;
 use smtp_proto::{MAIL_BODY_8BITMIME, MAIL_BODY_BINARYMIME, MAIL_SMTPUTF8};
 use store::ahash::HashSet;
@@ -14,7 +14,7 @@ pub trait SpamFilterAnalyzeRecipient: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
-impl SpamFilterAnalyzeRecipient for Core {
+impl SpamFilterAnalyzeRecipient for Server {
     async fn spam_filter_analyze_recipient(&self, ctx: &mut SpamFilterContext<'_>) {
         let mut to_raw = b"".as_slice();
         let mut cc_raw = b"".as_slice();
@@ -191,7 +191,7 @@ impl SpamFilterAnalyzeRecipient for Core {
 
             // Check for freemail or disposable domains
             if let Some(domain) = rcpt.email.domain_part.sld.as_deref() {
-                if self.spam.list_freemail_providers.contains(domain) {
+                if self.core.spam.list_freemail_providers.contains(domain) {
                     if ctx
                         .output
                         .recipients_to
@@ -202,7 +202,7 @@ impl SpamFilterAnalyzeRecipient for Core {
                     } else {
                         ctx.result.add_tag("FREEMAIL_CC");
                     }
-                } else if self.spam.list_disposable_providers.contains(domain) {
+                } else if self.core.spam.list_disposable_providers.contains(domain) {
                     if ctx
                         .output
                         .recipients_to

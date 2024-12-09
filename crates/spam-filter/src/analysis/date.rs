@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use common::Core;
+use common::Server;
 use store::write::now;
 
 use crate::SpamFilterContext;
@@ -12,7 +12,7 @@ pub trait SpamFilterAnalyzeDate: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
-impl SpamFilterAnalyzeDate for Core {
+impl SpamFilterAnalyzeDate for Server {
     async fn spam_filter_analyze_date(&self, ctx: &mut SpamFilterContext<'_>) {
         if let Some(date) = ctx.input.message.date() {
             let date = date.to_timestamp();

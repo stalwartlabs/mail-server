@@ -727,6 +727,40 @@ impl<T> TokenType<T> {
     }
 }
 
+impl<T: AsRef<str>> TokenType<T> {
+    pub fn hostname(&self) -> Option<&str> {
+        match self {
+            TokenType::Url(url) => url.as_ref().split_once("://").map(|(_, host)| {
+                host.split_once('/')
+                    .map_or(host, |(h, _)| h.split_once(':').map_or(h, |(h, _)| h))
+            }),
+            TokenType::UrlNoScheme(url) => {
+                let url = url.as_ref();
+                url.split_once('/').map_or(url, |(host, _)| host).into()
+            }
+            TokenType::Email(email) => email.as_ref().rsplit_once('@').map(|(_, domain)| domain),
+            _ => None,
+        }
+    }
+
+    pub fn hostname_sld(&self) -> Option<&str> {
+        self.hostname().and_then(|host| psl::domain_str(host))
+    }
+
+    pub fn url_lowercase(&self, with_scheme_only: bool) -> Option<String> {
+        match self {
+            TokenType::Url(url) => url.as_ref().trim().to_lowercase().into(),
+            TokenType::UrlNoScheme(url) if !with_scheme_only => {
+                let url = url.as_ref();
+                format!("http:s//{}", url.trim().to_lowercase())
+                    .to_lowercase()
+                    .into()
+            }
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
 

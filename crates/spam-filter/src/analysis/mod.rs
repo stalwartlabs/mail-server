@@ -4,6 +4,7 @@ use mail_parser::{parsers::MessageStream, Header};
 
 use crate::{Recipient, SpamFilterInput, SpamFilterOutput, SpamFilterResult};
 
+pub mod bounce;
 pub mod date;
 pub mod dmarc;
 pub mod ehlo;
@@ -12,8 +13,11 @@ pub mod headers;
 pub mod init;
 pub mod iprev;
 pub mod messageid;
+pub mod received;
 pub mod recipient;
 pub mod replyto;
+pub mod subject;
+pub mod url;
 
 impl SpamFilterInput<'_> {
     pub fn header_as_address(&self, header: &Header<'_>) -> Option<Cow<'_, str>> {
@@ -27,7 +31,7 @@ impl SpamFilterInput<'_> {
     }
 }
 
-impl SpamFilterOutput {
+impl SpamFilterOutput<'_> {
     pub fn all_recipients(&self) -> impl Iterator<Item = &Recipient> {
         self.recipients_to
             .iter()

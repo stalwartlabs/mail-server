@@ -6447,16 +6447,21 @@ name = "spam-filter"
 version = "0.10.7"
 dependencies = [
  "common",
+ "decancer",
+ "hyper 1.5.1",
+ "idna 1.0.3",
  "mail-auth",
  "mail-builder",
  "mail-parser",
  "mail-send",
  "nlp",
  "psl",
+ "reqwest 0.12.9",
  "smtp-proto",
  "store",
  "tokio",
  "trc",
+ "unicode-security",
  "utils",
 ]
 

@@ -16,6 +16,11 @@ mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
 mail-auth = { version = "0.5" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 psl = "2"
+hyper = { version = "1.0.1", features = ["server", "http1", "http2"] }
+idna = "1.0"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2", "stream"]}
+decancer = "3.0.1"
+unicode-security = "0.1.0"
 
 [features]
 test_mode = []

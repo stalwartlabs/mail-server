@@ -31,13 +31,12 @@ pub struct PluginContext<'x> {
     pub arguments: Vec<Variable>,
 }
 
-const PLUGINS_REGISTER: [RegisterPluginFnc; 14] = [
+const PLUGINS_REGISTER: [RegisterPluginFnc; 13] = [
     query::register,
     exec::register,
     lookup::register,
     lookup::register_get,
     lookup::register_set,
-    lookup::register_remote,
     lookup::register_local_domain,
     dns::register,
     dns::register_exists,
@@ -86,15 +85,14 @@ impl Core {
             2 => lookup::exec(ctx).await,
             3 => lookup::exec_get(ctx).await,
             4 => lookup::exec_set(ctx).await,
-            5 => lookup::exec_remote(ctx).await,
-            6 => lookup::exec_local_domain(ctx).await,
-            7 => dns::exec(ctx).await,
-            8 => dns::exec_exists(ctx).await,
-            9 => http::exec_header(ctx).await,
-            10 => headers::exec(ctx),
-            11 => text::exec_tokenize(ctx),
-            12 => text::exec_domain_part(ctx),
-            13 => llm_prompt::exec(ctx).await,
+            5 => lookup::exec_local_domain(ctx).await,
+            6 => dns::exec(ctx).await,
+            7 => dns::exec_exists(ctx).await,
+            8 => http::exec_header(ctx).await,
+            9 => headers::exec(ctx),
+            10 => text::exec_tokenize(ctx),
+            11 => text::exec_domain_part(ctx),
+            12 => llm_prompt::exec(ctx).await,
             _ => unreachable!(),
         };
 

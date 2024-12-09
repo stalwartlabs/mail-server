@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use common::Core;
+use common::Server;
 use mail_parser::HeaderName;
 use store::ahash::AHashSet;
 
@@ -13,7 +13,7 @@ pub trait SpamFilterAnalyzeHeaders: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
-impl SpamFilterAnalyzeHeaders for Core {
+impl SpamFilterAnalyzeHeaders for Server {
     async fn spam_filter_analyze_headers(&self, ctx: &mut SpamFilterContext<'_>) {
         let mut list_score = 0.0;
         let mut unique_headers = AHashSet::new();
