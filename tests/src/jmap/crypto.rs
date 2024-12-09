@@ -147,7 +147,7 @@ pub async fn test(params: &mut JMAPTest) {
     let mut request = client.build();
     request.get_email();
     let emails = request.send_get_email().await.unwrap().take_list();
-    assert_eq!(emails.len(), 3, "3 messages were expected: {:#?}.", emails);
+    assert_eq!(emails.len(), 3, "3 messages were expected: {emails:#?}.");
 
     for email in emails {
         let message =
@@ -169,7 +169,7 @@ pub async fn test(params: &mut JMAPTest) {
                 "got message {message}, expected plain text message"
             );
         } else {
-            panic!("Unexpected message: {:#?}", message)
+            panic!("Unexpected message: {message:#?}")
         }
     }
 }

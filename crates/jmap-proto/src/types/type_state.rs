@@ -71,7 +71,7 @@ impl From<u64> for DataType {
             11 => DataType::Quota,
             12 => DataType::SieveScript,
             _ => {
-                debug_assert!(false, "Invalid type_state value: {}", value);
+                debug_assert!(false, "Invalid type_state value: {value}");
                 DataType::None
             }
         }

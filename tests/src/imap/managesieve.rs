@@ -173,7 +173,7 @@ impl SieveConnection {
         {
             lines
         } else {
-            panic!("Expected {:?} from server but got: {:?}", rt, lines);
+            panic!("Expected {rt:?} from server but got: {lines:?}");
         }
     }
 
@@ -191,12 +191,12 @@ impl SieveConnection {
                     }
                 }
                 Ok(Ok(None)) => {
-                    panic!("Invalid response: {:?}.", lines);
+                    panic!("Invalid response: {lines:?}.");
                 }
                 Ok(Err(err)) => {
-                    panic!("Connection broken: {} ({:?})", err, lines);
+                    panic!("Connection broken: {err} ({lines:?})");
                 }
-                Err(_) => panic!("Timeout while waiting for server response: {:?}", lines),
+                Err(_) => panic!("Timeout while waiting for server response: {lines:?}"),
             }
         }
     }

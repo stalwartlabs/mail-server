@@ -288,14 +288,14 @@ impl<'x> Variable<'x> {
             }
             (Variable::String(a), b) => {
                 if !a.is_empty() {
-                    Variable::String(format!("{}{}", a, b).into())
+                    Variable::String(format!("{a}{b}").into())
                 } else {
                     b
                 }
             }
             (a, Variable::String(b)) => {
                 if !b.is_empty() {
-                    Variable::String(format!("{}{}", a, b).into())
+                    Variable::String(format!("{a}{b}").into())
                 } else {
                     a
                 }

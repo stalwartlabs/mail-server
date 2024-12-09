@@ -118,7 +118,7 @@ impl RocksDbStore {
                 .map_err(|err| {
                     config.new_build_error(
                         prefix.as_str(),
-                        format!("Failed to open database: {:?}", err),
+                        format!("Failed to open database: {err:?}"),
                     )
                 })
                 .ok()?
@@ -135,7 +135,7 @@ impl RocksDbStore {
                 .map_err(|err| {
                     config.new_build_error(
                         (&prefix, "pool.workers"),
-                        format!("Failed to build worker pool: {:?}", err),
+                        format!("Failed to build worker pool: {err:?}"),
                     )
                 })
                 .ok()?,

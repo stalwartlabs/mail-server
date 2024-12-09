@@ -152,7 +152,7 @@ async fn assert_state(
             );
         }
         result => {
-            panic!("Timeout waiting for event {:?}: {:?}", state, result);
+            panic!("Timeout waiting for event {state:?}: {result:?}");
         }
     }
 }

@@ -186,9 +186,7 @@ pub async fn test(params: &mut JMAPTest) {
                         list
                     })
                     .collect::<Vec<Vec<_>>>(),
-                "test_num: {}, state: {:?}",
-                test_num,
-                state
+                "test_num: {test_num}, state: {state:?}"
             );
 
             if let State::Initial = state {
@@ -265,26 +263,17 @@ pub async fn test(params: &mut JMAPTest) {
                 assert_eq!(
                     insertions.len(),
                     0,
-                    "test_num: {}, state: {:?}, pending: {:?}",
-                    test_num,
-                    state,
-                    insertions
+                    "test_num: {test_num}, state: {state:?}, pending: {insertions:?}"
                 );
                 assert_eq!(
                     updates.len(),
                     0,
-                    "test_num: {}, state: {:?}, pending: {:?}",
-                    test_num,
-                    state,
-                    updates
+                    "test_num: {test_num}, state: {state:?}, pending: {updates:?}"
                 );
                 assert_eq!(
                     deletions.len(),
                     0,
-                    "test_num: {}, state: {:?}, pending: {:?}",
-                    test_num,
-                    state,
-                    deletions
+                    "test_num: {test_num}, state: {state:?}, pending: {deletions:?}"
                 );
             }
         }

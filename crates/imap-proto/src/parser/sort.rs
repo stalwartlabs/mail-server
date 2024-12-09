@@ -232,8 +232,7 @@ mod tests {
                     .parse_sort()
                     .expect(&command_str),
                 arguments,
-                "{}",
-                command_str
+                "{command_str}"
             );
         }
     }

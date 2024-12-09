@@ -198,15 +198,13 @@ impl Session {
             accounts: VecMap::new(),
             primary_accounts: VecMap::new(),
             username: "".to_string(),
-            api_url: format!("{}/jmap/", base_url),
+            api_url: format!("{base_url}/jmap/"),
             download_url: format!(
-                "{}/jmap/download/{{accountId}}/{{blobId}}/{{name}}?accept={{type}}",
-                base_url
+                "{base_url}/jmap/download/{{accountId}}/{{blobId}}/{{name}}?accept={{type}}"
             ),
-            upload_url: format!("{}/jmap/upload/{{accountId}}/", base_url),
+            upload_url: format!("{base_url}/jmap/upload/{{accountId}}/"),
             event_source_url: format!(
-                "{}/jmap/eventsource/?types={{types}}&closeafter={{closeafter}}&ping={{ping}}",
-                base_url
+                "{base_url}/jmap/eventsource/?types={{types}}&closeafter={{closeafter}}&ping={{ping}}"
             ),
             base_url,
             state: 0,

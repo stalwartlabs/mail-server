@@ -143,11 +143,5 @@ pub(crate) fn build_pool<M: Manager>(
         .wait_timeout(config.property_or_default((prefix, "pool.timeout.wait"), "30s"))
         .recycle_timeout(config.property_or_default((prefix, "pool.timeout.recycle"), "30s"))
         .build()
-        .map_err(|err| {
-            format!(
-                "Failed to build pool for {prefix:?}: {err}",
-                prefix = prefix,
-                err = err
-            )
-        })
+        .map_err(|err| format!("Failed to build pool for {prefix:?}: {err}"))
 }

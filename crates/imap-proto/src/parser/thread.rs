@@ -108,8 +108,7 @@ mod tests {
                     .parse_thread()
                     .expect(&command_str),
                 arguments,
-                "{}",
-                command_str
+                "{command_str}"
             );
         }
     }

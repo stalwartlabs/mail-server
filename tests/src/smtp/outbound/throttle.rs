@@ -138,7 +138,7 @@ async fn throttle_outbound() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     local.queue_receiver.read_event().await.assert_reload();
     let due = local.queue_receiver.last_queued_due().await - now();
-    assert!(due > 0, "Due: {}", due);
+    assert!(due > 0, "Due: {due}");
 
     // Expect concurrency throttle for recipient domain 'example.org'
     test_message.return_path_domain = "test.net".to_string();
@@ -214,7 +214,7 @@ async fn throttle_outbound() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     local.queue_receiver.read_event().await.assert_reload();
     let due = local.queue_receiver.last_queued_due().await - now();
-    assert!(due > 0, "Due: {}", due);
+    assert!(due > 0, "Due: {due}");
 
     // Expect concurrency throttle for mx 'mx.test.org'
     core.core.smtp.resolvers.dns.mx_add(
@@ -298,7 +298,7 @@ async fn throttle_outbound() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     local.queue_receiver.read_event().await.assert_reload();
     let due = local.queue_receiver.last_queued_due().await - now();
-    assert!(due > 0, "Due: {}", due);
+    assert!(due > 0, "Due: {due}");
 }
 
 pub trait TestQueueEnvelope<'x> {

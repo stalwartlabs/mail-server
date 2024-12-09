@@ -212,10 +212,7 @@ impl Request<Command> {
                                 _ => {
                                     return Err(bad(
                                         self.tag,
-                                        format!(
-                                            "Invalid token {:?} found in section-spect.",
-                                            token
-                                        ),
+                                        format!("Invalid token {token:?} found in section-spect."),
                                     ))
                                 }
                             }
@@ -375,7 +372,7 @@ impl Request<Command> {
                     _ => {
                         return Err(bad(
                             self.tag.clone(),
-                            format!("Unsupported parameter '{}'.", token),
+                            format!("Unsupported parameter '{token}'."),
                         ));
                     }
                 }
@@ -776,8 +773,7 @@ mod tests {
                     .parse_fetch()
                     .expect(command),
                 arguments,
-                "{}",
-                command
+                "{command}"
             );
         }
     }

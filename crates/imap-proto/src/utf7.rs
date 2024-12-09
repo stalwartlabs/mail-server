@@ -164,8 +164,7 @@ mod tests {
             assert_eq!(
                 super::utf7_decode(input).expect(input),
                 expected_result,
-                "while decoding {:?}",
-                input
+                "while decoding {input:?}"
             );
         }
     }
@@ -183,8 +182,7 @@ mod tests {
             assert_eq!(
                 super::utf7_encode(input),
                 expected_result,
-                "while encoding {:?}",
-                expected_result
+                "while encoding {expected_result:?}"
             );
         }
     }

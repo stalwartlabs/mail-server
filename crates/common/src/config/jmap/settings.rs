@@ -111,21 +111,18 @@ impl JmapConfig {
                     Ok((
                         hyper::header::HeaderName::from_str(k.trim()).map_err(|err| {
                             format!(
-                                "Invalid header found in property \"server.http.headers\": {}",
-                                err
+                                "Invalid header found in property \"server.http.headers\": {err}"
                             )
                         })?,
                         hyper::header::HeaderValue::from_str(v.trim()).map_err(|err| {
                             format!(
-                                "Invalid header found in property \"server.http.headers\": {}",
-                                err
+                                "Invalid header found in property \"server.http.headers\": {err}"
                             )
                         })?,
                     ))
                 } else {
                     Err(format!(
-                        "Invalid header found in property \"server.http.headers\": {}",
-                        v
+                        "Invalid header found in property \"server.http.headers\": {v}"
                     ))
                 }
             })

@@ -285,7 +285,7 @@ impl TlsReporting for Server {
                 )
                 .await
                 .clone(),
-            report_id: format!("{}_{}", event_from, policy),
+            report_id: format!("{event_from}_{policy}"),
             policies: Vec::with_capacity(events.len()),
         };
 

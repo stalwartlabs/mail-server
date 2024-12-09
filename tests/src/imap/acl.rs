@@ -214,8 +214,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     // Copy from John's Inbox to Jane's Inbox
     imap_john
         .send(&format!(
-            "UID COPY {} \"Shared Folders/jane.smith@example.com/Inbox\"",
-            uid
+            "UID COPY {uid} \"Shared Folders/jane.smith@example.com/Inbox\""
         ))
         .await;
     let uid = imap_john
@@ -227,9 +226,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     imap_bill.send("NOOP").await;
     imap_bill.assert_read(Type::Tagged, ResponseType::Ok).await;
 
-    imap_bill
-        .send(&format!("UID FETCH {} (PREVIEW)", uid))
-        .await;
+    imap_bill.send(&format!("UID FETCH {uid} (PREVIEW)")).await;
     imap_bill
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
@@ -238,33 +235,27 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     imap_jane.send("SELECT INBOX").await;
     imap_jane.assert_read(Type::Tagged, ResponseType::Ok).await;
 
-    imap_jane
-        .send(&format!("UID FETCH {} (PREVIEW)", uid))
-        .await;
+    imap_jane.send(&format!("UID FETCH {uid} (PREVIEW)")).await;
     imap_jane
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains("copy test");
 
     // Bill now moves the message to his own Inbox
-    imap_bill.send(&format!("UID MOVE {} INBOX", uid)).await;
+    imap_bill.send(&format!("UID MOVE {uid} INBOX")).await;
     let uid_moved = imap_bill
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .into_copy_uid();
 
     // Both Jane and Bill should not see the message on Jane's Inbox anymore
-    imap_bill
-        .send(&format!("UID FETCH {} (PREVIEW)", uid))
-        .await;
+    imap_bill.send(&format!("UID FETCH {uid} (PREVIEW)")).await;
     imap_bill
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_count("copy test", 0);
 
-    imap_jane
-        .send(&format!("UID FETCH {} (PREVIEW)", uid))
-        .await;
+    imap_jane.send(&format!("UID FETCH {uid} (PREVIEW)")).await;
     imap_jane
         .assert_read(Type::Tagged, ResponseType::Ok)
         .await
@@ -275,7 +266,7 @@ pub async fn test(mut imap_john: &mut ImapConnection, _imap_check: &mut ImapConn
     imap_bill.assert_read(Type::Tagged, ResponseType::Ok).await;
 
     imap_bill
-        .send(&format!("UID FETCH {} (PREVIEW)", uid_moved))
+        .send(&format!("UID FETCH {uid_moved} (PREVIEW)"))
         .await;
     imap_bill
         .assert_read(Type::Tagged, ResponseType::Ok)

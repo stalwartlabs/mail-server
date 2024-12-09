@@ -439,7 +439,7 @@ impl ParseValue for VerifyStrategy {
             "relaxed" => Ok(VerifyStrategy::Relaxed),
             "strict" => Ok(VerifyStrategy::Strict),
             "disable" | "disabled" | "never" | "none" => Ok(VerifyStrategy::Disable),
-            _ => Err(format!("Invalid value {:?}.", value)),
+            _ => Err(format!("Invalid value {value:?}.")),
         }
     }
 }

@@ -88,7 +88,7 @@ async fn oidc_directory() {
                 Some(_) => StatusCode::UNAUTHORIZED.into_http_response(),
                 None => panic!("Missing Authorization header: {req:#?}"),
             },
-            _ => panic!("Unexpected request: {:?}", req),
+            _ => panic!("Unexpected request: {req:?}"),
         }
     }))
     .await;
@@ -115,8 +115,7 @@ async fn oidc_directory() {
             .unwrap_err();
         assert!(
             err.matches(EventType::Auth(AuthEvent::Failed)),
-            "Unexpected error: {:?}",
-            err
+            "Unexpected error: {err:?}"
         );
 
         // Test a valid token

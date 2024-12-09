@@ -27,5 +27,5 @@ pub fn serialize_hex<S>(value: &u32, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    format!("{:x}", value).serialize(serializer)
+    format!("{value:x}").serialize(serializer)
 }
