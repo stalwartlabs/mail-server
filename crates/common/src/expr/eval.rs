@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, cmp::Ordering, fmt::Display};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display, net::IpAddr};
 
 use hyper::StatusCode;
+use mail_auth::common::resolver::ToReverseName;
 use trc::EvalEvent;
 
 use crate::Server;
@@ -14,6 +15,7 @@ use crate::Server;
 use super::{
     functions::{ResolveVariable, FUNCTIONS},
     if_block::IfBlock,
+    tokenizer::TokenMap,
     BinaryOperator, Constant, Expression, ExpressionItem, UnaryOperator, Variable,
 };
 
@@ -163,6 +165,9 @@ impl Expression {
             match expr {
                 ExpressionItem::Variable(v) => {
                     stack.push(resolver.resolve_variable(*v));
+                }
+                ExpressionItem::Global(v) => {
+                    stack.push(resolver.resolve_global(v));
                 }
                 ExpressionItem::Constant(val) => {
                     stack.push(Variable::from(val));
@@ -682,19 +687,45 @@ impl<'x> TryFrom<Variable<'x>> for StatusCode {
 }
 
 impl<'x> ResolveVariable for &'x str {
-    fn resolve_variable(&self, variable: u32) -> Variable<'x> {
-        match variable {
-            0 => Variable::String((*self).into()),
-            _ => Variable::Integer(0),
-        }
+    fn resolve_variable(&self, _: u32) -> Variable<'x> {
+        Variable::String((*self).into())
+    }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
     }
 }
 
 impl ResolveVariable for Vec<String> {
+    fn resolve_variable(&self, _: u32) -> Variable<'_> {
+        Variable::Array(self.iter().map(|v| Variable::String(v.into())).collect())
+    }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
+}
+
+impl ResolveVariable for IpAddr {
     fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
-            0 => Variable::Array(self.iter().map(|v| Variable::String(v.into())).collect()),
+            0 => Variable::String(self.to_string().into()),
+            1 => Variable::String(self.to_reverse_name().into()),
             _ => Variable::Integer(0),
         }
+    }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
+}
+
+impl TokenMap {
+    pub fn new_ip() -> Self {
+        TokenMap::default().with_variables_map([("ip", 0), ("reverse_ip", 1)])
+    }
+
+    pub fn new_single(name: &'static str) -> Self {
+        TokenMap::default().with_variables_map([(name, 0)])
     }
 }

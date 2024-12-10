@@ -6,12 +6,19 @@
 
 use std::time::Duration;
 
+use ahash::AHashSet;
+use mail_parser::HeaderName;
 use utils::{config::Config, glob::GlobSet};
 
-use super::{if_block::IfBlock, Expression};
+use super::if_block::IfBlock;
 
 #[derive(Debug, Clone, Default)]
 pub struct SpamFilterConfig {
+    pub max_rbl_ip_checks: usize,
+    pub max_rbl_domain_checks: usize,
+    pub max_rbl_email_checks: usize,
+    pub max_rbl_url_checks: usize,
+
     pub list_dmarc_allow: GlobSet,
     pub list_spf_dkim_allow: GlobSet,
     pub list_freemail_providers: GlobSet,
@@ -23,13 +30,26 @@ pub struct SpamFilterConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Target {
+pub enum Element {
     Url,
     Domain,
     Email,
     Ip,
-    Ipv4,
-    Ipv6,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Location {
+    EnvelopeFrom,
+    EnvelopeTo,
+    DkimPassing,
+    Ehlo,
+    Header(HeaderName<'static>),
+    BodyText,
+    BodyHtml,
+    BodyRaw,
+    Message,
+    Attachment,
+    Tcp,
 }
 
 #[derive(Debug, Clone)]
@@ -43,15 +63,17 @@ pub struct RemoteListConfig {
     pub max_entries: usize,    // 100000
     pub max_entry_size: usize, // 256
     pub format: RemoteListFormat,
-    pub target: Target,
+    pub element: Element,
+    pub element_location: AHashSet<Location>,
     pub tag: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct DnsblConfig {
     pub id: String,
-    pub zone: Expression,
-    pub target: Target,
+    pub zone: IfBlock,
+    pub element: Element,
+    pub element_location: AHashSet<Location>,
     pub tags: IfBlock,
 }
 
@@ -68,5 +90,11 @@ pub enum RemoteListFormat {
 impl SpamFilterConfig {
     pub fn parse(config: &mut Config) -> Self {
         SpamFilterConfig::default()
+    }
+}
+
+impl From<HeaderName<'static>> for Location {
+    fn from(header: HeaderName<'static>) -> Self {
+        Location::Header(header)
     }
 }

@@ -16,6 +16,7 @@ pub mod text;
 
 pub trait ResolveVariable: Sync + Send {
     fn resolve_variable(&self, variable: u32) -> Variable<'_>;
+    fn resolve_global(&self, variable: &str) -> Variable<'_>;
 }
 
 impl<'x> Variable<'x> {

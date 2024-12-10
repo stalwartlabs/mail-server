@@ -581,4 +581,8 @@ impl<T: SessionStream> ResolveVariable for Session<T> {
             _ => expr::Variable::default(),
         }
     }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
 }

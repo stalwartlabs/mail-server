@@ -83,6 +83,7 @@ pub struct Expression {
 #[derive(Debug, Clone)]
 pub enum ExpressionItem {
     Variable(u32),
+    Global(String),
     Capture(u32),
     Constant(Constant),
     BinaryOperator(BinaryOperator),
@@ -187,6 +188,7 @@ pub enum UnaryOperator {
 #[derive(Debug, Clone)]
 pub enum Token {
     Variable(u32),
+    Global(String),
     Capture(u32),
     Function {
         name: Cow<'static, str>,

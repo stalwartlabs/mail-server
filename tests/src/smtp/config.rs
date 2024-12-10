@@ -509,6 +509,10 @@ impl ResolveVariable for TestEnvelope {
             _ => Default::default(),
         }
     }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
 }
 
 impl TestEnvelope {

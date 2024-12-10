@@ -1,11 +1,9 @@
-use std::collections::HashSet;
-
 use common::Server;
 use mail_parser::{parsers::fields::thread::thread_name, HeaderName, PartType};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 
 use crate::{
-    modules::html::{html_to_tokens, HtmlToken, HREF, SRC},
+    modules::html::{html_to_tokens, HtmlToken},
     Email, Hostname, Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput,
     SpamFilterResult, TextPart,
 };
@@ -186,37 +184,6 @@ impl SpamFilterInit for Server {
         }
         text_parts.extend(text_parts_nested);
 
-        // Extract URLs
-        let mut urls: HashSet<String> =
-            HashSet::from_iter(subject_tokens.iter().filter_map(|t| t.url_lowercase(false)));
-        for part in &text_parts {
-            match part {
-                TextPart::Plain { tokens, .. } => {
-                    urls.extend(tokens.iter().filter_map(|t| t.url_lowercase(false)));
-                }
-                TextPart::Html {
-                    html_tokens,
-                    tokens,
-                    ..
-                } => {
-                    for token in html_tokens {
-                        if let HtmlToken::StartTag { attributes, .. } = token {
-                            for (attr, value) in attributes {
-                                match value {
-                                    Some(value) if [HREF, SRC].contains(attr) => {
-                                        urls.insert(value.trim().to_lowercase());
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                    }
-                    urls.extend(tokens.iter().filter_map(|t| t.url_lowercase(false)));
-                }
-                TextPart::None => {}
-            }
-        }
-
         let env_from_addr = Email::new(input.env_from);
         SpamFilterContext {
             output: SpamFilterOutput {
@@ -247,12 +214,9 @@ impl SpamFilterInit for Server {
                 recipients_cc,
                 recipients_bcc,
                 text_parts,
-                urls,
             },
             input,
-            result: SpamFilterResult {
-                tags: Default::default(),
-            },
+            result: SpamFilterResult::default(),
         }
     }
 }

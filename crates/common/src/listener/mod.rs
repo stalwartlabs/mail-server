@@ -234,6 +234,10 @@ impl<T: SessionStream> ResolveVariable for SessionData<T> {
             _ => crate::expr::Variable::default(),
         }
     }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
 }
 
 impl Debug for TcpAcceptor {

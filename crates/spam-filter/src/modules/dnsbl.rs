@@ -1,18 +1,19 @@
 use std::time::Instant;
 
-use common::{config::spamfilter::DnsblConfig, Server};
+use common::{config::spamfilter::DnsblConfig, expr::functions::ResolveVariable, Server};
 use mail_auth::Error;
 use trc::SpamEvent;
 
-pub async fn is_dnsbl(
+use crate::analysis::SpamFilterResolver;
+
+pub(crate) async fn is_dnsbl(
     server: &Server,
     config: &DnsblConfig,
-    item: &str,
-    span_id: u64,
+    resolver: SpamFilterResolver<'_, impl ResolveVariable>,
 ) -> Option<String> {
     let time = Instant::now();
     let zone = server
-        .eval_expr::<String, _>(&config.zone, &item, &config.id, span_id)
+        .eval_if::<String, _>(&config.zone, &resolver, resolver.ctx.input.span_id)
         .await?;
     let todo = "use proper event error";
 
@@ -29,7 +30,9 @@ pub async fn is_dnsbl(
                 Elapsed = time.elapsed()
             );
 
-            server.eval_if(&config.tags, &result, span_id).await
+            server
+                .eval_if(&config.tags, &result, resolver.ctx.input.span_id)
+                .await
         }
         Err(Error::DnsRecordNotFound(_)) => {
             trc::event!(

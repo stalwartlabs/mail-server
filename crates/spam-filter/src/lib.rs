@@ -57,7 +57,6 @@ pub struct SpamFilterOutput<'x> {
     pub subject_tokens: Vec<TokenType<&'x str>>,
 
     pub text_parts: Vec<TextPart<'x>>,
-    pub urls: HashSet<String>,
 }
 
 pub enum TextPart<'x> {
@@ -73,8 +72,13 @@ pub enum TextPart<'x> {
     None,
 }
 
+#[derive(Debug, Default)]
 pub struct SpamFilterResult {
     pub tags: AHashSet<String>,
+    pub rbl_ip_checks: usize,
+    pub rbl_domain_checks: usize,
+    pub rbl_url_checks: usize,
+    pub rbl_email_checks: usize,
 }
 
 pub struct SpamFilterContext<'x> {

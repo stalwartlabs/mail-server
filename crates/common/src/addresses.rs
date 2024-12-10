@@ -172,6 +172,10 @@ impl ResolveVariable for Address<'_> {
     fn resolve_variable(&self, _: u32) -> crate::expr::Variable {
         Variable::from(self.0)
     }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
 }
 
 impl AddressMapping {

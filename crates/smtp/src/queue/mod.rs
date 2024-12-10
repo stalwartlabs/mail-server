@@ -280,6 +280,10 @@ impl<'x> ResolveVariable for QueueEnvelope<'x> {
             _ => "".into(),
         }
     }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
 }
 
 impl ResolveVariable for Message {
@@ -297,6 +301,10 @@ impl ResolveVariable for Message {
             _ => "".into(),
         }
     }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
 }
 
 pub struct RecipientDomain<'x>(&'x str);
@@ -313,6 +321,10 @@ impl<'x> ResolveVariable for RecipientDomain<'x> {
             V_RECIPIENT_DOMAIN => self.0.into(),
             _ => "".into(),
         }
+    }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
     }
 }
 
