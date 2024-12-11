@@ -442,6 +442,7 @@ impl SmtpEvent {
             SmtpEvent::RcptToDuplicate => "Duplicate RCPT TO",
             SmtpEvent::RcptToRewritten => "RCPT TO address rewritten",
             SmtpEvent::RcptToMissing => "RCPT TO address missing",
+            SmtpEvent::RcptToGreylisted => "RCPT TO greylisted",
             SmtpEvent::TooManyRecipients => "Too many recipients",
             SmtpEvent::TooManyInvalidRcpt => "Too many invalid recipients",
             SmtpEvent::RawInput => "Raw SMTP input received",
@@ -552,6 +553,7 @@ impl SmtpEvent {
             }
             SmtpEvent::RcptToRewritten => "The envelope recipient address was rewritten",
             SmtpEvent::RcptToMissing => "The remote client issued a DATA command before RCPT TO",
+            SmtpEvent::RcptToGreylisted => "The recipient was greylisted",
             SmtpEvent::TooManyRecipients => {
                 "The remote client exceeded the number of recipients allowed"
             }

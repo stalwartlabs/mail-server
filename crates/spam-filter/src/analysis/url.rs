@@ -438,7 +438,7 @@ fn is_single_html_url<T: AsRef<str>>(html_tokens: &[HtmlToken], tokens: &[TokenT
     url_count = 0;
 
     for token in html_tokens {
-        if matches!(token, HtmlToken::StartTag { name, attributes } if *name == A && attributes.iter().any(|(k, _)| *k == HREF))
+        if matches!(token, HtmlToken::StartTag { name, attributes, .. } if *name == A && attributes.iter().any(|(k, _)| *k == HREF))
         {
             url_count += 1;
         }

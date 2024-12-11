@@ -5,6 +5,7 @@ pub enum HtmlToken {
     StartTag {
         name: u64,
         attributes: Vec<(u64, Option<String>)>,
+        is_self_closing: bool,
     },
     EndTag {
         name: u64,
@@ -18,10 +19,46 @@ pub enum HtmlToken {
 }
 
 pub(crate) const A: u64 = b'a' as u64;
+pub(crate) const IMG: u64 = (b'i' as u64) | (b'm' as u64) << 8 | (b'g' as u64) << 16;
+pub(crate) const HEAD: u64 =
+    (b'h' as u64) | (b'e' as u64) << 8 | (b'a' as u64) << 16 | (b'd' as u64) << 24;
+pub(crate) const BODY: u64 =
+    (b'b' as u64) | (b'o' as u64) << 8 | (b'd' as u64) << 16 | (b'y' as u64) << 24;
+pub(crate) const META: u64 =
+    (b'm' as u64) | (b'e' as u64) << 8 | (b't' as u64) << 16 | (b'a' as u64) << 24;
+pub(crate) const LINK: u64 =
+    (b'l' as u64) | (b'i' as u64) << 8 | (b'n' as u64) << 16 | (b'k' as u64) << 24;
 
 pub(crate) const HREF: u64 =
     (b'h' as u64) | (b'r' as u64) << 8 | (b'e' as u64) << 16 | (b'f' as u64) << 24;
 pub(crate) const SRC: u64 = (b's' as u64) | (b'r' as u64) << 8 | (b'c' as u64) << 16;
+pub(crate) const WIDTH: u64 = (b'w' as u64)
+    | (b'i' as u64) << 8
+    | (b'd' as u64) << 16
+    | (b't' as u64) << 24
+    | (b'h' as u64) << 32;
+pub(crate) const HEIGHT: u64 = (b'h' as u64)
+    | (b'e' as u64) << 8
+    | (b'i' as u64) << 16
+    | (b'g' as u64) << 24
+    | (b'h' as u64) << 32
+    | (b't' as u64) << 40;
+pub(crate) const REL: u64 = (b'r' as u64) | (b'e' as u64) << 8 | (b'l' as u64) << 16;
+pub(crate) const CONTENT: u64 = (b'c' as u64)
+    | (b'o' as u64) << 8
+    | (b'n' as u64) << 16
+    | (b't' as u64) << 24
+    | (b'e' as u64) << 32
+    | (b'n' as u64) << 40
+    | (b't' as u64) << 48;
+pub(crate) const HTTP_EQUIV: u64 = (b'h' as u64)
+    | (b't' as u64) << 8
+    | (b't' as u64) << 16
+    | (b'p' as u64) << 24
+    | (b'-' as u64) << 32
+    | (b'e' as u64) << 40
+    | (b'q' as u64) << 48
+    | (b'u' as u64) << 56;
 
 pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
     let input = input.as_bytes();
@@ -106,6 +143,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                     }
 
                     let mut in_quote = false;
+                    let mut is_self_closing = false;
 
                     let mut key: u64 = 0;
                     let mut shift = 0;
@@ -122,6 +160,9 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                             b'A'..=b'Z' if shift < 64 => {
                                 key |= ((ch - b'A' + b'a') as u64) << shift;
                                 shift += 8;
+                            }
+                            b'/' if !in_quote => {
+                                is_self_closing = true;
                             }
                             b'>' if !in_quote => {
                                 if shift != 0 {
@@ -205,6 +246,7 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                             tags.push(HtmlToken::StartTag {
                                 name: tag,
                                 attributes,
+                                is_self_closing,
                             });
                         }
                     }
@@ -292,7 +334,8 @@ mod tests {
             tokens,
             vec![HtmlToken::StartTag {
                 name: 7760228,
-                attributes: vec![]
+                attributes: vec![],
+                is_self_closing: false
             }]
         );
     }
@@ -325,14 +368,16 @@ mod tests {
             vec![
                 HtmlToken::StartTag {
                     name: 7760228,
-                    attributes: vec![]
+                    attributes: vec![],
+                    is_self_closing: false
                 },
                 HtmlToken::Text {
                     text: "Hello,".to_string()
                 },
                 HtmlToken::StartTag {
                     name: 1851879539,
-                    attributes: vec![]
+                    attributes: vec![],
+                    is_self_closing: false
                 },
                 HtmlToken::Text {
                     text: " \" world \"".to_string()
@@ -358,15 +403,18 @@ mod tests {
                     attributes: vec![
                         (1701869940, Some("text".to_string())),
                         (435761734006, Some("test".to_string()))
-                    ]
+                    ],
+                    is_self_closing: false
                 },
                 HtmlToken::StartTag {
                     name: 111516266162547,
-                    attributes: vec![]
+                    attributes: vec![],
+                    is_self_closing: true
                 },
                 HtmlToken::StartTag {
                     name: 6647407,
-                    attributes: vec![(1920234593, None)]
+                    attributes: vec![(1920234593, None)],
+                    is_self_closing: true
                 },
                 HtmlToken::StartTag {
                     name: 97,
@@ -374,7 +422,8 @@ mod tests {
                         (98, Some("1".to_string())),
                         (98, None),
                         (99, Some("123".to_string()))
-                    ]
+                    ],
+                    is_self_closing: false
                 }
             ]
         );

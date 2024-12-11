@@ -4,11 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 use ahash::AHashSet;
+use hyper::HeaderMap;
 use mail_parser::HeaderName;
-use utils::{config::Config, glob::GlobSet};
+use utils::{
+    config::Config,
+    glob::{GlobMap, GlobSet},
+};
 
 use super::if_block::IfBlock;
 
@@ -19,14 +23,58 @@ pub struct SpamFilterConfig {
     pub max_rbl_email_checks: usize,
     pub max_rbl_url_checks: usize,
 
+    pub greylist_duration: Option<Duration>,
+
+    pub pyzor: Option<PyzorConfig>,
+    pub asn: AsnLookupProvider,
+
     pub list_dmarc_allow: GlobSet,
     pub list_spf_dkim_allow: GlobSet,
     pub list_freemail_providers: GlobSet,
     pub list_disposable_providers: GlobSet,
     pub list_trusted_domains: GlobSet,
     pub list_url_redirectors: GlobSet,
+    pub list_file_extensions: GlobMap<FileExtension>,
+
     pub remote_lists: Vec<RemoteListConfig>,
     pub dnsbls: Vec<DnsblConfig>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum AsnLookupProvider {
+    Dns {
+        ipv4_zone: String,
+        ipv6_zone: String,
+        separator: char,
+        asn_index: usize,
+        country_index: Option<usize>,
+    },
+    Rest {
+        api: String,
+        timeout: Duration,
+        headers: HeaderMap,
+        asn_path: Vec<String>,
+        country_path: Option<Vec<String>>,
+    },
+    #[default]
+    None,
+}
+
+#[derive(Debug, Clone)]
+pub struct PyzorConfig {
+    pub address: SocketAddr,
+    pub timeout: Duration,
+    pub min_count: u64,
+    pub min_wl_count: u64,
+    pub ratio: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileExtension {
+    pub known_types: AHashSet<String>,
+    pub is_bad: bool,
+    pub is_archive: bool,
+    pub is_nz: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

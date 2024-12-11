@@ -866,6 +866,7 @@ impl EventType {
             EventType::Security(SecurityEvent::ScanBan) => 558,
             EventType::Store(StoreEvent::AzureError) => 559,
             EventType::TlsRpt(TlsRptEvent::RecordNotFound) => 560,
+            EventType::Smtp(SmtpEvent::RcptToGreylisted) => 561,
         }
     }
 
@@ -1472,6 +1473,7 @@ impl EventType {
             558 => Some(EventType::Security(SecurityEvent::ScanBan)),
             559 => Some(EventType::Store(StoreEvent::AzureError)),
             560 => Some(EventType::TlsRpt(TlsRptEvent::RecordNotFound)),
+            561 => Some(EventType::Smtp(SmtpEvent::RcptToGreylisted)),
             _ => None,
         }
     }

@@ -393,6 +393,7 @@ pub enum SmtpEvent {
     RcptToDuplicate,
     RcptToRewritten,
     RcptToMissing,
+    RcptToGreylisted,
     TooManyRecipients,
     TooManyInvalidRcpt,
     RawInput,

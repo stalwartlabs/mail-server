@@ -4,16 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use sieve::{runtime::Variable, FunctionMap};
-
-use super::PluginContext;
-
 use std::{
     borrow::Cow,
     io::Write,
+    net::SocketAddr,
     time::{Duration, SystemTime},
 };
 
+use common::config::spamfilter::PyzorConfig;
 use mail_parser::{decoders::html::add_html_token, Message, PartType};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 use sha1::{Digest, Sha1};
@@ -24,29 +22,27 @@ const ATOMIC_NUM_LINES: usize = 4;
 const DIGEST_SPEC: &[(usize, usize)] = &[(20, 3), (60, 3)];
 
 #[derive(Default, Debug, PartialEq, Eq)]
-struct PyzorResponse {
-    code: u32,
-    count: u64,
-    wl_count: u64,
+pub(crate) struct PyzorResponse {
+    pub code: u32,
+    pub count: u64,
+    pub wl_count: u64,
 }
 
-pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
-    fnc_map.set_external_function("pyzor_check", plugin_id, 2);
-}
-
-pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
+pub(crate) async fn pyzor_check(
+    message: &Message<'_>,
+    config: &PyzorConfig,
+) -> trc::Result<Option<PyzorResponse>> {
     // Make sure there is at least one text part
-    if !ctx
-        .message
+    if !message
         .parts
         .iter()
         .any(|p| matches!(p.body, PartType::Text(_) | PartType::Html(_)))
     {
-        return Ok(Variable::default());
+        return Ok(None);
     }
 
     // Hash message
-    let request = ctx.message.pyzor_check_message();
+    let request = message.pyzor_check_message();
 
     #[cfg(feature = "test_mode")]
     {
@@ -74,35 +70,21 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         }
     }
 
-    let address = ctx.arguments[0].to_string();
-    let timeout = Duration::from_secs((ctx.arguments[1].to_integer() as u64).clamp(5, 60));
-
     // Send message to address
-    pyzor_send_message(address.as_ref(), timeout, &request)
+    pyzor_send_message(config.address, config.timeout, &request)
         .await
         .map(Into::into)
         .map_err(|err| {
             trc::SpamEvent::PyzorError
                 .into_err()
-                .ctx(trc::Key::Url, address.to_string())
+                .ctx(trc::Key::Url, config.address.to_string())
                 .reason(err)
                 .details("Pyzor failed")
         })
 }
 
-impl From<PyzorResponse> for Variable {
-    fn from(response: PyzorResponse) -> Self {
-        vec![
-            Variable::from(response.code),
-            Variable::from(response.count),
-            Variable::from(response.wl_count),
-        ]
-        .into()
-    }
-}
-
 async fn pyzor_send_message(
-    addr: &str,
+    addr: SocketAddr,
     timeout: Duration,
     message: &str,
 ) -> std::io::Result<PyzorResponse> {
@@ -451,7 +433,7 @@ mod test {
     async fn send_message() {
         assert_eq!(
             pyzor_send_message(
-                "public.pyzor.org:24441",
+                "public.pyzor.org:24441".parse().unwrap(),
                 Duration::from_secs(10),
                 concat!(
                     "Op: check\n",

@@ -291,6 +291,70 @@ impl<T: SessionStream> Session<T> {
         }
 
         if self.is_allowed().await {
+            // Greylist
+            if let Some(greylist_duration) = self
+                .server
+                .core
+                .spam
+                .greylist_duration
+                .filter(|_| self.data.authenticated_as.is_none())
+            {
+                let key = format!(
+                    "g:{}:{}:{}",
+                    self.data.remote_ip_str,
+                    self.data.mail_from.as_ref().unwrap().address_lcase,
+                    self.data.rcpt_to.last().unwrap().address_lcase
+                );
+                match self
+                    .server
+                    .lookup_store()
+                    .key_exists(key.clone().into_bytes())
+                    .await
+                {
+                    Ok(true) => (),
+                    Ok(false) => {
+                        match self
+                            .server
+                            .lookup_store()
+                            .key_set(key.into_bytes(), vec![], greylist_duration.as_secs().into())
+                            .await
+                        {
+                            Ok(_) => {
+                                let rcpt = self.data.rcpt_to.pop().unwrap();
+
+                                trc::event!(
+                                    Smtp(SmtpEvent::RcptToGreylisted),
+                                    SpanId = self.data.session_id,
+                                    To = rcpt.address_lcase,
+                                );
+
+                                return self
+                                    .write(
+                                        concat!(
+                                            "422 4.2.2 Greylisted, please try ",
+                                            "again in a few moments.\r\n"
+                                        )
+                                        .as_bytes(),
+                                    )
+                                    .await;
+                            }
+                            Err(err) => {
+                                trc::error!(err
+                                    .span_id(self.data.session_id)
+                                    .caused_by(trc::location!())
+                                    .details("Failed to set greylist."));
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        trc::error!(err
+                            .span_id(self.data.session_id)
+                            .caused_by(trc::location!())
+                            .details("Failed to check greylist."));
+                    }
+                }
+            }
+
             trc::event!(
                 Smtp(SmtpEvent::RcptTo),
                 SpanId = self.data.session_id,

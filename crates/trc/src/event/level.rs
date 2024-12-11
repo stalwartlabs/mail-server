@@ -186,6 +186,7 @@ impl EventType {
                 | SmtpEvent::MailboxDoesNotExist
                 | SmtpEvent::RelayNotAllowed
                 | SmtpEvent::RcptTo
+                | SmtpEvent::RcptToGreylisted
                 | SmtpEvent::TooManyInvalidRcpt
                 | SmtpEvent::Vrfy
                 | SmtpEvent::VrfyNotFound

@@ -13,14 +13,14 @@ use crate::{modules::dnsbl::is_dnsbl, SpamFilterContext, TextPart};
 
 use super::{ElementLocation, SpamFilterResolver};
 
-pub trait SpamFilterAnalyzeIpRev: Sync + Send {
+pub trait SpamFilterAnalyzeIp: Sync + Send {
     fn spam_filter_analyze_ip(
         &self,
         ctx: &mut SpamFilterContext<'_>,
     ) -> impl Future<Output = ()> + Send;
 }
 
-impl SpamFilterAnalyzeIpRev for Server {
+impl SpamFilterAnalyzeIp for Server {
     async fn spam_filter_analyze_ip(&self, ctx: &mut SpamFilterContext<'_>) {
         // IP Address RBL
         let mut ips =

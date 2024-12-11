@@ -82,6 +82,32 @@ pub fn fn_cosine_similarity<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variabl
     .into()
 }
 
+pub fn cosine_similarity(a: &[&str], b: &[&str]) -> f64 {
+    let mut word_freq: HashMap<&str, [u32; 2]> = HashMap::new();
+
+    for (idx, items) in [a, b].into_iter().enumerate() {
+        for item in items {
+            word_freq.entry(item).or_insert([0, 0])[idx] += 1;
+        }
+    }
+
+    let mut dot_product = 0;
+    let mut magnitude_a = 0;
+    let mut magnitude_b = 0;
+
+    for (_word, count) in word_freq.iter() {
+        dot_product += count[0] * count[1];
+        magnitude_a += count[0] * count[0];
+        magnitude_b += count[1] * count[1];
+    }
+
+    if magnitude_a != 0 && magnitude_b != 0 {
+        dot_product as f64 / (magnitude_a as f64).sqrt() / (magnitude_b as f64).sqrt()
+    } else {
+        0.0
+    }
+}
+
 pub fn fn_jaccard_similarity<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let mut word_freq = [HashSet::new(), HashSet::new()];
 
