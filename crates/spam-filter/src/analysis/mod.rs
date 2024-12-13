@@ -28,6 +28,7 @@ pub mod pyzor;
 pub mod received;
 pub mod recipient;
 pub mod replyto;
+pub mod reputation;
 pub mod subject;
 pub mod url;
 

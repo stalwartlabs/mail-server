@@ -29,7 +29,9 @@ use dashmap::DashMap;
 use futures::StreamExt;
 use imap_proto::protocol::list::Attribute;
 use ipc::{DeliveryEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
-use listener::{blocked::Security, limiter::ConcurrencyLimiter, tls::AcmeProviders};
+use listener::{
+    asn::AsnGeoLookupData, blocked::Security, limiter::ConcurrencyLimiter, tls::AcmeProviders,
+};
 
 use manager::webadmin::{Resource, WebAdminManager};
 use nlp::bayes::cache::BayesTokenCache;
@@ -92,6 +94,7 @@ pub struct Data {
 
     pub bayes_cache: BayesTokenCache,
     pub remote_lists: RwLock<AHashMap<String, RemoteList>>,
+    pub asn_geo_data: AsnGeoLookupData,
 
     pub jmap_id_gen: SnowflakeIdGenerator,
     pub queue_id_gen: SnowflakeIdGenerator,

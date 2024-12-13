@@ -7,7 +7,6 @@
 use std::{net::SocketAddr, time::Duration};
 
 use ahash::AHashSet;
-use hyper::HeaderMap;
 use mail_parser::HeaderName;
 use utils::{
     config::Config,
@@ -24,9 +23,8 @@ pub struct SpamFilterConfig {
     pub max_rbl_url_checks: usize,
 
     pub greylist_duration: Option<Duration>,
-
     pub pyzor: Option<PyzorConfig>,
-    pub asn: AsnLookupProvider,
+    pub reputation: Option<ReputationConfig>,
 
     pub list_dmarc_allow: GlobSet,
     pub list_spf_dkim_allow: GlobSet,
@@ -41,23 +39,14 @@ pub struct SpamFilterConfig {
 }
 
 #[derive(Debug, Clone, Default)]
-pub enum AsnLookupProvider {
-    Dns {
-        ipv4_zone: String,
-        ipv6_zone: String,
-        separator: char,
-        asn_index: usize,
-        country_index: Option<usize>,
-    },
-    Rest {
-        api: String,
-        timeout: Duration,
-        headers: HeaderMap,
-        asn_path: Vec<String>,
-        country_path: Option<Vec<String>>,
-    },
-    #[default]
-    None,
+pub struct ReputationConfig {
+    pub expiry: u64,
+    pub token_score: f64,
+    pub factor: f64,
+    pub ip_weight: f64,
+    pub domain_weight: f64,
+    pub asn_weight: f64,
+    pub sender_weight: f64,
 }
 
 #[derive(Debug, Clone)]

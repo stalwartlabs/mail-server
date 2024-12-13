@@ -360,6 +360,8 @@ impl TokenMap {
             V_QUEUE_EXPIRES_IN,
             V_QUEUE_LAST_STATUS,
             V_QUEUE_LAST_ERROR,
+            V_ASN,
+            V_COUNTRY,
         ])
     }
 

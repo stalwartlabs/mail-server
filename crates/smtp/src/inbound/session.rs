@@ -578,6 +578,22 @@ impl<T: SessionStream> ResolveVariable for Session<T> {
             V_TLS => self.stream.is_tls().into(),
             V_PRIORITY => self.data.priority.to_string().into(),
             V_PROTOCOL => self.instance.protocol.as_str().into(),
+            V_ASN => self
+                .data
+                .asn_geo_data
+                .asn
+                .as_ref()
+                .map(|a| a.id)
+                .unwrap_or_default()
+                .into(),
+            V_COUNTRY => self
+                .data
+                .asn_geo_data
+                .country
+                .as_ref()
+                .map(|c| c.as_str())
+                .unwrap_or_default()
+                .into(),
             _ => expr::Variable::default(),
         }
     }

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use hyper::HeaderMap;
 
-use crate::USER_AGENT;
+use crate::{HttpLimitResponse, USER_AGENT};
 
 use self::config::ConfigManager;
 
@@ -34,25 +34,48 @@ impl ConfigManager {
                 format!("Failed to fetch configuration key 'resource.{resource_id}': {err}",)
             })?
         {
-            fetch_resource(&url, None).await
+            fetch_resource(&url, None, Duration::from_secs(60), MAX_SIZE).await
         } else {
             match resource_id {
-                "spam-filter" => fetch_resource(DEFAULT_SPAMFILTER_URL, None).await,
-                "webadmin" => fetch_resource(DEFAULT_WEBADMIN_URL, None).await,
+                "spam-filter" => {
+                    fetch_resource(
+                        DEFAULT_SPAMFILTER_URL,
+                        None,
+                        Duration::from_secs(60),
+                        MAX_SIZE,
+                    )
+                    .await
+                }
+                "webadmin" => {
+                    fetch_resource(
+                        DEFAULT_WEBADMIN_URL,
+                        None,
+                        Duration::from_secs(60),
+                        MAX_SIZE,
+                    )
+                    .await
+                }
                 _ => Err(format!("Unknown resource: {resource_id}")),
             }
         }
     }
 }
 
-pub async fn fetch_resource(url: &str, headers: Option<HeaderMap>) -> Result<Vec<u8>, String> {
+const MAX_SIZE: usize = 100 * 1024 * 1024;
+
+pub async fn fetch_resource(
+    url: &str,
+    headers: Option<HeaderMap>,
+    timeout: Duration,
+    max_size: usize,
+) -> Result<Vec<u8>, String> {
     if let Some(path) = url.strip_prefix("file://") {
         tokio::fs::read(path)
             .await
             .map_err(|err| format!("Failed to read {path}: {err}"))
     } else {
         let response = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(timeout)
             .danger_accept_invalid_certs(is_localhost_url(url))
             .user_agent(USER_AGENT)
             .build()
@@ -65,10 +88,10 @@ pub async fn fetch_resource(url: &str, headers: Option<HeaderMap>) -> Result<Vec
 
         if response.status().is_success() {
             response
-                .bytes()
+                .bytes_with_limit(max_size)
                 .await
                 .map_err(|err| format!("Failed to fetch {url}: {err}"))
-                .map(|bytes| bytes.to_vec())
+                .and_then(|bytes| bytes.ok_or_else(|| format!("Resource too large: {url}")))
         } else {
             let code = response.status().canonical_reason().unwrap_or_default();
             let reason = response.text().await.unwrap_or_default();

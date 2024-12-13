@@ -28,6 +28,8 @@ pub struct SpamFilterInput<'x> {
     pub remote_ip: IpAddr,
     pub ehlo_domain: &'x str,
     pub authenticated_as: &'x str,
+    pub asn: Option<u32>,
+    pub country: Option<&'x str>,
 
     // TLS
     pub tls_version: &'x str,
@@ -37,6 +39,8 @@ pub struct SpamFilterInput<'x> {
     pub env_from: &'x str,
     pub env_from_flags: u64,
     pub env_rcpt_to: &'x [&'x str],
+
+    pub is_test: bool,
 }
 
 pub struct SpamFilterOutput<'x> {
@@ -75,6 +79,7 @@ pub enum TextPart<'x> {
 #[derive(Debug, Default)]
 pub struct SpamFilterResult {
     pub tags: AHashSet<String>,
+    pub score: f64,
     pub rbl_ip_checks: usize,
     pub rbl_domain_checks: usize,
     pub rbl_url_checks: usize,

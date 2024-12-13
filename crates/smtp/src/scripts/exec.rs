@@ -33,6 +33,24 @@ impl<T: SessionStream> Session<T> {
                     .map_or(0, |d| d.as_secs()),
             )
             .set_variable(
+                "asn",
+                self.data
+                    .asn_geo_data
+                    .asn
+                    .as_ref()
+                    .map(|r| r.id)
+                    .unwrap_or_default(),
+            )
+            .set_variable(
+                "country",
+                self.data
+                    .asn_geo_data
+                    .country
+                    .as_ref()
+                    .map(|r| r.as_str())
+                    .unwrap_or_default(),
+            )
+            .set_variable(
                 "spf.result",
                 self.data
                     .spf_mail_from

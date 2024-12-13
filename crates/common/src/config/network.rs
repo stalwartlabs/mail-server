@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Duration;
+
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap};
 use utils::config::{Config, Rate};
 
@@ -16,6 +18,7 @@ pub struct Network {
     pub contact_form: Option<ContactForm>,
     pub http_response_url: IfBlock,
     pub http_allowed_endpoint: IfBlock,
+    pub asn_geo_lookup: AsnGeoLookupConfig,
 }
 
 #[derive(Clone)]
@@ -28,6 +31,31 @@ pub struct ContactForm {
     pub from_subject: FieldOrDefault,
     pub from_name: FieldOrDefault,
     pub field_honey_pot: Option<String>,
+}
+
+#[derive(Clone)]
+pub enum AsnGeoLookupConfig {
+    Resource {
+        expires: Duration,
+        timeout: Duration,
+        max_size: usize,
+        resources: Vec<AsnGeoLookupResource>,
+    },
+    Dns {
+        zone_ipv4: String,
+        zone_ipv6: String,
+        separator: String,
+        index_asn: usize,
+        index_asn_name: Option<usize>,
+        index_country: Option<usize>,
+    },
+    Disabled,
+}
+
+#[derive(Clone)]
+pub enum AsnGeoLookupResource {
+    Asn { url: String, headers: HeaderMap },
+    Geo { url: String, headers: HeaderMap },
 }
 
 #[derive(Clone)]
@@ -62,6 +90,7 @@ impl Default for Network {
                 "protocol + '://' + key_get('default', 'hostname') + ':' + local_port",
             ),
             http_allowed_endpoint: IfBlock::new::<()>("server.http.allowed-endpoint", [], "200"),
+            asn_geo_lookup: AsnGeoLookupConfig::Disabled,
         }
     }
 }

@@ -117,6 +117,7 @@ impl Data {
                     .unwrap_or_else(|| Duration::from_secs(3600)),
             ),
             remote_lists: Default::default(),
+            asn_geo_data: Default::default(),
         }
     }
 }
@@ -152,6 +153,7 @@ impl Default for Data {
                 Duration::from_secs(3600),
                 Duration::from_secs(3600),
             ),
+            asn_geo_data: Default::default(),
         }
     }
 }

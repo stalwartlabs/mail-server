@@ -372,6 +372,7 @@ fn milter_address_modifications() {
         0,
         "127.0.0.1".parse().unwrap(),
         0,
+        Default::default(),
         0,
     );
 
@@ -478,6 +479,7 @@ fn milter_message_modifications() {
         0,
         "127.0.0.1".parse().unwrap(),
         0,
+        Default::default(),
         0,
     );
 

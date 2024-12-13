@@ -21,6 +21,7 @@ use smtp::queue::{DeliveryAttempt, Message, QueueId};
 use super::{QueueReceiver, ReportReceiver};
 
 pub mod antispam;
+pub mod asn;
 pub mod auth;
 pub mod basic;
 pub mod data;

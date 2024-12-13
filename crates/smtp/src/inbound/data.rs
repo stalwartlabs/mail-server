@@ -916,7 +916,26 @@ impl<T: SessionStream> Session<T> {
         );
         headers.extend_from_slice(b" [");
         headers.extend_from_slice(self.data.remote_ip.to_string().as_bytes());
-        headers.extend_from_slice(b"])\r\n\t");
+        headers.extend_from_slice(b"]");
+        if self.data.asn_geo_data.asn.is_some() || self.data.asn_geo_data.country.is_some() {
+            headers.extend_from_slice(b" (");
+            if let Some(asn) = &self.data.asn_geo_data.asn {
+                headers.extend_from_slice(b"AS");
+                headers.extend_from_slice(asn.id.to_string().as_bytes());
+                if let Some(name) = &asn.name {
+                    headers.extend_from_slice(b" ");
+                    headers.extend_from_slice(name.as_bytes());
+                }
+            }
+            if let Some(country) = &self.data.asn_geo_data.country {
+                if self.data.asn_geo_data.asn.is_some() {
+                    headers.extend_from_slice(b", ");
+                }
+                headers.extend_from_slice(country.as_bytes());
+            }
+            headers.extend_from_slice(b")");
+        }
+        headers.extend_from_slice(b")\r\n\t");
         if self.stream.is_tls() {
             let (version, cipher) = self.stream.tls_version_and_cipher();
             headers.extend_from_slice(b"(using ");
