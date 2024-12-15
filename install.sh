@@ -127,7 +127,7 @@ main() {
     fi
 
     # Installation complete
-    local _host=$(hostname)
+    local _host=$(hostname -f)
     say "🎉 Installation complete! Continue the setup at http://$_host:8080/login"
 
     return 0
