@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use store::{LookupStore, Store};
+use store::Store;
 
 pub mod config;
 pub mod lookup;
 
 pub struct SqlDirectory {
-    store: LookupStore,
+    sql_store: Store,
     mappings: SqlMappings,
     pub(crate) data_store: Store,
 }

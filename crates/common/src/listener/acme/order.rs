@@ -9,12 +9,13 @@ use rustls::sign::CertifiedKey;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use store::dispatch::lookup::KeyValue;
 use trc::{AcmeEvent, EventType};
 use x509_parser::parse_x509_certificate;
 
 use crate::listener::acme::directory::Identifier;
 use crate::listener::acme::ChallengeSettings;
-use crate::Server;
+use crate::{Server, KV_ACME};
 
 use super::directory::{Account, AuthStatus, Directory, OrderStatus};
 use super::AcmeProvider;
@@ -207,20 +208,26 @@ impl Server {
 
                 match &provider.challenge {
                     ChallengeSettings::TlsAlpn01 => {
-                        self.lookup_store()
+                        self.in_memory_store()
                             .key_set(
-                                format!("acme:{domain}").into_bytes(),
-                                account.tls_alpn_key(challenge, domain.clone())?,
-                                3600.into(),
+                                KeyValue::with_prefix(
+                                    KV_ACME,
+                                    &domain,
+                                    account.tls_alpn_key(challenge, domain.clone())?,
+                                )
+                                .expires(3600),
                             )
                             .await?;
                     }
                     ChallengeSettings::Http01 => {
-                        self.lookup_store()
+                        self.in_memory_store()
                             .key_set(
-                                format!("acme:{}", challenge.token).into_bytes(),
-                                account.http_proof(challenge)?,
-                                3600.into(),
+                                KeyValue::with_prefix(
+                                    KV_ACME,
+                                    &challenge.token,
+                                    account.http_proof(challenge)?,
+                                )
+                                .expires(3600),
                             )
                             .await?;
                     }

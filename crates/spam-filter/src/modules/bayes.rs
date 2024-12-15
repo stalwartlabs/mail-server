@@ -4,68 +4,83 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::collections::HashSet;
+
+use common::{ip_to_bytes, Server, KV_BAYES_MODEL_GLOBAL, KV_BAYES_MODEL_USER};
+use mail_auth::DmarcResult;
 use nlp::{
     bayes::{
-        cache::BayesTokenCache, tokenize::BayesTokenizer, BayesClassifier, BayesModel, TokenHash,
-        Weights,
+        tokenize::{BayesInputToken, BayesTokenizer},
+        BayesModel, TokenHash, Weights,
     },
-    tokenizers::osb::{OsbToken, OsbTokenizer},
+    tokenizers::{
+        osb::{Gram, OsbToken, OsbTokenizer},
+        types::TokenType,
+    },
 };
-use sieve::{runtime::Variable, FunctionMap};
-use store::{write::key::KeySerializer, LookupStore, U64_LEN};
+use store::dispatch::lookup::KeyValue;
 use trc::AddContext;
 
-use super::PluginContext;
+use crate::{SpamFilterContext, TextPart};
 
-pub fn register_train(plugin_id: u32, fnc_map: &mut FunctionMap) {
-    fnc_map.set_external_function("bayes_train", plugin_id, 3);
-}
-
-pub fn register_untrain(plugin_id: u32, fnc_map: &mut FunctionMap) {
-    fnc_map.set_external_function("bayes_untrain", plugin_id, 3);
-}
-
-pub fn register_classify(plugin_id: u32, fnc_map: &mut FunctionMap) {
-    fnc_map.set_external_function("bayes_classify", plugin_id, 3);
-}
-
-pub fn register_is_balanced(plugin_id: u32, fnc_map: &mut FunctionMap) {
-    fnc_map.set_external_function("bayes_is_balanced", plugin_id, 3);
-}
-
-pub async fn exec_train(ctx: PluginContext<'_>) -> trc::Result<Variable> {
-    train(ctx, true).await
-}
-
-pub async fn exec_untrain(ctx: PluginContext<'_>) -> trc::Result<Variable> {
-    train(ctx, false).await
-}
-
-async fn train(ctx: PluginContext<'_>, is_train: bool) -> trc::Result<Variable> {
-    let store = match &ctx.arguments[0] {
-        Variable::String(v) if !v.is_empty() => ctx.server.core.storage.lookups.get(v.as_ref()),
-        _ => Some(&ctx.server.core.storage.lookup),
-    }
-    .ok_or_else(|| {
-        trc::SieveEvent::RuntimeError
-            .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
-            .details("Unknown store")
-    })?;
-
-    let text = ctx.arguments[1].to_string();
-    let is_spam = ctx.arguments[2].to_bool();
-    if text.is_empty() {
-        trc::bail!(trc::SpamEvent::TrainError
-            .into_err()
-            .reason("Empty message"));
-    }
-
+pub(crate) async fn bayes_train(
+    server: &Server,
+    ctx: &SpamFilterContext<'_>,
+    is_spam: bool,
+    is_train: bool,
+) -> trc::Result<()> {
     // Train the model
     let mut model = BayesModel::default();
+
+    // Train metadata tokens
+    for token in ctx.spam_tokens() {
+        model.train_token(TokenHash::from(Gram::Uni { t1: &token }), is_spam);
+    }
+
+    // Train the subject
     model.train(
-        OsbTokenizer::new(BayesTokenizer::new(text.as_ref()), 5),
+        OsbTokenizer::new(
+            BayesTokenizer::new(
+                &ctx.output.subject_thread,
+                ctx.output.subject_tokens.iter().filter_map(to_bayes_token),
+            ),
+            5,
+        ),
         is_spam,
     );
+
+    // Train the body
+    match ctx
+        .input
+        .message
+        .html_body
+        .first()
+        .or_else(|| ctx.input.message.text_body.first())
+        .and_then(|idx| ctx.output.text_parts.get(*idx))
+    {
+        Some(TextPart::Html {
+            text_body, tokens, ..
+        }) => {
+            model.train(
+                OsbTokenizer::new(
+                    BayesTokenizer::new(text_body, tokens.iter().filter_map(to_bayes_token_owned)),
+                    5,
+                ),
+                is_spam,
+            );
+        }
+        Some(TextPart::Plain { text_body, tokens }) => {
+            model.train(
+                OsbTokenizer::new(
+                    BayesTokenizer::new(text_body, tokens.iter().filter_map(to_bayes_token)),
+                    5,
+                ),
+                is_spam,
+            );
+        }
+        _ => {}
+    }
+
     if model.weights.is_empty() {
         trc::bail!(trc::SpamEvent::TrainError
             .into_err()
@@ -74,29 +89,27 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> trc::Result<Variable> 
 
     trc::event!(
         Spam(trc::SpamEvent::Train),
-        SpanId = ctx.session_id,
+        SpanId = ctx.input.span_id,
         Details = is_spam,
         Total = model.weights.len(),
     );
 
     // Update weight and invalidate cache
-    let bayes_cache = &ctx.server.inner.data.bayes_cache;
+    let prefix = if ctx.input.account_id.is_some() {
+        KV_BAYES_MODEL_GLOBAL
+    } else {
+        KV_BAYES_MODEL_USER
+    };
     if is_train {
         for (hash, weights) in model.weights {
-            store
-                .counter_incr(
-                    KeySerializer::new(U64_LEN)
-                        .write(hash.h1)
-                        .write(hash.h2)
-                        .finalize(),
-                    weights.into(),
-                    None,
-                    false,
-                )
+            server
+                .in_memory_store()
+                .counter_incr(KeyValue::new(
+                    hash.serialize(prefix, ctx.input.account_id),
+                    i64::from(weights),
+                ))
                 .await
                 .caused_by(trc::location!())?;
-
-            bayes_cache.invalidate(&hash);
         }
 
         // Update training counts
@@ -105,97 +118,148 @@ async fn train(ctx: PluginContext<'_>, is_train: bool) -> trc::Result<Variable> 
         } else {
             Weights { spam: 0, ham: 1 }
         };
-        store
-            .counter_incr(
-                KeySerializer::new(U64_LEN)
-                    .write(0u64)
-                    .write(0u64)
-                    .finalize(),
-                weights.into(),
-                None,
-                false,
-            )
+        server
+            .in_memory_store()
+            .counter_incr(KeyValue::new(
+                TokenHash::serialize_index(prefix, ctx.input.account_id),
+                i64::from(weights),
+            ))
             .await
-            .caused_by(trc::location!())?;
+            .caused_by(trc::location!())
+            .map(|_| ())
     } else {
         //TODO: Implement untrain
-        return Ok(false.into());
+        Ok(())
     }
-
-    bayes_cache.invalidate(&TokenHash::default());
-
-    Ok(true.into())
 }
 
-pub async fn exec_classify(ctx: PluginContext<'_>) -> trc::Result<Variable> {
-    let store = match &ctx.arguments[0] {
-        Variable::String(v) if !v.is_empty() => ctx.server.core.storage.lookups.get(v.as_ref()),
-        _ => Some(&ctx.server.core.storage.lookup),
-    }
-    .ok_or_else(|| {
-        trc::SieveEvent::RuntimeError
-            .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
-            .details("Unknown store")
-    })?;
-    let text = ctx.arguments[1].to_string();
-    if text.is_empty() {
-        trc::bail!(trc::SpamEvent::ClassifyError
-            .into_err()
-            .reason("Empty message"));
-    }
-
-    // Create classifier from defaults
-    let mut classifier = BayesClassifier::default();
-    if let Some(params) = ctx.arguments[2].as_array() {
-        if let Some(Variable::Integer(value)) = params.first() {
-            classifier.min_token_hits = *value as u32;
-        }
-        if let Some(Variable::Integer(value)) = params.get(1) {
-            classifier.min_tokens = *value as u32;
-        }
-        if let Some(Variable::Float(value)) = params.get(2) {
-            classifier.min_prob_strength = *value;
-        }
-        if let Some(Variable::Integer(value)) = params.get(3) {
-            classifier.min_learns = *value as u32;
-        }
-    }
+pub(crate) async fn bayes_classify(
+    server: &Server,
+    ctx: &SpamFilterContext<'_>,
+) -> trc::Result<f64> {
+    let classifier = if let Some(config) = &server.core.spam.bayes {
+        &config.classifier
+    } else {
+        return Ok(0.0);
+    };
 
     // Obtain training counts
-    let bayes_cache = &ctx.server.inner.data.bayes_cache;
-    let (spam_learns, ham_learns) = bayes_cache
-        .get_or_update(TokenHash::default(), store)
+    let prefix = if ctx.input.account_id.is_some() {
+        KV_BAYES_MODEL_GLOBAL
+    } else {
+        KV_BAYES_MODEL_USER
+    };
+    let (spam_learns, ham_learns) = server
+        .in_memory_store()
+        .counter_get(TokenHash::serialize_index(prefix, ctx.input.account_id))
         .await
-        .map(|w| (w.spam, w.ham))?;
+        .map(|w| {
+            let w = Weights::from(w);
+            (w.spam, w.ham)
+        })?;
 
     // Make sure we have enough training data
     if spam_learns < classifier.min_learns || ham_learns < classifier.min_learns {
         trc::event!(
             Spam(trc::SpamEvent::NotEnoughTrainingData),
-            SpanId = ctx.session_id,
+            SpanId = ctx.input.span_id,
             Details = vec![
                 trc::Value::from(spam_learns),
                 trc::Value::from(ham_learns),
                 trc::Value::from(classifier.min_learns)
             ],
         );
-        return Ok(Variable::default());
+        return Ok(0.0);
     }
 
     // Classify the text
-    let mut tokens = Vec::new();
-    for token in OsbTokenizer::<_, TokenHash>::new(BayesTokenizer::new(text.as_ref()), 5) {
-        let weights = bayes_cache.get_or_update(token.inner, store).await?;
-        tokens.push(OsbToken {
+    let mut osb_tokens = Vec::new();
+
+    // Classify metadata tokens
+    for token in ctx.spam_tokens() {
+        let weights = server
+            .in_memory_store()
+            .counter_get(
+                TokenHash::from(Gram::Uni { t1: &token }).serialize(prefix, ctx.input.account_id),
+            )
+            .await
+            .map(Weights::from)?;
+        osb_tokens.push(OsbToken {
+            inner: weights,
+            idx: 1,
+        });
+    }
+
+    // Classify the subject
+    for token in OsbTokenizer::<_, TokenHash>::new(
+        BayesTokenizer::new(
+            &ctx.output.subject_thread,
+            ctx.output.subject_tokens.iter().filter_map(to_bayes_token),
+        ),
+        5,
+    ) {
+        let weights = server
+            .in_memory_store()
+            .counter_get(token.inner.serialize(prefix, ctx.input.account_id))
+            .await
+            .map(Weights::from)?;
+        osb_tokens.push(OsbToken {
             inner: weights,
             idx: token.idx,
         });
     }
-    let result = classifier.classify(tokens.into_iter(), ham_learns, spam_learns);
+
+    // Classify the body
+    match ctx
+        .input
+        .message
+        .html_body
+        .first()
+        .or_else(|| ctx.input.message.text_body.first())
+        .and_then(|idx| ctx.output.text_parts.get(*idx))
+    {
+        Some(TextPart::Html {
+            text_body, tokens, ..
+        }) => {
+            for token in OsbTokenizer::<_, TokenHash>::new(
+                BayesTokenizer::new(text_body, tokens.iter().filter_map(to_bayes_token_owned)),
+                5,
+            ) {
+                let weights = server
+                    .in_memory_store()
+                    .counter_get(token.inner.serialize(prefix, ctx.input.account_id))
+                    .await
+                    .map(Weights::from)?;
+                osb_tokens.push(OsbToken {
+                    inner: weights,
+                    idx: token.idx,
+                });
+            }
+        }
+        Some(TextPart::Plain { text_body, tokens }) => {
+            for token in OsbTokenizer::<_, TokenHash>::new(
+                BayesTokenizer::new(text_body, tokens.iter().filter_map(to_bayes_token)),
+                5,
+            ) {
+                let weights = server
+                    .in_memory_store()
+                    .counter_get(token.inner.serialize(prefix, ctx.input.account_id))
+                    .await
+                    .map(Weights::from)?;
+                osb_tokens.push(OsbToken {
+                    inner: weights,
+                    idx: token.idx,
+                });
+            }
+        }
+        _ => {}
+    }
+
+    let result = classifier.classify(osb_tokens.into_iter(), ham_learns, spam_learns);
 
     trc::event!(
         Spam(trc::SpamEvent::Classify),
-        SpanId = ctx.session_id,
+        SpanId = ctx.input.span_id,
         Details = vec![
             trc::Value::from(spam_learns),
             trc::Value::from(ham_learns),
@@ -204,38 +268,39 @@ pub async fn exec_classify(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         Result = result.unwrap_or_default()
     );
 
-    Ok(result.map(Variable::from).unwrap_or_default())
+    Ok(result.unwrap_or_default())
 }
 
-pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> trc::Result<Variable> {
-    let min_balance = match &ctx.arguments[2] {
-        Variable::Float(n) => *n,
-        Variable::Integer(n) => *n as f64,
-        _ => 0.0,
-    };
+pub(crate) async fn bayes_is_balanced(
+    server: &Server,
+    ctx: &SpamFilterContext<'_>,
+    learn_spam: bool,
+) -> trc::Result<bool> {
+    let min_balance = server
+        .core
+        .spam
+        .bayes
+        .as_ref()
+        .map_or(0.0, |c| c.classifier.min_balance);
 
     if min_balance == 0.0 {
-        return Ok(true.into());
+        return Ok(true);
     }
-
-    let store = match &ctx.arguments[0] {
-        Variable::String(v) if !v.is_empty() => ctx.server.core.storage.lookups.get(v.as_ref()),
-        _ => Some(&ctx.server.core.storage.lookup),
-    }
-    .ok_or_else(|| {
-        trc::SieveEvent::RuntimeError
-            .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
-            .details("Unknown store")
-    })?;
-
-    let learn_spam = ctx.arguments[1].to_bool();
 
     // Obtain training counts
-    let bayes_cache = &ctx.server.inner.data.bayes_cache;
-    let (spam_learns, ham_learns) = bayes_cache
-        .get_or_update(TokenHash::default(), store)
+    let prefix = if ctx.input.account_id.is_some() {
+        KV_BAYES_MODEL_GLOBAL
+    } else {
+        KV_BAYES_MODEL_USER
+    };
+    let (spam_learns, ham_learns) = server
+        .in_memory_store()
+        .counter_get(TokenHash::serialize_index(prefix, ctx.input.account_id))
         .await
-        .map(|w| (w.spam as f64, w.ham as f64))?;
+        .map(|w| {
+            let w = Weights::from(w);
+            (w.spam as f64, w.ham as f64)
+        })?;
 
     let result = if spam_learns > 0.0 || ham_learns > 0.0 {
         if learn_spam {
@@ -249,7 +314,7 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> trc::Result<Variable> {
 
     trc::event!(
         Spam(trc::SpamEvent::TrainBalance),
-        SpanId = ctx.session_id,
+        SpanId = ctx.input.span_id,
         Details = vec![
             trc::Value::from(learn_spam),
             trc::Value::from(min_balance),
@@ -259,40 +324,74 @@ pub async fn exec_is_balanced(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         Result = result
     );
 
-    Ok(result.into())
+    Ok(result)
 }
 
-trait LookupOrInsert {
-    async fn get_or_update(&self, hash: TokenHash, get_token: &LookupStore)
-        -> trc::Result<Weights>;
-}
-
-impl LookupOrInsert for BayesTokenCache {
-    async fn get_or_update(
-        &self,
-        hash: TokenHash,
-        get_token: &LookupStore,
-    ) -> trc::Result<Weights> {
-        if let Some(weights) = self.get(&hash) {
-            Ok(weights.unwrap_or_default())
-        } else {
-            let num = get_token
-                .counter_get(
-                    KeySerializer::new(U64_LEN)
-                        .write(hash.h1)
-                        .write(hash.h2)
-                        .finalize(),
-                )
-                .await
-                .caused_by(trc::location!())?;
-            Ok(if num != 0 {
-                let weights = Weights::from(num);
-                self.insert_positive(hash, weights);
-                weights
-            } else {
-                self.insert_negative(hash);
-                Weights::default()
-            })
+pub(crate) async fn bayes_train_if_balanced(
+    server: &Server,
+    ctx: &SpamFilterContext<'_>,
+    learn_spam: bool,
+) {
+    let err = match bayes_is_balanced(server, ctx, learn_spam).await {
+        Ok(true) => match bayes_train(server, ctx, learn_spam, true).await {
+            Ok(_) => {
+                return;
+            }
+            Err(err) => err,
+        },
+        Ok(false) => {
+            return;
         }
+        Err(err) => err,
+    };
+
+    trc::error!(err.span_id(ctx.input.span_id).caused_by(trc::location!()));
+}
+
+const P_FROM_NAME: u8 = 0;
+const P_FROM_EMAIL: u8 = 1;
+const P_FROM_DOMAIN: u8 = 2;
+const P_ASN: u8 = 3;
+const P_REMOTE_IP: u8 = 4;
+
+impl SpamFilterContext<'_> {
+    pub fn spam_tokens(&self) -> HashSet<Vec<u8>> {
+        let mut tokens = HashSet::new();
+        if matches!(self.input.dmarc_result, DmarcResult::Pass) {
+            for addr in [&self.output.env_from_addr, &self.output.from.email] {
+                if !addr.address.is_empty() {
+                    tokens.insert(add_prefix(P_FROM_EMAIL, addr.address.as_bytes()));
+                    tokens.insert(add_prefix(
+                        P_FROM_DOMAIN,
+                        addr.domain_part.sld_or_default().as_bytes(),
+                    ));
+                }
+            }
+            if let Some(name) = &self.output.from.name {
+                for name_part in name.split_whitespace() {
+                    tokens.insert(add_prefix(P_FROM_NAME, name_part.to_lowercase().as_bytes()));
+                }
+            }
+        }
+        if let Some(asn) = self.input.asn {
+            tokens.insert(add_prefix(P_ASN, &asn.to_be_bytes()));
+        }
+        tokens.insert(add_prefix(P_REMOTE_IP, &ip_to_bytes(&self.input.remote_ip)));
+        tokens
     }
+}
+
+fn add_prefix(prefix: u8, key: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(key.len() + 1);
+    buf.extend_from_slice(key);
+    buf.push(prefix);
+    buf
+}
+
+fn to_bayes_token(token: &TokenType<&str>) -> Option<BayesInputToken> {
+    token.to_bayes_token()
+}
+
+fn to_bayes_token_owned(token: &TokenType<String>) -> Option<BayesInputToken> {
+    token.to_bayes_token()
 }

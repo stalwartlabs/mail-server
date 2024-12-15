@@ -220,27 +220,3 @@ impl SpamFilterInit for Server {
         }
     }
 }
-
-/*
-
-use std::future::Future;
-
-use common::Server;
-
-use crate::SpamFilterContext;
-
-pub trait SpamFilterAnalyze!: Sync + Send {
-    fn spam_filter_analyze_*(
-        &self,
-        ctx: &mut SpamFilterContext<'_>,
-    ) -> impl Future<Output = ()> + Send;
-}
-
-impl SpamFilterAnalyze! for Server {
-    async fn spam_filter_analyze_*(&self, ctx: &mut SpamFilterContext<'_>) {
-        todo!()
-    }
-}
-
-
-*/

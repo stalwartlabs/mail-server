@@ -108,6 +108,7 @@ pub async fn test(params: &mut JMAPTest) {
         metrics_alerts: parse_metric_alerts(&mut config),
         logo_url: None,
         ai_apis: Default::default(),
+        spam_filter_llm: None,
     }
     .into();
     config.assert_no_errors();
@@ -173,6 +174,7 @@ impl EnterpriseCore for Core {
             metrics_alerts: vec![],
             logo_url: None,
             ai_apis: Default::default(),
+            spam_filter_llm: None,
         }
         .into();
         self

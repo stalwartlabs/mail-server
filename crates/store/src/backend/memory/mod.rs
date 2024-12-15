@@ -7,12 +7,12 @@
 use ahash::AHashMap;
 use utils::{config::Config, glob::GlobMap};
 
-use crate::{LookupStore, Stores, Value};
+use crate::{InMemoryStore, Stores, Value};
 
-pub type MemoryStore = GlobMap<Value<'static>>;
+pub type StaticMemoryStore = GlobMap<Value<'static>>;
 
 impl Stores {
-    pub fn parse_memory_stores(&mut self, config: &mut Config) {
+    pub fn parse_static_stores(&mut self, config: &mut Config) {
         let mut lookups = AHashMap::new();
         let mut errors = Vec::new();
 
@@ -68,7 +68,7 @@ impl Stores {
                 // Add entry
                 lookups
                     .entry(id.to_string())
-                    .or_insert_with(MemoryStore::default)
+                    .or_insert_with(StaticMemoryStore::default)
                     .insert(key, value);
             } else {
                 errors.push(key.to_string());
@@ -80,8 +80,8 @@ impl Stores {
         }
 
         for (id, store) in lookups {
-            self.lookup_stores
-                .insert(id, LookupStore::Memory(store.into()));
+            self.in_memory_stores
+                .insert(id, InMemoryStore::Static(store.into()));
         }
     }
 }

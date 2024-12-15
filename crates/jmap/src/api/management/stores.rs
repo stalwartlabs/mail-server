@@ -123,7 +123,7 @@ impl ManageStore for Server {
             }
             (Some("purge"), Some("lookup"), id, &Method::GET) => {
                 // Validate the access token
-                access_token.assert_has_permission(Permission::PurgeLookupStore)?;
+                access_token.assert_has_permission(Permission::PurgeInMemoryStore)?;
 
                 let store = if let Some(id) = id {
                     if let Some(store) = self.core.storage.lookups.get(id) {

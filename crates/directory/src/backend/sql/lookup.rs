@@ -32,8 +32,11 @@ impl SqlDirectory {
             QueryBy::Name(username) => (
                 self.mappings
                     .row_to_principal(
-                        self.store
-                            .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
+                        self.sql_store
+                            .sql_query::<NamedRows>(
+                                &self.mappings.query_name,
+                                vec![username.into()],
+                            )
                             .await
                             .caused_by(trc::location!())?,
                     )
@@ -51,8 +54,8 @@ impl SqlDirectory {
                     (
                         self.mappings
                             .row_to_principal(
-                                self.store
-                                    .query::<NamedRows>(
+                                self.sql_store
+                                    .sql_query::<NamedRows>(
                                         &self.mappings.query_name,
                                         vec![principal.name().into()],
                                     )
@@ -76,8 +79,11 @@ impl SqlDirectory {
                 match self
                     .mappings
                     .row_to_principal(
-                        self.store
-                            .query::<NamedRows>(&self.mappings.query_name, vec![username.into()])
+                        self.sql_store
+                            .sql_query::<NamedRows>(
+                                &self.mappings.query_name,
+                                vec![username.into()],
+                            )
                             .await
                             .caused_by(trc::location!())?,
                     )
@@ -108,8 +114,8 @@ impl SqlDirectory {
         // Obtain members
         if return_member_of && !self.mappings.query_members.is_empty() {
             for row in self
-                .store
-                .query::<Rows>(
+                .sql_store
+                .sql_query::<Rows>(
                     &self.mappings.query_members,
                     vec![external_principal.name().into()],
                 )
@@ -134,8 +140,8 @@ impl SqlDirectory {
             external_principal.set(
                 PrincipalField::Emails,
                 PrincipalValue::StringList(
-                    self.store
-                        .query::<Rows>(
+                    self.sql_store
+                        .sql_query::<Rows>(
                             &self.mappings.query_emails,
                             vec![external_principal.name().into()],
                         )
@@ -151,8 +157,8 @@ impl SqlDirectory {
             external_principal.set(
                 PrincipalField::Secrets,
                 PrincipalValue::StringList(
-                    self.store
-                        .query::<Rows>(
+                    self.sql_store
+                        .sql_query::<Rows>(
                             &self.mappings.query_secrets,
                             vec![external_principal.name().into()],
                         )
@@ -198,8 +204,8 @@ impl SqlDirectory {
 
     pub async fn email_to_id(&self, address: &str) -> trc::Result<Option<u32>> {
         let names = self
-            .store
-            .query::<Rows>(&self.mappings.query_recipients, vec![address.into()])
+            .sql_store
+            .sql_query::<Rows>(&self.mappings.query_recipients, vec![address.into()])
             .await
             .caused_by(trc::location!())?;
 
@@ -219,8 +225,8 @@ impl SqlDirectory {
 
     pub async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {
         let result = self
-            .store
-            .query::<bool>(
+            .sql_store
+            .sql_query::<bool>(
                 &self.mappings.query_recipients,
                 vec![address.to_string().into()],
             )

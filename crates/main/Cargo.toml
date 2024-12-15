@@ -22,6 +22,7 @@ jmap_proto = { path = "../jmap-proto" }
 smtp = { path = "../smtp" }
 imap = { path = "../imap" }
 pop3 = { path = "../pop3" }
+spam-filter = { path = "../spam-filter" }
 managesieve = { path = "../managesieve" }
 common = { path = "../common" }
 directory = { path = "../directory" }
@@ -45,4 +46,9 @@ elastic = ["store/elastic"]
 s3 = ["store/s3"]
 redis = ["store/redis"]
 azure = ["store/azure"]
-enterprise = ["jmap/enterprise", "common/enterprise", "store/enterprise", "managesieve/enterprise", "directory/enterprise"]
+enterprise = [ "jmap/enterprise", 
+               "common/enterprise", 
+               "store/enterprise", 
+               "managesieve/enterprise", 
+               "directory/enterprise", 
+               "spam-filter/enterprise"]

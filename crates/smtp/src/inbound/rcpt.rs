@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
+use common::{
+    config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification, KV_GREYLIST,
+};
 use directory::backend::RcptType;
 use smtp_proto::{
     RcptTo, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
+use store::dispatch::lookup::KeyValue;
 use trc::{SecurityEvent, SmtpEvent};
 
 use crate::{
@@ -299,24 +302,31 @@ impl<T: SessionStream> Session<T> {
                 .greylist_duration
                 .filter(|_| self.data.authenticated_as.is_none())
             {
-                let key = format!(
-                    "g:{}:{}:{}",
-                    self.data.remote_ip_str,
-                    self.data.mail_from.as_ref().unwrap().address_lcase,
-                    self.data.rcpt_to.last().unwrap().address_lcase
+                let mut key = Vec::with_capacity(64);
+                key.push(KV_GREYLIST);
+                match self.data.remote_ip {
+                    std::net::IpAddr::V4(ipv4_addr) => key.extend_from_slice(&ipv4_addr.octets()),
+                    std::net::IpAddr::V6(ipv6_addr) => key.extend_from_slice(&ipv6_addr.octets()),
+                };
+                key.extend_from_slice(
+                    self.data
+                        .mail_from
+                        .as_ref()
+                        .unwrap()
+                        .address_lcase
+                        .as_bytes(),
                 );
-                match self
-                    .server
-                    .lookup_store()
-                    .key_exists(key.clone().into_bytes())
-                    .await
-                {
+                key.extend_from_slice(self.data.rcpt_to.last().unwrap().address_lcase.as_bytes());
+
+                match self.server.in_memory_store().key_exists(key.clone()).await {
                     Ok(true) => (),
                     Ok(false) => {
                         match self
                             .server
-                            .lookup_store()
-                            .key_set(key.into_bytes(), vec![], greylist_duration.as_secs().into())
+                            .in_memory_store()
+                            .key_set(
+                                KeyValue::new(key, vec![]).expires(greylist_duration.as_secs()),
+                            )
                             .await
                         {
                             Ok(_) => {

@@ -239,7 +239,7 @@ impl Scripting {
             )
             .with_max_header_size(10240)
             .with_valid_notification_uri("mailto")
-            .with_valid_ext_lists(stores.lookup_stores.keys().map(|k| k.to_string()))
+            .with_valid_ext_lists(stores.in_memory_stores.keys().map(|k| k.to_string()))
             .with_functions(&mut fnc_map_trusted)
             .with_max_redirects(
                 config

@@ -183,9 +183,11 @@ impl Enterprise {
             .collect::<Vec<_>>()
         {
             if let Some(api) = AiApiConfig::parse(config, &id) {
-                ai_apis.insert(id, api);
+                ai_apis.insert(id, api.into());
             }
         }
+
+        todo!("implement spam filter llm config");
 
         Some(Enterprise {
             license,
@@ -198,6 +200,7 @@ impl Enterprise {
             metrics_store,
             metrics_alerts: parse_metric_alerts(config),
             ai_apis,
+            spam_filter_llm: None,
         })
     }
 }

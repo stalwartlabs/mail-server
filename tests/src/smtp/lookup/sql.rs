@@ -119,7 +119,7 @@ async fn lookup_sql() {
 
     // Obtain directory handle
     let handle = DirectoryStore {
-        store: core.storage.lookups.get("sql").unwrap().clone(),
+        store: core.storage.stores.get("sql").unwrap().clone(),
     };
 
     let test = TestSMTP::from_core(core);
@@ -162,7 +162,7 @@ async fn lookup_sql() {
     ] {
         handle
             .store
-            .query::<usize>(query, Vec::new())
+            .sql_query::<usize>(query, Vec::new())
             .await
             .unwrap();
     }

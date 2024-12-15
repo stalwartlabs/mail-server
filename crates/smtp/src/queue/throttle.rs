@@ -10,7 +10,7 @@ use common::{
     config::smtp::Throttle,
     expr::functions::ResolveVariable,
     listener::limiter::{ConcurrencyLimiter, InFlight},
-    Server,
+    Server, KV_RATE_LIMIT_HASH,
 };
 use dashmap::mapref::entry::Entry;
 use store::write::now;
@@ -52,26 +52,32 @@ impl IsAllowed for Server {
             let key = throttle.new_key(envelope);
 
             if let Some(rate) = &throttle.rate {
-                if let Ok(Some(next_refill)) = self
+                match self
                     .core
                     .storage
                     .lookup
-                    .is_rate_allowed(key.as_ref(), rate, false)
+                    .is_rate_allowed(KV_RATE_LIMIT_HASH, key.as_ref(), rate, false)
                     .await
                 {
-                    trc::event!(
-                        Queue(trc::QueueEvent::RateLimitExceeded),
-                        SpanId = session_id,
-                        Id = throttle.id.clone(),
-                        Limit = vec![
-                            trc::Value::from(rate.requests),
-                            trc::Value::from(rate.period)
-                        ],
-                    );
+                    Ok(Some(next_refill)) => {
+                        trc::event!(
+                            Queue(trc::QueueEvent::RateLimitExceeded),
+                            SpanId = session_id,
+                            Id = throttle.id.clone(),
+                            Limit = vec![
+                                trc::Value::from(rate.requests),
+                                trc::Value::from(rate.period)
+                            ],
+                        );
 
-                    return Err(Error::Rate {
-                        retry_at: now() + next_refill,
-                    });
+                        return Err(Error::Rate {
+                            retry_at: now() + next_refill,
+                        });
+                    }
+                    Err(err) => {
+                        trc::error!(err.span_id(session_id).caused_by(trc::location!()));
+                    }
+                    _ => (),
                 }
             }
 

@@ -11,7 +11,7 @@ use directory::{
 use mail_send::Credentials;
 
 #[allow(unused_imports)]
-use store::{LookupStore, Store};
+use store::{InMemoryStore, Store};
 
 use crate::directory::{
     map_account_id, map_account_ids, DirectoryTest, IntoTestPrincipal, TestPrincipal,
@@ -37,7 +37,7 @@ async fn sql_directory() {
         println!("Testing SQL directory {:?}", directory_id);
         let handle = config.directories.directories.remove(directory_id).unwrap();
         let store = DirectoryStore {
-            store: config.stores.lookup_stores.remove(directory_id).unwrap(),
+            store: config.stores.stores.remove(directory_id).unwrap(),
         };
         let base_store = config.stores.stores.get(directory_id).unwrap();
         let core = config.server;
@@ -356,7 +356,7 @@ impl DirectoryStore {
         // Create tables
         for table in ["accounts", "group_members", "emails"] {
             self.store
-                .query::<usize>(&format!("DROP TABLE IF EXISTS {table}"), vec![])
+                .sql_query::<usize>(&format!("DROP TABLE IF EXISTS {table}"), vec![])
                 .await
                 .unwrap();
         }
@@ -383,7 +383,7 @@ impl DirectoryStore {
             };
 
             self.store
-                .query::<usize>(&query, vec![])
+                .sql_query::<usize>(&query, vec![])
                 .await
                 .unwrap_or_else(|_| panic!("failed for {query}"));
         }
@@ -396,7 +396,7 @@ impl DirectoryStore {
             "individual"
         };
         self.store
-            .query::<usize>(
+            .sql_query::<usize>(
                 if self.is_postgresql() {
                     concat!(
                         "INSERT INTO accounts (name, secret, description, ",
@@ -439,7 +439,7 @@ impl DirectoryStore {
 
     pub async fn create_test_group(&self, login: &str, name: &str) {
         self.store
-            .query::<usize>(
+            .sql_query::<usize>(
                 if self.is_postgresql() {
                     concat!(
                         "INSERT INTO accounts (name, description, ",
@@ -469,7 +469,7 @@ impl DirectoryStore {
 
     pub async fn link_test_address(&self, login: &str, address: &str, typ: &str) {
         self.store
-            .query::<usize>(
+            .sql_query::<usize>(
                 if self.is_postgresql() {
                     "INSERT INTO emails (name, address, type) VALUES ($1, $2, $3) ON CONFLICT (name, address) DO NOTHING"
                 } else if self.is_mysql() {
@@ -485,7 +485,7 @@ impl DirectoryStore {
 
     pub async fn set_test_quota(&self, login: &str, quota: u32) {
         self.store
-            .query::<usize>(
+            .sql_query::<usize>(
                 if self.is_postgresql() {
                     "UPDATE accounts SET quota = $1 where name = $2"
                 } else {
@@ -499,7 +499,7 @@ impl DirectoryStore {
 
     pub async fn add_to_group(&self, login: &str, group: &str) {
         self.store
-            .query::<usize>(
+            .sql_query::<usize>(
                 if self.is_postgresql() {
                     "INSERT INTO group_members (name, member_of) VALUES ($1, $2)"
                 } else {
@@ -513,7 +513,7 @@ impl DirectoryStore {
 
     pub async fn remove_from_group(&self, login: &str, group: &str) {
         self.store
-            .query::<usize>(
+            .sql_query::<usize>(
                 if self.is_postgresql() {
                     "DELETE FROM group_members WHERE name = $1 AND member_of = $2"
                 } else {
@@ -527,7 +527,7 @@ impl DirectoryStore {
 
     pub async fn remove_test_alias(&self, login: &str, alias: &str) {
         self.store
-            .query::<usize>(
+            .sql_query::<usize>(
                 if self.is_postgresql() {
                     "DELETE FROM emails WHERE name = $1 AND address = $2"
                 } else {
@@ -542,7 +542,7 @@ impl DirectoryStore {
     fn is_mysql(&self) -> bool {
         #[cfg(feature = "mysql")]
         {
-            matches!(self.store, LookupStore::Store(Store::MySQL(_)))
+            matches!(self.store, Store::MySQL(_))
         }
         #[cfg(not(feature = "mysql"))]
         {
@@ -553,7 +553,7 @@ impl DirectoryStore {
     fn is_postgresql(&self) -> bool {
         #[cfg(feature = "postgres")]
         {
-            matches!(self.store, LookupStore::Store(Store::PostgreSQL(_)))
+            matches!(self.store, Store::PostgreSQL(_))
         }
         #[cfg(not(feature = "postgres"))]
         {
@@ -565,7 +565,7 @@ impl DirectoryStore {
     fn is_sqlite(&self) -> bool {
         #[cfg(feature = "sqlite")]
         {
-            matches!(self.store, LookupStore::Store(Store::SQLite(_)))
+            matches!(self.store, Store::SQLite(_))
         }
         #[cfg(not(feature = "sqlite"))]
         {

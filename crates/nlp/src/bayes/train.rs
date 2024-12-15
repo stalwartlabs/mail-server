@@ -20,12 +20,16 @@ impl BayesModel {
         }
 
         for token in tokens {
-            let hs = self.weights.entry(token.inner).or_default();
-            if is_spam {
-                hs.spam += 1;
-            } else {
-                hs.ham += 1;
-            }
+            self.train_token(token.inner, is_spam);
+        }
+    }
+
+    pub fn train_token(&mut self, token: TokenHash, is_spam: bool) {
+        let hs = self.weights.entry(token).or_default();
+        if is_spam {
+            hs.spam += 1;
+        } else {
+            hs.ham += 1;
         }
     }
 

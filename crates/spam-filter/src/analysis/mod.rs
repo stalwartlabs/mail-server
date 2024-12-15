@@ -12,6 +12,7 @@ use mail_parser::{parsers::MessageStream, Header};
 
 use crate::{Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput, SpamFilterResult};
 
+pub mod bayes;
 pub mod bounce;
 pub mod date;
 pub mod dmarc;
@@ -22,6 +23,8 @@ pub mod headers;
 pub mod html;
 pub mod init;
 pub mod ip;
+#[cfg(feature = "enterprise")]
+pub mod llm;
 pub mod messageid;
 pub mod mime;
 pub mod pyzor;
@@ -29,7 +32,9 @@ pub mod received;
 pub mod recipient;
 pub mod replyto;
 pub mod reputation;
+pub mod score;
 pub mod subject;
+pub mod trusted_reply;
 pub mod url;
 
 impl SpamFilterInput<'_> {
@@ -56,6 +61,10 @@ impl SpamFilterOutput<'_> {
 impl SpamFilterResult {
     pub fn add_tag(&mut self, tag: impl Into<String>) {
         self.tags.insert(tag.into());
+    }
+
+    pub fn has_tag(&self, tag: impl AsRef<str>) -> bool {
+        self.tags.contains(tag.as_ref())
     }
 }
 

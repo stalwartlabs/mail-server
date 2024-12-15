@@ -18,13 +18,14 @@ impl SqlDirectory {
     ) -> Option<Self> {
         let prefix = prefix.as_key();
         let store_id = config.value_require((&prefix, "store"))?.to_string();
-        let store = if let Some(store) = stores.lookup_stores.get(&store_id) {
-            store.clone()
-        } else {
-            let err = format!("Directory references a non-existent store {store_id:?}");
-            config.new_build_error((&prefix, "store"), err);
-            return None;
-        };
+        let sql_store =
+            if let Some(sql_store) = stores.stores.get(&store_id).filter(|store| store.is_sql()) {
+                sql_store.clone()
+            } else {
+                let err = format!("Directory references a non-existent store {store_id:?}");
+                config.new_build_error((&prefix, "store"), err);
+                return None;
+            };
 
         let mut mappings = SqlMappings {
             column_description: config
@@ -64,7 +65,7 @@ impl SqlDirectory {
         }
 
         Some(SqlDirectory {
-            store,
+            sql_store,
             mappings,
             data_store,
         })

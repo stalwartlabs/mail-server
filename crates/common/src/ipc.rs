@@ -13,7 +13,7 @@ use mail_auth::{
     mta_sts::TlsRpt,
     report::{tlsrpt::FailureDetails, Record},
 };
-use store::{BlobStore, LookupStore, Store};
+use store::{BlobStore, InMemoryStore, Store};
 use tokio::sync::{mpsc, oneshot};
 use utils::{map::bitmap::Bitmap, BlobHash};
 
@@ -68,7 +68,7 @@ pub enum HousekeeperEvent {
 pub enum PurgeType {
     Data(Store),
     Blobs { store: Store, blob_store: BlobStore },
-    Lookup(LookupStore),
+    Lookup(InMemoryStore),
     Account(Option<u32>),
 }
 

@@ -15,7 +15,7 @@ pub mod write;
 
 pub use ahash;
 use ahash::AHashMap;
-use backend::{fs::FsStore, memory::MemoryStore};
+use backend::{fs::FsStore, memory::StaticMemoryStore};
 pub use blake3;
 pub use parking_lot;
 pub use rand;
@@ -171,7 +171,7 @@ pub struct Stores {
     pub stores: AHashMap<String, Store>,
     pub blob_stores: AHashMap<String, BlobStore>,
     pub fts_stores: AHashMap<String, FtsStore>,
-    pub lookup_stores: AHashMap<String, LookupStore>,
+    pub in_memory_stores: AHashMap<String, InMemoryStore>,
     pub purge_schedules: Vec<PurgeSchedule>,
 }
 
@@ -225,18 +225,11 @@ pub enum FtsStore {
 }
 
 #[derive(Clone, Debug)]
-pub enum LookupStore {
+pub enum InMemoryStore {
     Store(Store),
-    Query(Arc<QueryStore>),
     #[cfg(feature = "redis")]
     Redis(Arc<RedisStore>),
-    Memory(Arc<MemoryStore>),
-}
-
-#[derive(Debug)]
-pub struct QueryStore {
-    pub store: LookupStore,
-    pub query: String,
+    Static(Arc<StaticMemoryStore>),
 }
 
 #[cfg(feature = "sqlite")]
@@ -311,7 +304,7 @@ impl From<ElasticSearchStore> for FtsStore {
 }
 
 #[cfg(feature = "redis")]
-impl From<RedisStore> for LookupStore {
+impl From<RedisStore> for InMemoryStore {
     fn from(store: RedisStore) -> Self {
         Self::Redis(Arc::new(store))
     }
@@ -332,7 +325,7 @@ impl From<Store> for BlobStore {
     }
 }
 
-impl From<Store> for LookupStore {
+impl From<Store> for InMemoryStore {
     fn from(store: Store) -> Self {
         Self::Store(store)
     }
@@ -347,7 +340,7 @@ impl Default for BlobStore {
     }
 }
 
-impl Default for LookupStore {
+impl Default for InMemoryStore {
     fn default() -> Self {
         Self::Store(Store::None)
     }

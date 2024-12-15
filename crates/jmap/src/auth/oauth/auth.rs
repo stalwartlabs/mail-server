@@ -11,13 +11,14 @@ use common::{
         oauth::{CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN, USER_CODE_ALPHABET, USER_CODE_LEN},
         AccessToken,
     },
-    Server,
+    Server, KV_OAUTH,
 };
 use rand::distributions::Standard;
 use serde::Deserialize;
 use serde_json::json;
 use std::future::Future;
 use store::{
+    dispatch::lookup::KeyValue,
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     write::Bincode,
     Serialize,
@@ -120,9 +121,8 @@ impl OAuthApiHandler for Server {
                     .storage
                     .lookup
                     .key_set(
-                        format!("oauth:{client_code}").into_bytes(),
-                        value,
-                        self.core.oauth.oauth_expiry_auth_code.into(),
+                        KeyValue::with_prefix(KV_OAUTH, client_code.as_bytes(), value)
+                            .expires(self.core.oauth.oauth_expiry_auth_code),
                     )
                     .await?;
 
@@ -147,7 +147,10 @@ impl OAuthApiHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Bincode<OAuthCode>>(format!("oauth:{code}").into_bytes())
+                    .key_get::<Bincode<OAuthCode>>(KeyValue::<()>::build_key(
+                        KV_OAUTH,
+                        code.as_bytes(),
+                    ))
                     .await?
                 {
                     if auth_code.inner.status == OAuthStatus::Pending {
@@ -160,7 +163,7 @@ impl OAuthApiHandler for Server {
                         self.core
                             .storage
                             .lookup
-                            .key_delete(format!("oauth:{code}").into_bytes())
+                            .key_delete(KeyValue::<()>::build_key(KV_OAUTH, code.as_bytes()))
                             .await?;
 
                         // Update device code status
@@ -168,9 +171,12 @@ impl OAuthApiHandler for Server {
                             .storage
                             .lookup
                             .key_set(
-                                format!("oauth:{device_code}").into_bytes(),
-                                auth_code.serialize(),
-                                self.core.oauth.oauth_expiry_auth_code.into(),
+                                KeyValue::with_prefix(
+                                    KV_OAUTH,
+                                    device_code.as_bytes(),
+                                    auth_code.serialize(),
+                                )
+                                .expires(self.core.oauth.oauth_expiry_auth_code),
                             )
                             .await?;
                     }
@@ -238,9 +244,8 @@ impl OAuthApiHandler for Server {
             .storage
             .lookup
             .key_set(
-                format!("oauth:{device_code}").into_bytes(),
-                oauth_code.clone(),
-                self.core.oauth.oauth_expiry_user_code.into(),
+                KeyValue::with_prefix(KV_OAUTH, device_code.as_bytes(), oauth_code.clone())
+                    .expires(self.core.oauth.oauth_expiry_user_code),
             )
             .await?;
 
@@ -249,9 +254,8 @@ impl OAuthApiHandler for Server {
             .storage
             .lookup
             .key_set(
-                format!("oauth:{user_code}").into_bytes(),
-                oauth_code,
-                self.core.oauth.oauth_expiry_user_code.into(),
+                KeyValue::with_prefix(KV_OAUTH, user_code.as_bytes(), oauth_code)
+                    .expires(self.core.oauth.oauth_expiry_user_code),
             )
             .await?;
 

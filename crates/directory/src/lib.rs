@@ -122,7 +122,7 @@ pub enum Permission {
     BlobFetch,
     PurgeBlobStore,
     PurgeDataStore,
-    PurgeLookupStore,
+    PurgeInMemoryStore,
     PurgeAccount,
     FtsReindex,
     Undelete,

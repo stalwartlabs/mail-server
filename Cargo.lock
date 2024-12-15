@@ -3880,6 +3880,7 @@ dependencies = [
  "managesieve",
  "pop3",
  "smtp",
+ "spam-filter",
  "store",
  "tokio",
  "trc",
@@ -4173,14 +4174,15 @@ dependencies = [
  "farmhash",
  "jieba-rs",
  "lru-cache",
+ "maplit",
  "nohash",
  "parking_lot",
  "phf",
  "psl",
+ "radix_trie",
  "rust-stemmers",
  "serde",
  "siphasher 1.0.1",
- "tinysegmenter",
  "tokio",
  "whatlang",
  "xxhash-rust",
@@ -6773,6 +6775,7 @@ dependencies = [
  "sieve-rs",
  "smtp",
  "smtp-proto",
+ "spam-filter",
  "store",
  "tokio",
  "tokio-rustls 0.26.0",
@@ -6859,16 +6862,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c9d3793400a45f954c52e73d068316d76b6f4e36977e3fcebb13a2721e80237"
 dependencies = [
  "crunchy",
-]
-
-[[package]]
-name = "tinysegmenter"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1755695d17d470baf2d937a59ab4e86de3034b056fc8700e21411b0efca36497"
-dependencies = [
- "lazy_static",
- "maplit",
 ]
 
 [[package]]

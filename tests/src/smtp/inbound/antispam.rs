@@ -219,7 +219,7 @@ async fn antispam() {
         .enable_enterprise();
     core.enterprise.as_mut().unwrap().ai_apis.insert(
         "dummy".to_string(),
-        AiApiConfig::parse(&mut config, "dummy").unwrap(),
+        AiApiConfig::parse(&mut config, "dummy").unwrap().into(),
     );
     crate::AssertConfig::assert_no_errors(config);
 

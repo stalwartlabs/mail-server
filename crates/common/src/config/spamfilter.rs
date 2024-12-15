@@ -8,6 +8,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use ahash::AHashSet;
 use mail_parser::HeaderName;
+use nlp::bayes::BayesClassifier;
 use utils::{
     config::Config,
     glob::{GlobMap, GlobSet},
@@ -21,10 +22,16 @@ pub struct SpamFilterConfig {
     pub max_rbl_domain_checks: usize,
     pub max_rbl_email_checks: usize,
     pub max_rbl_url_checks: usize,
+    pub trusted_reply: Option<u64>,
 
     pub greylist_duration: Option<Duration>,
     pub pyzor: Option<PyzorConfig>,
     pub reputation: Option<ReputationConfig>,
+    pub bayes: Option<BayesConfig>,
+
+    pub score_reject_threshold: f64,
+    pub score_discard_threshold: f64,
+    pub score_spam_threshold: f64,
 
     pub list_dmarc_allow: GlobSet,
     pub list_spf_dkim_allow: GlobSet,
@@ -33,9 +40,29 @@ pub struct SpamFilterConfig {
     pub list_trusted_domains: GlobSet,
     pub list_url_redirectors: GlobSet,
     pub list_file_extensions: GlobMap<FileExtension>,
+    pub list_scores: GlobMap<SpamFilterAction<f64>>,
+    pub list_spamtraps: GlobSet,
 
     pub remote_lists: Vec<RemoteListConfig>,
     pub dnsbls: Vec<DnsblConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SpamFilterAction<T> {
+    Allow(T),
+    Discard,
+    Reject,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BayesConfig {
+    pub classifier: BayesClassifier,
+    pub auto_learn: bool,
+    pub auto_learn_reply_ham: bool,
+    pub auto_learn_spam_threshold: f64,
+    pub auto_learn_ham_threshold: f64,
+    pub score_spam: f64,
+    pub score_ham: f64,
 }
 
 #[derive(Debug, Clone, Default)]

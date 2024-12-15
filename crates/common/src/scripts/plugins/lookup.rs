@@ -5,7 +5,7 @@
  */
 
 use sieve::{runtime::Variable, FunctionMap};
-use store::{Deserialize, Value};
+use store::{dispatch::lookup::KeyValue, Deserialize, Value};
 
 use crate::scripts::into_sieve_value;
 
@@ -93,13 +93,15 @@ pub async fn exec_set(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             .details("Unknown store")
     })?
     .key_set(
-        ctx.arguments[1].to_string().into_owned().into_bytes(),
-        if !ctx.arguments[2].is_empty() {
-            bincode::serialize(&ctx.arguments[2]).unwrap_or_default()
-        } else {
-            vec![]
-        },
-        expires,
+        KeyValue::new(
+            ctx.arguments[1].to_string().into_owned().into_bytes(),
+            if !ctx.arguments[2].is_empty() {
+                bincode::serialize(&ctx.arguments[2]).unwrap_or_default()
+            } else {
+                vec![]
+            },
+        )
+        .expires_opt(expires),
     )
     .await
     .map(|_| true.into())

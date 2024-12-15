@@ -16,7 +16,10 @@ use utils::{
     glob::GlobPattern,
 };
 
-use crate::{manager::config::MatchType, Server};
+use crate::{
+    ip_to_bytes, manager::config::MatchType, Server, KV_RATE_LIMIT_AUTH, KV_RATE_LIMIT_LOITER,
+    KV_RATE_LIMIT_RCPT, KV_RATE_LIMIT_SCAN,
+};
 
 #[derive(Debug, Clone)]
 pub struct Security {
@@ -138,13 +141,13 @@ impl Server {
         if let Some(rate) = &self.core.network.security.rcpt_fail_rate {
             let is_allowed = self.is_ip_allowed(&ip)
                 || (self
-                    .lookup_store()
-                    .is_rate_allowed(format!("r:{ip}").as_bytes(), rate, false)
+                    .in_memory_store()
+                    .is_rate_allowed(KV_RATE_LIMIT_RCPT, &ip_to_bytes(&ip), rate, false)
                     .await?
                     .is_none()
                     && self
-                        .lookup_store()
-                        .is_rate_allowed(format!("r:{rcpt}").as_bytes(), rate, false)
+                        .in_memory_store()
+                        .is_rate_allowed(KV_RATE_LIMIT_RCPT, rcpt.as_bytes(), rate, false)
                         .await?
                         .is_none());
 
@@ -160,8 +163,8 @@ impl Server {
         if let Some(rate) = &self.core.network.security.scanner_fail_rate {
             let is_allowed = self.is_ip_allowed(&ip)
                 || self
-                    .lookup_store()
-                    .is_rate_allowed(format!("h:{ip}").as_bytes(), rate, false)
+                    .in_memory_store()
+                    .is_rate_allowed(KV_RATE_LIMIT_SCAN, &ip_to_bytes(&ip), rate, false)
                     .await?
                     .is_none();
 
@@ -187,8 +190,8 @@ impl Server {
         if let Some(rate) = &self.core.network.security.loiter_fail_rate {
             let is_allowed = self.is_ip_allowed(&ip)
                 || self
-                    .lookup_store()
-                    .is_rate_allowed(format!("l:{ip}").as_bytes(), rate, false)
+                    .in_memory_store()
+                    .is_rate_allowed(KV_RATE_LIMIT_LOITER, &ip_to_bytes(&ip), rate, false)
                     .await?
                     .is_none();
 
@@ -205,14 +208,14 @@ impl Server {
             let login = login.unwrap_or_default();
             let is_allowed = self.is_ip_allowed(&ip)
                 || (self
-                    .lookup_store()
-                    .is_rate_allowed(format!("b:{ip}").as_bytes(), rate, false)
+                    .in_memory_store()
+                    .is_rate_allowed(KV_RATE_LIMIT_AUTH, &ip_to_bytes(&ip), rate, false)
                     .await?
                     .is_none()
                     && (login.is_empty()
                         || self
-                            .lookup_store()
-                            .is_rate_allowed(format!("b:{login}").as_bytes(), rate, false)
+                            .in_memory_store()
+                            .is_rate_allowed(KV_RATE_LIMIT_AUTH, login.as_bytes(), rate, false)
                             .await?
                             .is_none()));
             if !is_allowed {

@@ -1,6 +1,7 @@
 use common::Server;
-use store::{Deserialize, Value};
+use store::{dispatch::lookup::KeyValue, Deserialize, Value};
 
+pub mod bayes;
 pub mod dnsbl;
 pub mod html;
 pub mod pyzor;
@@ -13,7 +14,7 @@ pub(crate) async fn key_get<T: Deserialize + From<Value<'static>> + std::fmt::De
     key: impl Into<Vec<u8>>,
 ) -> Result<Option<T>, ()> {
     server
-        .lookup_store()
+        .in_memory_store()
         .key_get(key.into())
         .await
         .map_err(|err| {
@@ -21,14 +22,8 @@ pub(crate) async fn key_get<T: Deserialize + From<Value<'static>> + std::fmt::De
         })
 }
 
-pub(crate) async fn key_set(
-    server: &Server,
-    span_id: u64,
-    key: Vec<u8>,
-    value: Vec<u8>,
-    expires: Option<u64>,
-) {
-    if let Err(err) = server.lookup_store().key_set(key, value, expires).await {
+pub(crate) async fn key_set(server: &Server, span_id: u64, kv: KeyValue<Vec<u8>>) {
+    if let Err(err) = server.in_memory_store().key_set(kv).await {
         trc::error!(err.span_id(span_id).caused_by(trc::location!()));
     }
 }

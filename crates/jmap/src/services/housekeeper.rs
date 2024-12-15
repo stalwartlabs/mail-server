@@ -299,7 +299,7 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                             );
 
                             tokio::spawn(async move {
-                                if let Err(err) = store.purge_lookup_store().await {
+                                if let Err(err) = store.purge_in_memory_store().await {
                                     trc::error!(err.details("Failed to purge lookup store"));
                                 }
                             });
@@ -434,9 +434,10 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                             PurgeStore::Blobs { store, blob_store } => {
                                                 ("blob", store.purge_blobs(blob_store).await)
                                             }
-                                            PurgeStore::Lookup(lookup_store) => {
-                                                ("lookup", lookup_store.purge_lookup_store().await)
-                                            }
+                                            PurgeStore::Lookup(in_memory_store) => (
+                                                "lookup",
+                                                in_memory_store.purge_in_memory_store().await,
+                                            ),
                                         };
 
                                         match result {

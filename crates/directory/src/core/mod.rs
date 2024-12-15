@@ -73,7 +73,7 @@ impl Permission {
             Permission::BlobFetch => "Retrieve arbitrary blobs",
             Permission::PurgeBlobStore => "Purge the blob storage",
             Permission::PurgeDataStore => "Purge the data storage",
-            Permission::PurgeLookupStore => "Purge the lookup storage",
+            Permission::PurgeInMemoryStore => "Purge the lookup storage",
             Permission::PurgeAccount => "Purge user accounts",
             Permission::FtsReindex => "Rebuild the full-text search index",
             Permission::Undelete => "Restore deleted items",

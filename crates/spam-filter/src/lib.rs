@@ -40,6 +40,7 @@ pub struct SpamFilterInput<'x> {
     pub env_from_flags: u64,
     pub env_rcpt_to: &'x [&'x str],
 
+    pub account_id: Option<u32>,
     pub is_test: bool,
 }
 
@@ -84,6 +85,7 @@ pub struct SpamFilterResult {
     pub rbl_domain_checks: usize,
     pub rbl_url_checks: usize,
     pub rbl_email_checks: usize,
+    pub llm_header: Option<String>,
 }
 
 pub struct SpamFilterContext<'x> {

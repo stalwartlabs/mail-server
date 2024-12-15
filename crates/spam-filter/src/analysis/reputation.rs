@@ -1,8 +1,11 @@
-use std::future::Future;
+use std::{borrow::Cow, future::Future};
 
-use common::Server;
+use common::{
+    ip_to_bytes, Server, KV_REPUTATION_ASN, KV_REPUTATION_DOMAIN, KV_REPUTATION_FROM,
+    KV_REPUTATION_IP,
+};
 use mail_auth::DmarcResult;
-use store::{Deserialize, Serialize};
+use store::{dispatch::lookup::KeyValue, Deserialize, Serialize};
 
 use crate::{
     modules::{key_get, key_set},
@@ -39,25 +42,32 @@ impl SpamFilterAnalyzeReputation for Server {
         };
 
         // Do not penalize forged domains
-        let prefix = if matches!(ctx.input.dmarc_result, DmarcResult::Pass) {
-            ""
-        } else {
-            "_"
-        };
+        let is_dmarc_pass = matches!(ctx.input.dmarc_result, DmarcResult::Pass);
 
         let mut types = vec![
-            (Type::Ip, format!("i:{}", ctx.input.remote_ip)),
-            (Type::From, format!("f:{}{}", prefix, sender.address)),
+            (Type::Ip, Cow::Owned(ip_to_bytes(&ctx.input.remote_ip))),
+            (
+                Type::From,
+                if is_dmarc_pass {
+                    Cow::Borrowed(sender.address.as_bytes())
+                } else {
+                    Cow::Owned(format!("_{}", sender.domain_part.sld_or_default()).into_bytes())
+                },
+            ),
             (
                 Type::Domain,
-                format!("d:{}{}", prefix, sender.domain_part.sld_or_default()),
+                if is_dmarc_pass {
+                    Cow::Borrowed(sender.domain_part.sld_or_default().as_bytes())
+                } else {
+                    Cow::Owned(format!("_{}", sender.domain_part.sld_or_default()).into_bytes())
+                },
             ),
         ];
 
         // Add ASN
         if let Some(asn_id) = &ctx.input.asn {
             ctx.result.add_tag(format!("SOURCE_ASN_{asn_id}"));
-            types.push((Type::Asn, format!("a:{asn_id}")));
+            types.push((Type::Asn, Cow::Owned(asn_id.to_be_bytes().to_vec())));
         }
 
         if let Some(country) = &ctx.input.country {
@@ -68,8 +78,6 @@ impl SpamFilterAnalyzeReputation for Server {
             let mut reputation = 0.0;
 
             for (rep_type, key) in types {
-                let key = key.into_bytes();
-
                 let mut token =
                     match key_get::<Reputation>(self, ctx.input.span_id, key.clone()).await {
                         Ok(Some(token)) => token,
@@ -77,13 +85,16 @@ impl SpamFilterAnalyzeReputation for Server {
                             key_set(
                                 self,
                                 ctx.input.span_id,
-                                key,
-                                Reputation {
-                                    count: 1,
-                                    score: ctx.result.score,
-                                }
-                                .serialize(),
-                                config.expiry.into(),
+                                KeyValue::with_prefix(
+                                    rep_type.prefix(),
+                                    key.as_ref(),
+                                    Reputation {
+                                        count: 1,
+                                        score: ctx.result.score,
+                                    }
+                                    .serialize(),
+                                )
+                                .expires(config.expiry),
                             )
                             .await;
                             continue;
@@ -100,9 +111,8 @@ impl SpamFilterAnalyzeReputation for Server {
                     key_set(
                         self,
                         ctx.input.span_id,
-                        key,
-                        token.serialize(),
-                        config.expiry.into(),
+                        KeyValue::with_prefix(rep_type.prefix(), key.as_ref(), token.serialize())
+                            .expires(config.expiry),
                     )
                     .await;
                 }
@@ -122,6 +132,17 @@ impl SpamFilterAnalyzeReputation for Server {
             if reputation > 0.0 {
                 ctx.result.score += (reputation - ctx.result.score) * config.factor;
             }
+        }
+    }
+}
+
+impl Type {
+    pub fn prefix(&self) -> u8 {
+        match self {
+            Type::Ip => KV_REPUTATION_IP,
+            Type::From => KV_REPUTATION_FROM,
+            Type::Domain => KV_REPUTATION_DOMAIN,
+            Type::Asn => KV_REPUTATION_ASN,
         }
     }
 }

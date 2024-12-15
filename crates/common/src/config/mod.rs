@@ -15,7 +15,7 @@ use hyper::{
 };
 use ring::signature::{EcdsaKeyPair, RsaKeyPair};
 use spamfilter::SpamFilterConfig;
-use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
+use store::{BlobBackend, BlobStore, FtsStore, InMemoryStore, Store, Stores};
 use telemetry::Metrics;
 use utils::config::{utils::AsKey, Config};
 
@@ -111,7 +111,7 @@ impl Core {
             .value_require("storage.lookup")
             .map(|id| id.to_string())
             .and_then(|id| {
-                if let Some(store) = stores.lookup_stores.get(&id) {
+                if let Some(store) = stores.in_memory_stores.get(&id) {
                     store.clone().into()
                 } else {
                     config.new_parse_error(
@@ -161,12 +161,12 @@ impl Core {
         // If any of the stores are missing, disable all stores to avoid data loss
         if matches!(data, Store::None)
             || matches!(&blob.backend, BlobBackend::Store(Store::None))
-            || matches!(lookup, LookupStore::Store(Store::None))
+            || matches!(lookup, InMemoryStore::Store(Store::None))
             || matches!(fts, FtsStore::Store(Store::None))
         {
             data = Store::default();
             blob = BlobStore::default();
-            lookup = LookupStore::default();
+            lookup = InMemoryStore::default();
             fts = FtsStore::default();
             config.new_build_error(
                 "storage.*",
@@ -196,7 +196,7 @@ impl Core {
                 purge_schedules: stores.purge_schedules,
                 config: config_manager,
                 stores: stores.stores,
-                lookups: stores.lookup_stores,
+                lookups: stores.in_memory_stores,
                 blobs: stores.blob_stores,
                 ftss: stores.fts_stores,
             },

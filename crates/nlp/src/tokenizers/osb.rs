@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, iter::Peekable};
+use std::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct OsbToken<T> {
@@ -14,26 +14,26 @@ pub struct OsbToken<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Gram<'x> {
-    Uni { t1: &'x str },
-    Bi { t1: &'x str, t2: &'x str },
+    Uni { t1: &'x [u8] },
+    Bi { t1: &'x [u8], t2: &'x [u8] },
 }
 
-pub struct OsbTokenizer<'x, I, R>
+pub struct OsbTokenizer<I, R>
 where
-    I: Iterator<Item = Cow<'x, str>>,
+    I: Iterator<Item = Vec<u8>>,
     R: for<'y> From<Gram<'y>> + 'static,
 {
     iter: Peekable<I>,
-    buf: Vec<Option<Cow<'x, str>>>,
+    buf: Vec<Option<Vec<u8>>>,
     window_size: usize,
     window_pos: usize,
     window_idx: usize,
     phantom: std::marker::PhantomData<R>,
 }
 
-impl<'x, I, R> OsbTokenizer<'x, I, R>
+impl<I, R> OsbTokenizer<I, R>
 where
-    I: Iterator<Item = Cow<'x, str>>,
+    I: Iterator<Item = Vec<u8>>,
     R: for<'y> From<Gram<'y>> + 'static,
 {
     pub fn new(iter: I, window_size: usize) -> Self {
@@ -48,9 +48,9 @@ where
     }
 }
 
-impl<'x, I, R> Iterator for OsbTokenizer<'x, I, R>
+impl<I, R> Iterator for OsbTokenizer<I, R>
 where
-    I: Iterator<Item = Cow<'x, str>>,
+    I: Iterator<Item = Vec<u8>>,
     R: for<'y> From<Gram<'y>> + 'static,
 {
     type Item = OsbToken<R>;
@@ -91,15 +91,17 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::borrow::Cow;
-
     use crate::tokenizers::osb::{Gram, OsbToken};
 
     impl From<Gram<'_>> for String {
         fn from(value: Gram<'_>) -> Self {
             match value {
-                Gram::Uni { t1 } => t1.to_string(),
-                Gram::Bi { t1, t2 } => format!("{t1} {t2}"),
+                Gram::Uni { t1 } => std::str::from_utf8(t1).unwrap().to_string(),
+                Gram::Bi { t1, t2 } => format!(
+                    "{} {}",
+                    std::str::from_utf8(t1).unwrap(),
+                    std::str::from_utf8(t2).unwrap()
+                ),
             }
         }
     }
@@ -110,7 +112,7 @@ mod test {
             super::OsbTokenizer::new(
                 "The quick brown fox jumps over the lazy dog and the lazy cat"
                     .split_ascii_whitespace()
-                    .map(Cow::from),
+                    .map(|b| b.as_bytes().to_vec()),
                 5,
             )
             .collect::<Vec<_>>(),

@@ -9,8 +9,9 @@ use std::{borrow::Cow, fmt::Write, future::Future};
 use chrono::Utc;
 use common::{
     config::network::{ContactForm, FieldOrDefault},
+    ip_to_bytes,
     ipc::{DeliveryResult, IngestMessage},
-    psl, Server,
+    psl, Server, KV_RATE_LIMIT_CONTACT,
 };
 use hyper::StatusCode;
 use mail_builder::{
@@ -61,7 +62,8 @@ impl FormHandler for Server {
                     .storage
                     .lookup
                     .is_rate_allowed(
-                        format!("contact:{}", session.remote_ip).as_bytes(),
+                        KV_RATE_LIMIT_CONTACT,
+                        &ip_to_bytes(&session.remote_ip),
                         rate,
                         false,
                     )

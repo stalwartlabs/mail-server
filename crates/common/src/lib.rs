@@ -34,7 +34,6 @@ use listener::{
 };
 
 use manager::webadmin::{Resource, WebAdminManager};
-use nlp::bayes::cache::BayesTokenCache;
 use parking_lot::{Mutex, RwLock};
 use reqwest::Response;
 use rustls::sign::CertifiedKey;
@@ -67,6 +66,28 @@ pub static DAEMON_NAME: &str = concat!("Stalwart Mail Server v", env!("CARGO_PKG
 
 pub const IPC_CHANNEL_BUFFER: usize = 1024;
 
+pub const KV_ACME: u8 = 0;
+pub const KV_OAUTH: u8 = 1;
+pub const KV_RATE_LIMIT_RCPT: u8 = 2;
+pub const KV_RATE_LIMIT_SCAN: u8 = 3;
+pub const KV_RATE_LIMIT_LOITER: u8 = 4;
+pub const KV_RATE_LIMIT_AUTH: u8 = 5;
+pub const KV_RATE_LIMIT_HASH: u8 = 6;
+pub const KV_RATE_LIMIT_CONTACT: u8 = 7;
+pub const KV_RATE_LIMIT_JMAP: u8 = 8;
+pub const KV_RATE_LIMIT_JMAP_AUTH: u8 = 9;
+pub const KV_RATE_LIMIT_HTTP_ANONYM: u8 = 10;
+pub const KV_RATE_LIMIT_IMAP: u8 = 11;
+pub const KV_REPUTATION_IP: u8 = 12;
+pub const KV_REPUTATION_FROM: u8 = 13;
+pub const KV_REPUTATION_DOMAIN: u8 = 14;
+pub const KV_REPUTATION_ASN: u8 = 15;
+pub const KV_GREYLIST: u8 = 16;
+pub const KV_BAYES_MODEL_GLOBAL: u8 = 17;
+pub const KV_BAYES_MODEL_USER: u8 = 18;
+pub const KV_TRUSTED_REPLY: u8 = 19;
+pub const KV_LOCK_PURGE_ACCOUNT: u8 = 20;
+
 #[derive(Clone)]
 pub struct Server {
     pub inner: Arc<Inner>,
@@ -92,7 +113,6 @@ pub struct Data {
     pub permissions: ADashMap<u32, Arc<RolePermissions>>,
     pub permissions_version: AtomicU8,
 
-    pub bayes_cache: BayesTokenCache,
     pub remote_lists: RwLock<AHashMap<String, RemoteList>>,
     pub asn_geo_data: AsnGeoLookupData,
 
@@ -347,6 +367,30 @@ impl Default for Ipc {
             index_tx: Default::default(),
             queue_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             report_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
+        }
+    }
+}
+
+pub fn ip_to_bytes(ip: &IpAddr) -> Vec<u8> {
+    match ip {
+        IpAddr::V4(ip) => ip.octets().to_vec(),
+        IpAddr::V6(ip) => ip.octets().to_vec(),
+    }
+}
+
+pub fn ip_to_bytes_prefix(prefix: u8, ip: &IpAddr) -> Vec<u8> {
+    match ip {
+        IpAddr::V4(ip) => {
+            let mut buf = Vec::with_capacity(5);
+            buf.push(prefix);
+            buf.extend_from_slice(&ip.octets());
+            buf
+        }
+        IpAddr::V6(ip) => {
+            let mut buf = Vec::with_capacity(17);
+            buf.push(prefix);
+            buf.extend_from_slice(&ip.octets());
+            buf
         }
     }
 }

@@ -44,7 +44,7 @@ impl Server {
 
     pub(crate) async fn build_acme_certificate(&self, domain: &str) -> Option<Arc<CertifiedKey>> {
         match self
-            .lookup_store()
+            .in_memory_store()
             .key_get::<Bincode<SerializedCert>>(format!("acme:{domain}").into_bytes())
             .await
         {

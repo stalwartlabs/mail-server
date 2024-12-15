@@ -4,14 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
-
 use utils::config::{cron::SimpleCron, utils::ParseValue, Config};
 
 use crate::{
     backend::fs::FsStore,
     write::purge::{PurgeSchedule, PurgeStore},
-    BlobStore, CompressionAlgo, LookupStore, QueryStore, Store, Stores,
+    BlobStore, CompressionAlgo, InMemoryStore, Store, Stores,
 };
 
 #[cfg(feature = "s3")]
@@ -106,7 +104,7 @@ impl Stores {
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id, db.into());
+                        self.in_memory_stores.insert(store_id, db.into());
                     }
                 }
                 #[cfg(feature = "foundation")]
@@ -128,7 +126,7 @@ impl Stores {
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id, db.into());
+                        self.in_memory_stores.insert(store_id, db.into());
                     }
                 }
                 #[cfg(feature = "postgres")]
@@ -144,7 +142,7 @@ impl Stores {
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id.clone(), db.into());
+                        self.in_memory_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 #[cfg(feature = "mysql")]
@@ -159,7 +157,7 @@ impl Stores {
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id.clone(), db.into());
+                        self.in_memory_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 #[cfg(feature = "sqlite")]
@@ -181,7 +179,7 @@ impl Stores {
                             store_id.clone(),
                             BlobStore::from(db.clone()).with_compression(compression_algo),
                         );
-                        self.lookup_stores.insert(store_id.clone(), db.into());
+                        self.in_memory_stores.insert(store_id.clone(), db.into());
                     }
                 }
                 "fs" => {
@@ -210,9 +208,9 @@ impl Stores {
                 "redis" => {
                     if let Some(db) = RedisStore::open(config, prefix)
                         .await
-                        .map(LookupStore::from)
+                        .map(InMemoryStore::from)
                     {
-                        self.lookup_stores.insert(store_id, db);
+                        self.in_memory_stores.insert(store_id, db);
                     }
                 }
                 #[cfg(feature = "enterprise")]
@@ -262,7 +260,7 @@ impl Stores {
                             id.to_string(),
                             BlobStore::from(db.clone()).with_compression(compression),
                         );
-                        self.lookup_stores.insert(id.to_string(), db.into());
+                        self.in_memory_stores.insert(id.to_string(), db.into());
                     }
                 }
                 "distributed-blob" => {
@@ -285,44 +283,7 @@ impl Stores {
 
     pub async fn parse_lookups(&mut self, config: &mut Config) {
         // Parse memory stores
-        self.parse_memory_stores(config);
-
-        // Add SQL queries as lookup stores
-        for (store_id, lookup_store) in self.stores.iter().filter_map(|(id, store)| {
-            if store.is_sql() {
-                Some((id.clone(), LookupStore::from(store.clone())))
-            } else {
-                None
-            }
-        }) {
-            // Add queries as lookup stores
-            for lookup_id in config.sub_keys(("store", store_id.as_str(), "query"), "") {
-                if let Some(query) = config.value(("store", store_id.as_str(), "query", lookup_id))
-                {
-                    self.lookup_stores.insert(
-                        format!("{store_id}/{lookup_id}"),
-                        LookupStore::Query(Arc::new(QueryStore {
-                            store: lookup_store.clone(),
-                            query: query.to_string(),
-                        })),
-                    );
-                }
-            }
-
-            // Run init queries on database
-            for query in config
-                .values(("store", store_id.as_str(), "init.execute"))
-                .map(|(_, s)| s.to_string())
-                .collect::<Vec<_>>()
-            {
-                if let Err(err) = lookup_store.query::<usize>(&query, Vec::new()).await {
-                    config.new_build_error(
-                        ("store", store_id.as_str()),
-                        format!("Failed to initialize store: {err}"),
-                    );
-                }
-            }
-        }
+        self.parse_static_stores(config);
 
         // Parse purge schedules
         if let Some(store) = config
@@ -361,8 +322,8 @@ impl Stores {
                 });
             }
         }
-        for (store_id, store) in &self.lookup_stores {
-            if matches!(store, LookupStore::Store(_)) {
+        for (store_id, store) in &self.in_memory_stores {
+            if matches!(store, InMemoryStore::Store(_)) {
                 self.purge_schedules.push(PurgeSchedule {
                     cron: config
                         .property_or_default::<SimpleCron>(

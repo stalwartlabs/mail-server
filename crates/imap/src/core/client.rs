@@ -8,7 +8,7 @@ use std::{iter::Peekable, sync::Arc, vec::IntoIter};
 
 use common::{
     listener::{limiter::ConcurrencyLimiter, SessionResult, SessionStream},
-    ConcurrencyLimiters,
+    ConcurrencyLimiters, KV_RATE_LIMIT_IMAP,
 };
 use imap_proto::{
     receiver::{self, Request},
@@ -292,7 +292,12 @@ impl<T: SessionStream> Session<T> {
                     .core
                     .storage
                     .lookup
-                    .is_rate_allowed(format!("ireq:{}", data.account_id).as_bytes(), rate, true)
+                    .is_rate_allowed(
+                        KV_RATE_LIMIT_IMAP,
+                        &data.account_id.to_be_bytes(),
+                        rate,
+                        true,
+                    )
                     .await?
                     .is_some()
                 {
