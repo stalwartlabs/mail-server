@@ -366,11 +366,11 @@ impl LdapMappings {
                 }
             } else if self.attr_email_address.contains(&attr) {
                 for item in value {
-                    principal.prepend_str(PrincipalField::Emails, item);
+                    principal.prepend_str(PrincipalField::Emails, item.to_lowercase());
                 }
             } else if self.attr_email_alias.contains(&attr) {
                 for item in value {
-                    principal.append_str(PrincipalField::Emails, item);
+                    principal.append_str(PrincipalField::Emails, item.to_lowercase());
                 }
             } else if let Some(idx) = self.attr_description.iter().position(|a| a == &attr) {
                 if !principal.has_field(PrincipalField::Description) || idx == 0 {

@@ -291,7 +291,7 @@ impl SqlMappings {
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_email) {
                     if let Value::Text(text) = value {
-                        principal.set(PrincipalField::Emails, text.into_owned());
+                        principal.set(PrincipalField::Emails, text.to_lowercase());
                     }
                 } else if name.eq_ignore_ascii_case(&self.column_quota) {
                     if let Value::Integer(quota) = value {
