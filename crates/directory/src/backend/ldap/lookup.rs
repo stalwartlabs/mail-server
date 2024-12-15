@@ -356,10 +356,19 @@ impl LdapMappings {
 
         for (attr, value) in entry.attrs {
             if self.attr_name.contains(&attr) {
-                principal.set(
-                    PrincipalField::Name,
-                    value.into_iter().next().unwrap_or_default(),
-                );
+                if !self.attr_email_address.contains(&attr) {
+                    principal.set(
+                        PrincipalField::Name,
+                        value.into_iter().next().unwrap_or_default(),
+                    );
+                } else {
+                    for (idx, item) in value.into_iter().enumerate() {
+                        principal.prepend_str(PrincipalField::Emails, item.to_lowercase());
+                        if idx == 0 {
+                            principal.set(PrincipalField::Name, item);
+                        }
+                    }
+                }
             } else if self.attr_secret.contains(&attr) {
                 for item in value {
                     principal.append_str(PrincipalField::Secrets, item);
