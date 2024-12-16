@@ -1,8 +1,15 @@
-use common::Server;
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use common::Server;
 use store::{dispatch::lookup::KeyValue, Deserialize, Value};
 
 pub mod bayes;
 pub mod dnsbl;
+pub mod expression;
 pub mod html;
 pub mod pyzor;
 pub mod remote_list;

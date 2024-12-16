@@ -1,4 +1,10 @@
-use std::{future::Future, net::IpAddr};
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use std::{future::Future, net::IpAddr};
 
 use common::{
     config::spamfilter::{Element, Location},
@@ -7,11 +13,16 @@ use common::{
 use mail_auth::IprevResult;
 use mail_parser::{HeaderName, HeaderValue, Host};
 use nlp::tokenizers::types::TokenType;
-use store::ahash::AHashSet;
 
-use crate::{modules::dnsbl::is_dnsbl, SpamFilterContext, TextPart};
+use crate::{
+    modules::{
+        dnsbl::is_dnsbl,
+        expression::{IpResolver, SpamFilterResolver},
+    },
+    SpamFilterContext, TextPart,
+};
 
-use super::{ElementLocation, SpamFilterResolver};
+use super::ElementLocation;
 
 pub trait SpamFilterAnalyzeIp: Sync + Send {
     fn spam_filter_analyze_ip(
@@ -23,8 +34,9 @@ pub trait SpamFilterAnalyzeIp: Sync + Send {
 impl SpamFilterAnalyzeIp for Server {
     async fn spam_filter_analyze_ip(&self, ctx: &mut SpamFilterContext<'_>) {
         // IP Address RBL
-        let mut ips =
-            AHashSet::from_iter([ElementLocation::new(ctx.input.remote_ip, Location::Tcp)]);
+        ctx.output
+            .ips
+            .insert(ElementLocation::new(ctx.input.remote_ip, Location::Tcp));
 
         // Obtain IP addresses from Received headers
         for header in ctx.input.message.headers() {
@@ -32,14 +44,18 @@ impl SpamFilterAnalyzeIp for Server {
                 (&header.name, &header.value)
             {
                 if let Some(ip) = received.from_ip() {
-                    ips.insert(ElementLocation::new(ip, HeaderName::Received));
+                    ctx.output
+                        .ips
+                        .insert(ElementLocation::new(ip, Location::HeaderReceived));
                 }
                 for host in [&received.from, &received.helo, &received.by]
                     .into_iter()
                     .flatten()
                 {
                     if let Host::IpAddr(ip) = host {
-                        ips.insert(ElementLocation::new(*ip, HeaderName::Received));
+                        ctx.output
+                            .ips
+                            .insert(ElementLocation::new(*ip, Location::HeaderReceived));
                     }
                 }
             }
@@ -50,44 +66,48 @@ impl SpamFilterAnalyzeIp for Server {
             let is_body = ctx.input.message.text_body.contains(&part_id)
                 || ctx.input.message.html_body.contains(&part_id);
             match part {
-                TextPart::Plain { tokens, .. } => ips.extend(tokens.iter().filter_map(|t| {
-                    if let TokenType::IpAddr(ip) = t {
-                        ip.parse::<IpAddr>().ok().map(|ip| {
-                            ElementLocation::new(
-                                ip,
-                                if is_body {
-                                    Location::BodyText
-                                } else {
-                                    Location::Attachment
-                                },
-                            )
-                        })
-                    } else {
-                        None
-                    }
-                })),
-                TextPart::Html { tokens, .. } => ips.extend(tokens.iter().filter_map(|t| {
-                    if let TokenType::IpAddr(ip) = t {
-                        ip.parse::<IpAddr>().ok().map(|ip| {
-                            ElementLocation::new(
-                                ip,
-                                if is_body {
-                                    Location::BodyHtml
-                                } else {
-                                    Location::Attachment
-                                },
-                            )
-                        })
-                    } else {
-                        None
-                    }
-                })),
+                TextPart::Plain { tokens, .. } => {
+                    ctx.output.ips.extend(tokens.iter().filter_map(|t| {
+                        if let TokenType::IpAddr(ip) = t {
+                            ip.parse::<IpAddr>().ok().map(|ip| {
+                                ElementLocation::new(
+                                    ip,
+                                    if is_body {
+                                        Location::BodyText
+                                    } else {
+                                        Location::Attachment
+                                    },
+                                )
+                            })
+                        } else {
+                            None
+                        }
+                    }))
+                }
+                TextPart::Html { tokens, .. } => {
+                    ctx.output.ips.extend(tokens.iter().filter_map(|t| {
+                        if let TokenType::IpAddr(ip) = t {
+                            ip.parse::<IpAddr>().ok().map(|ip| {
+                                ElementLocation::new(
+                                    ip,
+                                    if is_body {
+                                        Location::BodyHtml
+                                    } else {
+                                        Location::Attachment
+                                    },
+                                )
+                            })
+                        } else {
+                            None
+                        }
+                    }))
+                }
                 TextPart::None => (),
             }
         }
 
         // Validate IP addresses
-        for ip in ips {
+        for ip in &ctx.output.ips {
             if ip.element.is_loopback()
                 || ip.element.is_multicast()
                 || ip.element.is_unspecified()
@@ -100,9 +120,13 @@ impl SpamFilterAnalyzeIp for Server {
             }
 
             for dnsbl in &self.core.spam.dnsbls {
-                if dnsbl.element == Element::Ip && dnsbl.element_location.contains(&ip.location) {
-                    if let Some(tag) =
-                        is_dnsbl(self, dnsbl, SpamFilterResolver::new(ctx, &ip.element)).await
+                if dnsbl.element == Element::Ip {
+                    if let Some(tag) = is_dnsbl(
+                        self,
+                        dnsbl,
+                        SpamFilterResolver::new(ctx, &IpResolver(ip.element), ip.location),
+                    )
+                    .await
                     {
                         ctx.result.add_tag(tag);
                     }

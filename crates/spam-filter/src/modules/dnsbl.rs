@@ -1,10 +1,18 @@
-use std::time::Instant;
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use std::time::Instant;
 
 use common::{config::spamfilter::DnsblConfig, expr::functions::ResolveVariable, Server};
 use mail_auth::Error;
 use trc::SpamEvent;
 
-use crate::analysis::SpamFilterResolver;
+use crate::modules::expression::StringListResolver;
+
+use super::expression::SpamFilterResolver;
 
 pub(crate) async fn is_dnsbl(
     server: &Server,
@@ -31,7 +39,11 @@ pub(crate) async fn is_dnsbl(
             );
 
             server
-                .eval_if(&config.tags, &result, resolver.ctx.input.span_id)
+                .eval_if(
+                    &config.tags,
+                    &StringListResolver(&result),
+                    resolver.ctx.input.span_id,
+                )
                 .await
         }
         Err(Error::DnsRecordNotFound(_)) => {

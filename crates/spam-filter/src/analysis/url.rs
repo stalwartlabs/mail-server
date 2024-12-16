@@ -1,18 +1,23 @@
-use std::collections::HashSet;
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 use std::{borrow::Cow, future::Future, time::Duration};
 
 use common::config::spamfilter::{Element, Location};
-use common::expr::functions::ResolveVariable;
-use common::expr::Variable;
 use common::scripts::functions::unicode::CharUtils;
 use common::Server;
 use hyper::{header::LOCATION, Uri};
-use mail_parser::HeaderName;
 use nlp::tokenizers::types::TokenType;
 use reqwest::redirect::Policy;
 use unicode_security::MixedScript;
 
 use crate::modules::dnsbl::is_dnsbl;
+use crate::modules::expression::{IpResolver, SpamFilterResolver, StringResolver};
 use crate::modules::html::SRC;
 use crate::modules::remote_list::is_in_remote_list;
 use crate::{
@@ -20,13 +25,23 @@ use crate::{
     Hostname, SpamFilterContext, TextPart,
 };
 
-use super::{is_trusted_domain, ElementLocation, SpamFilterResolver};
+use super::{is_trusted_domain, ElementLocation};
 
 pub trait SpamFilterAnalyzeUrl: Sync + Send {
     fn spam_filter_analyze_url(
         &self,
         ctx: &mut SpamFilterContext<'_>,
     ) -> impl Future<Output = ()> + Send;
+}
+
+pub struct UrlParts {
+    pub url: String,
+    pub url_parsed: Option<UrlParsed>,
+}
+
+pub struct UrlParsed {
+    pub parts: Uri,
+    pub host: Hostname,
 }
 
 impl SpamFilterAnalyzeUrl for Server {
@@ -37,7 +52,7 @@ impl SpamFilterAnalyzeUrl for Server {
                 .subject_tokens
                 .iter()
                 .filter_map(|t| t.url_lowercase(false))
-                .map(|url| ElementLocation::new(url, HeaderName::Subject)),
+                .map(|url| ElementLocation::new(url, Location::HeaderSubject)),
         );
         for (part_id, part) in ctx.output.text_parts.iter().enumerate() {
             let is_body = ctx.input.message.text_body.contains(&part_id)
@@ -121,7 +136,7 @@ impl SpamFilterAnalyzeUrl for Server {
             }
         }
 
-        for url in &urls {
+        for url in urls {
             for ch in url.element.chars() {
                 if ch.is_zwsp() {
                     ctx.result.add_tag("ZERO_WIDTH_SPACE_URL");
@@ -134,36 +149,51 @@ impl SpamFilterAnalyzeUrl for Server {
 
             // Skip non-URLs such as 'data:' and 'mailto:'
             if !url.element.contains("://") {
+                ctx.output.urls.insert(ElementLocation::new(
+                    UrlParts::new(url.element),
+                    url.location,
+                ));
                 continue;
             }
 
             // Parse url
             let url_parsed = match url.element.parse::<Uri>() {
-                Ok(url) if url.host().is_some() => url,
+                Ok(url_parsed) if url_parsed.host().is_some() => UrlParsed {
+                    host: Hostname::new(url_parsed.host().unwrap()),
+                    parts: url_parsed,
+                },
                 _ => {
                     // URL could not be parsed
+                    ctx.output.urls.insert(ElementLocation::new(
+                        UrlParts::new(url.element),
+                        url.location,
+                    ));
                     ctx.result.add_tag("R_SUSPICIOUS_URL");
                     continue;
                 }
             };
-            let host = Hostname::new(url_parsed.host().unwrap());
-            let host_sld = host.sld_or_default();
+            let host_sld = url_parsed.host.sld_or_default();
 
             // Skip local and trusted domains
             if is_trusted_domain(self, host_sld, ctx.input.span_id).await {
+                ctx.output.urls.insert(ElementLocation::new(
+                    UrlParts::new(url.element).with_parsed(url_parsed),
+                    url.location,
+                ));
                 continue;
             }
 
-            let mut redirected_urls = Vec::new();
-            if let Some(ip) = host.ip {
+            if let Some(ip) = url_parsed.host.ip {
                 // Check IP DNSBL
                 if ctx.result.rbl_ip_checks < self.core.spam.max_rbl_ip_checks {
                     for dnsbl in &self.core.spam.dnsbls {
-                        if dnsbl.element == Element::Ip
-                            && dnsbl.element_location.contains(&url.location)
-                        {
-                            if let Some(tag) =
-                                is_dnsbl(self, dnsbl, SpamFilterResolver::new(ctx, &ip)).await
+                        if dnsbl.element == Element::Ip {
+                            if let Some(tag) = is_dnsbl(
+                                self,
+                                dnsbl,
+                                SpamFilterResolver::new(ctx, &IpResolver(ip), url.location),
+                            )
+                            .await
                             {
                                 ctx.result.add_tag(tag);
                             }
@@ -196,18 +226,11 @@ impl SpamFilterAnalyzeUrl for Server {
                                     redirect_count += 1;
                                     continue;
                                 } else {
-                                    let new_url = ElementLocation::new(
-                                        location.to_lowercase(),
-                                        url.location.clone(),
-                                    );
-                                    if !urls.contains(&new_url) {
-                                        redirected_urls.push((
-                                            Cow::Owned(new_url.element),
-                                            location_parsed,
-                                            host,
-                                            new_url.location,
-                                        ));
-                                    }
+                                    ctx.output.urls.insert(ElementLocation::new(
+                                        UrlParts::new(location.to_lowercase())
+                                            .with_parts(location_parsed, host),
+                                        url.location,
+                                    ));
                                 }
                             }
                         }
@@ -224,120 +247,72 @@ impl SpamFilterAnalyzeUrl for Server {
                 }
             }
 
-            for (url, url_parsed, host, location) in [(
-                Cow::Borrowed(url.element.as_str()),
-                url_parsed,
-                host,
-                url.location.clone(),
-            )]
-            .into_iter()
-            .chain(redirected_urls.into_iter())
-            {
-                let query = url_parsed
-                    .path_and_query()
-                    .map(|pq| pq.as_str())
-                    .unwrap_or_default();
-                if host.ip.is_none() {
-                    if !host.fqdn.is_ascii() {
-                        if let Ok(cured_host) =
-                            decancer::cure(&host.fqdn, decancer::Options::default())
+            // Add URL
+            ctx.output.urls.insert(ElementLocation::new(
+                UrlParts::new(url.element).with_parsed(url_parsed),
+                url.location,
+            ));
+        }
+
+        for (el, url_parsed) in ctx.output.urls.iter().filter_map(|el| {
+            el.element
+                .url_parsed
+                .as_ref()
+                .map(|url_parsed| (el, url_parsed))
+        }) {
+            let host = &url_parsed.host;
+            let url = &el.element.url;
+            let url_parsed = &url_parsed.parts;
+
+            let query = url_parsed
+                .path_and_query()
+                .map(|pq| pq.as_str())
+                .unwrap_or_default();
+            if host.ip.is_none() {
+                if !host.fqdn.is_ascii() {
+                    if let Ok(cured_host) = decancer::cure(&host.fqdn, decancer::Options::default())
+                    {
+                        let cured_host = cured_host.to_string();
+                        if cured_host != host.fqdn
+                            && matches!(self.core.dns_exists_ip(&cured_host).await, Ok(true))
                         {
-                            let cured_host = cured_host.to_string();
-                            if cured_host != host.fqdn
-                                && matches!(self.core.dns_exists_ip(&cured_host).await, Ok(true))
-                            {
-                                ctx.result.add_tag("HOMOGRAPH_URL");
-                            }
-
-                            if !cured_host.is_single_script() {
-                                ctx.result.add_tag("MIXED_CHARSET_URL");
-                            }
+                            ctx.result.add_tag("HOMOGRAPH_URL");
                         }
-                    } else if matches!(host.sld.as_deref(), Some("googleusercontent.com"))
-                        && query.starts_with("/proxy/")
-                    {
-                        ctx.result.add_tag("HAS_GUC_PROXY_URI");
-                    } else if host.fqdn.ends_with("firebasestorage.googleapis.com") {
-                        ctx.result.add_tag("HAS_GOOGLE_FIREBASE_URL");
-                    } else if host.sld_or_default().starts_with("google.") && query.contains("url?")
-                    {
-                        ctx.result.add_tag("HAS_GOOGLE_REDIR");
-                    }
 
-                    if host.fqdn.contains("ipfs.")
-                        || (query.contains("/ipfs") && query.contains("/qm"))
-                    {
-                        // InterPlanetary File System (IPFS) gateway URL, likely malicious
-                        ctx.result.add_tag("HAS_IPFS_GATEWAY_URL");
-                    } else if host.fqdn.ends_with(".onion") {
-                        // Onion URL
-                        ctx.result.add_tag("HAS_ONION_URI");
-                    }
-
-                    // Check Domain DNSBL
-                    if ctx.result.rbl_domain_checks < self.core.spam.max_rbl_domain_checks {
-                        for dnsbl in &self.core.spam.dnsbls {
-                            if matches!(dnsbl.element, Element::Domain)
-                                && dnsbl.element_location.contains(&location)
-                            {
-                                if let Some(tag) = is_dnsbl(
-                                    self,
-                                    dnsbl,
-                                    SpamFilterResolver::new(ctx, &host.sld_or_default()),
-                                )
-                                .await
-                                {
-                                    ctx.result.add_tag(tag);
-                                }
-                            }
+                        if !cured_host.is_single_script() {
+                            ctx.result.add_tag("MIXED_CHARSET_URL");
                         }
-                        ctx.result.rbl_domain_checks += 1;
                     }
-                } else {
-                    // URL is an ip address
-                    ctx.result.add_tag("R_SUSPICIOUS_URL");
-                }
-
-                if query.starts_with("/wp-") {
-                    // Contains WordPress URIs
-                    ctx.result.add_tag("HAS_WP_URI");
-
-                    if query.starts_with("/wp-content") || query.starts_with("/wp-includes") {
-                        // URL that is pointing to a compromised WordPress installation
-                        ctx.result.add_tag("WP_COMPROMISED");
-                    }
-                }
-
-                if query.contains("/../")
-                    && !query.contains("/.well-known")
-                    && !query.contains("/.well_known")
+                } else if matches!(host.sld.as_deref(), Some("googleusercontent.com"))
+                    && query.starts_with("/proxy/")
                 {
-                    // Message contains URI with a hidden path
-                    ctx.result.add_tag("URI_HIDDEN_PATH");
+                    ctx.result.add_tag("HAS_GUC_PROXY_URI");
+                } else if host.fqdn.ends_with("firebasestorage.googleapis.com") {
+                    ctx.result.add_tag("HAS_GOOGLE_FIREBASE_URL");
+                } else if host.sld_or_default().starts_with("google.") && query.contains("url?") {
+                    ctx.result.add_tag("HAS_GOOGLE_REDIR");
                 }
 
-                // Check remote lists
-                for remote in &self.core.spam.remote_lists {
-                    if matches!(remote.element, Element::Url)
-                        && remote.element_location.contains(&location)
-                        && is_in_remote_list(self, remote, url.as_ref(), ctx.input.span_id).await
-                    {
-                        ctx.result.add_tag(&remote.tag);
-                    }
+                if host.fqdn.contains("ipfs.") || (query.contains("/ipfs") && query.contains("/qm"))
+                {
+                    // InterPlanetary File System (IPFS) gateway URL, likely malicious
+                    ctx.result.add_tag("HAS_IPFS_GATEWAY_URL");
+                } else if host.fqdn.ends_with(".onion") {
+                    // Onion URL
+                    ctx.result.add_tag("HAS_ONION_URI");
                 }
 
-                // Check URL DNSBL
-                if ctx.result.rbl_url_checks < self.core.spam.max_rbl_url_checks {
+                // Check Domain DNSBL
+                if ctx.result.rbl_domain_checks < self.core.spam.max_rbl_domain_checks {
                     for dnsbl in &self.core.spam.dnsbls {
-                        if matches!(dnsbl.element, Element::Url)
-                            && dnsbl.element_location.contains(&location)
-                        {
+                        if matches!(dnsbl.element, Element::Domain) {
                             if let Some(tag) = is_dnsbl(
                                 self,
                                 dnsbl,
                                 SpamFilterResolver::new(
                                     ctx,
-                                    &UriHost::new(&url, &url_parsed, &host),
+                                    &StringResolver(host.sld_or_default()),
+                                    el.location,
                                 ),
                             )
                             .await
@@ -346,8 +321,56 @@ impl SpamFilterAnalyzeUrl for Server {
                             }
                         }
                     }
-                    ctx.result.rbl_url_checks += 1;
+                    ctx.result.rbl_domain_checks += 1;
                 }
+            } else {
+                // URL is an ip address
+                ctx.result.add_tag("R_SUSPICIOUS_URL");
+            }
+
+            if query.starts_with("/wp-") {
+                // Contains WordPress URIs
+                ctx.result.add_tag("HAS_WP_URI");
+
+                if query.starts_with("/wp-content") || query.starts_with("/wp-includes") {
+                    // URL that is pointing to a compromised WordPress installation
+                    ctx.result.add_tag("WP_COMPROMISED");
+                }
+            }
+
+            if query.contains("/../")
+                && !query.contains("/.well-known")
+                && !query.contains("/.well_known")
+            {
+                // Message contains URI with a hidden path
+                ctx.result.add_tag("URI_HIDDEN_PATH");
+            }
+
+            // Check remote lists
+            for remote in &self.core.spam.remote_lists {
+                if matches!(remote.element, Element::Url)
+                    && is_in_remote_list(self, remote, url.as_ref(), ctx.input.span_id).await
+                {
+                    ctx.result.add_tag(&remote.tag);
+                }
+            }
+
+            // Check URL DNSBL
+            if ctx.result.rbl_url_checks < self.core.spam.max_rbl_url_checks {
+                for dnsbl in &self.core.spam.dnsbls {
+                    if matches!(dnsbl.element, Element::Url) {
+                        if let Some(tag) = is_dnsbl(
+                            self,
+                            dnsbl,
+                            SpamFilterResolver::new(ctx, &el.element, el.location),
+                        )
+                        .await
+                        {
+                            ctx.result.add_tag(tag);
+                        }
+                    }
+                }
+                ctx.result.rbl_url_checks += 1;
             }
         }
     }
@@ -447,61 +470,38 @@ fn is_single_html_url<T: AsRef<str>>(html_tokens: &[HtmlToken], tokens: &[TokenT
     url_count == 1
 }
 
-struct UriHost<'x> {
-    full_url: &'x str,
-    url: &'x Uri,
-    host: &'x Hostname,
-}
-
-pub const V_URL_FULL: u32 = 0;
-pub const V_URL_PATH_QUERY: u32 = 1;
-pub const V_URL_PATH: u32 = 2;
-pub const V_URL_QUERY: u32 = 3;
-pub const V_URL_SCHEME: u32 = 4;
-pub const V_URL_AUTHORITY: u32 = 5;
-pub const V_URL_HOST: u32 = 6;
-pub const V_URL_HOST_SLD: u32 = 7;
-pub const V_URL_PORT: u32 = 8;
-
-impl ResolveVariable for UriHost<'_> {
-    fn resolve_variable(&self, variable: u32) -> Variable<'_> {
-        match variable {
-            V_URL_FULL => Variable::String(self.full_url.into()),
-            V_URL_PATH_QUERY => Variable::String(
-                self.url
-                    .path_and_query()
-                    .map(|p| p.as_str())
-                    .unwrap_or_default()
-                    .into(),
-            ),
-            V_URL_PATH => Variable::String(self.url.path().into()),
-            V_URL_QUERY => Variable::String(self.url.query().unwrap_or_default().into()),
-            V_URL_SCHEME => Variable::String(self.url.scheme_str().unwrap_or_default().into()),
-            V_URL_AUTHORITY => Variable::String(
-                self.url
-                    .authority()
-                    .map(|a| a.as_str())
-                    .unwrap_or_default()
-                    .into(),
-            ),
-            V_URL_HOST => Variable::String(self.host.fqdn.as_str().into()),
-            V_URL_HOST_SLD => Variable::String(self.host.sld_or_default().into()),
-            V_URL_PORT => Variable::Integer(self.url.port_u16().unwrap_or(0) as _),
-            _ => Variable::Integer(0),
-        }
-    }
-
-    fn resolve_global(&self, _: &str) -> Variable<'_> {
-        Variable::Integer(0)
+impl PartialEq for UrlParts {
+    fn eq(&self, other: &Self) -> bool {
+        self.url == other.url
     }
 }
 
-impl<'x> UriHost<'x> {
-    pub fn new(full_url: &'x str, url: &'x Uri, host: &'x Hostname) -> Self {
+impl Eq for UrlParts {}
+
+impl Hash for UrlParts {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.url.hash(state);
+    }
+}
+
+impl UrlParts {
+    pub fn new(url: String) -> Self {
         Self {
-            full_url,
             url,
-            host,
+            url_parsed: None,
         }
+    }
+
+    pub fn with_parsed(mut self, url_parsed: UrlParsed) -> Self {
+        self.url_parsed = Some(url_parsed);
+        self
+    }
+
+    pub fn with_parts(mut self, url_parsed: Uri, host: Hostname) -> Self {
+        self.url_parsed = Some(UrlParsed {
+            parts: url_parsed,
+            host,
+        });
+        self
     }
 }

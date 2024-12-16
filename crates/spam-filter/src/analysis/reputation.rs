@@ -1,4 +1,10 @@
-use std::{borrow::Cow, future::Future};
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use std::{borrow::Cow, future::Future};
 
 use common::{
     ip_to_bytes, Server, KV_REPUTATION_ASN, KV_REPUTATION_DOMAIN, KV_REPUTATION_FROM,

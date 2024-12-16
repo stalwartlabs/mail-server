@@ -1,4 +1,10 @@
-use common::Server;
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use common::Server;
 use mail_parser::{parsers::fields::thread::thread_name, HeaderName, PartType};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 
@@ -214,6 +220,10 @@ impl SpamFilterInit for Server {
                 recipients_cc,
                 recipients_bcc,
                 text_parts,
+                ips: Default::default(),
+                emails: Default::default(),
+                urls: Default::default(),
+                domains: Default::default(),
             },
             input,
             result: SpamFilterResult::default(),

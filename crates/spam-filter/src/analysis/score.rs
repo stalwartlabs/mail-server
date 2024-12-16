@@ -1,4 +1,10 @@
-use common::{config::spamfilter::SpamFilterAction, Server};
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use common::{config::spamfilter::SpamFilterAction, Server};
 use std::{fmt::Write, future::Future, vec};
 
 use crate::{modules::bayes::bayes_train_if_balanced, SpamFilterContext};

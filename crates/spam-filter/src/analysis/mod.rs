@@ -1,16 +1,18 @@
-use std::{
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
 };
 
-use common::{
-    config::spamfilter::Location,
-    expr::{functions::ResolveVariable, Variable},
-    Server,
-};
+use common::{config::spamfilter::Location, Server};
 use mail_parser::{parsers::MessageStream, Header};
 
-use crate::{Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput, SpamFilterResult};
+use crate::{Recipient, SpamFilterInput, SpamFilterOutput, SpamFilterResult};
 
 pub mod bayes;
 pub mod bounce;
@@ -32,6 +34,7 @@ pub mod received;
 pub mod recipient;
 pub mod replyto;
 pub mod reputation;
+pub mod rules;
 pub mod score;
 pub mod subject;
 pub mod trusted_reply;
@@ -68,28 +71,7 @@ impl SpamFilterResult {
     }
 }
 
-pub(crate) struct SpamFilterResolver<'x, T: ResolveVariable> {
-    pub ctx: &'x SpamFilterContext<'x>,
-    pub item: &'x T,
-}
-
-impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
-    fn resolve_variable(&self, variable: u32) -> common::expr::Variable<'_> {
-        self.item.resolve_variable(variable)
-    }
-
-    fn resolve_global(&self, variable: &str) -> common::expr::Variable<'_> {
-        Variable::Integer(self.ctx.result.tags.contains(variable).into())
-    }
-}
-
-impl<'x, T: ResolveVariable> SpamFilterResolver<'x, T> {
-    pub fn new(ctx: &'x SpamFilterContext<'x>, item: &'x T) -> Self {
-        Self { ctx, item }
-    }
-}
-
-pub(crate) struct ElementLocation<T> {
+pub struct ElementLocation<T> {
     pub element: T,
     pub location: Location,
 }

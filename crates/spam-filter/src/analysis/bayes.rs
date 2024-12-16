@@ -1,11 +1,14 @@
-use std::future::Future;
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
+ use std::future::Future;
 
 use common::Server;
 
-use crate::{
-    modules::bayes::{bayes_classify, bayes_train_if_balanced},
-    SpamFilterContext,
-};
+use crate::{modules::bayes::bayes_classify, SpamFilterContext};
 
 pub trait SpamFilterAnalyzeBayes: Sync + Send {
     fn spam_filter_analyze_bayes_classify(

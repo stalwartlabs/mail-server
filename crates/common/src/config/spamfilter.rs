@@ -7,7 +7,6 @@
 use std::{net::SocketAddr, time::Duration};
 
 use ahash::AHashSet;
-use mail_parser::HeaderName;
 use nlp::bayes::BayesClassifier;
 use utils::{
     config::Config,
@@ -24,6 +23,7 @@ pub struct SpamFilterConfig {
     pub max_rbl_url_checks: usize,
     pub trusted_reply: Option<u64>,
 
+    pub rules: Vec<SpamFilterRule>,
     pub greylist_duration: Option<Duration>,
     pub pyzor: Option<PyzorConfig>,
     pub reputation: Option<ReputationConfig>,
@@ -86,6 +86,12 @@ pub struct PyzorConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpamFilterRule {
+    pub rule: IfBlock,
+    pub scope: Option<Element>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileExtension {
     pub known_types: AHashSet<String>,
     pub is_bad: bool,
@@ -99,19 +105,25 @@ pub enum Element {
     Domain,
     Email,
     Ip,
+    Header,
+    Body,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Location {
     EnvelopeFrom,
     EnvelopeTo,
-    DkimPassing,
+    HeaderDkimPass,
+    HeaderReceived,
+    HeaderFrom,
+    HeaderReplyTo,
+    HeaderSubject,
+    HeaderTo,
+    HeaderCc,
+    HeaderBcc,
     Ehlo,
-    Header(HeaderName<'static>),
     BodyText,
     BodyHtml,
-    BodyRaw,
-    Message,
     Attachment,
     Tcp,
 }
@@ -128,7 +140,6 @@ pub struct RemoteListConfig {
     pub max_entry_size: usize, // 256
     pub format: RemoteListFormat,
     pub element: Element,
-    pub element_location: AHashSet<Location>,
     pub tag: String,
 }
 
@@ -137,7 +148,6 @@ pub struct DnsblConfig {
     pub id: String,
     pub zone: IfBlock,
     pub element: Element,
-    pub element_location: AHashSet<Location>,
     pub tags: IfBlock,
 }
 
@@ -157,8 +167,24 @@ impl SpamFilterConfig {
     }
 }
 
-impl From<HeaderName<'static>> for Location {
-    fn from(header: HeaderName<'static>) -> Self {
-        Location::Header(header)
+impl Location {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Location::EnvelopeFrom => "env_from",
+            Location::EnvelopeTo => "env_to",
+            Location::HeaderDkimPass => "dkim_pass",
+            Location::HeaderReceived => "received",
+            Location::HeaderFrom => "from",
+            Location::HeaderReplyTo => "reply_to",
+            Location::HeaderSubject => "subject",
+            Location::HeaderTo => "to",
+            Location::HeaderCc => "cc",
+            Location::HeaderBcc => "bcc",
+            Location::Ehlo => "ehlo",
+            Location::BodyText => "body_text",
+            Location::BodyHtml => "body_html",
+            Location::Attachment => "attachment",
+            Location::Tcp => "tcp",
+        }
     }
 }

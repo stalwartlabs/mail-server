@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
+ */
+
 pub mod analysis;
 pub mod modules;
 
@@ -5,6 +11,8 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 
+use analysis::url::UrlParts;
+use analysis::ElementLocation;
 use mail_auth::{dmarc::Policy, ArcOutput, DkimOutput, DmarcResult, IprevOutput, SpfOutput};
 use mail_parser::Message;
 use modules::html::HtmlToken;
@@ -60,6 +68,11 @@ pub struct SpamFilterOutput<'x> {
     pub subject: String,
     pub subject_thread: String,
     pub subject_tokens: Vec<TokenType<&'x str>>,
+
+    pub ips: AHashSet<ElementLocation<IpAddr>>,
+    pub urls: HashSet<ElementLocation<UrlParts>>,
+    pub emails: HashSet<ElementLocation<Recipient>>,
+    pub domains: HashSet<ElementLocation<String>>,
 
     pub text_parts: Vec<TextPart<'x>>,
 }
