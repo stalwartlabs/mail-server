@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::{collections::HashSet, future::Future};
+use std::{collections::HashSet, future::Future};
 
 use common::{
     config::spamfilter::{Element, Location},
@@ -17,6 +17,7 @@ use crate::{
     modules::{
         dnsbl::is_dnsbl,
         expression::{SpamFilterResolver, StringResolver},
+        html::{HtmlToken, A, HREF},
     },
     Email, Recipient, SpamFilterContext, TextPart,
 };
@@ -100,23 +101,59 @@ impl SpamFilterAnalyzeDomain for Server {
                         None
                     }
                 })),
-                TextPart::Html { tokens, .. } => emails.extend(tokens.iter().filter_map(|t| {
-                    if let TokenType::Email(email) = t {
-                        Some(ElementLocation::new(
-                            Recipient {
-                                email: Email::new(email),
-                                name: None,
-                            },
-                            if is_body {
-                                Location::BodyHtml
-                            } else {
-                                Location::Attachment
-                            },
-                        ))
-                    } else {
-                        None
-                    }
-                })),
+                TextPart::Html {
+                    tokens,
+                    html_tokens,
+                    ..
+                } => {
+                    emails.extend(tokens.iter().filter_map(|t| {
+                        if let TokenType::Email(email) = t {
+                            Some(ElementLocation::new(
+                                Recipient {
+                                    email: Email::new(email),
+                                    name: None,
+                                },
+                                if is_body {
+                                    Location::BodyHtml
+                                } else {
+                                    Location::Attachment
+                                },
+                            ))
+                        } else {
+                            None
+                        }
+                    }));
+                    emails.extend(html_tokens.iter().filter_map(|token| {
+                        if let HtmlToken::StartTag {
+                            name: A,
+                            attributes,
+                            ..
+                        } = token
+                        {
+                            attributes.iter().find_map(|(attr, value)| {
+                                if *attr == HREF {
+                                    let value = value.as_deref()?.strip_prefix("mailto:")?;
+                                    if value.contains('@') {
+                                        return Some(ElementLocation::new(
+                                            Recipient {
+                                                email: Email::new(value),
+                                                name: None,
+                                            },
+                                            if is_body {
+                                                Location::BodyHtml
+                                            } else {
+                                                Location::Attachment
+                                            },
+                                        ));
+                                    }
+                                }
+                                None
+                            })
+                        } else {
+                            None
+                        }
+                    }));
+                }
                 TextPart::None => (),
             }
         }
@@ -135,9 +172,9 @@ impl SpamFilterAnalyzeDomain for Server {
             }
 
             // Check Email DNSBL
-            if ctx.result.rbl_email_checks < self.core.spam.max_rbl_email_checks {
-                for dnsbl in &self.core.spam.dnsbls {
-                    if dnsbl.element == Element::Email {
+            if ctx.result.rbl_email_checks < self.core.spam.dnsbl.max_email_checks {
+                for dnsbl in &self.core.spam.dnsbl.servers {
+                    if dnsbl.scope == Element::Email {
                         if let Some(tag) = is_dnsbl(
                             self,
                             dnsbl,
@@ -166,9 +203,9 @@ impl SpamFilterAnalyzeDomain for Server {
             }
 
             // Check Domain DNSBL
-            if ctx.result.rbl_domain_checks < self.core.spam.max_rbl_domain_checks {
-                for dnsbl in &self.core.spam.dnsbls {
-                    if dnsbl.element == Element::Domain {
+            if ctx.result.rbl_domain_checks < self.core.spam.dnsbl.max_domain_checks {
+                for dnsbl in &self.core.spam.dnsbl.servers {
+                    if dnsbl.scope == Element::Domain {
                         if let Some(tag) = is_dnsbl(
                             self,
                             dnsbl,

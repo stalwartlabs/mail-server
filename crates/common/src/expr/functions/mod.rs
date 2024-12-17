@@ -79,6 +79,7 @@ pub(crate) const FUNCTIONS: &[(&str, fn(Vec<Variable>) -> Variable, u32)] = &[
     ("rsplit_once", text::fn_rsplit_once, 2),
     ("split_n", text::fn_split_n, 3),
     ("split_words", text::fn_split_words, 1),
+    ("hash", text::fn_hash, 2),
 ];
 
 pub const F_IS_LOCAL_DOMAIN: u32 = 0;

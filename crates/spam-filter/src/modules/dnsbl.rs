@@ -4,19 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::time::Instant;
+use std::{net::Ipv4Addr, time::Instant};
 
-use common::{config::spamfilter::DnsblConfig, expr::functions::ResolveVariable, Server};
+use common::{config::spamfilter::DnsBlServer, expr::functions::ResolveVariable, Server};
 use mail_auth::Error;
 use trc::SpamEvent;
 
-use crate::modules::expression::StringListResolver;
+use crate::modules::expression::IpResolver;
 
 use super::expression::SpamFilterResolver;
 
 pub(crate) async fn is_dnsbl(
     server: &Server,
-    config: &DnsblConfig,
+    config: &DnsBlServer,
     resolver: SpamFilterResolver<'_, impl ResolveVariable>,
 ) -> Option<String> {
     let time = Instant::now();
@@ -27,13 +27,11 @@ pub(crate) async fn is_dnsbl(
 
     match server.core.smtp.resolvers.dns.ipv4_lookup(&zone).await {
         Ok(result) => {
-            let result = result.iter().map(|ip| ip.to_string()).collect::<Vec<_>>();
-
             trc::event!(
                 Spam(SpamEvent::Classify),
                 Result = result
                     .iter()
-                    .map(|ip| trc::Value::from(ip.clone()))
+                    .map(|ip| trc::Value::from(ip.to_string()))
                     .collect::<Vec<_>>(),
                 Elapsed = time.elapsed()
             );
@@ -41,7 +39,18 @@ pub(crate) async fn is_dnsbl(
             server
                 .eval_if(
                     &config.tags,
-                    &StringListResolver(&result),
+                    &SpamFilterResolver::new(
+                        resolver.ctx,
+                        &IpResolver(
+                            result
+                                .iter()
+                                .copied()
+                                .next()
+                                .unwrap_or(Ipv4Addr::BROADCAST)
+                                .into(),
+                        ),
+                        resolver.location,
+                    ),
                     resolver.ctx.input.span_id,
                 )
                 .await

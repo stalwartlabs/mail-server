@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::Server;
 use mail_parser::HeaderName;
@@ -23,22 +23,15 @@ pub trait SpamFilterAnalyzeSubject: Sync + Send {
 impl SpamFilterAnalyzeSubject for Server {
     async fn spam_filter_analyze_subject(&self, ctx: &mut SpamFilterContext<'_>) {
         let mut subject_raw = b"".as_slice();
-        let mut is_reply = false;
 
         for header in ctx.input.message.headers() {
-            match &header.name {
-                HeaderName::Subject => {
-                    subject_raw = ctx
-                        .input
-                        .message
-                        .raw_message()
-                        .get(header.offset_start..header.offset_end)
-                        .unwrap_or_default();
-                }
-                HeaderName::InReplyTo | HeaderName::References => {
-                    is_reply = true;
-                }
-                _ => {}
+            if header.name == HeaderName::Subject {
+                subject_raw = ctx
+                    .input
+                    .message
+                    .raw_message()
+                    .get(header.offset_start..header.offset_end)
+                    .unwrap_or_default();
             }
         }
 
@@ -66,12 +59,6 @@ impl SpamFilterAnalyzeSubject for Server {
                     '$' | '€' | '£' | '¥' | '₹' | '₽' | '₿' => {
                         ctx.result.add_tag("SUBJECT_HAS_CURRENCY");
                     }
-                    '!' => {
-                        ctx.result.add_tag("SUBJECT_HAS_EXCLAIM");
-                    }
-                    '?' => {
-                        ctx.result.add_tag("SUBJECT_HAS_QUESTION");
-                    }
                     _ => {
                         if ch.is_alphabetic() {
                             if ch.is_uppercase() {
@@ -93,16 +80,6 @@ impl SpamFilterAnalyzeSubject for Server {
             last_ch = ch;
         }
 
-        match last_ch_trimmed {
-            '?' => {
-                ctx.result.add_tag("SUBJECT_ENDS_QUESTION");
-            }
-            '!' => {
-                ctx.result.add_tag("SUBJECT_ENDS_EXCLAIM");
-            }
-            _ => {}
-        }
-
         if last_ch.is_whitespace() {
             if last_ch_trimmed.is_whitespace() {
                 // Subject is empty
@@ -120,11 +97,6 @@ impl SpamFilterAnalyzeSubject for Server {
         {
             // Subject contains mostly capital letters
             ctx.result.add_tag("SUBJ_ALL_CAPS");
-        }
-
-        if ctx.output.subject_thread.len() > 200 {
-            // Subject is very long
-            ctx.result.add_tag("LONG_SUBJ");
         }
 
         for token in &ctx.output.subject_tokens {
@@ -186,11 +158,6 @@ impl SpamFilterAnalyzeSubject for Server {
                 // Subject header is unnecessarily encoded in base64
                 ctx.result.add_tag("SUBJ_EXCESS_BASE64");
             }
-        }
-
-        if !is_reply && ctx.output.subject.trim().starts_with("re:") {
-            // Subject is not a reply but starts with "re:"
-            ctx.result.add_tag("FAKE_REPLY");
         }
     }
 }

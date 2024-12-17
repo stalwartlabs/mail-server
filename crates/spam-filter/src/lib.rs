@@ -66,7 +66,9 @@ pub struct SpamFilterOutput<'x> {
     pub reply_to: Option<Recipient>,
 
     pub subject: String,
+    pub subject_lc: String,
     pub subject_thread: String,
+    pub subject_thread_lc: String,
     pub subject_tokens: Vec<TokenType<&'x str>>,
 
     pub ips: AHashSet<ElementLocation<IpAddr>>,

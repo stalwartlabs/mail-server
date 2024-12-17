@@ -27,7 +27,15 @@ impl SpamFilterAnalyzeLlm for Server {
             .and_then(|c| c.spam_filter_llm.as_ref())
         {
             let time = Instant::now();
-            let prompt = config.prompt.clone();
+            let body = if let Some(body) = ctx.text_body() {
+                body
+            } else {
+                return;
+            };
+            let prompt = format!(
+                "{}\n\nSubject: {}\n\n{}",
+                config.prompt, ctx.output.subject, body
+            );
             match config
                 .model
                 .send_request(prompt, config.temperature.into())

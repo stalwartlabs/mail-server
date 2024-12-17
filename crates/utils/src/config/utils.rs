@@ -208,6 +208,32 @@ impl Config {
         }
     }
 
+    pub fn value_require_non_empty(&mut self, key: impl AsKey) -> Option<&str> {
+        let key = key.as_key();
+
+        #[cfg(debug_assertions)]
+        self.keys_read.lock().insert(key.clone());
+
+        if let Some(value) = self.keys.get(&key).and_then(|v| {
+            let v = v.trim();
+            if !v.is_empty() {
+                Some(v)
+            } else {
+                None
+            }
+        }) {
+            Some(value)
+        } else {
+            self.errors.insert(
+                key,
+                ConfigError::Parse {
+                    error: "Missing property".to_string(),
+                },
+            );
+            None
+        }
+    }
+
     pub fn try_parse_value<T: ParseValue>(&mut self, key: impl AsKey, value: &str) -> Option<T> {
         match T::parse_value(value) {
             Ok(value) => Some(value),

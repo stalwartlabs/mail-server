@@ -83,7 +83,7 @@ impl SpamFilterAnalyzeDmarc for Server {
         if self
             .core
             .spam
-            .list_dmarc_allow
+            .lists.dmarc_allow
             .contains(&ctx.output.from.email.domain_part.fqdn)
         {
             if matches!(ctx.input.dmarc_result, DmarcResult::Pass) {
@@ -94,7 +94,7 @@ impl SpamFilterAnalyzeDmarc for Server {
         } else if self
             .core
             .spam
-            .list_spf_dkim_allow
+            .lists.spf_dkim_allow
             .contains(&ctx.output.from.email.domain_part.fqdn)
         {
             let is_dkim_pass = matches!(ctx.input.arc_result.result(), DkimResult::Pass)

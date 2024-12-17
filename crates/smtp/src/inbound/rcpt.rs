@@ -299,7 +299,8 @@ impl<T: SessionStream> Session<T> {
                 .server
                 .core
                 .spam
-                .greylist_duration
+                .expiry
+                .grey_list
                 .filter(|_| self.data.authenticated_as.is_none())
             {
                 let mut key = Vec::with_capacity(64);
@@ -324,9 +325,7 @@ impl<T: SessionStream> Session<T> {
                         match self
                             .server
                             .in_memory_store()
-                            .key_set(
-                                KeyValue::new(key, vec![]).expires(greylist_duration.as_secs()),
-                            )
+                            .key_set(KeyValue::new(key, vec![]).expires(greylist_duration))
                             .await
                         {
                             Ok(_) => {

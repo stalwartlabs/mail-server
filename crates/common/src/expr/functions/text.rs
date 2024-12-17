@@ -6,6 +6,9 @@
 
 use std::borrow::Cow;
 
+use sha1::Sha1;
+use sha2::{Sha256, Sha512};
+
 use crate::expr::Variable;
 
 pub(crate) fn fn_trim(mut v: Vec<Variable>) -> Variable {
@@ -310,5 +313,32 @@ pub(crate) fn fn_rsplit_once(v: Vec<Variable>) -> Variable {
                 ])
             })
             .unwrap_or_default(),
+    }
+}
+
+pub(crate) fn fn_hash(v: Vec<Variable>) -> Variable {
+    use sha1::Digest;
+    let mut v = v.into_iter();
+    let value = v.next().unwrap().into_string();
+    let algo = v.next().unwrap().into_string();
+
+    match algo.as_ref() {
+        "md5" => format!("{:x}", md5::compute(value.as_bytes())).into(),
+        "sha1" => {
+            let mut hasher = Sha1::new();
+            hasher.update(value.as_bytes());
+            format!("{:x}", hasher.finalize()).into()
+        }
+        "sha256" => {
+            let mut hasher = Sha256::new();
+            hasher.update(value.as_bytes());
+            format!("{:x}", hasher.finalize()).into()
+        }
+        "sha512" => {
+            let mut hasher = Sha512::new();
+            hasher.update(value.as_bytes());
+            format!("{:x}", hasher.finalize()).into()
+        }
+        _ => Variable::default(),
     }
 }

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::Server;
 use mail_parser::HeaderName;
@@ -19,26 +19,12 @@ pub trait SpamFilterAnalyzeFrom: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
-const SERVICE_ACCOUNTS: [&str; 9] = [
-    "www-data",
-    "anonymous",
-    "ftp",
-    "apache",
-    "nobody",
-    "guest",
-    "nginx",
-    "web",
-    "www",
-];
-pub(crate) const TITLES: [&str; 7] = ["mr. ", "mrs. ", "ms. ", "dr. ", "prof. ", "rev. ", "hon. "];
-
 impl SpamFilterAnalyzeFrom for Server {
     async fn spam_filter_analyze_from(&self, ctx: &mut SpamFilterContext<'_>) {
         let mut from_count = 0;
         let mut from_raw = b"".as_slice();
         let mut crt = None;
         let mut dnt = None;
-        let mut sender = None;
 
         for header in ctx.input.message.headers() {
             match &header.name {
@@ -50,14 +36,6 @@ impl SpamFilterAnalyzeFrom for Server {
                         .raw_message()
                         .get(header.offset_start..header.offset_end)
                         .unwrap_or_default();
-                }
-                HeaderName::Sender => {
-                    sender = header
-                        .value()
-                        .as_address()
-                        .and_then(|addrs| addrs.first())
-                        .and_then(|addr| addr.address())
-                        .map(Email::new);
                 }
                 HeaderName::Other(name) => {
                     if name.eq_ignore_ascii_case("X-Confirm-Reading-To") {
@@ -87,31 +65,25 @@ impl SpamFilterAnalyzeFrom for Server {
         }
 
         let env_from_empty = ctx.output.env_from_addr.address.is_empty();
-        let mut is_from_service_account = false;
-        let mut is_www_dot_domain = false;
         let from_addr = &ctx.output.from.email;
         let from_name = ctx.output.from.name.as_deref().unwrap_or_default();
         if from_count > 0 {
             // Validate address
             let from_addr_is_valid = from_addr.is_valid();
             if from_addr_is_valid {
-                if SERVICE_ACCOUNTS.contains(&from_addr.local_part.as_str()) {
-                    is_from_service_account = true;
-                }
-                if from_addr.domain_part.fqdn.starts_with("www.") {
-                    is_www_dot_domain = true;
-                }
                 if self
                     .core
                     .spam
-                    .list_freemail_providers
+                    .lists
+                    .freemail_providers
                     .contains(from_addr.domain_part.sld.as_deref().unwrap_or_default())
                 {
                     ctx.result.add_tag("FREEMAIL_FROM");
                 } else if self
                     .core
                     .spam
-                    .list_disposable_providers
+                    .lists
+                    .disposable_providers
                     .contains(from_addr.domain_part.sld.as_deref().unwrap_or_default())
                 {
                     ctx.result.add_tag("DISPOSABLE_FROM");
@@ -144,17 +116,6 @@ impl SpamFilterAnalyzeFrom for Server {
                     } else {
                         ctx.result.add_tag("FROM_NEQ_DISPLAY_NAME");
                     }
-                } else {
-                    for title in TITLES {
-                        if from_name.contains(title) {
-                            ctx.result.add_tag("FROM_NAME_HAS_TITLE");
-                            break;
-                        }
-                    }
-
-                    if from_name.contains("  ") {
-                        ctx.result.add_tag("FROM_NAME_EXCESS_SPACE");
-                    }
                 }
             }
 
@@ -172,10 +133,6 @@ impl SpamFilterAnalyzeFrom for Server {
             } else if from_addr_is_valid {
                 ctx.result.add_tag("FORGED_SENDER");
                 ctx.result.add_tag("FROM_NEQ_ENVFROM");
-            }
-
-            if from_addr.local_part.contains("+") {
-                ctx.result.add_tag("TAGGED_FROM");
             }
 
             // Validate FROM/TO relationship
@@ -243,10 +200,7 @@ impl SpamFilterAnalyzeFrom for Server {
         if !env_from_empty {
             // Validate envelope address
             if ctx.output.env_from_addr.is_valid() {
-                if SERVICE_ACCOUNTS.contains(&ctx.output.env_from_addr.local_part.as_str()) {
-                    ctx.result.add_tag("ENVFROM_SERVICE_ACCT");
-                }
-                if self.core.spam.list_freemail_providers.contains(
+                if self.core.spam.lists.freemail_providers.contains(
                     ctx.output
                         .env_from_addr
                         .domain_part
@@ -255,7 +209,7 @@ impl SpamFilterAnalyzeFrom for Server {
                         .unwrap_or_default(),
                 ) {
                     ctx.result.add_tag("FREEMAIL_ENVFROM");
-                } else if self.core.spam.list_disposable_providers.contains(
+                } else if self.core.spam.lists.disposable_providers.contains(
                     ctx.output
                         .env_from_addr
                         .domain_part
@@ -291,30 +245,6 @@ impl SpamFilterAnalyzeFrom for Server {
                     ctx.result.add_tag("HEADER_FORGED_MDN");
                 }
             }
-        }
-
-        for addr in [
-            ctx.output.reply_to.as_ref().map(|s| &s.email),
-            sender.as_ref(),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            if !is_from_service_account && SERVICE_ACCOUNTS.contains(&addr.local_part.as_str()) {
-                is_from_service_account = true;
-            }
-
-            if !is_www_dot_domain && addr.domain_part.fqdn.starts_with("www.") {
-                is_www_dot_domain = true;
-            }
-        }
-
-        if is_from_service_account {
-            ctx.result.add_tag("FROM_SERVICE_ACCT");
-        }
-
-        if is_www_dot_domain {
-            ctx.result.add_tag("WWW_DOT_DOMAIN");
         }
     }
 }

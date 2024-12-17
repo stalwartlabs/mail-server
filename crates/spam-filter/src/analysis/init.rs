@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use common::Server;
+use common::Server;
 use mail_parser::{parsers::fields::thread::thread_name, HeaderName, PartType};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 
@@ -190,6 +190,7 @@ impl SpamFilterInit for Server {
         }
         text_parts.extend(text_parts_nested);
 
+        let subject_thread = thread_name(&subject).to_string();
         let env_from_addr = Email::new(input.env_from);
         SpamFilterContext {
             output: SpamFilterOutput {
@@ -213,7 +214,9 @@ impl SpamFilterInit for Server {
                     name: from.and_then(|f| f.name()).map(|s| s.to_lowercase()),
                 },
                 reply_to,
-                subject_thread: thread_name(&subject).to_string(),
+                subject_thread_lc: subject_thread.trim().to_lowercase(),
+                subject_lc: subject.trim().to_lowercase(),
+                subject_thread,
                 subject,
                 subject_tokens,
                 recipients_to,

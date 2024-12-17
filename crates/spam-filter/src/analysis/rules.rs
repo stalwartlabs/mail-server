@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::{
     config::spamfilter::{Element, Location},
@@ -27,7 +27,7 @@ impl SpamFilterAnalyzeRules for Server {
     async fn spam_filter_analyze_rules(&self, ctx: &mut SpamFilterContext<'_>) {
         for rule in &self.core.spam.rules {
             match rule.scope {
-                Some(Element::Url) => {
+                Element::Url => {
                     for url in &ctx.output.urls {
                         if let Some(tag) = self
                             .eval_if::<String, _>(
@@ -41,7 +41,7 @@ impl SpamFilterAnalyzeRules for Server {
                         }
                     }
                 }
-                Some(Element::Domain) => {
+                Element::Domain => {
                     for domain in &ctx.output.domains {
                         if let Some(tag) = self
                             .eval_if::<String, _>(
@@ -59,7 +59,7 @@ impl SpamFilterAnalyzeRules for Server {
                         }
                     }
                 }
-                Some(Element::Email) => {
+                Element::Email => {
                     for email in &ctx.output.emails {
                         if let Some(tag) = self
                             .eval_if::<String, _>(
@@ -92,7 +92,7 @@ impl SpamFilterAnalyzeRules for Server {
                         }
                     }
                 }
-                Some(Element::Ip) => {
+                Element::Ip => {
                     for ip in &ctx.output.ips {
                         if let Some(tag) = self
                             .eval_if::<String, _>(
@@ -106,7 +106,7 @@ impl SpamFilterAnalyzeRules for Server {
                         }
                     }
                 }
-                Some(Element::Header) => {
+                Element::Header => {
                     for header in ctx.input.message.headers() {
                         let raw = String::from_utf8_lossy(
                             ctx.input
@@ -135,7 +135,7 @@ impl SpamFilterAnalyzeRules for Server {
                         }
                     }
                 }
-                Some(Element::Body) => {
+                Element::Body => {
                     for (idx, part) in ctx.output.text_parts.iter().enumerate() {
                         let text = match part {
                             TextPart::Plain { text_body, .. } => *text_body,
@@ -162,7 +162,7 @@ impl SpamFilterAnalyzeRules for Server {
                         }
                     }
                 }
-                None => {
+                Element::Any => {
                     if let Some(tag) = self
                         .eval_if::<String, _>(
                             &rule.rule,

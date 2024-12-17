@@ -4,14 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::Server;
 use mail_parser::HeaderName;
 
 use crate::SpamFilterContext;
-
-use super::from::TITLES;
 
 pub trait SpamFilterAnalyzeReplyTo: Sync + Send {
     fn spam_filter_analyze_reply_to(
@@ -113,7 +111,8 @@ impl SpamFilterAnalyzeReplyTo for Server {
             if self
                 .core
                 .spam
-                .list_freemail_providers
+                .lists
+                .freemail_providers
                 .contains(reply_to_sld)
             {
                 ctx.result.add_tag("FREEMAIL_REPLYTO");
@@ -129,7 +128,8 @@ impl SpamFilterAnalyzeReplyTo for Server {
                     && self
                         .core
                         .spam
-                        .list_freemail_providers
+                        .lists
+                        .freemail_providers
                         .contains(from_domain_sld)
                 {
                     ctx.result.add_tag("FREEMAIL_REPLYTO_NEQ_FROM_DOM");
@@ -137,7 +137,8 @@ impl SpamFilterAnalyzeReplyTo for Server {
             } else if self
                 .core
                 .spam
-                .list_disposable_providers
+                .lists
+                .disposable_providers
                 .contains(reply_to_sld)
             {
                 ctx.result.add_tag("DISPOSABLE_REPLYTO");
@@ -156,14 +157,6 @@ impl SpamFilterAnalyzeReplyTo for Server {
                 } else if reply_to_raw_utf8.contains("?b?") || reply_to_raw_utf8.contains("?B?") {
                     // Reply-To header is unnecessarily encoded in base64
                     ctx.result.add_tag("REPLYTO_EXCESS_BASE64");
-                }
-            }
-
-            // Validate reply-to name
-            for title in TITLES {
-                if reply_to_name.contains(title) {
-                    ctx.result.add_tag("REPLYTO_EMAIL_HAS_TITLE");
-                    break;
                 }
             }
         } else {

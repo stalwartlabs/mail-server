@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::collections::HashSet;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::{borrow::Cow, future::Future, time::Duration};
 
@@ -176,18 +176,14 @@ impl SpamFilterAnalyzeUrl for Server {
 
             // Skip local and trusted domains
             if is_trusted_domain(self, host_sld, ctx.input.span_id).await {
-                ctx.output.urls.insert(ElementLocation::new(
-                    UrlParts::new(url.element).with_parsed(url_parsed),
-                    url.location,
-                ));
                 continue;
             }
 
             if let Some(ip) = url_parsed.host.ip {
                 // Check IP DNSBL
-                if ctx.result.rbl_ip_checks < self.core.spam.max_rbl_ip_checks {
-                    for dnsbl in &self.core.spam.dnsbls {
-                        if dnsbl.element == Element::Ip {
+                if ctx.result.rbl_ip_checks < self.core.spam.dnsbl.max_ip_checks {
+                    for dnsbl in &self.core.spam.dnsbl.servers {
+                        if dnsbl.scope == Element::Ip {
                             if let Some(tag) = is_dnsbl(
                                 self,
                                 dnsbl,
@@ -201,7 +197,7 @@ impl SpamFilterAnalyzeUrl for Server {
                     }
                     ctx.result.rbl_ip_checks += 1;
                 }
-            } else if self.core.spam.list_url_redirectors.contains(host_sld) {
+            } else if self.core.spam.lists.url_redirectors.contains(host_sld) {
                 // Check for redirectors
                 ctx.result.add_tag("REDIRECTOR_URL");
 
@@ -219,7 +215,8 @@ impl SpamFilterAnalyzeUrl for Server {
                                 if self
                                     .core
                                     .spam
-                                    .list_url_redirectors
+                                    .lists
+                                    .url_redirectors
                                     .contains(host.sld_or_default())
                                 {
                                     url_redirect = Cow::Owned(location);
@@ -262,12 +259,7 @@ impl SpamFilterAnalyzeUrl for Server {
         }) {
             let host = &url_parsed.host;
             let url = &el.element.url;
-            let url_parsed = &url_parsed.parts;
 
-            let query = url_parsed
-                .path_and_query()
-                .map(|pq| pq.as_str())
-                .unwrap_or_default();
             if host.ip.is_none() {
                 if !host.fqdn.is_ascii() {
                     if let Ok(cured_host) = decancer::cure(&host.fqdn, decancer::Options::default())
@@ -283,29 +275,12 @@ impl SpamFilterAnalyzeUrl for Server {
                             ctx.result.add_tag("MIXED_CHARSET_URL");
                         }
                     }
-                } else if matches!(host.sld.as_deref(), Some("googleusercontent.com"))
-                    && query.starts_with("/proxy/")
-                {
-                    ctx.result.add_tag("HAS_GUC_PROXY_URI");
-                } else if host.fqdn.ends_with("firebasestorage.googleapis.com") {
-                    ctx.result.add_tag("HAS_GOOGLE_FIREBASE_URL");
-                } else if host.sld_or_default().starts_with("google.") && query.contains("url?") {
-                    ctx.result.add_tag("HAS_GOOGLE_REDIR");
-                }
-
-                if host.fqdn.contains("ipfs.") || (query.contains("/ipfs") && query.contains("/qm"))
-                {
-                    // InterPlanetary File System (IPFS) gateway URL, likely malicious
-                    ctx.result.add_tag("HAS_IPFS_GATEWAY_URL");
-                } else if host.fqdn.ends_with(".onion") {
-                    // Onion URL
-                    ctx.result.add_tag("HAS_ONION_URI");
                 }
 
                 // Check Domain DNSBL
-                if ctx.result.rbl_domain_checks < self.core.spam.max_rbl_domain_checks {
-                    for dnsbl in &self.core.spam.dnsbls {
-                        if matches!(dnsbl.element, Element::Domain) {
+                if ctx.result.rbl_domain_checks < self.core.spam.dnsbl.max_domain_checks {
+                    for dnsbl in &self.core.spam.dnsbl.servers {
+                        if matches!(dnsbl.scope, Element::Domain) {
                             if let Some(tag) = is_dnsbl(
                                 self,
                                 dnsbl,
@@ -328,27 +303,9 @@ impl SpamFilterAnalyzeUrl for Server {
                 ctx.result.add_tag("R_SUSPICIOUS_URL");
             }
 
-            if query.starts_with("/wp-") {
-                // Contains WordPress URIs
-                ctx.result.add_tag("HAS_WP_URI");
-
-                if query.starts_with("/wp-content") || query.starts_with("/wp-includes") {
-                    // URL that is pointing to a compromised WordPress installation
-                    ctx.result.add_tag("WP_COMPROMISED");
-                }
-            }
-
-            if query.contains("/../")
-                && !query.contains("/.well-known")
-                && !query.contains("/.well_known")
-            {
-                // Message contains URI with a hidden path
-                ctx.result.add_tag("URI_HIDDEN_PATH");
-            }
-
             // Check remote lists
-            for remote in &self.core.spam.remote_lists {
-                if matches!(remote.element, Element::Url)
+            for remote in &self.core.spam.lists.remote {
+                if matches!(remote.scope, Element::Url)
                     && is_in_remote_list(self, remote, url.as_ref(), ctx.input.span_id).await
                 {
                     ctx.result.add_tag(&remote.tag);
@@ -356,9 +313,9 @@ impl SpamFilterAnalyzeUrl for Server {
             }
 
             // Check URL DNSBL
-            if ctx.result.rbl_url_checks < self.core.spam.max_rbl_url_checks {
-                for dnsbl in &self.core.spam.dnsbls {
-                    if matches!(dnsbl.element, Element::Url) {
+            if ctx.result.rbl_url_checks < self.core.spam.dnsbl.max_url_checks {
+                for dnsbl in &self.core.spam.dnsbl.servers {
+                    if matches!(dnsbl.scope, Element::Url) {
                         if let Some(tag) = is_dnsbl(
                             self,
                             dnsbl,

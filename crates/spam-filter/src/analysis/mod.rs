@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::{
+use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
 };
@@ -12,10 +12,11 @@
 use common::{config::spamfilter::Location, Server};
 use mail_parser::{parsers::MessageStream, Header};
 
-use crate::{Recipient, SpamFilterInput, SpamFilterOutput, SpamFilterResult};
+use crate::{
+    Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput, SpamFilterResult, TextPart,
+};
 
 pub mod bayes;
-pub mod bounce;
 pub mod date;
 pub mod dmarc;
 pub mod domain;
@@ -61,6 +62,22 @@ impl SpamFilterOutput<'_> {
     }
 }
 
+impl SpamFilterContext<'_> {
+    pub fn text_body(&self) -> Option<&str> {
+        self.input
+            .message
+            .text_body
+            .first()
+            .or_else(|| self.input.message.html_body.first())
+            .and_then(|idx| self.output.text_parts.get(*idx))
+            .and_then(|part| match part {
+                TextPart::Plain { text_body, .. } => Some(*text_body),
+                TextPart::Html { text_body, .. } => Some(text_body.as_str()),
+                TextPart::None => None,
+            })
+    }
+}
+
 impl SpamFilterResult {
     pub fn add_tag(&mut self, tag: impl Into<String>) {
         self.tags.insert(tag.into());
@@ -100,7 +117,7 @@ impl<T> ElementLocation<T> {
 }
 
 pub(crate) async fn is_trusted_domain(server: &Server, domain: &str, span_id: u64) -> bool {
-    if server.core.spam.list_trusted_domains.contains(domain) {
+    if server.core.spam.lists.trusted_domains.contains(domain) {
         return true;
     }
 

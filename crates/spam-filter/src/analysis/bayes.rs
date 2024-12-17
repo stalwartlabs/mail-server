@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::Server;
 
@@ -47,7 +47,7 @@ impl SpamFilterAnalyzeBayes for Server {
             .output
             .env_to_addr
             .iter()
-            .any(|addr| self.core.spam.list_spamtraps.contains(&addr.address))
+            .any(|addr| self.core.spam.lists.spamtraps.contains(&addr.address))
         {
             ctx.result.add_tag("SPAM_TRAP");
         }

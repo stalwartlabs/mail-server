@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::{future::Future, net::IpAddr};
+use std::{future::Future, net::IpAddr};
 
 use common::{
     config::spamfilter::{Element, Location},
@@ -119,8 +119,8 @@ impl SpamFilterAnalyzeIp for Server {
                 continue;
             }
 
-            for dnsbl in &self.core.spam.dnsbls {
-                if dnsbl.element == Element::Ip {
+            for dnsbl in &self.core.spam.dnsbl.servers {
+                if dnsbl.scope == Element::Ip {
                     if let Some(tag) = is_dnsbl(
                         self,
                         dnsbl,
@@ -133,7 +133,7 @@ impl SpamFilterAnalyzeIp for Server {
                 }
             }
             ctx.result.rbl_ip_checks += 1;
-            if ctx.result.rbl_ip_checks >= self.core.spam.max_rbl_ip_checks {
+            if ctx.result.rbl_ip_checks >= self.core.spam.dnsbl.max_ip_checks {
                 break;
             }
         }

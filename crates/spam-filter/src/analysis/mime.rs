@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::{collections::HashSet, future::Future, vec};
+use std::{collections::HashSet, future::Future, vec};
 
 use common::{
     scripts::functions::{array::cosine_similarity, unicode::CharUtils},
@@ -48,13 +48,27 @@ impl SpamFilterAnalyzeMime for Server {
                 }
                 HeaderName::ContentType => {
                     has_ct = true;
-                    is_plain_text = header.value().as_content_type().map_or(false, |ct| {
-                        ct.ctype().eq_ignore_ascii_case("text")
+
+                    if let Some(ct) = header.value().as_content_type() {
+                        if ct.ctype().eq_ignore_ascii_case("multipart")
+                            && ct
+                                .subtype()
+                                .map_or(false, |s| s.eq_ignore_ascii_case("report"))
+                            && ct.attribute("report-type").map_or(false, |a| {
+                                a.eq_ignore_ascii_case("delivery-status")
+                                    || a.eq_ignore_ascii_case("disposition-notification")
+                            })
+                        {
+                            // Message is a DSN
+                            ctx.result.add_tag("IS_DSN");
+                        }
+
+                        is_plain_text = ct.ctype().eq_ignore_ascii_case("text")
                             && ct
                                 .subtype()
                                 .unwrap_or_default()
-                                .eq_ignore_ascii_case("plain")
-                    });
+                                .eq_ignore_ascii_case("plain");
+                    }
                 }
                 HeaderName::ContentTransferEncoding => {
                     has_cte = true;
@@ -104,6 +118,11 @@ impl SpamFilterAnalyzeMime for Server {
                         if ct_type.is_empty() {
                             // Content-Type header can't be parsed
                             ctx.result.add_tag("BROKEN_CONTENT_TYPE");
+                        } else if (ct_type == "message" && ct_subtype == "rfc822")
+                            || (ct_type == "text" && ct_subtype == "rfc822-headers")
+                        {
+                            // Message has parts
+                            ctx.result.add_tag("HAS_MESSAGE_PARTS");
                         }
 
                         if raw_message
@@ -352,11 +371,11 @@ impl SpamFilterAnalyzeMime for Server {
                 }
                 let attach_name = attach_name.trim().to_lowercase();
                 if let Some((name, ext)) = attach_name.rsplit_once('.').and_then(|(name, ext)| {
-                    Some((name, self.core.spam.list_file_extensions.get(ext)?))
+                    Some((name, self.core.spam.lists.file_extensions.get(ext)?))
                 }) {
                     let sub_ext = name
                         .rsplit_once('.')
-                        .and_then(|(_, ext)| self.core.spam.list_file_extensions.get(ext));
+                        .and_then(|(_, ext)| self.core.spam.lists.file_extensions.get(ext));
 
                     if ext.is_bad {
                         // Attachment has a bad extension

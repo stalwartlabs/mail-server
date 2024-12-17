@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::{scripts::functions::text::levenshtein_distance, Server};
 use mail_parser::HeaderName;
@@ -121,12 +121,6 @@ impl SpamFilterAnalyzeRecipient for Server {
         match unique_recipients.len() {
             0 => {
                 ctx.result.add_tag("RCPT_COUNT_ZERO");
-                for raw in &[to_raw_utf8, cc_raw_utf8, bcc_raw_utf8] {
-                    if matches!(raw, Ok(raw) if raw.to_ascii_lowercase().contains("undisclosed")) {
-                        ctx.result.add_tag("R_UNDISC_RCPT");
-                        break;
-                    }
-                }
                 return;
             }
             1 => {
@@ -155,7 +149,6 @@ impl SpamFilterAnalyzeRecipient for Server {
         let mut to_dn_eq_addr_count = 0;
         let mut to_dn_count = 0;
         let mut to_match_envrcpt = 0;
-        let is_from_info = ctx.output.from.email.local_part == "info";
 
         for rcpt in &unique_recipients {
             // Validate name
@@ -164,9 +157,6 @@ impl SpamFilterAnalyzeRecipient for Server {
                     to_dn_eq_addr_count += 1;
                 } else {
                     to_dn_count += 1;
-                    if ["recipient", "recipients"].contains(&rcpt_name.as_str()) {
-                        ctx.result.add_tag("TO_DN_RECIPIENTS");
-                    }
                 }
             }
 
@@ -177,27 +167,18 @@ impl SpamFilterAnalyzeRecipient for Server {
 
             // Check if the local part is present in the subject
             if !rcpt.email.local_part.is_empty() {
-                if ctx.output.subject.contains(&rcpt.email.address) {
-                    ctx.result.add_tag("RCPT_ADDR_IN_SUBJECT");
+                if ctx.output.subject_lc.contains(&rcpt.email.address) {
+                    ctx.result.add_tag("RCPT_IN_SUBJECT");
                 } else if rcpt.email.local_part.len() > 3
-                    && ctx.output.subject.contains(&rcpt.email.local_part)
+                    && ctx.output.subject_lc.contains(&rcpt.email.local_part)
                 {
                     ctx.result.add_tag("RCPT_LOCAL_IN_SUBJECT");
                 }
-
-                if rcpt.email.local_part.contains('+') {
-                    ctx.result.add_tag("TAGGED_RCPT");
-                }
-            }
-
-            // Check if it is an into to info
-            if has_list_unsubscribe && is_from_info && rcpt.email.local_part == "info" {
-                ctx.result.add_tag("INFO_TO_INFO_LU");
             }
 
             // Check for freemail or disposable domains
             if let Some(domain) = rcpt.email.domain_part.sld.as_deref() {
-                if self.core.spam.list_freemail_providers.contains(domain) {
+                if self.core.spam.lists.freemail_providers.contains(domain) {
                     if ctx
                         .output
                         .recipients_to
@@ -208,7 +189,7 @@ impl SpamFilterAnalyzeRecipient for Server {
                     } else {
                         ctx.result.add_tag("FREEMAIL_CC");
                     }
-                } else if self.core.spam.list_disposable_providers.contains(domain) {
+                } else if self.core.spam.lists.disposable_providers.contains(domain) {
                     if ctx
                         .output
                         .recipients_to

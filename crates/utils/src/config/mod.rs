@@ -55,7 +55,7 @@ pub struct Rate {
     pub period: Duration,
 }
 
-pub(crate) type Result<T> = std::result::Result<T, String>;
+pub type Result<T> = std::result::Result<T, String>;
 
 impl Config {
     pub async fn resolve_macros(&mut self, classes: &[&str]) {

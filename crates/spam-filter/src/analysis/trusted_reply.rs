@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::{Server, KV_TRUSTED_REPLY};
 use mail_parser::{HeaderName, HeaderValue};
@@ -26,7 +26,7 @@ pub trait SpamFilterAnalyzeTrustedReply: Sync + Send {
 
 impl SpamFilterAnalyzeTrustedReply for Server {
     async fn spam_filter_analyze_reply_in(&self, ctx: &mut SpamFilterContext<'_>) {
-        if self.core.spam.trusted_reply.is_some() {
+        if self.core.spam.expiry.trusted_reply.is_some() {
             for header in ctx.input.message.headers() {
                 if let HeaderName::InReplyTo | HeaderName::References = &header.name {
                     let ids: Box<dyn Iterator<Item = &str> + Send> = match &header.value {
@@ -61,9 +61,10 @@ impl SpamFilterAnalyzeTrustedReply for Server {
     }
 
     async fn spam_filter_analyze_reply_out(&self, ctx: &mut SpamFilterContext<'_>) {
-        if let (Some(hold_time), Some(message_id)) =
-            (self.core.spam.trusted_reply, ctx.input.message.message_id())
-        {
+        if let (Some(hold_time), Some(message_id)) = (
+            self.core.spam.expiry.trusted_reply,
+            ctx.input.message.message_id(),
+        ) {
             if let Err(err) = self
                 .in_memory_store()
                 .key_set(

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use common::{config::spamfilter::SpamFilterAction, Server};
+use common::{config::spamfilter::SpamFilterAction, Server};
 use std::{fmt::Write, future::Future, vec};
 
 use crate::{modules::bayes::bayes_train_if_balanced, SpamFilterContext};
@@ -28,7 +28,7 @@ impl SpamFilterAnalyzeScore for Server {
         let mut header_len = 60;
 
         for tag in &ctx.result.tags {
-            let score = match self.core.spam.list_scores.get(tag) {
+            let score = match self.core.spam.lists.scores.get(tag) {
                 Some(SpamFilterAction::Allow(score)) => *score,
                 Some(SpamFilterAction::Discard) => {
                     return SpamFilterAction::Discard;
@@ -40,7 +40,9 @@ impl SpamFilterAnalyzeScore for Server {
             };
             ctx.result.score += score;
             header_len += tag.len() + 10;
-            results.push((tag.as_str(), score));
+            if score != 0.0 || !tag.starts_with("X_") {
+                results.push((tag.as_str(), score));
+            }
         }
 
         // Sort by score
@@ -78,19 +80,19 @@ impl SpamFilterAnalyzeScore for Server {
             }
         }
 
-        if self.core.spam.score_reject_threshold > 0.0
-            && ctx.result.score >= self.core.spam.score_reject_threshold
+        if self.core.spam.scores.reject_threshold > 0.0
+            && ctx.result.score >= self.core.spam.scores.reject_threshold
         {
             SpamFilterAction::Reject
-        } else if self.core.spam.score_discard_threshold > 0.0
-            && ctx.result.score >= self.core.spam.score_discard_threshold
+        } else if self.core.spam.scores.discard_threshold > 0.0
+            && ctx.result.score >= self.core.spam.scores.discard_threshold
         {
             SpamFilterAction::Discard
         } else {
             let _ = write!(
                 &mut header,
                 "X-Spam-Status: {}, score={:.2}\r\n",
-                if ctx.result.score >= self.core.spam.score_spam_threshold {
+                if ctx.result.score >= self.core.spam.scores.spam_threshold {
                     "Yes"
                 } else {
                     "No"

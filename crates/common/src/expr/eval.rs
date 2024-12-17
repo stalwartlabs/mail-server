@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, cmp::Ordering, fmt::Display, net::IpAddr};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 
 use hyper::StatusCode;
-use mail_auth::common::resolver::ToReverseName;
 use trc::EvalEvent;
 
 use crate::Server;
@@ -15,7 +14,6 @@ use crate::Server;
 use super::{
     functions::{ResolveVariable, FUNCTIONS},
     if_block::IfBlock,
-    tokenizer::TokenMap,
     BinaryOperator, Constant, Expression, ExpressionItem, UnaryOperator, Variable,
 };
 
