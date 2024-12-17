@@ -511,7 +511,7 @@ fn unwrap_token_response(response: TokenResponse) -> (String, Option<String>, u6
                 granted.expires_in,
             )
         }
-        TokenResponse::Error { error } => panic!("Expected granted, got {:?}", error),
+        TokenResponse::Error { error } => panic!("Expected granted, got {error:?}"),
     }
 }
 
@@ -525,6 +525,6 @@ fn unwrap_oidc_token_response(response: TokenResponse) -> (String, Option<String
                 granted.id_token.unwrap(),
             )
         }
-        TokenResponse::Error { error } => panic!("Expected granted, got {:?}", error),
+        TokenResponse::Error { error } => panic!("Expected granted, got {error:?}"),
     }
 }

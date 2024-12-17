@@ -1212,7 +1212,7 @@ impl Family {
             "index" => Ok(Family::Index),
             "bitmap" => Ok(Family::Bitmap),
             "log" => Ok(Family::Log),
-            _ => Err(format!("Unknown family {}", family)),
+            _ => Err(format!("Unknown family {family}")),
         }
     }
 }

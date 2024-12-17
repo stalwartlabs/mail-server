@@ -137,7 +137,7 @@ impl LdapFilter {
             } else {
                 config.new_parse_error(
                     key,
-                    format!("Missing '?' parameter placeholder in value {:?}", value),
+                    format!("Missing '?' parameter placeholder in value {value:?}"),
                 );
             }
         }

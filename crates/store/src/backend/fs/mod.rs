@@ -113,7 +113,7 @@ impl FsStore {
         let mut path = self.path.clone();
 
         for byte in key.iter().take(self.hash_levels) {
-            path.push(format!("{:x}", byte));
+            path.push(format!("{byte:x}"));
         }
         path.push(Base32Writer::from_bytes(key).finalize());
         path

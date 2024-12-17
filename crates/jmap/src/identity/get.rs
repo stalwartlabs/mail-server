@@ -165,7 +165,7 @@ impl IdentityGet for Server {
             let name = if name.is_empty() {
                 email.clone()
             } else if has_many {
-                format!("{} <{}>", name, email)
+                format!("{name} <{email}>")
             } else {
                 name.clone()
             };

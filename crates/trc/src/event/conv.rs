@@ -151,7 +151,7 @@ where
 {
     fn from(value: &crate::Result<T>) -> Self {
         match value {
-            Ok(value) => format!("{:?}", value).into(),
+            Ok(value) => format!("{value:?}").into(),
             Err(err) => err.clone().into(),
         }
     }

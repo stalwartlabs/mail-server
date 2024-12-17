@@ -177,7 +177,7 @@ pub fn parse_datetime(value: &[u8]) -> Result<i64> {
         .map_err(|_| Cow::from("Expected date/time, found an invalid UTF-8 string."))?
         .trim();
     DateTime::parse_from_str(datetime, "%d-%b-%Y %H:%M:%S %z")
-        .map_err(|_| Cow::from(format!("Failed to parse date/time '{}'.", datetime)))
+        .map_err(|_| Cow::from(format!("Failed to parse date/time '{datetime}'.")))
         .map(|dt| dt.timestamp())
 }
 
@@ -186,7 +186,7 @@ pub fn parse_date(value: &[u8]) -> Result<i64> {
         .map_err(|_| Cow::from("Expected date, found an invalid UTF-8 string."))?
         .trim();
     NaiveDate::parse_from_str(date, "%d-%b-%Y")
-        .map_err(|_| Cow::from(format!("Failed to parse date '{}'.", date)))
+        .map_err(|_| Cow::from(format!("Failed to parse date '{date}'.")))
         .map(|dt| {
             dt.and_hms_opt(0, 0, 0)
                 .unwrap_or_default()
@@ -200,7 +200,7 @@ pub fn parse_number<T: FromStr>(value: &[u8]) -> Result<T> {
         .map_err(|_| Cow::from("Expected a number, found an invalid UTF-8 string."))?;
     string
         .parse::<T>()
-        .map_err(|_| Cow::from(format!("Expected a number, found {:?}.", string)))
+        .map_err(|_| Cow::from(format!("Expected a number, found {string:?}.")))
 }
 
 pub fn parse_sequence_set(value: &[u8]) -> Result<Sequence> {

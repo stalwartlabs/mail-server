@@ -255,7 +255,7 @@ pub async fn test(params: &mut JMAPTest) {
                     for item in changes.added() {
                         let item_id = Id::from_bytes(item.id().as_bytes()).unwrap();
                         let id = id_map.iter().find(|(_, v)| **v == item_id).unwrap().0;
-                        assert!(id < &7, "{:?} (id: {})", changes, id);
+                        assert!(id < &7, "{changes:?} (id: {id})");
                     }
                 }
 

@@ -541,7 +541,7 @@ fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<M
                 IfBlock::new::<()>(format!("session.milter.{id}.enable"), [], "false")
             }),
         id: id.to_string().into(),
-        addrs: format!("{}:{}", hostname, port)
+        addrs: format!("{hostname}:{port}")
             .to_socket_addrs()
             .map_err(|err| {
                 config.new_build_error(
@@ -636,7 +636,7 @@ fn parse_hooks(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<MT
     ) {
         headers.insert(
             AUTHORIZATION,
-            format!("Basic {}", STANDARD.encode(format!("{}:{}", name, secret)))
+            format!("Basic {}", STANDARD.encode(format!("{name}:{secret}")))
                 .parse()
                 .unwrap(),
         );
@@ -937,7 +937,7 @@ impl ParseValue for Mechanism {
             "CRAM-MD5" => AUTH_CRAM_MD5,
             "DIGEST-MD5" => AUTH_DIGEST_MD5,
             "ANONYMOUS" => AUTH_ANONYMOUS,*/
-            _ => return Err(format!("Unsupported mechanism {:?}.", value)),
+            _ => return Err(format!("Unsupported mechanism {value:?}.")),
         }))
     }
 }

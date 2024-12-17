@@ -226,7 +226,7 @@ impl<T: SessionStream> SessionData<T> {
                     let parent_path = parent_path.join("/");
                     if let Some(old_parent_id) = account.mailbox_names.get(&parent_path) {
                         if let Some(old_parent) = account.mailbox_state.get_mut(old_parent_id) {
-                            let prefix = format!("{}/", parent_path);
+                            let prefix = format!("{parent_path}/");
                             old_parent.has_children = account.mailbox_names.keys().any(|name| {
                                 name != &arguments.mailbox_name && name.starts_with(&prefix)
                             });

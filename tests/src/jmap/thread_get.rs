@@ -29,7 +29,7 @@ pub async fn test(params: &mut JMAPTest) {
         let mut email = params
             .client
             .email_import(
-                format!("Subject: test\nReferences: <1234>\n\n{}", num).into_bytes(),
+                format!("Subject: test\nReferences: <1234>\n\n{num}").into_bytes(),
                 [&mailbox_id],
                 None::<Vec<String>>,
                 Some(10000i64 + num as i64),

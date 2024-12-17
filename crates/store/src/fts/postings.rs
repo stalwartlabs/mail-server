@@ -449,22 +449,20 @@ mod tests {
 
             assert_eq!(
                 iter.items_left, num_positions,
-                "failed for num_positions: {}",
-                num_positions
+                "failed for num_positions: {num_positions}"
             );
 
             for i in 0..num_positions {
                 assert_eq!(
                     iter.next(),
                     Some((i * i) as u32),
-                    "failed for position: {}",
-                    i
+                    "failed for position: {i}"
                 );
             }
             assert_eq!(iter.next(), None, "expected end of iterator");
 
             for field in 0..std::cmp::min(10, num_positions) as u8 {
-                assert!(deserialized.has_field(field), "failed for field: {}", field);
+                assert!(deserialized.has_field(field), "failed for field: {field}");
             }
 
             assert_eq!(deserialized.positions().len(), num_positions);

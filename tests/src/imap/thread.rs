@@ -88,17 +88,14 @@ pub async fn test(imap: &mut ImapConnection, _imap_check: &mut ImapConnection) {
         .assert_count("(9 10 11 12)", 0);
 
     // Filter by threadId and messageId
-    imap.send(&format!(
-        "UID THREAD REFERENCES UTF-8 THREADID {}",
-        thread_id
-    ))
-    .await;
+    imap.send(&format!("UID THREAD REFERENCES UTF-8 THREADID {thread_id}"))
+        .await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await
         .assert_contains("(1 2 3 4)")
         .assert_count("(", 1);
 
-    imap.send(&format!("UID THREAD REFERENCES UTF-8 EMAILID {}", email_id))
+    imap.send(&format!("UID THREAD REFERENCES UTF-8 EMAILID {email_id}"))
         .await;
     imap.assert_read(Type::Tagged, ResponseType::Ok)
         .await

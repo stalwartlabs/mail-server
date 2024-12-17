@@ -212,7 +212,7 @@ impl serde::Serialize for InvalidProperty {
                     if i > 0 {
                         path.push('/');
                     }
-                    let _ = write!(path, "{}", p);
+                    let _ = write!(path, "{p}");
                 }
                 path.serialize(serializer)
             }

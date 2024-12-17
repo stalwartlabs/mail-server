@@ -213,7 +213,7 @@ impl<T: SessionStream> Session<T> {
                     ip: self.data.local_ip.to_string().into(),
                 },
                 queue: queue_id.map(|id| Queue {
-                    id: format!("{:x}", id),
+                    id: format!("{id:x}"),
                 }),
                 protocol: Protocol { version: 1 },
             },

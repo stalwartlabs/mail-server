@@ -273,13 +273,13 @@ pub(crate) fn parse_http_headers(config: &mut Config, prefix: impl AsKey) -> Hea
             AUTHORIZATION,
             format!(
                 "Basic {}",
-                general_purpose::STANDARD.encode(format!("{}:{}", name, secret))
+                general_purpose::STANDARD.encode(format!("{name}:{secret}"))
             )
             .parse()
             .unwrap(),
         );
     } else if let Some(token) = config.value((&prefix, "auth.token")) {
-        headers.insert(AUTHORIZATION, format!("Bearer {}", token).parse().unwrap());
+        headers.insert(AUTHORIZATION, format!("Bearer {token}").parse().unwrap());
     }
 
     headers
