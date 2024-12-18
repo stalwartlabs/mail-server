@@ -282,7 +282,13 @@ impl Hasher for ThrottleKeyHasher {
     }
 
     fn write(&mut self, bytes: &[u8]) {
-        self.hash = u64::from_ne_bytes((&bytes[..std::mem::size_of::<u64>()]).try_into().unwrap());
+        debug_assert!(
+            bytes.len() >= std::mem::size_of::<u64>(),
+            "ThrottleKeyHasher: input too short {bytes:?}"
+        );
+        self.hash = bytes
+            .get(0..std::mem::size_of::<u64>())
+            .map_or(0, |b| u64::from_ne_bytes(b.try_into().unwrap()));
     }
 }
 
