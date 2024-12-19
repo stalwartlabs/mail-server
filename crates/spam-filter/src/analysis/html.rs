@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::Server;
 use hyper::Uri;
@@ -20,6 +20,7 @@ pub trait SpamFilterAnalyzeHtml: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
+#[derive(Debug)]
 struct Href {
     url_parsed: Option<Uri>,
     host: Option<Hostname>,
@@ -119,7 +120,7 @@ impl SpamFilterAnalyzeHtml for Server {
                                             if src.starts_with("data:") && src.contains(";base64,")
                                             {
                                                 // Has Data URI encoding
-                                                ctx.result.add_tag("Has Data URI encoding");
+                                                ctx.result.add_tag("HAS_DATA_URI");
                                             }
                                             continue;
                                         }
@@ -185,7 +186,7 @@ impl SpamFilterAnalyzeHtml for Server {
                                             has_rel_style = true;
                                         }
                                     } else if *attr == HREF
-                                        && value.to_ascii_lowercase().ends_with(".css")
+                                        && value.to_ascii_lowercase().contains(".css")
                                     {
                                         has_href_css = true;
                                     }
@@ -217,7 +218,7 @@ impl SpamFilterAnalyzeHtml for Server {
                         }
                         _ => (),
                     },
-                    HtmlToken::Text { text } if in_head > 0 => {
+                    HtmlToken::Text { text } if in_head == 0 => {
                         if let Some((href_url, href_host)) = last_href
                             .as_ref()
                             .and_then(|href| Some((href.url_parsed.as_ref()?, href.host.as_ref()?)))
@@ -313,7 +314,7 @@ impl SpamFilterAnalyzeHtml for Server {
                 }
 
                 if (!has_link_to_img || html_text_chars >= 2048)
-                    && html_img_words as f64 / (html_words as f64 + html_img_words as f64) > 0.5
+                    && (html_img_words as f64 / (html_words as f64 + html_img_words as f64) > 0.5)
                 {
                     // Message contains more images than text
                     ctx.result.add_tag("HTML_TEXT_IMG_RATIO");

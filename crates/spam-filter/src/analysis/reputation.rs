@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::{borrow::Cow, future::Future};
+use std::{borrow::Cow, future::Future};
 
 use common::{
     ip_to_bytes, Server, KV_REPUTATION_ASN, KV_REPUTATION_DOMAIN, KV_REPUTATION_FROM,
@@ -25,6 +25,7 @@ pub trait SpamFilterAnalyzeReputation: Sync + Send {
     ) -> impl Future<Output = ()> + Send;
 }
 
+#[derive(Debug)]
 enum Type {
     Ip,
     From,
@@ -48,7 +49,7 @@ impl SpamFilterAnalyzeReputation for Server {
         };
 
         // Do not penalize forged domains
-        let is_dmarc_pass = matches!(ctx.input.dmarc_result, DmarcResult::Pass);
+        let is_dmarc_pass = matches!(ctx.input.dmarc_result, Some(DmarcResult::Pass));
 
         let mut types = vec![
             (Type::Ip, Cow::Owned(ip_to_bytes(&ctx.input.remote_ip))),
@@ -84,29 +85,34 @@ impl SpamFilterAnalyzeReputation for Server {
             let mut reputation = 0.0;
 
             for (rep_type, key) in types {
-                let mut token =
-                    match key_get::<Reputation>(self, ctx.input.span_id, key.clone()).await {
-                        Ok(Some(token)) => token,
-                        Ok(None) if !ctx.input.is_test => {
-                            key_set(
-                                self,
-                                ctx.input.span_id,
-                                KeyValue::with_prefix(
-                                    rep_type.prefix(),
-                                    key.as_ref(),
-                                    Reputation {
-                                        count: 1,
-                                        score: ctx.result.score,
-                                    }
-                                    .serialize(),
-                                )
-                                .expires(config.expiry),
+                let mut token = match key_get::<Reputation>(
+                    self,
+                    ctx.input.span_id,
+                    KeyValue::<()>::build_key(rep_type.prefix(), key.as_ref()),
+                )
+                .await
+                {
+                    Ok(Some(token)) => token,
+                    Ok(None) if !ctx.input.is_test => {
+                        key_set(
+                            self,
+                            ctx.input.span_id,
+                            KeyValue::with_prefix(
+                                rep_type.prefix(),
+                                key.as_ref(),
+                                Reputation {
+                                    count: 1,
+                                    score: ctx.result.score,
+                                }
+                                .serialize(),
                             )
-                            .await;
-                            continue;
-                        }
-                        _ => continue,
-                    };
+                            .expires(config.expiry),
+                        )
+                        .await;
+                        continue;
+                    }
+                    Ok(None) | Err(_) => continue,
+                };
 
                 // Update reputation
                 token.score = (token.count + 1) as f64
@@ -130,8 +136,10 @@ impl SpamFilterAnalyzeReputation for Server {
                     Type::Domain => config.domain_weight,
                     Type::Asn => config.asn_weight,
                 };
+                let c = println!("{rep_type:?} {weight}");
 
                 reputation += token.score / token.count as f64 * weight;
+                let c = println!("{rep_type:?} {weight}: {reputation}");
             }
 
             // Adjust score

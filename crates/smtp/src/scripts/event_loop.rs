@@ -359,33 +359,6 @@ impl RunScript for Server {
             }
         }
 
-        // Assert global variables
-        #[cfg(feature = "test_mode")]
-        if let Some(expected_variables) = params.expected_variables {
-            for var_name in instance.global_variable_names() {
-                if instance.global_variable(var_name).unwrap().to_bool()
-                    && !expected_variables.contains_key(var_name)
-                {
-                    panic!(
-                        "Unexpected variable {var_name:?} with value {:?}\nExpected {:?}\nFound: {:?}",
-                        instance.global_variable(var_name).unwrap(),
-                        expected_variables.keys().collect::<Vec<_>>(),
-                        instance.global_variable_names().collect::<Vec<_>>()
-                    );
-                }
-            }
-
-            for (name, expected) in &expected_variables {
-                if let Some(value) = instance.global_variable(name.as_str()) {
-                    assert_eq!(value, expected, "Variable {name:?} has unexpected value");
-                } else {
-                    panic!("Missing variable {name:?} with value {expected:?}\nExpected {:?}\nFound: {:?}", 
-                    expected_variables.keys().collect::<Vec<_>>(),
-                    instance.global_variable_names().collect::<Vec<_>>());
-                }
-            }
-        }
-
         // Keep id
         // 0 = use original message
         // MAX = implicit keep

@@ -44,11 +44,10 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
                 .unwrap_or_default()
                 .into(),
             V_SPAM_EHLO_DOMAIN => self.ctx.output.ehlo_host.fqdn.as_str().into(),
-            V_SPAM_AUTH_AS => self.ctx.input.authenticated_as.into(),
+            V_SPAM_AUTH_AS => self.ctx.input.authenticated_as.unwrap_or_default().into(),
             V_SPAM_ASN => self.ctx.input.asn.unwrap_or_default().into(),
             V_SPAM_COUNTRY => self.ctx.input.country.unwrap_or_default().into(),
-            V_SPAM_TLS_VERSION => self.ctx.input.tls_version.into(),
-            V_SPAM_TLS_CIPHER => self.ctx.input.tls_cipher.into(),
+            V_SPAM_IS_TLS => self.ctx.input.is_tls.into(),
             V_SPAM_ENV_FROM => self.ctx.output.env_from_addr.address.as_str().into(),
             V_SPAM_ENV_FROM_LOCAL => self.ctx.output.env_from_addr.local_part.as_str().into(),
             V_SPAM_ENV_FROM_DOMAIN => self
@@ -442,14 +441,36 @@ impl ResolveVariable for StringListResolver<'_> {
     }
 }
 
-pub struct IpResolver(pub IpAddr);
+pub struct IpResolver {
+    ip: IpAddr,
+    ip_string: String,
+    reverse: String,
+    octets: Variable<'static>,
+}
 
 impl ResolveVariable for IpResolver {
     fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
-            V_IP => Variable::String(self.0.to_string().into()),
-            V_IP_REVERSE => Variable::String(self.0.to_reverse_name().into()),
-            V_IP_OCTETS => Variable::Array(match self.0 {
+            V_IP => Variable::String(self.ip_string.as_str().into()),
+            V_IP_REVERSE => Variable::String(self.reverse.as_str().into()),
+            V_IP_OCTETS => self.octets.clone(),
+            V_IP_IS_V4 => Variable::Integer(self.ip.is_ipv4() as _),
+            V_IP_IS_V6 => Variable::Integer(self.ip.is_ipv6() as _),
+            _ => Variable::Integer(0),
+        }
+    }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
+}
+
+impl IpResolver {
+    pub fn new(ip: IpAddr) -> Self {
+        Self {
+            ip_string: ip.to_string(),
+            reverse: ip.to_reverse_name(),
+            octets: Variable::Array(match ip {
                 IpAddr::V4(ipv4_addr) => ipv4_addr
                     .octets()
                     .iter()
@@ -461,13 +482,7 @@ impl ResolveVariable for IpResolver {
                     .map(|o| Variable::Integer(*o as _))
                     .collect(),
             }),
-            V_IP_IS_V4 => Variable::Integer(self.0.is_ipv4() as _),
-            V_IP_IS_V6 => Variable::Integer(self.0.is_ipv6() as _),
-            _ => Variable::Integer(0),
+            ip,
         }
-    }
-
-    fn resolve_global(&self, _: &str) -> Variable<'_> {
-        Variable::Integer(0)
     }
 }

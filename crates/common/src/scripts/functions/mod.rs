@@ -7,7 +7,6 @@
 pub mod array;
 mod email;
 mod header;
-pub mod html;
 pub mod image;
 pub mod misc;
 pub mod text;
@@ -16,9 +15,7 @@ pub mod url;
 
 use sieve::{runtime::Variable, FunctionMap};
 
-use self::{
-    array::*, email::*, header::*, html::*, image::*, misc::*, text::*, unicode::*, url::*,
-};
+use self::{array::*, email::*, header::*, image::*, misc::*, text::*, unicode::*, url::*};
 
 pub fn register_functions_trusted() -> FunctionMap {
     FunctionMap::new()
@@ -70,10 +67,6 @@ pub fn register_functions_trusted() -> FunctionMap {
         .with_function_args("cosine_similarity", fn_cosine_similarity, 2)
         .with_function_args("jaccard_similarity", fn_jaccard_similarity, 2)
         .with_function_args("levenshtein_distance", fn_levenshtein_distance, 2)
-        .with_function_args("html_has_tag", fn_html_has_tag, 2)
-        .with_function_args("html_attr", fn_html_attr, 2)
-        .with_function_args("html_attrs", fn_html_attrs, 3)
-        .with_function_args("html_attr_size", fn_html_attr_size, 3)
         .with_function_args("uri_part", fn_uri_part, 2)
         .with_function_args("substring", fn_substring, 3)
         .with_function_args("split", fn_split, 2)

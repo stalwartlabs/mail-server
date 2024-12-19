@@ -9,7 +9,7 @@ use mail_parser::{parsers::fields::thread::thread_name, HeaderName, PartType};
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 
 use crate::{
-    modules::html::{html_to_tokens, HtmlToken},
+    modules::html::{html_to_tokens, HtmlToken, HEAD},
     Email, Hostname, Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput,
     SpamFilterResult, TextPart,
 };
@@ -92,7 +92,6 @@ impl SpamFilterInit for Server {
             .tokenize_emails(true)
             .map(|t| t.word)
             .collect::<Vec<_>>();
-        let subject = subject.to_lowercase();
 
         // Tokenize and convert text parts
         let mut text_parts = Vec::new();
@@ -124,15 +123,25 @@ impl SpamFilterInit for Server {
                             })
                             .sum();
                         let mut text_body = String::with_capacity(text_body_len);
+                        let mut in_head = false;
                         for token in &html_tokens {
-                            if let HtmlToken::Text { text } = token {
-                                if !text_body.is_empty()
-                                    && !text_body.ends_with(' ')
-                                    && text.starts_with(' ')
-                                {
-                                    text_body.push(' ');
+                            match token {
+                                HtmlToken::StartTag { name: HEAD, .. } => {
+                                    in_head = true;
                                 }
-                                text_body.push_str(text)
+                                HtmlToken::EndTag { name: HEAD } => {
+                                    in_head = false;
+                                }
+                                HtmlToken::Text { text } if !in_head => {
+                                    if !text_body.is_empty()
+                                        && !text_body.ends_with(' ')
+                                        && text.starts_with(' ')
+                                    {
+                                        text_body.push(' ');
+                                    }
+                                    text_body.push_str(text)
+                                }
+                                _ => {}
                             }
                         }
 
@@ -190,17 +199,17 @@ impl SpamFilterInit for Server {
         }
         text_parts.extend(text_parts_nested);
 
-        let subject_thread = thread_name(&subject).to_string();
+        let subject_thread = thread_name(subject).to_string();
         let env_from_addr = Email::new(input.env_from);
         SpamFilterContext {
             output: SpamFilterOutput {
-                ehlo_host: Hostname::new(input.ehlo_domain),
-                iprev_ptr: input
-                    .iprev_result
-                    .ptr
-                    .as_ref()
-                    .and_then(|ptr| ptr.first())
-                    .map(|ptr| ptr.strip_suffix('.').unwrap_or(ptr).to_lowercase()),
+                ehlo_host: Hostname::new(input.ehlo_domain.unwrap_or("unknown")),
+                iprev_ptr: input.iprev_result.and_then(|r| {
+                    r.ptr
+                        .as_ref()
+                        .and_then(|ptr| ptr.first())
+                        .map(|ptr| ptr.strip_suffix('.').unwrap_or(ptr).to_lowercase())
+                }),
                 env_from_postmaster: env_from_addr.address.is_empty()
                     || POSTMASTER_ADDRESSES.contains(&env_from_addr.local_part.as_str()),
                 env_from_addr,
@@ -215,9 +224,9 @@ impl SpamFilterInit for Server {
                 },
                 reply_to,
                 subject_thread_lc: subject_thread.trim().to_lowercase(),
-                subject_lc: subject.trim().to_lowercase(),
                 subject_thread,
-                subject,
+                subject_lc: subject.trim().to_lowercase(),
+                subject: subject.to_string(),
                 subject_tokens,
                 recipients_to,
                 recipients_cc,

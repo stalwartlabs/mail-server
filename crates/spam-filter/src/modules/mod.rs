@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use common::Server;
+use common::Server;
 use store::{dispatch::lookup::KeyValue, Deserialize, Value};
 
 pub mod bayes;

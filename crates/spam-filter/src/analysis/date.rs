@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::Server;
+use mail_parser::HeaderName;
 use store::write::now;
 
 use crate::SpamFilterContext;
@@ -20,23 +21,35 @@ pub trait SpamFilterAnalyzeDate: Sync + Send {
 
 impl SpamFilterAnalyzeDate for Server {
     async fn spam_filter_analyze_date(&self, ctx: &mut SpamFilterContext<'_>) {
-        if let Some(date) = ctx.input.message.date() {
-            let date = date.to_timestamp();
-            if date != 0 {
-                let date_diff = now() as i64 - date;
+        match ctx
+            .input
+            .message
+            .header(HeaderName::Date)
+            .map(|h| h.as_datetime())
+        {
+            Some(Some(date)) => {
+                let date = date.to_timestamp();
+                if date != 0 {
+                    let date_diff = now() as i64 - date;
 
-                if date_diff > 86400 {
-                    // Older than a day
-                    ctx.result.add_tag("DATE_IN_PAST");
-                } else if -date_diff > 7200 {
-                    //# More than 2 hours in the future
-                    ctx.result.add_tag("DATE_IN_FUTURE");
+                    if date_diff > 86400 {
+                        // Older than a day
+                        ctx.result.add_tag("DATE_IN_PAST");
+                    } else if -date_diff > 7200 {
+                        //# More than 2 hours in the future
+                        ctx.result.add_tag("DATE_IN_FUTURE");
+                    }
+                } else {
+                    ctx.result.add_tag("INVALID_DATE");
                 }
-            } else {
+            }
+            Some(None) => {
                 ctx.result.add_tag("INVALID_DATE");
             }
-        } else {
-            ctx.result.add_tag("MISSING_DATE");
+
+            None => {
+                ctx.result.add_tag("MISSING_DATE");
+            }
         }
     }
 }

@@ -72,21 +72,21 @@ Test
 expect REPLYTO_EXCESS_QP REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@domain.org
-Reply-to: =?iso-8859-1?Q?Die_Hasen_und_die_Froesche?= <hello@domain.org>
+Reply-to: =?iso-8859-1?Q?Die_Hasen_und_die_Froesche?= <bye@domain.org>
 
 Test
 <!-- NEXT TEST -->
 expect REPLYTO_EXCESS_BASE64 REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@domain.org
-Reply-to: "=?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=" <hello@domain.org>
+Reply-to: "=?iso-8859-1?B?RGllIEhhc2VuIHVuIGRpZSBGcm9lc2NoZQ==?=" <bye@domain.org>
 
 Test
 <!-- NEXT TEST -->
 expect REPLYTO_EMAIL_HAS_TITLE REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@domain.org
-Reply-to: "Mr. Hello" <hello@domain.org>
+Reply-to: "Mr. Hello" <bye@domain.org>
 
 Test
 <!-- NEXT TEST -->

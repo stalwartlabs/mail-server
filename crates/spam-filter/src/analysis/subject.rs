@@ -32,6 +32,7 @@ impl SpamFilterAnalyzeSubject for Server {
                     .raw_message()
                     .get(header.offset_start..header.offset_end)
                     .unwrap_or_default();
+                break;
             }
         }
 
@@ -46,7 +47,6 @@ impl SpamFilterAnalyzeSubject for Server {
         let mut lower_count = 0;
 
         let mut last_ch = ' ';
-        let mut last_ch_trimmed = ' ';
         let mut is_ascii = true;
 
         for ch in ctx.output.subject_thread.chars() {
@@ -69,8 +69,6 @@ impl SpamFilterAnalyzeSubject for Server {
                         }
                     }
                 }
-
-                last_ch_trimmed = ch;
             }
 
             if !ch.is_ascii() {
@@ -80,14 +78,12 @@ impl SpamFilterAnalyzeSubject for Server {
             last_ch = ch;
         }
 
-        if last_ch.is_whitespace() {
-            if last_ch_trimmed.is_whitespace() {
-                // Subject is empty
-                ctx.result.add_tag("EMPTY_SUBJECT");
-            } else {
-                // Subject ends with whitespace
-                ctx.result.add_tag("SUBJECT_ENDS_SPACES");
-            }
+        if ctx.output.subject_lc.is_empty() {
+            // Subject is empty
+            ctx.result.add_tag("EMPTY_SUBJECT");
+        } else if ctx.output.subject.ends_with(' ') {
+            // Subject ends with whitespace
+            ctx.result.add_tag("SUBJECT_ENDS_SPACES");
         }
 
         if ctx.output.subject_thread.len() >= 10

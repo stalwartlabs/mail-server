@@ -83,7 +83,7 @@ impl SpamFilterAnalyzeMime for Server {
         if !has_mime_version && (has_ct || has_cte) {
             ctx.result.add_tag("MISSING_MIME_VERSION");
         }
-        if has_ct && !is_plain_text && !has_cte && !had_cd {
+        if has_ct && !is_plain_text && !has_cte && !had_cd && !has_mime_version {
             // Only Content-Type header without other MIME headers
             ctx.result.add_tag("MIME_HEADER_CTYPE_ONLY");
         }
@@ -323,10 +323,7 @@ impl SpamFilterAnalyzeMime for Server {
                         if !is_encrypted
                             && !has_content_id
                             && cd.map_or(true, |cd| {
-                                cd.attribute("type")
-                                    .unwrap_or_default()
-                                    .to_ascii_lowercase()
-                                    != "attachment"
+                                !cd.c_type.eq_ignore_ascii_case("attachment")
                                     && !cd.has_attribute("filename")
                             })
                         {
@@ -346,20 +343,16 @@ impl SpamFilterAnalyzeMime for Server {
             if is_attachment {
                 // Has a MIME attachment
                 ctx.result.add_tag("HAS_ATTACHMENT");
-                match &part.body {
-                    PartType::Binary(bytes) | PartType::InlineBinary(bytes) => {
-                        if let Some(t) = infer::get(bytes.as_ref()) {
-                            if t.mime_type() != ct_full {
-                                // Known content-type
-                                ctx.result.add_tag("MIME_GOOD");
-                            } else if ct_full != "application/octet-stream" {
-                                // Known bad content-type
-                                ctx.result.add_tag("MIME_BAD");
-                            }
+                if ct_full != "application/octet-stream" {
+                    if let Some(t) = infer::get(part.contents()) {
+                        if t.mime_type() == ct_full {
+                            // Known content-type
+                            ctx.result.add_tag("MIME_GOOD");
+                        } else {
+                            // Known bad content-type
+                            ctx.result.add_tag("MIME_BAD");
                         }
                     }
-
-                    _ => (),
                 }
             }
 

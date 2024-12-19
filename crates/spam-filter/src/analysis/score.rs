@@ -45,19 +45,24 @@ impl SpamFilterAnalyzeScore for Server {
             }
         }
 
-        // Sort by score
-        let mut header = String::with_capacity(header_len);
-        results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then_with(|| a.0.cmp(b.0)));
-        header.push_str("X-Spam-Result: ");
-        for (idx, (tag, score)) in results.into_iter().enumerate() {
-            if idx > 0 {
-                header.push_str(",\r\n\t");
+        // Write results header sorted by score
+        if let Some(header_name) = &self.core.spam.headers.result {
+            let mut header = String::with_capacity(header_name.len() + header_len + 2);
+            results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then_with(|| a.0.cmp(b.0)));
+            header.push_str(header_name);
+            header.push_str(": ");
+            for (idx, (tag, score)) in results.into_iter().enumerate() {
+                if idx > 0 {
+                    header.push_str(",\r\n\t");
+                }
+                let _ = write!(&mut header, "{} ({:.2})", tag, score);
             }
-            let _ = write!(&mut header, "{} ({:.2})", tag, score);
-        }
-        header.push_str("\r\n");
+            header.push_str("\r\n");
 
-        SpamFilterAction::Allow(header)
+            SpamFilterAction::Allow(header)
+        } else {
+            SpamFilterAction::Allow(String::new())
+        }
     }
 
     async fn spam_filter_finalize(
@@ -89,16 +94,19 @@ impl SpamFilterAnalyzeScore for Server {
         {
             SpamFilterAction::Discard
         } else {
-            let _ = write!(
-                &mut header,
-                "X-Spam-Status: {}, score={:.2}\r\n",
-                if ctx.result.score >= self.core.spam.scores.spam_threshold {
-                    "Yes"
-                } else {
-                    "No"
-                },
-                ctx.result.score
-            );
+            if let Some(header_name) = &self.core.spam.headers.status {
+                let _ = write!(
+                    &mut header,
+                    "{}: {}, score={:.2}\r\n",
+                    header_name,
+                    if ctx.result.score >= self.core.spam.scores.spam_threshold {
+                        "Yes"
+                    } else {
+                        "No"
+                    },
+                    ctx.result.score
+                );
+            }
             SpamFilterAction::Allow(header)
         }
     }

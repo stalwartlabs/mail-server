@@ -99,7 +99,7 @@ pub enum ExpressionItem {
     ArrayBuild(u32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Variable<'x> {
     String(Cow<'x, str>),
     Integer(i64),

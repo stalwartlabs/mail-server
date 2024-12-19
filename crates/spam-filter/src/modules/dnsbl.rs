@@ -23,6 +23,33 @@ pub(crate) async fn is_dnsbl(
     let zone = server
         .eval_if::<String, _>(&config.zone, &resolver, resolver.ctx.input.span_id)
         .await?;
+
+    #[cfg(feature = "test_mode")]
+    {
+        if zone.contains(".11.20.") {
+            let parts = zone.split('.').collect::<Vec<_>>();
+
+            return if config.tags.if_then.iter().any(|i| i.expr.items.len() == 3) && parts[0] != "2"
+            {
+                None
+            } else {
+                server
+                    .eval_if(
+                        &config.tags,
+                        &SpamFilterResolver::new(
+                            resolver.ctx,
+                            &IpResolver::new(
+                                format!("127.0.{}.{}", parts[1], parts[0]).parse().unwrap(),
+                            ),
+                            resolver.location,
+                        ),
+                        resolver.ctx.input.span_id,
+                    )
+                    .await
+            };
+        }
+    }
+
     let todo = "use proper event error";
 
     match server.core.smtp.resolvers.dns.ipv4_lookup(&zone).await {
@@ -41,7 +68,7 @@ pub(crate) async fn is_dnsbl(
                     &config.tags,
                     &SpamFilterResolver::new(
                         resolver.ctx,
-                        &IpResolver(
+                        &IpResolver::new(
                             result
                                 .iter()
                                 .copied()

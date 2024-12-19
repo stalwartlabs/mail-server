@@ -125,7 +125,7 @@ impl SpamFilterAnalyzeFrom for Server {
             }
 
             if (!env_from_empty && ctx.output.env_from_addr.address == from_addr.address)
-                || (!ctx.output.env_from_postmaster
+                || (ctx.output.env_from_postmaster
                     && from_addr_is_valid
                     && from_addr.domain_part.sld == ctx.output.ehlo_host.sld)
             {

@@ -233,7 +233,7 @@ impl SpamFilterLlmConfig {
                 .unwrap_or_default()
                 .chars()
                 .next()
-                .unwrap_or('|'),
+                .unwrap_or(','),
             index_category: config
                 .property("spam-filter.llm.index.category")
                 .unwrap_or_default(),

@@ -752,7 +752,7 @@ impl<T: AsRef<str>> TokenType<T> {
             TokenType::Url(url) => url.as_ref().trim().to_lowercase().into(),
             TokenType::UrlNoScheme(url) if !with_scheme_only => {
                 let url = url.as_ref();
-                format!("http:s//{}", url.trim().to_lowercase())
+                format!("https://{}", url.trim().to_lowercase())
                     .to_lowercase()
                     .into()
             }

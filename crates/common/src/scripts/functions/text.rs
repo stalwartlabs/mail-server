@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use mail_parser::decoders::html::html_to_text;
 use sieve::{runtime::Variable, Context};
 
 use super::ApplyString;
@@ -309,4 +310,8 @@ pub fn fn_detect_language<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable 
         .map(|l| l.code())
         .unwrap_or("unknown")
         .into()
+}
+
+pub fn fn_html_to_text<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
+    html_to_text(v[0].to_string().as_ref()).into()
 }

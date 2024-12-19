@@ -185,7 +185,7 @@ impl Core {
             oauth: OAuthConfig::parse(config),
             acme: AcmeProviders::parse(config),
             metrics: Metrics::parse(config),
-            spam: SpamFilterConfig::parse(config),
+            spam: SpamFilterConfig::parse(config).await,
             storage: Storage {
                 data,
                 blob,

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::Server;
 use mail_parser::{HeaderName, Host};
@@ -41,10 +41,10 @@ impl SpamFilterAnalyzeReceived for Server {
                     }
 
                     if let Some(received) = header.value().as_received() {
-                        let helo_domain = received.helo();
+                        let helo_domain = received.from().or_else(|| received.helo());
                         let ip_rev = received.from_iprev();
 
-                        if matches!(&helo_domain, Some(Host::Name(hostname)) if hostname.eq_ignore_ascii_case("localhost"))
+                        if matches!(&helo_domain, Some(Host::Name(hostname)) if hostname.eq_ignore_ascii_case("user"))
                         {
                             // HELO domain is "user"
                             ctx.result.add_tag("RCVD_HELO_USER");
@@ -68,7 +68,7 @@ impl SpamFilterAnalyzeReceived for Server {
                             }
                         }
 
-                        if received.from_ip().is_some() {
+                        if matches!(received.from, Some(Host::IpAddr(_))) {
                             // Received from an IP address rather than a FQDN
                             rcvd_from_ip += 1;
                         }
@@ -102,14 +102,14 @@ impl SpamFilterAnalyzeReceived for Server {
         }
 
         // Received from an authenticated user
-        if !ctx.input.authenticated_as.is_empty() {
+        if ctx.input.authenticated_as.is_some() {
             ctx.result.add_tag("RCVD_VIA_SMTP_AUTH");
         }
 
         // Received with TLS checks
-        if rcvd_count > 0 && rcvd_count == tls_count && !ctx.input.tls_version.is_empty() {
+        if rcvd_count > 0 && rcvd_count == tls_count && ctx.input.is_tls {
             ctx.result.add_tag("RCVD_TLS_ALL");
-        } else if !ctx.input.tls_version.is_empty() {
+        } else if ctx.input.is_tls {
             ctx.result.add_tag("RCVD_TLS_LAST");
         } else {
             ctx.result.add_tag("RCVD_NO_TLS_LAST");

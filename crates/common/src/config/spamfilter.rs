@@ -8,6 +8,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use ahash::AHashSet;
 use nlp::bayes::BayesClassifier;
+use tokio::net::lookup_host;
 use utils::{
     config::{utils::ParseValue, Config},
     glob::{GlobMap, GlobSet},
@@ -26,6 +27,14 @@ pub struct SpamFilterConfig {
     pub bayes: Option<BayesConfig>,
     pub scores: SpamFilterScoreConfig,
     pub expiry: SpamFilterExpiryConfig,
+    pub headers: SpamFilterHeaderConfig,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpamFilterHeaderConfig {
+    pub status: Option<String>,
+    pub result: Option<String>,
+    pub llm: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -182,7 +191,7 @@ pub enum RemoteListFormat {
 }
 
 impl SpamFilterConfig {
-    pub fn parse(config: &mut Config) -> Self {
+    pub async fn parse(config: &mut Config) -> Self {
         SpamFilterConfig {
             enabled: config
                 .property_or_default("spam-filter.enable", "true")
@@ -190,11 +199,12 @@ impl SpamFilterConfig {
             dnsbl: DnsBlConfig::parse(config),
             rules: parse_rules(config),
             lists: SpamFilterLists::parse(config),
-            pyzor: PyzorConfig::parse(config),
+            pyzor: PyzorConfig::parse(config).await,
             reputation: ReputationConfig::parse(config),
             bayes: BayesConfig::parse(config),
             scores: SpamFilterScoreConfig::parse(config),
             expiry: SpamFilterExpiryConfig::parse(config),
+            headers: SpamFilterHeaderConfig::parse(config),
         }
     }
 }
@@ -217,7 +227,7 @@ fn parse_rules(config: &mut Config) -> Vec<SpamFilterRule> {
 impl SpamFilterRule {
     pub fn parse(config: &mut Config, id: String) -> Option<(Self, i32)> {
         let id = id.as_str();
-        if config
+        if !config
             .property_or_default(("spam-filter.rule", id, "enable"), "true")
             .unwrap_or(true)
         {
@@ -249,7 +259,7 @@ impl DnsBlConfig {
     pub fn parse(config: &mut Config) -> Self {
         let mut servers = vec![];
         for id in config
-            .sub_keys("spam-filter.dnsbl.server", ".url")
+            .sub_keys("spam-filter.dnsbl.server", ".scope")
             .map(|k| k.to_string())
             .collect::<Vec<_>>()
         {
@@ -280,7 +290,7 @@ impl DnsBlServer {
     pub fn parse(config: &mut Config, id: String) -> Option<Self> {
         let id_ = id.as_str();
 
-        if config
+        if !config
             .property_or_default(("spam-filter.dnsbl.server", id_, "enable"), "true")
             .unwrap_or(true)
         {
@@ -300,11 +310,37 @@ impl DnsBlServer {
             tags: IfBlock::try_parse(
                 config,
                 ("spam-filter.dnsbl.server", id_, "tag"),
-                &Element::Domain.token_map(),
+                &Element::Ip.token_map(),
             )?,
             id,
         }
         .into()
+    }
+}
+
+impl SpamFilterHeaderConfig {
+    pub fn parse(config: &mut Config) -> Self {
+        let mut header = SpamFilterHeaderConfig::default();
+
+        for (typ, var) in [
+            ("status", &mut header.status),
+            ("result", &mut header.result),
+            ("llm", &mut header.llm),
+        ] {
+            if config
+                .property_or_default(("spam-filter.header", typ, "enable"), "true")
+                .unwrap_or(true)
+            {
+                if let Some(value) = config.value(("spam-filter.header", typ, "name")) {
+                    let value = value.trim();
+                    if !value.is_empty() {
+                        *var = value.to_string().into();
+                    }
+                }
+            }
+        }
+
+        header
     }
 }
 
@@ -511,7 +547,7 @@ impl SpamFilterLists {
 }
 
 impl PyzorConfig {
-    pub fn parse(config: &mut Config) -> Option<Self> {
+    pub async fn parse(config: &mut Config) -> Option<Self> {
         if !config
             .property_or_default("spam-filter.pyzor.enable", "true")
             .unwrap_or(true)
@@ -525,8 +561,18 @@ impl PyzorConfig {
         let host = config
             .value("spam-filter.pyzor.host")
             .unwrap_or("public.pyzor.org");
-        let address = match format!("{host}:{port}").parse() {
-            Ok(address) => address,
+        let address = match lookup_host(format!("{host}:{port}"))
+            .await
+            .map(|mut a| a.next())
+        {
+            Ok(Some(address)) => address,
+            Ok(None) => {
+                config.new_build_error(
+                    "spam-filter.pyzor.host",
+                    "Invalid address: No addresses found.",
+                );
+                return None;
+            }
             Err(err) => {
                 config.new_build_error(
                     "spam-filter.pyzor.host",
@@ -716,14 +762,23 @@ impl Location {
     }
 }
 
+impl Default for SpamFilterHeaderConfig {
+    fn default() -> Self {
+        SpamFilterHeaderConfig {
+            status: "X-Spam-Status".to_string().into(),
+            result: "X-Spam-Result".to_string().into(),
+            llm: "X-Spam-LLM".to_string().into(),
+        }
+    }
+}
+
 pub const V_SPAM_REMOTE_IP: u32 = 100;
 pub const V_SPAM_REMOTE_IP_PTR: u32 = 101;
 pub const V_SPAM_EHLO_DOMAIN: u32 = 102;
 pub const V_SPAM_AUTH_AS: u32 = 103;
 pub const V_SPAM_ASN: u32 = 104;
 pub const V_SPAM_COUNTRY: u32 = 105;
-pub const V_SPAM_TLS_VERSION: u32 = 106;
-pub const V_SPAM_TLS_CIPHER: u32 = 107;
+pub const V_SPAM_IS_TLS: u32 = 106;
 pub const V_SPAM_ENV_FROM: u32 = 108;
 pub const V_SPAM_ENV_FROM_LOCAL: u32 = 109;
 pub const V_SPAM_ENV_FROM_DOMAIN: u32 = 110;
@@ -794,8 +849,7 @@ impl Element {
             ("auth_as", V_SPAM_AUTH_AS),
             ("asn", V_SPAM_ASN),
             ("country", V_SPAM_COUNTRY),
-            ("tls_version", V_SPAM_TLS_VERSION),
-            ("tls_cipher", V_SPAM_TLS_CIPHER),
+            ("is_tls", V_SPAM_IS_TLS),
             ("env_from", V_SPAM_ENV_FROM),
             ("env_from.local", V_SPAM_ENV_FROM_LOCAL),
             ("env_from.domain", V_SPAM_ENV_FROM_DOMAIN),
@@ -844,6 +898,7 @@ impl Element {
             ]),
             Element::Email => map.with_variables_map([
                 ("email", V_RCPT_EMAIL),
+                ("value", V_RCPT_EMAIL),
                 ("name", V_RCPT_NAME),
                 ("local", V_RCPT_LOCAL),
                 ("domain", V_RCPT_DOMAIN),

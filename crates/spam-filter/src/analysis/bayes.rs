@@ -27,13 +27,14 @@ impl SpamFilterAnalyzeBayes for Server {
         if let Some(config) = &self.core.spam.bayes {
             if !ctx.result.has_tag("SPAM_TRAP") && !ctx.result.has_tag("TRUSTED_REPLY") {
                 match bayes_classify(self, ctx).await {
-                    Ok(score) => {
+                    Ok(Some(score)) => {
                         if score > config.score_spam {
                             ctx.result.add_tag("BAYES_SPAM");
                         } else if score < config.score_ham {
                             ctx.result.add_tag("BAYES_HAM");
                         }
                     }
+                    Ok(None) => (),
                     Err(err) => {
                         trc::error!(err.span_id(ctx.input.span_id).caused_by(trc::location!()));
                     }

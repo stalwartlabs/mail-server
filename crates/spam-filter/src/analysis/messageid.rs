@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::Server;
 use mail_parser::HeaderName;
@@ -20,20 +20,23 @@ pub trait SpamFilterAnalyzeMid: Sync + Send {
 
 impl SpamFilterAnalyzeMid for Server {
     async fn spam_filter_analyze_message_id(&self, ctx: &mut SpamFilterContext<'_>) {
-        let mid_raw = ctx
-            .input
-            .message
-            .header_raw(HeaderName::MessageId)
-            .unwrap_or_default()
-            .trim();
+        let mut mid = "";
+        let mut mid_raw = "";
 
-        if !mid_raw.is_empty() {
-            let mid = ctx
-                .input
-                .message
-                .message_id()
+        for header in ctx.input.message.headers() {
+            if let (HeaderName::MessageId, value) = (&header.name, &header.value) {
+                mid = value.as_text().unwrap_or_default();
+                mid_raw = std::str::from_utf8(
+                    &ctx.input.message.raw_message()[header.offset_start..header.offset_end],
+                )
                 .unwrap_or_default()
-                .to_lowercase();
+                .trim();
+                break;
+            }
+        }
+
+        if !mid.is_empty() {
+            let mid = mid.to_lowercase();
             if let Some(mid_host) = mid.rsplit_once('@').map(|(_, host)| Hostname::new(host)) {
                 if mid_host.ip.is_some() {
                     if mid_host.fqdn.starts_with('[') {
@@ -81,7 +84,7 @@ impl SpamFilterAnalyzeMid for Server {
                 ctx.result.add_tag("INVALID_MSGID");
             }
 
-            if !mid_raw.starts_with('<') || !mid_raw.ends_with('>') {
+            if !mid_raw.starts_with('<') || !mid_raw.contains('>') {
                 ctx.result.add_tag("MID_MISSING_BRACKETS");
             }
         } else {

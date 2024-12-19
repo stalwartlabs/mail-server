@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::{
+use std::{
     collections::HashSet,
     io::{BufRead, BufReader},
     time::Instant,
@@ -19,12 +19,20 @@ use common::{
 };
 use mail_auth::flate2;
 
+#[allow(unused_variables)]
+#[allow(unreachable_code)]
 pub async fn is_in_remote_list(
     server: &Server,
     config: &RemoteListConfig,
     item: &str,
     span_id: u64,
 ) -> bool {
+    #[cfg(feature = "test_mode")]
+    {
+        return (config.url.contains("open") && item.contains("open"))
+            || (config.url.contains("tank") && item.contains("tank"));
+    }
+
     match is_in_remote_list_(server, config, item, span_id).await {
         Ok(result) => result,
         Err(err) => {

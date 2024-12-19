@@ -121,7 +121,8 @@ impl EmailIngest for Server {
 
         // Check for Spam headers
         let mut is_spam = false;
-        if let (IngestSource::Smtp, Some((header_name, header_value))) =
+        let todo = "true";
+        /*if let (IngestSource::Smtp, Some((header_name, header_value))) =
             (params.source, &self.core.jmap.spam_header)
         {
             if params.mailbox_ids == [INBOX_ID]
@@ -136,7 +137,7 @@ impl EmailIngest for Server {
                 params.mailbox_ids[0] = JUNK_ID;
                 is_spam = true;
             }
-        }
+        }*/
 
         // Obtain message references and thread name
         let mut message_id = String::new();

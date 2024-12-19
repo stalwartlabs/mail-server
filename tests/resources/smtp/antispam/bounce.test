@@ -1,11 +1,12 @@
-expect SUBJ_BOUNCE_WORDS
+expect SUBJ_BOUNCE_WORDS SINGLE_SHORT_PART
 
 Subject: Delivery Status Notification (Failure)
 
 Test
 <!-- NEXT TEST -->
-expect BOUNCE
+expect BOUNCE SINGLE_SHORT_PART IS_DSN
 
+MIME-Version: 1.0
 Content-Type: multipart/report; report-type="delivery-status"; 
 	boundary="176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e"
 
@@ -18,8 +19,9 @@ Your message could not be delivered.
 --176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e--
 <!-- NEXT TEST -->
 envelope_from spammer@domain.com
-expect 
+expect SINGLE_SHORT_PART IS_DSN
 
+MIME-Version: 1.0
 Content-Type: multipart/report; report-type="delivery-status"; 
 	boundary="176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e"
 
@@ -31,7 +33,7 @@ Your message could not be delivered.
 
 --176e677bbd667276_87a2ed9cf1f4ecb_a49e592dab77f72e--
 <!-- NEXT TEST -->
-expect BOUNCE
+expect BOUNCE SINGLE_SHORT_PART
 
 From: MDaemon <dm@domain.com>
 X-MDDSN-Message: True
@@ -40,7 +42,7 @@ Subject: Something went wrong
 Your message could not be delivered.
 
 <!-- NEXT TEST -->
-expect BOUNCE SUBJ_BOUNCE_WORDS
+expect BOUNCE SUBJ_BOUNCE_WORDS SINGLE_SHORT_PART
 
 From: Automated <MAILER-DAEMON@domain.com>
 Subject: Delivery failure
@@ -48,8 +50,9 @@ Subject: Delivery failure
 Your message could not be delivered.
 
 <!-- NEXT TEST -->
-expect BOUNCE
+expect BOUNCE HAS_ATTACHMENT HAS_MESSAGE_PARTS
 
+MIME-Version: 1.0
 From: Automated <POSTMASTER@domain.com>
 Subject: Something unexpected happened
 Content-Type: multipart/mixed; 

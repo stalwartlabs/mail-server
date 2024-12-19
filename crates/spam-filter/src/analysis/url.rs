@@ -187,7 +187,7 @@ impl SpamFilterAnalyzeUrl for Server {
                             if let Some(tag) = is_dnsbl(
                                 self,
                                 dnsbl,
-                                SpamFilterResolver::new(ctx, &IpResolver(ip), url.location),
+                                SpamFilterResolver::new(ctx, &IpResolver::new(ip), url.location),
                             )
                             .await
                             {
@@ -201,46 +201,52 @@ impl SpamFilterAnalyzeUrl for Server {
                 // Check for redirectors
                 ctx.result.add_tag("REDIRECTOR_URL");
 
-                let mut redirect_count = 0;
-                let mut url_redirect = Cow::Borrowed(url.element.as_str());
+                if !ctx.result.has_tag("URL_REDIRECTOR_NESTED") {
+                    let mut redirect_count = 1;
+                    let mut url_redirect = Cow::Borrowed(url.element.as_str());
 
-                while redirect_count <= 0 {
-                    match http_get_header(url_redirect.as_ref(), LOCATION, Duration::from_secs(5))
+                    while redirect_count <= 3 {
+                        match http_get_header(
+                            url_redirect.as_ref(),
+                            LOCATION,
+                            Duration::from_secs(5),
+                        )
                         .await
-                    {
-                        Ok(Some(location)) => {
-                            if let Ok(location_parsed) = location.parse::<Uri>() {
-                                let host =
-                                    Hostname::new(location_parsed.host().unwrap_or_default());
-                                if self
-                                    .core
-                                    .spam
-                                    .lists
-                                    .url_redirectors
-                                    .contains(host.sld_or_default())
-                                {
-                                    url_redirect = Cow::Owned(location);
-                                    redirect_count += 1;
-                                    continue;
-                                } else {
-                                    ctx.output.urls.insert(ElementLocation::new(
-                                        UrlParts::new(location.to_lowercase())
-                                            .with_parts(location_parsed, host),
-                                        url.location,
-                                    ));
+                        {
+                            Ok(Some(location)) => {
+                                if let Ok(location_parsed) = location.parse::<Uri>() {
+                                    let host =
+                                        Hostname::new(location_parsed.host().unwrap_or_default());
+                                    if self
+                                        .core
+                                        .spam
+                                        .lists
+                                        .url_redirectors
+                                        .contains(host.sld_or_default())
+                                    {
+                                        url_redirect = Cow::Owned(location);
+                                        redirect_count += 1;
+                                        continue;
+                                    } else {
+                                        ctx.output.urls.insert(ElementLocation::new(
+                                            UrlParts::new(location.to_lowercase())
+                                                .with_parts(location_parsed, host),
+                                            url.location,
+                                        ));
+                                    }
                                 }
                             }
+                            Ok(None) => {}
+                            Err(err) => {
+                                trc::error!(err.span_id(ctx.input.span_id));
+                            }
                         }
-                        Ok(None) => {}
-                        Err(err) => {
-                            trc::error!(err.span_id(ctx.input.span_id));
-                        }
+                        break;
                     }
-                    break;
-                }
 
-                if redirect_count > 5 {
-                    ctx.result.add_tag("URL_REDIRECTOR_NESTED");
+                    if redirect_count > 3 {
+                        ctx.result.add_tag("URL_REDIRECTOR_NESTED");
+                    }
                 }
             }
 
@@ -270,10 +276,10 @@ impl SpamFilterAnalyzeUrl for Server {
                         {
                             ctx.result.add_tag("HOMOGRAPH_URL");
                         }
+                    }
 
-                        if !cured_host.is_single_script() {
-                            ctx.result.add_tag("MIXED_CHARSET_URL");
-                        }
+                    if !host.fqdn.is_single_script() {
+                        ctx.result.add_tag("MIXED_CHARSET_URL");
                     }
                 }
 
@@ -333,11 +339,21 @@ impl SpamFilterAnalyzeUrl for Server {
     }
 }
 
+#[allow(unreachable_code)]
+#[allow(unused_variables)]
 async fn http_get_header(
     url: &str,
     header: hyper::header::HeaderName,
     timeout: Duration,
 ) -> trc::Result<Option<String>> {
+    #[cfg(feature = "test_mode")]
+    {
+        return if url.contains("redirect.") {
+            Ok(url.split_once("/?").unwrap().1.to_string().into())
+        } else {
+            Ok(None)
+        };
+    }
     reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (X11; Linux i686; rv:109.0) Gecko/20100101 Firefox/118.0")
         .timeout(timeout)

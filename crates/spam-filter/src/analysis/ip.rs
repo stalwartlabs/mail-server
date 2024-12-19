@@ -44,18 +44,22 @@ impl SpamFilterAnalyzeIp for Server {
                 (&header.name, &header.value)
             {
                 if let Some(ip) = received.from_ip() {
-                    ctx.output
-                        .ips
-                        .insert(ElementLocation::new(ip, Location::HeaderReceived));
+                    if !ip.is_loopback() && !self.is_ip_allowed(&ip) {
+                        ctx.output
+                            .ips
+                            .insert(ElementLocation::new(ip, Location::HeaderReceived));
+                    }
                 }
                 for host in [&received.from, &received.helo, &received.by]
                     .into_iter()
                     .flatten()
                 {
                     if let Host::IpAddr(ip) = host {
-                        ctx.output
-                            .ips
-                            .insert(ElementLocation::new(*ip, Location::HeaderReceived));
+                        if !ip.is_loopback() && !self.is_ip_allowed(ip) {
+                            ctx.output
+                                .ips
+                                .insert(ElementLocation::new(*ip, Location::HeaderReceived));
+                        }
                     }
                 }
             }
@@ -124,7 +128,7 @@ impl SpamFilterAnalyzeIp for Server {
                     if let Some(tag) = is_dnsbl(
                         self,
                         dnsbl,
-                        SpamFilterResolver::new(ctx, &IpResolver(ip.element), ip.location),
+                        SpamFilterResolver::new(ctx, &IpResolver::new(ip.element), ip.location),
                     )
                     .await
                     {
@@ -139,10 +143,12 @@ impl SpamFilterAnalyzeIp for Server {
         }
 
         // Reverse DNS validation
-        match &ctx.input.iprev_result.result {
-            IprevResult::TempError(_) => ctx.result.add_tag("RDNS_DNSFAIL"),
-            IprevResult::Fail(_) | IprevResult::PermError(_) => ctx.result.add_tag("RDNS_DNSFAIL"),
-            IprevResult::Pass | IprevResult::None => (),
+        if let Some(iprev) = ctx.input.iprev_result {
+            match &iprev.result {
+                IprevResult::TempError(_) => ctx.result.add_tag("RDNS_DNSFAIL"),
+                IprevResult::Fail(_) | IprevResult::PermError(_) => ctx.result.add_tag("RDNS_NONE"),
+                IprevResult::Pass | IprevResult::None => (),
+            }
         }
     }
 }

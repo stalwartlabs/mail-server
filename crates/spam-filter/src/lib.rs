@@ -24,29 +24,28 @@ pub struct SpamFilterInput<'x> {
     pub span_id: u64,
 
     // Sender authentication
-    pub arc_result: &'x ArcOutput<'x>,
-    pub spf_ehlo_result: &'x SpfOutput,
-    pub spf_mail_from_result: &'x SpfOutput,
+    pub arc_result: Option<&'x ArcOutput<'x>>,
+    pub spf_ehlo_result: Option<&'x SpfOutput>,
+    pub spf_mail_from_result: Option<&'x SpfOutput>,
     pub dkim_result: &'x [DkimOutput<'x>],
-    pub dmarc_result: &'x DmarcResult,
-    pub dmarc_policy: &'x Policy,
-    pub iprev_result: &'x IprevOutput,
+    pub dmarc_result: Option<&'x DmarcResult>,
+    pub dmarc_policy: Option<&'x Policy>,
+    pub iprev_result: Option<&'x IprevOutput>,
 
     // Session details
     pub remote_ip: IpAddr,
-    pub ehlo_domain: &'x str,
-    pub authenticated_as: &'x str,
+    pub ehlo_domain: Option<&'x str>,
+    pub authenticated_as: Option<&'x str>,
     pub asn: Option<u32>,
     pub country: Option<&'x str>,
 
     // TLS
-    pub tls_version: &'x str,
-    pub tls_cipher: &'x str,
+    pub is_tls: bool,
 
     // Envelope
     pub env_from: &'x str,
     pub env_from_flags: u64,
-    pub env_rcpt_to: &'x [&'x str],
+    pub env_rcpt_to: Vec<&'x str>,
 
     pub account_id: Option<u32>,
     pub is_test: bool,

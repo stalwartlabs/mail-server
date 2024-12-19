@@ -11,6 +11,7 @@ use common::{
     Server,
 };
 use mail_auth::DkimResult;
+use mail_parser::{HeaderName, HeaderValue, Host};
 use nlp::tokenizers::types::TokenType;
 
 use crate::{
@@ -19,7 +20,7 @@ use crate::{
         expression::{SpamFilterResolver, StringResolver},
         html::{HtmlToken, A, HREF},
     },
-    Email, Recipient, SpamFilterContext, TextPart,
+    Email, Hostname, Recipient, SpamFilterContext, TextPart,
 };
 
 use super::{is_trusted_domain, ElementLocation};
@@ -49,11 +50,31 @@ impl SpamFilterAnalyzeDomain for Server {
             }
         }
 
+        // Add Received headers
+        for header in ctx.input.message.headers() {
+            if let (HeaderName::Received, HeaderValue::Received(received)) =
+                (&header.name, &header.value)
+            {
+                for host in [&received.from, &received.helo, &received.by]
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Host::Name(name) = host {
+                        if let Some(name) = Hostname::new(name.as_ref()).sld {
+                            domains.insert(ElementLocation::new(name, Location::HeaderReceived));
+                        }
+                    }
+                }
+            }
+        }
+
         // Add EHLO domain
-        domains.insert(ElementLocation::new(
-            ctx.output.ehlo_host.fqdn.clone(),
-            Location::Ehlo,
-        ));
+        if !ctx.output.ehlo_host.fqdn.is_empty() {
+            domains.insert(ElementLocation::new(
+                ctx.output.ehlo_host.fqdn.clone(),
+                Location::Ehlo,
+            ));
+        }
 
         // Add PTR
         if let Some(ptr) = &ctx.output.iprev_ptr {
@@ -161,12 +182,13 @@ impl SpamFilterAnalyzeDomain for Server {
         // Validate email
         for email in &emails {
             // Skip trusted domains
-            if is_trusted_domain(
-                self,
-                &email.element.email.domain_part.fqdn,
-                ctx.input.span_id,
-            )
-            .await
+            if !email.element.email.is_valid()
+                || is_trusted_domain(
+                    self,
+                    &email.element.email.domain_part.fqdn,
+                    ctx.input.span_id,
+                )
+                .await
             {
                 continue;
             }

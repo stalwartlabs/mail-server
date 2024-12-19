@@ -242,46 +242,50 @@ impl SpamFilterAnalyzeRecipient for Server {
             ctx.result.add_tag("RCPT_BOUNCEMOREONE");
         }
 
-        for rcpts in [&ctx.output.recipients_to, &ctx.output.recipients_cc] {
-            let mut is_sorted = false;
-            if rcpts.len() >= 6 {
-                // Check if the recipients list is sorted
-                let mut sorted = true;
-                for i in 1..rcpts.len() {
-                    if rcpts[i - 1].email.address > rcpts[i].email.address {
-                        sorted = false;
-                        break;
-                    }
+        let rcpts = ctx
+            .output
+            .recipients_to
+            .iter()
+            .chain(ctx.output.recipients_cc.iter())
+            .collect::<Vec<_>>();
+
+        let mut is_sorted = false;
+        if rcpts.len() >= 6 {
+            // Check if the recipients list is sorted
+            let mut sorted = true;
+            for i in 1..rcpts.len() {
+                if rcpts[i - 1].email.address > rcpts[i].email.address {
+                    sorted = false;
+                    break;
                 }
-                if sorted {
-                    ctx.result.add_tag("SORTED_RECIPS");
-                    is_sorted = true;
+            }
+            if sorted {
+                ctx.result.add_tag("SORTED_RECIPS");
+                is_sorted = true;
+            }
+        }
+
+        if !is_sorted && rcpt_count >= 5 {
+            // Look for similar recipients
+            let mut hits = 0;
+            let mut combinations = 0;
+            for i in 0..rcpts.len() {
+                for j in i + 1..rcpts.len() {
+                    let a = &rcpts[i].email;
+                    let b = &rcpts[j].email;
+
+                    if levenshtein_distance(&a.local_part, &b.local_part) < 3
+                        || (a.domain_part.fqdn != b.domain_part.fqdn
+                            && levenshtein_distance(&a.domain_part.fqdn, &b.domain_part.fqdn) < 4)
+                    {
+                        hits += 1;
+                    }
+                    combinations += 1;
                 }
             }
 
-            if !is_sorted && rcpt_count >= 5 {
-                // Look for similar recipients
-                let mut hits = 0;
-                let mut combinations = 0;
-                for i in 0..rcpts.len() {
-                    for j in i + 1..rcpts.len() {
-                        let a = &rcpts[i].email;
-                        let b = &rcpts[j].email;
-
-                        if levenshtein_distance(&a.local_part, &b.local_part) < 3
-                            || (a.domain_part.fqdn != b.domain_part.fqdn
-                                && levenshtein_distance(&a.domain_part.fqdn, &b.domain_part.fqdn)
-                                    < 4)
-                        {
-                            hits += 1;
-                        }
-                        combinations += 1;
-                    }
-                }
-
-                if hits as f64 / combinations as f64 > 0.65 {
-                    ctx.result.add_tag("SUSPICIOUS_RECIPS");
-                }
+            if hits as f64 / combinations as f64 > 0.65 {
+                ctx.result.add_tag("SUSPICIOUS_RECIPS");
             }
         }
     }

@@ -20,6 +20,7 @@ pub mod mail;
 pub mod milter;
 pub mod rcpt;
 pub mod session;
+pub mod spam;
 pub mod spawn;
 pub mod vrfy;
 

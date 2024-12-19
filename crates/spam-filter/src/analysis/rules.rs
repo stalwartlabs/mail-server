@@ -97,7 +97,11 @@ impl SpamFilterAnalyzeRules for Server {
                         if let Some(tag) = self
                             .eval_if::<String, _>(
                                 &rule.rule,
-                                &SpamFilterResolver::new(ctx, &IpResolver(ip.element), ip.location),
+                                &SpamFilterResolver::new(
+                                    ctx,
+                                    &IpResolver::new(ip.element),
+                                    ip.location,
+                                ),
                                 ctx.input.span_id,
                             )
                             .await

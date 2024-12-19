@@ -28,7 +28,7 @@ impl SpamFilterAnalyzeHeaders for Server {
         for header in ctx.input.message.headers() {
             // Add header exists tag
             let hdr_name = header.name();
-            let mut tag = String::with_capacity(hdr_name.len() + 5);
+            let mut tag: String = String::with_capacity(hdr_name.len() + 5);
             tag.push_str("X_HDR_");
             for ch in hdr_name.chars() {
                 if ch.is_ascii_alphanumeric() {
@@ -37,6 +37,7 @@ impl SpamFilterAnalyzeHeaders for Server {
                     tag.push('_');
                 }
             }
+            ctx.result.add_tag(tag);
 
             match &header.name {
                 HeaderName::ContentType

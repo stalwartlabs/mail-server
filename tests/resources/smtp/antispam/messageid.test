@@ -47,6 +47,12 @@ Message-ID: <hello@domain.com> (hello world)
 
 Test
 <!-- NEXT TEST -->
+expect MID_RHS_TOO_LONG
+
+Message-ID: <hello@domaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomaindomain.com>
+
+Test
+<!-- NEXT TEST -->
 expect MID_MISSING_BRACKETS
 
 Message-ID: hello@domain.com

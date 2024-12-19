@@ -7,7 +7,6 @@
 use std::{str::FromStr, time::Duration};
 
 use jmap_proto::request::capability::BaseCapabilities;
-use mail_parser::HeaderName;
 use nlp::language::Language;
 use utils::config::{cron::SimpleCron, utils::ParseValue, Config, Rate};
 
@@ -65,7 +64,6 @@ pub struct JmapConfig {
     pub fallback_admin: Option<(String, String)>,
     pub master_user: Option<(String, String)>,
 
-    pub spam_header: Option<(HeaderName<'static>, String)>,
     pub default_folders: Vec<DefaultFolder>,
     pub shared_folder: String,
 
@@ -334,17 +332,6 @@ impl JmapConfig {
             encrypt_append: config
                 .property_or_default("storage.encryption.append", "false")
                 .unwrap_or(false),
-            spam_header: config
-                .property_or_default::<Option<String>>("spam.header.is-spam", "X-Spam-Status: Yes")
-                .unwrap_or_default()
-                .and_then(|v| {
-                    v.split_once(':').map(|(k, v)| {
-                        (
-                            mail_parser::HeaderName::parse(k.trim().to_string()).unwrap(),
-                            v.trim().to_string(),
-                        )
-                    })
-                }),
             http_use_forwarded: config
                 .property("server.http.use-x-forwarded")
                 .unwrap_or(false),

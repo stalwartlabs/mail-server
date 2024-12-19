@@ -136,11 +136,11 @@ pub(crate) async fn bayes_train(
 pub(crate) async fn bayes_classify(
     server: &Server,
     ctx: &SpamFilterContext<'_>,
-) -> trc::Result<f64> {
+) -> trc::Result<Option<f64>> {
     let classifier = if let Some(config) = &server.core.spam.bayes {
         &config.classifier
     } else {
-        return Ok(0.0);
+        return Ok(None);
     };
 
     // Obtain training counts
@@ -169,7 +169,7 @@ pub(crate) async fn bayes_classify(
                 trc::Value::from(classifier.min_learns)
             ],
         );
-        return Ok(0.0);
+        return Ok(None);
     }
 
     // Classify the text
@@ -265,10 +265,10 @@ pub(crate) async fn bayes_classify(
             trc::Value::from(ham_learns),
             trc::Value::from(classifier.min_learns)
         ],
-        Result = result.unwrap_or_default()
+        Result = result.map(trc::Value::from).unwrap_or_default()
     );
 
-    Ok(result.unwrap_or_default())
+    Ok(result)
 }
 
 pub(crate) async fn bayes_is_balanced(
@@ -357,7 +357,7 @@ const P_REMOTE_IP: u8 = 4;
 impl SpamFilterContext<'_> {
     pub fn spam_tokens(&self) -> HashSet<Vec<u8>> {
         let mut tokens = HashSet::new();
-        if matches!(self.input.dmarc_result, DmarcResult::Pass) {
+        if matches!(self.input.dmarc_result, Some(DmarcResult::Pass)) {
             for addr in [&self.output.env_from_addr, &self.output.from.email] {
                 if !addr.address.is_empty() {
                     tokens.insert(add_prefix(P_FROM_EMAIL, addr.address.as_bytes()));
