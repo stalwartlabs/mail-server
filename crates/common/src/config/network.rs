@@ -239,6 +239,7 @@ impl AsnGeoLookupConfig {
                 }
                 .into()
             }
+            "disabled" | "none" | "false" => AsnGeoLookupConfig::Disabled.into(),
             _ => {
                 config.new_build_error("server.asn.type", "Invalid value");
                 None

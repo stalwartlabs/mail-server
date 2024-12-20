@@ -25,7 +25,7 @@ use crate::AssertConfig;
 pub mod config;
 pub mod inbound;
 pub mod lookup;
-pub mod management;
+//pub mod management;
 pub mod outbound;
 pub mod queue;
 pub mod reporting;
@@ -128,13 +128,13 @@ cert = '%{file:{CERT}}%'
 private-key = '%{file:{PK}}%'
 
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/queue.db"
 
 "#;

@@ -49,7 +49,7 @@ impl SieveHandler for Server {
         &self,
         req: &HttpRequest,
         path: Vec<&str>,
-        body: Option<Vec<u8>>,
+        _body: Option<Vec<u8>>,
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         // Validate the access token
@@ -78,8 +78,7 @@ impl SieveHandler for Server {
                     .duration_since(SystemTime::UNIX_EPOCH)
                     .map_or(0, |d| d.as_secs()),
             )
-            .set_variable("test", true)
-            .with_message(body.as_deref().unwrap_or_default());
+            .set_variable("test", true);
 
         let mut envelope_to = Vec::new();
         for (key, value) in UrlParams::new(req.uri().query()).into_inner() {

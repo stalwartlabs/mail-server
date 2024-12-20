@@ -155,8 +155,6 @@ impl EventType {
                 | SmtpEvent::InvalidParameter
                 | SmtpEvent::UnsupportedParameter
                 | SmtpEvent::SyntaxError
-                | SmtpEvent::PipeSuccess
-                | SmtpEvent::PipeError
                 | SmtpEvent::Error => Level::Debug,
                 SmtpEvent::MissingLocalHostname | SmtpEvent::RemoteIdNotFound => Level::Warn,
                 SmtpEvent::ConcurrencyLimitExceeded
@@ -337,14 +335,17 @@ impl EventType {
                 | SieveEvent::ActionReject => Level::Debug,
             },
             EventType::Spam(event) => match event {
-                SpamEvent::PyzorError | SpamEvent::TrainError | SpamEvent::ClassifyError => {
-                    Level::Warn
-                }
-                SpamEvent::Train
+                SpamEvent::PyzorError
+                | SpamEvent::TrainError
+                | SpamEvent::DnsblError
+                | SpamEvent::RemoteListError => Level::Warn,
+                SpamEvent::Pyzor
+                | SpamEvent::Train
                 | SpamEvent::Classify
-                | SpamEvent::NotEnoughTrainingData
-                | SpamEvent::TrainBalance => Level::Debug,
-                SpamEvent::ListUpdated => Level::Info,
+                | SpamEvent::ClassifyError
+                | SpamEvent::TrainBalance
+                | SpamEvent::Dnsbl
+                | SpamEvent::RemoteList => Level::Debug,
             },
             EventType::Http(event) => match event {
                 HttpEvent::ConnectionStart | HttpEvent::ConnectionEnd => Level::Debug,

@@ -20,7 +20,8 @@ pub mod reload;
 pub mod restore;
 pub mod webadmin;
 
-const DEFAULT_SPAMFILTER_URL: &str = "https://get.stalw.art/resources/config/spamfilter.toml";
+const DEFAULT_SPAMFILTER_URL: &str =
+    "https://raw.githubusercontent.com/stalwartlabs/spam-filter/refs/heads/main/spam-filter.toml";
 const DEFAULT_WEBADMIN_URL: &str =
     "https://github.com/stalwartlabs/webadmin/releases/latest/download/webadmin.zip";
 pub const WEBADMIN_KEY: &[u8] = "STALWART_WEBADMIN".as_bytes();

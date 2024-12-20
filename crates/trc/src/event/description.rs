@@ -409,8 +409,6 @@ impl SmtpEvent {
             SmtpEvent::MessageParseFailed => "Message parsing failed",
             SmtpEvent::MessageTooLarge => "Message too large",
             SmtpEvent::LoopDetected => "Mail loop detected",
-            SmtpEvent::PipeSuccess => "Pipe command succeeded",
-            SmtpEvent::PipeError => "Pipe command failed",
             SmtpEvent::DkimPass => "DKIM verification passed",
             SmtpEvent::DkimFail => "DKIM verification failed",
             SmtpEvent::ArcPass => "ARC verification passed",
@@ -504,8 +502,6 @@ impl SmtpEvent {
             SmtpEvent::LoopDetected => {
                 "A mail loop was detected, the message contains too many Received headers"
             }
-            SmtpEvent::PipeSuccess => "The pipe command succeeded",
-            SmtpEvent::PipeError => "The pipe command failed",
             SmtpEvent::DkimPass => "Successful DKIM verification",
             SmtpEvent::DkimFail => "Failed to verify DKIM signature",
             SmtpEvent::ArcPass => "Successful ARC verification",
@@ -1019,29 +1015,33 @@ impl PushSubscriptionEvent {
 impl SpamEvent {
     pub fn description(&self) -> &'static str {
         match self {
+            SpamEvent::Pyzor => "Pyzor success",
             SpamEvent::PyzorError => "Pyzor error",
-            SpamEvent::ListUpdated => "Spam list updated",
+            SpamEvent::RemoteList => "Remote list updated",
+            SpamEvent::RemoteListError => "Error updating remote list",
             SpamEvent::Train => "Training spam filter",
             SpamEvent::TrainBalance => "Balancing spam filter training data",
             SpamEvent::TrainError => "Error training spam filter",
             SpamEvent::Classify => "Classifying message for spam",
-            SpamEvent::ClassifyError => "Error classifying message for spam",
-            SpamEvent::NotEnoughTrainingData => "Not enough training data for spam filter",
+            SpamEvent::ClassifyError => "Not enough training data for spam filter",
+            SpamEvent::Dnsbl => "DNSBL query",
+            SpamEvent::DnsblError => "Error querying DNSBL",
         }
     }
 
     pub fn explain(&self) -> &'static str {
         match self {
             SpamEvent::PyzorError => "An error occurred with Pyzor",
-            SpamEvent::ListUpdated => "The spam list has been updated",
             SpamEvent::Train => "The spam filter is being trained with the message",
             SpamEvent::TrainBalance => "The spam filter training data is being balanced",
             SpamEvent::TrainError => "An error occurred while training the spam filter",
             SpamEvent::Classify => "The message is being classified for spam",
-            SpamEvent::ClassifyError => "An error occurred while classifying the message for spam",
-            SpamEvent::NotEnoughTrainingData => {
-                "There is not enough training data for the spam filter"
-            }
+            SpamEvent::ClassifyError => "There is not enough training data for the spam filter",
+            SpamEvent::Pyzor => "Pyzor query successful",
+            SpamEvent::RemoteList => "The remote list was updated",
+            SpamEvent::RemoteListError => "An error occurred while updating the remote list",
+            SpamEvent::Dnsbl => "The DNSBL query was successful",
+            SpamEvent::DnsblError => "An error occurred while querying the DNSBL",
         }
     }
 }

@@ -161,7 +161,7 @@ pub(crate) async fn bayes_classify(
     // Make sure we have enough training data
     if spam_learns < classifier.min_learns || ham_learns < classifier.min_learns {
         trc::event!(
-            Spam(trc::SpamEvent::NotEnoughTrainingData),
+            Spam(trc::SpamEvent::ClassifyError),
             SpanId = ctx.input.span_id,
             Details = vec![
                 trc::Value::from(spam_learns),

@@ -10,7 +10,7 @@ Test
 <!-- NEXT TEST -->
 remote_ip 10.0.0.1
 score 2.0
-final_score 1.5
+final_score 1.45
 expect 
 
 From: user@domain.org
@@ -20,7 +20,7 @@ Test
 <!-- NEXT TEST -->
 remote_ip 10.0.0.1
 score 3.0
-final_score 2.2525252525252526
+final_score 2.1772727272727272
 expect 
 
 From: user@domain.org
@@ -29,7 +29,7 @@ Test
 <!-- NEXT TEST -->
 remote_ip 10.0.0.1
 score -5.0
-final_score -1.4949494949494948
+final_score -1.5954545454545457
 expect 
 
 From: user@domain.org

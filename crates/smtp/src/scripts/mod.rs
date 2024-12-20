@@ -10,6 +10,7 @@ use ahash::AHashMap;
 use common::{
     auth::AccessToken, expr::functions::ResolveVariable, scripts::ScriptModification, Server,
 };
+use mail_parser::Message;
 use sieve::{runtime::Variable, Envelope};
 
 pub mod envelope;
@@ -30,7 +31,7 @@ pub enum ScriptResult {
 }
 
 pub struct ScriptParameters<'x> {
-    message: Option<&'x [u8]>,
+    message: Option<Message<'x>>,
     headers: Option<&'x [u8]>,
     variables: AHashMap<Cow<'static, str>, Variable>,
     envelope: Vec<(Envelope, Variable)>,
@@ -82,7 +83,7 @@ impl<'x> ScriptParameters<'x> {
         self
     }
 
-    pub fn with_message(self, message: &'x [u8]) -> Self {
+    pub fn with_message(self, message: Message<'x>) -> Self {
         Self {
             message: message.into(),
             ..self

@@ -130,7 +130,6 @@ pub enum AddressMapping {
 #[derive(Clone)]
 pub struct Data {
     pub script: IfBlock,
-    pub pipe_commands: Vec<Pipe>,
 
     // Limits
     pub max_messages: IfBlock,
@@ -144,14 +143,6 @@ pub struct Data {
     pub add_auth_results: IfBlock,
     pub add_message_id: IfBlock,
     pub add_date: IfBlock,
-}
-
-// Ceci n'est pas une pipe
-#[derive(Clone)]
-pub struct Pipe {
-    pub command: IfBlock,
-    pub arguments: IfBlock,
-    pub timeout: IfBlock,
 }
 
 #[derive(Clone)]
@@ -228,13 +219,6 @@ impl SessionConfig {
             .collect::<Vec<_>>()
             .into_iter()
             .filter_map(|id| parse_hooks(config, &id, &has_rcpt_vars))
-            .collect();
-        session.data.pipe_commands = config
-            .sub_keys("session.data.pipe", "")
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-            .into_iter()
-            .filter_map(|id| parse_pipe(config, &id, &has_rcpt_vars))
             .collect();
         session.throttle = SessionThrottle::parse(config);
         session.mta_sts_policy = Policy::try_parse(config);
@@ -519,17 +503,6 @@ impl SessionThrottle {
     }
 }
 
-fn parse_pipe(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Pipe> {
-    Some(Pipe {
-        command: IfBlock::try_parse(config, ("session.data.pipe", id, "command"), token_map)?,
-        arguments: IfBlock::try_parse(config, ("session.data.pipe", id, "arguments"), token_map)?,
-        timeout: IfBlock::try_parse(config, ("session.data.pipe", id, "timeout"), token_map)
-            .unwrap_or_else(|| {
-                IfBlock::new::<()>(format!("session.data.pipe.{id}.timeout"), [], "30s")
-            }),
-    })
-}
-
 fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Milter> {
     let hostname = config
         .value_require(("session.milter", id, "hostname"))?
@@ -800,7 +773,6 @@ impl Default for SessionConfig {
             },
             data: Data {
                 script: IfBlock::empty("session.data.script"),
-                pipe_commands: Default::default(),
                 max_messages: IfBlock::new::<()>("session.data.limits.messages", [], "10"),
                 max_message_size: IfBlock::new::<()>("session.data.limits.size", [], "104857600"),
                 max_received_headers: IfBlock::new::<()>(

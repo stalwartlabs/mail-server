@@ -19,7 +19,7 @@ pub trait SpamFilterAnalyzeBayes: Sync + Send {
     fn spam_filter_analyze_spam_trap(
         &self,
         ctx: &mut SpamFilterContext<'_>,
-    ) -> impl Future<Output = ()> + Send;
+    ) -> impl Future<Output = bool> + Send;
 }
 
 impl SpamFilterAnalyzeBayes for Server {
@@ -43,7 +43,7 @@ impl SpamFilterAnalyzeBayes for Server {
         }
     }
 
-    async fn spam_filter_analyze_spam_trap(&self, ctx: &mut SpamFilterContext<'_>) {
+    async fn spam_filter_analyze_spam_trap(&self, ctx: &mut SpamFilterContext<'_>) -> bool {
         if ctx
             .output
             .env_to_addr
@@ -51,6 +51,9 @@ impl SpamFilterAnalyzeBayes for Server {
             .any(|addr| self.core.spam.lists.spamtraps.contains(&addr.address))
         {
             ctx.result.add_tag("SPAM_TRAP");
+            true
+        } else {
+            false
         }
     }
 }

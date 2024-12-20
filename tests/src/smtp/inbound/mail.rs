@@ -21,13 +21,13 @@ use crate::smtp::{
 
 const CONFIG: &str = r#"
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/data.db"
 
 [session.ehlo]

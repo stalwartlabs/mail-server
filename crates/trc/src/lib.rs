@@ -360,8 +360,6 @@ pub enum SmtpEvent {
     MessageParseFailed,
     MessageTooLarge,
     LoopDetected,
-    PipeSuccess,
-    PipeError,
     DkimPass,
     DkimFail,
     ArcPass,
@@ -602,14 +600,17 @@ pub enum PushSubscriptionEvent {
 
 #[event_type]
 pub enum SpamEvent {
+    Pyzor,
     PyzorError,
-    ListUpdated,
+    RemoteList,
+    RemoteListError,
+    Dnsbl,
+    DnsblError,
     Train,
     TrainBalance,
     TrainError,
     Classify,
     ClassifyError,
-    NotEnoughTrainingData,
 }
 
 #[event_type]

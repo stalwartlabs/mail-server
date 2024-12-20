@@ -17,6 +17,7 @@ utils = { path =  "../utils" }
 nlp = { path =  "../nlp" }
 directory = { path =  "../directory" }
 common = { path =  "../common" }
+spam-filter = { path =  "../spam-filter" }
 trc = { path = "../trc" }
 mail-auth = { version = "0.5" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
@@ -56,6 +57,7 @@ chrono = "0.4"
 
 [features]
 test_mode = []
+enterprise = []
 
 #[[bench]]
 #name = "hash"

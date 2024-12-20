@@ -50,12 +50,10 @@ pub(crate) async fn is_dnsbl(
         }
     }
 
-    let todo = "use proper event error";
-
     match server.core.smtp.resolvers.dns.ipv4_lookup(&zone).await {
         Ok(result) => {
             trc::event!(
-                Spam(SpamEvent::Classify),
+                Spam(SpamEvent::Dnsbl),
                 Result = result
                     .iter()
                     .map(|ip| trc::Value::from(ip.to_string()))
@@ -84,7 +82,7 @@ pub(crate) async fn is_dnsbl(
         }
         Err(Error::DnsRecordNotFound(_)) => {
             trc::event!(
-                Spam(SpamEvent::Classify),
+                Spam(SpamEvent::Dnsbl),
                 Result = trc::Value::None,
                 Elapsed = time.elapsed()
             );
@@ -93,7 +91,7 @@ pub(crate) async fn is_dnsbl(
         }
         Err(err) => {
             trc::event!(
-                Spam(SpamEvent::Classify),
+                Spam(SpamEvent::DnsblError),
                 Elapsed = time.elapsed(),
                 CausedBy = err.to_string()
             );

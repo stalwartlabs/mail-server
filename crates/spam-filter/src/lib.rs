@@ -99,7 +99,7 @@ pub struct SpamFilterResult {
     pub rbl_domain_checks: usize,
     pub rbl_url_checks: usize,
     pub rbl_email_checks: usize,
-    pub llm_header: Option<String>,
+    pub header: Option<String>,
 }
 
 pub struct SpamFilterContext<'x> {

@@ -1,16 +1,20 @@
 use std::{
-    borrow::Cow,
     fs,
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use common::{
     auth::AccessToken,
-    enterprise::llm::{
-        AiApiConfig, ChatCompletionChoice, ChatCompletionRequest, ChatCompletionResponse, Message,
+    config::spamfilter::SpamFilterAction,
+    enterprise::{
+        llm::{
+            AiApiConfig, ChatCompletionChoice, ChatCompletionRequest, ChatCompletionResponse,
+            Message,
+        },
+        SpamFilterLlmConfig,
     },
     Core,
 };
@@ -21,7 +25,6 @@ use mail_auth::{
     IprevResult, SpfOutput, SpfResult, MX,
 };
 use mail_parser::MessageParser;
-use sieve::runtime::Variable;
 use smtp::core::{Session, SessionAddress};
 use smtp_proto::{MAIL_BODY_8BITMIME, MAIL_SMTPUTF8};
 use spam_filter::{
@@ -182,10 +185,12 @@ async fn antispam() {
     let mut core = Core::parse(&mut config, stores, Default::default())
         .await
         .enable_enterprise();
-    core.enterprise.as_mut().unwrap().ai_apis.insert(
+    let ai_apis = AHashMap::from_iter([(
         "dummy".to_string(),
         AiApiConfig::parse(&mut config, "dummy").unwrap().into(),
-    );
+    )]);
+    core.enterprise.as_mut().unwrap().spam_filter_llm =
+        SpamFilterLlmConfig::parse(&mut config, &ai_apis);
     crate::AssertConfig::assert_no_errors(config);
 
     // Add mock DNS entries
@@ -279,7 +284,8 @@ async fn antispam() {
         .join("smtp")
         .join("antispam");
     for test_name in [
-        /*"ip",
+        "combined",
+        "ip",
         "helo",
         "received",
         "messageid",
@@ -298,11 +304,10 @@ async fn antispam() {
         "replies_out",
         "replies_in",
         "spamtrap",
-        "bayes_classify",*/
+        "bayes_classify",
         "reputation",
         "pyzor",
         "llm",
-        "combined",
     ] {
         /*if test_name != "combined" {
             continue;
@@ -324,7 +329,7 @@ async fn antispam() {
             let mut dmarc_result = None;
             let mut dmarc_policy = None;
             let mut expected_tags = AHashSet::new();
-            let mut score_expect = 0.0;
+            let mut expect_headers = String::new();
             let mut score_set = 0.0;
             let mut score_final = 0.0;
             let mut body_params = 0;
@@ -420,8 +425,14 @@ async fn antispam() {
                             expected_tags
                                 .extend(value.split_ascii_whitespace().map(|v| v.to_uppercase()));
                         }
-                        "expect_score" => {
-                            score_expect = value.parse::<f64>().unwrap();
+                        "expect_header" => {
+                            let value = value.trim();
+                            if !value.is_empty() {
+                                if !expect_headers.is_empty() {
+                                    expect_headers.push(' ');
+                                }
+                                expect_headers.push_str(value);
+                            }
                         }
                         "score" => {
                             score_set = value.parse::<f64>().unwrap();
@@ -478,6 +489,39 @@ async fn antispam() {
                 }
             }
             let parsed_message = MessageParser::new().parse(&message).unwrap();
+
+            // Combined tests
+            if test_name == "combined" {
+                match session
+                    .spam_classify(
+                        &parsed_message,
+                        &dkim_domains,
+                        arc_result.as_ref(),
+                        dmarc_result.as_ref(),
+                        dmarc_policy.as_ref(),
+                    )
+                    .await
+                {
+                    SpamFilterAction::Allow(header) => {
+                        let mut last_ch = 'x';
+                        let mut result = String::with_capacity(header.len());
+                        for ch in header.chars() {
+                            if !ch.is_whitespace() {
+                                if last_ch.is_whitespace() {
+                                    result.push(' ');
+                                }
+                                result.push(ch);
+                            }
+                            last_ch = ch;
+                        }
+                        assert_eq!(result, expect_headers);
+                    }
+                    other => panic!("Unexpected action {other:?}"),
+                }
+                continue;
+            }
+
+            // Initialize filter
             let mut spam_input = session.build_spam_input(
                 &parsed_message,
                 &dkim_domains,
@@ -486,8 +530,6 @@ async fn antispam() {
                 dmarc_policy.as_ref(),
             );
             spam_input.is_tls = is_tls;
-
-            // Initialize filter
             let mut spam_ctx = server.spam_filter_init(spam_input);
             match test_name {
                 "html" => {
@@ -564,9 +606,7 @@ async fn antispam() {
                 }
                 "spamtrap" => {
                     server.spam_filter_analyze_spam_trap(&mut spam_ctx).await;
-                    server
-                        .spam_filter_finalize(&mut spam_ctx, String::new())
-                        .await;
+                    server.spam_filter_finalize(&mut spam_ctx).await;
                 }
                 "bayes_classify" => {
                     server
@@ -583,9 +623,6 @@ async fn antispam() {
                 }
                 "llm" => {
                     server.spam_filter_analyze_llm(&mut spam_ctx).await;
-                }
-                "combined" => {
-                    todo!("combined");
                 }
                 _ => panic!("Invalid test {test_name:?}"),
             }

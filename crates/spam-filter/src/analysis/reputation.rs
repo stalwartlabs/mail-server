@@ -85,7 +85,7 @@ impl SpamFilterAnalyzeReputation for Server {
             let mut reputation = 0.0;
 
             for (rep_type, key) in types {
-                let mut token = match key_get::<Reputation>(
+                let token = match key_get::<Reputation>(
                     self,
                     ctx.input.span_id,
                     KeyValue::<()>::build_key(rep_type.prefix(), key.as_ref()),
@@ -115,16 +115,25 @@ impl SpamFilterAnalyzeReputation for Server {
                 };
 
                 // Update reputation
-                token.score = (token.count + 1) as f64
+                let updated_score = (token.count + 1) as f64
                     * (ctx.result.score + config.token_score * token.score)
                     / (config.token_score * token.count as f64 + 1.0);
-                token.count += 1;
+                let updated_count = token.count + 1;
+
                 if !ctx.input.is_test {
                     key_set(
                         self,
                         ctx.input.span_id,
-                        KeyValue::with_prefix(rep_type.prefix(), key.as_ref(), token.serialize())
-                            .expires(config.expiry),
+                        KeyValue::with_prefix(
+                            rep_type.prefix(),
+                            key.as_ref(),
+                            Reputation {
+                                count: updated_count,
+                                score: updated_score,
+                            }
+                            .serialize(),
+                        )
+                        .expires(config.expiry),
                     )
                     .await;
                 }
@@ -136,10 +145,8 @@ impl SpamFilterAnalyzeReputation for Server {
                     Type::Domain => config.domain_weight,
                     Type::Asn => config.asn_weight,
                 };
-                let c = println!("{rep_type:?} {weight}");
 
                 reputation += token.score / token.count as f64 * weight;
-                let c = println!("{rep_type:?} {weight}: {reputation}");
             }
 
             // Adjust score

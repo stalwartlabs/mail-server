@@ -36,6 +36,7 @@ impl SpamFilterAnalyzeLlm for Server {
                 "{}\n\nSubject: {}\n\n{}",
                 config.prompt, ctx.output.subject, body
             );
+
             match config
                 .model
                 .send_request(prompt, config.temperature.into())
@@ -68,7 +69,7 @@ impl SpamFilterAnalyzeLlm for Server {
                                     confidence = Some(value);
                                 }
                             } else if config.index_explanation.map_or(false, |i| i == idx) {
-                                explanation = Some(value);
+                                explanation = Some(value.replace('\n', " "));
                             }
                         }
                     }
@@ -85,10 +86,12 @@ impl SpamFilterAnalyzeLlm for Server {
                         _ => return,
                     };
 
-                    if let Some(explanation) = explanation {
-                        ctx.result.llm_header =
-                            format!("X-Spam-Llm-Explanation: {category} ({explanation})\r\n",)
-                                .into();
+                    if let (Some(header), Some(mut explanation)) =
+                        (&self.core.spam.headers.llm, explanation)
+                    {
+                        explanation.truncate(512);
+                        ctx.result.header =
+                            format!("{header}: {category} ({explanation})\r\n",).into();
                     }
                 }
                 Err(err) => {

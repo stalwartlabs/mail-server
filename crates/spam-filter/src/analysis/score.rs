@@ -13,17 +13,16 @@ pub trait SpamFilterAnalyzeScore: Sync + Send {
     fn spam_filter_score(
         &self,
         ctx: &mut SpamFilterContext<'_>,
-    ) -> impl Future<Output = SpamFilterAction<String>> + Send;
+    ) -> impl Future<Output = SpamFilterAction<()>> + Send;
 
     fn spam_filter_finalize(
         &self,
         ctx: &mut SpamFilterContext<'_>,
-        header: String,
     ) -> impl Future<Output = SpamFilterAction<String>> + Send;
 }
 
 impl SpamFilterAnalyzeScore for Server {
-    async fn spam_filter_score(&self, ctx: &mut SpamFilterContext<'_>) -> SpamFilterAction<String> {
+    async fn spam_filter_score(&self, ctx: &mut SpamFilterContext<'_>) -> SpamFilterAction<()> {
         let mut results = vec![];
         let mut header_len = 60;
 
@@ -47,7 +46,10 @@ impl SpamFilterAnalyzeScore for Server {
 
         // Write results header sorted by score
         if let Some(header_name) = &self.core.spam.headers.result {
-            let mut header = String::with_capacity(header_name.len() + header_len + 2);
+            let mut header = ctx
+                .result
+                .header
+                .get_or_insert_with(|| String::with_capacity(header_name.len() + header_len + 2));
             results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then_with(|| a.0.cmp(b.0)));
             header.push_str(header_name);
             header.push_str(": ");
@@ -59,16 +61,15 @@ impl SpamFilterAnalyzeScore for Server {
             }
             header.push_str("\r\n");
 
-            SpamFilterAction::Allow(header)
+            SpamFilterAction::Allow(())
         } else {
-            SpamFilterAction::Allow(String::new())
+            SpamFilterAction::Allow(())
         }
     }
 
     async fn spam_filter_finalize(
         &self,
         ctx: &mut SpamFilterContext<'_>,
-        mut header: String,
     ) -> SpamFilterAction<String> {
         // Train Bayes classifier
         if let Some(config) = self.core.spam.bayes.as_ref().filter(|c| c.auto_learn) {
@@ -94,6 +95,7 @@ impl SpamFilterAnalyzeScore for Server {
         {
             SpamFilterAction::Discard
         } else {
+            let mut header = std::mem::take(&mut ctx.result.header).unwrap_or_default();
             if let Some(header_name) = &self.core.spam.headers.status {
                 let _ = write!(
                     &mut header,

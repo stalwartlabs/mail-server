@@ -20,7 +20,7 @@ use super::{if_block::IfBlock, tokenizer::TokenMap};
 pub struct SpamFilterConfig {
     pub enabled: bool,
     pub dnsbl: DnsBlConfig,
-    pub rules: Vec<SpamFilterRule>,
+    pub rules: SpamFilterRules,
     pub lists: SpamFilterLists,
     pub pyzor: Option<PyzorConfig>,
     pub reputation: Option<ReputationConfig>,
@@ -112,10 +112,15 @@ pub struct PyzorConfig {
     pub ratio: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SpamFilterRule {
-    pub rule: IfBlock,
-    pub scope: Element,
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SpamFilterRules {
+    pub url: Vec<IfBlock>,
+    pub domain: Vec<IfBlock>,
+    pub email: Vec<IfBlock>,
+    pub ip: Vec<IfBlock>,
+    pub header: Vec<IfBlock>,
+    pub body: Vec<IfBlock>,
+    pub any: Vec<IfBlock>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -197,7 +202,7 @@ impl SpamFilterConfig {
                 .property_or_default("spam-filter.enable", "true")
                 .unwrap_or(true),
             dnsbl: DnsBlConfig::parse(config),
-            rules: parse_rules(config),
+            rules: SpamFilterRules::parse(config),
             lists: SpamFilterLists::parse(config),
             pyzor: PyzorConfig::parse(config).await,
             reputation: ReputationConfig::parse(config),
@@ -209,23 +214,46 @@ impl SpamFilterConfig {
     }
 }
 
-fn parse_rules(config: &mut Config) -> Vec<SpamFilterRule> {
-    let mut rules = vec![];
-    for id in config
-        .sub_keys("spam-filter.rule", ".scope")
-        .map(|k| k.to_string())
-        .collect::<Vec<_>>()
-    {
-        if let Some(rule) = SpamFilterRule::parse(config, id) {
-            rules.push(rule);
+impl SpamFilterRules {
+    pub fn parse(config: &mut Config) -> SpamFilterRules {
+        let mut rules = vec![];
+        for id in config
+            .sub_keys("spam-filter.rule", ".scope")
+            .map(|k| k.to_string())
+            .collect::<Vec<_>>()
+        {
+            if let Some(rule) = SpamFilterRule::parse(config, id) {
+                rules.push(rule);
+            }
         }
+        rules.sort_by(|a, b| a.priority.cmp(&b.priority));
+
+        let mut result = SpamFilterRules::default();
+
+        for rule in rules {
+            match rule.scope {
+                Element::Url => result.url.push(rule.rule),
+                Element::Domain => result.domain.push(rule.rule),
+                Element::Email => result.email.push(rule.rule),
+                Element::Ip => result.ip.push(rule.rule),
+                Element::Header => result.header.push(rule.rule),
+                Element::Body => result.body.push(rule.rule),
+                Element::Any => result.any.push(rule.rule),
+            }
+        }
+
+        result
     }
-    rules.sort_by(|a, b| a.1.cmp(&b.1));
-    rules.into_iter().map(|(rule, _)| rule).collect()
+}
+
+struct SpamFilterRule {
+    rule: IfBlock,
+    priority: i32,
+    scope: Element,
 }
 
 impl SpamFilterRule {
-    pub fn parse(config: &mut Config, id: String) -> Option<(Self, i32)> {
+    pub fn parse(config: &mut Config, id: String) -> Option<Self> {
         let id = id.as_str();
         if !config
             .property_or_default(("spam-filter.rule", id, "enable"), "true")
@@ -240,18 +268,16 @@ impl SpamFilterRule {
             .property_or_default::<Element>(("spam-filter.rule", id, "scope"), "any")
             .unwrap_or_default();
 
-        (
-            SpamFilterRule {
-                rule: IfBlock::try_parse(
-                    config,
-                    ("spam-filter.rule", id, "condition"),
-                    &scope.token_map(),
-                )?,
-                scope,
-            },
+        SpamFilterRule {
+            rule: IfBlock::try_parse(
+                config,
+                ("spam-filter.rule", id, "condition"),
+                &scope.token_map(),
+            )?,
+            scope,
             priority,
-        )
-            .into()
+        }
+        .into()
     }
 }
 

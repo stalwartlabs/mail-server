@@ -312,14 +312,17 @@ impl ManageSettings for Server {
                             self.core
                                 .storage
                                 .config
-                                .set(values.into_iter().map(|(key, value)| ConfigKey {
-                                    key: if let Some(prefix) = &prefix {
-                                        format!("{prefix}.{key}")
-                                    } else {
-                                        key
-                                    },
-                                    value,
-                                }))
+                                .set(
+                                    values.into_iter().map(|(key, value)| ConfigKey {
+                                        key: if let Some(prefix) = &prefix {
+                                            format!("{prefix}.{key}")
+                                        } else {
+                                            key
+                                        },
+                                        value,
+                                    }),
+                                    true,
+                                )
                                 .await?;
                         }
                     }

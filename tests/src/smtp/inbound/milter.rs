@@ -51,13 +51,13 @@ struct HeaderTest {
 
 const CONFIG_MILTER: &str = r#"
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/queue.db"
 
 [session.rcpt]
@@ -77,13 +77,13 @@ stages = ["data"]
 
 const CONFIG_JMILTER: &str = r#"
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/queue.db"
 
 [session.rcpt]

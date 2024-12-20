@@ -234,10 +234,13 @@ impl Server {
         self.core
             .storage
             .config
-            .set([ConfigKey {
-                key: format!("{}.{}", BLOCKED_IP_KEY, ip),
-                value: String::new(),
-            }])
+            .set(
+                [ConfigKey {
+                    key: format!("{}.{}", BLOCKED_IP_KEY, ip),
+                    value: String::new(),
+                }],
+                true,
+            )
             .await?;
 
         // Increment version

@@ -70,8 +70,6 @@ async fn is_in_remote_list_(
         }
     }
 
-    let todo = "update RuntimeError with SpamEvent error";
-
     match server.inner.data.remote_lists.read().get(&config.id) {
         Some(remote_list) if remote_list.expires < Instant::now() => {
             return Ok(remote_list.entries.contains(item))
@@ -79,6 +77,7 @@ async fn is_in_remote_list_(
         _ => {}
     }
 
+    let time = Instant::now();
     let response = reqwest::Client::builder()
         .timeout(config.timeout)
         .user_agent(USER_AGENT)
@@ -88,7 +87,7 @@ async fn is_in_remote_list_(
         .send()
         .await
         .map_err(|err| {
-            trc::SieveEvent::RuntimeError
+            trc::SpamEvent::RemoteListError
                 .into_err()
                 .reason(err)
                 .ctx(trc::Key::Url, config.url.to_string())
@@ -100,16 +99,18 @@ async fn is_in_remote_list_(
             .bytes_with_limit(config.max_size)
             .await
             .map_err(|err| {
-                trc::SieveEvent::RuntimeError
+                trc::SpamEvent::RemoteListError
                     .into_err()
                     .reason(err)
                     .ctx(trc::Key::Url, config.url.to_string())
+                    .ctx(trc::Key::Elapsed, time.elapsed())
                     .details("Failed to fetch resource")
             })?
             .ok_or_else(|| {
-                trc::SieveEvent::RuntimeError
+                trc::SpamEvent::RemoteListError
                     .into_err()
                     .ctx(trc::Key::Url, config.url.to_string())
+                    .ctx(trc::Key::Elapsed, time.elapsed())
                     .details("Resource is too large")
             })?;
 
@@ -135,10 +136,11 @@ async fn is_in_remote_list_(
 
         for (pos, line) in BufReader::new(reader).lines().enumerate() {
             let line_ = line.map_err(|err| {
-                trc::SieveEvent::RuntimeError
+                trc::SpamEvent::RemoteListError
                     .into_err()
                     .reason(err)
                     .ctx(trc::Key::Url, config.url.to_string())
+                    .ctx(trc::Key::Elapsed, time.elapsed())
                     .details("Failed to read line")
             })?;
             // Clear list once the first entry has been successfully fetched, decompressed and UTF8-decoded
@@ -194,9 +196,10 @@ async fn is_in_remote_list_(
         }
 
         trc::event!(
-            Spam(trc::SpamEvent::ListUpdated),
+            Spam(trc::SpamEvent::RemoteList),
             Url = config.url.to_string(),
             Total = list.entries.len(),
+            Elapsed = time.elapsed(),
             SpanId = span_id
         );
 
@@ -204,10 +207,11 @@ async fn is_in_remote_list_(
         list.expires = Instant::now() + config.refresh;
         Ok(list.entries.contains(item))
     } else {
-        trc::bail!(trc::SieveEvent::RuntimeError
+        trc::bail!(trc::SpamEvent::RemoteListError
             .into_err()
             .ctx(trc::Key::Code, response.status().as_u16())
             .ctx(trc::Key::Url, config.url.to_string())
+            .ctx(trc::Key::Elapsed, time.elapsed())
             .details("Failed to fetch remote list"));
     }
 }

@@ -92,10 +92,13 @@ impl Enterprise {
                 .keys
                 .insert("enterprise.license-key".to_string(), license.clone());
             if let Err(err) = config_manager
-                .set([ConfigKey {
-                    key: "enterprise.license-key".to_string(),
-                    value: license.to_string(),
-                }])
+                .set(
+                    [ConfigKey {
+                        key: "enterprise.license-key".to_string(),
+                        value: license.to_string(),
+                    }],
+                    true,
+                )
                 .await
             {
                 trc::error!(err
@@ -205,8 +208,8 @@ impl Enterprise {
 
 impl SpamFilterLlmConfig {
     pub fn parse(config: &mut Config, models: &AHashMap<String, Arc<AiApiConfig>>) -> Option<Self> {
-        if config
-            .property_or_default("spam-filter.llm.enable", "false")
+        if !config
+            .property_or_default::<bool>("spam-filter.llm.enable", "false")
             .unwrap_or_default()
         {
             return None;

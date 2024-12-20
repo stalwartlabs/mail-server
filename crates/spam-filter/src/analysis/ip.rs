@@ -123,12 +123,13 @@ impl SpamFilterAnalyzeIp for Server {
                 continue;
             }
 
+            let ip_resolver = IpResolver::new(ip.element);
             for dnsbl in &self.core.spam.dnsbl.servers {
                 if dnsbl.scope == Element::Ip {
                     if let Some(tag) = is_dnsbl(
                         self,
                         dnsbl,
-                        SpamFilterResolver::new(ctx, &IpResolver::new(ip.element), ip.location),
+                        SpamFilterResolver::new(ctx, &ip_resolver, ip.location),
                     )
                     .await
                     {

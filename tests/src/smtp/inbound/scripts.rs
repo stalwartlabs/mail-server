@@ -42,11 +42,8 @@ max-connections = 10
 min-connections = 0
 idle-timeout = "5m"
 
-[session.data.pipe."test"]
-command = [ { if = "remote_ip = '10.0.0.123'", then = "'/bin/bash'" }, 
-            { else = false } ]
-arguments = "['{CFG_PATH}/pipe_me.sh', 'hello', 'world']"
-timeout = "10s"
+[spam-filter]
+enable = false
 
 [sieve.trusted]
 from-name = "'Sieve Daemon'"
@@ -99,7 +96,6 @@ email = ["john@localdomain.org", "jdoe@localdomain.org", "john.doe@localdomain.o
 email-list = ["info@localdomain.org"]
 member-of = ["sales"]
 
-
 "#;
 
 #[tokio::test]
@@ -134,23 +130,8 @@ async fn sieve_scripts() {
     }
 
     // Prepare config
-
     let tmp_dir = TempDir::new("smtp_sieve_test", true);
-    let mut config = Config::new(
-        tmp_dir.update_config(
-            config.replace(
-                "{CFG_PATH}",
-                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .join("resources")
-                    .join("smtp")
-                    .join("pipe")
-                    .as_path()
-                    .to_str()
-                    .unwrap(),
-            ),
-        ),
-    )
-    .unwrap();
+    let mut config = Config::new(tmp_dir.update_config(config)).unwrap();
     config.resolve_all_macros().await;
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
@@ -391,25 +372,5 @@ async fn sieve_scripts() {
         .assert_contains("From: Joe SixPack <joe@football.example.com>")
         .assert_contains("Received: ")
         .assert_contains("Authentication-Results: ");
-    qr.assert_no_events();
-
-    // Test pipes
-    session.data.remote_ip_str = "10.0.0.123".parse().unwrap();
-    session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
-    session
-        .send_message(
-            "test@example.net",
-            &["pipe@foobar.com"],
-            "test:no_dkim",
-            "250",
-        )
-        .await;
-
-    qr.expect_message()
-        .await
-        .read_lines(&qr)
-        .await
-        .assert_contains("X-My-Header: true")
-        .assert_contains("Authentication-Results");
     qr.assert_no_events();
 }
