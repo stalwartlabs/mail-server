@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use common::{
-    ipc::{DmarcEvent, OnHold, QueueEvent, QueueEventLock, ReportingEvent, TlsEvent},
+    ipc::{DmarcEvent, OnHold, QueueEvent, QueuedMessage, ReportingEvent, TlsEvent},
     Server,
 };
 use store::{
@@ -117,12 +117,12 @@ impl QueueReceiver {
     }
 
     pub async fn expect_message(&mut self) -> Message {
-        self.read_event().await.assert_reload();
+        self.read_event().await.assert_refresh();
         self.last_queued_message().await
     }
 
     pub async fn consume_message(&mut self, server: &Server) -> Message {
-        self.read_event().await.assert_reload();
+        self.read_event().await.assert_refresh();
         let message = self.last_queued_message().await;
         message
             .clone()
@@ -138,10 +138,9 @@ impl QueueReceiver {
     }
 
     pub async fn delivery_attempt(&mut self, queue_id: u64) -> DeliveryAttempt {
-        DeliveryAttempt::new(QueueEventLock {
+        DeliveryAttempt::new(QueuedMessage {
             due: self.message_due(queue_id).await,
             queue_id,
-            lock_expiry: 0,
         })
     }
 
@@ -300,19 +299,35 @@ impl ReportReceiver {
 }
 
 pub trait TestQueueEvent {
-    fn assert_reload(self);
-    fn unwrap_on_hold(self) -> OnHold<QueueEventLock>;
+    fn assert_refresh(self);
+    fn assert_done(self);
+    fn assert_refresh_or_done(self);
+    fn unwrap_on_hold(self) -> OnHold<QueuedMessage>;
 }
 
 impl TestQueueEvent for QueueEvent {
-    fn assert_reload(self) {
+    fn assert_refresh(self) {
         match self {
-            QueueEvent::Reload => (),
+            QueueEvent::Refresh(_) => (),
             e => panic!("Unexpected event: {e:?}"),
         }
     }
 
-    fn unwrap_on_hold(self) -> OnHold<QueueEventLock> {
+    fn assert_done(self) {
+        match self {
+            QueueEvent::WorkerDone(_) => (),
+            e => panic!("Unexpected event: {e:?}"),
+        }
+    }
+
+    fn assert_refresh_or_done(self) {
+        match self {
+            QueueEvent::Refresh(_) | QueueEvent::WorkerDone(_) => (),
+            e => panic!("Unexpected event: {e:?}"),
+        }
+    }
+
+    fn unwrap_on_hold(self) -> OnHold<QueuedMessage> {
         match self {
             QueueEvent::OnHold(value) => value,
             e => panic!("Unexpected event: {e:?}"),

@@ -66,7 +66,7 @@ impl RegisterSievePlugins for FunctionMap {
     }
 
     fn register_plugins_untrusted(mut self) -> Self {
-        llm_prompt::register(18, &mut self);
+        llm_prompt::register(12, &mut self);
         self
     }
 }

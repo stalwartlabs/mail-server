@@ -9,11 +9,11 @@ use common::{
         oauth::{oidc::StandardClaims, GrantType},
         AccessToken,
     },
-    Server,
+    Server, KV_OAUTH,
 };
 use hyper::StatusCode;
 use std::future::Future;
-use store::write::Bincode;
+use store::{dispatch::lookup::KeyValue, write::Bincode};
 use trc::AddContext;
 
 use crate::api::{
@@ -79,7 +79,10 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Bincode<OAuthCode>>(format!("oauth:{code}").into_bytes())
+                    .key_get::<Bincode<OAuthCode>>(KeyValue::<()>::build_key(
+                        KV_OAUTH,
+                        code.as_bytes(),
+                    ))
                     .await?
                 {
                     Some(auth_code) => {
@@ -102,7 +105,10 @@ impl TokenHandler for Server {
                                 self.core
                                     .storage
                                     .lookup
-                                    .key_delete(format!("oauth:{code}").into_bytes())
+                                    .key_delete(KeyValue::<()>::build_key(
+                                        KV_OAUTH,
+                                        code.as_bytes(),
+                                    ))
                                     .await?;
 
                                 // Issue token
@@ -143,7 +149,10 @@ impl TokenHandler for Server {
                     .core
                     .storage
                     .lookup
-                    .key_get::<Bincode<OAuthCode>>(format!("oauth:{device_code}").into_bytes())
+                    .key_get::<Bincode<OAuthCode>>(KeyValue::<()>::build_key(
+                        KV_OAUTH,
+                        device_code.as_bytes(),
+                    ))
                     .await?
                 {
                     let oauth = auth_code.inner;
@@ -162,7 +171,10 @@ impl TokenHandler for Server {
                                     self.core
                                         .storage
                                         .lookup
-                                        .key_delete(format!("oauth:{device_code}").into_bytes())
+                                        .key_delete(KeyValue::<()>::build_key(
+                                            KV_OAUTH,
+                                            device_code.as_bytes(),
+                                        ))
                                         .await?;
 
                                     // Issue token

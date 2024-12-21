@@ -6,7 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{core::BuildServer, Inner, Server};
+use common::{core::BuildServer, Inner, Server, KV_LOCK_FTS};
 use directory::{
     backend::internal::{manage::ManageDirectory, PrincipalField},
     Type,
@@ -17,10 +17,10 @@ use store::{
     fts::index::FtsDocument,
     roaring::RoaringBitmap,
     write::{
-        key::DeserializeBigEndian, now, BatchBuilder, Bincode, BlobOp, FtsQueueClass,
-        MaybeDynamicId, ValueClass,
+        key::DeserializeBigEndian, BatchBuilder, Bincode, BlobOp, FtsQueueClass, MaybeDynamicId,
+        ValueClass,
     },
-    Deserialize, IterateParams, Serialize, ValueKey, U32_LEN, U64_LEN,
+    IterateParams, Serialize, ValueKey, U32_LEN, U64_LEN,
 };
 
 use std::future::Future;
@@ -39,7 +39,6 @@ pub struct IndexEmail {
     account_id: u32,
     document_id: u32,
     seq: u64,
-    lock_expiry: u64,
     insert_hash: BlobHash,
 }
 
@@ -48,9 +47,13 @@ const INDEX_LOCK_EXPIRY: u64 = 60 * 5;
 pub fn spawn_index_task(inner: Arc<Inner>) {
     tokio::spawn(async move {
         let rx = inner.ipc.index_tx.clone();
+        let mut locked_seq_ids = AHashMap::new();
         loop {
             // Index any queued messages
-            inner.build_server().fts_index_queued().await;
+            inner
+                .build_server()
+                .fts_index_queued(&mut locked_seq_ids)
+                .await;
 
             // Wait for a signal to index more messages
             rx.notified().await;
@@ -59,8 +62,12 @@ pub fn spawn_index_task(inner: Arc<Inner>) {
 }
 
 pub trait Indexer: Sync + Send {
-    fn fts_index_queued(&self) -> impl Future<Output = ()> + Send;
+    fn fts_index_queued(
+        &self,
+        locked_seq_ids: &mut AHashMap<u64, Instant>,
+    ) -> impl Future<Output = ()> + Send;
     fn try_lock_index(&self, event: &IndexEmail) -> impl Future<Output = bool> + Send;
+    fn remove_index_lock(&self, seq_id: u64) -> impl Future<Output = ()> + Send;
     fn reindex(
         &self,
         account_id: Option<u32>,
@@ -70,7 +77,7 @@ pub trait Indexer: Sync + Send {
 }
 
 impl Indexer for Server {
-    async fn fts_index_queued(&self) {
+    async fn fts_index_queued(&self, locked_seq_ids: &mut AHashMap<u64, Instant>) {
         let from_key = ValueKey::<ValueClass<u32>> {
             account_id: 0,
             collection: 0,
@@ -92,25 +99,20 @@ impl Indexer for Server {
 
         // Retrieve entries pending to be indexed
         let mut entries = Vec::new();
-        let now = now();
+        let now = Instant::now();
         let _ = self
             .core
             .storage
             .data
             .iterate(
-                IterateParams::new(from_key, to_key).ascending(),
-                |key, value| {
-                    let event = IndexEmail::deserialize(key, value)?;
-
-                    if event.lock_expiry < now {
-                        entries.push(event);
-                    } else {
-                        trc::event!(
-                            FtsIndex(FtsIndexEvent::Locked),
-                            AccountId = event.account_id,
-                            DocumentId = event.document_id,
-                            Expires = trc::Value::Timestamp(event.lock_expiry),
-                        );
+                IterateParams::new(from_key, to_key).ascending().no_values(),
+                |key, _| {
+                    let entry = IndexEmail::deserialize(key)?;
+                    if locked_seq_ids
+                        .get(&entry.seq)
+                        .map_or(true, |expires| now >= *expires)
+                    {
+                        entries.push(entry);
                     }
 
                     Ok(true)
@@ -124,12 +126,18 @@ impl Indexer for Server {
             });
 
         // Add entries to the index
+        let mut unlock_seq_ids = Vec::with_capacity(entries.len());
         for event in entries {
             let op_start = Instant::now();
             // Lock index
             if !self.try_lock_index(&event).await {
+                locked_seq_ids.insert(
+                    event.seq,
+                    Instant::now() + std::time::Duration::from_secs(INDEX_LOCK_EXPIRY + 1),
+                );
                 continue;
             }
+            unlock_seq_ids.push(event.seq);
 
             match self
                 .get_property::<Bincode<MessageMetadata>>(
@@ -227,27 +235,33 @@ impl Indexer for Server {
                 break;
             }
         }
+
+        // Unlock entries
+        for seq_id in unlock_seq_ids {
+            self.remove_index_lock(seq_id).await;
+        }
+
+        // Delete expired locks
+        let now = Instant::now();
+        locked_seq_ids.retain(|_, expires| *expires > now);
     }
 
     async fn try_lock_index(&self, event: &IndexEmail) -> bool {
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(event.account_id)
-            .with_collection(Collection::Email)
-            .update_document(event.document_id)
-            .assert_value(event.value_class(), event.lock_expiry)
-            .set(event.value_class(), (now() + INDEX_LOCK_EXPIRY).serialize());
-        match self.core.storage.data.write(batch.build()).await {
-            Ok(_) => true,
-            Err(err) if err.is_assertion_failure() => {
-                trc::event!(
-                    FtsIndex(FtsIndexEvent::LockBusy),
-                    AccountId = event.account_id,
-                    DocumentId = event.document_id,
-                    CausedBy = err,
-                );
-
-                false
+        match self
+            .in_memory_store()
+            .try_lock(KV_LOCK_FTS, &event.seq.to_be_bytes(), INDEX_LOCK_EXPIRY)
+            .await
+        {
+            Ok(result) => {
+                if !result {
+                    trc::event!(
+                        FtsIndex(FtsIndexEvent::Locked),
+                        AccountId = event.account_id,
+                        DocumentId = event.document_id,
+                        Expires = trc::Value::Timestamp(INDEX_LOCK_EXPIRY),
+                    );
+                }
+                result
             }
             Err(err) => {
                 trc::error!(err
@@ -257,6 +271,19 @@ impl Indexer for Server {
 
                 false
             }
+        }
+    }
+
+    async fn remove_index_lock(&self, seq_id: u64) {
+        if let Err(err) = self
+            .in_memory_store()
+            .remove_lock(KV_LOCK_FTS, &seq_id.to_be_bytes())
+            .await
+        {
+            trc::error!(err
+                .details("Failed to unlock FTS index")
+                .ctx(trc::Key::Key, seq_id)
+                .caused_by(trc::location!()));
         }
     }
 
@@ -383,19 +410,18 @@ impl IndexEmail {
         })
     }
 
-    fn deserialize(key: &[u8], value: &[u8]) -> trc::Result<Self> {
+    fn deserialize(key: &[u8]) -> trc::Result<Self> {
         Ok(IndexEmail {
             seq: key.deserialize_be_u64(0)?,
             account_id: key.deserialize_be_u32(U64_LEN)?,
             document_id: key.deserialize_be_u32(U64_LEN + U32_LEN + 1)?,
-            lock_expiry: u64::deserialize(value)?,
             insert_hash: key
                 .get(
                     U64_LEN + U32_LEN + U32_LEN + 1
                         ..U64_LEN + U32_LEN + U32_LEN + BLOB_HASH_LEN + 1,
                 )
                 .and_then(|bytes| BlobHash::try_from_hash_slice(bytes).ok())
-                .ok_or_else(|| trc::Error::corrupted_key(key, value.into(), trc::location!()))?,
+                .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))?,
         })
     }
 }

@@ -207,6 +207,11 @@ impl InMemoryStore {
             .map(|count| count == 1)
     }
 
+    pub async fn remove_lock(&self, prefix: u8, key: &[u8]) -> trc::Result<()> {
+        self.counter_delete(KeyValue::<()>::build_key(prefix, key))
+            .await
+    }
+
     pub async fn purge_in_memory_store(&self) -> trc::Result<()> {
         match self {
             InMemoryStore::Store(store) => {

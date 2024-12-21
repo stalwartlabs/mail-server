@@ -12,7 +12,7 @@ use std::{
 
 use common::{
     expr::{self, functions::ResolveVariable, *},
-    ipc::QueueEventLock,
+    ipc::QueuedMessage,
     listener::limiter::InFlight,
 };
 use serde::{Deserialize, Serialize};
@@ -133,7 +133,7 @@ pub struct ErrorDetails {
 
 pub struct DeliveryAttempt {
     pub in_flight: Vec<InFlight>,
-    pub event: QueueEventLock,
+    pub event: QueuedMessage,
 }
 
 impl<T> Ord for Schedule<T> {

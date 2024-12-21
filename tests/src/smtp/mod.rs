@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use common::{
     config::server::{Listeners, ServerProtocol},
     ipc::{QueueEvent, ReportingEvent},
-    manager::boot::build_ipc,
+    manager::boot::{build_ipc, IpcReceivers},
     Core, Data, Inner, Server,
 };
 
@@ -25,7 +25,7 @@ use crate::AssertConfig;
 pub mod config;
 pub mod inbound;
 pub mod lookup;
-//pub mod management;
+pub mod management;
 pub mod outbound;
 pub mod queue;
 pub mod reporting;
@@ -142,6 +142,20 @@ path = "{TMP}/queue.db"
 impl TestSMTP {
     pub fn from_core(core: Core) -> Self {
         Self::from_core_and_tempdir(core, Default::default(), None)
+    }
+
+    pub fn inner_with_rxs(&self) -> (Arc<Inner>, IpcReceivers) {
+        let (ipc, ipc_rxs) = build_ipc();
+
+        (
+            Inner {
+                shared_core: self.server.core.as_ref().clone().into_shared(),
+                data: Default::default(),
+                ipc,
+            }
+            .into(),
+            ipc_rxs,
+        )
     }
 
     fn from_core_and_tempdir(core: Core, data: Data, temp_dir: Option<TempDir>) -> Self {

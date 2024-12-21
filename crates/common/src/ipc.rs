@@ -120,8 +120,10 @@ pub struct EncryptionKeys {
 
 #[derive(Debug)]
 pub enum QueueEvent {
-    Reload,
-    OnHold(OnHold<QueueEventLock>),
+    Refresh(Option<u64>),
+    WorkerDone(u64),
+    OnHold(OnHold<QueuedMessage>),
+    Paused(bool),
     Stop,
 }
 
@@ -132,11 +134,10 @@ pub struct OnHold<T> {
     pub message: T,
 }
 
-#[derive(Debug)]
-pub struct QueueEventLock {
+#[derive(Debug, Clone, Copy)]
+pub struct QueuedMessage {
     pub due: u64,
     pub queue_id: u64,
-    pub lock_expiry: u64,
 }
 
 #[derive(Debug)]

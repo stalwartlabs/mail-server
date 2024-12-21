@@ -5,14 +5,14 @@
  */
 
 use crate::queue::DomainPart;
-use common::ipc::{QueueEvent, QueueEventLock};
-use common::Server;
+use common::ipc::{QueueEvent, QueuedMessage};
+use common::{Server, KV_LOCK_QUEUE_MESSAGE};
 use std::borrow::Cow;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
 use store::write::key::DeserializeBigEndian;
 use store::write::{now, BatchBuilder, Bincode, BlobOp, QueueClass, ValueClass};
-use store::{Deserialize, IterateParams, Serialize, ValueKey, U64_LEN};
+use store::{IterateParams, Serialize, ValueKey, U64_LEN};
 use trc::ServerEvent;
 use utils::BlobHash;
 
@@ -21,6 +21,7 @@ use super::{
 };
 
 pub const LOCK_EXPIRY: u64 = 300;
+pub const QUEUE_REFRESH: u64 = 300;
 
 pub trait SmtpSpool: Sync + Send {
     fn new_message(
@@ -31,12 +32,11 @@ pub trait SmtpSpool: Sync + Send {
         span_id: u64,
     ) -> Message;
 
-    fn next_event(&self) -> impl Future<Output = Vec<QueueEventLock>> + Send;
+    fn next_event(&self) -> impl Future<Output = Vec<QueuedMessage>> + Send;
 
-    fn try_lock_event(
-        &self,
-        event: QueueEventLock,
-    ) -> impl Future<Output = Option<QueueEventLock>> + Send;
+    fn try_lock_event(&self, queue_id: QueueId) -> impl Future<Output = bool> + Send;
+
+    fn unlock_event(&self, queue_id: QueueId) -> impl Future<Output = ()> + Send;
 
     fn read_message(&self, id: QueueId) -> impl Future<Output = Option<Message>> + Send;
 }
@@ -70,7 +70,8 @@ impl SmtpSpool for Server {
         }
     }
 
-    async fn next_event(&self) -> Vec<QueueEventLock> {
+    async fn next_event(&self) -> Vec<QueuedMessage> {
+        let now = now();
         let from_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
             store::write::QueueEvent {
                 due: 0,
@@ -79,35 +80,24 @@ impl SmtpSpool for Server {
         )));
         let to_key = ValueKey::from(ValueClass::Queue(QueueClass::MessageEvent(
             store::write::QueueEvent {
-                due: u64::MAX,
+                due: now + QUEUE_REFRESH,
                 queue_id: u64::MAX,
             },
         )));
 
         let mut events = Vec::new();
-        let now = now();
+
         let result = self
             .store()
             .iterate(
-                IterateParams::new(from_key, to_key).ascending(),
-                |key, value| {
-                    let event = QueueEventLock {
-                        due: key.deserialize_be_u64(0)?,
-                        queue_id: key.deserialize_be_u64(U64_LEN)?,
-                        lock_expiry: u64::deserialize(value)?,
-                    };
-                    let do_continue = event.due <= now;
-                    if event.lock_expiry < now {
-                        events.push(event);
-                    } else {
-                        trc::event!(
-                            Queue(trc::QueueEvent::Locked),
-                            SpanId = event.queue_id,
-                            Due = trc::Value::Timestamp(event.due),
-                            Expires = trc::Value::Timestamp(event.lock_expiry),
-                        );
-                    }
-                    Ok(do_continue)
+                IterateParams::new(from_key, to_key).ascending().no_values(),
+                |key, _| {
+                    let due = key.deserialize_be_u64(0)?;
+                    let queue_id = key.deserialize_be_u64(U64_LEN)?;
+
+                    events.push(QueuedMessage { due, queue_id });
+
+                    Ok(due <= now)
                 },
             )
             .await;
@@ -121,41 +111,36 @@ impl SmtpSpool for Server {
         events
     }
 
-    async fn try_lock_event(&self, mut event: QueueEventLock) -> Option<QueueEventLock> {
-        let mut batch = BatchBuilder::new();
-        batch.assert_value(
-            ValueClass::Queue(QueueClass::MessageEvent(store::write::QueueEvent {
-                due: event.due,
-                queue_id: event.queue_id,
-            })),
-            event.lock_expiry,
-        );
-        event.lock_expiry = now() + LOCK_EXPIRY;
-        batch.set(
-            ValueClass::Queue(QueueClass::MessageEvent(store::write::QueueEvent {
-                due: event.due,
-                queue_id: event.queue_id,
-            })),
-            event.lock_expiry.serialize(),
-        );
-        match self.store().write(batch.build()).await {
-            Ok(_) => Some(event),
-            Err(err) if err.is_assertion_failure() => {
-                trc::event!(
-                    Queue(trc::QueueEvent::LockBusy),
-                    SpanId = event.queue_id,
-                    Due = trc::Value::Timestamp(event.due),
-                    CausedBy = err,
-                );
-
-                None
+    async fn try_lock_event(&self, queue_id: QueueId) -> bool {
+        match self
+            .in_memory_store()
+            .try_lock(KV_LOCK_QUEUE_MESSAGE, &queue_id.to_be_bytes(), LOCK_EXPIRY)
+            .await
+        {
+            Ok(result) => {
+                if !result {
+                    trc::event!(Queue(trc::QueueEvent::Locked), QueueId = queue_id,);
+                }
+                result
             }
             Err(err) => {
                 trc::error!(err
                     .details("Failed to lock event.")
                     .caused_by(trc::location!()));
-                None
+                false
             }
+        }
+    }
+
+    async fn unlock_event(&self, queue_id: QueueId) {
+        if let Err(err) = self
+            .in_memory_store()
+            .remove_lock(KV_LOCK_QUEUE_MESSAGE, &queue_id.to_be_bytes())
+            .await
+        {
+            trc::error!(err
+                .details("Failed to unlock event.")
+                .caused_by(trc::location!()));
         }
     }
 
@@ -323,7 +308,7 @@ impl Message {
             .inner
             .ipc
             .queue_tx
-            .send(QueueEvent::Reload)
+            .send(QueueEvent::Refresh(None))
             .await
             .is_err()
         {

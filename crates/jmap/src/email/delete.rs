@@ -298,10 +298,8 @@ impl EmailDeletion for Server {
 
         // Delete lock
         if let Err(err) = self
-            .core
-            .storage
-            .lookup
-            .counter_delete(format!("purge:{account_id}").into_bytes())
+            .in_memory_store()
+            .remove_lock(KV_LOCK_PURGE_ACCOUNT, &account_id.to_be_bytes())
             .await
         {
             trc::error!(err.details("Failed to delete lock.").account_id(account_id));

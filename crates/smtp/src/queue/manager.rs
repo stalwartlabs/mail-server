@@ -6,86 +6,152 @@
 
 use std::{
     sync::{atomic::Ordering, Arc},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use ahash::AHashSet;
 use common::{
     core::BuildServer,
-    ipc::{OnHold, QueueEvent, QueueEventLock},
+    ipc::{OnHold, QueueEvent, QueuedMessage},
     Inner,
 };
 use store::write::now;
 use tokio::sync::mpsc;
 
-use super::{spool::SmtpSpool, DeliveryAttempt, Message, Status};
-
-pub(crate) const SHORT_WAIT: Duration = Duration::from_millis(1);
-pub(crate) const LONG_WAIT: Duration = Duration::from_secs(86400 * 365);
+use super::{
+    spool::{SmtpSpool, QUEUE_REFRESH},
+    DeliveryAttempt, Message, QueueId, Status,
+};
 
 pub struct Queue {
     pub core: Arc<Inner>,
-    pub on_hold: Vec<OnHold<QueueEventLock>>,
-    pub next_wake_up: Duration,
+    pub on_hold: Vec<OnHold<QueuedMessage>>,
+    pub in_flight: AHashSet<QueueId>,
+    pub next_wake_up: Instant,
+    pub rx: mpsc::Receiver<QueueEvent>,
 }
 
 impl SpawnQueue for mpsc::Receiver<QueueEvent> {
-    fn spawn(mut self, core: Arc<Inner>) {
+    fn spawn(self, core: Arc<Inner>) {
         tokio::spawn(async move {
-            let mut queue = Queue::new(core);
-
-            loop {
-                let on_hold = match tokio::time::timeout(queue.next_wake_up, self.recv()).await {
-                    Ok(Some(QueueEvent::OnHold(on_hold))) => on_hold.into(),
-                    Ok(Some(QueueEvent::Stop)) | Ok(None) => {
-                        break;
-                    }
-                    _ => None,
-                };
-
-                queue.process_events().await;
-
-                // Add message on hold
-                if let Some(on_hold) = on_hold {
-                    queue.on_hold(on_hold);
-                }
-            }
+            Queue::new(core, self).start().await;
         });
     }
 }
 
 impl Queue {
-    pub fn new(core: Arc<Inner>) -> Self {
+    pub fn new(core: Arc<Inner>, rx: mpsc::Receiver<QueueEvent>) -> Self {
         Queue {
             core,
             on_hold: Vec::with_capacity(128),
-            next_wake_up: SHORT_WAIT,
+            in_flight: AHashSet::with_capacity(128),
+            next_wake_up: Instant::now(),
+            rx,
         }
     }
 
-    pub async fn process_events(&mut self) {
-        // Deliver any concurrency limited messages
-        let server = self.core.build_server();
-        while let Some(queue_event) = self.next_on_hold() {
-            DeliveryAttempt::new(queue_event)
-                .try_deliver(server.clone())
-                .await;
-        }
+    pub async fn start(&mut self) {
+        let mut is_paused = false;
 
-        // Deliver scheduled messages
-        let now = now();
-        self.next_wake_up = LONG_WAIT;
-        for queue_event in server.next_event().await {
-            if queue_event.due <= now {
-                DeliveryAttempt::new(queue_event)
-                    .try_deliver(server.clone())
-                    .await;
+        loop {
+            let (on_hold, refresh_queue) = match tokio::time::timeout(
+                self.next_wake_up.duration_since(Instant::now()),
+                self.rx.recv(),
+            )
+            .await
+            {
+                Ok(Some(QueueEvent::Refresh(queue_id))) => {
+                    if let Some(queue_id) = queue_id {
+                        self.in_flight.remove(&queue_id);
+                    }
+
+                    (None, true)
+                }
+                Ok(Some(QueueEvent::WorkerDone(queue_id))) => {
+                    self.in_flight.remove(&queue_id);
+
+                    (None, false)
+                }
+                Ok(Some(QueueEvent::OnHold(on_hold))) => {
+                    self.in_flight.remove(&on_hold.message.queue_id);
+
+                    (on_hold.into(), false)
+                }
+                Ok(Some(QueueEvent::Paused(paused))) => {
+                    is_paused = paused;
+                    (None, false)
+                }
+                Err(_) => (None, true),
+                Ok(Some(QueueEvent::Stop)) | Ok(None) => {
+                    break;
+                }
+            };
+
+            if !is_paused {
+                // Deliver any concurrency limited messages
+                let server = self.core.build_server();
+                while let Some(queue_event) = self.next_on_hold() {
+                    if let Some(message) =
+                        DeliveryAttempt::new(queue_event).try_deliver(server.clone())
+                    {
+                        self.on_hold(message);
+                    } else {
+                        self.in_flight.insert(queue_event.queue_id);
+                    }
+                }
+
+                // Deliver scheduled messages
+                if refresh_queue || self.next_wake_up <= Instant::now() {
+                    let now = now();
+                    let mut next_wake_up = QUEUE_REFRESH;
+                    for queue_event in server.next_event().await {
+                        match self.is_on_hold(queue_event.queue_id) {
+                            None => {
+                                if queue_event.due <= now {
+                                    if !self.in_flight.contains(&queue_event.queue_id) {
+                                        if let Some(message) = DeliveryAttempt::new(queue_event)
+                                            .try_deliver(server.clone())
+                                        {
+                                            self.on_hold(message);
+                                        } else {
+                                            self.in_flight.insert(queue_event.queue_id);
+                                        }
+                                    }
+                                } else {
+                                    let due_in = queue_event.due - now;
+                                    if due_in < next_wake_up {
+                                        next_wake_up = due_in;
+                                    }
+                                }
+                            }
+                            Some(on_hold)
+                                if on_hold.limiters.is_empty()
+                                    && on_hold.next_due.map_or(false, |due| due < next_wake_up) =>
+                            {
+                                next_wake_up = on_hold.next_due.unwrap();
+                            }
+                            _ => (),
+                        }
+                    }
+                    self.next_wake_up = Instant::now() + Duration::from_secs(next_wake_up);
+                }
             } else {
-                self.next_wake_up = Duration::from_secs(queue_event.due - now);
+                // Queue is paused
+                self.next_wake_up = Instant::now() + Duration::from_secs(86400);
+            }
+
+            // Add message on hold
+            if let Some(on_hold) = on_hold {
+                self.on_hold(on_hold);
             }
         }
     }
 
-    pub fn on_hold(&mut self, message: OnHold<QueueEventLock>) {
+    pub fn is_on_hold(&self, queue_id: QueueId) -> Option<&OnHold<QueuedMessage>> {
+        self.on_hold.iter().find(|o| o.message.queue_id == queue_id)
+    }
+
+    pub fn on_hold(&mut self, message: OnHold<QueuedMessage>) {
         self.on_hold.push(OnHold {
             next_due: message.next_due,
             limiters: message.limiters,
@@ -93,7 +159,7 @@ impl Queue {
         });
     }
 
-    pub fn next_on_hold(&mut self) -> Option<QueueEventLock> {
+    pub fn next_on_hold(&mut self) -> Option<QueuedMessage> {
         let now = now();
         self.on_hold
             .iter()

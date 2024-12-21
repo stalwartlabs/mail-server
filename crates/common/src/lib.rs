@@ -87,6 +87,10 @@ pub const KV_BAYES_MODEL_GLOBAL: u8 = 17;
 pub const KV_BAYES_MODEL_USER: u8 = 18;
 pub const KV_TRUSTED_REPLY: u8 = 19;
 pub const KV_LOCK_PURGE_ACCOUNT: u8 = 20;
+pub const KV_LOCK_QUEUE_MESSAGE: u8 = 21;
+pub const KV_LOCK_QUEUE_REPORT: u8 = 22;
+pub const KV_LOCK_FTS: u8 = 23;
+pub const KV_LOCK_HOUSEKEEPER: u8 = 24;
 
 #[derive(Clone)]
 pub struct Server {

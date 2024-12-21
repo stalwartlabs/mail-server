@@ -14,15 +14,13 @@ use super::{
     ConstantValue, ExpressionItem,
 };
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IfThen {
     pub expr: Expression,
     pub then: Expression,
 }
 
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IfBlock {
     pub key: String,
     pub if_then: Vec<IfThen>,

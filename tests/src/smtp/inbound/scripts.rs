@@ -242,8 +242,8 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    qr.read_event().await.assert_reload();
+    qr.read_event().await.assert_refresh();
+    qr.read_event().await.assert_refresh();
     let messages = qr.read_queued_messages().await;
     assert_eq!(messages.len(), 2);
     let mut messages = messages.into_iter();
@@ -289,8 +289,8 @@ async fn sieve_scripts() {
             "250",
         )
         .await;
-    qr.read_event().await.assert_reload();
-    qr.read_event().await.assert_reload();
+    qr.read_event().await.assert_refresh();
+    qr.read_event().await.assert_refresh();
     let messages = qr.read_queued_messages().await;
     assert_eq!(messages.len(), 2);
     let mut messages = messages.into_iter();

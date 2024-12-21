@@ -381,7 +381,6 @@ impl EventType {
             },
             EventType::FtsIndex(event) => match event {
                 FtsIndexEvent::Index => Level::Info,
-                FtsIndexEvent::LockBusy => Level::Warn,
                 FtsIndexEvent::BlobNotFound
                 | FtsIndexEvent::Locked
                 | FtsIndexEvent::MetadataNotFound => Level::Debug,
@@ -475,9 +474,7 @@ impl EventType {
                 | QueueEvent::ConcurrencyLimitExceeded
                 | QueueEvent::Rescheduled
                 | QueueEvent::QuotaExceeded => Level::Info,
-                QueueEvent::LockBusy | QueueEvent::Locked | QueueEvent::BlobNotFound => {
-                    Level::Debug
-                }
+                QueueEvent::Locked | QueueEvent::BlobNotFound => Level::Debug,
             },
             EventType::TlsRpt(event) => match event {
                 TlsRptEvent::RecordFetch
@@ -510,10 +507,7 @@ impl EventType {
                 | IncomingReportEvent::DecompressError => Level::Info,
             },
             EventType::OutgoingReport(event) => match event {
-                OutgoingReportEvent::LockBusy
-                | OutgoingReportEvent::LockDeleted
-                | OutgoingReportEvent::Locked
-                | OutgoingReportEvent::NotFound => Level::Info,
+                OutgoingReportEvent::Locked | OutgoingReportEvent::NotFound => Level::Info,
                 OutgoingReportEvent::SpfReport
                 | OutgoingReportEvent::SpfRateLimited
                 | OutgoingReportEvent::DkimReport

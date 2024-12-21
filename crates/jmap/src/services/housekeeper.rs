@@ -6,6 +6,7 @@
 
 use std::{
     collections::BinaryHeap,
+    future::Future,
     sync::{atomic::Ordering, Arc},
     time::{Duration, Instant, SystemTime},
 };
@@ -14,7 +15,7 @@ use common::{
     config::telemetry::OtelMetrics,
     core::BuildServer,
     ipc::{HousekeeperEvent, PurgeType},
-    Inner,
+    Inner, Server, KV_LOCK_HOUSEKEEPER,
 };
 
 #[cfg(feature = "enterprise")]
@@ -229,94 +230,12 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                         queue.remove_action(&action);
                         queue.schedule(renew_at, action);
                     }
-                    HousekeeperEvent::Purge(purge) => match purge {
-                        PurgeType::Data(store) => {
-                            // SPDX-SnippetBegin
-                            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
-                            // SPDX-License-Identifier: LicenseRef-SEL
-                            #[cfg(feature = "enterprise")]
-                            let trace_retention = inner
-                                .shared_core
-                                .load()
-                                .enterprise
-                                .as_ref()
-                                .and_then(|e| e.trace_store.as_ref())
-                                .and_then(|t| t.retention);
-                            #[cfg(feature = "enterprise")]
-                            let metrics_retention = inner
-                                .shared_core
-                                .load()
-                                .enterprise
-                                .as_ref()
-                                .and_then(|e| e.metrics_store.as_ref())
-                                .and_then(|m| m.retention);
-                            // SPDX-SnippetEnd
-
-                            tokio::spawn(async move {
-                                trc::event!(
-                                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
-                                    Type = "data"
-                                );
-                                if let Err(err) = store.purge_store().await {
-                                    trc::error!(err.details("Failed to purge data store"));
-                                }
-
-                                // SPDX-SnippetBegin
-                                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
-                                // SPDX-License-Identifier: LicenseRef-SEL
-                                #[cfg(feature = "enterprise")]
-                                if let Some(trace_retention) = trace_retention {
-                                    if let Err(err) = store.purge_spans(trace_retention).await {
-                                        trc::error!(err.details("Failed to purge tracing spans"));
-                                    }
-                                }
-
-                                #[cfg(feature = "enterprise")]
-                                if let Some(metrics_retention) = metrics_retention {
-                                    if let Err(err) = store.purge_metrics(metrics_retention).await {
-                                        trc::error!(err.details("Failed to purge metrics"));
-                                    }
-                                }
-                                // SPDX-SnippetEnd
-                            });
-                        }
-                        PurgeType::Blobs { store, blob_store } => {
-                            trc::event!(
-                                Housekeeper(trc::HousekeeperEvent::PurgeStore),
-                                Type = "blob"
-                            );
-
-                            tokio::spawn(async move {
-                                if let Err(err) = store.purge_blobs(blob_store).await {
-                                    trc::error!(err.details("Failed to purge blob store"));
-                                }
-                            });
-                        }
-                        PurgeType::Lookup(store) => {
-                            trc::event!(
-                                Housekeeper(trc::HousekeeperEvent::PurgeStore),
-                                Type = "lookup"
-                            );
-
-                            tokio::spawn(async move {
-                                if let Err(err) = store.purge_in_memory_store().await {
-                                    trc::error!(err.details("Failed to purge lookup store"));
-                                }
-                            });
-                        }
-                        PurgeType::Account(account_id) => {
-                            let server = inner.build_server();
-                            tokio::spawn(async move {
-                                trc::event!(Housekeeper(trc::HousekeeperEvent::PurgeAccounts));
-
-                                if let Some(account_id) = account_id {
-                                    server.purge_account(account_id).await;
-                                } else {
-                                    server.purge_accounts().await;
-                                }
-                            });
-                        }
-                    },
+                    HousekeeperEvent::Purge(purge) => {
+                        let server = inner.build_server();
+                        tokio::spawn(async move {
+                            server.purge(purge).await;
+                        });
+                    }
                     HousekeeperEvent::Exit => {
                         trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
 
@@ -661,6 +580,133 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
             }
         }
     });
+}
+
+pub trait Purge: Sync + Send {
+    fn purge(&self, purge: PurgeType) -> impl Future<Output = ()> + Send;
+}
+
+impl Purge for Server {
+    async fn purge(&self, purge: PurgeType) {
+        // Lock task
+        let lock_name = match &purge {
+            PurgeType::Data(_) => "data".into(),
+            PurgeType::Blobs { .. } => "blob".into(),
+            PurgeType::Lookup(_) => "lookup".into(),
+            PurgeType::Account(_) => None,
+        };
+        if let Some(lock_name) = lock_name {
+            match self
+                .core
+                .storage
+                .lookup
+                .try_lock(KV_LOCK_HOUSEKEEPER, lock_name.as_bytes(), 3600)
+                .await
+            {
+                Ok(true) => (),
+                Ok(false) => {
+                    trc::event!(Purge(trc::PurgeEvent::PurgeActive), Details = lock_name);
+                    return;
+                }
+                Err(err) => {
+                    trc::error!(err.details("Failed to lock task.").details(lock_name));
+                    return;
+                }
+            }
+        }
+
+        match purge {
+            PurgeType::Data(store) => {
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+                #[cfg(feature = "enterprise")]
+                let trace_retention = self
+                    .core
+                    .enterprise
+                    .as_ref()
+                    .and_then(|e| e.trace_store.as_ref())
+                    .and_then(|t| t.retention);
+                #[cfg(feature = "enterprise")]
+                let metrics_retention = self
+                    .core
+                    .enterprise
+                    .as_ref()
+                    .and_then(|e| e.metrics_store.as_ref())
+                    .and_then(|m| m.retention);
+                // SPDX-SnippetEnd
+
+                trc::event!(
+                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
+                    Type = "data"
+                );
+
+                if let Err(err) = store.purge_store().await {
+                    trc::error!(err.details("Failed to purge data store"));
+                }
+
+                // SPDX-SnippetBegin
+                // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                // SPDX-License-Identifier: LicenseRef-SEL
+                #[cfg(feature = "enterprise")]
+                if let Some(trace_retention) = trace_retention {
+                    if let Err(err) = store.purge_spans(trace_retention).await {
+                        trc::error!(err.details("Failed to purge tracing spans"));
+                    }
+                }
+
+                #[cfg(feature = "enterprise")]
+                if let Some(metrics_retention) = metrics_retention {
+                    if let Err(err) = store.purge_metrics(metrics_retention).await {
+                        trc::error!(err.details("Failed to purge metrics"));
+                    }
+                }
+                // SPDX-SnippetEnd
+            }
+            PurgeType::Blobs { store, blob_store } => {
+                trc::event!(
+                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
+                    Type = "blob"
+                );
+
+                if let Err(err) = store.purge_blobs(blob_store).await {
+                    trc::error!(err.details("Failed to purge blob store"));
+                }
+            }
+            PurgeType::Lookup(store) => {
+                trc::event!(
+                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
+                    Type = "lookup"
+                );
+
+                if let Err(err) = store.purge_in_memory_store().await {
+                    trc::error!(err.details("Failed to purge lookup store"));
+                }
+            }
+            PurgeType::Account(account_id) => {
+                trc::event!(Housekeeper(trc::HousekeeperEvent::PurgeAccounts));
+
+                if let Some(account_id) = account_id {
+                    self.purge_account(account_id).await;
+                } else {
+                    self.purge_accounts().await;
+                }
+            }
+        }
+
+        // Remove lock
+        if let Some(lock_name) = lock_name {
+            if let Err(err) = self
+                .in_memory_store()
+                .remove_lock(KV_LOCK_HOUSEKEEPER, lock_name.as_bytes())
+                .await
+            {
+                trc::error!(err
+                    .details("Failed to delete task lock.")
+                    .details(lock_name));
+            }
+        }
+    }
 }
 
 impl Queue {

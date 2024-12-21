@@ -5,7 +5,7 @@
  */
 
 use ahash::AHashMap;
-use common::{core::BuildServer, ipc::ReportingEvent, Inner, Server};
+use common::{core::BuildServer, ipc::ReportingEvent, Inner, Server, KV_LOCK_QUEUE_REPORT};
 
 use std::{
     future::Future,
@@ -13,14 +13,16 @@ use std::{
     time::{Duration, SystemTime},
 };
 use store::{
-    write::{now, BatchBuilder, QueueClass, ReportEvent, ValueClass},
-    Deserialize, IterateParams, Key, Serialize, Store, ValueKey,
+    write::{now, QueueClass, ReportEvent, ValueClass},
+    Deserialize, IterateParams, Store, ValueKey,
 };
 use tokio::sync::mpsc;
 
-use crate::queue::{manager::LONG_WAIT, spool::LOCK_EXPIRY};
+use crate::queue::spool::LOCK_EXPIRY;
 
 use super::{dmarc::DmarcReporting, tls::TlsReporting, ReportLock};
+
+pub const REPORT_REFRESH: Duration = Duration::from_secs(86400);
 
 impl SpawnReport for mpsc::Receiver<ReportingEvent> {
     fn spawn(mut self, inner: Arc<Inner>) {
@@ -41,7 +43,7 @@ impl SpawnReport for mpsc::Receiver<ReportingEvent> {
                         }
                         _ => None,
                     })
-                    .unwrap_or(LONG_WAIT);
+                    .unwrap_or(REPORT_REFRESH);
 
                 let server = inner.build_server();
                 let server_ = server.clone();
@@ -50,8 +52,10 @@ impl SpawnReport for mpsc::Receiver<ReportingEvent> {
                     for report_event in events {
                         match report_event {
                             QueueClass::DmarcReportHeader(event) if event.due <= now => {
-                                if server.try_lock_report(QueueClass::dmarc_lock(&event)).await {
+                                let lock_name = event.dmarc_lock();
+                                if server.try_lock_report(&lock_name).await {
                                     server.send_dmarc_aggregate_report(event).await;
+                                    server.unlock_report(&lock_name).await;
                                 }
                             }
                             QueueClass::TlsReportHeader(event) if event.due <= now => {
@@ -65,11 +69,10 @@ impl SpawnReport for mpsc::Receiver<ReportingEvent> {
                     }
 
                     for (_, tls_report) in tls_reports {
-                        if server
-                            .try_lock_report(QueueClass::tls_lock(tls_report.first().unwrap()))
-                            .await
-                        {
+                        let lock_name = tls_report.first().unwrap().tls_lock();
+                        if server.try_lock_report(&lock_name).await {
                             server.send_tls_aggregate_report(tls_report).await;
+                            server.unlock_report(&lock_name).await;
                         }
                     }
                 });
@@ -93,6 +96,7 @@ impl SpawnReport for mpsc::Receiver<ReportingEvent> {
 }
 
 async fn next_report_event(store: Store) -> Vec<QueueClass> {
+    let now = now();
     let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
         ReportEvent {
             due: 0,
@@ -103,7 +107,7 @@ async fn next_report_event(store: Store) -> Vec<QueueClass> {
     )));
     let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
         ReportEvent {
-            due: u64::MAX,
+            due: now + REPORT_REFRESH.as_secs(),
             policy_hash: 0,
             seq_id: 0,
             domain: String::new(),
@@ -111,16 +115,11 @@ async fn next_report_event(store: Store) -> Vec<QueueClass> {
     )));
 
     let mut events = Vec::new();
-    let now = now();
     let result = store
         .iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
                 let event = ReportEvent::deserialize(key)?;
-                if event.seq_id == 0 {
-                    // Skip lock
-                    return Ok(true);
-                }
                 let do_continue = event.due <= now;
                 events.push(if *key.last().unwrap() == 0 {
                     QueueClass::DmarcReportHeader(event)
@@ -142,69 +141,46 @@ async fn next_report_event(store: Store) -> Vec<QueueClass> {
 }
 
 pub trait LockReport: Sync + Send {
-    fn try_lock_report(&self, lock: QueueClass) -> impl Future<Output = bool> + Send;
+    fn try_lock_report(&self, lock: &[u8]) -> impl Future<Output = bool> + Send;
+
+    fn unlock_report(&self, lock: &[u8]) -> impl Future<Output = ()> + Send;
 }
 
 impl LockReport for Server {
-    async fn try_lock_report(&self, lock: QueueClass) -> bool {
-        let now = now();
+    async fn try_lock_report(&self, key: &[u8]) -> bool {
         match self
-            .store()
-            .get_value::<u64>(ValueKey::from(ValueClass::Queue(lock.clone())))
+            .in_memory_store()
+            .try_lock(KV_LOCK_QUEUE_REPORT, key, LOCK_EXPIRY)
             .await
         {
-            Ok(Some(expiry)) => {
-                if expiry < now {
-                    let mut batch = BatchBuilder::new();
-                    batch.assert_value(ValueClass::Queue(lock.clone()), expiry);
-                    batch.set(
-                        ValueClass::Queue(lock.clone()),
-                        (now + LOCK_EXPIRY).serialize(),
-                    );
-                    match self.core.storage.data.write(batch.build()).await {
-                        Ok(_) => true,
-                        Err(err) if err.is_assertion_failure() => {
-                            trc::event!(
-                                OutgoingReport(trc::OutgoingReportEvent::LockBusy),
-                                Expires = trc::Value::Timestamp(expiry),
-                                CausedBy = err,
-                                Key = ValueKey::from(ValueClass::Queue(lock)).serialize(0)
-                            );
-                            false
-                        }
-                        Err(err) => {
-                            trc::error!(err
-                                .caused_by(trc::location!())
-                                .details("Failed to lock report"));
-
-                            false
-                        }
-                    }
-                } else {
+            Ok(result) => {
+                if !result {
                     trc::event!(
                         OutgoingReport(trc::OutgoingReportEvent::Locked),
-                        Expires = trc::Value::Timestamp(expiry),
-                        Key = ValueKey::from(ValueClass::Queue(lock)).serialize(0)
+                        Expires = trc::Value::Timestamp(LOCK_EXPIRY),
+                        Key = key
                     );
-
-                    false
                 }
-            }
-            Ok(None) => {
-                trc::event!(
-                    OutgoingReport(trc::OutgoingReportEvent::LockDeleted),
-                    Key = ValueKey::from(ValueClass::Queue(lock)).serialize(0)
-                );
-
-                false
+                result
             }
             Err(err) => {
                 trc::error!(err
-                    .caused_by(trc::location!())
-                    .details("Failed to lock report"));
-
+                    .details("Failed to lock report.")
+                    .caused_by(trc::location!()));
                 false
             }
+        }
+    }
+
+    async fn unlock_report(&self, key: &[u8]) {
+        if let Err(err) = self
+            .in_memory_store()
+            .remove_lock(KV_LOCK_QUEUE_REPORT, key)
+            .await
+        {
+            trc::error!(err
+                .details("Failed to unlock event.")
+                .caused_by(trc::location!()));
         }
     }
 }

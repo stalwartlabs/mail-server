@@ -47,7 +47,7 @@ use utils::config::Config;
 
 use crate::{
     http_server::{spawn_mock_http_server, HttpMessage},
-    //jmap::enterprise::EnterpriseCore,
+    jmap::enterprise::EnterpriseCore,
     smtp::{session::TestSession, TempDir, TestSMTP},
 };
 
@@ -120,33 +120,6 @@ allow-invalid-certs = true
                 "js" = "BAD|NZ", 
                 "hta" = "BAD|NZ" }
 "#;
-
-pub trait EnterpriseCore {
-    fn enable_enterprise(self) -> Self;
-}
-
-impl EnterpriseCore for Core {
-    fn enable_enterprise(mut self) -> Self {
-        let todo = "remove";
-        self.enterprise = common::enterprise::Enterprise {
-            license: common::enterprise::license::LicenseKey {
-                valid_to: store::write::now() + 3600,
-                valid_from: store::write::now() - 3600,
-                domain: String::new(),
-                accounts: 100,
-            },
-            undelete: None,
-            trace_store: None,
-            metrics_store: None,
-            metrics_alerts: vec![],
-            logo_url: None,
-            ai_apis: Default::default(),
-            spam_filter_llm: None,
-        }
-        .into();
-        self
-    }
-}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn antispam() {

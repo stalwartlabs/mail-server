@@ -338,6 +338,9 @@ signature-algorithm = "ES256"
 expn = true
 vrfy = true
 
+[spam-filter]
+enable = false
+
 [tracer.console]
 type = "console"
 level = "{LEVEL}"

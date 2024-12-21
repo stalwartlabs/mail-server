@@ -92,8 +92,7 @@ async fn extensions() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
 
     local
         .queue_receiver
@@ -104,7 +103,7 @@ async fn extensions() {
         .assert_contains("<bill@foobar.org> (delivered to")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: delivered");
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_done();
     remote
         .queue_receiver
         .expect_message()
@@ -121,8 +120,7 @@ async fn extensions() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local
         .queue_receiver
         .expect_message()
@@ -133,7 +131,7 @@ async fn extensions() {
         .assert_contains("Action: failed")
         .assert_contains("Diagnostic-Code: smtp;552")
         .assert_contains("Status: 5.3.4");
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_done();
     remote.queue_receiver.assert_no_events();
 
     // Test DSN, SMTPUTF8 and REQUIRETLS extensions
@@ -149,9 +147,8 @@ async fn extensions() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
-    local.queue_receiver.read_event().await.assert_reload();
+        .try_deliver(core.clone());
+    local.queue_receiver.read_event().await.assert_done();
     let message = remote.queue_receiver.expect_message().await;
     assert_eq!(message.env_id, Some("abc123".to_string()));
     assert!((message.flags & MAIL_RET_HDRS) != 0);

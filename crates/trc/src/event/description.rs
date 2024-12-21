@@ -196,8 +196,7 @@ impl FtsIndexEvent {
     pub fn description(&self) -> &'static str {
         match self {
             FtsIndexEvent::Index => "Full-text search index done",
-            FtsIndexEvent::Locked => "Full-text search index is locked",
-            FtsIndexEvent::LockBusy => "Full-text search index lock is busy",
+            FtsIndexEvent::Locked => "Full-text search index is locked by another process",
             FtsIndexEvent::BlobNotFound => "Blob not found for full-text indexing",
             FtsIndexEvent::MetadataNotFound => "Metadata not found for full-text indexing",
         }
@@ -206,8 +205,7 @@ impl FtsIndexEvent {
     pub fn explain(&self) -> &'static str {
         match self {
             FtsIndexEvent::Index => "The full-text search index has been updated",
-            FtsIndexEvent::Locked => "The full-text search index is locked",
-            FtsIndexEvent::LockBusy => "The full-text search index lock is busy",
+            FtsIndexEvent::Locked => "The full-text search index is locked by another process",
             FtsIndexEvent::BlobNotFound => "The blob was not found for full-text indexing",
             FtsIndexEvent::MetadataNotFound => "The metadata was not found for full-text indexing",
         }
@@ -714,8 +712,7 @@ impl QueueEvent {
     pub fn description(&self) -> &'static str {
         match self {
             QueueEvent::Rescheduled => "Message rescheduled for delivery",
-            QueueEvent::LockBusy => "Queue lock is busy",
-            QueueEvent::Locked => "Queue is locked",
+            QueueEvent::Locked => "Queue event is locked by another process",
             QueueEvent::BlobNotFound => "Message blob not found",
             QueueEvent::RateLimitExceeded => "Rate limit exceeded",
             QueueEvent::ConcurrencyLimitExceeded => "Concurrency limit exceeded",
@@ -731,8 +728,7 @@ impl QueueEvent {
     pub fn explain(&self) -> &'static str {
         match self {
             QueueEvent::Rescheduled => "The message was rescheduled for delivery",
-            QueueEvent::LockBusy => "The queue lock is busy",
-            QueueEvent::Locked => "The queue is locked",
+            QueueEvent::Locked => "The queue event is locked by another process",
             QueueEvent::BlobNotFound => "The message blob was not found",
             QueueEvent::RateLimitExceeded => "The queue rate limit was exceeded",
             QueueEvent::ConcurrencyLimitExceeded => "The queue concurrency limit was exceeded",
@@ -817,9 +813,7 @@ impl OutgoingReportEvent {
             OutgoingReportEvent::NotFound => "Report not found",
             OutgoingReportEvent::SubmissionError => "Error submitting report",
             OutgoingReportEvent::NoRecipientsFound => "No recipients found for report",
-            OutgoingReportEvent::LockBusy => "Report lock is busy",
-            OutgoingReportEvent::LockDeleted => "Report lock was deleted",
-            OutgoingReportEvent::Locked => "Report is locked",
+            OutgoingReportEvent::Locked => "Report is locked by another process",
         }
     }
 
@@ -843,9 +837,7 @@ impl OutgoingReportEvent {
             OutgoingReportEvent::NotFound => "The report was not found",
             OutgoingReportEvent::SubmissionError => "Error submitting the report",
             OutgoingReportEvent::NoRecipientsFound => "No recipients found for the report",
-            OutgoingReportEvent::LockBusy => "The report lock is busy",
-            OutgoingReportEvent::LockDeleted => "The report lock was deleted",
-            OutgoingReportEvent::Locked => "The report is locked",
+            OutgoingReportEvent::Locked => "The report is locked by another process",
         }
     }
 }
@@ -1020,7 +1012,7 @@ impl SpamEvent {
             SpamEvent::RemoteList => "Remote list updated",
             SpamEvent::RemoteListError => "Error updating remote list",
             SpamEvent::Train => "Training spam filter",
-            SpamEvent::TrainBalance => "Balancing spam filter training data",
+            SpamEvent::TrainBalance => "Spam filter model balance verify",
             SpamEvent::TrainError => "Error training spam filter",
             SpamEvent::Classify => "Classifying message for spam",
             SpamEvent::ClassifyError => "Not enough training data for spam filter",
@@ -1033,7 +1025,7 @@ impl SpamEvent {
         match self {
             SpamEvent::PyzorError => "An error occurred with Pyzor",
             SpamEvent::Train => "The spam filter is being trained with the message",
-            SpamEvent::TrainBalance => "The spam filter training data is being balanced",
+            SpamEvent::TrainBalance => "The spam filter training data is verified for balance",
             SpamEvent::TrainError => "An error occurred while training the spam filter",
             SpamEvent::Classify => "The message is being classified for spam",
             SpamEvent::ClassifyError => "There is not enough training data for the spam filter",

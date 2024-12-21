@@ -107,8 +107,7 @@ async fn throttle_outbound() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     tokio::time::sleep(Duration::from_millis(100)).await;
     local.queue_receiver.read_event().await.unwrap_on_hold();
     in_flight.clear();
@@ -133,10 +132,9 @@ async fn throttle_outbound() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_refresh();
     let due = local.queue_receiver.last_queued_due().await - now();
     assert!(due > 0, "Due: {}", due);
 
@@ -172,8 +170,7 @@ async fn throttle_outbound() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     tokio::time::sleep(Duration::from_millis(100)).await;
     local.queue_receiver.read_event().await.unwrap_on_hold();
     in_flight.clear();
@@ -209,10 +206,9 @@ async fn throttle_outbound() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_refresh();
     let due = local.queue_receiver.last_queued_due().await - now();
     assert!(due > 0, "Due: {}", due);
 
@@ -255,8 +251,7 @@ async fn throttle_outbound() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local.queue_receiver.read_event().await.unwrap_on_hold();
     in_flight.clear();
 
@@ -292,11 +287,10 @@ async fn throttle_outbound() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
 
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_refresh();
     let due = local.queue_receiver.last_queued_due().await - now();
     assert!(due > 0, "Due: {}", due);
 }
