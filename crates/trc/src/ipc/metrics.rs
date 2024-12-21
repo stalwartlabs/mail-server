@@ -577,12 +577,12 @@ impl EventType {
             ) => true,
             EventType::Spam(
                 SpamEvent::PyzorError
-                | SpamEvent::ListUpdated
+                | SpamEvent::RemoteListError
                 | SpamEvent::Train
                 | SpamEvent::TrainError
                 | SpamEvent::Classify
                 | SpamEvent::ClassifyError
-                | SpamEvent::NotEnoughTrainingData,
+                | SpamEvent::DnsblError,
             ) => true,
             EventType::PushSubscription(_) => true,
             EventType::Cluster(

@@ -15,6 +15,7 @@ use common::{
     auth::AccessToken,
     config::smtp::auth::VerifyStrategy,
     listener::{
+        asn::AsnGeoLookupResult,
         limiter::{ConcurrencyLimiter, InFlight},
         ServerInstance,
     },
@@ -77,6 +78,7 @@ pub struct SessionData {
     pub remote_ip: IpAddr,
     pub remote_ip_str: String,
     pub remote_port: u16,
+    pub asn_geo_data: AsnGeoLookupResult,
     pub helo_domain: String,
 
     pub mail_from: Option<SessionAddress>,
@@ -148,6 +150,7 @@ impl SessionData {
         local_port: u16,
         remote_ip: IpAddr,
         remote_port: u16,
+        asn_geo_data: AsnGeoLookupResult,
         session_id: u64,
     ) -> Self {
         SessionData {
@@ -158,6 +161,7 @@ impl SessionData {
             local_ip_str: local_ip.to_string(),
             remote_ip_str: remote_ip.to_string(),
             remote_port,
+            asn_geo_data,
             helo_domain: String::new(),
             mail_from: None,
             rcpt_to: Vec::new(),
@@ -308,6 +312,7 @@ impl SessionData {
             remote_port: 0,
             local_port: 0,
             session_id,
+            asn_geo_data: AsnGeoLookupResult::default(),
             helo_domain: "localhost".into(),
             mail_from,
             rcpt_to,

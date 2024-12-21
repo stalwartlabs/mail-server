@@ -107,6 +107,9 @@ directory = "'{STORE}'"
 total = 5
 wait = "1ms"
 
+[spam-filter]
+enable = false
+
 [queue]
 path = "{TMP}"
 hash = 64

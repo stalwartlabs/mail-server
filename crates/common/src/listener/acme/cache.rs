@@ -98,10 +98,13 @@ impl Server {
         self.core
             .storage
             .config
-            .set([ConfigKey {
-                key: self.build_key(provider, class, items),
-                value: URL_SAFE_NO_PAD.encode(contents.as_ref()),
-            }])
+            .set(
+                [ConfigKey {
+                    key: self.build_key(provider, class, items),
+                    value: URL_SAFE_NO_PAD.encode(contents.as_ref()),
+                }],
+                true,
+            )
             .await
     }
 

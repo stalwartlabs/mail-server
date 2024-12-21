@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use common::Server;
+use common::{Server, KV_LOCK_PURGE_ACCOUNT};
 use jmap_proto::types::{
     collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
     type_state::DataType,
@@ -255,21 +255,12 @@ impl EmailDeletion for Server {
             .core
             .storage
             .lookup
-            .counter_incr(
-                format!("purge:{account_id}").into_bytes(),
-                1,
-                Some(3600),
-                true,
-            )
+            .try_lock(KV_LOCK_PURGE_ACCOUNT, &account_id.to_be_bytes(), 3600)
             .await
         {
-            Ok(1) => (),
-            Ok(count) => {
-                trc::event!(
-                    Purge(trc::PurgeEvent::PurgeActive),
-                    AccountId = account_id,
-                    Total = count,
-                );
+            Ok(true) => (),
+            Ok(false) => {
+                trc::event!(Purge(trc::PurgeEvent::PurgeActive), AccountId = account_id,);
                 return;
             }
             Err(err) => {
@@ -307,10 +298,8 @@ impl EmailDeletion for Server {
 
         // Delete lock
         if let Err(err) = self
-            .core
-            .storage
-            .lookup
-            .counter_delete(format!("purge:{account_id}").into_bytes())
+            .in_memory_store()
+            .remove_lock(KV_LOCK_PURGE_ACCOUNT, &account_id.to_be_bytes())
             .await
         {
             trc::error!(err.details("Failed to delete lock.").account_id(account_id));

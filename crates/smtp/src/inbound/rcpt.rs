@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
+use common::{
+    config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification, KV_GREYLIST,
+};
 use directory::backend::RcptType;
 use smtp_proto::{
     RcptTo, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
+use store::dispatch::lookup::KeyValue;
 use trc::{SecurityEvent, SmtpEvent};
 
 use crate::{
@@ -291,6 +294,76 @@ impl<T: SessionStream> Session<T> {
         }
 
         if self.is_allowed().await {
+            // Greylist
+            if let Some(greylist_duration) = self
+                .server
+                .core
+                .spam
+                .expiry
+                .grey_list
+                .filter(|_| self.data.authenticated_as.is_none())
+            {
+                let mut key = Vec::with_capacity(64);
+                key.push(KV_GREYLIST);
+                match self.data.remote_ip {
+                    std::net::IpAddr::V4(ipv4_addr) => key.extend_from_slice(&ipv4_addr.octets()),
+                    std::net::IpAddr::V6(ipv6_addr) => key.extend_from_slice(&ipv6_addr.octets()),
+                };
+                key.extend_from_slice(
+                    self.data
+                        .mail_from
+                        .as_ref()
+                        .unwrap()
+                        .address_lcase
+                        .as_bytes(),
+                );
+                key.extend_from_slice(self.data.rcpt_to.last().unwrap().address_lcase.as_bytes());
+
+                match self.server.in_memory_store().key_exists(key.clone()).await {
+                    Ok(true) => (),
+                    Ok(false) => {
+                        match self
+                            .server
+                            .in_memory_store()
+                            .key_set(KeyValue::new(key, vec![]).expires(greylist_duration))
+                            .await
+                        {
+                            Ok(_) => {
+                                let rcpt = self.data.rcpt_to.pop().unwrap();
+
+                                trc::event!(
+                                    Smtp(SmtpEvent::RcptToGreylisted),
+                                    SpanId = self.data.session_id,
+                                    To = rcpt.address_lcase,
+                                );
+
+                                return self
+                                    .write(
+                                        concat!(
+                                            "422 4.2.2 Greylisted, please try ",
+                                            "again in a few moments.\r\n"
+                                        )
+                                        .as_bytes(),
+                                    )
+                                    .await;
+                            }
+                            Err(err) => {
+                                trc::error!(err
+                                    .span_id(self.data.session_id)
+                                    .caused_by(trc::location!())
+                                    .details("Failed to set greylist."));
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        trc::error!(err
+                            .span_id(self.data.session_id)
+                            .caused_by(trc::location!())
+                            .details("Failed to check greylist."));
+                    }
+                }
+            }
+
             trc::event!(
                 Smtp(SmtpEvent::RcptTo),
                 SpanId = self.data.session_id,

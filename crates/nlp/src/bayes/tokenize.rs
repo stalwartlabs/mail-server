@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::borrow::Cow;
+use std::{borrow::Cow, net::IpAddr};
 
 use crate::{
     language::{
@@ -13,18 +13,19 @@ use crate::{
         stopwords::STOP_WORDS,
         Language,
     },
-    tokenizers::{
-        chinese::JIEBA,
-        types::{TokenType, TypesTokenizer},
-    },
+    tokenizers::{chinese::JIEBA, japanese, types::TokenType},
 };
 
-pub struct BayesTokenizer<'x> {
-    text: &'x str,
-    tokenizer: TypesTokenizer<'x>,
+pub struct BayesTokenizer<T: Iterator<Item = BayesInputToken>> {
+    stream: T,
     stemmer: Stemmer,
     stop_words: Option<&'static phf::Set<&'static str>>,
-    tokens: Vec<Cow<'x, str>>,
+    tokens: Vec<Vec<u8>>,
+}
+
+pub enum BayesInputToken {
+    Word(String),
+    Raw(Vec<u8>),
 }
 
 enum Stemmer {
@@ -34,8 +35,8 @@ enum Stemmer {
     None,
 }
 
-impl<'x> BayesTokenizer<'x> {
-    pub fn new(text: &'x str) -> Self {
+impl<T: Iterator<Item = BayesInputToken>> BayesTokenizer<T> {
+    pub fn new(text: &str, stream: T) -> Self {
         // Detect language
         let (mut language, score) =
             LanguageDetector::detect_single(text).unwrap_or((Language::English, 1.0));
@@ -44,8 +45,7 @@ impl<'x> BayesTokenizer<'x> {
         }
 
         Self {
-            text,
-            tokenizer: TypesTokenizer::new(text),
+            stream,
             stemmer: match language {
                 Language::Mandarin => Stemmer::Mandarin,
                 Language::Japanese => Stemmer::Japanese,
@@ -59,20 +59,17 @@ impl<'x> BayesTokenizer<'x> {
     }
 }
 
-impl<'x> Iterator for BayesTokenizer<'x> {
-    type Item = Cow<'x, str>;
+impl<T: Iterator<Item = BayesInputToken>> Iterator for BayesTokenizer<T> {
+    type Item = Vec<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(prev_token) = self.tokens.pop() {
             return Some(prev_token);
         }
 
-        loop {
-            let token = self.tokenizer.next()?;
-
-            let word: Cow<str> = match token.word {
-                TokenType::Alphabetic(word) => {
-                    let word = word.to_lowercase();
+        for token in self.stream.by_ref() {
+            return match token {
+                BayesInputToken::Word(word) => {
                     if self
                         .stop_words
                         .map_or(false, |sw| sw.contains(word.as_str()))
@@ -81,8 +78,8 @@ impl<'x> Iterator for BayesTokenizer<'x> {
                     }
                     match &self.stemmer {
                         Stemmer::IndoEuropean(stemmer) => match stemmer.stem(&word) {
-                            Cow::Borrowed(_) => word.into(),
-                            Cow::Owned(stemmed_word) => stemmed_word.into(),
+                            Cow::Borrowed(_) => word.into_bytes(),
+                            Cow::Owned(stemmed_word) => stemmed_word.into_bytes(),
                         },
                         Stemmer::Mandarin => {
                             let mut result = JIEBA.cut(&word, false).into_iter();
@@ -90,77 +87,90 @@ impl<'x> Iterator for BayesTokenizer<'x> {
                                 let stemmed_word = stemmed_word.to_string();
                                 self.tokens = result
                                     .rev()
-                                    .map(|word| Cow::from(word.to_string()))
+                                    .map(|word| word.to_string().into_bytes())
                                     .collect::<Vec<_>>();
-                                stemmed_word.into()
+                                stemmed_word.into_bytes()
                             } else {
                                 // This shouldn't happen, but just in case
                                 continue;
                             }
                         }
                         Stemmer::Japanese => {
-                            let mut result = tinysegmenter::tokenize(&word).into_iter();
+                            let mut result = japanese::tokenize(&word).into_iter();
                             if let Some(stemmed_word) = result.next() {
-                                self.tokens = result.rev().map(Cow::from).collect::<Vec<_>>();
-                                stemmed_word.into()
+                                self.tokens =
+                                    result.rev().map(|b| b.into_bytes()).collect::<Vec<_>>();
+                                stemmed_word.into_bytes()
                             } else {
                                 // This shouldn't happen, but just in case
                                 continue;
                             }
                         }
-                        Stemmer::None => word.into(),
+                        Stemmer::None => word.into_bytes(),
                     }
                 }
+                BayesInputToken::Raw(raw) => raw,
+            }
+            .into();
+        }
 
-                TokenType::Url(word) => {
-                    if let Some((_, host)) = word.split_once("://") {
-                        host.split_once('/')
-                            .map_or(host, |(h, _)| h)
-                            .to_lowercase()
-                            .into()
-                    } else {
-                        continue;
-                    }
-                }
-                TokenType::IpAddr(word) => word.into(),
-                TokenType::UrlNoScheme(word) => word
-                    .split_once('/')
-                    .map_or(word, |(h, _)| h)
-                    .to_lowercase()
-                    .into(),
-                TokenType::Alphanumeric(word)
-                | TokenType::Email(word)
-                | TokenType::UrlNoHost(word) => word.to_lowercase().into(),
-                TokenType::Other(ch) => {
-                    if SYMBOLS.contains(&ch) {
-                        (&self.text[token.from..token.to]).into()
-                    } else {
-                        continue;
-                    }
-                }
-                TokenType::Integer(word) => number_to_tag("INTEGER", word).into(),
-                TokenType::Float(word) => number_to_tag("FLOAT", word).into(),
-                TokenType::Punctuation(_) | TokenType::Space => {
-                    continue;
-                }
-            };
+        None
+    }
+}
 
-            return Some(word);
+impl<T: AsRef<str>> TokenType<T> {
+    pub fn to_bayes_token(&self) -> Option<BayesInputToken> {
+        match self {
+            TokenType::Alphabetic(word) => {
+                Some(BayesInputToken::Word(word.as_ref().to_lowercase()))
+            }
+            TokenType::Url(word) => {
+                let word = word.as_ref();
+                word.split_once("://")
+                    .map(|(_, host)| BayesInputToken::Raw(url_host_as_bytes(host)))
+            }
+            TokenType::IpAddr(word) => word.as_ref().parse::<IpAddr>().ok().map(|ip| {
+                BayesInputToken::Raw(match ip {
+                    IpAddr::V4(ip) => ip.octets().to_vec(),
+                    IpAddr::V6(ip) => ip.octets().to_vec(),
+                })
+            }),
+            TokenType::UrlNoScheme(word) => {
+                BayesInputToken::Raw(url_host_as_bytes(word.as_ref())).into()
+            }
+            TokenType::Alphanumeric(word) | TokenType::Email(word) | TokenType::UrlNoHost(word) => {
+                BayesInputToken::Raw(word.as_ref().to_lowercase().into_bytes()).into()
+            }
+            TokenType::Other(ch) => {
+                if SYMBOLS.contains(ch) {
+                    Some(BayesInputToken::Raw(ch.to_string().into_bytes()))
+                } else {
+                    None
+                }
+            }
+            TokenType::Integer(word) => number_to_tag(false, word.as_ref()).into(),
+            TokenType::Float(word) => number_to_tag(true, word.as_ref()).into(),
+            TokenType::Punctuation(_) | TokenType::Space => None,
         }
     }
 }
 
-fn number_to_tag(prefix: &str, num: &str) -> String {
-    format!(
-        "{}_{}_{}",
-        prefix,
-        if prefix.starts_with('-') {
-            "NEG"
-        } else {
-            "POS"
-        },
-        num.len()
-    )
+fn url_host_as_bytes(host: &str) -> Vec<u8> {
+    host.split_once('/')
+        .map_or(host, |(h, _)| h.rsplit_once(':').map_or(h, |(h, _)| h))
+        .to_lowercase()
+        .into_bytes()
+}
+
+fn number_to_tag(is_float: bool, num: &str) -> BayesInputToken {
+    let t = match (is_float, num.starts_with('-')) {
+        (true, true) => b'F',
+        (true, false) => b'f',
+        (false, true) => b'I',
+        (false, false) => b'i',
+    };
+
+    BayesInputToken::Raw([t, num.len() as u8].to_vec())
 }
 
 pub static SYMBOLS: phf::Set<char> = phf::phf_set! {
@@ -1147,7 +1157,7 @@ pub static SYMBOLS: phf::Set<char> = phf::phf_set! {
 mod tests {
     use std::borrow::Cow;
 
-    use crate::bayes::tokenize::BayesTokenizer;
+    use crate::{bayes::tokenize::BayesTokenizer, tokenizers::types::TypesTokenizer};
 
     #[test]
     fn bayes_tokenizer() {
@@ -1233,7 +1243,12 @@ mod tests {
         ];
 
         for (input, expect) in inputs.iter() {
-            let input = BayesTokenizer::new(input).collect::<Vec<_>>();
+            let input = BayesTokenizer::new(
+                input,
+                TypesTokenizer::new(input).filter_map(|t| t.word.to_bayes_token()),
+            )
+            .map(|word| String::from_utf8(word).unwrap())
+            .collect::<Vec<_>>();
             let expect = expect.iter().copied().map(Cow::from).collect::<Vec<_>>();
 
             assert_eq!(input, expect,);

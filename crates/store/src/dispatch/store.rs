@@ -18,8 +18,9 @@ use crate::{
         now, AnyClass, AnyKey, AssignedIds, Batch, BatchBuilder, BitmapClass, BitmapHash,
         Operation, ReportClass, ValueClass, ValueOp,
     },
-    BitmapKey, Deserialize, IterateParams, Key, Store, ValueKey, SUBSPACE_BITMAP_ID,
-    SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES, SUBSPACE_LOGS, U32_LEN,
+    BitmapKey, Deserialize, IterateParams, Key, QueryResult, Store, Value, ValueKey,
+    SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES, SUBSPACE_LOGS,
+    U32_LEN,
 };
 
 use super::DocumentSet;
@@ -152,6 +153,33 @@ impl Store {
             Self::None => Err(trc::StoreEvent::NotConfigured.into()),
         }
         .caused_by(trc::location!())
+    }
+
+    #[allow(unreachable_patterns)]
+    #[allow(unused_variables)]
+    pub async fn sql_query<T: QueryResult + std::fmt::Debug>(
+        &self,
+        query: &str,
+        params: Vec<Value<'_>>,
+    ) -> trc::Result<T> {
+        let result = match self {
+            #[cfg(feature = "sqlite")]
+            Self::SQLite(store) => store.query(query, &params).await,
+            #[cfg(feature = "postgres")]
+            Self::PostgreSQL(store) => store.query(query, &params).await,
+            #[cfg(feature = "mysql")]
+            Self::MySQL(store) => store.query(query, &params).await,
+            _ => Err(trc::StoreEvent::NotSupported.into_err()),
+        };
+
+        trc::event!(
+            Store(trc::StoreEvent::SqlQuery),
+            Details = query.to_string(),
+            Value = params.as_slice(),
+            Result = &result,
+        );
+
+        result.caused_by(trc::location!())
     }
 
     pub async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {

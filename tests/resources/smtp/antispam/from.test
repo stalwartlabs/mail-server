@@ -20,7 +20,7 @@ From: test
 Test
 <!-- NEXT TEST -->
 envelope_from www-data@domain.org
-expect FROM_SERVICE_ACCT ENVFROM_SERVICE_ACCT FROM_HAS_DN FROM_EQ_ENVFROM
+expect FROM_SERVICE_ACCT FROM_HAS_DN FROM_EQ_ENVFROM
 
 From: "WWW DATA" <www-data@domain.org>
 
@@ -150,12 +150,11 @@ Disposition-Notification-To: <bye@domain.org>
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@domain.org
+envelope_from anonymous@domain.org
 expect FROM_SERVICE_ACCT WWW_DOT_DOMAIN FROM_EQ_ENVFROM FROM_HAS_DN
 
-From: "Hello" <hello@domain.org>
-Sender: <info@www.domain.org>
-Reply-to: <guest@domain.org>
+From: "Hello" <anonymous@domain.org>
+Reply-to: <info@www.domain.org>
 
 Test
 <!-- NEXT TEST -->

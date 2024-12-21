@@ -84,6 +84,7 @@ pub struct QueueOutboundTimeout {
 
 #[derive(Debug, Clone)]
 pub struct QueueThrottle {
+    pub outbound_concurrency: u64,
     pub sender: Vec<Throttle>,
     pub rcpt: Vec<Throttle>,
     pub host: Vec<Throttle>,
@@ -205,6 +206,7 @@ impl Default for QueueConfig {
                 mta_sts: IfBlock::new::<()>("queue.outbound.timeouts.mta-sts", [], "10m"),
             },
             throttle: QueueThrottle {
+                outbound_concurrency: 25,
                 sender: Default::default(),
                 rcpt: Default::default(),
                 host: Default::default(),
@@ -388,6 +390,9 @@ fn parse_queue_throttle(config: &mut Config) -> QueueThrottle {
         sender: Vec::new(),
         rcpt: Vec::new(),
         host: Vec::new(),
+        outbound_concurrency: config
+            .property_or_default::<u64>("queue.outbound.concurrency", "25")
+            .unwrap_or(25),
     };
 
     let all_throttles = parse_throttle(

@@ -6,13 +6,14 @@
 
 use std::{
     borrow::Cow,
-    process::Stdio,
-    sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 
 use common::{
-    config::smtp::{auth::VerifyStrategy, session::Stage},
+    config::{
+        smtp::{auth::VerifyStrategy, session::Stage},
+        spamfilter::SpamFilterAction,
+    },
     listener::SessionStream,
     psl,
     scripts::ScriptModification,
@@ -22,12 +23,12 @@ use mail_auth::{
     dmarc, AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, ReceivedSpf,
 };
 use mail_builder::headers::{date::Date, message_id::generate_message_id_header};
+use mail_parser::MessageParser;
 use sieve::runtime::Variable;
 use smtp_proto::{
     MAIL_BY_RETURN, RCPT_NOTIFY_DELAY, RCPT_NOTIFY_FAILURE, RCPT_NOTIFY_NEVER, RCPT_NOTIFY_SUCCESS,
 };
 use store::write::now;
-use tokio::{io::AsyncWriteExt, process::Command};
 use trc::SmtpEvent;
 use utils::config::Rate;
 
@@ -43,21 +44,30 @@ use super::{ArcSeal, AuthResult, DkimSign};
 
 impl<T: SessionStream> Session<T> {
     pub async fn queue_message(&mut self) -> Cow<'static, [u8]> {
-        // Authenticate message
-        let raw_message = Arc::new(std::mem::take(&mut self.data.message));
-        let auth_message = if let Some(auth_message) = AuthenticatedMessage::parse_with_opts(
-            &raw_message,
-            self.server.core.smtp.mail_auth.dkim.strict,
-        ) {
-            auth_message
-        } else {
-            trc::event!(
-                Smtp(SmtpEvent::MessageParseFailed),
-                SpanId = self.data.session_id,
-            );
+        // Parse message
+        let raw_message = std::mem::take(&mut self.data.message);
+        let parsed_message = match MessageParser::new()
+            .parse(&raw_message)
+            .filter(|p| p.headers().iter().any(|h| !h.name.is_other()))
+        {
+            Some(parsed_message) => parsed_message,
+            None => {
+                trc::event!(
+                    Smtp(SmtpEvent::MessageParseFailed),
+                    SpanId = self.data.session_id,
+                );
 
-            return (&b"550 5.7.7 Failed to parse message.\r\n"[..]).into();
+                return (&b"550 5.7.7 Failed to parse message.\r\n"[..]).into();
+            }
         };
+
+        // Authenticate message
+        let auth_message = AuthenticatedMessage::from_parsed(
+            &parsed_message,
+            self.server.core.smtp.mail_auth.dkim.strict,
+        );
+        let has_date_header = auth_message.has_date_header();
+        let has_message_id_header = auth_message.has_message_id_header();
 
         // Loop detection
         let dc = &self.server.core.smtp.session.data;
@@ -312,11 +322,38 @@ impl<T: SessionStream> Session<T> {
 
         // Analyze reports
         if is_report {
-            self.server
-                .analyze_report(raw_message.clone(), self.data.session_id);
             if !rc.analysis.forward {
+                self.server.analyze_report(
+                    mail_parser::Message {
+                        html_body: parsed_message.html_body,
+                        text_body: parsed_message.text_body,
+                        attachments: parsed_message.attachments,
+                        parts: parsed_message
+                            .parts
+                            .into_iter()
+                            .map(|p| p.into_owned())
+                            .collect(),
+                        raw_message: b"".into(),
+                    },
+                    self.data.session_id,
+                );
                 self.data.messages_sent += 1;
                 return (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into();
+            } else {
+                self.server.analyze_report(
+                    mail_parser::Message {
+                        html_body: parsed_message.html_body.clone(),
+                        text_body: parsed_message.text_body.clone(),
+                        attachments: parsed_message.attachments.clone(),
+                        parts: parsed_message
+                            .parts
+                            .iter()
+                            .map(|p| p.clone().into_owned())
+                            .collect(),
+                        raw_message: b"".into(),
+                    },
+                    self.data.session_id,
+                );
             }
         }
 
@@ -383,6 +420,35 @@ impl<T: SessionStream> Session<T> {
             }
         }
 
+        // Run SPAM filter
+        if self.server.core.spam.enabled {
+            match self
+                .spam_classify(
+                    &parsed_message,
+                    &dkim_output,
+                    (&arc_output).into(),
+                    dmarc_result.as_ref(),
+                    dmarc_policy.as_ref(),
+                )
+                .await
+            {
+                SpamFilterAction::Allow(spam_headers) => {
+                    if !spam_headers.is_empty() {
+                        headers.extend_from_slice(spam_headers.as_bytes());
+                    }
+                }
+                SpamFilterAction::Discard => {
+                    self.data.messages_sent += 1;
+                    return (b"250 2.0.0 Message queued for delivery.\r\n"[..]).into();
+                }
+                SpamFilterAction::Reject => {
+                    self.data.messages_sent += 1;
+                    return (b"550 5.7.1 Message rejected due to excessive spam score.\r\n"[..])
+                        .into();
+                }
+            }
+        }
+
         // Run Milter filters
         let mut modifications = Vec::new();
         match self.run_milters(Stage::Data, (&auth_message).into()).await {
@@ -420,117 +486,6 @@ impl<T: SessionStream> Session<T> {
             None
         };
 
-        // Pipe message
-        for pipe in &dc.pipe_commands {
-            if let Some(command_) = self
-                .server
-                .eval_if::<String, _>(&pipe.command, self, self.data.session_id)
-                .await
-            {
-                let piped_message = edited_message.as_ref().unwrap_or(&raw_message).clone();
-                let timeout = self
-                    .server
-                    .eval_if(&pipe.timeout, self, self.data.session_id)
-                    .await
-                    .unwrap_or_else(|| Duration::from_secs(30));
-
-                let mut command = Command::new(&command_);
-                for argument in self
-                    .server
-                    .eval_if::<Vec<String>, _>(&pipe.arguments, self, self.data.session_id)
-                    .await
-                    .unwrap_or_default()
-                {
-                    command.arg(argument);
-                }
-                let time = Instant::now();
-                match command
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .kill_on_drop(true)
-                    .spawn()
-                {
-                    Ok(mut child) => {
-                        if let Some(mut stdin) = child.stdin.take() {
-                            match tokio::time::timeout(timeout, stdin.write_all(&piped_message))
-                                .await
-                            {
-                                Ok(Ok(_)) => {
-                                    drop(stdin);
-                                    match tokio::time::timeout(timeout, child.wait_with_output())
-                                        .await
-                                    {
-                                        Ok(Ok(output)) => {
-                                            if output.status.success()
-                                                && !output.stdout.is_empty()
-                                                && output.stdout[..] != piped_message[..]
-                                            {
-                                                edited_message = output.stdout.into();
-                                            }
-
-                                            trc::event!(
-                                                Smtp(SmtpEvent::PipeSuccess),
-                                                SpanId = self.data.session_id,
-                                                Path = command_,
-                                                Result = output.status.to_string(),
-                                                Elapsed = time.elapsed(),
-                                            );
-                                        }
-                                        Ok(Err(err)) => {
-                                            trc::event!(
-                                                Smtp(SmtpEvent::PipeError),
-                                                SpanId = self.data.session_id,
-                                                Reason = err.to_string(),
-                                                Elapsed = time.elapsed(),
-                                            );
-                                        }
-                                        Err(_) => {
-                                            trc::event!(
-                                                Smtp(SmtpEvent::PipeError),
-                                                SpanId = self.data.session_id,
-                                                Reason = "Timeout",
-                                                Elapsed = time.elapsed(),
-                                            );
-                                        }
-                                    }
-                                }
-                                Ok(Err(err)) => {
-                                    trc::event!(
-                                        Smtp(SmtpEvent::PipeError),
-                                        SpanId = self.data.session_id,
-                                        Reason = err.to_string(),
-                                        Elapsed = time.elapsed(),
-                                    );
-                                }
-                                Err(_) => {
-                                    trc::event!(
-                                        Smtp(SmtpEvent::PipeError),
-                                        SpanId = self.data.session_id,
-                                        Reason = "Stdin timeout",
-                                        Elapsed = time.elapsed(),
-                                    );
-                                }
-                            }
-                        } else {
-                            trc::event!(
-                                Smtp(SmtpEvent::PipeError),
-                                SpanId = self.data.session_id,
-                                Reason = "Stdin not available",
-                                Elapsed = time.elapsed(),
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        trc::event!(
-                            Smtp(SmtpEvent::PipeError),
-                            SpanId = self.data.session_id,
-                            Reason = err.to_string(),
-                        );
-                    }
-                }
-            }
-        }
-
         // Sieve filtering
         if let Some((script, script_id)) = self
             .server
@@ -544,7 +499,6 @@ impl<T: SessionStream> Session<T> {
         {
             let params = self
                 .build_script_parameters("data")
-                .with_message(edited_message.as_ref().unwrap_or(&raw_message))
                 .with_auth_headers(&headers)
                 .set_variable(
                     "arc.result",
@@ -589,7 +543,8 @@ impl<T: SessionStream> Session<T> {
                         .as_ref()
                         .map(|a| a.as_str())
                         .unwrap_or_default(),
-                );
+                )
+                .with_message(parsed_message);
 
             let modifications = match self.run_script(script_id, script.clone(), params).await {
                 ScriptResult::Accept { modifications } => modifications,
@@ -646,7 +601,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Add any missing headers
-        if !auth_message.has_date_header()
+        if !has_date_header
             && self
                 .server
                 .eval_if(&dc.add_date, self, self.data.session_id)
@@ -657,7 +612,7 @@ impl<T: SessionStream> Session<T> {
             headers.extend_from_slice(Date::now().to_rfc822().as_bytes());
             headers.extend_from_slice(b"\r\n");
         }
-        if !auth_message.has_message_id_header()
+        if !has_message_id_header
             && self
                 .server
                 .eval_if(&dc.add_message_id, self, self.data.session_id)
@@ -670,9 +625,7 @@ impl<T: SessionStream> Session<T> {
         }
 
         // DKIM sign
-        let raw_message = edited_message
-            .as_deref()
-            .unwrap_or_else(|| raw_message.as_slice());
+        let raw_message = edited_message.as_deref().unwrap_or(raw_message.as_slice());
         for signer in self
             .server
             .eval_if::<Vec<String>, _>(&ac.dkim.sign, self, self.data.session_id)
@@ -916,7 +869,26 @@ impl<T: SessionStream> Session<T> {
         );
         headers.extend_from_slice(b" [");
         headers.extend_from_slice(self.data.remote_ip.to_string().as_bytes());
-        headers.extend_from_slice(b"])\r\n\t");
+        headers.extend_from_slice(b"]");
+        if self.data.asn_geo_data.asn.is_some() || self.data.asn_geo_data.country.is_some() {
+            headers.extend_from_slice(b" (");
+            if let Some(asn) = &self.data.asn_geo_data.asn {
+                headers.extend_from_slice(b"AS");
+                headers.extend_from_slice(asn.id.to_string().as_bytes());
+                if let Some(name) = &asn.name {
+                    headers.extend_from_slice(b" ");
+                    headers.extend_from_slice(name.as_bytes());
+                }
+            }
+            if let Some(country) = &self.data.asn_geo_data.country {
+                if self.data.asn_geo_data.asn.is_some() {
+                    headers.extend_from_slice(b", ");
+                }
+                headers.extend_from_slice(country.as_bytes());
+            }
+            headers.extend_from_slice(b")");
+        }
+        headers.extend_from_slice(b")\r\n\t");
         if self.stream.is_tls() {
             let (version, cipher) = self.stream.tls_version_and_cipher();
             headers.extend_from_slice(b"(using ");

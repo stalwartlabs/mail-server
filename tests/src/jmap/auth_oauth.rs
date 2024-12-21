@@ -393,7 +393,7 @@ pub async fn test(params: &mut JMAPTest) {
         .core
         .storage
         .lookup
-        .purge_lookup_store()
+        .purge_in_memory_store()
         .await
         .unwrap();
     params.client.set_default_account_id(john_id);

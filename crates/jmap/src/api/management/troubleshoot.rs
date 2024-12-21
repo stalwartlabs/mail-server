@@ -670,6 +670,46 @@ async fn delivery_troubleshoot(
                                 }
                             }
 
+                            // Say EHLO again (some SMTP servers require this)
+                            tx.send(DeliveryStage::EhloStart).await?;
+
+                            let now = Instant::now();
+                            match tokio::time::timeout(timeout, async {
+                                client
+                                    .stream
+                                    .write_all(format!("EHLO {local_host}\r\n",).as_bytes())
+                                    .await?;
+                                client.stream.flush().await?;
+                                client.read_ehlo().await
+                            })
+                            .await
+                            {
+                                Ok(Ok(_)) => {
+                                    tx.send(DeliveryStage::EhloSuccess {
+                                        elapsed: now.elapsed_ms(),
+                                    })
+                                    .await?;
+                                }
+                                Ok(Err(err)) => {
+                                    tx.send(DeliveryStage::EhloError {
+                                        elapsed: now.elapsed_ms(),
+                                        reason: err.to_string(),
+                                    })
+                                    .await?;
+
+                                    continue;
+                                }
+                                Err(_) => {
+                                    tx.send(DeliveryStage::EhloError {
+                                        elapsed: now.elapsed_ms(),
+                                        reason: "Timed out reading response".to_string(),
+                                    })
+                                    .await?;
+
+                                    continue;
+                                }
+                            }
+
                             // Verify recipient
                             let mut is_success = email.is_none();
                             if let Some(email) = &email {

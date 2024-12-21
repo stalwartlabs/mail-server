@@ -35,6 +35,8 @@ pub const V_URL: u32 = 21;
 pub const V_URL_PATH: u32 = 22;
 pub const V_HEADERS: u32 = 23;
 pub const V_METHOD: u32 = 24;
+pub const V_ASN: u32 = 25;
+pub const V_COUNTRY: u32 = 26;
 
 pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("rcpt", V_RECIPIENT),
@@ -62,6 +64,8 @@ pub const VARIABLES_MAP: &[(&str, u32)] = &[
     ("url_path", V_URL_PATH),
     ("headers", V_HEADERS),
     ("method", V_METHOD),
+    ("asn", V_ASN),
+    ("country", V_COUNTRY),
 ];
 
 use regex::Regex;
@@ -83,6 +87,7 @@ pub struct Expression {
 #[derive(Debug, Clone)]
 pub enum ExpressionItem {
     Variable(u32),
+    Global(String),
     Capture(u32),
     Constant(Constant),
     BinaryOperator(BinaryOperator),
@@ -94,7 +99,7 @@ pub enum ExpressionItem {
     ArrayBuild(u32),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Variable<'x> {
     String(Cow<'x, str>),
     Integer(i64),
@@ -187,6 +192,7 @@ pub enum UnaryOperator {
 #[derive(Debug, Clone)]
 pub enum Token {
     Variable(u32),
+    Global(String),
     Capture(u32),
     Function {
         name: Cow<'static, str>,

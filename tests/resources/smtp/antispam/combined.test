@@ -6,9 +6,8 @@ spf.result none
 spf_ehlo.result none
 dmarc.result none
 remote_ip 195.210.29.48
-expect_header X-Spam-Status Yes, score=8.
-expect_header X-Spam-Result
-expect rdns_none auth_na dmarc_na helo_nores_a_or_mx once_received mid_rhs_match_from spf_na has_data_uri arc_na subject_has_exclaim subject_ends_exclaim mime_html_only html_short_link_img_1 to_dn_none rcpt_count_one to_match_envrcpt_all fromhost_nores_a_or_mx rcvd_count_zero from_eq_envfrom dkim_na rcvd_no_tls_last from_has_dn date_in_past
+expect_header X-Spam-Result: ARC_NA (0.00), DKIM_NA (0.00), DMARC_NA (0.00), FROM_EQ_ENVFROM (0.00), FROM_HAS_DN (0.00), HAS_DATA_URI (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_ZERO (0.00), SPF_NA (0.00), SUBJECT_ENDS_EXCLAIM (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), ONCE_RECEIVED (0.10), RCVD_NO_TLS_LAST (0.10), MIME_HTML_ONLY (0.20), HELO_NORES_A_OR_MX (0.30), AUTH_NA (1.00), DATE_IN_PAST (1.00), MID_RHS_MATCH_FROM (1.00), RDNS_NONE (1.00), FROMHOST_NORES_A_OR_MX (1.50), HTML_SHORT_LINK_IMG_1 (2.00), PYZOR (3.50)
+expect_header X-Spam-Status: Yes, score=11.70
 
 From: Client Services <noreply@tetheer.com>
 To: licensing@stalw.art
@@ -50,9 +49,8 @@ dkim.domains tenthrevolution.com
 dmarc.result pass
 remote_ip 185.58.86.181
 tls.version TLSv1.3
-expect_header X-Spam-Status No, score=3.
-expect_header X-Spam-Result
-expect from_eq_envfrom from_has_dn helo_nores_a_or_mx forged_rcvd_trail date_in_past arc_na uri_count_odd dkim_signed has_attachment spf_allow rcvd_tls_last rcpt_count_one mime_good subject_ends_spaces fromhost_nores_a_or_mx to_dn_eq_addr_all dkim_allow dmarc_policy_allow rcvd_count_three to_match_envrcpt_all
+expect_header X-Spam-Result: DMARC_POLICY_ALLOW (-0.50), DKIM_ALLOW (-0.20), SPF_ALLOW (-0.20), MIME_GOOD (-0.10), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENVFROM (0.00), FROM_HAS_DN (0.00), HAS_ATTACHMENT (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_THREE (0.00), TO_DN_EQ_ADDR_ALL (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), SUBJECT_ENDS_SPACES (0.50), URI_COUNT_ODD (0.50), DATE_IN_PAST (1.00), FORGED_RCVD_TRAIL (1.00), FROMHOST_NORES_A_OR_MX (1.50)
+expect_header X-Spam-Status: No, score=3.90
 
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=tenthrevolution.com;
 	s=mimecast20200102; t=1669138703;
@@ -89,57 +87,8 @@ Message-ID: <AS8PR04MB8071BB5854E10B6EA7161159EF0D9@AS8PR04MB8071.eurprd04.prod.
 Accept-Language: en-GB, en-US
 X-MS-Has-Attach: yes
 X-MS-TNEF-Correlator: 
-x-ms-publictraffictype: Email
-x-ms-traffictypediagnostic: AS8PR04MB8071:EE_|DU2PR04MB8952:EE_
-x-ms-office365-filtering-correlation-id: 320b349d-2736-406a-45c9-08daccb044b5
-x-ms-exchange-senderadcheck: 1
-x-ms-exchange-antispam-relay: 0
-x-microsoft-antispam: BCL:0
-x-microsoft-antispam-message-info: RFrNGr7IhMmS4iNfprhPqmj60ReOFkq3iNebFuTE+OovNlEuRaCUYK1lMSdb44RdkJKhfVU53K+aSMHjZ0V9Xdnq9igSL5NKbMPTOCvraH5VB+OYVuXbBG/+Ex2FCJ1HuHYab6Rwjy3ln/pisH9uDVF/Wpn1w6MFZcyTcMXl+5RQ79GOb12a5ybKmmvtxVTjOq53mA10D7qRiWXsxOPTYf7vjmuV6X+J+IF0lQ35AiAJjGAgJrYtu8datK9t3d/k1aIWms2B1tzpL76de0mre2dGVgQIfzu4hhfU99Hejj6opP+ISn2yDsEDRZKPC1FSbggeOMATGLdi7uMSLW3sIMYRm8M6kZ436e9vY718GaCGtYS9cdEaXKjQUeJg/M0MVYDtBdsgxpgOjusyuPj5Wf/KACGdvuNui+SeS+LCjCGrNhe4+uy1cx1XioD9YhNmcrJOHUBmqkmshClu+TdMRqCORGkVGNoRN97KFg0RlX/aYr6erDFDyphdZl65map16nZBjFw+h4JuPI0ZsBd4lWe0ep7a17rcT+xUESmo1/2chtCC6viPwDyGzqelSeZhxRyHa2Tu/VzstxElXSqgs9S8yTsaQ+nsjsRRAnfs5bKbjYzKX2QpXtAEEdQo5R8UnexDRLiB4MupsWkRM24dvSRkyc0Pt2eKO7vVLMSW/RUUxbSNLzTjh2MYOfPCl9WGXKXbJvn4+gZx4iLFZnbQxTxw4Y2lNX/EPDtn80ZpGz5Kab2p36tx/8KAOIYOw3zo5EnTHeHQBjUSmr6qS2cT2GZVyd89bzEZvOSsgsFqT1U=
-x-forefront-antispam-report: CIP:255.255.255.255;CTRY:;LANG:en;SCL:1;SRV:;IPV:NLI;SFV:NSPM;H:AS8PR04MB8071.eurprd04.prod.outlook.com;PTR:;CAT:NONE;SFS:(13230022)(39860400002)(366004)(136003)(396003)(346002)(376002)(451199015)(45080400002)(38100700002)(478600001)(33656002)(41300700001)(76116006)(66946007)(64756008)(66556008)(66446008)(66476007)(166002)(316002)(186003)(38070700005)(55016003)(83380400001)(4743002)(26005)(6506007)(7696005)(86362001)(9686003)(71200400001)(55236004)(99936003)(122000001)(6916009)(66899015)(2906002)(8936002)(5660300002)(52536014)(36394005);DIR:OUT;SFP:1101
-x-ms-exchange-antispam-messagedata-chunkcount: 1
-x-ms-exchange-antispam-messagedata-0: =?Windows-1252?Q?4P/FtE9B736TzSCbgF3J1iOGsQRezh6u4SgvpddFWvWNSVWTLtRmRvpF?=
- =?Windows-1252?Q?2jqjFWq7ft5r7M4S0JynXShWhP/1VAPc6lZMAfiyyfoQknuWz0rPQEid?=
- =?Windows-1252?Q?ay8qW5pzl7Dt3M/2MonJpXaeupRlkkhjREQspgY3DpMRnd8fCMq4O2we?=
- =?Windows-1252?Q?sd+rG6VpQ2irOU45M5WrVBGskNcX8C2gJnZzv2IF4BMaYCO9DI9xM6io?=
- =?Windows-1252?Q?BKvAgIM3b4Jm3WqwPMmT5bWEnJgRv4OI92cE4eZSzkRpI4u2DlxF4qx5?=
- =?Windows-1252?Q?QNX2XKfGHH002dn2lUpYXzMPF4f5jGaX401MDw1iGQWf9M2ZAOVhZoaP?=
- =?Windows-1252?Q?Y1BKjdodCrMTCvb1+0fLXxLHfAs4ku2e1gDUez44llQ2POHI6+JtsObx?=
- =?Windows-1252?Q?avS9SGfhtFkXDm6x/PLQAuuNhskxxSzuuKbrDQYWbP+LnhbsVVXsQhER?=
- =?Windows-1252?Q?qJgff0GlO8M3ICrjY3+moEVqND9Dgmj/opQvPX/J2OW/ULmGddsmUQIi?=
- =?Windows-1252?Q?XnwSNTZjtCf13KsGuXu2IIzCZ0vnE6RLJu9vjFJ8zx132jlBmYRfLkBy?=
- =?Windows-1252?Q?qNtny11BJny8+bVuodhuohKAYQY3HCGmtE/5GLBs1w3KbkA0rFWMSdg5?=
- =?Windows-1252?Q?0gb3egkCIkDN6fHHxo6vlo3Gay63TEGdiIoueTyLPJiMAs6DswGBhRB1?=
- =?Windows-1252?Q?B4c34FKxKQXIbCRrVHJME6wZMIfqgjhU6nfC39qMuqn4E/NCfLjoVUTm?=
- =?Windows-1252?Q?5IjQS3n+9ObjGWXNHu5nhgUJCGhgeKOcDxAHNL5bRQmruzUm9a5DedWI?=
- =?Windows-1252?Q?vlSEzriwrCtwOcwU6ycP0t9XzNTB+TjOv6DPGtSMzlaxRl2mmCgl0sqK?=
- =?Windows-1252?Q?1h5vOiAbw6hs/ENFK2n6pSNmFEDyDrM1DZ+eXTqKQixnSvbRLJfsxyyh?=
- =?Windows-1252?Q?RARROgIC3Q3grmk8keC1VN5IOjgpXF3tzUo9lKoC/PB0DRJp444jjJYK?=
- =?Windows-1252?Q?QpcGxSGUsAvbEK4JkfjFjzQucbW6kewoDp/vwl00JobRePzZymmgnwO3?=
- =?Windows-1252?Q?/sRlewjFoih9gkx2G3BD6RBp/UT0rSKlSFdLdOgsXwBea2HtjJYCQbcc?=
- =?Windows-1252?Q?qT/zqI8dMeiw2u+BIEcyttiiE95FfgCZ+Jw1eXXSPrKgbheuM3siCQ4l?=
- =?Windows-1252?Q?3idTUoQRfVOSGhdi7s9UTyioCQj9cQ6rRNEGoZsBb9rQdEj+IrOirbP5?=
- =?Windows-1252?Q?oUpMesdPuX1nS61a63hoYmZNO1o73kgeNrjnQKf4QXycHbucQOmDVrlv?=
- =?Windows-1252?Q?4oN+RZRmZ9IQ2cMKxNkwZgJqmPG5SAf31ZF5of8OrfYooS2jwz0Fzerq?=
- =?Windows-1252?Q?hLxLTtNQp6FtoVMA7uv7zpP6Nb5HYiCu5qY/kfqhS61Cqo5ulicay35G?=
- =?Windows-1252?Q?iAyY5WLHp7+ybc2Zn6eHXZrNzZ5S4E6rCiTcqE3NumT4Ax7vH/fDhT3f?=
- =?Windows-1252?Q?ShvqDg98354C9ZEtoV/t1x5vNporSrn/Sbb/FMjXSXOgGE3kxpPV65RB?=
- =?Windows-1252?Q?29Fl9M+Z8JmBacbtpZoGnqQ5nKttFjnXtj899djqwoYVuN48/hO4TgnU?=
- =?Windows-1252?Q?KqteFtHKVcQDNpdL8vdgo7uFVb9HFQvOU0ECxgTg0F8CpAchtGM3siVN?=
- =?Windows-1252?Q?M964A6hx5NPb8YH2C3Pq7IvbCiPf41CC7MSaAMLb04j1VXOKFdTzTQ?=
- =?Windows-1252?Q?=3D=3D?=
 MIME-Version: 1.0
 X-OriginatorOrg: tenthrevolution.com
-X-MS-Exchange-CrossTenant-AuthAs: Internal
-X-MS-Exchange-CrossTenant-AuthSource: AS8PR04MB8071.eurprd04.prod.outlook.com
-X-MS-Exchange-CrossTenant-Network-Message-Id: 320b349d-2736-406a-45c9-08daccb044b5
-X-MS-Exchange-CrossTenant-originalarrivaltime: 22 Nov 2022 17:37:46.5232
- (UTC)
-X-MS-Exchange-CrossTenant-fromentityheader: Hosted
-X-MS-Exchange-CrossTenant-id: 9575ad69-b859-42ee-bf2c-7263b3236a16
-X-MS-Exchange-CrossTenant-mailboxtype: HOSTED
-X-MS-Exchange-CrossTenant-userprincipalname: uaZau1MOBnlwTPYfr6/hV4Tn/rVEIPMPe31SJJq5jXeno2HbSjV5ElWexVy8mvfaALxr+kV60KBJgJFqS4ftLeUsiciMybCqKPuVBsmtEFg=
-X-MS-Exchange-Transport-CrossTenantHeadersStamped: DU2PR04MB8952
 X-Mimecast-Spam-Score: 0
 X-Mimecast-Originator: tenthrevolution.com
 Content-Language: en-US
@@ -625,9 +574,8 @@ dmarc.result fail
 dmarc.policy reject
 remote_ip 51.89.165.39
 tls.version TLS1_2
-expect_header X-Spam-Status Yes, score=13.
-expect_header X-Spam-Result
-expect has_replyto violated_direct_spf replyto_addr_eq_from uri_count_odd once_received r_parts_differ mid_rhs_match_from fromhost_nores_a_or_mx from_has_dn dkim_allow date_in_past to_match_envrcpt_all html_short_link_img_1 rcpt_count_one arc_na helo_nores_a_or_mx spf_softfail rcvd_tls_last rcvd_count_zero replyto_dom_eq_from_dom to_dn_none has_list_unsub dkim_signed rdns_none from_eq_envfrom dmarc_policy_reject
+expect_header X-Spam-Result: DKIM_ALLOW (-0.20), HAS_LIST_UNSUB (-0.01), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENVFROM (0.00), FROM_HAS_DN (0.00), HAS_REPLYTO (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_ZERO (0.00), REPLYTO_ADDR_EQ_FROM (0.00), REPLYTO_EQ_FROM (0.00), SPF_SOFTFAIL (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), ONCE_RECEIVED (0.10), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), DATE_IN_PAST (1.00), MID_RHS_MATCH_FROM (1.00), RDNS_NONE (1.00), R_PARTS_DIFFER (1.00), FROMHOST_NORES_A_OR_MX (1.50), DMARC_POLICY_REJECT (2.00), HTML_SHORT_LINK_IMG_1 (2.00), VIOLATED_DIRECT_SPF (3.50)
+expect_header X-Spam-Status: Yes, score=13.29
 
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=sectionalism; d=grupokonecta.net;
  h=To:Subject:Message-ID:Date:From:Reply-To:MIME-Version:List-Unsubscribe:

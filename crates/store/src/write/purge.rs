@@ -10,13 +10,13 @@ use tokio::sync::watch;
 use trc::PurgeEvent;
 use utils::config::cron::SimpleCron;
 
-use crate::{BlobStore, LookupStore, Store};
+use crate::{BlobStore, InMemoryStore, Store};
 
 #[derive(Clone)]
 pub enum PurgeStore {
     Data(Store),
     Blobs { store: Store, blob_store: BlobStore },
-    Lookup(LookupStore),
+    Lookup(InMemoryStore),
 }
 
 #[derive(Clone)]
@@ -59,7 +59,7 @@ impl PurgeSchedule {
                     PurgeStore::Blobs { store, blob_store } => {
                         store.purge_blobs(blob_store.clone()).await
                     }
-                    PurgeStore::Lookup(store) => store.purge_lookup_store().await,
+                    PurgeStore::Lookup(store) => store.purge_in_memory_store().await,
                 };
 
                 if let Err(err) = result {

@@ -18,7 +18,7 @@ use mail_auth::{
 };
 use mail_parser::DateTime;
 
-use store::write::{QueueClass, ReportEvent};
+use store::write::{key::KeySerializer, ReportEvent};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{
@@ -323,26 +323,25 @@ impl io::Write for SerializedSize {
 }
 
 pub trait ReportLock {
-    fn tls_lock(event: &ReportEvent) -> Self;
-    fn dmarc_lock(event: &ReportEvent) -> Self;
+    fn tls_lock(&self) -> Vec<u8>;
+    fn dmarc_lock(&self) -> Vec<u8>;
 }
 
-impl ReportLock for QueueClass {
-    fn tls_lock(event: &ReportEvent) -> Self {
-        QueueClass::TlsReportHeader(ReportEvent {
-            due: event.due,
-            policy_hash: 0,
-            seq_id: 0,
-            domain: event.domain.clone(),
-        })
+impl ReportLock for ReportEvent {
+    fn tls_lock(&self) -> Vec<u8> {
+        KeySerializer::new(self.domain.len() + std::mem::size_of::<u64>() + 1)
+            .write(0u8)
+            .write(self.due)
+            .write(self.domain.as_bytes())
+            .finalize()
     }
 
-    fn dmarc_lock(event: &ReportEvent) -> Self {
-        QueueClass::DmarcReportHeader(ReportEvent {
-            due: event.due,
-            policy_hash: event.policy_hash,
-            seq_id: 0,
-            domain: event.domain.clone(),
-        })
+    fn dmarc_lock(&self) -> Vec<u8> {
+        KeySerializer::new(self.domain.len() + (std::mem::size_of::<u64>() * 2) + 1)
+            .write(1u8)
+            .write(self.due)
+            .write(self.policy_hash)
+            .write(self.domain.as_bytes())
+            .finalize()
     }
 }

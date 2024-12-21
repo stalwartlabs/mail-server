@@ -14,9 +14,9 @@ pub mod license;
 pub mod llm;
 pub mod undelete;
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use directory::{
     backend::internal::{lookup::DirectoryStore, PrincipalField},
     QueryBy, Type,
@@ -38,7 +38,21 @@ pub struct Enterprise {
     pub trace_store: Option<TraceStore>,
     pub metrics_store: Option<MetricStore>,
     pub metrics_alerts: Vec<MetricAlert>,
-    pub ai_apis: AHashMap<String, AiApiConfig>,
+    pub ai_apis: AHashMap<String, Arc<AiApiConfig>>,
+    pub spam_filter_llm: Option<SpamFilterLlmConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpamFilterLlmConfig {
+    pub model: Arc<AiApiConfig>,
+    pub temperature: f64,
+    pub prompt: String,
+    pub separator: char,
+    pub index_category: usize,
+    pub index_confidence: Option<usize>,
+    pub index_explanation: Option<usize>,
+    pub categories: AHashSet<String>,
+    pub confidence: AHashSet<String>,
 }
 
 #[derive(Clone)]

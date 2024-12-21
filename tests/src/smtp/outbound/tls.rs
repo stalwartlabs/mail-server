@@ -80,8 +80,7 @@ async fn starttls_optional() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     let mut retry = local.queue_receiver.expect_message().await;
     let prev_due = retry.domains[0].retry.due;
     let next_due = now();
@@ -94,8 +93,7 @@ async fn starttls_optional() {
         .queue_receiver
         .delivery_attempt(queue_id)
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     tokio::time::sleep(Duration::from_millis(100)).await;
     remote
         .queue_receiver

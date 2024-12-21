@@ -120,8 +120,7 @@ async fn dane_verify() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local
         .queue_receiver
         .expect_message()
@@ -130,7 +129,7 @@ async fn dane_verify() {
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No TLSA records found");
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_done();
     local.queue_receiver.assert_no_events();
 
     // Expect TLS failure report
@@ -173,8 +172,7 @@ async fn dane_verify() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local
         .queue_receiver
         .expect_message()
@@ -183,7 +181,7 @@ async fn dane_verify() {
         .await
         .assert_contains("<bill@foobar.org> (DANE failed to authenticate")
         .assert_contains("No matching certificates found");
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_done();
     local.queue_receiver.assert_no_events();
 
     // Expect TLS failure report
@@ -221,9 +219,8 @@ async fn dane_verify() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
-    local.queue_receiver.read_event().await.assert_reload();
+        .try_deliver(core.clone());
+    local.queue_receiver.read_event().await.assert_done();
     local.queue_receiver.assert_no_events();
     remote
         .queue_receiver

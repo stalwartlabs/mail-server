@@ -10,6 +10,7 @@ use ahash::AHashMap;
 use common::{
     auth::AccessToken, expr::functions::ResolveVariable, scripts::ScriptModification, Server,
 };
+use mail_parser::Message;
 use sieve::{runtime::Variable, Envelope};
 
 pub mod envelope;
@@ -30,7 +31,7 @@ pub enum ScriptResult {
 }
 
 pub struct ScriptParameters<'x> {
-    message: Option<&'x [u8]>,
+    message: Option<Message<'x>>,
     headers: Option<&'x [u8]>,
     variables: AHashMap<Cow<'static, str>, Variable>,
     envelope: Vec<(Envelope, Variable)>,
@@ -38,8 +39,6 @@ pub struct ScriptParameters<'x> {
     from_name: String,
     return_path: String,
     sign: Vec<String>,
-    #[cfg(feature = "test_mode")]
-    expected_variables: Option<AHashMap<String, Variable>>,
     access_token: Option<&'x AccessToken>,
     session_id: u64,
 }
@@ -51,8 +50,6 @@ impl<'x> ScriptParameters<'x> {
             envelope: Vec::with_capacity(6),
             message: None,
             headers: None,
-            #[cfg(feature = "test_mode")]
-            expected_variables: None,
             from_addr: Default::default(),
             from_name: Default::default(),
             return_path: Default::default(),
@@ -86,7 +83,7 @@ impl<'x> ScriptParameters<'x> {
         self
     }
 
-    pub fn with_message(self, message: &'x [u8]) -> Self {
+    pub fn with_message(self, message: Message<'x>) -> Self {
         Self {
             message: message.into(),
             ..self
@@ -121,15 +118,6 @@ impl<'x> ScriptParameters<'x> {
 
     pub fn with_session_id(mut self, session_id: u64) -> Self {
         self.session_id = session_id;
-        self
-    }
-
-    #[cfg(feature = "test_mode")]
-    pub fn with_expected_variables(
-        mut self,
-        expected_variables: AHashMap<String, Variable>,
-    ) -> Self {
-        self.expected_variables = expected_variables.into();
         self
     }
 }

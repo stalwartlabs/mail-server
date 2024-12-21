@@ -2,7 +2,7 @@ use std::{cmp::Ordering, net::IpAddr, vec::IntoIter};
 
 use directory::backend::RcptType;
 use mail_auth::IpLookupStrategy;
-use store::{Deserialize, Rows, Value};
+use store::{dispatch::lookup::KeyValue, Deserialize, Rows, Value};
 use trc::AddContext;
 
 use crate::Server;
@@ -43,7 +43,7 @@ impl Server {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_lookup_store(store.as_ref(), session_id)
+                self.get_in_memory_store(store.as_ref(), session_id)
                     .key_get::<VariableWrapper>(key.into_owned().into_bytes())
                     .await
                     .map(|value| value.map(|v| v.into_inner()).unwrap_or_default())
@@ -53,7 +53,7 @@ impl Server {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_lookup_store(store.as_ref(), session_id)
+                self.get_in_memory_store(store.as_ref(), session_id)
                     .key_exists(key.into_owned().into_bytes())
                     .await
                     .caused_by(trc::location!())
@@ -64,12 +64,11 @@ impl Server {
                 let key = params.next_as_string();
                 let value = params.next_as_string();
 
-                self.get_lookup_store(store.as_ref(), session_id)
-                    .key_set(
+                self.get_in_memory_store(store.as_ref(), session_id)
+                    .key_set(KeyValue::new(
                         key.into_owned().into_bytes(),
                         value.into_owned().into_bytes(),
-                        None,
-                    )
+                    ))
                     .await
                     .map(|_| true)
                     .caused_by(trc::location!())
@@ -80,8 +79,8 @@ impl Server {
                 let key = params.next_as_string();
                 let value = params.next_as_integer();
 
-                self.get_lookup_store(store.as_ref(), session_id)
-                    .counter_incr(key.into_owned().into_bytes(), value, None, true)
+                self.get_in_memory_store(store.as_ref(), session_id)
+                    .counter_incr(KeyValue::new(key.into_owned(), value))
                     .await
                     .map(Variable::Integer)
                     .caused_by(trc::location!())
@@ -90,7 +89,7 @@ impl Server {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_lookup_store(store.as_ref(), session_id)
+                self.get_in_memory_store(store.as_ref(), session_id)
                     .counter_get(key.into_owned().into_bytes())
                     .await
                     .map(Variable::Integer)
@@ -107,7 +106,7 @@ impl Server {
         mut arguments: FncParams<'x>,
         session_id: u64,
     ) -> trc::Result<Variable<'x>> {
-        let store = self.get_lookup_store(arguments.next_as_string().as_ref(), session_id);
+        let store = self.get_data_store(arguments.next_as_string().as_ref(), session_id);
         let query = arguments.next_as_string();
 
         if query.is_empty() {
@@ -129,7 +128,7 @@ impl Server {
             .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
         {
             let mut rows = store
-                .query::<Rows>(&query, arguments)
+                .sql_query::<Rows>(&query, arguments)
                 .await
                 .caused_by(trc::location!())?;
             Ok(match rows.rows.len().cmp(&1) {
@@ -157,7 +156,7 @@ impl Server {
             })
         } else {
             store
-                .query::<usize>(&query, arguments)
+                .sql_query::<usize>(&query, arguments)
                 .await
                 .caused_by(trc::location!())
                 .map(|v| v.into())

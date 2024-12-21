@@ -7,7 +7,7 @@
 use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 use sieve::{runtime::Variable, FunctionMap};
 
-use crate::scripts::functions::{html::html_to_tokens, text::tokenize_words, ApplyString};
+use crate::scripts::functions::{text::tokenize_words, ApplyString};
 
 use super::PluginContext;
 
@@ -22,7 +22,6 @@ pub fn register_domain_part(plugin_id: u32, fnc_map: &mut FunctionMap) {
 pub fn exec_tokenize(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let mut v = ctx.arguments;
     let (urls, urls_without_scheme, emails) = match v[1].to_string().as_ref() {
-        "html" => return Ok(html_to_tokens(v[0].to_string().as_ref()).into()),
         "words" => return Ok(tokenize_words(&v[0])),
         "uri" | "url" => (true, true, true),
         "uri_strict" | "url_strict" => (true, false, false),

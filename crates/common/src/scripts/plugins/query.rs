@@ -19,8 +19,8 @@ pub fn register(plugin_id: u32, fnc_map: &mut FunctionMap) {
 pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     // Obtain store name
     let store = match &ctx.arguments[0] {
-        Variable::String(v) if !v.is_empty() => ctx.server.core.storage.lookups.get(v.as_ref()),
-        _ => Some(&ctx.server.core.storage.lookup),
+        Variable::String(v) if !v.is_empty() => ctx.server.core.storage.stores.get(v.as_ref()),
+        _ => Some(&ctx.server.core.storage.data),
     }
     .ok_or_else(|| {
         trc::SieveEvent::RuntimeError
@@ -48,7 +48,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         .get(..6)
         .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
     {
-        let mut rows = store.query::<Rows>(&query, arguments).await?;
+        let mut rows = store.sql_query::<Rows>(&query, arguments).await?;
         Ok(match rows.rows.len().cmp(&1) {
             Ordering::Equal => {
                 let mut row = rows.rows.pop().unwrap().values;
@@ -82,6 +82,10 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
                 .into(),
         })
     } else {
-        Ok(store.query::<usize>(&query, arguments).await.is_ok().into())
+        Ok(store
+            .sql_query::<usize>(&query, arguments)
+            .await
+            .is_ok()
+            .into())
     }
 }

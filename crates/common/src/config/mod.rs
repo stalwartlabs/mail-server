@@ -14,7 +14,8 @@ use hyper::{
     HeaderMap,
 };
 use ring::signature::{EcdsaKeyPair, RsaKeyPair};
-use store::{BlobBackend, BlobStore, FtsStore, LookupStore, Store, Stores};
+use spamfilter::SpamFilterConfig;
+use store::{BlobBackend, BlobStore, FtsStore, InMemoryStore, Store, Stores};
 use telemetry::Metrics;
 use utils::config::{utils::AsKey, Config};
 
@@ -35,10 +36,11 @@ pub mod network;
 pub mod scripts;
 pub mod server;
 pub mod smtp;
+pub mod spamfilter;
 pub mod storage;
 pub mod telemetry;
 
-pub(crate) const CONNECTION_VARS: &[u32; 7] = &[
+pub(crate) const CONNECTION_VARS: &[u32; 9] = &[
     V_LISTENER,
     V_REMOTE_IP,
     V_REMOTE_PORT,
@@ -46,6 +48,8 @@ pub(crate) const CONNECTION_VARS: &[u32; 7] = &[
     V_LOCAL_PORT,
     V_PROTOCOL,
     V_TLS,
+    V_ASN,
+    V_COUNTRY,
 ];
 
 impl Core {
@@ -107,7 +111,7 @@ impl Core {
             .value_require("storage.lookup")
             .map(|id| id.to_string())
             .and_then(|id| {
-                if let Some(store) = stores.lookup_stores.get(&id) {
+                if let Some(store) = stores.in_memory_stores.get(&id) {
                     store.clone().into()
                 } else {
                     config.new_parse_error(
@@ -157,12 +161,12 @@ impl Core {
         // If any of the stores are missing, disable all stores to avoid data loss
         if matches!(data, Store::None)
             || matches!(&blob.backend, BlobBackend::Store(Store::None))
-            || matches!(lookup, LookupStore::Store(Store::None))
+            || matches!(lookup, InMemoryStore::Store(Store::None))
             || matches!(fts, FtsStore::Store(Store::None))
         {
             data = Store::default();
             blob = BlobStore::default();
-            lookup = LookupStore::default();
+            lookup = InMemoryStore::default();
             fts = FtsStore::default();
             config.new_build_error(
                 "storage.*",
@@ -181,6 +185,7 @@ impl Core {
             oauth: OAuthConfig::parse(config),
             acme: AcmeProviders::parse(config),
             metrics: Metrics::parse(config),
+            spam: SpamFilterConfig::parse(config).await,
             storage: Storage {
                 data,
                 blob,
@@ -191,7 +196,7 @@ impl Core {
                 purge_schedules: stores.purge_schedules,
                 config: config_manager,
                 stores: stores.stores,
-                lookups: stores.lookup_stores,
+                lookups: stores.in_memory_stores,
                 blobs: stores.blob_stores,
                 ftss: stores.fts_stores,
             },

@@ -319,7 +319,7 @@ impl BootManager {
                         config.keys.insert(item.key.clone(), item.value.clone());
                     }
 
-                    if let Err(err) = manager.set(insert_keys).await {
+                    if let Err(err) = manager.set(insert_keys, true).await {
                         config
                             .new_build_error("*", format!("Failed to update configuration: {err}"));
                     }

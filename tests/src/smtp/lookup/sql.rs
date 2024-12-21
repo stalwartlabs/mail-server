@@ -48,7 +48,6 @@ emails = "SELECT address FROM emails WHERE name = ? AND type != 'list' ORDER BY 
 verify = "SELECT address FROM emails WHERE address LIKE '%' || ? || '%' AND type = 'primary' ORDER BY address LIMIT 5"
 expand = "SELECT p.address FROM emails AS p JOIN emails AS l ON p.name = l.name WHERE p.type = 'primary' AND l.address = ? AND l.type = 'list' ORDER BY p.address LIMIT 50"
 domains = "SELECT 1 FROM emails WHERE address LIKE '%@' || ? LIMIT 1"
-is_ip_allowed = "SELECT addr FROM allowed_ips WHERE addr = ? LIMIT 1"
 
 [directory."sql"]
 type = "sql"
@@ -73,7 +72,7 @@ relay = false
 errors.wait = "5ms"
 
 [session.extensions]
-requiretls = [{if = "key_exists('sql/is_ip_allowed', remote_ip)", then = true},
+requiretls = [{if = "sql_query('sql', 'SELECT addr FROM allowed_ips WHERE addr = ? LIMIT 1', remote_ip)", then = true},
               {else = false}]
 expn = true
 vrfy = true
@@ -119,7 +118,7 @@ async fn lookup_sql() {
 
     // Obtain directory handle
     let handle = DirectoryStore {
-        store: core.storage.lookups.get("sql").unwrap().clone(),
+        store: core.storage.stores.get("sql").unwrap().clone(),
     };
 
     let test = TestSMTP::from_core(core);
@@ -140,18 +139,6 @@ async fn lookup_sql() {
     handle
         .create_test_user_with_email("mike@foobar.net", "098765", "Mike")
         .await;
-    /*handle
-        .link_test_address("jane@foobar.org", "sales@foobar.org", "list")
-        .await;
-    handle
-        .link_test_address("john@foobar.org", "sales@foobar.org", "list")
-        .await;
-    handle
-        .link_test_address("bill@foobar.org", "sales@foobar.org", "list")
-        .await;
-    handle
-        .link_test_address("mike@foobar.net", "support@foobar.org", "list")
-        .await;*/
 
     for query in [
         "CREATE TABLE domains (name TEXT PRIMARY KEY, description TEXT);",
@@ -162,7 +149,7 @@ async fn lookup_sql() {
     ] {
         handle
             .store
-            .query::<usize>(query, Vec::new())
+            .sql_query::<usize>(query, Vec::new())
             .await
             .unwrap();
     }

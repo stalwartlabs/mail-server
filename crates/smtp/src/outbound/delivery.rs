@@ -11,14 +11,14 @@ use crate::outbound::mta_sts::lookup::MtaStsLookup;
 use crate::outbound::mta_sts::verify::VerifyPolicy;
 use crate::outbound::{client::StartTlsResult, dane::verify::TlsaVerify};
 use crate::queue::dsn::SendDsn;
-use crate::queue::spool::SmtpSpool;
+use crate::queue::spool::{SmtpSpool, LOCK_EXPIRY};
 use crate::queue::throttle::IsAllowed;
 use crate::reporting::SmtpReporting;
 use common::config::{
     server::ServerProtocol,
     smtp::{queue::RequireOptional, report::AggregateFrequency},
 };
-use common::ipc::{OnHold, PolicyType, QueueEvent, TlsEvent};
+use common::ipc::{OnHold, PolicyType, QueueEvent, QueuedMessage, TlsEvent};
 use common::Server;
 use mail_auth::{
     mta_sts::TlsRpt,
@@ -41,14 +41,21 @@ use super::{lookup::ToNextHop, mta_sts, session::SessionParams, NextHop, TlsStra
 use crate::queue::{throttle, DeliveryAttempt, Domain, Error, QueueEnvelope, Status};
 
 impl DeliveryAttempt {
-    pub async fn try_deliver(mut self, server: Server) {
-        tokio::spawn(async move {
-            // Lock message
-            if let Some(event) = server.try_lock_event(self.event).await {
-                self.event = event;
+    pub fn try_deliver(mut self, server: Server) -> Option<OnHold<QueuedMessage>> {
+        // Global concurrency limiter
+        if let Err(limiter) = server.is_outbound_allowed(&mut self.in_flight) {
+            return Some(OnHold {
+                next_due: None,
+                limiters: vec![limiter],
+                message: self.event,
+            });
+        }
 
-                // Fetch message
-                if let Some(mut message) = server.read_message(self.event.queue_id).await {
+        tokio::spawn(async move {
+            // Lock queue event
+            let queue_id = self.event.queue_id;
+            let queue_event = if server.try_lock_event(queue_id).await {
+                if let Some(mut message) = server.read_message(queue_id).await {
                     // Generate span id
                     message.span_id = server.inner.data.span_id_gen.generate().unwrap_or_else(now);
                     let span_id = message.span_id;
@@ -82,13 +89,18 @@ impl DeliveryAttempt {
 
                     // Attempt delivery
                     let start_time = Instant::now();
-                    self.deliver_task(server, message).await;
+                    let queue_event = self.deliver_task(server.clone(), message).await;
 
                     trc::event!(
                         Delivery(DeliveryEvent::AttemptEnd),
                         SpanId = span_id,
                         Elapsed = start_time.elapsed(),
                     );
+
+                    // Unlock event
+                    server.unlock_event(queue_id).await;
+
+                    queue_event
                 } else {
                     // Message no longer exists, delete queue event.
                     let mut batch = BatchBuilder::new();
@@ -104,15 +116,38 @@ impl DeliveryAttempt {
                             .details("Failed to delete queue event.")
                             .caused_by(trc::location!()));
                     }
+
+                    // Unlock event
+                    server.unlock_event(queue_id).await;
+
+                    QueueEvent::WorkerDone(queue_id)
                 }
+            } else {
+                QueueEvent::OnHold(OnHold {
+                    next_due: Some(LOCK_EXPIRY + 1),
+                    limiters: vec![],
+                    message: self.event,
+                })
+            };
+
+            // Notify queue manager
+            if server.inner.ipc.queue_tx.send(queue_event).await.is_err() {
+                trc::event!(
+                    Server(ServerEvent::ThreadError),
+                    Reason = "Channel closed.",
+                    CausedBy = trc::location!(),
+                );
             }
         });
+
+        None
     }
 
-    async fn deliver_task(mut self, server: Server, mut message: Message) {
+    async fn deliver_task(mut self, server: Server, mut message: Message) -> QueueEvent {
         // Check that the message still has recipients to be delivered
         let has_pending_delivery = message.has_pending_delivery();
         let span_id = message.span_id;
+        let queue_id = message.queue_id;
 
         // Send any due Delivery Status Notifications
         server.send_dsn(&mut message).await;
@@ -125,22 +160,7 @@ impl DeliveryAttempt {
                 message
                     .save_changes(&server, self.event.due.into(), due.into())
                     .await;
-                if server
-                    .inner
-                    .ipc
-                    .queue_tx
-                    .send(QueueEvent::Reload)
-                    .await
-                    .is_err()
-                {
-                    trc::event!(
-                        Server(ServerEvent::ThreadError),
-                        Reason = "Channel closed.",
-                        CausedBy = trc::location!(),
-                        SpanId = span_id
-                    );
-                }
-                return;
+                return QueueEvent::Refresh(queue_id.into());
             }
         } else {
             trc::event!(
@@ -151,23 +171,8 @@ impl DeliveryAttempt {
 
             // All message recipients expired, do not re-queue. (DSN has been already sent)
             message.remove(&server, self.event.due).await;
-            if server
-                .inner
-                .ipc
-                .queue_tx
-                .send(QueueEvent::Reload)
-                .await
-                .is_err()
-            {
-                trc::event!(
-                    Server(ServerEvent::ThreadError),
-                    Reason = "Channel closed.",
-                    CausedBy = trc::location!(),
-                    SpanId = span_id
-                );
-            }
 
-            return;
+            return QueueEvent::WorkerDone(queue_id);
         }
 
         // Throttle sender
@@ -212,19 +217,11 @@ impl DeliveryAttempt {
                             .save_changes(&server, self.event.due.into(), next_event.into())
                             .await;
 
-                        QueueEvent::Reload
+                        QueueEvent::Refresh(queue_id.into())
                     }
                 };
 
-                if server.inner.ipc.queue_tx.send(event).await.is_err() {
-                    trc::event!(
-                        Server(ServerEvent::ThreadError),
-                        Reason = "Channel closed.",
-                        CausedBy = trc::location!(),
-                        SpanId = span_id
-                    );
-                }
-                return;
+                return event;
             }
         }
 
@@ -1329,7 +1326,7 @@ impl DeliveryAttempt {
         server.send_dsn(&mut message).await;
 
         // Notify queue manager
-        let result = if !on_hold.is_empty() {
+        if !on_hold.is_empty() {
             // Save changes to disk
             let next_due = message.next_event_after(now());
             message.save_changes(&server, None, None).await;
@@ -1358,7 +1355,7 @@ impl DeliveryAttempt {
                 .save_changes(&server, self.event.due.into(), due.into())
                 .await;
 
-            QueueEvent::Reload
+            QueueEvent::Refresh(queue_id.into())
         } else {
             trc::event!(
                 Delivery(DeliveryEvent::Completed),
@@ -1369,15 +1366,7 @@ impl DeliveryAttempt {
             // Delete message from queue
             message.remove(&server, self.event.due).await;
 
-            QueueEvent::Reload
-        };
-        if server.inner.ipc.queue_tx.send(result).await.is_err() {
-            trc::event!(
-                Server(ServerEvent::ThreadError),
-                Reason = "Channel closed.",
-                CausedBy = trc::location!(),
-                SpanId = span_id
-            );
+            QueueEvent::WorkerDone(queue_id)
         }
     }
 }

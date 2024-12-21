@@ -20,15 +20,18 @@ use smtp::core::Session;
 
 const CONFIG: &str = r#"
 [storage]
-data = "sqlite"
-lookup = "sqlite"
-blob = "sqlite"
-fts = "sqlite"
+data = "rocksdb"
+lookup = "rocksdb"
+blob = "rocksdb"
+fts = "rocksdb"
 directory = "local"
 
-[store."sqlite"]
-type = "sqlite"
+[store."rocksdb"]
+type = "rocksdb"
 path = "{TMP}/queue.db"
+
+[spam-filter]
+enable = false
 
 [directory."local"]
 type = "memory"
@@ -125,12 +128,7 @@ async fn data() {
 
     // Send broken message
     session
-        .send_message(
-            "john@doe.org",
-            &["bill@foobar.org"],
-            "From: john",
-            "550 5.7.7",
-        )
+        .send_message("john@doe.org", &["bill@foobar.org"], "invalid", "550 5.7.7")
         .await;
 
     // Naive Loop detection

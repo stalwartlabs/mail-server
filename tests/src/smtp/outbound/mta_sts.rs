@@ -101,8 +101,7 @@ async fn mta_sts_verify() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local
         .queue_receiver
         .expect_message()
@@ -111,7 +110,7 @@ async fn mta_sts_verify() {
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("Record not found");
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_done();
 
     // Expect TLS failure report
     let report = local.report_receiver.read_report().await.unwrap_tls();
@@ -139,8 +138,7 @@ async fn mta_sts_verify() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local
         .queue_receiver
         .expect_message()
@@ -149,7 +147,7 @@ async fn mta_sts_verify() {
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("No 'mx' entries found");
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_done();
 
     // Expect TLS failure report
     let report = local.report_receiver.read_report().await.unwrap_tls();
@@ -174,8 +172,7 @@ async fn mta_sts_verify() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     local
         .queue_receiver
         .expect_message()
@@ -184,7 +181,7 @@ async fn mta_sts_verify() {
         .await
         .assert_contains("<bill@foobar.org> (MTA-STS failed to authenticate")
         .assert_contains("not authorized by policy");
-    local.queue_receiver.read_event().await.assert_reload();
+    local.queue_receiver.read_event().await.assert_done();
 
     // Expect TLS failure report
     let report = local.report_receiver.read_report().await.unwrap_tls();
@@ -225,9 +222,8 @@ async fn mta_sts_verify() {
         .queue_receiver
         .expect_message_then_deliver()
         .await
-        .try_deliver(core.clone())
-        .await;
-    local.queue_receiver.read_event().await.assert_reload();
+        .try_deliver(core.clone());
+    local.queue_receiver.read_event().await.assert_done();
     remote
         .queue_receiver
         .expect_message()

@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use ahash::{AHashMap, AHashSet};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GlobPattern {
     pattern: Vec<PatternChar>,
@@ -61,6 +63,36 @@ impl GlobPattern {
         }
     }
 
+    pub fn try_compile(pattern: &str, to_lower: bool) -> Result<Self, String> {
+        // Detect if the key is a glob pattern
+        let mut last_ch = '\0';
+        let mut has_escape = false;
+        let mut is_glob = false;
+        for ch in pattern.chars() {
+            match ch {
+                '\\' => {
+                    has_escape = true;
+                }
+                '*' | '?' if last_ch != '\\' => {
+                    is_glob = true;
+                }
+                _ => {}
+            }
+
+            last_ch = ch;
+        }
+
+        if is_glob {
+            Ok(GlobPattern::compile(pattern, to_lower))
+        } else {
+            Err(if has_escape {
+                pattern.replace('\\', "")
+            } else {
+                pattern.to_string()
+            })
+        }
+    }
+
     // Credits: Algorithm ported from https://research.swtch.com/glob
     pub fn matches(&self, value: &str) -> bool {
         let value = if self.to_lower {
@@ -106,5 +138,72 @@ impl GlobPattern {
             return false;
         }
         true
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GlobSet {
+    entries: AHashSet<String>,
+    patterns: Vec<GlobPattern>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GlobMap<V> {
+    entries: AHashMap<String, V>,
+    patterns: Vec<(GlobPattern, V)>,
+}
+
+impl GlobSet {
+    pub fn new() -> Self {
+        GlobSet::default()
+    }
+
+    pub fn insert(&mut self, pattern: &str) {
+        match GlobPattern::try_compile(pattern, false) {
+            Ok(glob) => {
+                self.patterns.push(glob);
+            }
+            Err(entry) => {
+                self.entries.insert(entry);
+            }
+        }
+    }
+
+    pub fn contains(&self, key: &str) -> bool {
+        self.entries.contains(key) || self.patterns.iter().any(|pattern| pattern.matches(key))
+    }
+}
+
+impl<V> GlobMap<V> {
+    pub fn new() -> Self {
+        GlobMap {
+            entries: AHashMap::new(),
+            patterns: Vec::new(),
+        }
+    }
+
+    pub fn insert(&mut self, pattern: &str, value: V) {
+        match GlobPattern::try_compile(pattern, false) {
+            Ok(glob) => {
+                self.patterns.push((glob, value));
+            }
+            Err(entry) => {
+                self.entries.insert(entry, value);
+            }
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&V> {
+        self.entries.get(key).or_else(|| {
+            self.patterns
+                .iter()
+                .find_map(|(pattern, value)| pattern.matches(key).then_some(value))
+        })
+    }
+}
+
+impl<V> Default for GlobMap<V> {
+    fn default() -> Self {
+        GlobMap::new()
     }
 }

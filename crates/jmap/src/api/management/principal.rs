@@ -626,7 +626,7 @@ impl PrincipalManager for Server {
                     self.core
                         .storage
                         .config
-                        .set([("authentication.fallback-admin.secret", password)])
+                        .set([("authentication.fallback-admin.secret", password)], true)
                         .await?;
 
                     // Remove entries from cache

@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::listener::{SessionResult, SessionStream};
+use common::{
+    listener::{SessionResult, SessionStream},
+    KV_RATE_LIMIT_IMAP,
+};
 use imap_proto::receiver::{self, Request};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::query::Filter;
@@ -186,7 +189,8 @@ impl<T: SessionStream> Session<T> {
                             .storage
                             .lookup
                             .is_rate_allowed(
-                                format!("ireq:{}", access_token.primary_id()).as_bytes(),
+                                KV_RATE_LIMIT_IMAP,
+                                &access_token.primary_id().to_be_bytes(),
                                 rate,
                                 true,
                             )

@@ -25,6 +25,7 @@ use crate::{
 use self::limiter::{ConcurrencyLimiter, InFlight};
 
 pub mod acme;
+pub mod asn;
 pub mod blocked;
 pub mod limiter;
 pub mod listen;
@@ -233,6 +234,10 @@ impl<T: SessionStream> ResolveVariable for SessionData<T> {
             V_TLS => self.stream.is_tls().into(),
             _ => crate::expr::Variable::default(),
         }
+    }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
     }
 }
 

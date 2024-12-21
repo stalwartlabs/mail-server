@@ -164,6 +164,9 @@ impl Expression {
                 ExpressionItem::Variable(v) => {
                     stack.push(resolver.resolve_variable(*v));
                 }
+                ExpressionItem::Global(v) => {
+                    stack.push(resolver.resolve_global(v));
+                }
                 ExpressionItem::Constant(val) => {
                     stack.push(Variable::from(val));
                 }

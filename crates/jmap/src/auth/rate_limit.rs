@@ -7,8 +7,10 @@
 use std::{net::IpAddr, sync::Arc};
 
 use common::{
+    ip_to_bytes,
     listener::limiter::{ConcurrencyLimiter, InFlight},
-    ConcurrencyLimiters, Server,
+    ConcurrencyLimiters, Server, KV_RATE_LIMIT_HTTP_ANONYM, KV_RATE_LIMIT_JMAP,
+    KV_RATE_LIMIT_JMAP_AUTH,
 };
 use directory::Permission;
 use trc::AddContext;
@@ -59,7 +61,8 @@ impl RateLimiter for Server {
                 .storage
                 .lookup
                 .is_rate_allowed(
-                    format!("j:{}", access_token.primary_id).as_bytes(),
+                    KV_RATE_LIMIT_JMAP,
+                    &access_token.primary_id.to_be_bytes(),
                     rate,
                     false,
                 )
@@ -91,7 +94,7 @@ impl RateLimiter for Server {
                 .core
                 .storage
                 .lookup
-                .is_rate_allowed(format!("jreq:{}", addr).as_bytes(), rate, false)
+                .is_rate_allowed(KV_RATE_LIMIT_HTTP_ANONYM, &ip_to_bytes(addr), rate, false)
                 .await
                 .caused_by(trc::location!())?
                 .is_some()
@@ -122,7 +125,7 @@ impl RateLimiter for Server {
                 .core
                 .storage
                 .lookup
-                .is_rate_allowed(format!("jauth:{}", addr).as_bytes(), rate, true)
+                .is_rate_allowed(KV_RATE_LIMIT_JMAP_AUTH, &ip_to_bytes(addr), rate, true)
                 .await
                 .caused_by(trc::location!())?
                 .is_some()
@@ -139,7 +142,7 @@ impl RateLimiter for Server {
                 .core
                 .storage
                 .lookup
-                .is_rate_allowed(format!("jauth:{}", addr).as_bytes(), rate, false)
+                .is_rate_allowed(KV_RATE_LIMIT_JMAP_AUTH, &ip_to_bytes(addr), rate, false)
                 .await
                 .caused_by(trc::location!())?
                 .is_some()

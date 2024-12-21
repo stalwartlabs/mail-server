@@ -11,7 +11,7 @@ use common::{
         server::ServerProtocol,
         smtp::queue::{RelayHost, RequireOptional},
     },
-    ipc::QueueEventLock,
+    ipc::QueuedMessage,
 };
 use mail_send::Credentials;
 use smtp_proto::{Response, Severity};
@@ -204,7 +204,7 @@ impl From<mta_sts::Error> for Status<(), Error> {
 }
 
 impl DeliveryAttempt {
-    pub fn new(event: QueueEventLock) -> Self {
+    pub fn new(event: QueuedMessage) -> Self {
         DeliveryAttempt {
             in_flight: Vec::new(),
             event,

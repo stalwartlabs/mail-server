@@ -8,6 +8,7 @@ use std::{borrow::Cow, future::Future, sync::Arc, time::Instant};
 
 use common::{scripts::plugins::PluginContext, Server};
 use mail_auth::common::headers::HeaderWriter;
+use mail_parser::{Encoding, Message, MessagePart, PartType};
 use sieve::{
     compiler::grammar::actions::action_redirect::{ByMode, ByTime, Notify, NotifyItem, Ret},
     Event, Input, MatchAs, Recipient, Sieve,
@@ -47,7 +48,19 @@ impl RunScript for Server {
             .core
             .sieve
             .trusted_runtime
-            .filter(params.message.unwrap_or_default())
+            .filter_parsed(params.message.unwrap_or_else(|| Message {
+                parts: vec![MessagePart {
+                    headers: vec![],
+                    is_encoding_problem: false,
+                    body: PartType::Text("".into()),
+                    encoding: Encoding::None,
+                    offset_header: 0,
+                    offset_body: 0,
+                    offset_end: 0,
+                }],
+                raw_message: b""[..].into(),
+                ..Default::default()
+            }))
             .with_vars_env(params.variables)
             .with_envelope_list(params.envelope)
             .with_user_address(&params.from_addr)
@@ -355,33 +368,6 @@ impl RunScript for Server {
                         Reason = err.to_string(),
                     );
                     break;
-                }
-            }
-        }
-
-        // Assert global variables
-        #[cfg(feature = "test_mode")]
-        if let Some(expected_variables) = params.expected_variables {
-            for var_name in instance.global_variable_names() {
-                if instance.global_variable(var_name).unwrap().to_bool()
-                    && !expected_variables.contains_key(var_name)
-                {
-                    panic!(
-                        "Unexpected variable {var_name:?} with value {:?}\nExpected {:?}\nFound: {:?}",
-                        instance.global_variable(var_name).unwrap(),
-                        expected_variables.keys().collect::<Vec<_>>(),
-                        instance.global_variable_names().collect::<Vec<_>>()
-                    );
-                }
-            }
-
-            for (name, expected) in &expected_variables {
-                if let Some(value) = instance.global_variable(name.as_str()) {
-                    assert_eq!(value, expected, "Variable {name:?} has unexpected value");
-                } else {
-                    panic!("Missing variable {name:?} with value {expected:?}\nExpected {:?}\nFound: {:?}", 
-                    expected_variables.keys().collect::<Vec<_>>(),
-                    instance.global_variable_names().collect::<Vec<_>>());
                 }
             }
         }

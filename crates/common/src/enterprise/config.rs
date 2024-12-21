@@ -8,7 +8,7 @@
  *
  */
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use directory::{backend::internal::manage::ManageDirectory, Type};
@@ -27,7 +27,7 @@ use crate::{
 
 use super::{
     license::LicenseKey, llm::AiApiConfig, AlertContent, AlertContentToken, AlertMethod,
-    Enterprise, MetricAlert, MetricStore, TraceStore, Undelete,
+    Enterprise, MetricAlert, MetricStore, SpamFilterLlmConfig, TraceStore, Undelete,
 };
 
 impl Enterprise {
@@ -92,10 +92,13 @@ impl Enterprise {
                 .keys
                 .insert("enterprise.license-key".to_string(), license.clone());
             if let Err(err) = config_manager
-                .set([ConfigKey {
-                    key: "enterprise.license-key".to_string(),
-                    value: license.to_string(),
-                }])
+                .set(
+                    [ConfigKey {
+                        key: "enterprise.license-key".to_string(),
+                        value: license.to_string(),
+                    }],
+                    true,
+                )
                 .await
             {
                 trc::error!(err
@@ -183,7 +186,7 @@ impl Enterprise {
             .collect::<Vec<_>>()
         {
             if let Some(api) = AiApiConfig::parse(config, &id) {
-                ai_apis.insert(id, api);
+                ai_apis.insert(id, api.into());
             }
         }
 
@@ -197,8 +200,71 @@ impl Enterprise {
             trace_store,
             metrics_store,
             metrics_alerts: parse_metric_alerts(config),
+            spam_filter_llm: SpamFilterLlmConfig::parse(config, &ai_apis),
             ai_apis,
         })
+    }
+}
+
+impl SpamFilterLlmConfig {
+    pub fn parse(config: &mut Config, models: &AHashMap<String, Arc<AiApiConfig>>) -> Option<Self> {
+        if !config
+            .property_or_default::<bool>("spam-filter.llm.enable", "false")
+            .unwrap_or_default()
+        {
+            return None;
+        }
+        let model = config.value_require_non_empty("spam-filter.llm.model")?;
+        let model = if let Some(model) = models.get(model) {
+            model.clone()
+        } else {
+            let message = format!("Model {model:?} not found in AI API configuration");
+            config.new_build_error("spam-filter.llm.model", message);
+            return None;
+        };
+
+        let llm = SpamFilterLlmConfig {
+            model,
+            temperature: config
+                .property_or_default("spam-filter.llm.temperature", "0.5")
+                .unwrap_or(0.5),
+            prompt: config
+                .value_require_non_empty("spam-filter.llm.prompt")?
+                .to_string(),
+            separator: config
+                .value_require_non_empty("spam-filter.llm.separator")
+                .unwrap_or_default()
+                .chars()
+                .next()
+                .unwrap_or(','),
+            index_category: config
+                .property("spam-filter.llm.index.category")
+                .unwrap_or_default(),
+            index_confidence: config.property("spam-filter.llm.index.confidence"),
+            index_explanation: config.property("spam-filter.llm.index.explanation"),
+            categories: config
+                .values("spam-filter.llm.categories")
+                .map(|(_, v)| v.trim().to_uppercase())
+                .collect(),
+            confidence: config
+                .values("spam-filter.llm.confidence")
+                .map(|(_, v)| v.trim().to_uppercase())
+                .collect(),
+        };
+
+        if llm.categories.is_empty() {
+            config.new_build_error("spam-filter.llm.categories", "No categories defined");
+            return None;
+        }
+        if llm.index_confidence.is_some() && llm.confidence.is_empty() {
+            config.new_build_error(
+                "spam-filter.llm.confidence",
+                "Confidence index is defined but no confidence values are provided",
+            );
+            return None;
+        }
+
+        llm.into()
     }
 }
 

@@ -4,14 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod bayes;
 pub mod dns;
 pub mod exec;
 pub mod headers;
 pub mod http;
 pub mod llm_prompt;
 pub mod lookup;
-pub mod pyzor;
 pub mod query;
 pub mod text;
 
@@ -33,22 +31,16 @@ pub struct PluginContext<'x> {
     pub arguments: Vec<Variable>,
 }
 
-const PLUGINS_REGISTER: [RegisterPluginFnc; 19] = [
+const PLUGINS_REGISTER: [RegisterPluginFnc; 13] = [
     query::register,
     exec::register,
     lookup::register,
     lookup::register_get,
     lookup::register_set,
-    lookup::register_remote,
     lookup::register_local_domain,
     dns::register,
     dns::register_exists,
     http::register_header,
-    bayes::register_train,
-    bayes::register_untrain,
-    bayes::register_classify,
-    bayes::register_is_balanced,
-    pyzor::register,
     headers::register,
     text::register_tokenize,
     text::register_domain_part,
@@ -74,7 +66,7 @@ impl RegisterSievePlugins for FunctionMap {
     }
 
     fn register_plugins_untrusted(mut self) -> Self {
-        llm_prompt::register(18, &mut self);
+        llm_prompt::register(12, &mut self);
         self
     }
 }
@@ -93,20 +85,14 @@ impl Core {
             2 => lookup::exec(ctx).await,
             3 => lookup::exec_get(ctx).await,
             4 => lookup::exec_set(ctx).await,
-            5 => lookup::exec_remote(ctx).await,
-            6 => lookup::exec_local_domain(ctx).await,
-            7 => dns::exec(ctx).await,
-            8 => dns::exec_exists(ctx).await,
-            9 => http::exec_header(ctx).await,
-            10 => bayes::exec_train(ctx).await,
-            11 => bayes::exec_untrain(ctx).await,
-            12 => bayes::exec_classify(ctx).await,
-            13 => bayes::exec_is_balanced(ctx).await,
-            14 => pyzor::exec(ctx).await,
-            15 => headers::exec(ctx),
-            16 => text::exec_tokenize(ctx),
-            17 => text::exec_domain_part(ctx),
-            18 => llm_prompt::exec(ctx).await,
+            5 => lookup::exec_local_domain(ctx).await,
+            6 => dns::exec(ctx).await,
+            7 => dns::exec_exists(ctx).await,
+            8 => http::exec_header(ctx).await,
+            9 => headers::exec(ctx),
+            10 => text::exec_tokenize(ctx),
+            11 => text::exec_domain_part(ctx),
+            12 => llm_prompt::exec(ctx).await,
             _ => unreachable!(),
         };
 

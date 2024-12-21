@@ -10,7 +10,7 @@ use directory::{backend::internal::manage::ManageDirectory, Directory, Type};
 use sieve::Sieve;
 use store::{
     write::{QueueClass, ValueClass},
-    BlobStore, FtsStore, IterateParams, LookupStore, Store, ValueKey,
+    BlobStore, FtsStore, InMemoryStore, IterateParams, Store, ValueKey,
 };
 use trc::AddContext;
 
@@ -39,7 +39,7 @@ impl Server {
     }
 
     #[inline(always)]
-    pub fn lookup_store(&self) -> &LookupStore {
+    pub fn in_memory_store(&self) -> &InMemoryStore {
         &self.core.storage.lookup
     }
 
@@ -66,7 +66,7 @@ impl Server {
         })
     }
 
-    pub fn get_lookup_store(&self, name: &str, session_id: u64) -> &LookupStore {
+    pub fn get_in_memory_store(&self, name: &str, session_id: u64) -> &InMemoryStore {
         self.core.storage.lookups.get(name).unwrap_or_else(|| {
             if !name.is_empty() {
                 trc::event!(
@@ -77,6 +77,20 @@ impl Server {
             }
 
             &self.core.storage.lookup
+        })
+    }
+
+    pub fn get_data_store(&self, name: &str, session_id: u64) -> &Store {
+        self.core.storage.stores.get(name).unwrap_or_else(|| {
+            if !name.is_empty() {
+                trc::event!(
+                    Eval(trc::EvalEvent::StoreNotFound),
+                    Id = name.to_string(),
+                    SpanId = session_id,
+                );
+            }
+
+            &self.core.storage.data
         })
     }
 

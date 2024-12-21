@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use mail_send::smtp::tls::build_tls_connector;
-use nlp::bayes::cache::BayesTokenCache;
 use parking_lot::RwLock;
 use utils::{
     config::Config,
@@ -105,18 +104,8 @@ impl Data {
                 shard_amount,
             ),
             smtp_connectors: TlsConnectors::default(),
-            bayes_cache: BayesTokenCache::new(
-                config
-                    .property_or_default("cache.bayes.capacity", "8192")
-                    .unwrap_or(8192),
-                config
-                    .property_or_default("cache.bayes.ttl.positive", "1h")
-                    .unwrap_or_else(|| Duration::from_secs(3600)),
-                config
-                    .property_or_default("cache.bayes.ttl.negative", "1h")
-                    .unwrap_or_else(|| Duration::from_secs(3600)),
-            ),
             remote_lists: Default::default(),
+            asn_geo_data: Default::default(),
         }
     }
 }
@@ -147,11 +136,7 @@ impl Default for Data {
             smtp_session_throttle: Default::default(),
             smtp_queue_throttle: Default::default(),
             smtp_connectors: Default::default(),
-            bayes_cache: BayesTokenCache::new(
-                8192,
-                Duration::from_secs(3600),
-                Duration::from_secs(3600),
-            ),
+            asn_geo_data: Default::default(),
         }
     }
 }

@@ -54,7 +54,7 @@ pub const THROTTLE_HELO_DOMAIN: u16 = 1 << 9;
 
 pub(crate) const RCPT_DOMAIN_VARS: &[u32; 1] = &[V_RECIPIENT_DOMAIN];
 
-pub(crate) const SMTP_EHLO_VARS: &[u32; 8] = &[
+pub(crate) const SMTP_EHLO_VARS: &[u32; 10] = &[
     V_LISTENER,
     V_REMOTE_IP,
     V_REMOTE_PORT,
@@ -63,8 +63,10 @@ pub(crate) const SMTP_EHLO_VARS: &[u32; 8] = &[
     V_PROTOCOL,
     V_TLS,
     V_HELO_DOMAIN,
+    V_ASN,
+    V_COUNTRY,
 ];
-pub(crate) const SMTP_MAIL_FROM_VARS: &[u32; 10] = &[
+pub(crate) const SMTP_MAIL_FROM_VARS: &[u32; 12] = &[
     V_LISTENER,
     V_REMOTE_IP,
     V_REMOTE_PORT,
@@ -75,8 +77,10 @@ pub(crate) const SMTP_MAIL_FROM_VARS: &[u32; 10] = &[
     V_SENDER,
     V_SENDER_DOMAIN,
     V_AUTHENTICATED_AS,
+    V_ASN,
+    V_COUNTRY,
 ];
-pub(crate) const SMTP_RCPT_TO_VARS: &[u32; 15] = &[
+pub(crate) const SMTP_RCPT_TO_VARS: &[u32; 17] = &[
     V_SENDER,
     V_SENDER_DOMAIN,
     V_RECIPIENTS,
@@ -92,6 +96,8 @@ pub(crate) const SMTP_RCPT_TO_VARS: &[u32; 15] = &[
     V_TLS,
     V_PRIORITY,
     V_HELO_DOMAIN,
+    V_ASN,
+    V_COUNTRY,
 ];
 pub(crate) const SMTP_QUEUE_HOST_VARS: &[u32; 14] = &[
     V_SENDER,

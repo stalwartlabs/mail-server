@@ -7,59 +7,33 @@
 use trc::AddContext;
 use utils::config::Rate;
 
-use crate::{write::LookupClass, Row};
+use crate::write::LookupClass;
 #[allow(unused_imports)]
 use crate::{
     write::{
         key::{DeserializeBigEndian, KeySerializer},
         now, BatchBuilder, Operation, ValueClass, ValueOp,
     },
-    Deserialize, IterateParams, LookupStore, QueryResult, Store, Value, ValueKey, U64_LEN,
+    Deserialize, InMemoryStore, IterateParams, QueryResult, Store, Value, ValueKey, U64_LEN,
 };
 
-impl LookupStore {
-    #[allow(unreachable_patterns)]
-    #[allow(unused_variables)]
-    pub async fn query<T: QueryResult + std::fmt::Debug>(
-        &self,
-        query: &str,
-        params: Vec<Value<'_>>,
-    ) -> trc::Result<T> {
-        let result = match self {
-            #[cfg(feature = "sqlite")]
-            LookupStore::Store(Store::SQLite(store)) => store.query(query, &params).await,
-            #[cfg(feature = "postgres")]
-            LookupStore::Store(Store::PostgreSQL(store)) => store.query(query, &params).await,
-            #[cfg(feature = "mysql")]
-            LookupStore::Store(Store::MySQL(store)) => store.query(query, &params).await,
-            _ => Err(trc::StoreEvent::NotSupported.into_err()),
-        };
+pub struct KeyValue<T> {
+    key: Vec<u8>,
+    value: T,
+    expires: Option<u64>,
+}
 
-        trc::event!(
-            Store(trc::StoreEvent::SqlQuery),
-            Details = query.to_string(),
-            Value = params.as_slice(),
-            Result = &result,
-        );
-
-        result.caused_by(trc::location!())
-    }
-
-    pub async fn key_set(
-        &self,
-        key: Vec<u8>,
-        value: Vec<u8>,
-        expires: Option<u64>,
-    ) -> trc::Result<()> {
+impl InMemoryStore {
+    pub async fn key_set(&self, kv: KeyValue<Vec<u8>>) -> trc::Result<()> {
         match self {
-            LookupStore::Store(store) => {
+            InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Key(key)),
+                    class: ValueClass::Lookup(LookupClass::Key(kv.key)),
                     op: ValueOp::Set(
-                        KeySerializer::new(value.len() + U64_LEN)
-                            .write(expires.map_or(u64::MAX, |expires| now() + expires))
-                            .write(value.as_slice())
+                        KeySerializer::new(kv.value.len() + U64_LEN)
+                            .write(kv.expires.map_or(u64::MAX, |expires| now() + expires))
+                            .write(kv.value.as_slice())
                             .finalize()
                             .into(),
                     ),
@@ -67,34 +41,20 @@ impl LookupStore {
                 store.write(batch.build()).await.map(|_| ())
             }
             #[cfg(feature = "redis")]
-            LookupStore::Redis(store) => store.key_set(key, value, expires).await,
-            LookupStore::Query(lookup) => lookup
-                .store
-                .query::<usize>(
-                    &lookup.query,
-                    vec![String::from_utf8(key).unwrap_or_default().into()],
-                )
-                .await
-                .map(|_| ()),
-            LookupStore::Memory(_) => Err(trc::StoreEvent::NotSupported.into_err()),
+            InMemoryStore::Redis(store) => store.key_set(kv.key, kv.value, kv.expires).await,
+            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
         }
         .caused_by(trc::location!())
     }
 
-    pub async fn counter_incr(
-        &self,
-        key: Vec<u8>,
-        value: i64,
-        expires: Option<u64>,
-        return_value: bool,
-    ) -> trc::Result<i64> {
+    pub async fn counter_incr(&self, kv: KeyValue<i64>) -> trc::Result<i64> {
         match self {
-            LookupStore::Store(store) => {
+            InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
 
-                if let Some(expires) = expires {
+                if let Some(expires) = kv.expires {
                     batch.ops.push(Operation::Value {
-                        class: ValueClass::Lookup(LookupClass::Key(key.clone())),
+                        class: ValueClass::Lookup(LookupClass::Key(kv.key.clone())),
                         op: ValueOp::Set(
                             KeySerializer::new(U64_LEN * 2)
                                 .write(0u64)
@@ -106,34 +66,25 @@ impl LookupStore {
                 }
 
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Counter(key)),
-                    op: if return_value {
-                        ValueOp::AddAndGet(value)
-                    } else {
-                        ValueOp::AtomicAdd(value)
-                    },
+                    class: ValueClass::Lookup(LookupClass::Counter(kv.key)),
+                    op: ValueOp::AddAndGet(kv.value),
                 });
 
-                store.write(batch.build()).await.and_then(|r| {
-                    if return_value {
-                        r.last_counter_id()
-                    } else {
-                        Ok(0)
-                    }
-                })
+                store
+                    .write(batch.build())
+                    .await
+                    .and_then(|r| r.last_counter_id())
             }
             #[cfg(feature = "redis")]
-            LookupStore::Redis(store) => store.key_incr(key, value, expires).await,
-            LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::StoreEvent::NotSupported.into_err())
-            }
+            InMemoryStore::Redis(store) => store.key_incr(kv.key, kv.value, kv.expires).await,
+            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
         }
         .caused_by(trc::location!())
     }
 
     pub async fn key_delete(&self, key: Vec<u8>) -> trc::Result<()> {
         match self {
-            LookupStore::Store(store) => {
+            InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
                 batch.ops.push(Operation::Value {
                     class: ValueClass::Lookup(LookupClass::Key(key)),
@@ -142,17 +93,15 @@ impl LookupStore {
                 store.write(batch.build()).await.map(|_| ())
             }
             #[cfg(feature = "redis")]
-            LookupStore::Redis(store) => store.key_delete(key).await,
-            LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::StoreEvent::NotSupported.into_err())
-            }
+            InMemoryStore::Redis(store) => store.key_delete(key).await,
+            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
         }
         .caused_by(trc::location!())
     }
 
     pub async fn counter_delete(&self, key: Vec<u8>) -> trc::Result<()> {
         match self {
-            LookupStore::Store(store) => {
+            InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
                 batch.ops.push(Operation::Value {
                     class: ValueClass::Lookup(LookupClass::Counter(key)),
@@ -161,10 +110,8 @@ impl LookupStore {
                 store.write(batch.build()).await.map(|_| ())
             }
             #[cfg(feature = "redis")]
-            LookupStore::Redis(store) => store.key_delete(key).await,
-            LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::StoreEvent::NotSupported.into_err())
-            }
+            InMemoryStore::Redis(store) => store.key_delete(key).await,
+            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
         }
         .caused_by(trc::location!())
     }
@@ -174,26 +121,15 @@ impl LookupStore {
         key: Vec<u8>,
     ) -> trc::Result<Option<T>> {
         match self {
-            LookupStore::Store(store) => store
+            InMemoryStore::Store(store) => store
                 .get_value::<LookupValue<T>>(ValueKey::from(ValueClass::Lookup(LookupClass::Key(
                     key,
                 ))))
                 .await
                 .map(|value| value.and_then(|v| v.into())),
             #[cfg(feature = "redis")]
-            LookupStore::Redis(store) => store.key_get(key).await,
-            LookupStore::Query(lookup) => lookup
-                .store
-                .query::<Option<Row>>(
-                    &lookup.query,
-                    vec![String::from_utf8(key).unwrap_or_default().into()],
-                )
-                .await
-                .map(|row| {
-                    row.and_then(|row| row.values.into_iter().next())
-                        .map(|value| T::from(value))
-                }),
-            LookupStore::Memory(store) => Ok(store
+            InMemoryStore::Redis(store) => store.key_get(key).await,
+            InMemoryStore::Static(store) => Ok(store
                 .get(std::str::from_utf8(&key).unwrap_or_default())
                 .map(|value| T::from(value.clone()))),
         }
@@ -202,7 +138,7 @@ impl LookupStore {
 
     pub async fn counter_get(&self, key: Vec<u8>) -> trc::Result<i64> {
         match self {
-            LookupStore::Store(store) => {
+            InMemoryStore::Store(store) => {
                 store
                     .get_counter(ValueKey::from(ValueClass::Lookup(LookupClass::Counter(
                         key,
@@ -210,33 +146,23 @@ impl LookupStore {
                     .await
             }
             #[cfg(feature = "redis")]
-            LookupStore::Redis(store) => store.counter_get(key).await,
-            LookupStore::Query(_) | LookupStore::Memory(_) => {
-                Err(trc::StoreEvent::NotSupported.into_err())
-            }
+            InMemoryStore::Redis(store) => store.counter_get(key).await,
+            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
         }
         .caused_by(trc::location!())
     }
 
     pub async fn key_exists(&self, key: Vec<u8>) -> trc::Result<bool> {
         match self {
-            LookupStore::Store(store) => store
+            InMemoryStore::Store(store) => store
                 .get_value::<LookupValue<()>>(ValueKey::from(ValueClass::Lookup(LookupClass::Key(
                     key,
                 ))))
                 .await
                 .map(|value| matches!(value, Some(LookupValue::Value(())))),
             #[cfg(feature = "redis")]
-            LookupStore::Redis(store) => store.key_exists(key).await,
-            LookupStore::Query(lookup) => lookup
-                .store
-                .query::<Option<Row>>(
-                    &lookup.query,
-                    vec![String::from_utf8(key).unwrap_or_default().into()],
-                )
-                .await
-                .map(|row| row.is_some()),
-            LookupStore::Memory(store) => Ok(store
+            InMemoryStore::Redis(store) => store.key_exists(key).await,
+            InMemoryStore::Static(store) => Ok(store
                 .get(std::str::from_utf8(&key).unwrap_or_default())
                 .is_some()),
         }
@@ -245,6 +171,7 @@ impl LookupStore {
 
     pub async fn is_rate_allowed(
         &self,
+        prefix: u8,
         key: &[u8],
         rate: &Rate,
         soft_check: bool,
@@ -254,12 +181,13 @@ impl LookupStore {
         let range_end = (range_start * rate.period.as_secs()) + rate.period.as_secs();
         let expires_in = range_end - now;
 
-        let mut bucket = Vec::with_capacity(key.len() + U64_LEN);
+        let mut bucket = Vec::with_capacity(key.len() + U64_LEN + 1);
+        bucket.push(prefix);
         bucket.extend_from_slice(key);
         bucket.extend_from_slice(range_start.to_be_bytes().as_slice());
 
         let requests = if !soft_check {
-            self.counter_incr(bucket, 1, expires_in.into(), true)
+            self.counter_incr(KeyValue::new(bucket, 1).expires(expires_in))
                 .await
                 .caused_by(trc::location!())?
         } else {
@@ -273,9 +201,20 @@ impl LookupStore {
         }
     }
 
-    pub async fn purge_lookup_store(&self) -> trc::Result<()> {
+    pub async fn try_lock(&self, prefix: u8, key: &[u8], duration: u64) -> trc::Result<bool> {
+        self.counter_incr(KeyValue::with_prefix(prefix, key, 1).expires(duration))
+            .await
+            .map(|count| count == 1)
+    }
+
+    pub async fn remove_lock(&self, prefix: u8, key: &[u8]) -> trc::Result<()> {
+        self.counter_delete(KeyValue::<()>::build_key(prefix, key))
+            .await
+    }
+
+    pub async fn purge_in_memory_store(&self) -> trc::Result<()> {
         match self {
-            LookupStore::Store(store) => {
+            InMemoryStore::Store(store) => {
                 // Delete expired keys and counters
                 let from_key = ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![0u8])));
                 let to_key =
@@ -354,8 +293,8 @@ impl LookupStore {
                 }
             }
             #[cfg(feature = "redis")]
-            LookupStore::Redis(_) => {}
-            LookupStore::Query(_) | LookupStore::Memory(_) => {}
+            InMemoryStore::Redis(_) => {}
+            InMemoryStore::Static(_) => {}
         }
 
         Ok(())
@@ -363,9 +302,45 @@ impl LookupStore {
 
     pub fn is_sql(&self) -> bool {
         match self {
-            LookupStore::Store(store) => store.is_sql(),
+            InMemoryStore::Store(store) => store.is_sql(),
             _ => false,
         }
+    }
+}
+
+impl<T> KeyValue<T> {
+    pub fn build_key(prefix: u8, key: impl AsRef<[u8]>) -> Vec<u8> {
+        let key_ = key.as_ref();
+        let mut key = Vec::with_capacity(key_.len() + 1);
+        key.push(prefix);
+        key.extend_from_slice(key_);
+        key
+    }
+
+    pub fn with_prefix(prefix: u8, key: impl AsRef<[u8]>, value: T) -> Self {
+        Self {
+            key: Self::build_key(prefix, key),
+            value,
+            expires: None,
+        }
+    }
+
+    pub fn new(key: impl Into<Vec<u8>>, value: T) -> Self {
+        Self {
+            key: key.into(),
+            value,
+            expires: None,
+        }
+    }
+
+    pub fn expires(mut self, expires: u64) -> Self {
+        self.expires = expires.into();
+        self
+    }
+
+    pub fn expires_opt(mut self, expires: Option<u64>) -> Self {
+        self.expires = expires;
+        self
     }
 }
 

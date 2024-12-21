@@ -196,8 +196,7 @@ impl FtsIndexEvent {
     pub fn description(&self) -> &'static str {
         match self {
             FtsIndexEvent::Index => "Full-text search index done",
-            FtsIndexEvent::Locked => "Full-text search index is locked",
-            FtsIndexEvent::LockBusy => "Full-text search index lock is busy",
+            FtsIndexEvent::Locked => "Full-text search index is locked by another process",
             FtsIndexEvent::BlobNotFound => "Blob not found for full-text indexing",
             FtsIndexEvent::MetadataNotFound => "Metadata not found for full-text indexing",
         }
@@ -206,8 +205,7 @@ impl FtsIndexEvent {
     pub fn explain(&self) -> &'static str {
         match self {
             FtsIndexEvent::Index => "The full-text search index has been updated",
-            FtsIndexEvent::Locked => "The full-text search index is locked",
-            FtsIndexEvent::LockBusy => "The full-text search index lock is busy",
+            FtsIndexEvent::Locked => "The full-text search index is locked by another process",
             FtsIndexEvent::BlobNotFound => "The blob was not found for full-text indexing",
             FtsIndexEvent::MetadataNotFound => "The metadata was not found for full-text indexing",
         }
@@ -409,8 +407,6 @@ impl SmtpEvent {
             SmtpEvent::MessageParseFailed => "Message parsing failed",
             SmtpEvent::MessageTooLarge => "Message too large",
             SmtpEvent::LoopDetected => "Mail loop detected",
-            SmtpEvent::PipeSuccess => "Pipe command succeeded",
-            SmtpEvent::PipeError => "Pipe command failed",
             SmtpEvent::DkimPass => "DKIM verification passed",
             SmtpEvent::DkimFail => "DKIM verification failed",
             SmtpEvent::ArcPass => "ARC verification passed",
@@ -442,6 +438,7 @@ impl SmtpEvent {
             SmtpEvent::RcptToDuplicate => "Duplicate RCPT TO",
             SmtpEvent::RcptToRewritten => "RCPT TO address rewritten",
             SmtpEvent::RcptToMissing => "RCPT TO address missing",
+            SmtpEvent::RcptToGreylisted => "RCPT TO greylisted",
             SmtpEvent::TooManyRecipients => "Too many recipients",
             SmtpEvent::TooManyInvalidRcpt => "Too many invalid recipients",
             SmtpEvent::RawInput => "Raw SMTP input received",
@@ -503,8 +500,6 @@ impl SmtpEvent {
             SmtpEvent::LoopDetected => {
                 "A mail loop was detected, the message contains too many Received headers"
             }
-            SmtpEvent::PipeSuccess => "The pipe command succeeded",
-            SmtpEvent::PipeError => "The pipe command failed",
             SmtpEvent::DkimPass => "Successful DKIM verification",
             SmtpEvent::DkimFail => "Failed to verify DKIM signature",
             SmtpEvent::ArcPass => "Successful ARC verification",
@@ -552,6 +547,7 @@ impl SmtpEvent {
             }
             SmtpEvent::RcptToRewritten => "The envelope recipient address was rewritten",
             SmtpEvent::RcptToMissing => "The remote client issued a DATA command before RCPT TO",
+            SmtpEvent::RcptToGreylisted => "The recipient was greylisted",
             SmtpEvent::TooManyRecipients => {
                 "The remote client exceeded the number of recipients allowed"
             }
@@ -716,8 +712,7 @@ impl QueueEvent {
     pub fn description(&self) -> &'static str {
         match self {
             QueueEvent::Rescheduled => "Message rescheduled for delivery",
-            QueueEvent::LockBusy => "Queue lock is busy",
-            QueueEvent::Locked => "Queue is locked",
+            QueueEvent::Locked => "Queue event is locked by another process",
             QueueEvent::BlobNotFound => "Message blob not found",
             QueueEvent::RateLimitExceeded => "Rate limit exceeded",
             QueueEvent::ConcurrencyLimitExceeded => "Concurrency limit exceeded",
@@ -733,8 +728,7 @@ impl QueueEvent {
     pub fn explain(&self) -> &'static str {
         match self {
             QueueEvent::Rescheduled => "The message was rescheduled for delivery",
-            QueueEvent::LockBusy => "The queue lock is busy",
-            QueueEvent::Locked => "The queue is locked",
+            QueueEvent::Locked => "The queue event is locked by another process",
             QueueEvent::BlobNotFound => "The message blob was not found",
             QueueEvent::RateLimitExceeded => "The queue rate limit was exceeded",
             QueueEvent::ConcurrencyLimitExceeded => "The queue concurrency limit was exceeded",
@@ -819,9 +813,7 @@ impl OutgoingReportEvent {
             OutgoingReportEvent::NotFound => "Report not found",
             OutgoingReportEvent::SubmissionError => "Error submitting report",
             OutgoingReportEvent::NoRecipientsFound => "No recipients found for report",
-            OutgoingReportEvent::LockBusy => "Report lock is busy",
-            OutgoingReportEvent::LockDeleted => "Report lock was deleted",
-            OutgoingReportEvent::Locked => "Report is locked",
+            OutgoingReportEvent::Locked => "Report is locked by another process",
         }
     }
 
@@ -845,9 +837,7 @@ impl OutgoingReportEvent {
             OutgoingReportEvent::NotFound => "The report was not found",
             OutgoingReportEvent::SubmissionError => "Error submitting the report",
             OutgoingReportEvent::NoRecipientsFound => "No recipients found for the report",
-            OutgoingReportEvent::LockBusy => "The report lock is busy",
-            OutgoingReportEvent::LockDeleted => "The report lock was deleted",
-            OutgoingReportEvent::Locked => "The report is locked",
+            OutgoingReportEvent::Locked => "The report is locked by another process",
         }
     }
 }
@@ -1017,29 +1007,33 @@ impl PushSubscriptionEvent {
 impl SpamEvent {
     pub fn description(&self) -> &'static str {
         match self {
+            SpamEvent::Pyzor => "Pyzor success",
             SpamEvent::PyzorError => "Pyzor error",
-            SpamEvent::ListUpdated => "Spam list updated",
+            SpamEvent::RemoteList => "Remote list updated",
+            SpamEvent::RemoteListError => "Error updating remote list",
             SpamEvent::Train => "Training spam filter",
-            SpamEvent::TrainBalance => "Balancing spam filter training data",
+            SpamEvent::TrainBalance => "Spam filter model balance verify",
             SpamEvent::TrainError => "Error training spam filter",
             SpamEvent::Classify => "Classifying message for spam",
-            SpamEvent::ClassifyError => "Error classifying message for spam",
-            SpamEvent::NotEnoughTrainingData => "Not enough training data for spam filter",
+            SpamEvent::ClassifyError => "Not enough training data for spam filter",
+            SpamEvent::Dnsbl => "DNSBL query",
+            SpamEvent::DnsblError => "Error querying DNSBL",
         }
     }
 
     pub fn explain(&self) -> &'static str {
         match self {
             SpamEvent::PyzorError => "An error occurred with Pyzor",
-            SpamEvent::ListUpdated => "The spam list has been updated",
             SpamEvent::Train => "The spam filter is being trained with the message",
-            SpamEvent::TrainBalance => "The spam filter training data is being balanced",
+            SpamEvent::TrainBalance => "The spam filter training data is verified for balance",
             SpamEvent::TrainError => "An error occurred while training the spam filter",
             SpamEvent::Classify => "The message is being classified for spam",
-            SpamEvent::ClassifyError => "An error occurred while classifying the message for spam",
-            SpamEvent::NotEnoughTrainingData => {
-                "There is not enough training data for the spam filter"
-            }
+            SpamEvent::ClassifyError => "There is not enough training data for the spam filter",
+            SpamEvent::Pyzor => "Pyzor query successful",
+            SpamEvent::RemoteList => "The remote list was updated",
+            SpamEvent::RemoteListError => "An error occurred while updating the remote list",
+            SpamEvent::Dnsbl => "The DNSBL query was successful",
+            SpamEvent::DnsblError => "An error occurred while querying the DNSBL",
         }
     }
 }

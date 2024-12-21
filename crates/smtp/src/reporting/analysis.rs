@@ -8,7 +8,6 @@ use std::{
     borrow::Cow,
     collections::hash_map::Entry,
     io::{Cursor, Read},
-    sync::Arc,
 };
 
 use ahash::AHashMap;
@@ -18,7 +17,7 @@ use mail_auth::{
     report::{tlsrpt::TlsReport, ActionDisposition, DmarcResult, Feedback, Report},
     zip,
 };
-use mail_parser::{MessageParser, MimeHeaders, PartType};
+use mail_parser::{Message, MimeHeaders, PartType};
 
 use store::{
     write::{now, BatchBuilder, Bincode, ReportClass, ValueClass},
@@ -53,23 +52,13 @@ pub struct IncomingReport<T> {
 }
 
 pub trait AnalyzeReport: Sync + Send {
-    fn analyze_report(&self, message: Arc<Vec<u8>>, session_id: u64);
+    fn analyze_report(&self, message: Message<'static>, session_id: u64);
 }
 
 impl AnalyzeReport for Server {
-    fn analyze_report(&self, message: Arc<Vec<u8>>, session_id: u64) {
+    fn analyze_report(&self, message: Message<'static>, session_id: u64) {
         let core = self.clone();
         tokio::spawn(async move {
-            let message = if let Some(message) = MessageParser::default().parse(message.as_ref()) {
-                message
-            } else {
-                trc::event!(
-                    IncomingReport(IncomingReportEvent::MessageParseFailed),
-                    SpanId = session_id
-                );
-
-                return;
-            };
             let from = message
                 .from()
                 .and_then(|a| a.last())

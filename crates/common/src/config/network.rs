@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::time::Duration;
+
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap};
 use utils::config::{Config, Rate};
 
@@ -16,6 +18,7 @@ pub struct Network {
     pub contact_form: Option<ContactForm>,
     pub http_response_url: IfBlock,
     pub http_allowed_endpoint: IfBlock,
+    pub asn_geo_lookup: AsnGeoLookupConfig,
 }
 
 #[derive(Clone)]
@@ -28,6 +31,32 @@ pub struct ContactForm {
     pub from_subject: FieldOrDefault,
     pub from_name: FieldOrDefault,
     pub field_honey_pot: Option<String>,
+}
+
+#[derive(Clone, Default)]
+pub enum AsnGeoLookupConfig {
+    Resource {
+        expires: Duration,
+        timeout: Duration,
+        max_size: usize,
+        resources: Vec<AsnGeoLookupResource>,
+    },
+    Dns {
+        zone_ipv4: String,
+        zone_ipv6: String,
+        separator: String,
+        index_asn: usize,
+        index_asn_name: Option<usize>,
+        index_country: Option<usize>,
+    },
+    #[default]
+    Disabled,
+}
+
+#[derive(Clone)]
+pub enum AsnGeoLookupResource {
+    Asn { url: String, headers: HeaderMap },
+    Geo { url: String, headers: HeaderMap },
 }
 
 #[derive(Clone)]
@@ -62,6 +91,7 @@ impl Default for Network {
                 "protocol + '://' + key_get('default', 'hostname') + ':' + local_port",
             ),
             http_allowed_endpoint: IfBlock::new::<()>("server.http.allowed-endpoint", [], "200"),
+            asn_geo_lookup: AsnGeoLookupConfig::Disabled,
         }
     }
 }
@@ -126,6 +156,7 @@ impl Network {
             node_id: config.property("cluster.node-id").unwrap_or_default(),
             security: Security::parse(config),
             contact_form: ContactForm::parse(config),
+            asn_geo_lookup: AsnGeoLookupConfig::parse(config).unwrap_or_default(),
             ..Default::default()
         };
         let token_map = &TokenMap::default().with_variables(HTTP_VARS);
@@ -143,5 +174,76 @@ impl Network {
         }
 
         network
+    }
+}
+
+impl AsnGeoLookupConfig {
+    pub fn parse(config: &mut Config) -> Option<Self> {
+        match config.value("server.asn.type")? {
+            "dns" => AsnGeoLookupConfig::Dns {
+                zone_ipv4: config
+                    .value_require_non_empty("server.asn.zone.ipv4")?
+                    .to_string(),
+                zone_ipv6: config
+                    .value_require_non_empty("server.asn.zone.ipv6")?
+                    .to_string(),
+                separator: config
+                    .value_require_non_empty("server.asn.separator")?
+                    .to_string(),
+                index_asn: config.property_require("server.asn.index.asn")?,
+                index_asn_name: config.property("server.asn.index.asn-name"),
+                index_country: config.property("server.asn.index.country"),
+            }
+            .into(),
+            "resource" => {
+                let mut resources = vec![];
+
+                for id in config
+                    .sub_keys("server.asn.resource", ".url")
+                    .map(|k| k.to_string())
+                    .collect::<Vec<_>>()
+                {
+                    let id = id.as_str();
+                    let url = config
+                        .value_require_non_empty(("server.asn.resource", id, "url"))?
+                        .to_string();
+                    let headers = parse_http_headers(config, ("server.asn.resource", id));
+
+                    resources.push(
+                        match config.value_require(("server.asn.resource", id, "type"))? {
+                            "asn" => AsnGeoLookupResource::Asn { url, headers },
+                            "geo" => AsnGeoLookupResource::Geo { url, headers },
+                            _ => {
+                                config.new_build_error(
+                                    ("server.asn.resource", id),
+                                    "Invalid resource",
+                                );
+                                continue;
+                            }
+                        },
+                    );
+                }
+
+                if resources.is_empty() {
+                    config.new_build_error("server.asn.resource", "No resources found");
+                    return None;
+                }
+
+                AsnGeoLookupConfig::Resource {
+                    expires: config.property_or_default::<Duration>("server.asn.expires", "1d")?,
+                    timeout: config.property_or_default::<Duration>("server.asn.timeout", "5m")?,
+                    max_size: config
+                        .property("server.asn.max-size")
+                        .unwrap_or(100 * 1024 * 1024),
+                    resources,
+                }
+                .into()
+            }
+            "disabled" | "none" | "false" => AsnGeoLookupConfig::Disabled.into(),
+            _ => {
+                config.new_build_error("server.asn.type", "Invalid value");
+                None
+            }
+        }
     }
 }

@@ -4,21 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashMap, hash::BuildHasherDefault};
-
-use nohash::NoHashHasher;
+use ahash::AHashMap;
+use radix_trie::TrieKey;
 use serde::{Deserialize, Serialize};
 
 use crate::tokenizers::osb::Gram;
 
-pub mod cache;
 pub mod classify;
 pub mod tokenize;
 pub mod train;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct BayesModel {
-    pub weights: HashMap<TokenHash, Weights, BuildHasherDefault<NoHashHasher<TokenHash>>>,
+    pub weights: AHashMap<TokenHash, Weights>,
     pub spam_learns: u32,
     pub ham_learns: u32,
 }
@@ -29,13 +27,15 @@ pub struct BayesClassifier {
     pub min_tokens: u32,
     pub min_prob_strength: f64,
     pub min_learns: u32,
+    pub min_balance: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct TokenHash {
-    pub h1: u64,
-    pub h2: u64,
+    hash: [u8; HASH_LEN],
+    len: u8,
 }
+const HASH_LEN: usize = std::mem::size_of::<u64>() * 2;
 
 #[derive(Debug, Serialize, Deserialize, Default, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct Weights {
@@ -50,6 +50,7 @@ impl BayesClassifier {
             min_tokens: 11,
             min_prob_strength: 0.05,
             min_learns: 200,
+            min_balance: 0.1,
         }
     }
 }
@@ -62,32 +63,69 @@ impl Default for BayesClassifier {
 
 impl From<Gram<'_>> for TokenHash {
     fn from(value: Gram<'_>) -> Self {
+        let mut hash = TokenHash {
+            hash: [0; HASH_LEN],
+            len: 0,
+        };
+
         match value {
-            Gram::Uni { t1 } => TokenHash {
-                h1: xxhash_rust::xxh3::xxh3_64(t1.as_bytes()),
-                h2: farmhash::hash64(t1.as_bytes()),
-            },
+            Gram::Uni { t1 } => {
+                if t1.len() <= HASH_LEN {
+                    hash.hash[..t1.len()].copy_from_slice(t1);
+                    hash.len = t1.len() as u8;
+                } else {
+                    let h1 = xxhash_rust::xxh3::xxh3_64(t1).to_be_bytes();
+                    let h2 = farmhash::hash64(t1).to_be_bytes();
+                    hash.hash[..std::mem::size_of::<u64>()].copy_from_slice(&h1);
+                    hash.hash[std::mem::size_of::<u64>()..].copy_from_slice(&h2);
+                    hash.len = HASH_LEN as u8;
+                }
+            }
             Gram::Bi { t1, t2, .. } => {
-                let mut buf = Vec::with_capacity(t1.len() + t2.len() + 1);
-                buf.extend_from_slice(t1.as_bytes());
-                buf.push(b' ');
-                buf.extend_from_slice(t2.as_bytes());
-                TokenHash {
-                    h1: xxhash_rust::xxh3::xxh3_64(&buf),
-                    h2: farmhash::hash64(&buf),
+                let len = t1.len() + t2.len() + 1;
+                if len <= HASH_LEN {
+                    for (h, b) in hash.hash.iter_mut().zip(
+                        t1.iter()
+                            .copied()
+                            .chain([b' '].into_iter())
+                            .chain(t2.iter().copied()),
+                    ) {
+                        *h = b;
+                    }
+                    hash.len = len as u8;
+                } else if t1.len() <= std::mem::size_of::<u64>() {
+                    for (h, b) in hash.hash.iter_mut().zip(
+                        t1.iter()
+                            .copied()
+                            .chain(xxhash_rust::xxh3::xxh3_64(t2).to_be_bytes().into_iter())
+                            .chain(farmhash::hash64(t2).to_be_bytes().into_iter()),
+                    ) {
+                        *h = b;
+                    }
+                    hash.len = HASH_LEN as u8;
+                } else {
+                    let mut buf = Vec::with_capacity(t1.len() + t2.len() + 1);
+                    buf.extend_from_slice(t1);
+                    buf.push(b' ');
+                    buf.extend_from_slice(t2);
+                    let h1 = xxhash_rust::xxh3::xxh3_64(&buf).to_be_bytes();
+                    let h2 = farmhash::fingerprint64(&buf).to_be_bytes();
+                    hash.hash[..std::mem::size_of::<u64>()].copy_from_slice(&h1);
+                    hash.hash[std::mem::size_of::<u64>()..].copy_from_slice(&h2);
+                    hash.len = HASH_LEN as u8;
                 }
             }
         }
+
+        hash
     }
 }
 
-impl std::hash::Hash for TokenHash {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write_u64(self.h1 ^ self.h2);
+impl TrieKey for TokenHash {
+    fn encode_bytes(&self) -> Vec<u8> {
+        self.hash[..self.len as usize].to_vec()
     }
 }
-
-impl nohash::IsEnabled for TokenHash {}
 
 impl From<i64> for Weights {
     fn from(value: i64) -> Self {
@@ -101,5 +139,33 @@ impl From<i64> for Weights {
 impl From<Weights> for i64 {
     fn from(value: Weights) -> Self {
         (value.ham as i64) << 32 | value.spam as i64
+    }
+}
+
+impl TokenHash {
+    pub fn serialize_index(prefix: u8, account_id: Option<u32>) -> Vec<u8> {
+        if let Some(account_id) = account_id {
+            let mut buf = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
+            buf.push(prefix);
+            buf.extend_from_slice(&account_id.to_be_bytes());
+            buf
+        } else {
+            vec![prefix]
+        }
+    }
+
+    pub fn serialize(&self, prefix: u8, account_id: Option<u32>) -> Vec<u8> {
+        if let Some(account_id) = account_id {
+            let mut buf = Vec::with_capacity(std::mem::size_of::<u32>() + self.len as usize + 1);
+            buf.push(prefix);
+            buf.extend_from_slice(&account_id.to_be_bytes());
+            buf.extend_from_slice(&self.hash[..self.len as usize]);
+            buf
+        } else {
+            let mut buf = Vec::with_capacity(self.len as usize + 1);
+            buf.push(prefix);
+            buf.extend_from_slice(&self.hash[..self.len as usize]);
+            buf
+        }
     }
 }

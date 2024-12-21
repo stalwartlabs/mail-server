@@ -6,18 +6,24 @@
 
 use std::time::{Duration, Instant};
 
-use common::config::server::ServerProtocol;
+use common::{config::server::ServerProtocol, ipc::QueueEvent};
 use mail_auth::MX;
 
 use crate::smtp::{session::TestSession, TestSMTP};
 use smtp::queue::manager::Queue;
 
 const LOCAL: &str = r#"
+[spam-filter]
+enable = false
+
 [session.rcpt]
 relay = true
 
 [session.data.limits]
-messages = 200
+messages = 2000
+
+[queue.outbound]
+concurrency = 1
 
 "#;
 
@@ -27,6 +33,9 @@ reject-non-fqdn = false
 
 [session.rcpt]
 relay = true
+
+[spam-filter]
+enable = false
 
 "#;
 
@@ -63,27 +72,35 @@ async fn concurrent_queue() {
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
 
-    // Send 100 test messages
+    // Spawn 20 concurrent queues
+    let mut inners = vec![];
+    for _ in 0..20 {
+        let (inner, rxs) = local.inner_with_rxs();
+        inners.push(inner.clone());
+        tokio::spawn(async move {
+            Queue::new(inner, rxs.queue_rx.unwrap()).start().await;
+        });
+    }
+
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Send 1000 test messages
     for _ in 0..100 {
         session
             .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
             .await;
     }
 
-    // Spawn 20 concurrent queues at different times
-    for _ in 0..10 {
-        let local = local.server.clone();
-        tokio::spawn(async move {
-            Queue::new(local.inner).process_events().await;
-        });
+    // Wake up all queues
+    for inner in &inners {
+        inner
+            .ipc
+            .queue_tx
+            .send(QueueEvent::Refresh(None))
+            .await
+            .unwrap();
     }
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    for _ in 0..10 {
-        let local = local.server.clone();
-        tokio::spawn(async move {
-            Queue::new(local.inner).process_events().await;
-        });
-    }
+
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     local.queue_receiver.assert_queue_is_empty().await;

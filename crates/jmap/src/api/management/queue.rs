@@ -343,7 +343,12 @@ impl QueueManagement for Server {
                         message
                             .save_changes(self, prev_event.into(), next_event.into())
                             .await;
-                        let _ = self.inner.ipc.queue_tx.send(QueueEvent::Reload).await;
+                        let _ = self
+                            .inner
+                            .ipc
+                            .queue_tx
+                            .send(QueueEvent::Refresh(None))
+                            .await;
                     }
 
                     Ok(JsonResponse::new(json!({

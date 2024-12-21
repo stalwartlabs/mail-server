@@ -75,8 +75,7 @@ async fn ip_lookup_strategy() {
             .queue_receiver
             .expect_message_then_deliver()
             .await
-            .try_deliver(core.clone())
-            .await;
+            .try_deliver(core.clone());
         tokio::time::sleep(Duration::from_millis(100)).await;
         if matches!(strategy, IpLookupStrategy::Ipv6thenIpv4) {
             remote.queue_receiver.expect_message().await;

@@ -121,16 +121,16 @@ impl EmailIngest for Server {
 
         // Check for Spam headers
         let mut is_spam = false;
-        if let (IngestSource::Smtp, Some((header_name, header_value))) =
-            (params.source, &self.core.jmap.spam_header)
+        if let (IngestSource::Smtp, Some(header_name)) =
+            (params.source, &self.core.spam.headers.status)
         {
             if params.mailbox_ids == [INBOX_ID]
                 && message.root_part().headers().iter().any(|header| {
-                    &header.name == header_name
+                    header.name() == header_name
                         && header
                             .value()
                             .as_text()
-                            .map_or(false, |value| value.contains(header_value))
+                            .map_or(false, |value| value.contains("Yes"))
                 })
             {
                 params.mailbox_ids[0] = JUNK_ID;

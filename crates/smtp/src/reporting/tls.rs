@@ -34,7 +34,7 @@ use trc::{AddContext, OutgoingReportEvent};
 
 use crate::{queue::RecipientDomain, reporting::SmtpReporting};
 
-use super::{AggregateTimestamp, ReportLock, SerializedSize};
+use super::{AggregateTimestamp, SerializedSize};
 
 #[derive(Debug, Clone)]
 pub struct TlsRptOptions {
@@ -492,12 +492,6 @@ impl TlsReporting for Server {
                 ValueClass::Queue(QueueClass::TlsReportHeader(report_event.clone())),
                 Bincode::new(entry).serialize(),
             );
-
-            // Add lock
-            builder.set(
-                ValueClass::Queue(QueueClass::tls_lock(&report_event)),
-                0u64.serialize(),
-            );
         }
 
         // Write entry
@@ -517,7 +511,7 @@ impl TlsReporting for Server {
     async fn delete_tls_report(&self, events: Vec<ReportEvent>) {
         let mut batch = BatchBuilder::new();
 
-        for (pos, event) in events.into_iter().enumerate() {
+        for event in events {
             let from_key = ReportEvent {
                 due: event.due,
                 policy_hash: event.policy_hash,
@@ -547,11 +541,6 @@ impl TlsReporting for Server {
                     .details("Failed to delete TLS reports"));
 
                 return;
-            }
-
-            if pos == 0 {
-                // Remove lock
-                batch.clear(ValueClass::Queue(QueueClass::tls_lock(&event)));
             }
 
             // Remove report header

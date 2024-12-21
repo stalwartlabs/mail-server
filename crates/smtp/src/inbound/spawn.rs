@@ -20,38 +20,35 @@ use crate::{
 };
 
 impl SessionManager for SmtpSessionManager {
-    fn handle<T: SessionStream>(
-        self,
-        session: listener::SessionData<T>,
-    ) -> impl std::future::Future<Output = ()> + Send {
-        // Create session
+    async fn handle<T: SessionStream>(self, session: listener::SessionData<T>) {
+        // Build server and create session
+        let server = self.inner.build_server();
         let mut session = Session {
-            hostname: String::new(),
-            server: self.inner.build_server(),
-            instance: session.instance,
-            state: State::default(),
-            stream: session.stream,
-            in_flight: vec![session.in_flight],
             data: SessionData::new(
                 session.local_ip,
                 session.local_port,
                 session.remote_ip,
                 session.remote_port,
+                server.lookup_asn_country(session.remote_ip).await,
                 session.session_id,
             ),
+            hostname: String::new(),
+            server,
+            instance: session.instance,
+            state: State::default(),
+            stream: session.stream,
+            in_flight: vec![session.in_flight],
             params: SessionParameters::default(),
         };
 
         // Enforce throttle
-        async {
-            if session.is_allowed().await
-                && session.init_conn().await
-                && session.handle_conn().await
-                && session.instance.acceptor.is_tls()
-            {
-                if let Ok(mut session) = session.into_tls().await {
-                    session.handle_conn().await;
-                }
+        if session.is_allowed().await
+            && session.init_conn().await
+            && session.handle_conn().await
+            && session.instance.acceptor.is_tls()
+        {
+            if let Ok(mut session) = session.into_tls().await {
+                session.handle_conn().await;
             }
         }
     }

@@ -244,7 +244,7 @@ impl DkimManagement for Server {
                     "Message-ID".to_string(),
                 ),
                 (format!("signature.{id}.report"), "false".to_string()),
-            ])
+            ], true)
             .await
     }
 }

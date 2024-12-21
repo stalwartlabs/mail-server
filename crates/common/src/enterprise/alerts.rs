@@ -119,6 +119,10 @@ impl ResolveVariable for CollectorResolver {
             Variable::Integer(0)
         }
     }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
 }
 
 impl AlertContent {

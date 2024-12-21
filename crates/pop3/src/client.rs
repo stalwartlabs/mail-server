@@ -4,7 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::listener::{SessionResult, SessionStream};
+use common::{
+    listener::{SessionResult, SessionStream},
+    KV_RATE_LIMIT_IMAP,
+};
 use mail_send::Credentials;
 use trc::{AddContext, SecurityEvent};
 
@@ -239,7 +242,8 @@ impl<T: SessionStream> Session<T> {
                             .storage
                             .lookup
                             .is_rate_allowed(
-                                format!("ireq:{}", mailbox.account_id).as_bytes(),
+                                KV_RATE_LIMIT_IMAP,
+                                &mailbox.account_id.to_be_bytes(),
                                 rate,
                                 true,
                             )

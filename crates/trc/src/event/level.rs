@@ -155,8 +155,6 @@ impl EventType {
                 | SmtpEvent::InvalidParameter
                 | SmtpEvent::UnsupportedParameter
                 | SmtpEvent::SyntaxError
-                | SmtpEvent::PipeSuccess
-                | SmtpEvent::PipeError
                 | SmtpEvent::Error => Level::Debug,
                 SmtpEvent::MissingLocalHostname | SmtpEvent::RemoteIdNotFound => Level::Warn,
                 SmtpEvent::ConcurrencyLimitExceeded
@@ -186,6 +184,7 @@ impl EventType {
                 | SmtpEvent::MailboxDoesNotExist
                 | SmtpEvent::RelayNotAllowed
                 | SmtpEvent::RcptTo
+                | SmtpEvent::RcptToGreylisted
                 | SmtpEvent::TooManyInvalidRcpt
                 | SmtpEvent::Vrfy
                 | SmtpEvent::VrfyNotFound
@@ -336,14 +335,17 @@ impl EventType {
                 | SieveEvent::ActionReject => Level::Debug,
             },
             EventType::Spam(event) => match event {
-                SpamEvent::PyzorError | SpamEvent::TrainError | SpamEvent::ClassifyError => {
-                    Level::Warn
-                }
-                SpamEvent::Train
+                SpamEvent::PyzorError
+                | SpamEvent::TrainError
+                | SpamEvent::DnsblError
+                | SpamEvent::RemoteListError => Level::Warn,
+                SpamEvent::Pyzor
+                | SpamEvent::Train
                 | SpamEvent::Classify
-                | SpamEvent::NotEnoughTrainingData
-                | SpamEvent::TrainBalance => Level::Debug,
-                SpamEvent::ListUpdated => Level::Info,
+                | SpamEvent::ClassifyError
+                | SpamEvent::TrainBalance
+                | SpamEvent::Dnsbl
+                | SpamEvent::RemoteList => Level::Debug,
             },
             EventType::Http(event) => match event {
                 HttpEvent::ConnectionStart | HttpEvent::ConnectionEnd => Level::Debug,
@@ -379,7 +381,6 @@ impl EventType {
             },
             EventType::FtsIndex(event) => match event {
                 FtsIndexEvent::Index => Level::Info,
-                FtsIndexEvent::LockBusy => Level::Warn,
                 FtsIndexEvent::BlobNotFound
                 | FtsIndexEvent::Locked
                 | FtsIndexEvent::MetadataNotFound => Level::Debug,
@@ -473,9 +474,7 @@ impl EventType {
                 | QueueEvent::ConcurrencyLimitExceeded
                 | QueueEvent::Rescheduled
                 | QueueEvent::QuotaExceeded => Level::Info,
-                QueueEvent::LockBusy | QueueEvent::Locked | QueueEvent::BlobNotFound => {
-                    Level::Debug
-                }
+                QueueEvent::Locked | QueueEvent::BlobNotFound => Level::Debug,
             },
             EventType::TlsRpt(event) => match event {
                 TlsRptEvent::RecordFetch
@@ -508,10 +507,7 @@ impl EventType {
                 | IncomingReportEvent::DecompressError => Level::Info,
             },
             EventType::OutgoingReport(event) => match event {
-                OutgoingReportEvent::LockBusy
-                | OutgoingReportEvent::LockDeleted
-                | OutgoingReportEvent::Locked
-                | OutgoingReportEvent::NotFound => Level::Info,
+                OutgoingReportEvent::Locked | OutgoingReportEvent::NotFound => Level::Info,
                 OutgoingReportEvent::SpfReport
                 | OutgoingReportEvent::SpfRateLimited
                 | OutgoingReportEvent::DkimReport

@@ -197,12 +197,17 @@ impl LicenseKey {
             Details = "Attempting to renew Enterprise license from license.stalw.art",
         );
 
-        match fetch_resource(&format!("{}{}", LICENSING_API, self.domain), headers.into())
-            .await
-            .and_then(|bytes| {
-                String::from_utf8(bytes)
-                    .map_err(|_| String::from("Failed to UTF-8 decode server response"))
-            }) {
+        match fetch_resource(
+            &format!("{}{}", LICENSING_API, self.domain),
+            headers.into(),
+            Duration::from_secs(60),
+            1024,
+        )
+        .await
+        .and_then(|bytes| {
+            String::from_utf8(bytes)
+                .map_err(|_| String::from("Failed to UTF-8 decode server response"))
+        }) {
             Ok(encoded_key) => match LicenseKey::new(&encoded_key, &self.domain) {
                 Ok(key) => Ok(RenewedLicense { key, encoded_key }),
                 Err(err) => {

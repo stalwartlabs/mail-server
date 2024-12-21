@@ -131,14 +131,13 @@ async fn smtp_delivery() {
         .queue_receiver
         .delivery_attempt(message.queue_id)
         .await
-        .try_deliver(core.clone())
-        .await;
+        .try_deliver(core.clone());
     let mut dsn = Vec::new();
     let mut domain_retries = vec![0; num_domains];
     loop {
         match local.queue_receiver.try_read_event().await {
-            Some(QueueEvent::Reload) => {}
-            Some(QueueEvent::OnHold(_)) => unreachable!(),
+            Some(QueueEvent::Refresh(_) | QueueEvent::WorkerDone(_)) => {}
+            Some(QueueEvent::OnHold(_)) | Some(QueueEvent::Paused(_)) => unreachable!(),
             None | Some(QueueEvent::Stop) => break,
         }
 
@@ -160,7 +159,7 @@ async fn smtp_delivery() {
                 for (idx, domain) in message.domains.iter().enumerate() {
                     domain_retries[idx] = domain.retry.inner;
                 }
-                DeliveryAttempt::new(event).try_deliver(core.clone()).await;
+                DeliveryAttempt::new(event).try_deliver(core.clone());
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
@@ -259,9 +258,12 @@ async fn smtp_delivery() {
             .queue_receiver
             .expect_message_then_deliver()
             .await
-            .try_deliver(core.clone())
-            .await;
-        local.queue_receiver.read_event().await.assert_reload();
+            .try_deliver(core.clone());
+        local
+            .queue_receiver
+            .read_event()
+            .await
+            .assert_refresh_or_done();
 
         let message = remote
             .queue_receiver

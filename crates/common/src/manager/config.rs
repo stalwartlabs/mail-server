@@ -173,7 +173,7 @@ impl ConfigManager {
         Ok(results)
     }
 
-    pub async fn set<I, T>(&self, keys: I) -> trc::Result<()>
+    pub async fn set<I, T>(&self, keys: I, overwrite: bool) -> trc::Result<()>
     where
         I: IntoIterator<Item = T>,
         T: Into<ConfigKey>,
@@ -183,10 +183,13 @@ impl ConfigManager {
 
         for key in keys {
             let key = key.into();
-            if self.cfg_local_patterns.is_local_key(&key.key) {
-                local_batch.push(key);
-            } else {
-                batch.set(ValueClass::Config(key.key.into_bytes()), key.value);
+
+            if overwrite || self.get(&key.key).await?.is_none() || key.key.starts_with("version.") {
+                if self.cfg_local_patterns.is_local_key(&key.key) {
+                    local_batch.push(key);
+                } else {
+                    batch.set(ValueClass::Config(key.key.into_bytes()), key.value);
+                }
             }
         }
 
@@ -342,7 +345,7 @@ impl ConfigManager {
             .await?
             .map_or(true, |v| v != external.version)
         {
-            self.set(external.keys).await?;
+            self.set(external.keys, false).await?;
 
             trc::event!(
                 Config(trc::ConfigEvent::ImportExternal),
@@ -382,11 +385,11 @@ impl ConfigManager {
                 external.id.clone_from(&key);
                 external.version.clone_from(&value);
                 external.keys.push(ConfigKey::from((key, value)));
-            } else if key.starts_with("queue.quota.")
+            } else if key.starts_with("spam-filter.")
+                || key.starts_with("server.asn.")
+                || key.starts_with("queue.quota.")
                 || key.starts_with("queue.throttle.")
                 || key.starts_with("session.throttle.")
-                || (key.starts_with("lookup.") && !key.starts_with("lookup.default."))
-                || key.starts_with("sieve.trusted.scripts.")
             {
                 external.keys.push(ConfigKey::from((key, value)));
             } else {

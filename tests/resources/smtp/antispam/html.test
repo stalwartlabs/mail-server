@@ -284,7 +284,7 @@ Content-Transfer-Encoding: 8bit
 <meta http-equiv="refresh" content="5">
 </head>
 <body>
-<p>some text</p>
+<p>some text and a lovely explanation to avoid the text to image ratio tag</p>
 <img src="data:image/png;base64,iVBORw0KGg...." alt="Red dot" />
 <a href="data:other">Click me for a hello message</a>
 </body>

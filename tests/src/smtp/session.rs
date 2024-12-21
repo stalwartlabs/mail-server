@@ -112,6 +112,7 @@ impl TestSession for Session<DummyIo> {
                 0,
                 "127.0.0.1".parse().unwrap(),
                 0,
+                Default::default(),
                 0,
             ),
             params: SessionParameters::default(),

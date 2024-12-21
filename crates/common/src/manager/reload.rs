@@ -53,10 +53,10 @@ impl Server {
     pub async fn reload_lookups(&self) -> trc::Result<ReloadResult> {
         let mut config = self.core.storage.config.build_config("lookup").await?;
         let mut stores = Stores::default();
-        stores.parse_memory_stores(&mut config);
+        stores.parse_static_stores(&mut config);
 
         let mut core = self.core.as_ref().clone();
-        for (id, store) in stores.lookup_stores {
+        for (id, store) in stores.in_memory_stores {
             core.storage.lookups.insert(id, store);
         }
 
@@ -75,7 +75,7 @@ impl Server {
             stores: self.core.storage.stores.clone(),
             blob_stores: self.core.storage.blobs.clone(),
             fts_stores: self.core.storage.ftss.clone(),
-            lookup_stores: self.core.storage.lookups.clone(),
+            in_memory_stores: self.core.storage.lookups.clone(),
             purge_schedules: Default::default(),
         };
         stores.parse_stores(&mut config).await;

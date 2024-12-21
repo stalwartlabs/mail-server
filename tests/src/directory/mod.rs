@@ -21,7 +21,7 @@ use rustls::ServerConfig;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use rustls_pki_types::PrivateKeyDer;
 use std::{borrow::Cow, io::BufReader, sync::Arc};
-use store::{LookupStore, Store, Stores};
+use store::{Store, Stores};
 use tokio_rustls::TlsAcceptor;
 
 use crate::{store::TempDir, AssertConfig};
@@ -307,7 +307,7 @@ fields.full-name = "name"
 "#;
 
 pub struct DirectoryStore {
-    pub store: LookupStore,
+    pub store: Store,
 }
 
 pub struct DirectoryTest {

@@ -11,6 +11,7 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     TestSMTP,
 };
+use ahash::AHashSet;
 use common::ipc::QueueEvent;
 use smtp::queue::{spool::SmtpSpool, DeliveryAttempt};
 use store::write::now;
@@ -56,7 +57,7 @@ async fn queue_retry() {
     let attempt = qr.expect_message_then_deliver().await;
 
     // Expect a failed DSN
-    attempt.try_deliver(core.clone()).await;
+    attempt.try_deliver(core.clone());
     let message = qr.expect_message().await;
     assert_eq!(message.return_path, "");
     assert_eq!(message.domains.first().unwrap().domain, "test.org");
@@ -67,7 +68,7 @@ async fn queue_retry() {
         .assert_contains("Content-Type: multipart/report")
         .assert_contains("Final-Recipient: rfc822;bill@foobar.org")
         .assert_contains("Action: failed");
-    qr.read_event().await.assert_reload();
+    qr.read_event().await.assert_done();
     qr.clear_queue(&core).await;
 
     // Expect a failed DSN for foobar.org, followed by two delayed DSN and
@@ -80,23 +81,35 @@ async fn queue_retry() {
             "250",
         )
         .await;
+    let mut in_fight = AHashSet::new();
     let attempt = qr.expect_message_then_deliver().await;
     let mut dsn = Vec::new();
     let mut retries = Vec::new();
-    attempt.try_deliver(core.clone()).await;
+    in_fight.insert(attempt.event.queue_id);
+    attempt.try_deliver(core.clone());
+
     loop {
         match qr.try_read_event().await {
-            Some(QueueEvent::Reload) => {}
-            Some(QueueEvent::OnHold(_)) => unreachable!(),
-            None | Some(QueueEvent::Stop) => break,
+            Some(QueueEvent::Refresh(Some(queue_id)) | QueueEvent::WorkerDone(queue_id)) => {
+                in_fight.remove(&queue_id);
+            }
+            Some(QueueEvent::OnHold(event)) => {
+                panic!("unexpected on hold event: {:?}", event);
+            }
+            Some(QueueEvent::Refresh(None)) => (),
+            None | Some(QueueEvent::Stop) | Some(QueueEvent::Paused(_)) => break,
         }
 
         let now = now();
         let events = core.next_event().await;
-        if events.is_empty() {
+
+        if events.is_empty() && in_fight.is_empty() {
             break;
         }
         for event in events {
+            if in_fight.contains(&event.queue_id) {
+                continue;
+            }
             if event.due > now {
                 tokio::time::sleep(Duration::from_secs(event.due - now)).await;
             }
@@ -106,8 +119,11 @@ async fn queue_retry() {
                 message.clone().remove(&core, event.due).await;
                 dsn.push(message);
             } else {
-                retries.push(event.due - now);
-                DeliveryAttempt::new(event).try_deliver(core.clone()).await;
+                retries.push(event.due.saturating_sub(now));
+                in_fight.insert(event.queue_id);
+                assert!(DeliveryAttempt::new(event)
+                    .try_deliver(core.clone())
+                    .is_none());
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }

@@ -794,6 +794,10 @@ impl ResolveVariable for HttpContext<'_> {
             _ => Variable::default(),
         }
     }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
 }
 
 pub async fn fetch_body(

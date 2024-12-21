@@ -8,7 +8,7 @@ use common::{
     config::smtp::{queue::QueueQuota, *},
     expr::{functions::ResolveVariable, *},
     listener::{limiter::ConcurrencyLimiter, SessionStream},
-    ThrottleKey,
+    ThrottleKey, KV_RATE_LIMIT_HASH,
 };
 use dashmap::mapref::entry::Entry;
 use trc::SmtpEvent;
@@ -212,27 +212,33 @@ impl<T: SessionStream> Session<T> {
 
                 // Check rate
                 if let Some(rate) = &t.rate {
-                    if self
+                    match self
                         .server
                         .core
                         .storage
                         .lookup
-                        .is_rate_allowed(key.hash.as_slice(), rate, false)
+                        .is_rate_allowed(KV_RATE_LIMIT_HASH, key.hash.as_slice(), rate, false)
                         .await
-                        .unwrap_or_default()
-                        .is_some()
                     {
-                        trc::event!(
-                            Smtp(SmtpEvent::RateLimitExceeded),
-                            SpanId = self.data.session_id,
-                            Id = t.id.clone(),
-                            Limit = vec![
-                                trc::Value::from(rate.requests),
-                                trc::Value::from(rate.period)
-                            ],
-                        );
+                        Ok(Some(_)) => {
+                            trc::event!(
+                                Smtp(SmtpEvent::RateLimitExceeded),
+                                SpanId = self.data.session_id,
+                                Id = t.id.clone(),
+                                Limit = vec![
+                                    trc::Value::from(rate.requests),
+                                    trc::Value::from(rate.period)
+                                ],
+                            );
 
-                        return false;
+                            return false;
+                        }
+                        Err(err) => {
+                            trc::error!(err
+                                .span_id(self.data.session_id)
+                                .caused_by(trc::location!()));
+                        }
+                        _ => (),
                     }
                 }
             }
@@ -248,13 +254,27 @@ impl<T: SessionStream> Session<T> {
         hasher.update(&rate.period.as_secs().to_ne_bytes()[..]);
         hasher.update(&rate.requests.to_ne_bytes()[..]);
 
-        self.server
+        match self
+            .server
             .core
             .storage
             .lookup
-            .is_rate_allowed(hasher.finalize().as_bytes(), rate, false)
+            .is_rate_allowed(
+                KV_RATE_LIMIT_HASH,
+                hasher.finalize().as_bytes(),
+                rate,
+                false,
+            )
             .await
-            .unwrap_or_default()
-            .is_none()
+        {
+            Ok(None) => true,
+            Ok(Some(_)) => false,
+            Err(err) => {
+                trc::error!(err
+                    .span_id(self.data.session_id)
+                    .caused_by(trc::location!()));
+                true
+            }
+        }
     }
 }

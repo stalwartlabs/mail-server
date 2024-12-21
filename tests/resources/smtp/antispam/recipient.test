@@ -24,7 +24,7 @@ Cc: other@user.org
 
 Test
 <!-- NEXT TEST -->
-expect RCPT_ADDR_IN_SUBJECT TO_DN_NONE RCPT_COUNT_ONE
+expect RCPT_IN_SUBJECT TO_DN_NONE RCPT_COUNT_ONE
 
 To: hello@world.com
 Subject: Special offer for HELLO@world.com
@@ -117,7 +117,7 @@ Cc: otheruser@guerrillamail.com
 Test
 <!-- NEXT TEST -->
 envelope_from test@test.com
-expect FREEMAIL_CC DISPOSABLE_TO RCPT_COUNT_THREE TO_DN_NONE
+expect FREEMAIL_CC DISPOSABLE_TO DISPOSABLE_CC RCPT_COUNT_THREE TO_DN_NONE
 
 To: otheruser@guerrillamail.com
 Cc: user@gmail.com
