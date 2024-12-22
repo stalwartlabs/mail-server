@@ -46,8 +46,9 @@ s3 = ["store/s3"]
 redis = ["store/redis"]
 azure = ["store/azure"]
 enterprise = [ "jmap/enterprise", 
+               "smtp/enterprise", 
                "common/enterprise", 
                "store/enterprise", 
                "managesieve/enterprise", 
                "directory/enterprise", 
-               "spam-filter/enterprise"]
+               "spam-filter/enterprise" ]
