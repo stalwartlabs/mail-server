@@ -41,21 +41,13 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     Ok(match &ctx.arguments[1] {
         Variable::Array(items) => {
             for item in items.iter() {
-                if !item.is_empty()
-                    && store
-                        .key_exists(item.to_string().into_owned().into_bytes())
-                        .await?
-                {
+                if !item.is_empty() && store.key_exists(item.to_string()).await? {
                     return Ok(true.into());
                 }
             }
             false
         }
-        v if !v.is_empty() => {
-            store
-                .key_exists(v.to_string().into_owned().into_bytes())
-                .await?
-        }
+        v if !v.is_empty() => store.key_exists(v.to_string()).await?,
         _ => false,
     }
     .into())
@@ -71,7 +63,7 @@ pub async fn exec_get(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             .ctx(trc::Key::Id, ctx.arguments[0].to_string().into_owned())
             .details("Unknown store")
     })?
-    .key_get::<VariableWrapper>(ctx.arguments[1].to_string().into_owned().into_bytes())
+    .key_get::<VariableWrapper>(ctx.arguments[1].to_string())
     .await
     .map(|v| v.map(|v| v.into_inner()).unwrap_or_default())
 }

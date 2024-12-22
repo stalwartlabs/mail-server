@@ -88,6 +88,7 @@ impl SpamFilterResult {
     }
 }
 
+#[derive(Debug)]
 pub struct ElementLocation<T> {
     pub element: T,
     pub location: Location,
@@ -117,8 +118,14 @@ impl<T> ElementLocation<T> {
 }
 
 pub(crate) async fn is_trusted_domain(server: &Server, domain: &str, span_id: u64) -> bool {
-    if server.core.spam.lists.trusted_domains.contains(domain) {
-        return true;
+    if let Some(store) = server.core.storage.lookups.get("trusted-domains") {
+        match store.key_exists(domain).await {
+            Ok(true) => return true,
+            Ok(false) => (),
+            Err(err) => {
+                trc::error!(err.span_id(span_id).caused_by(trc::location!()));
+            }
+        }
     }
 
     match server.core.storage.directory.is_local_domain(domain).await {
@@ -127,5 +134,19 @@ pub(crate) async fn is_trusted_domain(server: &Server, domain: &str, span_id: u6
             trc::error!(err.span_id(span_id).caused_by(trc::location!()));
             false
         }
+    }
+}
+
+pub(crate) async fn is_url_redirector(server: &Server, url: &str, span_id: u64) -> bool {
+    if let Some(store) = server.core.storage.lookups.get("url-redirectors") {
+        match store.key_exists(url).await {
+            Ok(result) => result,
+            Err(err) => {
+                trc::error!(err.span_id(span_id).caused_by(trc::location!()));
+                false
+            }
+        }
+    } else {
+        false
     }
 }

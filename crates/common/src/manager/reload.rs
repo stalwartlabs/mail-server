@@ -79,7 +79,7 @@ impl Server {
             purge_schedules: Default::default(),
         };
         stores.parse_stores(&mut config).await;
-        stores.parse_lookups(&mut config).await;
+        stores.parse_in_memory(&mut config).await;
 
         // Parse tracers
         let tracers = Telemetry::parse(&mut config, &stores);

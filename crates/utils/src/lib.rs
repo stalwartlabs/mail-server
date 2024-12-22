@@ -14,6 +14,8 @@ pub mod map;
 pub mod snowflake;
 pub mod url_params;
 
+use futures::StreamExt;
+use reqwest::Response;
 use rustls::{
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
     ClientConfig, RootCertStore, SignatureScheme,
@@ -86,6 +88,37 @@ impl AsRef<[u8]> for BlobHash {
 impl AsMut<[u8]> for BlobHash {
     fn as_mut(&mut self) -> &mut [u8] {
         self.0.as_mut()
+    }
+}
+
+pub trait HttpLimitResponse: Sync + Send {
+    fn bytes_with_limit(
+        self,
+        limit: usize,
+    ) -> impl std::future::Future<Output = reqwest::Result<Option<Vec<u8>>>> + Send;
+}
+
+impl HttpLimitResponse for Response {
+    async fn bytes_with_limit(self, limit: usize) -> reqwest::Result<Option<Vec<u8>>> {
+        if self
+            .content_length()
+            .map_or(false, |len| len as usize > limit)
+        {
+            return Ok(None);
+        }
+
+        let mut bytes = Vec::with_capacity(std::cmp::min(limit, 1024));
+        let mut stream = self.bytes_stream();
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            if bytes.len() + chunk.len() > limit {
+                return Ok(None);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+
+        Ok(Some(bytes))
     }
 }
 

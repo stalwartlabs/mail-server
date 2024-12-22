@@ -69,7 +69,7 @@ impl SpamFilterAnalyzeDomain for Server {
         }
 
         // Add EHLO domain
-        if !ctx.output.ehlo_host.fqdn.is_empty() {
+        if ctx.output.ehlo_host.sld.is_some() {
             domains.insert(ElementLocation::new(
                 ctx.output.ehlo_host.fqdn.clone(),
                 Location::Ehlo,

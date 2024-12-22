@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::borrow::Cow;
+
 use trc::AddContext;
 use utils::config::Rate;
 
-use crate::write::LookupClass;
+use crate::{backend::http::lookup::HttpStoreGet, write::LookupClass};
 #[allow(unused_imports)]
 use crate::{
     write::{
@@ -42,7 +44,9 @@ impl InMemoryStore {
             }
             #[cfg(feature = "redis")]
             InMemoryStore::Redis(store) => store.key_set(kv.key, kv.value, kv.expires).await,
-            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
+            InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
+                Err(trc::StoreEvent::NotSupported.into_err())
+            }
         }
         .caused_by(trc::location!())
     }
@@ -77,7 +81,9 @@ impl InMemoryStore {
             }
             #[cfg(feature = "redis")]
             InMemoryStore::Redis(store) => store.key_incr(kv.key, kv.value, kv.expires).await,
-            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
+            InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
+                Err(trc::StoreEvent::NotSupported.into_err())
+            }
         }
         .caused_by(trc::location!())
     }
@@ -94,7 +100,9 @@ impl InMemoryStore {
             }
             #[cfg(feature = "redis")]
             InMemoryStore::Redis(store) => store.key_delete(key).await,
-            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
+            InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
+                Err(trc::StoreEvent::NotSupported.into_err())
+            }
         }
         .caused_by(trc::location!())
     }
@@ -111,27 +119,32 @@ impl InMemoryStore {
             }
             #[cfg(feature = "redis")]
             InMemoryStore::Redis(store) => store.key_delete(key).await,
-            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
+            InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
+                Err(trc::StoreEvent::NotSupported.into_err())
+            }
         }
         .caused_by(trc::location!())
     }
 
     pub async fn key_get<T: Deserialize + From<Value<'static>> + std::fmt::Debug + 'static>(
         &self,
-        key: Vec<u8>,
+        key: impl Into<LookupKey<'_>>,
     ) -> trc::Result<Option<T>> {
         match self {
             InMemoryStore::Store(store) => store
                 .get_value::<LookupValue<T>>(ValueKey::from(ValueClass::Lookup(LookupClass::Key(
-                    key,
+                    key.into().into_bytes(),
                 ))))
                 .await
                 .map(|value| value.and_then(|v| v.into())),
             #[cfg(feature = "redis")]
-            InMemoryStore::Redis(store) => store.key_get(key).await,
+            InMemoryStore::Redis(store) => store.key_get(key.into().into_bytes()).await,
             InMemoryStore::Static(store) => Ok(store
-                .get(std::str::from_utf8(&key).unwrap_or_default())
+                .get(key.into().as_str())
                 .map(|value| T::from(value.clone()))),
+            InMemoryStore::Http(store) => {
+                Ok(store.get(key.into().as_str()).map(|value| T::from(value)))
+            }
         }
         .caused_by(trc::location!())
     }
@@ -147,24 +160,25 @@ impl InMemoryStore {
             }
             #[cfg(feature = "redis")]
             InMemoryStore::Redis(store) => store.counter_get(key).await,
-            InMemoryStore::Static(_) => Err(trc::StoreEvent::NotSupported.into_err()),
+            InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
+                Err(trc::StoreEvent::NotSupported.into_err())
+            }
         }
         .caused_by(trc::location!())
     }
 
-    pub async fn key_exists(&self, key: Vec<u8>) -> trc::Result<bool> {
+    pub async fn key_exists(&self, key: impl Into<LookupKey<'_>>) -> trc::Result<bool> {
         match self {
             InMemoryStore::Store(store) => store
                 .get_value::<LookupValue<()>>(ValueKey::from(ValueClass::Lookup(LookupClass::Key(
-                    key,
+                    key.into().into_bytes(),
                 ))))
                 .await
                 .map(|value| matches!(value, Some(LookupValue::Value(())))),
             #[cfg(feature = "redis")]
-            InMemoryStore::Redis(store) => store.key_exists(key).await,
-            InMemoryStore::Static(store) => Ok(store
-                .get(std::str::from_utf8(&key).unwrap_or_default())
-                .is_some()),
+            InMemoryStore::Redis(store) => store.key_exists(key.into().into_bytes()).await,
+            InMemoryStore::Static(store) => Ok(store.get(key.into().as_str()).is_some()),
+            InMemoryStore::Http(store) => Ok(store.contains(key.into().as_str())),
         }
         .caused_by(trc::location!())
     }
@@ -294,7 +308,7 @@ impl InMemoryStore {
             }
             #[cfg(feature = "redis")]
             InMemoryStore::Redis(_) => {}
-            InMemoryStore::Static(_) => {}
+            InMemoryStore::Static(_) | InMemoryStore::Http(_) => {}
         }
 
         Ok(())
@@ -304,6 +318,72 @@ impl InMemoryStore {
         match self {
             InMemoryStore::Store(store) => store.is_sql(),
             _ => false,
+        }
+    }
+}
+
+pub enum LookupKey<'x> {
+    String(String),
+    StringRef(&'x str),
+    Bytes(Vec<u8>),
+    BytesRef(&'x [u8]),
+}
+
+impl<'x> From<&'x str> for LookupKey<'x> {
+    fn from(key: &'x str) -> Self {
+        LookupKey::StringRef(key)
+    }
+}
+
+impl<'x> From<&'x String> for LookupKey<'x> {
+    fn from(key: &'x String) -> Self {
+        LookupKey::StringRef(key.as_str())
+    }
+}
+
+impl<'x> From<&'x [u8]> for LookupKey<'x> {
+    fn from(key: &'x [u8]) -> Self {
+        LookupKey::BytesRef(key)
+    }
+}
+
+impl<'x> From<Cow<'x, str>> for LookupKey<'x> {
+    fn from(key: Cow<'x, str>) -> Self {
+        match key {
+            Cow::Borrowed(key) => LookupKey::StringRef(key),
+            Cow::Owned(key) => LookupKey::String(key),
+        }
+    }
+}
+
+impl From<String> for LookupKey<'static> {
+    fn from(key: String) -> Self {
+        LookupKey::String(key)
+    }
+}
+
+impl From<Vec<u8>> for LookupKey<'static> {
+    fn from(key: Vec<u8>) -> Self {
+        LookupKey::Bytes(key)
+    }
+}
+
+impl LookupKey<'_> {
+    pub fn as_str(&self) -> &str {
+        match self {
+            LookupKey::String(string) => string,
+            LookupKey::StringRef(string) => string,
+            LookupKey::Bytes(bytes) => std::str::from_utf8(bytes).unwrap_or_default(),
+            LookupKey::BytesRef(bytes) => std::str::from_utf8(bytes).unwrap_or_default(),
+        }
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        match self {
+            LookupKey::String(string) => string.into_bytes(),
+            LookupKey::StringRef(string) => string.as_bytes().to_vec(),
+            LookupKey::Bytes(bytes) => bytes,
+            LookupKey::BytesRef(bytes) => bytes.to_vec(),
         }
     }
 }

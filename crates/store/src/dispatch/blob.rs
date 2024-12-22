@@ -40,7 +40,7 @@ impl BlobStore {
             #[cfg(feature = "azure")]
             BlobBackend::Azure(store) => store.get_blob(key, read_range).await,
             #[cfg(feature = "enterprise")]
-            BlobBackend::Composite(store) => store.get_blob(key, read_range).await,
+            BlobBackend::Sharded(store) => store.get_blob(key, read_range).await,
         };
 
         trc::event!(
@@ -122,7 +122,7 @@ impl BlobStore {
             #[cfg(feature = "azure")]
             BlobBackend::Azure(store) => store.put_blob(key, data.as_ref()).await,
             #[cfg(feature = "enterprise")]
-            BlobBackend::Composite(store) => store.put_blob(key, data.as_ref()).await,
+            BlobBackend::Sharded(store) => store.put_blob(key, data.as_ref()).await,
         }
         .caused_by(trc::location!());
 
@@ -160,7 +160,7 @@ impl BlobStore {
             #[cfg(feature = "azure")]
             BlobBackend::Azure(store) => store.delete_blob(key).await,
             #[cfg(feature = "enterprise")]
-            BlobBackend::Composite(store) => store.delete_blob(key).await,
+            BlobBackend::Sharded(store) => store.delete_blob(key).await,
         }
         .caused_by(trc::location!());
 

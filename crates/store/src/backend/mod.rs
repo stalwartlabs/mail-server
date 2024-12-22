@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+#[cfg(feature = "azure")]
+pub mod azure;
 #[cfg(feature = "enterprise")]
 pub mod composite;
 #[cfg(feature = "elastic")]
@@ -11,6 +13,7 @@ pub mod elastic;
 #[cfg(feature = "foundation")]
 pub mod foundationdb;
 pub mod fs;
+pub mod http;
 pub mod memory;
 #[cfg(feature = "mysql")]
 pub mod mysql;
@@ -24,8 +27,6 @@ pub mod rocksdb;
 pub mod s3;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
-#[cfg(feature = "azure")]
-pub mod azure;
 
 pub const MAX_TOKEN_LENGTH: usize = (u8::MAX >> 1) as usize;
 pub const MAX_TOKEN_MASK: usize = MAX_TOKEN_LENGTH - 1;

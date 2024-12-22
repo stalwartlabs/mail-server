@@ -15,18 +15,11 @@ use ahash::{AHashMap, AHashSet, RandomState};
 use arc_swap::ArcSwap;
 use auth::{oauth::config::OAuthConfig, roles::RolePermissions, AccessToken};
 use config::{
-    imap::ImapConfig,
-    jmap::settings::JmapConfig,
-    network::Network,
-    scripts::{RemoteList, Scripting},
-    smtp::SmtpConfig,
-    spamfilter::SpamFilterConfig,
-    storage::Storage,
-    telemetry::Metrics,
+    imap::ImapConfig, jmap::settings::JmapConfig, network::Network, scripts::Scripting,
+    smtp::SmtpConfig, spamfilter::SpamFilterConfig, storage::Storage, telemetry::Metrics,
 };
 use dashmap::DashMap;
 
-use futures::StreamExt;
 use imap_proto::protocol::list::Attribute;
 use ipc::{DeliveryEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
 use listener::{
@@ -35,7 +28,6 @@ use listener::{
 
 use manager::webadmin::{Resource, WebAdminManager};
 use parking_lot::{Mutex, RwLock};
-use reqwest::Response;
 use rustls::sign::CertifiedKey;
 use tokio::sync::{mpsc, Notify};
 use tokio_rustls::TlsConnector;
@@ -117,7 +109,6 @@ pub struct Data {
     pub permissions: ADashMap<u32, Arc<RolePermissions>>,
     pub permissions_version: AtomicU8,
 
-    pub remote_lists: RwLock<AHashMap<String, RemoteList>>,
     pub asn_geo_data: AsnGeoLookupData,
 
     pub jmap_id_gen: SnowflakeIdGenerator,
@@ -304,37 +295,6 @@ impl BuildHasher for ThrottleKeyHasherBuilder {
 
     fn build_hasher(&self) -> Self::Hasher {
         ThrottleKeyHasher::default()
-    }
-}
-
-pub trait HttpLimitResponse: Sync + Send {
-    fn bytes_with_limit(
-        self,
-        limit: usize,
-    ) -> impl std::future::Future<Output = reqwest::Result<Option<Vec<u8>>>> + Send;
-}
-
-impl HttpLimitResponse for Response {
-    async fn bytes_with_limit(self, limit: usize) -> reqwest::Result<Option<Vec<u8>>> {
-        if self
-            .content_length()
-            .map_or(false, |len| len as usize > limit)
-        {
-            return Ok(None);
-        }
-
-        let mut bytes = Vec::with_capacity(std::cmp::min(limit, 1024));
-        let mut stream = self.bytes_stream();
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            if bytes.len() + chunk.len() > limit {
-                return Ok(None);
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-
-        Ok(Some(bytes))
     }
 }
 

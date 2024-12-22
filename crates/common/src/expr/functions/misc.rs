@@ -48,3 +48,16 @@ pub(crate) fn fn_ip_reverse_name(v: Vec<Variable>) -> Variable {
         .unwrap_or_default()
         .into()
 }
+
+pub(crate) fn fn_if_then(v: Vec<Variable>) -> Variable {
+    let mut v = v.into_iter();
+    let condition = v.next().unwrap();
+    let iff = v.next().unwrap();
+    let then = v.next().unwrap();
+
+    if condition.to_bool() {
+        iff
+    } else {
+        then
+    }
+}

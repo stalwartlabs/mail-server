@@ -70,25 +70,7 @@ impl SpamFilterAnalyzeFrom for Server {
         if from_count > 0 {
             // Validate address
             let from_addr_is_valid = from_addr.is_valid();
-            if from_addr_is_valid {
-                if self
-                    .core
-                    .spam
-                    .lists
-                    .freemail_providers
-                    .contains(from_addr.domain_part.sld.as_deref().unwrap_or_default())
-                {
-                    ctx.result.add_tag("FREEMAIL_FROM");
-                } else if self
-                    .core
-                    .spam
-                    .lists
-                    .disposable_providers
-                    .contains(from_addr.domain_part.sld.as_deref().unwrap_or_default())
-                {
-                    ctx.result.add_tag("DISPOSABLE_FROM");
-                }
-            } else {
+            if !from_addr_is_valid {
                 ctx.result.add_tag("FROM_INVALID");
             }
 
@@ -200,26 +182,6 @@ impl SpamFilterAnalyzeFrom for Server {
         if !env_from_empty {
             // Validate envelope address
             if ctx.output.env_from_addr.is_valid() {
-                if self.core.spam.lists.freemail_providers.contains(
-                    ctx.output
-                        .env_from_addr
-                        .domain_part
-                        .sld
-                        .as_deref()
-                        .unwrap_or_default(),
-                ) {
-                    ctx.result.add_tag("FREEMAIL_ENVFROM");
-                } else if self.core.spam.lists.disposable_providers.contains(
-                    ctx.output
-                        .env_from_addr
-                        .domain_part
-                        .sld
-                        .as_deref()
-                        .unwrap_or_default(),
-                ) {
-                    ctx.result.add_tag("DISPOSABLE_ENVFROM");
-                }
-
                 // Mail from no resolve to A or MX
                 if matches!(
                     (

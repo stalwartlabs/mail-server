@@ -59,15 +59,18 @@ impl SpamFilterAnalyzeMid for Server {
                 }
 
                 // From address present in Message-ID checks
-                for sender in [&ctx.output.from.email, &ctx.output.env_from_addr] {
+                for (part, sender) in [
+                    ("FROM", &ctx.output.from.email),
+                    ("ENVFROM", &ctx.output.env_from_addr),
+                ] {
                     if !sender.address.is_empty() {
                         if mid.contains(&sender.address) {
-                            ctx.result.add_tag("MID_CONTAINS_FROM");
+                            ctx.result.add_tag(format!("MID_CONTAINS_{part}"));
                         } else if mid_host.fqdn == sender.domain_part.fqdn {
-                            ctx.result.add_tag("MID_RHS_MATCH_FROM");
+                            ctx.result.add_tag(format!("MID_RHS_MATCH_{part}"));
                         } else if matches!((&mid_host.sld, &sender.domain_part.sld), (Some(mid_sld), Some(sender_sld)) if mid_sld == sender_sld)
                         {
-                            ctx.result.add_tag("MID_RHS_MATCH_FROMTLD");
+                            ctx.result.add_tag(format!("MID_RHS_MATCH_{part}TLD"));
                         }
                     }
                 }

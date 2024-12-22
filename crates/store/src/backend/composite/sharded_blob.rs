@@ -14,11 +14,11 @@ use utils::config::{utils::AsKey, Config};
 
 use crate::{BlobBackend, Store, Stores};
 
-pub struct DistributedBlob {
+pub struct ShardedBlob {
     pub stores: Vec<BlobBackend>,
 }
 
-impl DistributedBlob {
+impl ShardedBlob {
     pub fn open(config: &mut Config, prefix: impl AsKey, stores: &Stores) -> Option<Self> {
         let prefix = prefix.as_key();
         let store_ids = config
@@ -83,7 +83,7 @@ impl DistributedBlob {
                 BlobBackend::S3(store) => store.get_blob(key, read_range).await,
                 #[cfg(feature = "azure")]
                 BlobBackend::Azure(store) => store.get_blob(key, read_range).await,
-                BlobBackend::Composite(_) => unimplemented!(),
+                BlobBackend::Sharded(_) => unimplemented!(),
             }
         })
         .await
@@ -115,7 +115,7 @@ impl DistributedBlob {
                 BlobBackend::S3(store) => store.put_blob(key, data).await,
                 #[cfg(feature = "azure")]
                 BlobBackend::Azure(store) => store.put_blob(key, data).await,
-                BlobBackend::Composite(_) => unimplemented!(),
+                BlobBackend::Sharded(_) => unimplemented!(),
             }
         })
         .await
@@ -147,7 +147,7 @@ impl DistributedBlob {
                 BlobBackend::S3(store) => store.delete_blob(key).await,
                 #[cfg(feature = "azure")]
                 BlobBackend::Azure(store) => store.delete_blob(key).await,
-                BlobBackend::Composite(_) => unimplemented!(),
+                BlobBackend::Sharded(_) => unimplemented!(),
             }
         })
         .await

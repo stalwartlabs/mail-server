@@ -158,15 +158,15 @@ Reply-to: <info@www.domain.org>
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@gmail.com
-expect FREEMAIL_ENVFROM FREEMAIL_FROM FROM_EQ_ENVFROM FROM_NO_DN
+envelope_from hello@custom.disposable.org
+expect FREEMAIL_FROM DISPOSABLE_ENV_FROM FROM_NEQ_ENVFROM FROM_NO_DN FORGED_SENDER
 
 From: hello@gmail.com
 
 Test
 <!-- NEXT TEST -->
-envelope_from hello@custom.disposable.org
-expect DISPOSABLE_ENVFROM DISPOSABLE_FROM FROM_EQ_ENVFROM FROM_NO_DN
+envelope_from hello@gmail.com
+expect DISPOSABLE_FROM FREEMAIL_ENV_FROM FROM_NEQ_ENVFROM FROM_NO_DN FORGED_SENDER
 
 From: hello@custom.disposable.org
 

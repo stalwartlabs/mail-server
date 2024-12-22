@@ -1009,8 +1009,6 @@ impl SpamEvent {
         match self {
             SpamEvent::Pyzor => "Pyzor success",
             SpamEvent::PyzorError => "Pyzor error",
-            SpamEvent::RemoteList => "Remote list updated",
-            SpamEvent::RemoteListError => "Error updating remote list",
             SpamEvent::Train => "Training spam filter",
             SpamEvent::TrainBalance => "Spam filter model balance verify",
             SpamEvent::TrainError => "Error training spam filter",
@@ -1030,8 +1028,6 @@ impl SpamEvent {
             SpamEvent::Classify => "The message is being classified for spam",
             SpamEvent::ClassifyError => "There is not enough training data for the spam filter",
             SpamEvent::Pyzor => "Pyzor query successful",
-            SpamEvent::RemoteList => "The remote list was updated",
-            SpamEvent::RemoteListError => "An error occurred while updating the remote list",
             SpamEvent::Dnsbl => "The DNSBL query was successful",
             SpamEvent::DnsblError => "An error occurred while querying the DNSBL",
         }
@@ -1556,6 +1552,8 @@ impl StoreEvent {
             StoreEvent::BlobWrite => "Blob write operation",
             StoreEvent::BlobDelete => "Blob delete operation",
             StoreEvent::DataIterate => "Data store iteration operation",
+            StoreEvent::HttpStoreFetch => "HTTP store updated",
+            StoreEvent::HttpStoreError => "Error updating HTTP store",
         }
     }
 
@@ -1591,6 +1589,8 @@ impl StoreEvent {
             StoreEvent::BlobWrite => "A blob write operation was executed",
             StoreEvent::BlobDelete => "A blob delete operation was executed",
             StoreEvent::DataIterate => "A data store iteration operation was executed",
+            StoreEvent::HttpStoreFetch => "The HTTP store was updated",
+            StoreEvent::HttpStoreError => "An error occurred while updating the HTTP store",
         }
     }
 }

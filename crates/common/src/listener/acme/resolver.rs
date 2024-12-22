@@ -13,10 +13,10 @@ use rustls::{
     ServerConfig,
 };
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use store::write::Bincode;
+use store::{dispatch::lookup::KeyValue, write::Bincode};
 use trc::AcmeEvent;
 
-use crate::{listener::acme::directory::SerializedCert, Server};
+use crate::{listener::acme::directory::SerializedCert, Server, KV_ACME};
 
 use super::{directory::ACME_TLS_ALPN_NAME, AcmeProvider, StaticResolver};
 
@@ -45,7 +45,7 @@ impl Server {
     pub(crate) async fn build_acme_certificate(&self, domain: &str) -> Option<Arc<CertifiedKey>> {
         match self
             .in_memory_store()
-            .key_get::<Bincode<SerializedCert>>(format!("acme:{domain}").into_bytes())
+            .key_get::<Bincode<SerializedCert>>(KeyValue::<()>::build_key(KV_ACME, domain))
             .await
         {
             Ok(Some(cert)) => {

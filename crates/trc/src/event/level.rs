@@ -20,7 +20,7 @@ impl EventType {
                 | StoreEvent::SqlQuery
                 | StoreEvent::LdapQuery
                 | StoreEvent::LdapBind => Level::Trace,
-                StoreEvent::NotFound => Level::Debug,
+                StoreEvent::NotFound | StoreEvent::HttpStoreFetch => Level::Debug,
                 StoreEvent::AssertValueFailed
                 | StoreEvent::FoundationdbError
                 | StoreEvent::MysqlError
@@ -41,7 +41,7 @@ impl EventType {
                 | StoreEvent::NotSupported
                 | StoreEvent::UnexpectedError
                 | StoreEvent::CryptoError => Level::Error,
-                StoreEvent::BlobMissingMarker => Level::Warn,
+                StoreEvent::BlobMissingMarker | StoreEvent::HttpStoreError => Level::Warn,
             },
             EventType::Jmap(_) => Level::Debug,
             EventType::Imap(event) => match event {
@@ -335,17 +335,15 @@ impl EventType {
                 | SieveEvent::ActionReject => Level::Debug,
             },
             EventType::Spam(event) => match event {
-                SpamEvent::PyzorError
-                | SpamEvent::TrainError
-                | SpamEvent::DnsblError
-                | SpamEvent::RemoteListError => Level::Warn,
+                SpamEvent::PyzorError | SpamEvent::TrainError | SpamEvent::DnsblError => {
+                    Level::Warn
+                }
                 SpamEvent::Pyzor
                 | SpamEvent::Train
                 | SpamEvent::Classify
                 | SpamEvent::ClassifyError
                 | SpamEvent::TrainBalance
-                | SpamEvent::Dnsbl
-                | SpamEvent::RemoteList => Level::Debug,
+                | SpamEvent::Dnsbl => Level::Debug,
             },
             EventType::Http(event) => match event {
                 HttpEvent::ConnectionStart | HttpEvent::ConnectionEnd => Level::Debug,

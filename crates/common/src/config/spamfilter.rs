@@ -11,7 +11,7 @@ use nlp::bayes::BayesClassifier;
 use tokio::net::lookup_host;
 use utils::{
     config::{utils::ParseValue, Config},
-    glob::{GlobMap, GlobSet},
+    glob::GlobMap,
 };
 
 use super::{if_block::IfBlock, tokenizer::TokenMap};
@@ -61,16 +61,8 @@ pub struct DnsBlConfig {
 
 #[derive(Debug, Clone, Default)]
 pub struct SpamFilterLists {
-    pub dmarc_allow: GlobSet,
-    pub spf_dkim_allow: GlobSet,
-    pub freemail_providers: GlobSet,
-    pub disposable_providers: GlobSet,
-    pub trusted_domains: GlobSet,
-    pub url_redirectors: GlobSet,
     pub file_extensions: GlobMap<FileExtension>,
     pub scores: GlobMap<SpamFilterAction<f64>>,
-    pub spamtraps: GlobSet,
-    pub remote: Vec<RemoteListConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -163,36 +155,11 @@ pub enum Location {
 }
 
 #[derive(Debug, Clone)]
-pub struct RemoteListConfig {
-    pub id: String,
-    pub url: String,
-    pub retry: Duration,
-    pub refresh: Duration,
-    pub timeout: Duration,
-    pub max_size: usize,
-    pub max_entries: usize,
-    pub max_entry_size: usize,
-    pub format: RemoteListFormat,
-    pub scope: Element,
-    pub tag: String,
-}
-
-#[derive(Debug, Clone)]
 pub struct DnsBlServer {
     pub id: String,
     pub zone: IfBlock,
     pub scope: Element,
     pub tags: IfBlock,
-}
-
-#[derive(Debug, Clone)]
-pub enum RemoteListFormat {
-    List,
-    Csv {
-        column: u32,
-        separator: char,
-        skip_first: bool,
-    },
 }
 
 impl SpamFilterConfig {
@@ -373,16 +340,8 @@ impl SpamFilterHeaderConfig {
 impl SpamFilterLists {
     pub fn parse(config: &mut Config) -> Self {
         let mut lists = SpamFilterLists {
-            dmarc_allow: GlobSet::default(),
-            spf_dkim_allow: GlobSet::default(),
-            freemail_providers: GlobSet::default(),
-            disposable_providers: GlobSet::default(),
-            trusted_domains: GlobSet::default(),
-            url_redirectors: GlobSet::default(),
-            spamtraps: GlobSet::default(),
             file_extensions: GlobMap::default(),
             scores: GlobMap::default(),
-            remote: Default::default(),
         };
 
         // Parse local lists
@@ -393,27 +352,6 @@ impl SpamFilterLists {
                 .filter(|(id, key)| !id.is_empty() && !key.is_empty())
             {
                 match id {
-                    "dmarc-allow" => {
-                        lists.dmarc_allow.insert(key);
-                    }
-                    "spf-dkim-allow" => {
-                        lists.spf_dkim_allow.insert(key);
-                    }
-                    "freemail-providers" => {
-                        lists.freemail_providers.insert(key);
-                    }
-                    "disposable-providers" => {
-                        lists.disposable_providers.insert(key);
-                    }
-                    "trusted-domains" => {
-                        lists.trusted_domains.insert(key);
-                    }
-                    "url-redirectors" => {
-                        lists.url_redirectors.insert(key);
-                    }
-                    "spam-traps" => {
-                        lists.spamtraps.insert(key);
-                    }
                     "scores" => {
                         let action = match value.to_lowercase().as_str() {
                             "reject" => SpamFilterAction::Reject,
@@ -468,104 +406,6 @@ impl SpamFilterLists {
 
         for (key, error) in errors {
             config.new_parse_error(key, error);
-        }
-
-        // Parse remote lists
-        for id in config
-            .sub_keys("spam-filter.remote-list", ".url")
-            .map(|k| k.to_string())
-            .collect::<Vec<_>>()
-        {
-            let id_ = id.as_str();
-            if !config
-                .property_or_default(("spam-filter.remote-list", id_, "enable"), "true")
-                .unwrap_or(true)
-            {
-                continue;
-            }
-
-            let format = match config
-                .value_require(("spam-filter.remote-list", id_, "format"))
-                .unwrap_or_default()
-            {
-                "list" => RemoteListFormat::List,
-                "csv" => RemoteListFormat::Csv {
-                    column: config
-                        .property_require(("spam-filter.remote-list", id_, "column"))
-                        .unwrap_or(0),
-                    separator: config
-                        .property_or_default::<String>(
-                            ("spam-filter.remote-list", id_, "separator"),
-                            ",",
-                        )
-                        .unwrap_or_default()
-                        .chars()
-                        .next()
-                        .unwrap_or(','),
-                    skip_first: config
-                        .property_or_default::<bool>(
-                            ("spam-filter.remote-list", id_, "skip-first"),
-                            "false",
-                        )
-                        .unwrap_or(false),
-                },
-                other => {
-                    let message = format!("Invalid format: {other:?}");
-                    config.new_build_error(("spam-filter.remote-list", id_, "format"), message);
-                    continue;
-                }
-            };
-
-            lists.remote.push(RemoteListConfig {
-                url: config
-                    .value_require(("spam-filter.remote-list", id_, "url"))
-                    .unwrap_or_default()
-                    .to_string(),
-                retry: config
-                    .property_or_default::<Duration>(
-                        ("spam-filter.remote-list", id_, "retry"),
-                        "1h",
-                    )
-                    .unwrap_or(Duration::from_secs(3600)),
-                refresh: config
-                    .property_or_default::<Duration>(
-                        ("spam-filter.remote-list", id_, "refresh"),
-                        "12h",
-                    )
-                    .unwrap_or(Duration::from_secs(43200)),
-                timeout: config
-                    .property_or_default::<Duration>(
-                        ("spam-filter.remote-list", id_, "timeout"),
-                        "30s",
-                    )
-                    .unwrap_or(Duration::from_secs(30)),
-                max_size: config
-                    .property_or_default::<usize>(
-                        ("spam-filter.remote-list", id_, "limits.size"),
-                        "104857600",
-                    )
-                    .unwrap_or(104857600),
-                max_entries: config
-                    .property_or_default::<usize>(
-                        ("spam-filter.remote-list", id_, "limits.entries"),
-                        "100000",
-                    )
-                    .unwrap_or(100000),
-                max_entry_size: config
-                    .property_or_default::<usize>(
-                        ("spam-filter.remote-list", id_, "limits.entry-size"),
-                        "512",
-                    )
-                    .unwrap_or(512),
-                format,
-                scope: config
-                    .property_require(("spam-filter.remote-list", id_, "scope"))
-                    .unwrap_or_default(),
-                tag: config
-                    .property_require(("spam-filter.remote-list", id_, "tag"))
-                    .unwrap_or_else(|| format!("REMOTE_LIST_{}", id_.to_uppercase())),
-                id,
-            });
         }
 
         lists

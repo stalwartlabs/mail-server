@@ -15,7 +15,7 @@ pub mod write;
 
 pub use ahash;
 use ahash::AHashMap;
-use backend::{fs::FsStore, memory::StaticMemoryStore};
+use backend::{fs::FsStore, http::HttpStore, memory::StaticMemoryStore};
 pub use blake3;
 pub use parking_lot;
 pub use rand;
@@ -214,7 +214,7 @@ pub enum BlobBackend {
     #[cfg(feature = "azure")]
     Azure(Arc<AzureStore>),
     #[cfg(feature = "enterprise")]
-    Composite(Arc<backend::composite::distributed_blob::DistributedBlob>),
+    Sharded(Arc<backend::composite::sharded_blob::ShardedBlob>),
 }
 
 #[derive(Clone)]
@@ -229,6 +229,7 @@ pub enum InMemoryStore {
     Store(Store),
     #[cfg(feature = "redis")]
     Redis(Arc<RedisStore>),
+    Http(Arc<HttpStore>),
     Static(Arc<StaticMemoryStore>),
 }
 
@@ -750,7 +751,7 @@ impl Stores {
             self.stores
                 .retain(|_, store| !matches!(store, Store::SQLReadReplica(_)));
             self.blob_stores
-                .retain(|_, store| !matches!(store.backend, BlobBackend::Composite(_)));
+                .retain(|_, store| !matches!(store.backend, BlobBackend::Sharded(_)));
         }
     }
 }

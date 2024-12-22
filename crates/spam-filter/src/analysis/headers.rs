@@ -33,8 +33,10 @@ impl SpamFilterAnalyzeHeaders for Server {
             for ch in hdr_name.chars() {
                 if ch.is_ascii_alphanumeric() {
                     tag.push(ch.to_ascii_uppercase());
-                } else {
+                } else if ch == '-' {
                     tag.push('_');
+                } else {
+                    tag.push('X');
                 }
             }
             ctx.result.add_tag(tag);

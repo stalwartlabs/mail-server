@@ -102,48 +102,6 @@ impl SpamFilterAnalyzeReplyTo for Server {
                 ctx.result.add_tag("REPLYTO_ADDR_EQ_FROM");
             }
 
-            let reply_to_sld = reply_to
-                .email
-                .domain_part
-                .sld
-                .as_deref()
-                .unwrap_or_default();
-            if self
-                .core
-                .spam
-                .lists
-                .freemail_providers
-                .contains(reply_to_sld)
-            {
-                ctx.result.add_tag("FREEMAIL_REPLYTO");
-                let from_domain_sld = ctx
-                    .output
-                    .from
-                    .email
-                    .domain_part
-                    .sld
-                    .as_deref()
-                    .unwrap_or_default();
-                if reply_to_sld != from_domain_sld
-                    && self
-                        .core
-                        .spam
-                        .lists
-                        .freemail_providers
-                        .contains(from_domain_sld)
-                {
-                    ctx.result.add_tag("FREEMAIL_REPLYTO_NEQ_FROM_DOM");
-                }
-            } else if self
-                .core
-                .spam
-                .lists
-                .disposable_providers
-                .contains(reply_to_sld)
-            {
-                ctx.result.add_tag("DISPOSABLE_REPLYTO");
-            }
-
             // Validate unnecessary encoding
             let reply_to_raw_utf8 = std::str::from_utf8(reply_to_raw).unwrap_or_default();
             if reply_to.email.address.is_ascii()

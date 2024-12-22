@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::collections::hash_map::Entry;
+
 use ahash::AHashMap;
 use utils::{config::Config, glob::GlobMap};
 
@@ -80,8 +82,17 @@ impl Stores {
         }
 
         for (id, store) in lookups {
-            self.in_memory_stores
-                .insert(id, InMemoryStore::Static(store.into()));
+            match self.in_memory_stores.entry(id) {
+                Entry::Vacant(entry) => {
+                    entry.insert(InMemoryStore::Static(store.into()));
+                }
+                Entry::Occupied(e) => {
+                    config.new_build_error(
+                        ("lookup", e.key().as_str()),
+                        "An im-memory store with this id already exists",
+                    );
+                }
+            }
         }
     }
 }

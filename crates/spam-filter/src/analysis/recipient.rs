@@ -175,33 +175,6 @@ impl SpamFilterAnalyzeRecipient for Server {
                     ctx.result.add_tag("RCPT_LOCAL_IN_SUBJECT");
                 }
             }
-
-            // Check for freemail or disposable domains
-            if let Some(domain) = rcpt.email.domain_part.sld.as_deref() {
-                if self.core.spam.lists.freemail_providers.contains(domain) {
-                    if ctx
-                        .output
-                        .recipients_to
-                        .iter()
-                        .any(|r| r.email == rcpt.email)
-                    {
-                        ctx.result.add_tag("FREEMAIL_TO");
-                    } else {
-                        ctx.result.add_tag("FREEMAIL_CC");
-                    }
-                } else if self.core.spam.lists.disposable_providers.contains(domain) {
-                    if ctx
-                        .output
-                        .recipients_to
-                        .iter()
-                        .any(|r| r.email == rcpt.email)
-                    {
-                        ctx.result.add_tag("DISPOSABLE_TO");
-                    } else {
-                        ctx.result.add_tag("DISPOSABLE_CC");
-                    }
-                }
-            }
         }
 
         if to_dn_count == 0 && to_dn_eq_addr_count == 0 {

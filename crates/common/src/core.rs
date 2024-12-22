@@ -66,7 +66,11 @@ impl Server {
         })
     }
 
-    pub fn get_in_memory_store(&self, name: &str, session_id: u64) -> &InMemoryStore {
+    pub fn get_in_memory_store(&self, name: &str) -> Option<&InMemoryStore> {
+        self.core.storage.lookups.get(name)
+    }
+
+    pub fn get_in_memory_store_or_default(&self, name: &str, session_id: u64) -> &InMemoryStore {
         self.core.storage.lookups.get(name).unwrap_or_else(|| {
             if !name.is_empty() {
                 trc::event!(

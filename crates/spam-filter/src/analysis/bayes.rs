@@ -44,16 +44,21 @@ impl SpamFilterAnalyzeBayes for Server {
     }
 
     async fn spam_filter_analyze_spam_trap(&self, ctx: &mut SpamFilterContext<'_>) -> bool {
-        if ctx
-            .output
-            .env_to_addr
-            .iter()
-            .any(|addr| self.core.spam.lists.spamtraps.contains(&addr.address))
-        {
-            ctx.result.add_tag("SPAM_TRAP");
-            true
-        } else {
-            false
+        if let Some(store) = self.get_in_memory_store("spam-traps") {
+            for addr in &ctx.output.env_to_addr {
+                match store.key_exists(addr.address.as_str()).await {
+                    Ok(true) => {
+                        ctx.result.add_tag("SPAM_TRAP");
+                        return true;
+                    }
+                    Ok(false) => (),
+                    Err(err) => {
+                        trc::error!(err.span_id(ctx.input.span_id).caused_by(trc::location!()));
+                    }
+                }
+            }
         }
+
+        false
     }
 }

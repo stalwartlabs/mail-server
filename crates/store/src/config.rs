@@ -42,7 +42,7 @@ use crate::backend::azure::AzureStore;
 impl Stores {
     pub async fn parse_all(config: &mut Config) -> Self {
         let mut stores = Self::parse(config).await;
-        stores.parse_lookups(config).await;
+        stores.parse_in_memory(config).await;
         stores
     }
 
@@ -263,14 +263,12 @@ impl Stores {
                         self.in_memory_stores.insert(id.to_string(), db.into());
                     }
                 }
-                "distributed-blob" => {
-                    if let Some(db) =
-                        crate::backend::composite::distributed_blob::DistributedBlob::open(
-                            config, prefix, self,
-                        )
-                    {
+                "sharded-blob" | "distributed-blob" => {
+                    if let Some(db) = crate::backend::composite::sharded_blob::ShardedBlob::open(
+                        config, prefix, self,
+                    ) {
                         let store = BlobStore {
-                            backend: crate::BlobBackend::Composite(db.into()),
+                            backend: crate::BlobBackend::Sharded(db.into()),
                             compression,
                         };
                         self.blob_stores.insert(id, store);
@@ -281,9 +279,12 @@ impl Stores {
         }
     }
 
-    pub async fn parse_lookups(&mut self, config: &mut Config) {
+    pub async fn parse_in_memory(&mut self, config: &mut Config) {
         // Parse memory stores
         self.parse_static_stores(config);
+
+        // Parse http stores
+        self.parse_http_stores(config);
 
         // Parse purge schedules
         if let Some(store) = config

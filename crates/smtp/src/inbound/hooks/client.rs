@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{config::smtp::session::MTAHook, HttpLimitResponse};
+use common::config::smtp::session::MTAHook;
+use utils::HttpLimitResponse;
 
 use super::{Request, Response};
 

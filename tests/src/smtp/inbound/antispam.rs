@@ -106,19 +106,19 @@ model = "gpt-dummy"
 allow-invalid-certs = true
 
 [spam-filter.list]
-"freemail-providers" = {"gmail.com", "googlemail.com", "yahoomail.com", "*freemail.org"}
-"disposable-providers" = {"guerrillamail.com", "*disposable.org"}
-"url-redirectors" = {"bit.ly", "redirect.io", "redirect.me", "redirect.org", "redirect.com", "redirect.net", "t.ly", "tinyurl.com"}
-"dmarc-allow" = {"dmarc-allow.org"}
-"spf-dkim-allow" = {"spf-dkim-allow.org"}
-"spam-traps" = {"spamtrap@*"}
-"trusted-domains" = {"stalw.art"}
 "file-extensions" = { "html" = "text/html|BAD", 
                 "pdf" = "application/pdf|NZ", 
                 "txt" = "text/plain|message/disposition-notification|text/rfc822-headers", 
                 "zip" = "AR", 
                 "js" = "BAD|NZ", 
                 "hta" = "BAD|NZ" }
+[lookup]
+"url-redirectors" = {"bit.ly", "redirect.io", "redirect.me", "redirect.org", "redirect.com", "redirect.net", "t.ly", "tinyurl.com"}
+"known-dmarc-domains" = {"dmarc-allow.org"}
+"spam-traps" = {"spamtrap@*"}
+"trusted-domains" = {"stalw.art"}
+"freemail-providers" = {"gmail.com", "googlemail.com", "yahoomail.com", "*freemail.org"}
+"disposable-providers" = {"guerrillamail.com", "*disposable.org"}
 "#;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -526,10 +526,12 @@ async fn antispam() {
                 }
                 "from" => {
                     server.spam_filter_analyze_from(&mut spam_ctx).await;
+                    server.spam_filter_analyze_domain(&mut spam_ctx).await;
                     server.spam_filter_analyze_rules(&mut spam_ctx).await;
                 }
                 "replyto" => {
                     server.spam_filter_analyze_reply_to(&mut spam_ctx).await;
+                    server.spam_filter_analyze_domain(&mut spam_ctx).await;
                     server.spam_filter_analyze_rules(&mut spam_ctx).await;
                 }
                 "recipient" => {
@@ -553,6 +555,9 @@ async fn antispam() {
                 }
                 "dmarc" => {
                     server.spam_filter_analyze_dmarc(&mut spam_ctx).await;
+                    server.spam_filter_analyze_headers(&mut spam_ctx).await;
+                    server.spam_filter_analyze_rules(&mut spam_ctx).await;
+                    spam_ctx.result.tags.retain(|t| !t.starts_with("X_HDR_"));
                 }
                 "ip" => {
                     server.spam_filter_analyze_ip(&mut spam_ctx).await;

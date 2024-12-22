@@ -4,11 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    collections::HashSet,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use sieve::{compiler::grammar::Capability, Compiler, Runtime, Sieve};
@@ -32,12 +28,6 @@ pub struct Scripting {
     pub sign: IfBlock,
     pub trusted_scripts: AHashMap<String, Arc<Sieve>>,
     pub untrusted_scripts: AHashMap<String, Arc<Sieve>>,
-}
-
-#[derive(Clone)]
-pub struct RemoteList {
-    pub entries: HashSet<String>,
-    pub expires: Instant,
 }
 
 impl Scripting {

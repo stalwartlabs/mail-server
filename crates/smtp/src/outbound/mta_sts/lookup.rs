@@ -19,7 +19,7 @@ use mail_auth::{common::lru::DnsCache, mta_sts::MtaSts, report::tlsrpt::ResultTy
 use super::{parse::ParsePolicy, Error};
 
 #[cfg(not(feature = "test_mode"))]
-use common::HttpLimitResponse;
+use utils::HttpLimitResponse;
 
 #[cfg(not(feature = "test_mode"))]
 const MAX_POLICY_SIZE: usize = 1024 * 1024;

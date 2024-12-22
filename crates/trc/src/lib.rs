@@ -598,8 +598,6 @@ pub enum PushSubscriptionEvent {
 pub enum SpamEvent {
     Pyzor,
     PyzorError,
-    RemoteList,
-    RemoteListError,
     Dnsbl,
     DnsblError,
     Train,
@@ -838,6 +836,7 @@ pub enum StoreEvent {
     NotSupported,
     UnexpectedError,
     CryptoError,
+    HttpStoreError,
 
     // Warnings
     BlobMissingMarker,
@@ -851,6 +850,7 @@ pub enum StoreEvent {
     SqlQuery,
     LdapQuery,
     LdapBind,
+    HttpStoreFetch,
 }
 
 #[event_type]

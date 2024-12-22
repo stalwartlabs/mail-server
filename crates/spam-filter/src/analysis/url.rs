@@ -19,13 +19,12 @@ use unicode_security::MixedScript;
 use crate::modules::dnsbl::is_dnsbl;
 use crate::modules::expression::{IpResolver, SpamFilterResolver, StringResolver};
 use crate::modules::html::SRC;
-use crate::modules::remote_list::is_in_remote_list;
 use crate::{
     modules::html::{HtmlToken, A, HREF},
     Hostname, SpamFilterContext, TextPart,
 };
 
-use super::{is_trusted_domain, ElementLocation};
+use super::{is_trusted_domain, is_url_redirector, ElementLocation};
 
 pub trait SpamFilterAnalyzeUrl: Sync + Send {
     fn spam_filter_analyze_url(
@@ -197,7 +196,7 @@ impl SpamFilterAnalyzeUrl for Server {
                     }
                     ctx.result.rbl_ip_checks += 1;
                 }
-            } else if self.core.spam.lists.url_redirectors.contains(host_sld) {
+            } else if is_url_redirector(self, host_sld, ctx.input.span_id).await {
                 // Check for redirectors
                 ctx.result.add_tag("REDIRECTOR_URL");
 
@@ -217,12 +216,12 @@ impl SpamFilterAnalyzeUrl for Server {
                                 if let Ok(location_parsed) = location.parse::<Uri>() {
                                     let host =
                                         Hostname::new(location_parsed.host().unwrap_or_default());
-                                    if self
-                                        .core
-                                        .spam
-                                        .lists
-                                        .url_redirectors
-                                        .contains(host.sld_or_default())
+                                    if is_url_redirector(
+                                        self,
+                                        host.sld_or_default(),
+                                        ctx.input.span_id,
+                                    )
+                                    .await
                                     {
                                         url_redirect = Cow::Owned(location);
                                         redirect_count += 1;
@@ -264,7 +263,6 @@ impl SpamFilterAnalyzeUrl for Server {
                 .map(|url_parsed| (el, url_parsed))
         }) {
             let host = &url_parsed.host;
-            let url = &el.element.url;
 
             if host.ip.is_none() {
                 if !host.fqdn.is_ascii() {
@@ -307,15 +305,6 @@ impl SpamFilterAnalyzeUrl for Server {
             } else {
                 // URL is an ip address
                 ctx.result.add_tag("R_SUSPICIOUS_URL");
-            }
-
-            // Check remote lists
-            for remote in &self.core.spam.lists.remote {
-                if matches!(remote.scope, Element::Url)
-                    && is_in_remote_list(self, remote, url.as_ref(), ctx.input.span_id).await
-                {
-                    ctx.result.add_tag(&remote.tag);
-                }
             }
 
             // Check URL DNSBL

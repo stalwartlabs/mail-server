@@ -13,7 +13,7 @@ use common::{
     ipc::StateEvent,
     listener::{ServerInstance, SessionData, SessionManager, SessionStream},
     manager::webadmin::Resource,
-    Inner, Server,
+    Inner, Server, KV_ACME,
 };
 use directory::Permission;
 use http_body_util::{BodyExt, Full};
@@ -32,6 +32,7 @@ use jmap_proto::{
     types::{blob::BlobId, id::Id},
 };
 use std::future::Future;
+use store::dispatch::lookup::KeyValue;
 use trc::SecurityEvent;
 use utils::url_params::UrlParams;
 
@@ -247,7 +248,7 @@ impl ParseHttp for Server {
                             .core
                             .storage
                             .lookup
-                            .key_get::<String>(format!("acme:{token}").into_bytes())
+                            .key_get::<String>(KeyValue::<()>::build_key(KV_ACME, token))
                             .await?
                         {
                             Some(proof) => Ok(Resource::new("text/plain", proof.into_bytes())

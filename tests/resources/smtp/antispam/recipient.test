@@ -117,7 +117,7 @@ Cc: otheruser@guerrillamail.com
 Test
 <!-- NEXT TEST -->
 envelope_from test@test.com
-expect FREEMAIL_CC DISPOSABLE_TO DISPOSABLE_CC RCPT_COUNT_THREE TO_DN_NONE
+expect FREEMAIL_CC DISPOSABLE_TO DISPOSABLE_BCC RCPT_COUNT_THREE TO_DN_NONE
 
 To: otheruser@guerrillamail.com
 Cc: user@gmail.com

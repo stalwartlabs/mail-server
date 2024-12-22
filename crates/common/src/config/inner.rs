@@ -104,7 +104,6 @@ impl Data {
                 shard_amount,
             ),
             smtp_connectors: TlsConnectors::default(),
-            remote_lists: Default::default(),
             asn_geo_data: Default::default(),
         }
     }
@@ -121,7 +120,6 @@ impl Default for Data {
             blocked_ips_version: 0.into(),
             permissions: Default::default(),
             permissions_version: 0.into(),
-            remote_lists: Default::default(),
             jmap_id_gen: Default::default(),
             queue_id_gen: Default::default(),
             span_id_gen: Default::default(),

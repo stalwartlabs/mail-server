@@ -7,8 +7,9 @@
 use std::time::Duration;
 
 use hyper::HeaderMap;
+use utils::HttpLimitResponse;
 
-use crate::{HttpLimitResponse, USER_AGENT};
+use crate::USER_AGENT;
 
 use self::config::ConfigManager;
 

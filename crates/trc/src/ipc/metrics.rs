@@ -456,7 +456,8 @@ impl EventType {
                 | StoreEvent::DataIterate
                 | StoreEvent::BlobRead
                 | StoreEvent::BlobWrite
-                | StoreEvent::BlobDelete,
+                | StoreEvent::BlobDelete
+                | StoreEvent::HttpStoreError,
             ) => true,
             EventType::MessageIngest(_) => true,
             EventType::Jmap(
@@ -577,7 +578,6 @@ impl EventType {
             ) => true,
             EventType::Spam(
                 SpamEvent::PyzorError
-                | SpamEvent::RemoteListError
                 | SpamEvent::Train
                 | SpamEvent::TrainError
                 | SpamEvent::Classify

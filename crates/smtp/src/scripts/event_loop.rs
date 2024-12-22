@@ -102,14 +102,11 @@ impl RunScript for Server {
                             if let Some(store) = self.core.storage.lookups.get(&list) {
                                 for value in &values {
                                     if let Ok(true) = store
-                                        .key_exists(
-                                            if !matches!(match_as, MatchAs::Lowercase) {
-                                                value.clone()
-                                            } else {
-                                                value.to_lowercase()
-                                            }
-                                            .into_bytes(),
-                                        )
+                                        .key_exists(if !matches!(match_as, MatchAs::Lowercase) {
+                                            value.clone()
+                                        } else {
+                                            value.to_lowercase()
+                                        })
                                         .await
                                     {
                                         input = true.into();

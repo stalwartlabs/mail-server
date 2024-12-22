@@ -7,9 +7,7 @@
 use std::future::Future;
 
 use common::Server;
-use mail_auth::{
-    common::verify::VerifySignature, dmarc::Policy, DkimResult, DmarcResult, SpfResult,
-};
+use mail_auth::{dmarc::Policy, DkimResult, DmarcResult, SpfResult};
 
 use crate::SpamFilterContext;
 
@@ -78,77 +76,5 @@ impl SpamFilterAnalyzeDmarc for Server {
                     },
                 ),
             }));
-
-        for header in ctx.input.message.headers() {
-            let header_name = header.name();
-            if header_name.eq_ignore_ascii_case("DKIM-Signature") {
-                ctx.result.add_tag("DKIM_SIGNED");
-            } else if header_name.eq_ignore_ascii_case("ARC-Seal") {
-                ctx.result.add_tag("ARC_SIGNED");
-            }
-        }
-
-        if self
-            .core
-            .spam
-            .lists
-            .dmarc_allow
-            .contains(&ctx.output.from.email.domain_part.fqdn)
-        {
-            if matches!(ctx.input.dmarc_result, Some(DmarcResult::Pass)) {
-                ctx.result.add_tag("ALLOWLIST_DMARC");
-            } else if ctx.input.dmarc_result.is_some() {
-                ctx.result.add_tag("BLOCKLIST_DMARC");
-            }
-        } else if self
-            .core
-            .spam
-            .lists
-            .spf_dkim_allow
-            .contains(&ctx.output.from.email.domain_part.fqdn)
-        {
-            let spf = ctx
-                .input
-                .spf_mail_from_result
-                .map(|r| r.result())
-                .unwrap_or(SpfResult::None);
-            let is_dkim_pass = matches!(
-                ctx.input.arc_result.map(|r| r.result()),
-                Some(DkimResult::Pass)
-            ) || ctx.input.dkim_result.iter().any(|r| {
-                matches!(r.result(), DkimResult::Pass)
-                    && r.signature().map_or(false, |s| {
-                        s.domain().to_lowercase() == ctx.output.from.email.domain_part.fqdn
-                    })
-            });
-            let is_spf_pass = matches!(spf, SpfResult::Pass);
-
-            if is_dkim_pass && is_spf_pass {
-                ctx.result.add_tag("ALLOWLIST_SPF_DKIM");
-            } else if is_dkim_pass {
-                ctx.result.add_tag("ALLOWLIST_DKIM");
-                if !matches!(spf, SpfResult::TempError) {
-                    ctx.result.add_tag("BLOCKLIST_SPF");
-                }
-            } else if is_spf_pass {
-                ctx.result.add_tag("ALLOWLIST_SPF");
-                if !ctx
-                    .input
-                    .dkim_result
-                    .iter()
-                    .any(|r| matches!(r.result(), DkimResult::TempError(_)))
-                {
-                    ctx.result.add_tag("BLOCKLIST_DKIM");
-                }
-            } else if !matches!(spf, SpfResult::TempError)
-                && !ctx
-                    .input
-                    .dkim_result
-                    .iter()
-                    .any(|r| matches!(r.result(), DkimResult::TempError(_)))
-            {
-                ctx.result.add_tag("BLOCKLIST_SPF_DKIM");
-            }
-        }
     }
 }

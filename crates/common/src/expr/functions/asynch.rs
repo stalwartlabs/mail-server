@@ -43,8 +43,8 @@ impl Server {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_in_memory_store(store.as_ref(), session_id)
-                    .key_get::<VariableWrapper>(key.into_owned().into_bytes())
+                self.get_in_memory_store_or_default(store.as_ref(), session_id)
+                    .key_get::<VariableWrapper>(key)
                     .await
                     .map(|value| value.map(|v| v.into_inner()).unwrap_or_default())
                     .caused_by(trc::location!())
@@ -53,8 +53,8 @@ impl Server {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_in_memory_store(store.as_ref(), session_id)
-                    .key_exists(key.into_owned().into_bytes())
+                self.get_in_memory_store_or_default(store.as_ref(), session_id)
+                    .key_exists(key)
                     .await
                     .caused_by(trc::location!())
                     .map(|v| v.into())
@@ -64,7 +64,7 @@ impl Server {
                 let key = params.next_as_string();
                 let value = params.next_as_string();
 
-                self.get_in_memory_store(store.as_ref(), session_id)
+                self.get_in_memory_store_or_default(store.as_ref(), session_id)
                     .key_set(KeyValue::new(
                         key.into_owned().into_bytes(),
                         value.into_owned().into_bytes(),
@@ -79,7 +79,7 @@ impl Server {
                 let key = params.next_as_string();
                 let value = params.next_as_integer();
 
-                self.get_in_memory_store(store.as_ref(), session_id)
+                self.get_in_memory_store_or_default(store.as_ref(), session_id)
                     .counter_incr(KeyValue::new(key.into_owned(), value))
                     .await
                     .map(Variable::Integer)
@@ -89,7 +89,7 @@ impl Server {
                 let store = params.next_as_string();
                 let key = params.next_as_string();
 
-                self.get_in_memory_store(store.as_ref(), session_id)
+                self.get_in_memory_store_or_default(store.as_ref(), session_id)
                     .counter_get(key.into_owned().into_bytes())
                     .await
                     .map(Variable::Integer)

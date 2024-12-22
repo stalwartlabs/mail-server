@@ -90,21 +90,21 @@ Reply-to: "Mr. Hello" <bye@domain.org>
 
 Test
 <!-- NEXT TEST -->
-expect FREEMAIL_REPLYTO REPLYTO_EQ_FROM HAS_REPLYTO 
+expect FREEMAIL_REPLY_TO FREEMAIL_FROM REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@gmail.com
-Reply-to: hello@gmail.com
+Reply-to: bye@gmail.com
 
 Test
 <!-- NEXT TEST -->
-expect DISPOSABLE_REPLYTO REPLYTO_EQ_FROM HAS_REPLYTO 
+expect DISPOSABLE_REPLY_TO DISPOSABLE_FROM REPLYTO_DOM_EQ_FROM_DOM HAS_REPLYTO 
 
 From: hello@custom.disposable.org
-Reply-to: hello@custom.disposable.org
+Reply-to: bye@custom.disposable.org
 
 Test
 <!-- NEXT TEST -->
-expect FREEMAIL_REPLYTO_NEQ_FROM_DOM FREEMAIL_REPLYTO REPLYTO_DOM_NEQ_FROM_DOM SPOOF_REPLYTO HAS_REPLYTO 
+expect FREEMAIL_REPLY_TO_NEQ_FROM_DOM FREEMAIL_REPLY_TO FREEMAIL_FROM REPLYTO_DOM_NEQ_FROM_DOM SPOOF_REPLYTO HAS_REPLYTO 
 
 From: hello@gmail.com
 Reply-to: hello@yahoomail.com
