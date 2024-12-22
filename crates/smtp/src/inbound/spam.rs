@@ -12,16 +12,18 @@ use spam_filter::{
         bayes::SpamFilterAnalyzeBayes, date::SpamFilterAnalyzeDate, dmarc::SpamFilterAnalyzeDmarc,
         domain::SpamFilterAnalyzeDomain, ehlo::SpamFilterAnalyzeEhlo, from::SpamFilterAnalyzeFrom,
         headers::SpamFilterAnalyzeHeaders, html::SpamFilterAnalyzeHtml, init::SpamFilterInit,
-        ip::SpamFilterAnalyzeIp, llm::SpamFilterAnalyzeLlm, messageid::SpamFilterAnalyzeMid,
-        mime::SpamFilterAnalyzeMime, pyzor::SpamFilterAnalyzePyzor,
-        received::SpamFilterAnalyzeReceived, recipient::SpamFilterAnalyzeRecipient,
-        replyto::SpamFilterAnalyzeReplyTo, reputation::SpamFilterAnalyzeReputation,
-        rules::SpamFilterAnalyzeRules, score::SpamFilterAnalyzeScore,
-        subject::SpamFilterAnalyzeSubject, trusted_reply::SpamFilterAnalyzeTrustedReply,
-        url::SpamFilterAnalyzeUrl,
+        ip::SpamFilterAnalyzeIp, messageid::SpamFilterAnalyzeMid, mime::SpamFilterAnalyzeMime,
+        pyzor::SpamFilterAnalyzePyzor, received::SpamFilterAnalyzeReceived,
+        recipient::SpamFilterAnalyzeRecipient, replyto::SpamFilterAnalyzeReplyTo,
+        reputation::SpamFilterAnalyzeReputation, rules::SpamFilterAnalyzeRules,
+        score::SpamFilterAnalyzeScore, subject::SpamFilterAnalyzeSubject,
+        trusted_reply::SpamFilterAnalyzeTrustedReply, url::SpamFilterAnalyzeUrl,
     },
     SpamFilterInput,
 };
+
+#[cfg(feature = "enterprise")]
+use spam_filter::analysis::llm::SpamFilterAnalyzeLlm;
 
 use crate::core::Session;
 
@@ -90,6 +92,7 @@ impl<T: SessionStream> Session<T> {
             server.spam_filter_analyze_html(&mut ctx).await;
 
             // LLM classification
+            #[cfg(feature = "enterprise")]
             server.spam_filter_analyze_llm(&mut ctx).await;
 
             // Trusted reply analysis

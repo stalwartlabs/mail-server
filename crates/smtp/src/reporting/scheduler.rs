@@ -13,7 +13,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 use store::{
-    write::{now, QueueClass, ReportEvent, ValueClass},
+    write::{now, BatchBuilder, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, Store, ValueKey,
 };
 use tokio::sync::mpsc;
@@ -115,11 +115,23 @@ async fn next_report_event(store: Store) -> Vec<QueueClass> {
     )));
 
     let mut events = Vec::new();
+    let mut old_locks = Vec::new();
     let result = store
         .iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
                 let event = ReportEvent::deserialize(key)?;
+
+                // TODO - REMOVEME - Part of v0.11 migration
+                if event.seq_id == 0 {
+                    old_locks.push(if *key.last().unwrap() == 0 {
+                        QueueClass::DmarcReportHeader(event)
+                    } else {
+                        QueueClass::TlsReportHeader(event)
+                    });
+                    return Ok(true);
+                }
+
                 let do_continue = event.due <= now;
                 events.push(if *key.last().unwrap() == 0 {
                     QueueClass::DmarcReportHeader(event)
@@ -130,6 +142,19 @@ async fn next_report_event(store: Store) -> Vec<QueueClass> {
             },
         )
         .await;
+
+    // TODO - REMOVEME - Part of v0.11 migration
+    if !old_locks.is_empty() {
+        let mut batch = BatchBuilder::new();
+        for event in old_locks {
+            batch.clear(ValueClass::Queue(event));
+        }
+        if let Err(err) = store.write(batch.build()).await {
+            trc::error!(err
+                .caused_by(trc::location!())
+                .details("Failed to remove old report events"));
+        }
+    }
 
     if let Err(err) = result {
         trc::error!(err
