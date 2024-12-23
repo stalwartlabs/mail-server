@@ -8,6 +8,7 @@ use std::future::Future;
 
 use common::Server;
 use mail_parser::HeaderName;
+use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 use smtp_proto::{MAIL_BODY_8BITMIME, MAIL_BODY_BINARYMIME, MAIL_SMTPUTF8};
 
 use crate::{Email, SpamFilterContext};
@@ -81,22 +82,37 @@ impl SpamFilterAnalyzeFrom for Server {
             } else if from_name_trimmed == from_addr.address {
                 ctx.result.add_tag("FROM_DN_EQ_ADDR");
             } else {
-                let from_name_addr = Email::new(from_name_trimmed);
                 if from_addr_is_valid {
                     ctx.result.add_tag("FROM_HAS_DN");
                 }
-                if from_name_addr.is_valid() {
-                    if (from_addr_is_valid
-                        && from_name_addr.domain_part.sld != from_addr.domain_part.sld)
-                        || (!env_from_empty
-                            && ctx.output.env_from_addr.domain_part.sld
-                                != from_name_addr.domain_part.sld)
-                        || (env_from_empty
-                            && ctx.output.ehlo_host.sld != from_name_addr.domain_part.sld)
+
+                if from_name_trimmed.contains('@') {
+                    if let Some(from_name_addr) = TypesTokenizer::new(from_name_trimmed)
+                        .tokenize_numbers(false)
+                        .tokenize_urls(false)
+                        .tokenize_urls_without_scheme(false)
+                        .tokenize_emails(true)
+                        .filter_map(|t| match t.word {
+                            TokenType::Email(email) => {
+                                let email = Email::new(email);
+                                email.is_valid().then_some(email)
+                            }
+                            _ => None,
+                        })
+                        .next()
                     {
-                        ctx.result.add_tag("SPOOF_DISPLAY_NAME");
-                    } else {
-                        ctx.result.add_tag("FROM_NEQ_DISPLAY_NAME");
+                        if (from_addr_is_valid
+                            && from_name_addr.domain_part.sld != from_addr.domain_part.sld)
+                            || (!env_from_empty
+                                && ctx.output.env_from_addr.domain_part.sld
+                                    != from_name_addr.domain_part.sld)
+                            || (env_from_empty
+                                && ctx.output.ehlo_host.sld != from_name_addr.domain_part.sld)
+                        {
+                            ctx.result.add_tag("SPOOF_DISPLAY_NAME");
+                        } else {
+                            ctx.result.add_tag("FROM_NEQ_DISPLAY_NAME");
+                        }
                     }
                 }
             }
