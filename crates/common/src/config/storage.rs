@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use directory::Directory;
-use store::{write::purge::PurgeSchedule, BlobStore, FtsStore, InMemoryStore, Store};
+use store::{BlobStore, FtsStore, InMemoryStore, PurgeSchedule, Store};
 
 use crate::manager::config::ConfigManager;
 

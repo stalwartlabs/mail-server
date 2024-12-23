@@ -229,9 +229,7 @@ pub enum HousekeeperEvent {
     Start,
     Stop,
     Schedule,
-    PurgeAccounts,
-    PurgeSessions,
-    PurgeStore,
+    Run,
 }
 
 #[event_type]
@@ -707,7 +705,7 @@ pub enum PurgeEvent {
     Finished,
     Running,
     Error,
-    PurgeActive,
+    InProgress,
     AutoExpunge,
     TombstoneCleanup,
 }

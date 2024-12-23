@@ -285,17 +285,22 @@ impl SpamFilterAnalyzeMime for Server {
                         ctx.result.add_tag("R_MISSING_CHARSET");
                     }
 
-                    match &part.body {
-                        PartType::Text(text) | PartType::Html(text)
-                            if ctx.input.message.text_body.contains(&part_id)
-                                || ctx.input.message.html_body.contains(&part_id) =>
-                        {
-                            if !text.as_ref().is_single_script() {
-                                // Text part contains multiple scripts
-                                ctx.result.add_tag("R_MIXED_CHARSET");
-                            }
-                        }
-                        _ => (),
+                    if ctx
+                        .output
+                        .text_parts
+                        .get(part_id)
+                        .filter(|_| {
+                            ctx.input.message.text_body.contains(&part_id)
+                                || ctx.input.message.html_body.contains(&part_id)
+                        })
+                        .map_or(false, |p| match p {
+                            TextPart::Plain { text_body, .. } => !text_body.is_single_script(),
+                            TextPart::Html { text_body, .. } => !text_body.is_single_script(),
+                            TextPart::None => false,
+                        })
+                    {
+                        // Text part contains multiple scripts
+                        ctx.result.add_tag("R_MIXED_CHARSET");
                     }
 
                     has_text_part = true;

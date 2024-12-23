@@ -20,7 +20,8 @@ pub use blake3;
 pub use parking_lot;
 pub use rand;
 pub use roaring;
-use write::{purge::PurgeSchedule, BitmapClass, ValueClass};
+use utils::config::cron::SimpleCron;
+use write::{BitmapClass, ValueClass};
 
 #[cfg(feature = "s3")]
 use backend::s3::S3Store;
@@ -351,6 +352,20 @@ impl Default for FtsStore {
     fn default() -> Self {
         Self::Store(Store::None)
     }
+}
+
+#[derive(Clone)]
+pub enum PurgeStore {
+    Data(Store),
+    Blobs { store: Store, blob_store: BlobStore },
+    Lookup(InMemoryStore),
+}
+
+#[derive(Clone)]
+pub struct PurgeSchedule {
+    pub cron: SimpleCron,
+    pub store_id: String,
+    pub store: PurgeStore,
 }
 
 #[derive(Clone, Debug, PartialEq)]

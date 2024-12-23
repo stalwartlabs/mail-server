@@ -31,7 +31,6 @@ pub mod blob;
 pub mod hash;
 pub mod key;
 pub mod log;
-pub mod purge;
 
 pub trait SerializeWithId: Send + Sync {
     fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>>;

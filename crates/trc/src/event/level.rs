@@ -268,9 +268,9 @@ impl EventType {
                 PurgeEvent::Finished => Level::Debug,
                 PurgeEvent::Running => Level::Info,
                 PurgeEvent::Error => Level::Error,
-                PurgeEvent::PurgeActive
-                | PurgeEvent::AutoExpunge
-                | PurgeEvent::TombstoneCleanup => Level::Debug,
+                PurgeEvent::InProgress | PurgeEvent::AutoExpunge | PurgeEvent::TombstoneCleanup => {
+                    Level::Debug
+                }
             },
             EventType::Eval(event) => match event {
                 EvalEvent::Error | EvalEvent::StoreNotFound => Level::Debug,
@@ -370,12 +370,8 @@ impl EventType {
                 | ClusterEvent::InvalidPacket => Level::Warn,
             },
             EventType::Housekeeper(event) => match event {
-                HousekeeperEvent::Start
-                | HousekeeperEvent::PurgeAccounts
-                | HousekeeperEvent::PurgeSessions
-                | HousekeeperEvent::PurgeStore
-                | HousekeeperEvent::Stop => Level::Info,
-                HousekeeperEvent::Schedule => Level::Debug,
+                HousekeeperEvent::Start | HousekeeperEvent::Stop => Level::Info,
+                HousekeeperEvent::Run | HousekeeperEvent::Schedule => Level::Debug,
             },
             EventType::FtsIndex(event) => match event {
                 FtsIndexEvent::Index => Level::Info,

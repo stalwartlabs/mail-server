@@ -135,7 +135,7 @@ impl SpamFilterInit for Server {
                                 HtmlToken::Text { text } if !in_head => {
                                     if !text_body.is_empty()
                                         && !text_body.ends_with(' ')
-                                        && text.starts_with(' ')
+                                        && !text.starts_with(' ')
                                     {
                                         text_body.push(' ');
                                     }

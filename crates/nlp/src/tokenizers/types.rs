@@ -153,7 +153,7 @@ impl<'x> TypesTokenizer<'x> {
                 has_number = true;
             } else {
                 let last_was_space = self.last_ch_is_space;
-                self.last_ch_is_space = ch.is_ascii_whitespace();
+                self.last_ch_is_space = ch.is_whitespace();
                 stop_char = Token {
                     word: if self.last_ch_is_space {
                         if last_was_space {
@@ -1034,7 +1034,7 @@ mod test {
                 "http://example.org/\u{b}bar",
                 vec![
                     TokenType::Url("http://example.org/"),
-                    TokenType::Punctuation('\u{b}'),
+                    TokenType::Space,
                     TokenType::Alphabetic("bar"),
                 ],
             ),
@@ -1090,7 +1090,7 @@ mod test {
                 "example.org/\u{b}bar",
                 vec![
                     TokenType::UrlNoScheme("example.org/"),
-                    TokenType::Punctuation('\u{b}'),
+                    TokenType::Space,
                     TokenType::Alphabetic("bar"),
                 ],
             ),
@@ -2875,7 +2875,7 @@ mod test {
                 .map(|t| t.word)
                 .collect::<Vec<_>>();
 
-            assert_eq!(result, expected);
+            assert_eq!(result, expected, "text: {:?}", text);
 
             /*print!("({text:?}, ");
             print!("vec![");

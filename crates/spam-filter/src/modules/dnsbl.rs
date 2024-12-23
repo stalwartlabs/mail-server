@@ -54,6 +54,7 @@ pub(crate) async fn is_dnsbl(
         Ok(result) => {
             trc::event!(
                 Spam(SpamEvent::Dnsbl),
+                Hostname = zone,
                 Result = result
                     .iter()
                     .map(|ip| trc::Value::from(ip.to_string()))
@@ -83,6 +84,7 @@ pub(crate) async fn is_dnsbl(
         Err(Error::DnsRecordNotFound(_)) => {
             trc::event!(
                 Spam(SpamEvent::Dnsbl),
+                Hostname = zone,
                 Result = trc::Value::None,
                 Elapsed = time.elapsed()
             );
@@ -92,6 +94,7 @@ pub(crate) async fn is_dnsbl(
         Err(err) => {
             trc::event!(
                 Spam(SpamEvent::DnsblError),
+                Hostname = zone,
                 Elapsed = time.elapsed(),
                 CausedBy = err.to_string()
             );

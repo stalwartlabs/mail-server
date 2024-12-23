@@ -7,9 +7,8 @@
 use utils::config::{cron::SimpleCron, utils::ParseValue, Config};
 
 use crate::{
-    backend::fs::FsStore,
-    write::purge::{PurgeSchedule, PurgeStore},
-    BlobStore, CompressionAlgo, InMemoryStore, Store, Stores,
+    backend::fs::FsStore, BlobStore, CompressionAlgo, InMemoryStore, PurgeSchedule, PurgeStore,
+    Store, Stores,
 };
 
 #[cfg(feature = "s3")]

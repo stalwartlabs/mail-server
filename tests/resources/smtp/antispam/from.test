@@ -189,6 +189,13 @@ Test
 envelope_from baz@domain.org
 expect SPOOF_DISPLAY_NAME FROM_HAS_DN FROM_EQ_ENVFROM
 
+From: Foo (foo@bar.com) <baz@domain.org>
+
+Test
+<!-- NEXT TEST -->
+envelope_from baz@domain.org
+expect SPOOF_DISPLAY_NAME FROM_HAS_DN FROM_EQ_ENVFROM
+
 From: "Foo foo@bar.com" <baz@domain.org>
 
 Test

@@ -174,9 +174,7 @@ impl HousekeeperEvent {
             HousekeeperEvent::Start => "Housekeeper process started",
             HousekeeperEvent::Stop => "Housekeeper process stopped",
             HousekeeperEvent::Schedule => "Housekeeper task scheduled",
-            HousekeeperEvent::PurgeAccounts => "Purging accounts",
-            HousekeeperEvent::PurgeSessions => "Purging sessions",
-            HousekeeperEvent::PurgeStore => "Purging store",
+            HousekeeperEvent::Run => "Housekeeper task run",
         }
     }
 
@@ -185,9 +183,7 @@ impl HousekeeperEvent {
             HousekeeperEvent::Start => "The housekeeper process has started",
             HousekeeperEvent::Stop => "The housekeeper process has stopped",
             HousekeeperEvent::Schedule => "A housekeeper task has been scheduled",
-            HousekeeperEvent::PurgeAccounts => "Purging accounts",
-            HousekeeperEvent::PurgeSessions => "Purging sessions",
-            HousekeeperEvent::PurgeStore => "Purging store",
+            HousekeeperEvent::Run => "A housekeeper task is running",
         }
     }
 }
@@ -1266,7 +1262,7 @@ impl PurgeEvent {
             PurgeEvent::Finished => "Purge finished",
             PurgeEvent::Running => "Purge running",
             PurgeEvent::Error => "Purge error",
-            PurgeEvent::PurgeActive => "Active purge in progress",
+            PurgeEvent::InProgress => "Active purge in progress",
             PurgeEvent::AutoExpunge => "Auto-expunge executed",
             PurgeEvent::TombstoneCleanup => "Tombstone cleanup executed",
         }
@@ -1278,7 +1274,7 @@ impl PurgeEvent {
             PurgeEvent::Finished => "The purge has finished",
             PurgeEvent::Running => "The purge is running",
             PurgeEvent::Error => "An error occurred with the purge",
-            PurgeEvent::PurgeActive => "An active purge is in progress",
+            PurgeEvent::InProgress => "An active purge is in progress",
             PurgeEvent::AutoExpunge => "Auto-expunge has been executed",
             PurgeEvent::TombstoneCleanup => "Tombstone cleanup has been executed",
         }

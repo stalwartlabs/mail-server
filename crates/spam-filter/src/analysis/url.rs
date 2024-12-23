@@ -167,7 +167,7 @@ impl SpamFilterAnalyzeUrl for Server {
                         UrlParts::new(url.element),
                         url.location,
                     ));
-                    ctx.result.add_tag("R_SUSPICIOUS_URL");
+                    ctx.result.add_tag("R_UNPARSABLE_URL");
                     continue;
                 }
             };

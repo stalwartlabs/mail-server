@@ -25,9 +25,9 @@ use common::telemetry::{
 };
 
 use smtp::reporting::SmtpReporting;
-use store::write::{now, purge::PurgeStore};
+use store::{write::now, PurgeStore};
 use tokio::sync::mpsc;
-use trc::{Collector, MetricType};
+use trc::{Collector, MetricType, PurgeEvent};
 use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{email::delete::EmailDeletion, JmapMethods, LONG_SLUMBER};
@@ -233,7 +233,7 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                     HousekeeperEvent::Purge(purge) => {
                         let server = inner.build_server();
                         tokio::spawn(async move {
-                            server.purge(purge).await;
+                            server.purge(purge, 0).await;
                         });
                     }
                     HousekeeperEvent::Exit => {
@@ -251,6 +251,8 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                     while let Some(event) = queue.pop() {
                         match event.event {
                             ActionClass::Acme(provider_id) => {
+                                trc::event!(Housekeeper(trc::HousekeeperEvent::Run), Type = "acme");
+
                                 let server = server.clone();
                                 tokio::spawn(async move {
                                     if let Some(provider) =
@@ -298,6 +300,11 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                 });
                             }
                             ActionClass::Account => {
+                                trc::event!(
+                                    Housekeeper(trc::HousekeeperEvent::Run),
+                                    Type = "purge_account"
+                                );
+
                                 let server = server.clone();
                                 queue.schedule(
                                     Instant::now()
@@ -305,11 +312,15 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                     ActionClass::Account,
                                 );
                                 tokio::spawn(async move {
-                                    trc::event!(Housekeeper(trc::HousekeeperEvent::PurgeAccounts));
-                                    server.purge_accounts().await;
+                                    server.purge(PurgeType::Account(None), 0).await;
                                 });
                             }
                             ActionClass::Session => {
+                                trc::event!(
+                                    Housekeeper(trc::HousekeeperEvent::Run),
+                                    Type = "purge_session"
+                                );
+
                                 let server = server.clone();
                                 queue.schedule(
                                     Instant::now()
@@ -318,7 +329,7 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                 );
 
                                 tokio::spawn(async move {
-                                    trc::event!(Housekeeper(trc::HousekeeperEvent::PurgeSessions));
+                                    trc::event!(Purge(PurgeEvent::Started), Type = "session");
                                     server.inner.data.http_auth_cache.cleanup();
                                     server
                                         .inner
@@ -341,44 +352,45 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                 if let Some(schedule) =
                                     server.core.storage.purge_schedules.get(idx).cloned()
                                 {
+                                    trc::event!(
+                                        Housekeeper(trc::HousekeeperEvent::Run),
+                                        Type = "purge_store",
+                                        Id = idx
+                                    );
+
                                     queue.schedule(
                                         Instant::now() + schedule.cron.time_to_next(),
                                         ActionClass::Store(idx),
                                     );
-                                    tokio::spawn(async move {
-                                        let (class, result) = match schedule.store {
-                                            PurgeStore::Data(store) => {
-                                                ("data", store.purge_store().await)
-                                            }
-                                            PurgeStore::Blobs { store, blob_store } => {
-                                                ("blob", store.purge_blobs(blob_store).await)
-                                            }
-                                            PurgeStore::Lookup(in_memory_store) => (
-                                                "lookup",
-                                                in_memory_store.purge_in_memory_store().await,
-                                            ),
-                                        };
 
-                                        match result {
-                                            Ok(_) => {
-                                                trc::event!(
-                                                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
-                                                    Id = schedule.store_id
-                                                );
-                                            }
-                                            Err(err) => {
-                                                trc::error!(err
-                                                    .details(format!(
-                                                        "Failed to purge {class} store."
-                                                    ))
-                                                    .id(schedule.store_id));
-                                            }
-                                        }
+                                    let server = server.clone();
+                                    tokio::spawn(async move {
+                                        server
+                                            .purge(
+                                                match schedule.store {
+                                                    PurgeStore::Data(store) => {
+                                                        PurgeType::Data(store)
+                                                    }
+                                                    PurgeStore::Blobs { store, blob_store } => {
+                                                        PurgeType::Blobs { store, blob_store }
+                                                    }
+                                                    PurgeStore::Lookup(in_memory_store) => {
+                                                        PurgeType::Lookup(in_memory_store)
+                                                    }
+                                                },
+                                                idx as u32,
+                                            )
+                                            .await;
                                     });
                                 }
                             }
                             ActionClass::OtelMetrics => {
                                 if let Some(otel) = &server.core.metrics.otel {
+                                    trc::event!(
+                                        Housekeeper(trc::HousekeeperEvent::Run),
+                                        Type = "metrics_report"
+                                    );
+
                                     queue.schedule(
                                         Instant::now() + otel.interval,
                                         ActionClass::OtelMetrics,
@@ -398,6 +410,11 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                 }
                             }
                             ActionClass::CalculateMetrics => {
+                                trc::event!(
+                                    Housekeeper(trc::HousekeeperEvent::Run),
+                                    Type = "metrics_calculate"
+                                );
+
                                 // Calculate expensive metrics every 5 minutes
                                 queue.schedule(
                                     Instant::now() + Duration::from_secs(5 * 60),
@@ -495,6 +512,11 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                     .as_ref()
                                     .and_then(|e| e.metrics_store.as_ref())
                                 {
+                                    trc::event!(
+                                        Housekeeper(trc::HousekeeperEvent::Run),
+                                        Type = "metrics_internal"
+                                    );
+
                                     queue.schedule(
                                         Instant::now() + metrics_store.interval.time_to_next(),
                                         ActionClass::InternalMetrics,
@@ -516,6 +538,11 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
 
                             #[cfg(feature = "enterprise")]
                             ActionClass::AlertMetrics => {
+                                trc::event!(
+                                    Housekeeper(trc::HousekeeperEvent::Run),
+                                    Type = "metrics_alert"
+                                );
+
                                 let server = server.clone();
 
                                 tokio::spawn(async move {
@@ -537,6 +564,11 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
 
                             #[cfg(feature = "enterprise")]
                             ActionClass::RenewLicense => {
+                                trc::event!(
+                                    Housekeeper(trc::HousekeeperEvent::Run),
+                                    Type = "renew_license"
+                                );
+
                                 match server.reload().await {
                                     Ok(result) => {
                                         if let Some(new_core) = result.new_core {
@@ -583,37 +615,61 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
 }
 
 pub trait Purge: Sync + Send {
-    fn purge(&self, purge: PurgeType) -> impl Future<Output = ()> + Send;
+    fn purge(&self, purge: PurgeType, store_idx: u32) -> impl Future<Output = ()> + Send;
 }
 
 impl Purge for Server {
-    async fn purge(&self, purge: PurgeType) {
+    async fn purge(&self, purge: PurgeType, store_idx: u32) {
         // Lock task
-        let lock_name = match &purge {
-            PurgeType::Data(_) => "data".into(),
-            PurgeType::Blobs { .. } => "blob".into(),
-            PurgeType::Lookup(_) => "lookup".into(),
-            PurgeType::Account(_) => None,
+        let (lock_type, lock_name) = match &purge {
+            PurgeType::Data(_) => (
+                "data",
+                [0u8]
+                    .into_iter()
+                    .chain(store_idx.to_be_bytes().into_iter())
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            PurgeType::Blobs { .. } => (
+                "blob",
+                [1u8]
+                    .into_iter()
+                    .chain(store_idx.to_be_bytes().into_iter())
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            PurgeType::Lookup(_) => (
+                "in-memory",
+                [2u8]
+                    .into_iter()
+                    .chain(store_idx.to_be_bytes().into_iter())
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            PurgeType::Account(_) => ("account", None),
         };
-        if let Some(lock_name) = lock_name {
+        if let Some(lock_name) = &lock_name {
             match self
                 .core
                 .storage
                 .lookup
-                .try_lock(KV_LOCK_HOUSEKEEPER, lock_name.as_bytes(), 3600)
+                .try_lock(KV_LOCK_HOUSEKEEPER, lock_name, 3600)
                 .await
             {
                 Ok(true) => (),
                 Ok(false) => {
-                    trc::event!(Purge(trc::PurgeEvent::PurgeActive), Details = lock_name);
+                    trc::event!(Purge(PurgeEvent::InProgress), Details = lock_type);
                     return;
                 }
                 Err(err) => {
-                    trc::error!(err.details("Failed to lock task.").details(lock_name));
+                    trc::error!(err.details("Failed to lock task.").details(lock_type));
                     return;
                 }
             }
         }
+
+        trc::event!(Purge(PurgeEvent::Started), Type = lock_type, Id = store_idx);
+        let time = Instant::now();
 
         match purge {
             PurgeType::Data(store) => {
@@ -635,11 +691,6 @@ impl Purge for Server {
                     .and_then(|e| e.metrics_store.as_ref())
                     .and_then(|m| m.retention);
                 // SPDX-SnippetEnd
-
-                trc::event!(
-                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
-                    Type = "data"
-                );
 
                 if let Err(err) = store.purge_store().await {
                     trc::error!(err.details("Failed to purge data store"));
@@ -664,28 +715,16 @@ impl Purge for Server {
                 // SPDX-SnippetEnd
             }
             PurgeType::Blobs { store, blob_store } => {
-                trc::event!(
-                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
-                    Type = "blob"
-                );
-
                 if let Err(err) = store.purge_blobs(blob_store).await {
                     trc::error!(err.details("Failed to purge blob store"));
                 }
             }
             PurgeType::Lookup(store) => {
-                trc::event!(
-                    Housekeeper(trc::HousekeeperEvent::PurgeStore),
-                    Type = "lookup"
-                );
-
                 if let Err(err) = store.purge_in_memory_store().await {
                     trc::error!(err.details("Failed to purge lookup store"));
                 }
             }
             PurgeType::Account(account_id) => {
-                trc::event!(Housekeeper(trc::HousekeeperEvent::PurgeAccounts));
-
                 if let Some(account_id) = account_id {
                     self.purge_account(account_id).await;
                 } else {
@@ -694,16 +733,23 @@ impl Purge for Server {
             }
         }
 
+        trc::event!(
+            Purge(PurgeEvent::Finished),
+            Type = lock_type,
+            Id = store_idx,
+            Elapsed = time.elapsed()
+        );
+
         // Remove lock
-        if let Some(lock_name) = lock_name {
+        if let Some(lock_name) = &lock_name {
             if let Err(err) = self
                 .in_memory_store()
-                .remove_lock(KV_LOCK_HOUSEKEEPER, lock_name.as_bytes())
+                .remove_lock(KV_LOCK_HOUSEKEEPER, lock_name)
                 .await
             {
                 trc::error!(err
                     .details("Failed to delete task lock.")
-                    .details(lock_name));
+                    .details(lock_type));
             }
         }
     }

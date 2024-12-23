@@ -260,7 +260,7 @@ impl EmailDeletion for Server {
         {
             Ok(true) => (),
             Ok(false) => {
-                trc::event!(Purge(trc::PurgeEvent::PurgeActive), AccountId = account_id,);
+                trc::event!(Purge(trc::PurgeEvent::InProgress), AccountId = account_id,);
                 return;
             }
             Err(err) => {
