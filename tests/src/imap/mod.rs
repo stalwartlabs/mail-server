@@ -7,6 +7,7 @@
 pub mod acl;
 pub mod append;
 pub mod basic;
+pub mod bayes;
 pub mod body_structure;
 pub mod condstore;
 pub mod copy_move;
@@ -108,7 +109,14 @@ total = 5
 wait = "1ms"
 
 [spam-filter]
-enable = false
+enable = true
+
+[spam-filter.bayes.account]
+enable = true
+
+[spam-filter.bayes.classify]
+balance = "0.0"
+learns = 10
 
 [queue]
 path = "{TMP}"
@@ -134,6 +142,12 @@ protocol = "smtp"
 [remote."mock-smtp".tls]
 enable = false
 allow-invalid-certs = true
+
+[session.data]
+spam-filter = "recipients[0] != 'popper@example.com'"
+
+[session.data.add-headers]
+delivered-to = false
 
 [session.extensions]
 future-release = [ { if = "!is_empty(authenticated_as)", then = "99999999d"},
@@ -413,6 +427,14 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
         )
         .await;
     store
+        .create_test_user(
+            "bayes@example.com",
+            "secret",
+            "Thomas Bayes",
+            &["bayes@example.com"],
+        )
+        .await;
+    store
         .create_test_group(
             "support@example.com",
             "Support Group",
@@ -484,6 +506,9 @@ pub async fn imap_tests() {
         imap.send("LOGOUT").await;
         imap.assert_read(Type::Untagged, ResponseType::Bye).await;
     }
+
+    // Bayes training
+    bayes::test(&handle).await;
 
     // Run ManageSieve tests
     managesieve::test().await;

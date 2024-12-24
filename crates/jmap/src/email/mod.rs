@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+pub mod bayes;
 pub mod body;
 pub mod cache;
 pub mod copy;

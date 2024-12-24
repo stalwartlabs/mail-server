@@ -172,7 +172,7 @@ pub enum EventType {
     PushSubscription(PushSubscriptionEvent),
     Cluster(ClusterEvent),
     Housekeeper(HousekeeperEvent),
-    FtsIndex(FtsIndexEvent),
+    TaskQueue(TaskQueueEvent),
     Milter(MilterEvent),
     MtaHook(MtaHookEvent),
     Delivery(DeliveryEvent),
@@ -233,8 +233,9 @@ pub enum HousekeeperEvent {
 }
 
 #[event_type]
-pub enum FtsIndexEvent {
+pub enum TaskQueueEvent {
     Index,
+    BayesTrain,
     Locked,
     BlobNotFound,
     MetadataNotFound,

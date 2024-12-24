@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use common::{
     auth::AccessToken, listener::stream::NullIo, scripts::plugins::PluginContext, Server,
 };
-use directory::{backend::internal::PrincipalField, QueryBy};
+use directory::{backend::internal::PrincipalField, Permission, QueryBy};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient};
@@ -21,7 +21,10 @@ use store::{
 use trc::{AddContext, SieveEvent};
 
 use crate::{
-    email::ingest::{EmailIngest, IngestEmail, IngestSource, IngestedEmail},
+    email::{
+        bayes::EmailBayesTrain,
+        ingest::{EmailIngest, IngestEmail, IngestSource, IngestedEmail},
+    },
     mailbox::{get::MailboxGet, set::MailboxSet, INBOX_ID, TRASH_ID},
     sieve::SeenIdHash,
     JmapMethods,
@@ -456,6 +459,7 @@ impl SieveScriptIngest for Server {
         // Deliver messages
         let mut last_temp_error = None;
         let mut has_delivered = false;
+        let can_spam_train = self.email_bayes_can_train(access_token);
         for (message_id, sieve_message) in messages.into_iter().enumerate() {
             if !sieve_message.file_into.is_empty() {
                 // Parse message if needed
@@ -484,8 +488,11 @@ impl SieveScriptIngest for Server {
                         mailbox_ids: sieve_message.file_into,
                         keywords: sieve_message.flags,
                         received_at: None,
-                        source: IngestSource::Smtp,
-                        encrypt: self.core.jmap.encrypt,
+                        source: IngestSource::Smtp {
+                            deliver_to: envelope_to,
+                        },
+                        spam_classify: access_token.has_permission(Permission::SpamFilterClassify),
+                        spam_train: can_spam_train,
                         session_id,
                     })
                     .await

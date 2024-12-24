@@ -34,6 +34,7 @@ pub struct SpamFilterConfig {
 pub struct SpamFilterHeaderConfig {
     pub status: Option<String>,
     pub result: Option<String>,
+    pub bayes_result: Option<String>,
     pub llm: Option<String>,
 }
 
@@ -81,7 +82,9 @@ pub struct BayesConfig {
     pub auto_learn_ham_threshold: f64,
     pub score_spam: f64,
     pub score_ham: f64,
-    pub enabled_account: bool,
+    pub account_score_spam: f64,
+    pub account_score_ham: f64,
+    pub account_classify: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -319,6 +322,7 @@ impl SpamFilterHeaderConfig {
             ("status", &mut header.status),
             ("result", &mut header.result),
             ("llm", &mut header.llm),
+            ("bayes", &mut header.bayes_result),
         ] {
             if config
                 .property_or_default(("spam-filter.header", typ, "enable"), "true")
@@ -549,9 +553,15 @@ impl BayesConfig {
             score_ham: config
                 .property_or_default("spam-filter.bayes.score.ham", "0.5")
                 .unwrap_or(0.5),
-            enabled_account: config
-                .property_or_default("spam-filter.bayes.enable-account", "false")
+            account_classify: config
+                .property_or_default("spam-filter.bayes.account.enable", "false")
                 .unwrap_or(false),
+            account_score_spam: config
+                .property_or_default("spam-filter.bayes.account.score.spam", "0.7")
+                .unwrap_or(0.7),
+            account_score_ham: config
+                .property_or_default("spam-filter.bayes.account.score.ham", "0.5")
+                .unwrap_or(0.5),
         }
         .into()
     }
@@ -633,6 +643,7 @@ impl Default for SpamFilterHeaderConfig {
         SpamFilterHeaderConfig {
             status: "X-Spam-Status".to_string().into(),
             result: "X-Spam-Result".to_string().into(),
+            bayes_result: "X-Spam-Bayes".to_string().into(),
             llm: "X-Spam-LLM".to_string().into(),
         }
     }

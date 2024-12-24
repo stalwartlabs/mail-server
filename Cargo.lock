@@ -3496,6 +3496,7 @@ dependencies = [
  "sieve-rs",
  "smtp",
  "smtp-proto",
+ "spam-filter",
  "store",
  "tokio",
  "tokio-tungstenite 0.24.0",

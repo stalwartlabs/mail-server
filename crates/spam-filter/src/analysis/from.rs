@@ -122,15 +122,15 @@ impl SpamFilterAnalyzeFrom for Server {
                 ctx.result.add_tag("FROM_BOUNCE");
             }
 
-            if (!env_from_empty && ctx.output.env_from_addr.address == from_addr.address)
-                || (ctx.output.env_from_postmaster
-                    && from_addr_is_valid
-                    && from_addr.domain_part.sld == ctx.output.ehlo_host.sld)
-            {
+            if !env_from_empty && ctx.output.env_from_addr.address == from_addr.address {
                 ctx.result.add_tag("FROM_EQ_ENVFROM");
             } else if from_addr_is_valid {
-                ctx.result.add_tag("FORGED_SENDER");
-                ctx.result.add_tag("FROM_NEQ_ENVFROM");
+                if from_addr.domain_part.sld == ctx.output.ehlo_host.sld {
+                    ctx.result.add_tag("FROMTLD_EQ_ENVFROMTLD");
+                } else if !ctx.output.env_from_postmaster {
+                    ctx.result.add_tag("FORGED_SENDER");
+                    ctx.result.add_tag("FROM_NEQ_ENVFROM");
+                }
             }
 
             // Validate FROM/TO relationship

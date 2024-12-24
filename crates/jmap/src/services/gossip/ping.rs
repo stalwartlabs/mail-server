@@ -74,7 +74,7 @@ impl Gossiper {
         tokio::spawn(async move {
             trc::event!(Cluster(ClusterEvent::OneOrMorePeersOffline));
 
-            server.request_fts_index();
+            server.notify_task_queue();
             let _ = server
                 .inner
                 .ipc

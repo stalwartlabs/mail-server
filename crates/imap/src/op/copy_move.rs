@@ -19,9 +19,9 @@ use crate::{
 use common::{listener::SessionStream, MailboxId};
 use jmap::{
     changes::write::ChangeLog,
-    email::{copy::EmailCopy, ingest::EmailIngest, set::TagManager},
-    mailbox::UidMailbox,
-    services::state::StateManager,
+    email::{bayes::EmailBayesTrain, copy::EmailCopy, ingest::EmailIngest, set::TagManager},
+    mailbox::{UidMailbox, JUNK_ID},
+    services::{index::Indexer, state::StateManager},
     JmapMethods,
 };
 use jmap_proto::{
@@ -33,7 +33,7 @@ use jmap_proto::{
 };
 use store::{
     roaring::RoaringBitmap,
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE},
+    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, ValueClass, F_VALUE},
 };
 
 use super::ImapContext;
@@ -171,10 +171,19 @@ impl<T: SessionStream> SessionData<T> {
         let mut changelog = ChangeLogBuilder::new();
         let mut did_move = false;
         let mut copied_ids = Vec::with_capacity(ids.len());
+        let access_token = self
+            .server
+            .get_cached_access_token(dest_mailbox.account_id)
+            .await
+            .imap_ctx(&arguments.tag, trc::location!())?;
+
         if src_mailbox.id.account_id == dest_mailbox.account_id {
             // Mailboxes are in the same account
             let account_id = src_mailbox.id.account_id;
             let dest_mailbox_id = UidMailbox::new_unassigned(dest_mailbox_id);
+            let can_spam_train = self.server.email_bayes_can_train(&access_token);
+            let mut has_spam_train_tasks = false;
+
             for (id, imap_id) in ids {
                 // Obtain mailbox tags
                 let (mut mailboxes, thread_id) = if let Some(result) = self
@@ -216,7 +225,7 @@ impl<T: SessionStream> SessionData<T> {
                     }
                 }
 
-                // Write changes
+                // Perepare write batch
                 let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(account_id)
@@ -231,10 +240,41 @@ impl<T: SessionStream> SessionData<T> {
                         .imap_ctx(&arguments.tag, trc::location!())?;
                 }
                 batch.value(Property::Cid, changelog.change_id, F_VALUE);
+
+                // Add bayes train task
+                if can_spam_train {
+                    if dest_mailbox_id.mailbox_id == JUNK_ID {
+                        batch.set(
+                            ValueClass::TaskQueue(
+                                self.server
+                                    .email_bayes_queue_task_build(account_id, id, true)
+                                    .await
+                                    .imap_ctx(&arguments.tag, trc::location!())?,
+                            ),
+                            vec![],
+                        );
+                        has_spam_train_tasks = true;
+                    } else if src_mailbox.id.mailbox_id == JUNK_ID {
+                        batch.set(
+                            ValueClass::TaskQueue(
+                                self.server
+                                    .email_bayes_queue_task_build(account_id, id, false)
+                                    .await
+                                    .imap_ctx(&arguments.tag, trc::location!())?,
+                            ),
+                            vec![],
+                        );
+                        has_spam_train_tasks = true;
+                    }
+                }
+
+                // Write changes
                 self.server
                     .write_batch(batch)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?;
+
+                // Update changelog
                 changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
                 changelog.log_child_update(Collection::Mailbox, dest_mailbox_id.mailbox_id);
                 if is_move {
@@ -242,17 +282,17 @@ impl<T: SessionStream> SessionData<T> {
                     did_move = true;
                 }
             }
+
+            // Trigger Bayes training
+            if has_spam_train_tasks {
+                self.server.notify_task_queue();
+            }
         } else {
             // Obtain quota for target account
             let src_account_id = src_mailbox.id.account_id;
             let mut dest_change_id = None;
             let dest_account_id = dest_mailbox.account_id;
-            let resource_token = self
-                .server
-                .get_cached_access_token(dest_account_id)
-                .await
-                .imap_ctx(&arguments.tag, trc::location!())?
-                .as_resource_token();
+            let resource_token = access_token.as_resource_token();
             let mut destroy_ids = RoaringBitmap::new();
             for (id, imap_id) in ids {
                 match self

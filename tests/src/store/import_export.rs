@@ -279,7 +279,7 @@ impl Snapshot {
             (SUBSPACE_BITMAP_TAG, false),
             (SUBSPACE_BITMAP_TEXT, false),
             (SUBSPACE_DIRECTORY, true),
-            (SUBSPACE_FTS_QUEUE, true),
+            (SUBSPACE_TASK_QUEUE, true),
             (SUBSPACE_INDEXES, false),
             (SUBSPACE_BLOB_RESERVE, true),
             (SUBSPACE_BLOB_LINK, true),

@@ -19,7 +19,10 @@ use crate::{
 };
 use common::{listener::SessionStream, MailboxId};
 use jmap::{
-    email::ingest::{EmailIngest, IngestEmail, IngestSource},
+    email::{
+        bayes::EmailBayesTrain,
+        ingest::{EmailIngest, IngestEmail, IngestSource},
+    },
     services::state::StateManager,
 };
 use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_state::DataType};
@@ -91,12 +94,13 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         // Obtain quota
-        let resource_token = self
+        let access_token = self
             .server
             .get_cached_access_token(mailbox.account_id)
             .await
-            .imap_ctx(&arguments.tag, trc::location!())?
-            .as_resource_token();
+            .imap_ctx(&arguments.tag, trc::location!())?;
+        let resource_token = access_token.as_resource_token();
+        let spam_train = self.server.email_bayes_can_train(&access_token);
 
         // Append messages
         let mut response = StatusResponse::completed(Command::Append);
@@ -113,7 +117,8 @@ impl<T: SessionStream> SessionData<T> {
                     keywords: message.flags.into_iter().map(Keyword::from).collect(),
                     received_at: message.received_at.map(|d| d as u64),
                     source: IngestSource::Imap,
-                    encrypt: self.server.core.jmap.encrypt && self.server.core.jmap.encrypt_append,
+                    spam_classify: false,
+                    spam_train,
                     session_id: self.session_id,
                 })
                 .await

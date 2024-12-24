@@ -130,6 +130,7 @@ pub enum AddressMapping {
 #[derive(Clone)]
 pub struct Data {
     pub script: IfBlock,
+    pub spam_filter: IfBlock,
 
     // Limits
     pub max_messages: IfBlock,
@@ -143,6 +144,7 @@ pub struct Data {
     pub add_auth_results: IfBlock,
     pub add_message_id: IfBlock,
     pub add_date: IfBlock,
+    pub add_delivered_to: bool,
 }
 
 #[derive(Clone)]
@@ -412,6 +414,11 @@ impl SessionConfig {
                 &has_rcpt_vars,
             ),
             (
+                &mut session.data.spam_filter,
+                "session.data.spam-filter",
+                &has_rcpt_vars,
+            ),
+            (
                 &mut session.data.add_received,
                 "session.data.add-headers.received",
                 &has_rcpt_vars,
@@ -446,7 +453,9 @@ impl SessionConfig {
                 *value = if_block;
             }
         }
-
+        session.data.add_delivered_to = config
+            .property_or_default("session.data.add-headers.delivered-to", "true")
+            .unwrap_or(true);
         session
     }
 }
@@ -773,6 +782,7 @@ impl Default for SessionConfig {
             },
             data: Data {
                 script: IfBlock::empty("session.data.script"),
+                spam_filter: IfBlock::new::<()>("session.data.spam-filter", [], "true"),
                 max_messages: IfBlock::new::<()>("session.data.limits.messages", [], "10"),
                 max_message_size: IfBlock::new::<()>("session.data.limits.size", [], "104857600"),
                 max_received_headers: IfBlock::new::<()>(
@@ -810,6 +820,7 @@ impl Default for SessionConfig {
                     [("local_port == 25", "true")],
                     "false",
                 ),
+                add_delivered_to: false,
             },
             extensions: Extensions {
                 pipelining: IfBlock::new::<()>("session.extensions.pipelining", [], "true"),

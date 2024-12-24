@@ -13,6 +13,7 @@ utils = { path =  "../utils" }
 common = { path =  "../common" }
 directory = { path =  "../directory" }
 trc = { path = "../trc" }
+spam-filter = { path = "../spam-filter" }
 smtp-proto = { version = "0.1" }
 mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] }

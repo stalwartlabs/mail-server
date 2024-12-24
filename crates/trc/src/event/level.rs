@@ -373,11 +373,12 @@ impl EventType {
                 HousekeeperEvent::Start | HousekeeperEvent::Stop => Level::Info,
                 HousekeeperEvent::Run | HousekeeperEvent::Schedule => Level::Debug,
             },
-            EventType::FtsIndex(event) => match event {
-                FtsIndexEvent::Index => Level::Info,
-                FtsIndexEvent::BlobNotFound
-                | FtsIndexEvent::Locked
-                | FtsIndexEvent::MetadataNotFound => Level::Debug,
+            EventType::TaskQueue(event) => match event {
+                TaskQueueEvent::Index => Level::Info,
+                TaskQueueEvent::BlobNotFound
+                | TaskQueueEvent::Locked
+                | TaskQueueEvent::BayesTrain
+                | TaskQueueEvent::MetadataNotFound => Level::Debug,
             },
             EventType::Dmarc(_) => Level::Debug,
             EventType::Spf(_) => Level::Debug,

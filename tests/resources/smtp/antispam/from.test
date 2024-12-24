@@ -48,14 +48,14 @@ From: "hello@other.domain.co.uk" <hello@domain.co.uk>
 Test
 <!-- NEXT TEST -->
 helo_domain mx.domain.co.uk
-expect FROM_EQ_ENVFROM FROM_NEQ_DISPLAY_NAME FROM_HAS_DN FROM_BOUNCE
+expect FROMTLD_EQ_ENVFROMTLD FROM_NEQ_DISPLAY_NAME FROM_HAS_DN FROM_BOUNCE
 
 From: "postmaster@mx.domain.co.uk" <postmaster@domain.co.uk>
 
 Test
 <!-- NEXT TEST -->
 helo_domain mx.domain.co.uk
-expect FROM_EQ_ENVFROM FROM_HAS_DN FROM_BOUNCE
+expect FROMTLD_EQ_ENVFROMTLD FROM_HAS_DN FROM_BOUNCE
 
 From: "Mailer Daemon" <MAILER-DAEMON@domain.co.uk>
 

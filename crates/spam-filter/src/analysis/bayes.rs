@@ -8,7 +8,7 @@ use std::future::Future;
 
 use common::Server;
 
-use crate::{modules::bayes::bayes_classify, SpamFilterContext};
+use crate::{modules::bayes::BayesClassifier, SpamFilterContext};
 
 pub trait SpamFilterAnalyzeBayes: Sync + Send {
     fn spam_filter_analyze_bayes_classify(
@@ -26,7 +26,7 @@ impl SpamFilterAnalyzeBayes for Server {
     async fn spam_filter_analyze_bayes_classify(&self, ctx: &mut SpamFilterContext<'_>) {
         if let Some(config) = &self.core.spam.bayes {
             if !ctx.result.has_tag("SPAM_TRAP") && !ctx.result.has_tag("TRUSTED_REPLY") {
-                match bayes_classify(self, ctx).await {
+                match self.bayes_classify(ctx).await {
                     Ok(Some(score)) => {
                         if score > config.score_spam {
                             ctx.result.add_tag("BAYES_SPAM");

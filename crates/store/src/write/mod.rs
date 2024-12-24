@@ -146,7 +146,7 @@ pub enum ValueClass<T> {
     Acl(u32),
     Lookup(LookupClass),
     FtsIndex(BitmapHash),
-    FtsQueue(FtsQueueClass),
+    TaskQueue(TaskQueueClass),
     Directory(DirectoryClass<T>),
     Blob(BlobOp),
     Config(Vec<u8>),
@@ -157,9 +157,16 @@ pub enum ValueClass<T> {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub struct FtsQueueClass {
-    pub seq: u64,
-    pub hash: BlobHash,
+pub enum TaskQueueClass {
+    IndexEmail {
+        seq: u64,
+        hash: BlobHash,
+    },
+    BayesTrain {
+        seq: u64,
+        hash: BlobHash,
+        learn_spam: bool,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -890,5 +897,15 @@ impl RandomAvailableId for RoaringBitmap {
         }
 
         available_ids[rand::thread_rng().gen_range(0..available_ids.len())]
+    }
+}
+
+impl QueueClass {
+    pub fn due(&self) -> Option<u64> {
+        match self {
+            QueueClass::DmarcReportHeader(report_event) => report_event.due.into(),
+            QueueClass::TlsReportHeader(report_event) => report_event.due.into(),
+            _ => None,
+        }
     }
 }

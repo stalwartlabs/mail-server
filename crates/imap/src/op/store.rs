@@ -24,9 +24,9 @@ use imap_proto::{
 };
 use jmap::{
     changes::{get::ChangesLookup, write::ChangeLog},
-    email::set::TagManager,
+    email::{bayes::EmailBayesTrain, set::TagManager},
     mailbox::UidMailbox,
-    services::state::StateManager,
+    services::{index::Indexer, state::StateManager},
     JmapMethods,
 };
 use jmap_proto::types::{
@@ -35,7 +35,7 @@ use jmap_proto::types::{
 };
 use store::{
     query::log::{Change, Query},
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE},
+    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, ValueClass, F_VALUE},
 };
 
 use super::{FromModSeq, ImapContext};
@@ -193,6 +193,14 @@ impl<T: SessionStream> SessionData<T> {
             .collect::<Vec<_>>();
         let mut changelog = ChangeLogBuilder::new();
         let mut changed_mailboxes = AHashSet::new();
+        let access_token = self
+            .server
+            .get_cached_access_token(account_id)
+            .await
+            .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
+        let can_spam_train = self.server.email_bayes_can_train(&access_token);
+        let mut has_spam_train_tasks = false;
+
         'outer: for (id, imap_id) in &ids {
             let mut try_count = 0;
             loop {
@@ -235,6 +243,28 @@ impl<T: SessionStream> SessionData<T> {
                 }
 
                 if keywords.has_changes() {
+                    // Train spam filter
+                    let mut train_spam = None;
+                    if can_spam_train {
+                        for keyword in keywords.added() {
+                            if keyword == &Keyword::Junk {
+                                train_spam = Some(true);
+                                break;
+                            } else if keyword == &Keyword::NotJunk {
+                                train_spam = Some(false);
+                                break;
+                            }
+                        }
+                        if train_spam.is_none() {
+                            for keyword in keywords.removed() {
+                                if keyword == &Keyword::Junk {
+                                    train_spam = Some(false);
+                                    break;
+                                }
+                            }
+                        }
+                    };
+
                     // Convert keywords to flags
                     let seen_changed = keywords
                         .changed_tags()
@@ -265,6 +295,21 @@ impl<T: SessionStream> SessionData<T> {
                             .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                     }
                     batch.value(Property::Cid, changelog.change_id, F_VALUE);
+
+                    // Add spam train task
+                    if let Some(learn_spam) = train_spam {
+                        batch.set(
+                            ValueClass::TaskQueue(
+                                self.server
+                                    .email_bayes_queue_task_build(account_id, *id, learn_spam)
+                                    .await
+                                    .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?,
+                            ),
+                            vec![],
+                        );
+                        has_spam_train_tasks = true;
+                    }
+
                     match self.server.write_batch(batch).await {
                         Ok(_) => {
                             // Set all current mailboxes as changed if the Seen tag changed
@@ -285,6 +330,8 @@ impl<T: SessionStream> SessionData<T> {
                                     }
                                 }
                             }
+
+                            // Update changelog
                             changelog.log_update(Collection::Email, Id::from_parts(thread_id, *id));
 
                             // Add item to response
@@ -336,6 +383,11 @@ impl<T: SessionStream> SessionData<T> {
         // Log mailbox changes
         for mailbox_id in &changed_mailboxes {
             changelog.log_child_update(Collection::Mailbox, *mailbox_id);
+        }
+
+        // Trigger Bayes training
+        if has_spam_train_tasks {
+            self.server.notify_task_queue();
         }
 
         // Write changes

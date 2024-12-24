@@ -39,7 +39,7 @@ impl EventType {
             EventType::PushSubscription(event) => event.description(),
             EventType::Cluster(event) => event.description(),
             EventType::Housekeeper(event) => event.description(),
-            EventType::FtsIndex(event) => event.description(),
+            EventType::TaskQueue(event) => event.description(),
             EventType::Milter(event) => event.description(),
             EventType::MtaHook(event) => event.description(),
             EventType::Delivery(event) => event.description(),
@@ -87,7 +87,7 @@ impl EventType {
             EventType::PushSubscription(event) => event.explain(),
             EventType::Cluster(event) => event.explain(),
             EventType::Housekeeper(event) => event.explain(),
-            EventType::FtsIndex(event) => event.explain(),
+            EventType::TaskQueue(event) => event.explain(),
             EventType::Milter(event) => event.explain(),
             EventType::MtaHook(event) => event.explain(),
             EventType::Delivery(event) => event.explain(),
@@ -188,22 +188,24 @@ impl HousekeeperEvent {
     }
 }
 
-impl FtsIndexEvent {
+impl TaskQueueEvent {
     pub fn description(&self) -> &'static str {
         match self {
-            FtsIndexEvent::Index => "Full-text search index done",
-            FtsIndexEvent::Locked => "Full-text search index is locked by another process",
-            FtsIndexEvent::BlobNotFound => "Blob not found for full-text indexing",
-            FtsIndexEvent::MetadataNotFound => "Metadata not found for full-text indexing",
+            TaskQueueEvent::Index => "Full-text search indexing completed",
+            TaskQueueEvent::Locked => "Task is locked by another process",
+            TaskQueueEvent::BlobNotFound => "Blob not found for task",
+            TaskQueueEvent::MetadataNotFound => "Metadata not found for task",
+            TaskQueueEvent::BayesTrain => "Bayesian training completed",
         }
     }
 
     pub fn explain(&self) -> &'static str {
         match self {
-            FtsIndexEvent::Index => "The full-text search index has been updated",
-            FtsIndexEvent::Locked => "The full-text search index is locked by another process",
-            FtsIndexEvent::BlobNotFound => "The blob was not found for full-text indexing",
-            FtsIndexEvent::MetadataNotFound => "The metadata was not found for full-text indexing",
+            TaskQueueEvent::Index => "The full-text search index has been updated",
+            TaskQueueEvent::Locked => "The task id is locked by another process",
+            TaskQueueEvent::BlobNotFound => "The requested blob was not found for task",
+            TaskQueueEvent::MetadataNotFound => "The metadata was not found for task",
+            TaskQueueEvent::BayesTrain => "Bayesian training has been completed",
         }
     }
 }
@@ -799,8 +801,8 @@ impl OutgoingReportEvent {
             OutgoingReportEvent::DkimRateLimited => "DKIM report rate limited",
             OutgoingReportEvent::DmarcReport => "DMARC report sent",
             OutgoingReportEvent::DmarcRateLimited => "DMARC report rate limited",
-            OutgoingReportEvent::DmarcAggregateReport => "DMARC aggregate report sent",
-            OutgoingReportEvent::TlsAggregate => "TLS aggregate report sent",
+            OutgoingReportEvent::DmarcAggregateReport => "DMARC aggregate is being prepared",
+            OutgoingReportEvent::TlsAggregate => "TLS aggregate report is being prepared",
             OutgoingReportEvent::HttpSubmission => "Report submitted via HTTP",
             OutgoingReportEvent::UnauthorizedReportingAddress => "Unauthorized reporting address",
             OutgoingReportEvent::ReportingAddressValidationError => {
@@ -821,8 +823,8 @@ impl OutgoingReportEvent {
             OutgoingReportEvent::DkimRateLimited => "The DKIM report was rate limited",
             OutgoingReportEvent::DmarcReport => "A DMARC report has been sent",
             OutgoingReportEvent::DmarcRateLimited => "The DMARC report was rate limited",
-            OutgoingReportEvent::DmarcAggregateReport => "A DMARC aggregate report has been sent",
-            OutgoingReportEvent::TlsAggregate => "A TLS aggregate report has been sent",
+            OutgoingReportEvent::DmarcAggregateReport => "A DMARC aggregate report will be sent",
+            OutgoingReportEvent::TlsAggregate => "A TLS aggregate report will be sent",
             OutgoingReportEvent::HttpSubmission => "The report was submitted via HTTP",
             OutgoingReportEvent::UnauthorizedReportingAddress => {
                 "The reporting address is not authorized to send reports"

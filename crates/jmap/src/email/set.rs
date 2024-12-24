@@ -52,6 +52,7 @@ use crate::{
 use std::future::Future;
 
 use super::{
+    bayes::EmailBayesTrain,
     delete::EmailDeletion,
     headers::{BuildHeader, ValueToHeader},
     ingest::{EmailIngest, IngestEmail, IngestSource},
@@ -78,6 +79,7 @@ impl EmailSet for Server {
         let mut response = self
             .prepare_set_response(&request, Collection::Email)
             .await?;
+        let can_train_spam = self.email_bayes_can_train(access_token);
 
         // Obtain mailboxIds
         let mailbox_ids = self.mailbox_get_or_create(account_id).await?;
@@ -738,7 +740,8 @@ impl EmailSet for Server {
                     keywords,
                     received_at,
                     source: IngestSource::Jmap,
-                    encrypt: self.core.jmap.encrypt && self.core.jmap.encrypt_append,
+                    spam_classify: false,
+                    spam_train: can_train_spam,
                     session_id: session.session_id,
                 })
                 .await

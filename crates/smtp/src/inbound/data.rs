@@ -421,7 +421,13 @@ impl<T: SessionStream> Session<T> {
         }
 
         // Run SPAM filter
-        if self.server.core.spam.enabled {
+        if self.server.core.spam.enabled
+            && self
+                .server
+                .eval_if(&dc.spam_filter, self, self.data.session_id)
+                .await
+                .unwrap_or(true)
+        {
             match self
                 .spam_classify(
                     &parsed_message,

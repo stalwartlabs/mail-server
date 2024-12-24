@@ -21,8 +21,8 @@ use jmap_proto::{
     types::{collection::Collection, property::Property},
 };
 use services::{
-    delivery::spawn_delivery_manager, housekeeper::spawn_housekeeper, index::spawn_index_task,
-    state::spawn_state_manager,
+    delivery::spawn_delivery_manager, housekeeper::spawn_housekeeper,
+    index::spawn_email_queue_task, state::spawn_state_manager,
 };
 
 use store::{
@@ -98,7 +98,7 @@ impl SpawnServices for IpcReceivers {
         spawn_housekeeper(inner.clone(), self.housekeeper_rx.take().unwrap());
 
         // Spawn index task
-        spawn_index_task(inner);
+        spawn_email_queue_task(inner);
     }
 }
 

@@ -6,6 +6,7 @@
 
 use std::{
     borrow::Cow,
+    fmt::Write,
     time::{Duration, Instant},
 };
 
@@ -22,14 +23,17 @@ use mail_parser::{
 };
 
 use rand::Rng;
+use spam_filter::{
+    analysis::init::SpamFilterInit, modules::bayes::BayesClassifier, SpamFilterInput,
+};
 use std::future::Future;
 use store::{
     ahash::AHashSet,
     query::Filter,
     write::{
         log::{ChangeLogBuilder, Changes, LogInsert},
-        now, AssignedIds, BatchBuilder, BitmapClass, FtsQueueClass, MaybeDynamicId,
-        MaybeDynamicValue, SerializeWithId, TagValue, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
+        now, AssignedIds, BatchBuilder, BitmapClass, MaybeDynamicId, MaybeDynamicValue,
+        SerializeWithId, TagValue, TaskQueueClass, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
     },
     BitmapKey, BlobClass, Serialize,
 };
@@ -67,16 +71,18 @@ pub struct IngestEmail<'x> {
     pub mailbox_ids: Vec<u32>,
     pub keywords: Vec<Keyword>,
     pub received_at: Option<u64>,
-    pub source: IngestSource,
-    pub encrypt: bool,
+    pub source: IngestSource<'x>,
+    pub spam_classify: bool,
+    pub spam_train: bool,
     pub session_id: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum IngestSource {
-    Smtp,
+pub enum IngestSource<'x> {
+    Smtp { deliver_to: &'x str },
     Jmap,
     Imap,
+    Restore,
 }
 
 const MAX_RETRIES: u32 = 10;
@@ -119,23 +125,94 @@ impl EmailIngest for Server {
                 .ctx(trc::Key::Reason, "Failed to parse e-mail message.")
         })?;
 
-        // Check for Spam headers
         let mut is_spam = false;
-        if let (IngestSource::Smtp, Some(header_name)) =
-            (params.source, &self.core.spam.headers.status)
-        {
-            if params.mailbox_ids == [INBOX_ID]
-                && message.root_part().headers().iter().any(|header| {
-                    header.name() == header_name
-                        && header
-                            .value()
-                            .as_text()
-                            .map_or(false, |value| value.contains("Yes"))
-                })
-            {
-                params.mailbox_ids[0] = JUNK_ID;
-                is_spam = true;
+        let mut train_spam = None;
+        let mut extra_headers = String::new();
+        match params.source {
+            IngestSource::Smtp { deliver_to } => {
+                // Add delivered to header
+                if self.core.smtp.session.data.add_delivered_to {
+                    extra_headers = format!("Delivered-To: {deliver_to}\r\n");
+                }
+
+                // Spam classification and training
+                if params.spam_classify
+                    && self.core.spam.enabled
+                    && params.mailbox_ids == [INBOX_ID]
+                {
+                    // Set the spam filter result
+                    is_spam = self
+                        .core
+                        .spam
+                        .headers
+                        .status
+                        .as_ref()
+                        .and_then(|name| message.header(name.as_str()).and_then(|v| v.as_text()))
+                        .map_or(false, |v| v.contains("Yes"));
+
+                    // Classify the message with user's model
+                    if let Some(bayes_config) = self
+                        .core
+                        .spam
+                        .bayes
+                        .as_ref()
+                        .filter(|config| config.account_classify && params.spam_train)
+                    {
+                        // Initialize spam filter
+                        let ctx = self.spam_filter_init(SpamFilterInput::from_account_message(
+                            &message,
+                            account_id,
+                            params.session_id,
+                        ));
+
+                        // Bayes classify
+                        match self.bayes_classify(&ctx).await {
+                            Ok(Some(score)) => {
+                                let result = if score > bayes_config.score_spam {
+                                    is_spam = true;
+                                    "Yes"
+                                } else if score < bayes_config.score_ham {
+                                    is_spam = false;
+                                    "No"
+                                } else {
+                                    "Unknown"
+                                };
+
+                                if let Some(header) = &self.core.spam.headers.bayes_result {
+                                    let _ = write!(
+                                        &mut extra_headers,
+                                        "{header}: {result}, {score:.2}\r\n",
+                                    );
+                                }
+                            }
+                            Ok(None) => (),
+                            Err(err) => {
+                                trc::error!(err.caused_by(trc::location!()));
+                            }
+                        }
+                    }
+
+                    if is_spam {
+                        params.mailbox_ids[0] = JUNK_ID;
+                        params.keywords.push(Keyword::Junk);
+                    }
+                }
             }
+            IngestSource::Jmap | IngestSource::Imap
+                if params.spam_train && self.core.spam.enabled =>
+            {
+                if params.keywords.contains(&Keyword::Junk) {
+                    train_spam = Some(true);
+                } else if params.keywords.contains(&Keyword::NotJunk) {
+                    train_spam = Some(false);
+                } else if params.mailbox_ids[0] == JUNK_ID {
+                    train_spam = Some(true);
+                } else if params.mailbox_ids[0] == INBOX_ID {
+                    train_spam = Some(false);
+                }
+            }
+
+            _ => (),
         }
 
         // Obtain message references and thread name
@@ -177,7 +254,7 @@ impl EmailIngest for Server {
             }
 
             // Check for duplicates
-            if params.source == IngestSource::Smtp
+            if params.source.is_smtp()
                 && !message_id.is_empty()
                 && !self
                     .core
@@ -223,8 +300,24 @@ impl EmailIngest for Server {
             }
         };
 
+        // Add additional headers to message
+        if !extra_headers.is_empty() {
+            raw_message_len += extra_headers.len() as u64;
+            let mut new_message = Vec::with_capacity(raw_message_len as usize);
+            new_message.extend_from_slice(extra_headers.as_bytes());
+            new_message.extend_from_slice(raw_message.as_ref());
+            raw_message = Cow::from(new_message);
+        }
+
         // Encrypt message
-        if params.encrypt && !message.is_encrypted() {
+        let do_encrypt = match params.source {
+            IngestSource::Jmap | IngestSource::Imap => {
+                self.core.jmap.encrypt && self.core.jmap.encrypt_append
+            }
+            IngestSource::Smtp { .. } => self.core.jmap.encrypt,
+            IngestSource::Restore => false,
+        };
+        if do_encrypt && !message.is_encrypted() {
             if let Some(encrypt_params) = self
                 .get_property::<EncryptionParams>(
                     account_id,
@@ -340,12 +433,24 @@ impl EmailIngest for Server {
             .set(Property::ThreadId, maybe_thread_id)
             .tag(Property::ThreadId, TagValue::Id(maybe_thread_id), 0)
             .set(
-                ValueClass::FtsQueue(FtsQueueClass {
+                ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                     seq: self.generate_snowflake_id().caused_by(trc::location!())?,
                     hash: blob_id.hash.clone(),
                 }),
-                0u64.serialize(),
+                vec![],
             );
+
+        // Request spam training
+        if let Some(learn_spam) = train_spam {
+            batch.set(
+                ValueClass::TaskQueue(TaskQueueClass::BayesTrain {
+                    seq: self.generate_snowflake_id()?,
+                    hash: blob_id.hash.clone(),
+                    learn_spam,
+                }),
+                vec![],
+            );
+        }
 
         // Insert and obtain ids
         let ids = self
@@ -363,17 +468,17 @@ impl EmailIngest for Server {
         let id = Id::from_parts(thread_id, document_id);
 
         // Request FTS index
-        self.request_fts_index();
+        self.notify_task_queue();
 
         trc::event!(
             MessageIngest(match params.source {
-                IngestSource::Smtp =>
+                IngestSource::Smtp { .. } =>
                     if !is_spam {
                         MessageIngestEvent::Ham
                     } else {
                         MessageIngestEvent::Spam
                     },
-                IngestSource::Jmap => MessageIngestEvent::JmapAppend,
+                IngestSource::Jmap | IngestSource::Restore => MessageIngestEvent::JmapAppend,
                 IngestSource::Imap => MessageIngestEvent::ImapAppend,
             }),
             SpanId = params.session_id,
@@ -566,6 +671,12 @@ pub struct LogEmailInsert(Option<u32>);
 impl LogEmailInsert {
     pub fn new(thread_id: Option<u32>) -> Self {
         Self(thread_id)
+    }
+}
+
+impl IngestSource<'_> {
+    pub fn is_smtp(&self) -> bool {
+        matches!(self, Self::Smtp { .. })
     }
 }
 

@@ -590,7 +590,7 @@ impl Store {
             SUBSPACE_BITMAP_TAG,
             SUBSPACE_BITMAP_TEXT,
             SUBSPACE_DIRECTORY,
-            SUBSPACE_FTS_QUEUE,
+            SUBSPACE_TASK_QUEUE,
             SUBSPACE_INDEXES,
             SUBSPACE_BLOB_RESERVE,
             SUBSPACE_BLOB_LINK,
@@ -772,7 +772,7 @@ impl Store {
         for (subspace, with_values) in [
             (SUBSPACE_ACL, true),
             //(SUBSPACE_DIRECTORY, true),
-            (SUBSPACE_FTS_QUEUE, true),
+            (SUBSPACE_TASK_QUEUE, true),
             (SUBSPACE_LOOKUP_VALUE, true),
             (SUBSPACE_PROPERTY, true),
             (SUBSPACE_SETTINGS, true),

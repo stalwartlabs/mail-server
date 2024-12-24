@@ -91,7 +91,7 @@ impl SqliteStore {
         for table in [
             SUBSPACE_ACL,
             SUBSPACE_DIRECTORY,
-            SUBSPACE_FTS_QUEUE,
+            SUBSPACE_TASK_QUEUE,
             SUBSPACE_BLOB_RESERVE,
             SUBSPACE_BLOB_LINK,
             SUBSPACE_LOOKUP_VALUE,

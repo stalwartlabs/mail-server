@@ -11,15 +11,15 @@ use crate::{
     BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, SUBSPACE_ACL,
     SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_BLOB_LINK,
     SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_FTS_INDEX,
-    SUBSPACE_FTS_QUEUE, SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_VALUE, SUBSPACE_PROPERTY,
+    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_VALUE, SUBSPACE_PROPERTY,
     SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_IN,
-    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TELEMETRY_INDEX, SUBSPACE_TELEMETRY_METRIC,
-    SUBSPACE_TELEMETRY_SPAN, U32_LEN, U64_LEN, WITH_SUBSPACE,
+    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE, SUBSPACE_TELEMETRY_INDEX,
+    SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U32_LEN, U64_LEN, WITH_SUBSPACE,
 };
 
 use super::{
     AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportClass,
-    ReportEvent, ResolveId, TagValue, TelemetryClass, ValueClass,
+    ReportEvent, ResolveId, TagValue, TaskQueueClass, TelemetryClass, ValueClass,
 };
 
 pub struct KeySerializer {
@@ -266,12 +266,24 @@ impl<T: ResolveId> ValueClass<T> {
                 .write(account_id)
                 .write(collection)
                 .write(document_id),
-            ValueClass::FtsQueue(queue) => serializer
-                .write(queue.seq)
-                .write(account_id)
-                .write(collection)
-                .write(document_id)
-                .write::<&[u8]>(queue.hash.as_ref()),
+            ValueClass::TaskQueue(task) => match task {
+                TaskQueueClass::IndexEmail { seq, hash } => serializer
+                    .write(*seq)
+                    .write(account_id)
+                    .write(0u8)
+                    .write(document_id)
+                    .write::<&[u8]>(hash.as_ref()),
+                TaskQueueClass::BayesTrain {
+                    seq,
+                    hash,
+                    learn_spam,
+                } => serializer
+                    .write(*seq)
+                    .write(account_id)
+                    .write(if *learn_spam { 1u8 } else { 2u8 })
+                    .write(document_id)
+                    .write::<&[u8]>(hash.as_ref()),
+            },
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { hash, until } => serializer
                     .write(account_id)
@@ -542,7 +554,7 @@ impl<T> ValueClass<T> {
                     BLOB_HASH_LEN + U32_LEN * 2 + 2
                 }
             },
-            ValueClass::FtsQueue { .. } => BLOB_HASH_LEN + U64_LEN * 2,
+            ValueClass::TaskQueue { .. } => BLOB_HASH_LEN + U64_LEN * 2,
             ValueClass::Queue(q) => match q {
                 QueueClass::Message(_) => U64_LEN,
                 QueueClass::MessageEvent(_) => U64_LEN * 2,
@@ -575,7 +587,7 @@ impl<T> ValueClass<T> {
             }
             ValueClass::Acl(_) => SUBSPACE_ACL,
             ValueClass::FtsIndex(_) => SUBSPACE_FTS_INDEX,
-            ValueClass::FtsQueue { .. } => SUBSPACE_FTS_QUEUE,
+            ValueClass::TaskQueue { .. } => SUBSPACE_TASK_QUEUE,
             ValueClass::Blob(op) => match op {
                 BlobOp::Reserve { .. } => SUBSPACE_BLOB_RESERVE,
                 BlobOp::Commit { .. } | BlobOp::Link { .. } | BlobOp::LinkId { .. } => {

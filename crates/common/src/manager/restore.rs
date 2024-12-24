@@ -15,7 +15,7 @@ use store::{
     roaring::RoaringBitmap,
     write::{
         key::DeserializeBigEndian, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass,
-        FtsQueueClass, LookupClass, MaybeDynamicId, MaybeDynamicValue, Operation, TagValue,
+        LookupClass, MaybeDynamicId, MaybeDynamicValue, Operation, TagValue, TaskQueueClass,
         ValueClass,
     },
     BlobStore, Serialize, Store, U32_LEN,
@@ -145,7 +145,7 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                         if account_id != u32::MAX && document_id != u32::MAX {
                             if reader.version == 1 && collection == email_collection {
                                 batch.set(
-                                    ValueClass::FtsQueue(FtsQueueClass {
+                                    ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                                         seq,
                                         hash: hash.clone(),
                                     }),

@@ -446,10 +446,11 @@ impl EventType {
             EventType::Eval(EvalEvent::Error) => 138,
             EventType::Eval(EvalEvent::Result) => 139,
             EventType::Eval(EvalEvent::StoreNotFound) => 140,
-            EventType::FtsIndex(FtsIndexEvent::BlobNotFound) => 141,
-            EventType::FtsIndex(FtsIndexEvent::Index) => 142,
-            EventType::FtsIndex(FtsIndexEvent::Locked) => 144,
-            EventType::FtsIndex(FtsIndexEvent::MetadataNotFound) => 145,
+            EventType::TaskQueue(TaskQueueEvent::BlobNotFound) => 141,
+            EventType::TaskQueue(TaskQueueEvent::Index) => 142,
+            EventType::TaskQueue(TaskQueueEvent::BayesTrain) => 143,
+            EventType::TaskQueue(TaskQueueEvent::Locked) => 144,
+            EventType::TaskQueue(TaskQueueEvent::MetadataNotFound) => 145,
             EventType::Housekeeper(HousekeeperEvent::Run) => 146,
             EventType::Housekeeper(HousekeeperEvent::Schedule) => 149,
             EventType::Housekeeper(HousekeeperEvent::Start) => 150,
@@ -1008,10 +1009,11 @@ impl EventType {
             138 => Some(EventType::Eval(EvalEvent::Error)),
             139 => Some(EventType::Eval(EvalEvent::Result)),
             140 => Some(EventType::Eval(EvalEvent::StoreNotFound)),
-            141 => Some(EventType::FtsIndex(FtsIndexEvent::BlobNotFound)),
-            142 => Some(EventType::FtsIndex(FtsIndexEvent::Index)),
-            144 => Some(EventType::FtsIndex(FtsIndexEvent::Locked)),
-            145 => Some(EventType::FtsIndex(FtsIndexEvent::MetadataNotFound)),
+            141 => Some(EventType::TaskQueue(TaskQueueEvent::BlobNotFound)),
+            142 => Some(EventType::TaskQueue(TaskQueueEvent::Index)),
+            143 => Some(EventType::TaskQueue(TaskQueueEvent::BayesTrain)),
+            144 => Some(EventType::TaskQueue(TaskQueueEvent::Locked)),
+            145 => Some(EventType::TaskQueue(TaskQueueEvent::MetadataNotFound)),
             146 => Some(EventType::Housekeeper(HousekeeperEvent::Run)),
             149 => Some(EventType::Housekeeper(HousekeeperEvent::Schedule)),
             150 => Some(EventType::Housekeeper(HousekeeperEvent::Start)),
@@ -1468,6 +1470,8 @@ impl EventType {
         }
     }
 }
+
+//  147 148 335 336 376 458 459
 
 impl Key {
     fn code(&self) -> u64 {

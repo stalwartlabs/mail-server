@@ -7,7 +7,7 @@
 use common::{config::spamfilter::SpamFilterAction, Server};
 use std::{fmt::Write, future::Future, vec};
 
-use crate::{modules::bayes::bayes_train_if_balanced, SpamFilterContext};
+use crate::{modules::bayes::BayesClassifier, SpamFilterContext};
 
 pub trait SpamFilterAnalyzeScore: Sync + Send {
     fn spam_filter_score(
@@ -78,11 +78,11 @@ impl SpamFilterAnalyzeScore for Server {
             if ctx.result.has_tag("SPAM_TRAP")
                 || (ctx.result.score >= config.auto_learn_spam_threshold && !was_classified)
             {
-                bayes_train_if_balanced(self, ctx, true).await;
+                self.bayes_train_if_balanced(ctx, true).await;
             } else if ctx.result.has_tag("TRUSTED_REPLY")
                 || (ctx.result.score <= config.auto_learn_ham_threshold && !was_classified)
             {
-                bayes_train_if_balanced(self, ctx, false).await;
+                self.bayes_train_if_balanced(ctx, false).await;
             }
         }
 

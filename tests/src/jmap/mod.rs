@@ -42,7 +42,7 @@ use smtp::{core::SmtpSessionManager, SpawnQueueManager};
 
 use store::{
     roaring::RoaringBitmap,
-    write::{key::DeserializeBigEndian, AnyKey, FtsQueueClass, ValueClass},
+    write::{key::DeserializeBigEndian, AnyKey, TaskQueueClass, ValueClass},
     IterateParams, Stores, ValueKey, SUBSPACE_PROPERTY,
 };
 use tokio::sync::watch;
@@ -455,7 +455,7 @@ pub async fn wait_for_index(server: &Server) {
                         account_id: 0,
                         collection: 0,
                         document_id: 0,
-                        class: ValueClass::FtsQueue(FtsQueueClass {
+                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                             seq: 0,
                             hash: BlobHash::default(),
                         }),
@@ -464,7 +464,7 @@ pub async fn wait_for_index(server: &Server) {
                         account_id: u32::MAX,
                         collection: u8::MAX,
                         document_id: u32::MAX,
-                        class: ValueClass::FtsQueue(FtsQueueClass {
+                        class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                             seq: u64::MAX,
                             hash: BlobHash::default(),
                         }),

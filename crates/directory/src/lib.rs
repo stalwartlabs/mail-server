@@ -128,10 +128,10 @@ pub enum Permission {
     Undelete,
     DkimSignatureCreate,
     DkimSignatureGet,
-    UpdateSpamFilter,
-    UpdateWebadmin,
+    SpamFilterUpdate,
+    WebadminUpdate,
     LogsView,
-    SieveRun,
+    SpamFilterTrain,
     Restart,
     TracingList,
     TracingGet,
@@ -264,7 +264,9 @@ pub enum Permission {
     OauthClientOverride,
 
     AiModelInteract,
-    Troubleshoot, // WARNING: add new ids at the end (TODO: use static ids)
+    Troubleshoot,
+    SpamFilterClassify,
+    // WARNING: add new ids at the end (TODO: use static ids)
 }
 
 pub type Permissions = Bitset<{ Permission::COUNT.div_ceil(std::mem::size_of::<usize>()) }>;

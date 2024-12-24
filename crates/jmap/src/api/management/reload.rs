@@ -121,7 +121,7 @@ impl ManageReload for Server {
         match (path.get(1).copied(), req.method()) {
             (Some("spam-filter"), &Method::GET) => {
                 // Validate the access token
-                access_token.assert_has_permission(Permission::UpdateSpamFilter)?;
+                access_token.assert_has_permission(Permission::SpamFilterUpdate)?;
 
                 Ok(JsonResponse::new(json!({
                     "data":  self
@@ -135,7 +135,7 @@ impl ManageReload for Server {
             }
             (Some("webadmin"), &Method::GET) => {
                 // Validate the access token
-                access_token.assert_has_permission(Permission::UpdateWebadmin)?;
+                access_token.assert_has_permission(Permission::WebadminUpdate)?;
 
                 self.inner
                     .data

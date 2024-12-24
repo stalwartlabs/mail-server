@@ -193,8 +193,9 @@ impl UndeleteApi for Server {
                                             mailbox_ids: vec![INBOX_ID],
                                             keywords: vec![],
                                             received_at: (request.time as u64).into(),
-                                            source: IngestSource::Smtp,
-                                            encrypt: false,
+                                            source: IngestSource::Restore,
+                                            spam_classify: false,
+                                            spam_train: false,
                                             session_id: session.session_id,
                                         })
                                         .await

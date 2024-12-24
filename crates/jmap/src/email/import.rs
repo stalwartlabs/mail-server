@@ -25,7 +25,10 @@ use crate::{
     changes::state::StateManager, mailbox::set::MailboxSet, JmapMethods,
 };
 
-use super::ingest::{EmailIngest, IngestEmail, IngestSource};
+use super::{
+    bayes::EmailBayesTrain,
+    ingest::{EmailIngest, IngestEmail, IngestSource},
+};
 use std::future::Future;
 
 pub trait EmailImport: Sync + Send {
@@ -70,6 +73,7 @@ impl EmailImport for Server {
             not_created: VecMap::new(),
             state_change: None,
         };
+        let can_train_spam = self.email_bayes_can_train(access_token);
 
         'outer: for (id, email) in request.emails {
             // Validate mailboxIds
@@ -135,7 +139,8 @@ impl EmailImport for Server {
                     keywords: email.keywords,
                     received_at: email.received_at.map(|r| r.into()),
                     source: IngestSource::Jmap,
-                    encrypt: self.core.jmap.encrypt && self.core.jmap.encrypt_append,
+                    spam_classify: false,
+                    spam_train: can_train_spam,
                     session_id: session.session_id,
                 })
                 .await

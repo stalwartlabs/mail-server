@@ -53,7 +53,7 @@ impl SieveHandler for Server {
         access_token: &AccessToken,
     ) -> trc::Result<HttpResponse> {
         // Validate the access token
-        access_token.assert_has_permission(Permission::SieveRun)?;
+        access_token.assert_has_permission(Permission::SpamFilterTrain)?;
 
         let (script, script_id) = match (
             path.get(1).and_then(|name| {

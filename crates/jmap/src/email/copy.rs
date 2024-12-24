@@ -37,10 +37,10 @@ use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue}
 use store::{
     write::{
         log::{Changes, LogInsert},
-        BatchBuilder, Bincode, FtsQueueClass, MaybeDynamicId, TagValue, ValueClass, F_BITMAP,
+        BatchBuilder, Bincode, MaybeDynamicId, TagValue, TaskQueueClass, ValueClass, F_BITMAP,
         F_VALUE,
     },
-    BlobClass, Serialize,
+    BlobClass,
 };
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
@@ -441,11 +441,11 @@ impl EmailCopy for Server {
             .value(Property::Keywords, keywords, F_VALUE | F_BITMAP)
             .value(Property::Cid, change_id, F_VALUE)
             .set(
-                ValueClass::FtsQueue(FtsQueueClass {
+                ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                     seq: self.generate_snowflake_id()?,
                     hash: metadata.blob_hash.clone(),
                 }),
-                0u64.serialize(),
+                vec![],
             );
         EmailIndexBuilder::set(metadata).build(
             &mut batch,
@@ -468,7 +468,7 @@ impl EmailCopy for Server {
         let document_id = ids.last_document_id().caused_by(trc::location!())?;
 
         // Request FTS index
-        self.request_fts_index();
+        self.notify_task_queue();
 
         // Update response
         email.id = Id::from_parts(thread_id, document_id);

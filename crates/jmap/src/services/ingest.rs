@@ -15,7 +15,10 @@ use std::future::Future;
 use store::ahash::AHashMap;
 
 use crate::{
-    email::ingest::{EmailIngest, IngestEmail, IngestSource},
+    email::{
+        bayes::EmailBayesTrain,
+        ingest::{EmailIngest, IngestEmail, IngestSource},
+    },
     mailbox::INBOX_ID,
     sieve::{get::SieveScriptGet, ingest::SieveScriptIngest},
 };
@@ -131,8 +134,10 @@ impl MailDelivery for Server {
                                 mailbox_ids: vec![INBOX_ID],
                                 keywords: vec![],
                                 received_at: None,
-                                source: IngestSource::Smtp,
-                                encrypt: self.core.jmap.encrypt,
+                                source: IngestSource::Smtp { deliver_to: &rcpt },
+                                spam_classify: access_token
+                                    .has_permission(Permission::SpamFilterClassify),
+                                spam_train: self.email_bayes_can_train(&access_token),
                                 session_id: message.session_id,
                             })
                             .await

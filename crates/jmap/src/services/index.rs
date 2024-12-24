@@ -6,7 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{core::BuildServer, Inner, Server, KV_LOCK_FTS};
+use common::{core::BuildServer, Inner, Server, KV_LOCK_EMAIL_TASK};
 use directory::{
     backend::internal::{manage::ManageDirectory, PrincipalField},
     Type,
@@ -17,34 +17,42 @@ use store::{
     fts::index::FtsDocument,
     roaring::RoaringBitmap,
     write::{
-        key::DeserializeBigEndian, BatchBuilder, Bincode, BlobOp, FtsQueueClass, MaybeDynamicId,
-        ValueClass,
+        key::{DeserializeBigEndian, KeySerializer},
+        BatchBuilder, Bincode, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
     },
     IterateParams, Serialize, ValueKey, U32_LEN, U64_LEN,
 };
 
 use std::future::Future;
-use trc::{AddContext, FtsIndexEvent};
+use trc::{AddContext, TaskQueueEvent};
 use utils::{BlobHash, BLOB_HASH_LEN};
 
 use crate::{
     blob::download::BlobDownload,
     changes::write::ChangeLog,
-    email::{index::IndexMessageText, metadata::MessageMetadata},
+    email::{bayes::EmailBayesTrain, index::IndexMessageText, metadata::MessageMetadata},
     JmapMethods,
 };
 
-#[derive(Debug)]
-pub struct IndexEmail {
+#[derive(Debug, Clone)]
+pub struct EmailTask {
     account_id: u32,
     document_id: u32,
     seq: u64,
-    insert_hash: BlobHash,
+    hash: BlobHash,
+    action: EmailTaskAction,
 }
 
-const INDEX_LOCK_EXPIRY: u64 = 60 * 5;
+#[derive(Debug, Clone, Copy)]
+pub enum EmailTaskAction {
+    Index,
+    BayesTrain { learn_spam: bool },
+}
 
-pub fn spawn_index_task(inner: Arc<Inner>) {
+const FTS_LOCK_EXPIRY: u64 = 60 * 5;
+const BAYES_LOCK_EXPIRY: u64 = 60 * 30;
+
+pub fn spawn_email_queue_task(inner: Arc<Inner>) {
     tokio::spawn(async move {
         let rx = inner.ipc.index_tx.clone();
         let mut locked_seq_ids = AHashMap::new();
@@ -52,7 +60,7 @@ pub fn spawn_index_task(inner: Arc<Inner>) {
             // Index any queued messages
             inner
                 .build_server()
-                .fts_index_queued(&mut locked_seq_ids)
+                .email_task_queued(&mut locked_seq_ids)
                 .await;
 
             // Wait for a signal to index more messages
@@ -62,27 +70,27 @@ pub fn spawn_index_task(inner: Arc<Inner>) {
 }
 
 pub trait Indexer: Sync + Send {
-    fn fts_index_queued(
+    fn email_task_queued(
         &self,
         locked_seq_ids: &mut AHashMap<u64, Instant>,
     ) -> impl Future<Output = ()> + Send;
-    fn try_lock_index(&self, event: &IndexEmail) -> impl Future<Output = bool> + Send;
-    fn remove_index_lock(&self, seq_id: u64) -> impl Future<Output = ()> + Send;
+    fn try_lock_index(&self, event: &EmailTask) -> impl Future<Output = bool> + Send;
+    fn remove_index_lock(&self, event: &EmailTask) -> impl Future<Output = ()> + Send;
     fn reindex(
         &self,
         account_id: Option<u32>,
         tenant_id: Option<u32>,
     ) -> impl Future<Output = trc::Result<()>> + Send;
-    fn request_fts_index(&self);
+    fn notify_task_queue(&self);
 }
 
 impl Indexer for Server {
-    async fn fts_index_queued(&self, locked_seq_ids: &mut AHashMap<u64, Instant>) {
+    async fn email_task_queued(&self, locked_seq_ids: &mut AHashMap<u64, Instant>) {
         let from_key = ValueKey::<ValueClass<u32>> {
             account_id: 0,
             collection: 0,
             document_id: 0,
-            class: ValueClass::FtsQueue(FtsQueueClass {
+            class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                 seq: 0,
                 hash: BlobHash::default(),
             }),
@@ -91,7 +99,7 @@ impl Indexer for Server {
             account_id: u32::MAX,
             collection: u8::MAX,
             document_id: u32::MAX,
-            class: ValueClass::FtsQueue(FtsQueueClass {
+            class: ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                 seq: u64::MAX,
                 hash: BlobHash::default(),
             }),
@@ -107,7 +115,7 @@ impl Indexer for Server {
             .iterate(
                 IterateParams::new(from_key, to_key).ascending().no_values(),
                 |key, _| {
-                    let entry = IndexEmail::deserialize(key)?;
+                    let entry = EmailTask::deserialize(key)?;
                     if locked_seq_ids
                         .get(&entry.seq)
                         .map_or(true, |expires| now >= *expires)
@@ -126,18 +134,21 @@ impl Indexer for Server {
             });
 
         // Add entries to the index
-        let mut unlock_seq_ids = Vec::with_capacity(entries.len());
+        let mut unlock_events = Vec::with_capacity(entries.len());
         for event in entries {
             let op_start = Instant::now();
             // Lock index
             if !self.try_lock_index(&event).await {
                 locked_seq_ids.insert(
                     event.seq,
-                    Instant::now() + std::time::Duration::from_secs(INDEX_LOCK_EXPIRY + 1),
+                    Instant::now() + std::time::Duration::from_secs(event.lock_expiry() + 1),
                 );
                 continue;
             }
-            unlock_seq_ids.push(event.seq);
+
+            if event.remove_lock() {
+                unlock_events.push(event.clone());
+            }
 
             match self
                 .get_property::<Bincode<MessageMetadata>>(
@@ -149,7 +160,7 @@ impl Indexer for Server {
                 .await
             {
                 Ok(Some(metadata))
-                    if metadata.inner.blob_hash.as_slice() == event.insert_hash.as_slice() =>
+                    if metadata.inner.blob_hash.as_slice() == event.hash.as_slice() =>
                 {
                     // Obtain raw message
                     let raw_message = if let Ok(Some(raw_message)) = self
@@ -159,7 +170,7 @@ impl Indexer for Server {
                         raw_message
                     } else {
                         trc::event!(
-                            FtsIndex(FtsIndexEvent::BlobNotFound),
+                            TaskQueue(TaskQueueEvent::BlobNotFound),
                             AccountId = event.account_id,
                             DocumentId = event.document_id,
                             BlobId = metadata.inner.blob_hash.to_hex(),
@@ -168,29 +179,46 @@ impl Indexer for Server {
                     };
                     let message = metadata.inner.contents.into_message(&raw_message);
 
-                    // Index message
-                    let document =
-                        FtsDocument::with_default_language(self.core.jmap.default_language)
-                            .with_account_id(event.account_id)
-                            .with_collection(Collection::Email)
-                            .with_document_id(event.document_id)
-                            .index_message(&message);
-                    if let Err(err) = self.core.storage.fts.index(document).await {
-                        trc::error!(err
-                            .account_id(event.account_id)
-                            .document_id(event.document_id)
-                            .details("Failed to index email in FTS index"));
+                    match event.action {
+                        EmailTaskAction::Index => {
+                            // Index message
+                            let document =
+                                FtsDocument::with_default_language(self.core.jmap.default_language)
+                                    .with_account_id(event.account_id)
+                                    .with_collection(Collection::Email)
+                                    .with_document_id(event.document_id)
+                                    .index_message(&message);
+                            if let Err(err) = self.core.storage.fts.index(document).await {
+                                trc::error!(err
+                                    .account_id(event.account_id)
+                                    .document_id(event.document_id)
+                                    .details("Failed to index email in FTS index"));
 
-                        continue;
+                                continue;
+                            }
+
+                            trc::event!(
+                                TaskQueue(TaskQueueEvent::Index),
+                                AccountId = event.account_id,
+                                Collection = Collection::Email,
+                                DocumentId = event.document_id,
+                                Elapsed = op_start.elapsed(),
+                            );
+                        }
+                        EmailTaskAction::BayesTrain { learn_spam } => {
+                            // Train bayes classifier for account
+                            self.email_bayes_train(event.account_id, 0, message, learn_spam)
+                                .await;
+
+                            trc::event!(
+                                TaskQueue(TaskQueueEvent::BayesTrain),
+                                AccountId = event.account_id,
+                                Collection = Collection::Email,
+                                DocumentId = event.document_id,
+                                Elapsed = op_start.elapsed(),
+                            );
+                        }
                     }
-
-                    trc::event!(
-                        FtsIndex(FtsIndexEvent::Index),
-                        AccountId = event.account_id,
-                        Collection = Collection::Email,
-                        DocumentId = event.document_id,
-                        Elapsed = op_start.elapsed(),
-                    );
                 }
 
                 Err(err) => {
@@ -200,12 +228,12 @@ impl Indexer for Server {
                         .caused_by(trc::location!())
                         .details("Failed to retrieve email metadata"));
 
-                    break;
+                    continue;
                 }
                 _ => {
                     // The message was probably deleted or overwritten
                     trc::event!(
-                        FtsIndex(FtsIndexEvent::MetadataNotFound),
+                        TaskQueue(TaskQueueEvent::MetadataNotFound),
                         AccountId = event.account_id,
                         DocumentId = event.document_id,
                     );
@@ -231,14 +259,12 @@ impl Indexer for Server {
                     .account_id(event.account_id)
                     .document_id(event.document_id)
                     .details("Failed to remove index email from queue."));
-
-                break;
             }
         }
 
         // Unlock entries
-        for seq_id in unlock_seq_ids {
-            self.remove_index_lock(seq_id).await;
+        for event in unlock_events {
+            self.remove_index_lock(&event).await;
         }
 
         // Delete expired locks
@@ -246,19 +272,19 @@ impl Indexer for Server {
         locked_seq_ids.retain(|_, expires| *expires > now);
     }
 
-    async fn try_lock_index(&self, event: &IndexEmail) -> bool {
+    async fn try_lock_index(&self, event: &EmailTask) -> bool {
         match self
             .in_memory_store()
-            .try_lock(KV_LOCK_FTS, &event.seq.to_be_bytes(), INDEX_LOCK_EXPIRY)
+            .try_lock(KV_LOCK_EMAIL_TASK, &event.lock_key(), event.lock_expiry())
             .await
         {
             Ok(result) => {
                 if !result {
                     trc::event!(
-                        FtsIndex(FtsIndexEvent::Locked),
+                        TaskQueue(TaskQueueEvent::Locked),
                         AccountId = event.account_id,
                         DocumentId = event.document_id,
-                        Expires = trc::Value::Timestamp(INDEX_LOCK_EXPIRY),
+                        Expires = trc::Value::Timestamp(event.lock_expiry()),
                     );
                 }
                 result
@@ -267,27 +293,27 @@ impl Indexer for Server {
                 trc::error!(err
                     .account_id(event.account_id)
                     .document_id(event.document_id)
-                    .details("Failed to lock FTS index"));
+                    .details("Failed to lock email task"));
 
                 false
             }
         }
     }
 
-    async fn remove_index_lock(&self, seq_id: u64) {
+    async fn remove_index_lock(&self, event: &EmailTask) {
         if let Err(err) = self
             .in_memory_store()
-            .remove_lock(KV_LOCK_FTS, &seq_id.to_be_bytes())
+            .remove_lock(KV_LOCK_EMAIL_TASK, &event.lock_key())
             .await
         {
             trc::error!(err
-                .details("Failed to unlock FTS index")
-                .ctx(trc::Key::Key, seq_id)
+                .details("Failed to unlock email task")
+                .ctx(trc::Key::Key, event.seq)
                 .caused_by(trc::location!()));
         }
     }
 
-    fn request_fts_index(&self) {
+    fn notify_task_queue(&self) {
         self.inner.ipc.index_tx.notify_one();
     }
 
@@ -376,7 +402,7 @@ impl Indexer for Server {
 
             for (document_id, hash) in hashes {
                 batch.update_document(document_id).set(
-                    ValueClass::FtsQueue(FtsQueueClass { hash, seq }),
+                    ValueClass::TaskQueue(TaskQueueClass::IndexEmail { hash, seq }),
                     0u64.serialize(),
                 );
                 seq += 1;
@@ -396,26 +422,64 @@ impl Indexer for Server {
         }
 
         // Request indexing
-        self.request_fts_index();
+        self.notify_task_queue();
 
         Ok(())
     }
 }
 
-impl IndexEmail {
+impl EmailTask {
+    fn remove_lock(&self) -> bool {
+        matches!(self.action, EmailTaskAction::Index)
+    }
+
+    fn lock_key(&self) -> Vec<u8> {
+        match self.action {
+            EmailTaskAction::Index => KeySerializer::new(U64_LEN + 1)
+                .write(0u8)
+                .write(self.seq)
+                .finalize(),
+            EmailTaskAction::BayesTrain { .. } => KeySerializer::new((U32_LEN * 2) + 1)
+                .write(1u8)
+                .write_leb128(self.account_id)
+                .write_leb128(self.document_id)
+                .finalize(),
+        }
+    }
+
+    fn lock_expiry(&self) -> u64 {
+        match self.action {
+            EmailTaskAction::Index => FTS_LOCK_EXPIRY,
+            EmailTaskAction::BayesTrain { .. } => BAYES_LOCK_EXPIRY,
+        }
+    }
+
     fn value_class(&self) -> ValueClass<MaybeDynamicId> {
-        ValueClass::FtsQueue(FtsQueueClass {
-            hash: self.insert_hash.clone(),
-            seq: self.seq,
+        ValueClass::TaskQueue(match self.action {
+            EmailTaskAction::Index => TaskQueueClass::IndexEmail {
+                hash: self.hash.clone(),
+                seq: self.seq,
+            },
+            EmailTaskAction::BayesTrain { learn_spam } => TaskQueueClass::BayesTrain {
+                hash: self.hash.clone(),
+                seq: self.seq,
+                learn_spam,
+            },
         })
     }
 
     fn deserialize(key: &[u8]) -> trc::Result<Self> {
-        Ok(IndexEmail {
+        Ok(EmailTask {
             seq: key.deserialize_be_u64(0)?,
             account_id: key.deserialize_be_u32(U64_LEN)?,
             document_id: key.deserialize_be_u32(U64_LEN + U32_LEN + 1)?,
-            insert_hash: key
+            action: match key.get(U64_LEN + U32_LEN) {
+                Some(0) => EmailTaskAction::Index,
+                Some(1) => EmailTaskAction::BayesTrain { learn_spam: true },
+                Some(2) => EmailTaskAction::BayesTrain { learn_spam: false },
+                _ => return Err(trc::Error::corrupted_key(key, None, trc::location!())),
+            },
+            hash: key
                 .get(
                     U64_LEN + U32_LEN + U32_LEN + 1
                         ..U64_LEN + U32_LEN + U32_LEN + BLOB_HASH_LEN + 1,

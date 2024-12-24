@@ -250,6 +250,7 @@ pub trait AggregateTimestamp {
     fn to_timestamp(&self) -> u64;
     fn to_timestamp_(&self, dt: DateTime) -> u64;
     fn as_secs(&self) -> u64;
+    fn due(&self) -> u64;
 }
 
 impl AggregateTimestamp for AggregateFrequency {
@@ -292,6 +293,10 @@ impl AggregateTimestamp for AggregateFrequency {
             AggregateFrequency::Weekly => 7 * 86400,
             AggregateFrequency::Never => 0,
         }
+    }
+
+    fn due(&self) -> u64 {
+        self.to_timestamp() + self.as_secs()
     }
 }
 

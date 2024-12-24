@@ -20,82 +20,103 @@ use tokio::sync::mpsc;
 
 use crate::queue::spool::LOCK_EXPIRY;
 
-use super::{dmarc::DmarcReporting, tls::TlsReporting, ReportLock};
+use super::{dmarc::DmarcReporting, tls::TlsReporting, AggregateTimestamp, ReportLock};
 
 pub const REPORT_REFRESH: Duration = Duration::from_secs(86400);
 
 impl SpawnReport for mpsc::Receiver<ReportingEvent> {
     fn spawn(mut self, inner: Arc<Inner>) {
         tokio::spawn(async move {
-            let mut next_wake_up;
+            let mut next_wake_up = REPORT_REFRESH;
+            let mut refresh_queue = true;
 
             loop {
-                // Read events
-                let now = now();
-                let events = next_report_event(inner.shared_core.load().storage.data.clone()).await;
-                next_wake_up = events
-                    .last()
-                    .and_then(|e| match e {
-                        QueueClass::DmarcReportHeader(e) | QueueClass::TlsReportHeader(e)
-                            if e.due > now =>
-                        {
-                            Duration::from_secs(e.due - now).into()
-                        }
-                        _ => None,
-                    })
-                    .unwrap_or(REPORT_REFRESH);
-
                 let server = inner.build_server();
-                let server_ = server.clone();
-                tokio::spawn(async move {
-                    let mut tls_reports = AHashMap::new();
-                    for report_event in events {
-                        match report_event {
-                            QueueClass::DmarcReportHeader(event) if event.due <= now => {
-                                let lock_name = event.dmarc_lock();
-                                if server.try_lock_report(&lock_name).await {
-                                    server.send_dmarc_aggregate_report(event).await;
-                                    server.unlock_report(&lock_name).await;
+
+                if refresh_queue {
+                    // Read events
+                    let events = next_report_event(server.store()).await;
+                    let now = now();
+                    next_wake_up = events
+                        .last()
+                        .and_then(|e| {
+                            e.due()
+                                .filter(|due| *due > now)
+                                .map(|due| Duration::from_secs(due - now))
+                        })
+                        .unwrap_or(REPORT_REFRESH);
+
+                    if events
+                        .first()
+                        .and_then(|e| e.due())
+                        .map_or(false, |due| due <= now)
+                    {
+                        let server_ = server.clone();
+                        tokio::spawn(async move {
+                            let mut tls_reports = AHashMap::new();
+                            for report_event in events {
+                                match report_event {
+                                    QueueClass::DmarcReportHeader(event) if event.due <= now => {
+                                        let lock_name = event.dmarc_lock();
+                                        if server_.try_lock_report(&lock_name).await {
+                                            server_.send_dmarc_aggregate_report(event).await;
+                                            server_.unlock_report(&lock_name).await;
+                                        }
+                                    }
+                                    QueueClass::TlsReportHeader(event) if event.due <= now => {
+                                        tls_reports
+                                            .entry(event.domain.clone())
+                                            .or_insert_with(Vec::new)
+                                            .push(event);
+                                    }
+                                    _ => (),
                                 }
                             }
-                            QueueClass::TlsReportHeader(event) if event.due <= now => {
-                                tls_reports
-                                    .entry(event.domain.clone())
-                                    .or_insert_with(Vec::new)
-                                    .push(event);
-                            }
-                            _ => (),
-                        }
-                    }
 
-                    for (_, tls_report) in tls_reports {
-                        let lock_name = tls_report.first().unwrap().tls_lock();
-                        if server.try_lock_report(&lock_name).await {
-                            server.send_tls_aggregate_report(tls_report).await;
-                            server.unlock_report(&lock_name).await;
-                        }
+                            for (_, tls_report) in tls_reports {
+                                let lock_name = tls_report.first().unwrap().tls_lock();
+                                if server_.try_lock_report(&lock_name).await {
+                                    server_.send_tls_aggregate_report(tls_report).await;
+                                    server_.unlock_report(&lock_name).await;
+                                }
+                            }
+                        });
                     }
-                });
+                }
 
                 match tokio::time::timeout(next_wake_up, self.recv()).await {
-                    Ok(Some(event)) => match event {
-                        ReportingEvent::Dmarc(event) => {
-                            server_.schedule_dmarc(event).await;
+                    Ok(Some(event)) => {
+                        refresh_queue = false;
+
+                        match event {
+                            ReportingEvent::Dmarc(event) => {
+                                next_wake_up = std::cmp::min(
+                                    next_wake_up,
+                                    Duration::from_secs(event.interval.due().saturating_sub(now())),
+                                );
+                                server.schedule_dmarc(event).await;
+                            }
+                            ReportingEvent::Tls(event) => {
+                                next_wake_up = std::cmp::min(
+                                    next_wake_up,
+                                    Duration::from_secs(event.interval.due().saturating_sub(now())),
+                                );
+                                server.schedule_tls(event).await;
+                            }
+                            ReportingEvent::Stop => break,
                         }
-                        ReportingEvent::Tls(event) => {
-                            server_.schedule_tls(event).await;
-                        }
-                        ReportingEvent::Stop => break,
-                    },
+                    }
                     Ok(None) => break,
-                    Err(_) => {}
+                    Err(_) => {
+                        refresh_queue = true;
+                    }
                 }
             }
         });
     }
 }
 
-async fn next_report_event(store: Store) -> Vec<QueueClass> {
+async fn next_report_event(store: &Store) -> Vec<QueueClass> {
     let now = now();
     let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
         ReportEvent {
@@ -182,7 +203,7 @@ impl LockReport for Server {
                 if !result {
                     trc::event!(
                         OutgoingReport(trc::OutgoingReportEvent::Locked),
-                        Expires = trc::Value::Timestamp(LOCK_EXPIRY),
+                        Expires = trc::Value::Timestamp(now() + LOCK_EXPIRY),
                         Key = key
                     );
                 }

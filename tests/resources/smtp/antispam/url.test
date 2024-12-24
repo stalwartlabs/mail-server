@@ -28,7 +28,7 @@ Subject: test
 
 my site is https://www.xn--80ak6aa92e.com/
 <!-- NEXT TEST -->
-expect R_SUSPICIOUS_URL
+expect R_UNPARSABLE_URL
 
 Subject: test
 

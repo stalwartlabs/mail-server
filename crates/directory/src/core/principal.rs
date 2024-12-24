@@ -1088,6 +1088,8 @@ impl Permission {
                 | Permission::SieveRenameScript
                 | Permission::SieveCheckScript
                 | Permission::SieveHaveSpace
+                | Permission::SpamFilterClassify
+                | Permission::SpamFilterTrain
         )
     }
 

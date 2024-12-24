@@ -250,8 +250,9 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                         mailbox_ids: vec![mailbox_id],
                         keywords: vec![],
                         received_at: None,
-                        source: IngestSource::Smtp,
-                        encrypt: false,
+                        source: IngestSource::Smtp { deliver_to: "" },
+                        spam_classify: false,
+                        spam_train: false,
                         session_id: 0,
                     })
                     .await

@@ -9,7 +9,7 @@ pub mod modules;
 
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 
 use analysis::url::UrlParts;
 use analysis::ElementLocation;
@@ -126,6 +126,33 @@ pub struct Email {
 pub struct Recipient {
     pub email: Email,
     pub name: Option<String>,
+}
+
+impl<'x> SpamFilterInput<'x> {
+    pub fn from_account_message(message: &'x Message<'x>, account_id: u32, span_id: u64) -> Self {
+        Self {
+            message,
+            span_id,
+            arc_result: None,
+            spf_ehlo_result: None,
+            spf_mail_from_result: None,
+            dkim_result: &[],
+            dmarc_result: None,
+            dmarc_policy: None,
+            iprev_result: None,
+            remote_ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            ehlo_domain: None,
+            authenticated_as: None,
+            asn: None,
+            country: None,
+            is_tls: true,
+            env_from: "",
+            env_from_flags: 0,
+            env_rcpt_to: vec![],
+            account_id: Some(account_id),
+            is_test: false,
+        }
+    }
 }
 
 impl PartialEq for Hostname {

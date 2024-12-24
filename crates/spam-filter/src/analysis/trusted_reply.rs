@@ -10,7 +10,7 @@ use common::{Server, KV_TRUSTED_REPLY};
 use mail_parser::{HeaderName, HeaderValue};
 use store::dispatch::lookup::KeyValue;
 
-use crate::{modules::bayes::bayes_train_if_balanced, SpamFilterContext};
+use crate::{modules::bayes::BayesClassifier, SpamFilterContext};
 
 pub trait SpamFilterAnalyzeTrustedReply: Sync + Send {
     fn spam_filter_analyze_reply_in(
@@ -84,7 +84,7 @@ impl SpamFilterAnalyzeTrustedReply for Server {
             .as_ref()
             .map_or(false, |config| config.auto_learn_reply_ham)
         {
-            bayes_train_if_balanced(self, ctx, false).await;
+            self.bayes_train_if_balanced(ctx, false).await;
         }
     }
 }
