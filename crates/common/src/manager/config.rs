@@ -329,7 +329,11 @@ impl ConfigManager {
             })
     }
 
-    pub async fn update_config_resource(&self, resource_id: &str) -> trc::Result<Option<String>> {
+    pub async fn update_config_resource(
+        &self,
+        resource_id: &str,
+        overwrite: bool,
+    ) -> trc::Result<Option<String>> {
         let external = self
             .fetch_config_resource(resource_id)
             .await
@@ -345,7 +349,7 @@ impl ConfigManager {
             .await?
             .map_or(true, |v| v != external.version)
         {
-            self.set(external.keys, false).await?;
+            self.set(external.keys, overwrite).await?;
 
             trc::event!(
                 Config(trc::ConfigEvent::ImportExternal),
@@ -387,6 +391,7 @@ impl ConfigManager {
                 external.keys.push(ConfigKey::from((key, value)));
             } else if key.starts_with("spam-filter.")
                 || key.starts_with("http-lookup.")
+                || (key.starts_with("lookup.") && !key.starts_with("lookup.default."))
                 || key.starts_with("server.asn.")
                 || key.starts_with("queue.quota.")
                 || key.starts_with("queue.throttle.")

@@ -98,7 +98,10 @@ impl ManageReload for Server {
                         .map_err(|err| {
                             trc::EventType::Server(trc::ServerEvent::ThreadError)
                                 .reason(err)
-                                .details("Failed to send settings reload event to housekeeper")
+                                .details(concat!(
+                                    "Failed to send settings reload ",
+                                    "event to housekeeper"
+                                ))
                                 .caused_by(trc::location!())
                         })?;
                 }
@@ -123,12 +126,14 @@ impl ManageReload for Server {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::SpamFilterUpdate)?;
 
+                let overwrite = UrlParams::new(req.uri().query()).has_key("overwrite");
+
                 Ok(JsonResponse::new(json!({
                     "data":  self
                     .core
                     .storage
                     .config
-                    .update_config_resource("spam-filter")
+                    .update_config_resource("spam-filter", overwrite)
                     .await?,
                 }))
                 .into_http_response())
