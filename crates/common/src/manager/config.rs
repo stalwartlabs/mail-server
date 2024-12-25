@@ -386,6 +386,7 @@ impl ConfigManager {
                 external.version.clone_from(&value);
                 external.keys.push(ConfigKey::from((key, value)));
             } else if key.starts_with("spam-filter.")
+                || key.starts_with("http-lookup.")
                 || key.starts_with("server.asn.")
                 || key.starts_with("queue.quota.")
                 || key.starts_with("queue.throttle.")
