@@ -162,7 +162,6 @@ impl SpamFilterAnalyzeUrl for Server {
                     parts: url_parsed,
                 },
                 _ => {
-                    let c = println!("URL {}", url.element);
                     // URL could not be parsed
                     ctx.output.urls.insert(ElementLocation::new(
                         UrlParts::new(url.element),
