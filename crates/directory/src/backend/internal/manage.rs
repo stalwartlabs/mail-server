@@ -330,17 +330,24 @@ impl ManageDirectory for Store {
                 };
 
                 for name in names {
-                    list.push(
+                    let item = match (
                         self.get_principal_info(&name)
                             .await
                             .caused_by(trc::location!())?
                             .filter(|v| {
                                 expected_type.map_or(true, |t| v.typ == t)
                                     && v.has_tenant_access(tenant_id)
-                            })
-                            .or_else(|| field.map_internal_roles(&name))
-                            .ok_or_else(|| not_found(name))?,
-                    );
+                            }),
+                        field.map_internal_roles(&name),
+                    ) {
+                        (_, Some(v)) => v,
+                        (Some(v), _) => v,
+                        _ => {
+                            return Err(not_found(name));
+                        }
+                    };
+
+                    list.push(item);
                 }
             }
         }
@@ -1087,13 +1094,19 @@ impl ManageDirectory for Store {
                 ) => {
                     let mut new_member_of = Vec::new();
                     for member in members {
-                        let member_info = self
-                            .get_principal_info(&member)
-                            .await
-                            .caused_by(trc::location!())?
-                            .filter(|p| p.has_tenant_access(tenant_id))
-                            .or_else(|| change.field.map_internal_roles(&member))
-                            .ok_or_else(|| not_found(member.clone()))?;
+                        let member_info = match (
+                            self.get_principal_info(&member)
+                                .await
+                                .caused_by(trc::location!())?
+                                .filter(|p| p.has_tenant_access(tenant_id)),
+                            change.field.map_internal_roles(&member),
+                        ) {
+                            (_, Some(v)) => v,
+                            (Some(v), _) => v,
+                            _ => {
+                                return Err(not_found(member.clone()));
+                            }
+                        };
 
                         validate_member_of(
                             change.field,
@@ -1142,13 +1155,19 @@ impl ManageDirectory for Store {
                     PrincipalField::MemberOf | PrincipalField::Lists | PrincipalField::Roles,
                     PrincipalValue::String(member),
                 ) => {
-                    let member_info = self
-                        .get_principal_info(&member)
-                        .await
-                        .caused_by(trc::location!())?
-                        .filter(|p| p.has_tenant_access(tenant_id))
-                        .or_else(|| change.field.map_internal_roles(&member))
-                        .ok_or_else(|| not_found(member.clone()))?;
+                    let member_info = match (
+                        self.get_principal_info(&member)
+                            .await
+                            .caused_by(trc::location!())?
+                            .filter(|p| p.has_tenant_access(tenant_id)),
+                        change.field.map_internal_roles(&member),
+                    ) {
+                        (_, Some(v)) => v,
+                        (Some(v), _) => v,
+                        _ => {
+                            return Err(not_found(member.clone()));
+                        }
+                    };
 
                     if !member_of.contains(&member_info.id) {
                         validate_member_of(
