@@ -19,7 +19,8 @@ use jmap_proto::{
     },
 };
 use mail_parser::{
-    parsers::fields::thread::thread_name, HeaderName, HeaderValue, Message, MessageParser, PartType,
+    parsers::fields::thread::thread_name, Header, HeaderName, HeaderValue, Message, MessageParser,
+    PartType,
 };
 
 use rand::Rng;
@@ -128,11 +129,19 @@ impl EmailIngest for Server {
         let mut is_spam = false;
         let mut train_spam = None;
         let mut extra_headers = String::new();
+        let mut extra_headers_parsed = Vec::new();
         match params.source {
             IngestSource::Smtp { deliver_to } => {
                 // Add delivered to header
                 if self.core.smtp.session.data.add_delivered_to {
                     extra_headers = format!("Delivered-To: {deliver_to}\r\n");
+                    extra_headers_parsed.push(Header {
+                        name: HeaderName::Other("Delivered-To".into()),
+                        value: HeaderValue::Text(deliver_to.into()),
+                        offset_field: 0,
+                        offset_start: 13,
+                        offset_end: extra_headers.len(),
+                    });
                 }
 
                 // Spam classification and training
@@ -179,10 +188,25 @@ impl EmailIngest for Server {
                                 };
 
                                 if let Some(header) = &self.core.spam.headers.bayes_result {
+                                    let offset_field = extra_headers.len();
+                                    let offset_start = offset_field + header.len() + 1;
+
                                     let _ = write!(
                                         &mut extra_headers,
                                         "{header}: {result}, {score:.2}\r\n",
                                     );
+
+                                    extra_headers_parsed.push(Header {
+                                        name: HeaderName::Other(header.into()),
+                                        value: HeaderValue::Text(
+                                            extra_headers
+                                                [offset_start + 1..extra_headers.len() - 2]
+                                                .into(),
+                                        ),
+                                        offset_field,
+                                        offset_start,
+                                        offset_end: extra_headers.len(),
+                                    });
                                 }
                             }
                             Ok(None) => (),
@@ -302,11 +326,51 @@ impl EmailIngest for Server {
 
         // Add additional headers to message
         if !extra_headers.is_empty() {
-            raw_message_len += extra_headers.len() as u64;
+            let offset_start = extra_headers.len();
+            raw_message_len += offset_start as u64;
             let mut new_message = Vec::with_capacity(raw_message_len as usize);
             new_message.extend_from_slice(extra_headers.as_bytes());
             new_message.extend_from_slice(raw_message.as_ref());
             raw_message = Cow::from(new_message);
+            message.raw_message = raw_message.as_ref().into();
+
+            // Adjust offsets
+            let mut part_iter_stack = Vec::new();
+            let mut part_iter = message.parts.iter_mut();
+
+            loop {
+                if let Some(part) = part_iter.next() {
+                    // Increment header offsets
+                    for header in part.headers.iter_mut() {
+                        header.offset_field += offset_start;
+                        header.offset_start += offset_start;
+                        header.offset_end += offset_start;
+                    }
+
+                    // Adjust part offsets
+                    part.offset_body += offset_start;
+                    part.offset_end += offset_start;
+                    part.offset_header += offset_start;
+
+                    if let PartType::Message(sub_message) = &mut part.body {
+                        if sub_message.root_part().offset_header != 0 {
+                            sub_message.raw_message = raw_message.as_ref().into();
+                            part_iter_stack.push(part_iter);
+                            part_iter = sub_message.parts.iter_mut();
+                        }
+                    }
+                } else if let Some(iter) = part_iter_stack.pop() {
+                    part_iter = iter;
+                } else {
+                    break;
+                }
+            }
+
+            // Add extra headers to root part
+            let root_part = &mut message.parts[0];
+            root_part.offset_header = 0;
+            extra_headers_parsed.append(&mut root_part.headers);
+            root_part.headers = extra_headers_parsed;
         }
 
         // Encrypt message

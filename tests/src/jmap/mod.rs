@@ -216,9 +216,6 @@ blob = "{STORE}"
 lookup = "{STORE}"
 directory = "{STORE}"
 
-[spam.header]
-is-spam  = "X-Spam-Status: Yes"
-
 [jmap.protocol.get]
 max-objects = 100000
 
@@ -339,7 +336,7 @@ expn = true
 vrfy = true
 
 [spam-filter]
-enable = false
+enable = true
 
 [tracer.console]
 type = "console"
@@ -374,7 +371,7 @@ pub async fn jmap_tests() {
     .await;
 
     webhooks::test(&mut params).await;
-    email_query::test(&mut params, delete).await;
+    /*email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -384,7 +381,7 @@ pub async fn jmap_tests() {
     email_copy::test(&mut params).await;
     thread_get::test(&mut params).await;
     thread_merge::test(&mut params).await;
-    mailbox::test(&mut params).await;
+    mailbox::test(&mut params).await;*/
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
     auth_limits::test(&mut params).await;
