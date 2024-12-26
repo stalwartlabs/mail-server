@@ -323,7 +323,9 @@ impl Stores {
             }
         }
         for (store_id, store) in &self.in_memory_stores {
-            if matches!(store, InMemoryStore::Store(_)) {
+            if matches!(store, InMemoryStore::Store(_))
+                && config.is_active_in_memory_store(store_id)
+            {
                 self.purge_schedules.push(PurgeSchedule {
                     cron: config
                         .property_or_default::<SimpleCron>(
@@ -342,6 +344,7 @@ impl Stores {
 #[allow(dead_code)]
 trait IsActiveStore {
     fn is_active_store(&self, id: &str) -> bool;
+    fn is_active_in_memory_store(&self, id: &str) -> bool;
 }
 
 impl IsActiveStore for Config {
@@ -362,5 +365,10 @@ impl IsActiveStore for Config {
         }
 
         false
+    }
+
+    fn is_active_in_memory_store(&self, id: &str) -> bool {
+        self.value("storage.lookup")
+            .map_or(false, |store_id| store_id == id)
     }
 }

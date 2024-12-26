@@ -375,7 +375,10 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                                         PurgeType::Blobs { store, blob_store }
                                                     }
                                                     PurgeStore::Lookup(in_memory_store) => {
-                                                        PurgeType::Lookup(in_memory_store)
+                                                        PurgeType::Lookup {
+                                                            store: in_memory_store,
+                                                            prefix: None,
+                                                        }
                                                     }
                                                 },
                                                 idx as u32,
@@ -638,7 +641,7 @@ impl Purge for Server {
                     .collect::<Vec<_>>()
                     .into(),
             ),
-            PurgeType::Lookup(_) => (
+            PurgeType::Lookup { prefix: None, .. } => (
                 "in-memory",
                 [2u8]
                     .into_iter()
@@ -646,6 +649,7 @@ impl Purge for Server {
                     .collect::<Vec<_>>()
                     .into(),
             ),
+            PurgeType::Lookup { .. } => ("in-memory-prefix", None),
             PurgeType::Account(_) => ("account", None),
         };
         if let Some(lock_name) = &lock_name {
@@ -719,8 +723,14 @@ impl Purge for Server {
                     trc::error!(err.details("Failed to purge blob store"));
                 }
             }
-            PurgeType::Lookup(store) => {
-                if let Err(err) = store.purge_in_memory_store().await {
+            PurgeType::Lookup { store, prefix } => {
+                if let Some(prefix) = prefix {
+                    if let Err(err) = store.key_delete_prefix(&prefix).await {
+                        trc::error!(err
+                            .details("Failed to delete key prefix")
+                            .ctx(trc::Key::Key, prefix));
+                    }
+                } else if let Err(err) = store.purge_in_memory_store().await {
                     trc::error!(err.details("Failed to purge lookup store"));
                 }
             }

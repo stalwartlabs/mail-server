@@ -70,30 +70,13 @@ impl RocksDbStore {
     pub(crate) async fn delete_range(&self, from: impl Key, to: impl Key) -> trc::Result<()> {
         let db = self.db.clone();
         self.spawn_worker(move || {
-            let cf = db
-                .cf_handle(std::str::from_utf8(&[from.subspace()]).unwrap())
-                .unwrap();
-
-            // TODO use delete_range when implemented (see https://github.com/rust-rocksdb/rust-rocksdb/issues/839)
-            let from = from.serialize(0);
-            let to = to.serialize(0);
-            let mut delete_keys = Vec::new();
-            let it_mode = IteratorMode::From(&from, Direction::Forward);
-
-            for row in db.iterator_cf(&cf, it_mode) {
-                let (key, _) = row.map_err(into_error)?;
-
-                if key.as_ref() < from.as_slice() || key.as_ref() >= to.as_slice() {
-                    break;
-                }
-                delete_keys.push(key);
-            }
-
-            for k in delete_keys {
-                db.delete_cf(&cf, &k).map_err(into_error)?;
-            }
-
-            Ok(())
+            db.delete_range_cf(
+                &db.cf_handle(std::str::from_utf8(&[from.subspace()]).unwrap())
+                    .unwrap(),
+                from.serialize(0),
+                to.serialize(0),
+            )
+            .map_err(into_error)
         })
         .await
     }

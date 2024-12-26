@@ -67,6 +67,11 @@ type = "redis"
 urls = "redis://127.0.0.1"
 redis-type = "single"
 
+[storage]
+lookup = "mysql"
+data = "postgresql"
+blob = "sqlite"
+
 "#;
 
 #[tokio::test(flavor = "multi_thread")]

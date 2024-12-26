@@ -43,7 +43,7 @@ impl InMemoryStore {
                 store.write(batch.build()).await.map(|_| ())
             }
             #[cfg(feature = "redis")]
-            InMemoryStore::Redis(store) => store.key_set(kv.key, kv.value, kv.expires).await,
+            InMemoryStore::Redis(store) => store.key_set(&kv.key, &kv.value, kv.expires).await,
             InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
                 Err(trc::StoreEvent::NotSupported.into_err())
             }
@@ -80,7 +80,7 @@ impl InMemoryStore {
                     .and_then(|r| r.last_counter_id())
             }
             #[cfg(feature = "redis")]
-            InMemoryStore::Redis(store) => store.key_incr(kv.key, kv.value, kv.expires).await,
+            InMemoryStore::Redis(store) => store.key_incr(&kv.key, kv.value, kv.expires).await,
             InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
                 Err(trc::StoreEvent::NotSupported.into_err())
             }
@@ -88,18 +88,18 @@ impl InMemoryStore {
         .caused_by(trc::location!())
     }
 
-    pub async fn key_delete(&self, key: Vec<u8>) -> trc::Result<()> {
+    pub async fn key_delete(&self, key: impl Into<LookupKey<'_>>) -> trc::Result<()> {
         match self {
             InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Key(key)),
+                    class: ValueClass::Lookup(LookupClass::Key(key.into().into_bytes())),
                     op: ValueOp::Clear,
                 });
                 store.write(batch.build()).await.map(|_| ())
             }
             #[cfg(feature = "redis")]
-            InMemoryStore::Redis(store) => store.key_delete(key).await,
+            InMemoryStore::Redis(store) => store.key_delete(key.into().as_bytes()).await,
             InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
                 Err(trc::StoreEvent::NotSupported.into_err())
             }
@@ -107,18 +107,55 @@ impl InMemoryStore {
         .caused_by(trc::location!())
     }
 
-    pub async fn counter_delete(&self, key: Vec<u8>) -> trc::Result<()> {
+    pub async fn counter_delete(&self, key: impl Into<LookupKey<'_>>) -> trc::Result<()> {
         match self {
             InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Counter(key)),
+                    class: ValueClass::Lookup(LookupClass::Counter(key.into().into_bytes())),
                     op: ValueOp::Clear,
                 });
                 store.write(batch.build()).await.map(|_| ())
             }
             #[cfg(feature = "redis")]
-            InMemoryStore::Redis(store) => store.key_delete(key).await,
+            InMemoryStore::Redis(store) => store.key_delete(key.into().as_bytes()).await,
+            InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
+                Err(trc::StoreEvent::NotSupported.into_err())
+            }
+        }
+        .caused_by(trc::location!())
+    }
+
+    pub async fn key_delete_prefix(&self, prefix: &[u8]) -> trc::Result<()> {
+        match self {
+            InMemoryStore::Store(store) => {
+                if prefix.is_empty() {
+                    return Ok(());
+                }
+
+                let from_range = prefix.to_vec();
+                let mut to_range = Vec::with_capacity(prefix.len() + 3);
+                to_range.extend_from_slice(prefix);
+                to_range.extend_from_slice([u8::MAX, u8::MAX, u8::MAX].as_ref());
+
+                store
+                    .delete_range(
+                        ValueKey::from(ValueClass::Lookup(LookupClass::Counter(
+                            from_range.clone(),
+                        ))),
+                        ValueKey::from(ValueClass::Lookup(LookupClass::Counter(to_range.clone()))),
+                    )
+                    .await?;
+
+                store
+                    .delete_range(
+                        ValueKey::from(ValueClass::Lookup(LookupClass::Key(from_range))),
+                        ValueKey::from(ValueClass::Lookup(LookupClass::Key(to_range))),
+                    )
+                    .await
+            }
+            #[cfg(feature = "redis")]
+            InMemoryStore::Redis(store) => store.key_delete_prefix(prefix).await,
             InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
                 Err(trc::StoreEvent::NotSupported.into_err())
             }
@@ -138,7 +175,7 @@ impl InMemoryStore {
                 .await
                 .map(|value| value.and_then(|v| v.into())),
             #[cfg(feature = "redis")]
-            InMemoryStore::Redis(store) => store.key_get(key.into().into_bytes()).await,
+            InMemoryStore::Redis(store) => store.key_get(key.into().as_bytes()).await,
             InMemoryStore::Static(store) => Ok(store
                 .get(key.into().as_str())
                 .map(|value| T::from(value.clone()))),
@@ -149,17 +186,17 @@ impl InMemoryStore {
         .caused_by(trc::location!())
     }
 
-    pub async fn counter_get(&self, key: Vec<u8>) -> trc::Result<i64> {
+    pub async fn counter_get(&self, key: impl Into<LookupKey<'_>>) -> trc::Result<i64> {
         match self {
             InMemoryStore::Store(store) => {
                 store
                     .get_counter(ValueKey::from(ValueClass::Lookup(LookupClass::Counter(
-                        key,
+                        key.into().into_bytes(),
                     ))))
                     .await
             }
             #[cfg(feature = "redis")]
-            InMemoryStore::Redis(store) => store.counter_get(key).await,
+            InMemoryStore::Redis(store) => store.counter_get(key.into().as_bytes()).await,
             InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
                 Err(trc::StoreEvent::NotSupported.into_err())
             }
@@ -176,7 +213,7 @@ impl InMemoryStore {
                 .await
                 .map(|value| matches!(value, Some(LookupValue::Value(())))),
             #[cfg(feature = "redis")]
-            InMemoryStore::Redis(store) => store.key_exists(key.into().into_bytes()).await,
+            InMemoryStore::Redis(store) => store.key_exists(key.into().as_bytes()).await,
             InMemoryStore::Static(store) => Ok(store.get(key.into().as_str()).is_some()),
             InMemoryStore::Http(store) => Ok(store.contains(key.into().as_str())),
         }
@@ -384,6 +421,15 @@ impl LookupKey<'_> {
             LookupKey::StringRef(string) => string.as_bytes().to_vec(),
             LookupKey::Bytes(bytes) => bytes,
             LookupKey::BytesRef(bytes) => bytes.to_vec(),
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            LookupKey::String(string) => string.as_bytes(),
+            LookupKey::StringRef(string) => string.as_bytes(),
+            LookupKey::Bytes(bytes) => bytes.as_slice(),
+            LookupKey::BytesRef(bytes) => bytes,
         }
     }
 }

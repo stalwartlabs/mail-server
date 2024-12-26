@@ -9,7 +9,7 @@ use common::{
     auth::AccessToken,
     ipc::{HousekeeperEvent, PurgeType},
     manager::webadmin::Resource,
-    Server,
+    *,
 };
 use directory::{
     backend::internal::manage::{self, ManageDirectory},
@@ -108,7 +108,7 @@ impl ManageStore for Server {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::PurgeDataStore)?;
 
-                let store = if let Some(id) = id {
+                let store = if let Some(id) = id.filter(|id| *id != "default") {
                     if let Some(store) = self.core.storage.stores.get(id) {
                         store.clone()
                     } else {
@@ -121,11 +121,11 @@ impl ManageStore for Server {
                 self.housekeeper_request(HousekeeperEvent::Purge(PurgeType::Data(store)))
                     .await
             }
-            (Some("purge"), Some("lookup"), id, &Method::GET) => {
+            (Some("purge"), Some("in-memory"), id, &Method::GET) => {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::PurgeInMemoryStore)?;
 
-                let store = if let Some(id) = id {
+                let store = if let Some(id) = id.filter(|id| *id != "default") {
                     if let Some(store) = self.core.storage.lookups.get(id) {
                         store.clone()
                     } else {
@@ -135,8 +135,57 @@ impl ManageStore for Server {
                     self.core.storage.lookup.clone()
                 };
 
-                self.housekeeper_request(HousekeeperEvent::Purge(PurgeType::Lookup(store)))
-                    .await
+                let prefix = match path.get(4).copied() {
+                    Some("acme") => vec![KV_ACME].into(),
+                    Some("oauth") => vec![KV_OAUTH].into(),
+                    Some("rate-rcpt") => vec![KV_RATE_LIMIT_RCPT].into(),
+                    Some("rate-scan") => vec![KV_RATE_LIMIT_SCAN].into(),
+                    Some("rate-loiter") => vec![KV_RATE_LIMIT_LOITER].into(),
+                    Some("rate-auth") => vec![KV_RATE_LIMIT_AUTH].into(),
+                    Some("rate-hash") => vec![KV_RATE_LIMIT_HASH].into(),
+                    Some("rate-contact") => vec![KV_RATE_LIMIT_CONTACT].into(),
+                    Some("rate-jmap") => vec![KV_RATE_LIMIT_JMAP].into(),
+                    Some("rate-jmap-auth") => vec![KV_RATE_LIMIT_JMAP_AUTH].into(),
+                    Some("rate-http-anonymous") => vec![KV_RATE_LIMIT_HTTP_ANONYM].into(),
+                    Some("rate-imap") => vec![KV_RATE_LIMIT_IMAP].into(),
+                    Some("reputation-ip") => vec![KV_REPUTATION_IP].into(),
+                    Some("reputation-from") => vec![KV_REPUTATION_FROM].into(),
+                    Some("reputation-domain") => vec![KV_REPUTATION_DOMAIN].into(),
+                    Some("reputation-asn") => vec![KV_REPUTATION_ASN].into(),
+                    Some("greylist") => vec![KV_GREYLIST].into(),
+                    Some("bayes-account") => {
+                        if let Some(account) = path.get(5).copied() {
+                            let account_id = self
+                                .core
+                                .storage
+                                .data
+                                .get_principal_id(decode_path_element(account).as_ref())
+                                .await?
+                                .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
+
+                            let mut key = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
+                            key.push(KV_BAYES_MODEL_USER);
+                            key.extend_from_slice(&account_id.to_be_bytes());
+                            key.into()
+                        } else {
+                            vec![KV_BAYES_MODEL_USER].into()
+                        }
+                    }
+                    Some("bayes-global") => vec![KV_BAYES_MODEL_GLOBAL].into(),
+                    Some("trusted-reply") => vec![KV_TRUSTED_REPLY].into(),
+                    Some("lock-purge-account") => vec![KV_LOCK_PURGE_ACCOUNT].into(),
+                    Some("lock-queue-message") => vec![KV_LOCK_QUEUE_MESSAGE].into(),
+                    Some("lock-queue-report") => vec![KV_LOCK_QUEUE_REPORT].into(),
+                    Some("lock-email-task") => vec![KV_LOCK_EMAIL_TASK].into(),
+                    Some("lock-housekeeper") => vec![KV_LOCK_HOUSEKEEPER].into(),
+                    _ => None,
+                };
+
+                self.housekeeper_request(HousekeeperEvent::Purge(PurgeType::Lookup {
+                    store,
+                    prefix,
+                }))
+                .await
             }
             (Some("purge"), Some("account"), id, &Method::GET) => {
                 // Validate the access token

@@ -67,8 +67,14 @@ pub enum HousekeeperEvent {
 
 pub enum PurgeType {
     Data(Store),
-    Blobs { store: Store, blob_store: BlobStore },
-    Lookup(InMemoryStore),
+    Blobs {
+        store: Store,
+        blob_store: BlobStore,
+    },
+    Lookup {
+        store: InMemoryStore,
+        prefix: Option<Vec<u8>>,
+    },
     Account(Option<u32>),
 }
 

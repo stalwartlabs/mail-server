@@ -6,7 +6,7 @@
 
 use std::sync::{atomic::Ordering, Arc};
 
-use common::{auth::AccessToken, Server};
+use common::{auth::AccessToken, Server, KV_BAYES_MODEL_USER};
 use directory::{
     backend::internal::{
         lookup::DirectoryStore,
@@ -353,6 +353,23 @@ impl PrincipalManager for Server {
                         // Remove FTS index
                         if matches!(typ, Type::Individual | Type::Group) {
                             self.core.storage.fts.remove_all(account_id).await?;
+                        }
+
+                        // Delete bayes model
+                        if self
+                            .core
+                            .spam
+                            .bayes
+                            .as_ref()
+                            .map_or(false, |c| c.account_classify)
+                        {
+                            let mut key = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
+                            key.push(KV_BAYES_MODEL_USER);
+                            key.extend_from_slice(&account_id.to_be_bytes());
+
+                            if let Err(err) = self.in_memory_store().key_delete_prefix(&key).await {
+                                trc::error!(err.details("Failed to delete user bayes model"));
+                            }
                         }
 
                         // Remove entries from cache
