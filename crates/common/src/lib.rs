@@ -27,13 +27,13 @@ use listener::{
 };
 
 use manager::webadmin::{Resource, WebAdminManager};
+use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
 use tokio::sync::{mpsc, Notify};
 use tokio_rustls::TlsConnector;
 use utils::{
-    lru_cache::LruCache,
-    map::ttl_dashmap::{ADashMap, TtlDashMap},
+    cache::{Cache, CacheItemWeight, CacheWithTtl},
     snowflake::SnowflakeIdGenerator,
 };
 
@@ -92,6 +92,7 @@ pub struct Server {
 pub struct Inner {
     pub shared_core: ArcSwap<Core>,
     pub data: Data,
+    pub cache: Caches,
     pub ipc: Ipc,
 }
 
@@ -99,14 +100,8 @@ pub struct Data {
     pub tls_certificates: ArcSwap<AHashMap<String, Arc<CertifiedKey>>>,
     pub tls_self_signed_cert: Option<Arc<CertifiedKey>>,
 
-    pub access_tokens: TtlDashMap<u32, Arc<AccessToken>>,
-    pub http_auth_cache: TtlDashMap<String, u32>,
-
     pub blocked_ips: RwLock<AHashSet<IpAddr>>,
     pub blocked_ips_version: AtomicU8,
-
-    pub permissions: ADashMap<u32, Arc<RolePermissions>>,
-    pub permissions_version: AtomicU8,
 
     pub asn_geo_data: AsnGeoLookupData,
 
@@ -120,15 +115,26 @@ pub struct Data {
     pub jmap_limiter: DashMap<u32, Arc<ConcurrencyLimiters>, RandomState>,
     pub imap_limiter: DashMap<u32, Arc<ConcurrencyLimiters>, RandomState>,
 
-    pub account_cache: LruCache<AccountId, Arc<Account>>,
-    pub mailbox_cache: LruCache<MailboxId, Arc<MailboxState>>,
-    pub threads_cache: LruCache<u32, Arc<Threads>>,
-
     pub logos: Mutex<AHashMap<String, Option<Resource<Vec<u8>>>>>,
 
     pub smtp_session_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
     pub smtp_queue_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
     pub smtp_connectors: TlsConnectors,
+}
+
+pub struct Caches {
+    pub access_tokens: CacheWithTtl<u32, Arc<AccessToken>>,
+    pub http_auth: CacheWithTtl<String, u32>,
+
+    pub permissions: Cache<u32, Arc<RolePermissions>>,
+    pub permissions_version: AtomicU8,
+
+    pub account: Cache<AccountId, Arc<Account>>,
+    pub mailbox: Cache<MailboxId, Arc<MailboxState>>,
+    pub threads: Cache<u32, Arc<Threads>>,
+
+    pub bayes: CacheWithTtl<TokenHash, Option<Weights>>,
+    pub dnsbl: CacheWithTtl<TokenHash, Option<Arc<Vec<IpAddr>>>>,
 }
 
 pub struct Ipc {
@@ -165,6 +171,7 @@ pub struct Account {
     pub mailbox_state: AHashMap<u32, Mailbox>,
     pub state_email: Option<u64>,
     pub state_mailbox: Option<u64>,
+    pub obj_size: u64,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -190,6 +197,7 @@ pub struct MailboxState {
     pub total_messages: usize,
     pub modseq: Option<u64>,
     pub next_state: Option<Box<NextMailboxState>>,
+    pub obj_size: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -229,6 +237,49 @@ pub struct Core {
     pub metrics: Metrics,
     #[cfg(feature = "enterprise")]
     pub enterprise: Option<enterprise::Enterprise>,
+}
+
+impl CacheItemWeight for AccountId {
+    fn weight(&self) -> u64 {
+        (std::mem::size_of::<u32>() * 2) as u64
+    }
+}
+
+impl CacheItemWeight for MailboxId {
+    fn weight(&self) -> u64 {
+        (std::mem::size_of::<u32>() * 2) as u64
+    }
+}
+
+impl CacheItemWeight for Threads {
+    fn weight(&self) -> u64 {
+        ((self.threads.len() + 1) * std::mem::size_of::<u64>()) as u64
+    }
+}
+
+impl CacheItemWeight for MailboxState {
+    fn weight(&self) -> u64 {
+        self.obj_size
+    }
+}
+
+impl CacheItemWeight for Account {
+    fn weight(&self) -> u64 {
+        self.obj_size
+    }
+}
+
+impl MailboxState {
+    pub fn calculate_weight(&self) -> u64 {
+        (std::mem::size_of::<u64>() * 5) as u64
+            + (self.id_to_imap.len() * std::mem::size_of::<u64>() + std::mem::size_of::<u32>())
+                as u64
+            + (self.uid_to_id.len() * std::mem::size_of::<u64>()) as u64
+            + self
+                .next_state
+                .as_ref()
+                .map_or(0, |n| n.next_state.calculate_weight())
+    }
 }
 
 pub trait IntoString: Sized {
@@ -322,6 +373,25 @@ impl Default for Inner {
             shared_core: Default::default(),
             data: Default::default(),
             ipc: Default::default(),
+            cache: Default::default(),
+        }
+    }
+}
+
+#[cfg(feature = "test_mode")]
+#[allow(clippy::derivable_impls)]
+impl Default for Caches {
+    fn default() -> Self {
+        Self {
+            access_tokens: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            http_auth: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            permissions: Cache::new(1024, 10 * 1024 * 1024),
+            permissions_version: Default::default(),
+            account: Cache::new(1024, 10 * 1024 * 1024),
+            mailbox: Cache::new(1024, 10 * 1024 * 1024),
+            threads: Cache::new(1024, 10 * 1024 * 1024),
+            bayes: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dnsbl: CacheWithTtl::new(1024, 10 * 1024 * 1024),
         }
     }
 }

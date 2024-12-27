@@ -4,12 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    fmt::Debug,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{fmt::Debug, path::PathBuf, sync::Arc, time::Duration};
 
 use base64::{
     engine::general_purpose::{self, STANDARD},
@@ -26,7 +21,7 @@ use common::{
         boot::build_ipc,
         config::{ConfigManager, Patterns},
     },
-    Core, Data, Inner, Server,
+    Caches, Core, Data, Inner, Server,
 };
 use enterprise::{insert_test_metrics, EnterpriseCore};
 use hyper::{header::AUTHORIZATION, Method};
@@ -46,7 +41,7 @@ use store::{
     IterateParams, Stores, ValueKey, SUBSPACE_PROPERTY,
 };
 use tokio::sync::watch;
-use utils::{config::Config, map::ttl_dashmap::TtlMap, BlobHash};
+use utils::{config::Config, BlobHash};
 use webhooks::{spawn_mock_webhook_endpoint, MockWebhookEndpoint};
 
 use crate::{
@@ -529,23 +524,18 @@ pub async fn emails_purge_tombstoned(server: &Server) {
         .unwrap();
 
     for account_id in account_ids {
-        let do_add = server
-            .inner
-            .data
-            .access_tokens
-            .get_with_ttl(&account_id)
-            .is_none();
+        let do_add = server.inner.cache.access_tokens.get(&account_id).is_none();
 
         if do_add {
-            server.inner.data.access_tokens.insert_with_ttl(
+            server.inner.cache.access_tokens.insert(
                 account_id,
                 Arc::new(AccessToken::from_id(account_id)),
-                Instant::now() + Duration::from_secs(3600),
+                Duration::from_secs(3600),
             );
         }
         server.emails_purge_tombstoned(account_id).await.unwrap();
         if do_add {
-            server.inner.data.access_tokens.remove(&account_id);
+            server.inner.cache.access_tokens.remove(&account_id);
         }
     }
 }
@@ -590,12 +580,14 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
         .await
         .enable_enterprise();
     let data = Data::parse(&mut config);
+    let cache = Caches::parse(&mut config);
     let store = core.storage.data.clone();
     let (ipc, mut ipc_rxs) = build_ipc();
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,
         ipc,
+        cache,
     });
 
     // Parse acceptors

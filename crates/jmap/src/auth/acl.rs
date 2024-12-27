@@ -358,7 +358,7 @@ impl AclMethods for Server {
 
     fn refresh_acls(&self, changes: &Object<Value>, current: &Option<HashedValue<Object<Value>>>) {
         if let Value::Acl(acl_changes) = changes.get(&Property::Acl) {
-            let access_tokens = &self.inner.data.access_tokens;
+            let access_tokens = &self.inner.cache.access_tokens;
             if let Some(Value::Acl(acl_current)) = current
                 .as_ref()
                 .and_then(|current| current.inner.properties.get(&Property::Acl))

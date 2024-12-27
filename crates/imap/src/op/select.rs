@@ -21,7 +21,6 @@ use imap_proto::{
 use crate::core::{SavedSearch, SelectedMailbox, Session, State};
 use common::listener::SessionStream;
 use jmap_proto::types::id::Id;
-use utils::lru_cache::LruCached;
 
 use super::{ImapContext, ToModSeq};
 
@@ -47,39 +46,41 @@ impl<T: SessionStream> Session<T> {
 
         if let Some(mailbox) = data.get_mailbox_by_name(&arguments.mailbox_name) {
             // Try obtaining the mailbox from the cache
-            let state =
-                {
-                    let modseq = data
-                        .get_modseq(mailbox.account_id)
-                        .await
-                        .imap_ctx(&arguments.tag, trc::location!())?;
+            let state = {
+                let modseq = data
+                    .get_modseq(mailbox.account_id)
+                    .await
+                    .imap_ctx(&arguments.tag, trc::location!())?;
 
-                    if let Some(cached_state) =
-                        self.server.inner.data.mailbox_cache.get(&mailbox).and_then(
-                            |cached_state| {
-                                if cached_state.modseq.unwrap_or(0) >= modseq.unwrap_or(0) {
-                                    Some(cached_state)
-                                } else {
-                                    None
-                                }
-                            },
-                        )
-                    {
-                        cached_state.as_ref().clone()
-                    } else {
-                        let new_state = Arc::new(
-                            data.fetch_messages(&mailbox)
-                                .await
-                                .imap_ctx(&arguments.tag, trc::location!())?,
-                        );
-                        self.server
-                            .inner
-                            .data
-                            .mailbox_cache
-                            .insert(mailbox, new_state.clone());
-                        new_state.as_ref().clone()
-                    }
-                };
+                if let Some(cached_state) =
+                    self.server
+                        .inner
+                        .cache
+                        .mailbox
+                        .get(&mailbox)
+                        .and_then(|cached_state| {
+                            if cached_state.modseq.unwrap_or(0) >= modseq.unwrap_or(0) {
+                                Some(cached_state)
+                            } else {
+                                None
+                            }
+                        })
+                {
+                    cached_state.as_ref().clone()
+                } else {
+                    let new_state = Arc::new(
+                        data.fetch_messages(&mailbox)
+                            .await
+                            .imap_ctx(&arguments.tag, trc::location!())?,
+                    );
+                    self.server
+                        .inner
+                        .cache
+                        .mailbox
+                        .insert(mailbox, new_state.clone());
+                    new_state.as_ref().clone()
+                }
+            };
 
             // Synchronize messages
             let closed_previous = self.state.close_mailbox();

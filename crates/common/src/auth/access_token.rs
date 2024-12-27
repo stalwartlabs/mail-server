@@ -6,7 +6,7 @@
 
 use directory::{
     backend::internal::{lookup::DirectoryStore, PrincipalField},
-    Permission, Principal, QueryBy,
+    Permission, Principal, QueryBy, PERMISSIONS_BITSET_SIZE,
 };
 use jmap_proto::{
     request::RequestMethod,
@@ -15,14 +15,15 @@ use jmap_proto::{
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,
-    time::Instant,
 };
 use store::query::acl::AclQuery;
 use trc::AddContext;
-use utils::map::{
-    bitmap::{Bitmap, BitmapItem},
-    ttl_dashmap::TtlMap,
-    vec_map::VecMap,
+use utils::{
+    cache::TtlEntry,
+    map::{
+        bitmap::{Bitmap, BitmapItem},
+        vec_map::VecMap,
+    },
 };
 
 use crate::Server;
@@ -109,6 +110,7 @@ impl Server {
                 .unwrap_or_default(),
             quota: principal.quota(),
             permissions,
+            obj_size: 0,
         })
     }
 
@@ -183,27 +185,52 @@ impl Server {
             }
         }
 
-        Ok(access_token)
+        Ok(access_token.update_size())
     }
 
-    pub fn cache_access_token(&self, access_token: Arc<AccessToken>) {
-        self.inner.data.access_tokens.insert_with_ttl(
-            access_token.primary_id(),
-            access_token,
-            Instant::now() + self.core.jmap.session_cache_ttl,
-        );
+    pub async fn get_or_build_access_token(
+        &self,
+        principal: Principal,
+    ) -> trc::Result<Arc<AccessToken>> {
+        match self
+            .inner
+            .cache
+            .access_tokens
+            .get_value_or_guard_async(&principal.id())
+            .await
+        {
+            Ok(token) => Ok(token),
+            Err(guard) => {
+                let token = Arc::new(
+                    self.update_access_token(self.build_access_token(principal).await?)
+                        .await?,
+                );
+                let _ = guard.insert(TtlEntry::new(
+                    token.clone(),
+                    self.core.jmap.session_cache_ttl,
+                ));
+                Ok(token)
+            }
+        }
     }
 
     pub async fn get_cached_access_token(&self, primary_id: u32) -> trc::Result<Arc<AccessToken>> {
-        if let Some(access_token) = self.inner.data.access_tokens.get_with_ttl(&primary_id) {
-            Ok(access_token)
-        } else {
-            // Refresh ACL token
-            self.get_access_token(primary_id).await.map(|access_token| {
-                let access_token = Arc::new(access_token);
-                self.cache_access_token(access_token.clone());
-                access_token
-            })
+        match self
+            .inner
+            .cache
+            .access_tokens
+            .get_value_or_guard_async(&primary_id)
+            .await
+        {
+            Ok(token) => Ok(token),
+            Err(guard) => {
+                let token = Arc::new(self.get_access_token(primary_id).await?);
+                let _ = guard.insert(TtlEntry::new(
+                    token.clone(),
+                    self.core.jmap.session_cache_ttl,
+                ));
+                Ok(token)
+            }
         }
     }
 }
@@ -466,5 +493,18 @@ impl AccessToken {
             quota: self.quota,
             tenant: self.tenant,
         }
+    }
+
+    pub fn update_size(mut self) -> Self {
+        self.obj_size = ((std::mem::size_of::<u32>() * 2)
+            + (std::mem::size_of::<u64>() * 3)
+            + (self.member_of.len() * std::mem::size_of::<u32>())
+            + (self.access_to.len() * (std::mem::size_of::<u32>() + std::mem::size_of::<u64>()))
+            + self.name.len()
+            + self.description.as_ref().map_or(0, |v| v.len())
+            + self.emails.iter().map(|v| v.len()).sum::<usize>()
+            + (PERMISSIONS_BITSET_SIZE * std::mem::size_of::<usize>()))
+            as u64;
+        self
     }
 }

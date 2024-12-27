@@ -111,7 +111,7 @@ impl From<&Gossiper> for PeerStatus {
                 .load(Ordering::Relaxed),
             gen_permissions: cluster
                 .inner
-                .data
+                .cache
                 .permissions_version
                 .load(Ordering::Relaxed),
         }

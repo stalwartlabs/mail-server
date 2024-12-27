@@ -10,7 +10,6 @@ use common::{Server, Threads};
 use jmap_proto::types::{collection::Collection, property::Property};
 use std::future::Future;
 use trc::AddContext;
-use utils::lru_cache::LruCached;
 
 use crate::JmapMethods;
 
@@ -38,12 +37,8 @@ impl ThreadCache for Server {
             .caused_by(trc::location!())?;
 
         // Lock the cache
-        let thread_cache = if let Some(thread_cache) = self
-            .inner
-            .data
-            .threads_cache
-            .get(&account_id)
-            .and_then(|t| {
+        let thread_cache = if let Some(thread_cache) =
+            self.inner.cache.threads.get(&account_id).and_then(|t| {
                 if t.modseq.unwrap_or(0) >= modseq.unwrap_or(0) {
                     Some(t)
                 } else {
@@ -66,8 +61,8 @@ impl ThreadCache for Server {
                 modseq,
             });
             self.inner
-                .data
-                .threads_cache
+                .cache
+                .threads
                 .insert(account_id, thread_cache.clone());
             thread_cache
         };

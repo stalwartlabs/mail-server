@@ -25,7 +25,6 @@ use jmap_proto::{
 use parking_lot::Mutex;
 use store::query::log::{Change, Query};
 use trc::AddContext;
-use utils::lru_cache::LruCached;
 
 use super::{Account, MailboxId, MailboxSync, Session, SessionData};
 
@@ -115,8 +114,8 @@ impl<T: SessionStream> SessionData<T> {
         if let Some(cached_account) = self
             .server
             .inner
-            .data
-            .account_cache
+            .cache
+            .account
             .get(&cached_account_id)
             .and_then(|cached_account| {
                 if cached_account.state_mailbox == state_mailbox
@@ -212,7 +211,19 @@ impl<T: SessionStream> SessionData<T> {
             mailbox_state: AHashMap::with_capacity(mailboxes.len()),
             state_mailbox,
             state_email,
+            obj_size: 0,
         };
+        account.obj_size = (std::mem::size_of::<u32>()
+            + (std::mem::size_of::<u64>() * 3)
+            + account.prefix.as_ref().map_or(0, |p| p.len())
+            + account
+                .mailbox_names
+                .keys()
+                .map(|k| k.len() + std::mem::size_of::<u32>())
+                .sum::<usize>()
+            + (account.mailbox_state.len()
+                * (std::mem::size_of::<Mailbox>() + std::mem::size_of::<u32>())))
+            as u64;
 
         loop {
             while let Some((mailbox_id, mailbox_parent_id, mailbox)) = iter.next() {
@@ -322,8 +333,8 @@ impl<T: SessionStream> SessionData<T> {
         // Update cache
         self.server
             .inner
-            .data
-            .account_cache
+            .cache
+            .account
             .insert(cached_account_id, Arc::new(account.clone()));
 
         Ok(account)
@@ -469,17 +480,11 @@ impl<T: SessionStream> SessionData<T> {
                     }
 
                     // Update cache
-                    if let Some(cached_account_) = self
-                        .server
-                        .inner
-                        .data
-                        .account_cache
-                        .lock()
-                        .get_mut(&AccountId {
-                            account_id,
-                            primary_id: access_token.primary_id(),
-                        })
-                    {
+                    let ac_id = AccountId {
+                        account_id,
+                        primary_id: access_token.primary_id(),
+                    };
+                    if let Some(cached_account_) = self.server.inner.cache.account.get(&ac_id) {
                         if cached_account_.state_mailbox != state_mailbox
                             || cached_account_.state_email != state_email
                         {
@@ -493,7 +498,11 @@ impl<T: SessionStream> SessionData<T> {
                             });
                             cached_account.state_mailbox = state_mailbox;
                             cached_account.state_email = state_email;
-                            *cached_account_ = Arc::new(cached_account);
+                            self.server
+                                .inner
+                                .cache
+                                .account
+                                .insert(ac_id, Arc::new(cached_account));
                         }
                     }
                 } else {

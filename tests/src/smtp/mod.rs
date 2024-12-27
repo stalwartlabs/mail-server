@@ -152,6 +152,7 @@ impl TestSMTP {
                 shared_core: self.server.core.as_ref().clone().into_shared(),
                 data: Default::default(),
                 ipc,
+                cache: Default::default(),
             }
             .into(),
             ipc_rxs,
@@ -179,6 +180,7 @@ impl TestSMTP {
                     shared_core,
                     data,
                     ipc,
+                    cache: Default::default(),
                 }
                 .into(),
             },

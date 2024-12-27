@@ -9,9 +9,11 @@ use std::sync::{Arc, LazyLock};
 use ahash::AHashSet;
 use directory::{
     backend::internal::{lookup::DirectoryStore, PrincipalField},
-    Permission, Permissions, QueryBy, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER,
+    Permission, Permissions, QueryBy, PERMISSIONS_BITSET_SIZE, ROLE_ADMIN, ROLE_TENANT_ADMIN,
+    ROLE_USER,
 };
 use trc::AddContext;
+use utils::cache::CacheItemWeight;
 
 use crate::Server;
 
@@ -33,10 +35,19 @@ impl Server {
             ROLE_ADMIN => Ok(ADMIN_PERMISSIONS.clone()),
             ROLE_TENANT_ADMIN => Ok(TENANT_ADMIN_PERMISSIONS.clone()),
             role_id => {
-                if let Some(role_permissions) = self.inner.data.permissions.get(&role_id) {
-                    Ok(role_permissions.clone())
-                } else {
-                    self.build_role_permissions(role_id).await
+                match self
+                    .inner
+                    .cache
+                    .permissions
+                    .get_value_or_guard_async(&role_id)
+                    .await
+                {
+                    Ok(permissions) => Ok(permissions),
+                    Err(guard) => {
+                        let permissions = self.build_role_permissions(role_id).await?;
+                        let _ = guard.insert(permissions.clone());
+                        Ok(permissions)
+                    }
                 }
             }
         }
@@ -81,7 +92,7 @@ impl Server {
                     }
                     role_id => {
                         // Try with the cache
-                        if let Some(role_permissions) = self.inner.data.permissions.get(&role_id) {
+                        if let Some(role_permissions) = self.inner.cache.permissions.get(&role_id) {
                             return_permissions.union(role_permissions.as_ref());
                         } else {
                             let mut role_permissions = RolePermissions::default();
@@ -133,7 +144,7 @@ impl Server {
                             } else {
                                 // Cache role
                                 self.inner
-                                    .data
+                                    .cache
                                     .permissions
                                     .insert(role_id, Arc::new(role_permissions));
                             }
@@ -147,13 +158,7 @@ impl Server {
             }
         }
 
-        // Cache role
-        let return_permissions = Arc::new(return_permissions);
-        self.inner
-            .data
-            .permissions
-            .insert(role_id, return_permissions.clone());
-        Ok(return_permissions)
+        Ok(Arc::new(return_permissions))
     }
 }
 
@@ -212,4 +217,10 @@ fn admin_permissions() -> Arc<RolePermissions> {
         enabled: Permissions::all(),
         disabled: Permissions::new(),
     })
+}
+
+impl CacheItemWeight for RolePermissions {
+    fn weight(&self) -> u64 {
+        (PERMISSIONS_BITSET_SIZE * std::mem::size_of::<usize>() * 2) as u64
+    }
 }

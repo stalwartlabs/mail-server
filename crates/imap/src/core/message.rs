@@ -16,7 +16,6 @@ use jmap_proto::{
 };
 use store::write::assert::HashedValue;
 use trc::AddContext;
-use utils::lru_cache::LruCached;
 
 use crate::core::ImapId;
 
@@ -104,7 +103,7 @@ impl<T: SessionStream> SessionData<T> {
             uid_to_id.insert(uid, message_id);
         }
 
-        Ok(MailboxState {
+        let mut state = MailboxState {
             uid_next: uid_max + 1,
             uid_validity,
             total_messages: id_to_imap.len(),
@@ -113,7 +112,11 @@ impl<T: SessionStream> SessionData<T> {
             uid_max,
             modseq,
             next_state: None,
-        })
+            obj_size: 0,
+        };
+        state.obj_size = state.calculate_weight();
+
+        Ok(state)
     }
 
     pub async fn synchronize_messages(
@@ -150,8 +153,8 @@ impl<T: SessionStream> SessionData<T> {
             // Update cache
             self.server
                 .inner
-                .data
-                .mailbox_cache
+                .cache
+                .mailbox
                 .insert(mailbox.id, Arc::new(new_state.clone()));
 
             // Update state

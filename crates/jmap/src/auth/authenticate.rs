@@ -10,7 +10,6 @@ use common::{auth::AuthRequest, listener::limiter::InFlight, Server};
 use hyper::header;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use utils::map::ttl_dashmap::TtlMap;
 
 use crate::api::{http::HttpSessionData, HttpRequest};
 
@@ -36,56 +35,59 @@ impl Authenticator for Server {
         allow_api_access: bool,
     ) -> trc::Result<(InFlight, Arc<AccessToken>)> {
         if let Some((mechanism, token)) = req.authorization() {
-            let access_token =
-                if let Some(account_id) = self.inner.data.http_auth_cache.get_with_ttl(token) {
-                    self.get_cached_access_token(account_id).await?
-                } else {
-                    let credentials = if mechanism.eq_ignore_ascii_case("basic") {
-                        // Decode the base64 encoded credentials
-                        decode_plain_auth(token).ok_or_else(|| {
-                            trc::AuthEvent::Error
-                                .into_err()
-                                .details("Failed to decode Basic auth request.")
-                                .id(token.to_string())
-                                .caused_by(trc::location!())
-                        })?
-                    } else if mechanism.eq_ignore_ascii_case("bearer") {
-                        // Enforce anonymous rate limit
-                        self.is_http_anonymous_request_allowed(&session.remote_ip)
-                            .await?;
-
-                        decode_bearer_token(token, allow_api_access).ok_or_else(|| {
-                            trc::AuthEvent::Error
-                                .into_err()
-                                .details("Failed to decode Bearer token.")
-                                .id(token.to_string())
-                                .caused_by(trc::location!())
-                        })?
-                    } else {
-                        // Enforce anonymous rate limit
-                        self.is_http_anonymous_request_allowed(&session.remote_ip)
-                            .await?;
-
-                        return Err(trc::AuthEvent::Error
+            let access_token = if let Some(account_id) = self.inner.cache.http_auth.get(token) {
+                self.get_cached_access_token(account_id).await?
+            } else {
+                let credentials = if mechanism.eq_ignore_ascii_case("basic") {
+                    // Decode the base64 encoded credentials
+                    decode_plain_auth(token).ok_or_else(|| {
+                        trc::AuthEvent::Error
                             .into_err()
-                            .reason("Unsupported authentication mechanism.")
-                            .details(token.to_string())
-                            .caused_by(trc::location!()));
-                    };
-
-                    // Authenticate
-                    let access_token = self
-                        .authenticate(&AuthRequest::from_credentials(
-                            credentials,
-                            session.session_id,
-                            session.remote_ip,
-                        ))
+                            .details("Failed to decode Basic auth request.")
+                            .id(token.to_string())
+                            .caused_by(trc::location!())
+                    })?
+                } else if mechanism.eq_ignore_ascii_case("bearer") {
+                    // Enforce anonymous rate limit
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
                         .await?;
 
-                    // Cache session
-                    self.cache_session(token.to_string(), &access_token);
-                    access_token
+                    decode_bearer_token(token, allow_api_access).ok_or_else(|| {
+                        trc::AuthEvent::Error
+                            .into_err()
+                            .details("Failed to decode Bearer token.")
+                            .id(token.to_string())
+                            .caused_by(trc::location!())
+                    })?
+                } else {
+                    // Enforce anonymous rate limit
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
+
+                    return Err(trc::AuthEvent::Error
+                        .into_err()
+                        .reason("Unsupported authentication mechanism.")
+                        .details(token.to_string())
+                        .caused_by(trc::location!()));
                 };
+
+                // Authenticate
+                let access_token = self
+                    .authenticate(&AuthRequest::from_credentials(
+                        credentials,
+                        session.session_id,
+                        session.remote_ip,
+                    ))
+                    .await?;
+
+                // Cache session
+                self.inner.cache.http_auth.insert(
+                    token.to_string(),
+                    access_token.primary_id(),
+                    self.core.jmap.session_cache_ttl,
+                );
+                access_token
+            };
 
             // Enforce authenticated rate limit
             self.is_http_authenticated_request_allowed(&access_token)

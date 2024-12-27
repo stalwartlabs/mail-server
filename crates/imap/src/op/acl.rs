@@ -368,7 +368,11 @@ impl<T: SessionStream> Session<T> {
             }
 
             // Invalidate ACLs
-            data.server.inner.data.access_tokens.remove(&acl_account_id);
+            data.server
+                .inner
+                .cache
+                .access_tokens
+                .remove(&acl_account_id);
 
             trc::event!(
                 Imap(trc::ImapEvent::SetAcl),

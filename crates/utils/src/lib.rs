@@ -6,10 +6,10 @@
 
 use std::sync::Arc;
 
+pub mod cache;
 pub mod codec;
 pub mod config;
 pub mod glob;
-pub mod lru_cache;
 pub mod map;
 pub mod snowflake;
 pub mod url_params;

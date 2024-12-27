@@ -34,7 +34,7 @@ use common::{
     },
     core::BuildServer,
     manager::boot::build_ipc,
-    Core, Data, Inner, Server,
+    Caches, Core, Data, Inner, Server,
 };
 
 use ::store::Stores;
@@ -331,12 +331,15 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let tracers = Telemetry::parse(&mut config, &stores);
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let data = Data::parse(&mut config);
+    let cache = Caches::parse(&mut config);
+
     let store = core.storage.data.clone();
     let (ipc, mut ipc_rxs) = build_ipc();
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,
         ipc,
+        cache,
     });
 
     // Parse acceptors

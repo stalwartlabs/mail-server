@@ -12,14 +12,13 @@ use dashmap::DashMap;
 use mail_send::smtp::tls::build_tls_connector;
 use parking_lot::RwLock;
 use utils::{
+    cache::{Cache, CacheWithTtl},
     config::Config,
-    lru_cache::{LruCache, LruCached},
-    map::ttl_dashmap::{TtlDashMap, TtlMap},
     snowflake::SnowflakeIdGenerator,
 };
 
 use crate::{
-    listener::blocked::BlockedIps, manager::webadmin::WebAdminManager, Data,
+    listener::blocked::BlockedIps, manager::webadmin::WebAdminManager, Caches, Data,
     ThrottleKeyHasherBuilder, TlsConnectors,
 };
 
@@ -59,12 +58,8 @@ impl Data {
             })
             .ok()
             .map(Arc::new),
-            access_tokens: TtlDashMap::with_capacity(capacity, shard_amount),
-            http_auth_cache: TtlDashMap::with_capacity(capacity, shard_amount),
             blocked_ips: RwLock::new(BlockedIps::parse(config).blocked_ip_addresses),
             blocked_ips_version: 0.into(),
-            permissions: Default::default(),
-            permissions_version: 0.into(),
             jmap_id_gen: id_generator.clone(),
             queue_id_gen: id_generator.clone(),
             span_id_gen: id_generator,
@@ -83,15 +78,6 @@ impl Data {
                 RandomState::default(),
                 shard_amount,
             ),
-            account_cache: LruCache::with_capacity(
-                config.property("cache.account.size").unwrap_or(2048),
-            ),
-            mailbox_cache: LruCache::with_capacity(
-                config.property("cache.mailbox.size").unwrap_or(2048),
-            ),
-            threads_cache: LruCache::with_capacity(
-                config.property("cache.thread.size").unwrap_or(2048),
-            ),
             logos: Default::default(),
             smtp_session_throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
                 capacity,
@@ -109,17 +95,29 @@ impl Data {
     }
 }
 
+impl Caches {
+    pub fn parse(config: &mut Config) -> Self {
+        Caches {
+            access_tokens: CacheWithTtl::from_config(config, "cache.access-tokens"),
+            http_auth: CacheWithTtl::from_config(config, "cache.http-auth"),
+            permissions: Cache::from_config(config, "cache.permissions"),
+            permissions_version: 0.into(),
+            account: Cache::from_config(config, "cache.account"),
+            mailbox: Cache::from_config(config, "cache.mailbox"),
+            threads: Cache::from_config(config, "cache.threads"),
+            bayes: CacheWithTtl::from_config(config, "cache.bayes"),
+            dnsbl: CacheWithTtl::from_config(config, "cache.dnsbl"),
+        }
+    }
+}
+
 impl Default for Data {
     fn default() -> Self {
         Self {
             tls_certificates: Default::default(),
             tls_self_signed_cert: Default::default(),
-            access_tokens: Default::default(),
-            http_auth_cache: Default::default(),
             blocked_ips: Default::default(),
             blocked_ips_version: 0.into(),
-            permissions: Default::default(),
-            permissions_version: 0.into(),
             jmap_id_gen: Default::default(),
             queue_id_gen: Default::default(),
             span_id_gen: Default::default(),
@@ -127,9 +125,6 @@ impl Default for Data {
             config_version: Default::default(),
             jmap_limiter: Default::default(),
             imap_limiter: Default::default(),
-            account_cache: LruCache::with_capacity(2048),
-            mailbox_cache: LruCache::with_capacity(2048),
-            threads_cache: LruCache::with_capacity(2048),
             logos: Default::default(),
             smtp_session_throttle: Default::default(),
             smtp_queue_throttle: Default::default(),

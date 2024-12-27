@@ -28,7 +28,6 @@ use smtp::reporting::SmtpReporting;
 use store::{write::now, PurgeStore};
 use tokio::sync::mpsc;
 use trc::{Collector, MetricType, PurgeEvent};
-use utils::map::ttl_dashmap::TtlMap;
 
 use crate::{email::delete::EmailDeletion, JmapMethods, LONG_SLUMBER};
 
@@ -330,13 +329,11 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
 
                                 tokio::spawn(async move {
                                     trc::event!(Purge(PurgeEvent::Started), Type = "session");
-                                    server.inner.data.http_auth_cache.cleanup();
                                     server
                                         .inner
                                         .data
                                         .jmap_limiter
                                         .retain(|_, limiter| limiter.is_active());
-                                    server.inner.data.access_tokens.cleanup();
 
                                     for throttle in [
                                         &server.inner.data.smtp_session_throttle,

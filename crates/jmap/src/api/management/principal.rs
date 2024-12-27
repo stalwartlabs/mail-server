@@ -372,17 +372,11 @@ impl PrincipalManager for Server {
                             }
                         }
 
-                        // Remove entries from cache
-                        self.inner
-                            .data
-                            .http_auth_cache
-                            .retain(|_, id| id.item != account_id);
-
                         if matches!(typ, Type::Role | Type::Tenant) {
                             // Update permissions cache
-                            self.inner.data.permissions.clear();
+                            self.inner.cache.permissions.clear();
                             self.inner
-                                .data
+                                .cache
                                 .permissions_version
                                 .fetch_add(1, Ordering::Relaxed);
                         }
@@ -419,14 +413,12 @@ impl PrincipalManager for Server {
 
                         // Validate changes
                         let mut needs_assert = false;
-                        let mut expire_session = false;
                         let mut expire_token = false;
                         let mut is_role_change = false;
 
                         for change in &changes {
                             match change.field {
                                 PrincipalField::Secrets => {
-                                    expire_session = true;
                                     needs_assert = true;
                                 }
                                 PrincipalField::Name
@@ -528,25 +520,17 @@ impl PrincipalManager for Server {
                             )
                             .await?;
 
-                        if expire_session {
-                            // Remove entries from cache
-                            self.inner
-                                .data
-                                .http_auth_cache
-                                .retain(|_, id| id.item != account_id);
-                        }
-
                         if is_role_change {
                             // Update permissions cache
-                            self.inner.data.permissions.clear();
+                            self.inner.cache.permissions.clear();
                             self.inner
-                                .data
+                                .cache
                                 .permissions_version
                                 .fetch_add(1, Ordering::Relaxed);
                         }
 
                         if expire_token {
-                            self.inner.data.access_tokens.remove(&account_id);
+                            self.inner.cache.access_tokens.remove(&account_id);
                         }
 
                         Ok(JsonResponse::new(json!({
@@ -646,12 +630,6 @@ impl PrincipalManager for Server {
                         .set([("authentication.fallback-admin.secret", password)], true)
                         .await?;
 
-                    // Remove entries from cache
-                    self.inner
-                        .data
-                        .http_auth_cache
-                        .retain(|_, id| id.item != u32::MAX);
-
                     return Ok(JsonResponse::new(json!({
                         "data": (),
                     }))
@@ -712,12 +690,6 @@ impl PrincipalManager for Server {
                     .with_tenant(access_token.tenant.map(|t| t.id)),
             )
             .await?;
-
-        // Remove entries from cache
-        self.inner
-            .data
-            .http_auth_cache
-            .retain(|_, id| id.item != access_token.primary_id());
 
         Ok(JsonResponse::new(json!({
             "data": (),

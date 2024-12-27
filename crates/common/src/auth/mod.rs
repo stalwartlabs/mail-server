@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{net::IpAddr, sync::Arc, time::Instant};
+use std::{net::IpAddr, sync::Arc};
 
 use directory::{
     core::secret::verify_secret_hash, Directory, Permission, Permissions, Principal, QueryBy,
@@ -12,7 +12,10 @@ use directory::{
 use jmap_proto::types::collection::Collection;
 use mail_send::Credentials;
 use oauth::GrantType;
-use utils::map::{bitmap::Bitmap, ttl_dashmap::TtlMap, vec_map::VecMap};
+use utils::{
+    cache::CacheItemWeight,
+    map::{bitmap::Bitmap, vec_map::VecMap},
+};
 
 use crate::Server;
 
@@ -32,6 +35,7 @@ pub struct AccessToken {
     pub quota: u64,
     pub permissions: Permissions,
     pub tenant: Option<TenantInfo>,
+    pub obj_size: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -72,21 +76,7 @@ impl Server {
                 }
             }
             _ => match self.authenticate_credentials(req, directory).await {
-                Ok(principal) => {
-                    if let Some(access_token) =
-                        self.inner.data.access_tokens.get_with_ttl(&principal.id())
-                    {
-                        Ok(access_token)
-                    } else {
-                        self.build_access_token(principal)
-                            .await
-                            .map(|access_token| {
-                                let access_token = Arc::new(access_token);
-                                self.cache_access_token(access_token.clone());
-                                access_token
-                            })
-                    }
-                }
+                Ok(principal) => self.get_or_build_access_token(principal).await,
                 Err(err) => Err(err),
             },
         }
@@ -195,14 +185,6 @@ impl Server {
                 ))
         }
     }
-
-    pub fn cache_session(&self, session_id: String, access_token: &AccessToken) {
-        self.inner.data.http_auth_cache.insert_with_ttl(
-            session_id,
-            access_token.primary_id(),
-            Instant::now() + self.core.jmap.session_cache_ttl,
-        );
-    }
 }
 
 impl<'x> AuthRequest<'x> {
@@ -244,6 +226,12 @@ impl<'x> AuthRequest<'x> {
     pub fn with_directory(mut self, directory: &'x Directory) -> Self {
         self.directory = Some(directory);
         self
+    }
+}
+
+impl CacheItemWeight for AccessToken {
+    fn weight(&self) -> u64 {
+        self.obj_size
     }
 }
 

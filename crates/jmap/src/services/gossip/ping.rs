@@ -182,7 +182,7 @@ impl Gossiper {
 
         // Reload settings
         if update_permissions {
-            self.inner.data.permissions.clear();
+            self.inner.cache.permissions.clear();
         }
 
         if update_config || update_lists {

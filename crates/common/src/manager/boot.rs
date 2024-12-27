@@ -21,7 +21,7 @@ use utils::{
 use crate::{
     config::{server::Listeners, telemetry::Telemetry},
     ipc::{DeliveryEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
-    Core, Data, Inner, Ipc, IPC_CHANNEL_BUFFER,
+    Caches, Core, Data, Inner, Ipc, IPC_CHANNEL_BUFFER,
 };
 
 use super::{
@@ -334,6 +334,9 @@ impl BootManager {
                 // Parse data
                 let data = Data::parse(&mut config);
 
+                // Parse caches
+                let cache = Caches::parse(&mut config);
+
                 // Enable telemetry
                 #[cfg(feature = "enterprise")]
                 telemetry.enable(core.is_enterprise_edition());
@@ -365,6 +368,7 @@ impl BootManager {
                     shared_core: ArcSwap::from_pointee(core),
                     data,
                     ipc,
+                    cache,
                 });
 
                 // Parse TCP acceptors

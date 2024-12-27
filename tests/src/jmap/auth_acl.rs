@@ -670,7 +670,7 @@ pub async fn test(params: &mut JMAPTest) {
             .add_to_group(name, "sales@example.com")
             .await;
     }
-    server.inner.data.access_tokens.clear();
+    server.inner.cache.access_tokens.clear();
     john_client.refresh_session().await.unwrap();
     jane_client.refresh_session().await.unwrap();
     bill_client.refresh_session().await.unwrap();
@@ -770,8 +770,8 @@ pub async fn test(params: &mut JMAPTest) {
         .data
         .remove_from_group("jdoe@example.com", "sales@example.com")
         .await;
-    server.inner.data.http_auth_cache.clear();
-    server.inner.data.access_tokens.clear();
+    server.inner.cache.http_auth.clear();
+    server.inner.cache.access_tokens.clear();
     assert_forbidden(
         john_client
             .set_default_account_id(sales_id.to_string())

@@ -13,7 +13,7 @@ use std::{
 };
 
 use base64::{engine::general_purpose, Engine};
-use common::{config::server::Listeners, listener::SessionData, Core, Data, Inner};
+use common::{config::server::Listeners, listener::SessionData, Caches, Core, Data, Inner};
 use ece::EcKeyComponents;
 use hyper::{body, header::CONTENT_ENCODING, server::conn::http1, service::service_fn, StatusCode};
 use hyper_util::rt::TokioIo;
@@ -104,6 +104,7 @@ pub async fn test(params: &mut JMAPTest) {
             .await
             .into_shared(),
         data: Data::parse(&mut settings),
+        cache: Caches::parse(&mut settings),
         ..Default::default()
     });
     settings.errors.clear();

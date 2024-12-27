@@ -7,6 +7,7 @@
 use ahash::AHashMap;
 use radix_trie::TrieKey;
 use serde::{Deserialize, Serialize};
+use utils::cache::CacheItemWeight;
 
 use crate::tokenizers::osb::Gram;
 
@@ -139,6 +140,18 @@ impl From<i64> for Weights {
 impl From<Weights> for i64 {
     fn from(value: Weights) -> Self {
         (value.ham as i64) << 32 | value.spam as i64
+    }
+}
+
+impl CacheItemWeight for Weights {
+    fn weight(&self) -> u64 {
+        std::mem::size_of::<u64>() as u64
+    }
+}
+
+impl CacheItemWeight for TokenHash {
+    fn weight(&self) -> u64 {
+        self.len as u64
     }
 }
 

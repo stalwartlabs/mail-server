@@ -5,6 +5,7 @@ edition = "2021"
 resolver = "2"
 
 [dependencies]
+utils = { path =  "../utils" }
 xxhash-rust = { version = "0.8.5", features = ["xxh3"] }
 farmhash = "1.1.5"
 siphasher = "1.0"

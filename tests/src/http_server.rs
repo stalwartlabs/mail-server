@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use ahash::AHashMap;
-use common::{config::server::Listeners, listener::SessionData, Core, Data, Inner};
+use common::{config::server::Listeners, listener::SessionData, Caches, Core, Data, Inner};
 use hyper::{body, server::conn::http1, service::service_fn, Method, Uri};
 use hyper_util::rt::TokioIo;
 use jmap::api::{http::fetch_body, HttpResponse};
@@ -69,6 +69,7 @@ pub async fn spawn_mock_http_server(
             .await
             .into_shared(),
         data: Data::parse(&mut settings),
+        cache: Caches::parse(&mut settings),
         ..Default::default()
     });
     settings.errors.clear();
