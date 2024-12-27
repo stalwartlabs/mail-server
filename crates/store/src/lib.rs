@@ -232,6 +232,8 @@ pub enum InMemoryStore {
     Redis(Arc<RedisStore>),
     Http(Arc<HttpStore>),
     Static(Arc<StaticMemoryStore>),
+    #[cfg(feature = "enterprise")]
+    Sharded(Arc<backend::composite::sharded_lookup::ShardedInMemory>),
 }
 
 #[cfg(feature = "sqlite")]

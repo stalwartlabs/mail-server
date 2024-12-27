@@ -50,7 +50,7 @@ impl ShardedBlob {
 
     #[inline(always)]
     fn get_store(&self, key: &[u8]) -> &BlobBackend {
-        &self.stores[key.first().copied().unwrap_or_default() as usize % self.stores.len()]
+        &self.stores[xxhash_rust::xxh3::xxh3_64(key) as usize % self.stores.len()]
     }
 
     pub async fn get_blob(
