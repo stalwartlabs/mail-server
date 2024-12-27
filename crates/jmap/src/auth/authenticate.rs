@@ -41,9 +41,6 @@ impl Authenticator for Server {
                     self.get_cached_access_token(account_id).await?
                 } else {
                     let credentials = if mechanism.eq_ignore_ascii_case("basic") {
-                        // Throttle authentication requests
-                        self.is_auth_allowed_soft(&session.remote_ip).await?;
-
                         // Decode the base64 encoded credentials
                         decode_plain_auth(token).ok_or_else(|| {
                             trc::AuthEvent::Error
@@ -54,7 +51,8 @@ impl Authenticator for Server {
                         })?
                     } else if mechanism.eq_ignore_ascii_case("bearer") {
                         // Enforce anonymous rate limit
-                        self.is_anonymous_allowed(&session.remote_ip).await?;
+                        self.is_http_anonymous_request_allowed(&session.remote_ip)
+                            .await?;
 
                         decode_bearer_token(token, allow_api_access).ok_or_else(|| {
                             trc::AuthEvent::Error
@@ -65,7 +63,8 @@ impl Authenticator for Server {
                         })?
                     } else {
                         // Enforce anonymous rate limit
-                        self.is_anonymous_allowed(&session.remote_ip).await?;
+                        self.is_http_anonymous_request_allowed(&session.remote_ip)
+                            .await?;
 
                         return Err(trc::AuthEvent::Error
                             .into_err()
@@ -75,22 +74,13 @@ impl Authenticator for Server {
                     };
 
                     // Authenticate
-                    let access_token = match self
+                    let access_token = self
                         .authenticate(&AuthRequest::from_credentials(
                             credentials,
                             session.session_id,
                             session.remote_ip,
                         ))
-                        .await
-                    {
-                        Ok(access_token) => access_token,
-                        Err(err) => {
-                            if err.matches(trc::EventType::Auth(trc::AuthEvent::Failed)) {
-                                let _ = self.is_auth_allowed_hard(&session.remote_ip).await;
-                            }
-                            return Err(err);
-                        }
-                    };
+                        .await?;
 
                     // Cache session
                     self.cache_session(token.to_string(), &access_token);
@@ -98,12 +88,13 @@ impl Authenticator for Server {
                 };
 
             // Enforce authenticated rate limit
-            self.is_account_allowed(&access_token)
+            self.is_http_authenticated_request_allowed(&access_token)
                 .await
                 .map(|in_flight| (in_flight, access_token))
         } else {
             // Enforce anonymous rate limit
-            self.is_anonymous_allowed(&session.remote_ip).await?;
+            self.is_http_anonymous_request_allowed(&session.remote_ip)
+                .await?;
 
             Err(trc::AuthEvent::Failed
                 .into_err()

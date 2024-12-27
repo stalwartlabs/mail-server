@@ -54,7 +54,8 @@ impl ClientRegistrationHandler for Server {
             // Validate permissions
             access_token.assert_has_permission(Permission::OauthClientRegistration)?;
         } else {
-            self.is_anonymous_allowed(&session.remote_ip).await?;
+            self.is_http_anonymous_request_allowed(&session.remote_ip)
+                .await?;
         }
 
         // Parse request

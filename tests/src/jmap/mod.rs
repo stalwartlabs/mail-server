@@ -120,7 +120,7 @@ implicit = false
 certificate = "default"
 
 [server.fail2ban]
-authentication = "101/5s"
+authentication = "100/5s"
 
 [authentication]
 rate-limit = "100/2s"
@@ -371,7 +371,7 @@ pub async fn jmap_tests() {
     .await;
 
     webhooks::test(&mut params).await;
-    /*email_query::test(&mut params, delete).await;
+    email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -381,7 +381,7 @@ pub async fn jmap_tests() {
     email_copy::test(&mut params).await;
     thread_get::test(&mut params).await;
     thread_merge::test(&mut params).await;
-    mailbox::test(&mut params).await;*/
+    mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
     auth_limits::test(&mut params).await;

@@ -232,13 +232,15 @@ impl ParseHttp for Server {
                 }
                 ("oauth-authorization-server", &Method::GET) => {
                     // Limit anonymous requests
-                    self.is_anonymous_allowed(&session.remote_ip).await?;
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
 
                     return self.handle_oauth_metadata(req, session).await;
                 }
                 ("openid-configuration", &Method::GET) => {
                     // Limit anonymous requests
-                    self.is_anonymous_allowed(&session.remote_ip).await?;
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
 
                     return self.handle_oidc_metadata(req, session).await;
                 }
@@ -258,6 +260,10 @@ impl ParseHttp for Server {
                     }
                 }
                 ("mta-sts.txt", &Method::GET) => {
+                    // Limit anonymous requests
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
+
                     return if let Some(policy) = self.build_mta_sts_policy() {
                         Ok(Resource::new("text/plain", policy.to_string().into_bytes())
                             .into_http_response())
@@ -266,12 +272,20 @@ impl ParseHttp for Server {
                     };
                 }
                 ("mail-v1.xml", &Method::GET) => {
+                    // Limit anonymous requests
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
+
                     return self.handle_autoconfig_request(&req).await;
                 }
                 ("autoconfig", &Method::GET) => {
                     if path.next().unwrap_or_default() == "mail"
                         && path.next().unwrap_or_default() == "config-v1.1.xml"
                     {
+                        // Limit anonymous requests
+                        self.is_http_anonymous_request_allowed(&session.remote_ip)
+                            .await?;
+
                         return self.handle_autoconfig_request(&req).await;
                     }
                 }
@@ -282,12 +296,14 @@ impl ParseHttp for Server {
             },
             "auth" => match (path.next().unwrap_or_default(), req.method()) {
                 ("device", &Method::POST) => {
-                    self.is_anonymous_allowed(&session.remote_ip).await?;
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
 
                     return self.handle_device_auth(&mut req, session).await;
                 }
                 ("token", &Method::POST) => {
-                    self.is_anonymous_allowed(&session.remote_ip).await?;
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
 
                     return self.handle_token_request(&mut req, session).await;
                 }
@@ -314,7 +330,8 @@ impl ParseHttp for Server {
                 }
                 ("jwks.json", &Method::GET) => {
                     // Limit anonymous requests
-                    self.is_anonymous_allowed(&session.remote_ip).await?;
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
 
                     return Ok(self.core.oauth.oidc_jwks.clone().into_http_response());
                 }
@@ -408,6 +425,10 @@ impl ParseHttp for Server {
                 if req.method() == Method::GET
                     && path.next().unwrap_or_default() == "config-v1.1.xml"
                 {
+                    // Limit anonymous requests
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
+
                     return self.handle_autoconfig_request(&req).await;
                 }
             }
@@ -415,6 +436,10 @@ impl ParseHttp for Server {
                 if req.method() == Method::POST
                     && path.next().unwrap_or_default() == "autodiscover.xml"
                 {
+                    // Limit anonymous requests
+                    self.is_http_anonymous_request_allowed(&session.remote_ip)
+                        .await?;
+
                     return self
                         .handle_autodiscover_request(
                             fetch_body(&mut req, 8192, session.session_id).await,
@@ -423,27 +448,37 @@ impl ParseHttp for Server {
                 }
             }
             "robots.txt" => {
+                // Limit anonymous requests
+                self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    .await?;
+
                 return Ok(
                     Resource::new("text/plain", b"User-agent: *\nDisallow: /\n".to_vec())
                         .into_http_response(),
                 );
             }
-            "healthz" => match path.next().unwrap_or_default() {
-                "live" => {
-                    return Ok(StatusCode::OK.into_http_response());
-                }
-                "ready" => {
-                    return Ok({
-                        if !self.core.storage.data.is_none() {
-                            StatusCode::OK
-                        } else {
-                            StatusCode::SERVICE_UNAVAILABLE
-                        }
+            "healthz" => {
+                // Limit anonymous requests
+                self.is_http_anonymous_request_allowed(&session.remote_ip)
+                    .await?;
+
+                match path.next().unwrap_or_default() {
+                    "live" => {
+                        return Ok(StatusCode::OK.into_http_response());
                     }
-                    .into_http_response());
+                    "ready" => {
+                        return Ok({
+                            if !self.core.storage.data.is_none() {
+                                StatusCode::OK
+                            } else {
+                                StatusCode::SERVICE_UNAVAILABLE
+                            }
+                        }
+                        .into_http_response());
+                    }
+                    _ => (),
                 }
-                _ => (),
-            },
+            }
             "metrics" => match path.next().unwrap_or_default() {
                 "prometheus" => {
                     if let Some(prometheus) = &self.core.metrics.prometheus {
@@ -508,7 +543,8 @@ impl ParseHttp for Server {
                 if let Some(form) = &self.core.network.contact_form {
                     match *req.method() {
                         Method::POST => {
-                            self.is_anonymous_allowed(&session.remote_ip).await?;
+                            self.is_http_anonymous_request_allowed(&session.remote_ip)
+                                .await?;
 
                             let form_data =
                                 FormData::from_request(&mut req, form.max_size, session.session_id)

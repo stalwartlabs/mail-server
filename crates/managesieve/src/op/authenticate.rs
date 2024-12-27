@@ -17,7 +17,6 @@ use imap_proto::{
     protocol::authenticate::Mechanism,
     receiver::{self, Request},
 };
-use jmap::auth::rate_limit::RateLimiter;
 use mail_parser::decoders::base64::base64_decode;
 use std::sync::Arc;
 
@@ -70,9 +69,6 @@ impl<T: SessionStream> Session<T> {
                     .details("Authentication mechanism not supported."))
             }
         };
-
-        // Throttle authentication requests
-        self.server.is_auth_allowed_soft(&self.remote_addr).await?;
 
         // Authenticate
         let access_token = self

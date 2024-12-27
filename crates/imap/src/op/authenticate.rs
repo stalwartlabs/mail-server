@@ -17,7 +17,6 @@ use imap_proto::{
     receiver::{self, Request},
     Command, ResponseCode, StatusResponse,
 };
-use jmap::auth::rate_limit::RateLimiter;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use std::sync::Arc;
@@ -76,12 +75,6 @@ impl<T: SessionStream> Session<T> {
         credentials: Credentials<String>,
         tag: String,
     ) -> trc::Result<()> {
-        // Throttle authentication requests
-        self.server
-            .is_auth_allowed_soft(&self.remote_addr)
-            .await
-            .map_err(|err| err.id(tag.clone()))?;
-
         // Authenticate
         let access_token = self
             .server

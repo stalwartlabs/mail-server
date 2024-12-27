@@ -144,9 +144,10 @@ impl ManageStore for Server {
                     Some("rate-auth") => vec![KV_RATE_LIMIT_AUTH].into(),
                     Some("rate-hash") => vec![KV_RATE_LIMIT_HASH].into(),
                     Some("rate-contact") => vec![KV_RATE_LIMIT_CONTACT].into(),
-                    Some("rate-jmap") => vec![KV_RATE_LIMIT_JMAP].into(),
-                    Some("rate-jmap-auth") => vec![KV_RATE_LIMIT_JMAP_AUTH].into(),
-                    Some("rate-http-anonymous") => vec![KV_RATE_LIMIT_HTTP_ANONYM].into(),
+                    Some("rate-http-authenticated") => {
+                        vec![KV_RATE_LIMIT_HTTP_AUTHENTICATED].into()
+                    }
+                    Some("rate-http-anonymous") => vec![KV_RATE_LIMIT_HTTP_ANONYMOUS].into(),
                     Some("rate-imap") => vec![KV_RATE_LIMIT_IMAP].into(),
                     Some("reputation-ip") => vec![KV_REPUTATION_IP].into(),
                     Some("reputation-from") => vec![KV_REPUTATION_FROM].into(),

@@ -9,8 +9,7 @@ use std::{net::IpAddr, sync::Arc};
 use common::{
     ip_to_bytes,
     listener::limiter::{ConcurrencyLimiter, InFlight},
-    ConcurrencyLimiters, Server, KV_RATE_LIMIT_HTTP_ANONYM, KV_RATE_LIMIT_JMAP,
-    KV_RATE_LIMIT_JMAP_AUTH,
+    ConcurrencyLimiters, Server, KV_RATE_LIMIT_HTTP_ANONYMOUS, KV_RATE_LIMIT_HTTP_AUTHENTICATED,
 };
 use directory::Permission;
 use trc::AddContext;
@@ -20,14 +19,15 @@ use std::future::Future;
 
 pub trait RateLimiter: Sync + Send {
     fn get_concurrency_limiter(&self, account_id: u32) -> Arc<ConcurrencyLimiters>;
-    fn is_account_allowed(
+    fn is_http_authenticated_request_allowed(
         &self,
         access_token: &AccessToken,
     ) -> impl Future<Output = trc::Result<InFlight>> + Send;
-    fn is_anonymous_allowed(&self, addr: &IpAddr) -> impl Future<Output = trc::Result<()>> + Send;
+    fn is_http_anonymous_request_allowed(
+        &self,
+        addr: &IpAddr,
+    ) -> impl Future<Output = trc::Result<()>> + Send;
     fn is_upload_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight>;
-    fn is_auth_allowed_soft(&self, addr: &IpAddr) -> impl Future<Output = trc::Result<()>> + Send;
-    fn is_auth_allowed_hard(&self, addr: &IpAddr) -> impl Future<Output = trc::Result<()>> + Send;
 }
 
 impl RateLimiter for Server {
@@ -54,14 +54,17 @@ impl RateLimiter for Server {
             })
     }
 
-    async fn is_account_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight> {
+    async fn is_http_authenticated_request_allowed(
+        &self,
+        access_token: &AccessToken,
+    ) -> trc::Result<InFlight> {
         let limiter = self.get_concurrency_limiter(access_token.primary_id());
         let is_rate_allowed = if let Some(rate) = &self.core.jmap.rate_authenticated {
             self.core
                 .storage
                 .lookup
                 .is_rate_allowed(
-                    KV_RATE_LIMIT_JMAP,
+                    KV_RATE_LIMIT_HTTP_AUTHENTICATED,
                     &access_token.primary_id.to_be_bytes(),
                     rate,
                     false,
@@ -88,13 +91,18 @@ impl RateLimiter for Server {
         }
     }
 
-    async fn is_anonymous_allowed(&self, addr: &IpAddr) -> trc::Result<()> {
+    async fn is_http_anonymous_request_allowed(&self, addr: &IpAddr) -> trc::Result<()> {
         if let Some(rate) = &self.core.jmap.rate_anonymous {
             if self
                 .core
                 .storage
                 .lookup
-                .is_rate_allowed(KV_RATE_LIMIT_HTTP_ANONYM, &ip_to_bytes(addr), rate, false)
+                .is_rate_allowed(
+                    KV_RATE_LIMIT_HTTP_ANONYMOUS,
+                    &ip_to_bytes(addr),
+                    rate,
+                    false,
+                )
                 .await
                 .caused_by(trc::location!())?
                 .is_some()
@@ -117,39 +125,5 @@ impl RateLimiter for Server {
         } else {
             Err(trc::LimitEvent::ConcurrentUpload.into_err())
         }
-    }
-
-    async fn is_auth_allowed_soft(&self, addr: &IpAddr) -> trc::Result<()> {
-        if let Some(rate) = &self.core.jmap.rate_authenticate_req {
-            if self
-                .core
-                .storage
-                .lookup
-                .is_rate_allowed(KV_RATE_LIMIT_JMAP_AUTH, &ip_to_bytes(addr), rate, true)
-                .await
-                .caused_by(trc::location!())?
-                .is_some()
-            {
-                return Err(trc::AuthEvent::TooManyAttempts.into_err());
-            }
-        }
-        Ok(())
-    }
-
-    async fn is_auth_allowed_hard(&self, addr: &IpAddr) -> trc::Result<()> {
-        if let Some(rate) = &self.core.jmap.rate_authenticate_req {
-            if self
-                .core
-                .storage
-                .lookup
-                .is_rate_allowed(KV_RATE_LIMIT_JMAP_AUTH, &ip_to_bytes(addr), rate, false)
-                .await
-                .caused_by(trc::location!())?
-                .is_some()
-            {
-                return Err(trc::AuthEvent::TooManyAttempts.into_err());
-            }
-        }
-        Ok(())
     }
 }

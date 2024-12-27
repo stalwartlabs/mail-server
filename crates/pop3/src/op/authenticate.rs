@@ -13,7 +13,6 @@ use common::{
     ConcurrencyLimiters,
 };
 use directory::Permission;
-use jmap::auth::rate_limit::RateLimiter;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
 use std::sync::Arc;
@@ -68,9 +67,6 @@ impl<T: SessionStream> Session<T> {
     }
 
     pub async fn handle_auth(&mut self, credentials: Credentials<String>) -> trc::Result<()> {
-        // Throttle authentication requests
-        self.server.is_auth_allowed_soft(&self.remote_addr).await?;
-
         // Authenticate
         let access_token = self
             .server

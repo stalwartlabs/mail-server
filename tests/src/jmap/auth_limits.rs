@@ -68,40 +68,6 @@ pub async fn test(params: &mut JMAPTest) {
     let range_end = (range_start * LIMIT) + LIMIT;
     tokio::time::sleep(Duration::from_secs(range_end - now)).await;
 
-    // Invalid authentication requests should be rate limited
-    let mut n_401 = 0;
-    let mut n_429 = 0;
-    for n in 0..110 {
-        if let Err(jmap_client::Error::Problem(problem)) = Client::new()
-            .credentials(Credentials::basic(
-                "not_an_account@example.com",
-                &format!("brute_force{}", n),
-            ))
-            .accept_invalid_certs(true)
-            .connect("https://127.0.0.1:8899")
-            .await
-        {
-            if problem.status().unwrap() == 401 {
-                n_401 += 1;
-                if n_401 > 100 {
-                    panic!("Rate limiter failed: 429: {n_429}, 401: {n_401}.");
-                }
-            } else if problem.status().unwrap() == 429 {
-                n_429 += 1;
-                if n_429 > 11 {
-                    panic!("Rate limiter too restrictive: 429: {n_429}, 401: {n_401}.");
-                }
-            } else {
-                panic!("Unexpected error status {}", problem.status().unwrap());
-            }
-        } else {
-            panic!("Unexpected response.");
-        }
-    }
-
-    // Limit should be restored after 1 second
-    tokio::time::sleep(Duration::from_millis(1500)).await;
-
     // Test fail2ban
     assert_eq!(
         server
@@ -113,6 +79,26 @@ pub async fn test(params: &mut JMAPTest) {
             .unwrap(),
         None
     );
+    for n in 0..98 {
+        match Client::new()
+            .credentials(Credentials::basic(
+                "not_an_account@example.com",
+                &format!("brute_force{}", n),
+            ))
+            .accept_invalid_certs(true)
+            .connect("https://127.0.0.1:8899")
+            .await
+        {
+            Err(jmap_client::Error::Problem(_)) => {}
+            Err(err) => {
+                panic!("Unexpected response: {:?}", err);
+            }
+            Ok(_) => {
+                panic!("Unexpected success");
+            }
+        }
+    }
+
     let mut imap = ImapConnection::connect(b"_x ").await;
     imap.send("AUTHENTICATE PLAIN AGpvaG4AY2hpbWljaGFuZ2Fz")
         .await;

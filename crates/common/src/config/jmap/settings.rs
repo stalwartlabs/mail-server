@@ -45,7 +45,6 @@ pub struct JmapConfig {
 
     pub session_cache_ttl: Duration,
     pub rate_authenticated: Option<Rate>,
-    pub rate_authenticate_req: Option<Rate>,
     pub rate_anonymous: Option<Rate>,
 
     pub event_source_throttle: Duration,
@@ -304,9 +303,6 @@ impl JmapConfig {
                 .unwrap_or(Duration::from_secs(3600)),
             rate_authenticated: config
                 .property_or_default::<Option<Rate>>("jmap.rate-limit.account", "1000/1m")
-                .unwrap_or_default(),
-            rate_authenticate_req: config
-                .property_or_default::<Option<Rate>>("authentication.rate-limit", "10/1m")
                 .unwrap_or_default(),
             rate_anonymous: config
                 .property_or_default::<Option<Rate>>("jmap.rate-limit.anonymous", "100/1m")
