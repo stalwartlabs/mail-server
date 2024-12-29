@@ -7,7 +7,7 @@
 use std::{
     collections::BTreeMap,
     hash::{BuildHasher, Hasher},
-    net::IpAddr,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{atomic::AtomicU8, Arc},
 };
 
@@ -15,8 +15,17 @@ use ahash::{AHashMap, AHashSet, RandomState};
 use arc_swap::ArcSwap;
 use auth::{oauth::config::OAuthConfig, roles::RolePermissions, AccessToken};
 use config::{
-    imap::ImapConfig, jmap::settings::JmapConfig, network::Network, scripts::Scripting,
-    smtp::SmtpConfig, spamfilter::SpamFilterConfig, storage::Storage, telemetry::Metrics,
+    imap::ImapConfig,
+    jmap::settings::JmapConfig,
+    network::Network,
+    scripts::Scripting,
+    smtp::{
+        resolver::{Policy, Tlsa},
+        SmtpConfig,
+    },
+    spamfilter::SpamFilterConfig,
+    storage::Storage,
+    telemetry::Metrics,
 };
 use dashmap::DashMap;
 
@@ -26,6 +35,7 @@ use listener::{
     asn::AsnGeoLookupData, blocked::Security, limiter::ConcurrencyLimiter, tls::AcmeProviders,
 };
 
+use mail_auth::{Txt, MX};
 use manager::webadmin::{Resource, WebAdminManager};
 use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
@@ -133,8 +143,16 @@ pub struct Caches {
     pub mailbox: Cache<MailboxId, Arc<MailboxState>>,
     pub threads: Cache<u32, Arc<Threads>>,
 
-    pub bayes: CacheWithTtl<TokenHash, Option<Weights>>,
-    pub dnsbl: CacheWithTtl<TokenHash, Option<Arc<Vec<IpAddr>>>>,
+    pub bayes: CacheWithTtl<TokenHash, Weights>,
+
+    pub dns_txt: CacheWithTtl<String, Txt>,
+    pub dns_mx: CacheWithTtl<String, Arc<Vec<MX>>>,
+    pub dns_ptr: CacheWithTtl<IpAddr, Arc<Vec<String>>>,
+    pub dns_ipv4: CacheWithTtl<String, Arc<Vec<Ipv4Addr>>>,
+    pub dns_ipv6: CacheWithTtl<String, Arc<Vec<Ipv6Addr>>>,
+    pub dns_tlsa: CacheWithTtl<String, Arc<Tlsa>>,
+    pub dbs_mta_sts: CacheWithTtl<String, Arc<Policy>>,
+    pub dns_rbl: CacheWithTtl<String, Option<Arc<Vec<Ipv4Addr>>>>,
 }
 
 pub struct Ipc {
@@ -241,19 +259,19 @@ pub struct Core {
 
 impl CacheItemWeight for AccountId {
     fn weight(&self) -> u64 {
-        (std::mem::size_of::<u32>() * 2) as u64
+        std::mem::size_of::<AccountId>() as u64
     }
 }
 
 impl CacheItemWeight for MailboxId {
     fn weight(&self) -> u64 {
-        (std::mem::size_of::<u32>() * 2) as u64
+        std::mem::size_of::<MailboxId>() as u64
     }
 }
 
 impl CacheItemWeight for Threads {
     fn weight(&self) -> u64 {
-        ((self.threads.len() + 1) * std::mem::size_of::<u64>()) as u64
+        ((self.threads.len() + 2) * std::mem::size_of::<Threads>()) as u64
     }
 }
 
@@ -271,14 +289,15 @@ impl CacheItemWeight for Account {
 
 impl MailboxState {
     pub fn calculate_weight(&self) -> u64 {
-        (std::mem::size_of::<u64>() * 5) as u64
-            + (self.id_to_imap.len() * std::mem::size_of::<u64>() + std::mem::size_of::<u32>())
+        std::mem::size_of::<MailboxState>() as u64
+            + (self.id_to_imap.len() * std::mem::size_of::<ImapId>() + std::mem::size_of::<u32>())
                 as u64
             + (self.uid_to_id.len() * std::mem::size_of::<u64>()) as u64
-            + self
-                .next_state
-                .as_ref()
-                .map_or(0, |n| n.next_state.calculate_weight())
+            + self.next_state.as_ref().map_or(0, |n| {
+                std::mem::size_of::<NextMailboxState>() as u64
+                    + (n.deletions.len() * std::mem::size_of::<ImapId>()) as u64
+                    + n.next_state.calculate_weight()
+            })
     }
 }
 
@@ -391,7 +410,14 @@ impl Default for Caches {
             mailbox: Cache::new(1024, 10 * 1024 * 1024),
             threads: Cache::new(1024, 10 * 1024 * 1024),
             bayes: CacheWithTtl::new(1024, 10 * 1024 * 1024),
-            dnsbl: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_rbl: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_txt: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_mx: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_ptr: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_ipv4: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_ipv6: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dns_tlsa: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            dbs_mta_sts: CacheWithTtl::new(1024, 10 * 1024 * 1024),
         }
     }
 }

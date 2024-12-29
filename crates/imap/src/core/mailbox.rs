@@ -213,8 +213,7 @@ impl<T: SessionStream> SessionData<T> {
             state_email,
             obj_size: 0,
         };
-        account.obj_size = (std::mem::size_of::<u32>()
-            + (std::mem::size_of::<u64>() * 3)
+        account.obj_size = (std::mem::size_of::<Account>()
             + account.prefix.as_ref().map_or(0, |p| p.len())
             + account
                 .mailbox_names

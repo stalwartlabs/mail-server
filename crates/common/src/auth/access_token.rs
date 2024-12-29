@@ -6,7 +6,7 @@
 
 use directory::{
     backend::internal::{lookup::DirectoryStore, PrincipalField},
-    Permission, Principal, QueryBy, PERMISSIONS_BITSET_SIZE,
+    Permission, Principal, QueryBy,
 };
 use jmap_proto::{
     request::RequestMethod,
@@ -496,15 +496,12 @@ impl AccessToken {
     }
 
     pub fn update_size(mut self) -> Self {
-        self.obj_size = ((std::mem::size_of::<u32>() * 2)
-            + (std::mem::size_of::<u64>() * 3)
+        self.obj_size = (std::mem::size_of::<AccessToken>()
             + (self.member_of.len() * std::mem::size_of::<u32>())
             + (self.access_to.len() * (std::mem::size_of::<u32>() + std::mem::size_of::<u64>()))
             + self.name.len()
             + self.description.as_ref().map_or(0, |v| v.len())
-            + self.emails.iter().map(|v| v.len()).sum::<usize>()
-            + (PERMISSIONS_BITSET_SIZE * std::mem::size_of::<usize>()))
-            as u64;
+            + self.emails.iter().map(|v| v.len()).sum::<usize>()) as u64;
         self
     }
 }

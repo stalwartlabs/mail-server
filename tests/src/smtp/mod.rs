@@ -4,16 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use common::{
-    config::server::{Listeners, ServerProtocol},
+    config::{
+        server::{Listeners, ServerProtocol},
+        smtp::resolver::Tlsa,
+    },
     ipc::{QueueEvent, ReportingEvent},
     manager::boot::{build_ipc, IpcReceivers},
     Core, Data, Inner, Server,
 };
 
 use jmap::api::JmapSessionManager;
+use mail_auth::{common::resolver::IntoFqdn, Txt, MX};
 use session::{DummyIo, TestSession};
 use smtp::core::{Session, SmtpSessionManager};
 use store::{BlobStore, Store, Stores};
@@ -244,5 +252,112 @@ impl TestSMTP {
 
     pub fn build_smtp(&self) -> Server {
         self.server.clone()
+    }
+}
+
+pub trait DnsCache {
+    fn txt_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: impl Into<Txt>,
+        valid_until: std::time::Instant,
+    );
+    fn ipv4_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Vec<Ipv4Addr>,
+        valid_until: std::time::Instant,
+    );
+    fn ipv6_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Vec<Ipv6Addr>,
+        valid_until: std::time::Instant,
+    );
+    fn dnsbl_add(&self, name: &str, value: Vec<Ipv4Addr>, valid_until: std::time::Instant);
+    fn ptr_add(&self, name: IpAddr, value: Vec<String>, valid_until: std::time::Instant);
+    fn mx_add<'x>(&self, name: impl IntoFqdn<'x>, value: Vec<MX>, valid_until: std::time::Instant);
+    fn tlsa_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Arc<Tlsa>,
+        valid_until: std::time::Instant,
+    );
+}
+
+impl DnsCache for Server {
+    fn txt_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: impl Into<Txt>,
+        valid_until: std::time::Instant,
+    ) {
+        self.inner.cache.dns_txt.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            value.into(),
+            valid_until,
+        );
+    }
+
+    fn ipv4_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Vec<Ipv4Addr>,
+        valid_until: std::time::Instant,
+    ) {
+        self.inner.cache.dns_ipv4.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            Arc::new(value),
+            valid_until,
+        );
+    }
+
+    fn dnsbl_add(&self, name: &str, value: Vec<Ipv4Addr>, valid_until: std::time::Instant) {
+        self.inner.cache.dns_rbl.insert_with_expiry(
+            name.to_string(),
+            Some(Arc::new(value)),
+            valid_until,
+        );
+    }
+
+    fn ipv6_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Vec<Ipv6Addr>,
+        valid_until: std::time::Instant,
+    ) {
+        self.inner.cache.dns_ipv6.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            Arc::new(value),
+            valid_until,
+        );
+    }
+
+    fn ptr_add(&self, name: IpAddr, value: Vec<String>, valid_until: std::time::Instant) {
+        self.inner
+            .cache
+            .dns_ptr
+            .insert_with_expiry(name, Arc::new(value), valid_until);
+    }
+
+    fn mx_add<'x>(&self, name: impl IntoFqdn<'x>, value: Vec<MX>, valid_until: std::time::Instant) {
+        self.inner.cache.dns_mx.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            Arc::new(value),
+            valid_until,
+        );
+    }
+
+    fn tlsa_add<'x>(
+        &self,
+        name: impl IntoFqdn<'x>,
+        value: Arc<Tlsa>,
+        valid_until: std::time::Instant,
+    ) {
+        self.inner.cache.dns_tlsa.insert_with_expiry(
+            name.into_fqdn().into_owned(),
+            value,
+            valid_until,
+        );
     }
 }

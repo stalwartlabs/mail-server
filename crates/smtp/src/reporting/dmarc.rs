@@ -70,7 +70,11 @@ impl<T: SessionStream> Session<T> {
                 .smtp
                 .resolvers
                 .dns
-                .verify_dmarc_report_address(dmarc_output.domain(), dmarc_record.ruf())
+                .verify_dmarc_report_address(
+                    dmarc_output.domain(),
+                    dmarc_record.ruf(),
+                    Some(&self.server.inner.cache.dns_txt),
+                )
                 .await
             {
                 Some(rcpts) => {
@@ -364,7 +368,7 @@ impl DmarcReporting for Server {
             .smtp
             .resolvers
             .dns
-            .verify_dmarc_report_address(&event.domain, &rua)
+            .verify_dmarc_report_address(&event.domain, &rua, Some(&self.inner.cache.dns_txt))
             .await
         {
             Some(rcpts) => {

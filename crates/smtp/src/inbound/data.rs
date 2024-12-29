@@ -20,7 +20,8 @@ use common::{
 };
 use mail_auth::{
     common::{headers::HeaderWriter, verify::VerifySignature},
-    dmarc, AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, ReceivedSpf,
+    dmarc::{self, verify::DmarcParameters},
+    AuthenticatedMessage, AuthenticationResults, DkimResult, DmarcResult, ReceivedSpf,
 };
 use mail_builder::headers::{date::Date, message_id::generate_message_id_header};
 use mail_parser::MessageParser;
@@ -109,7 +110,7 @@ impl<T: SessionStream> Session<T> {
                 .smtp
                 .resolvers
                 .dns
-                .verify_dkim(&auth_message)
+                .verify_dkim(self.server.inner.cache.build_auth_parameters(&auth_message))
                 .await;
             let pass = dkim_output
                 .iter()
@@ -179,7 +180,7 @@ impl<T: SessionStream> Session<T> {
                 .smtp
                 .resolvers
                 .dns
-                .verify_arc(&auth_message)
+                .verify_arc(self.server.inner.cache.build_auth_parameters(&auth_message))
                 .await;
 
             let strict = arc.is_strict();
@@ -240,24 +241,28 @@ impl<T: SessionStream> Session<T> {
         let (dmarc_result, dmarc_policy) = match &self.data.spf_mail_from {
             Some(spf_output) if dmarc.verify() => {
                 let time = Instant::now();
-                let dmarc_output = self
-                    .server
-                    .core
-                    .smtp
-                    .resolvers
-                    .dns
-                    .verify_dmarc(
-                        &auth_message,
-                        &dkim_output,
-                        if !mail_from.domain.is_empty() {
-                            &mail_from.domain
-                        } else {
-                            &self.data.helo_domain
-                        },
-                        spf_output,
-                        |domain| psl::domain_str(domain).unwrap_or(domain),
-                    )
-                    .await;
+                let dmarc_output =
+                    self.server
+                        .core
+                        .smtp
+                        .resolvers
+                        .dns
+                        .verify_dmarc(self.server.inner.cache.build_auth_parameters(
+                            DmarcParameters {
+                                message: &auth_message,
+                                dkim_output: &dkim_output,
+                                rfc5321_mail_from_domain: if !mail_from.domain.is_empty() {
+                                    &mail_from.domain
+                                } else {
+                                    &self.data.helo_domain
+                                },
+                                spf_output,
+                                domain_suffix_fn: |domain| {
+                                    psl::domain_str(domain).unwrap_or(domain)
+                                },
+                            },
+                        ))
+                        .await;
 
                 let pass = matches!(dmarc_output.spf_result(), DmarcResult::Pass)
                     || matches!(dmarc_output.dkim_result(), DmarcResult::Pass);

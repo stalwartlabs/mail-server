@@ -8,11 +8,18 @@ use std::net::IpAddr;
 
 use mail_auth::{Error, IpLookupStrategy};
 
-use crate::Core;
+use crate::Server;
 
-impl Core {
+impl Server {
     pub async fn dns_exists_mx(&self, entry: &str) -> trc::Result<bool> {
-        match self.smtp.resolvers.dns.mx_lookup(entry).await {
+        match self
+            .core
+            .smtp
+            .resolvers
+            .dns
+            .mx_lookup(entry, Some(&self.inner.cache.dns_mx))
+            .await
+        {
             Ok(result) => Ok(result.iter().any(|mx| !mx.exchanges.is_empty())),
             Err(Error::DnsRecordNotFound(_)) => Ok(false),
             Err(err) => Err(err.into()),
@@ -21,10 +28,17 @@ impl Core {
 
     pub async fn dns_exists_ip(&self, entry: &str) -> trc::Result<bool> {
         match self
+            .core
             .smtp
             .resolvers
             .dns
-            .ip_lookup(entry, IpLookupStrategy::Ipv4thenIpv6, 10)
+            .ip_lookup(
+                entry,
+                IpLookupStrategy::Ipv4thenIpv6,
+                10,
+                Some(&self.inner.cache.dns_ipv4),
+                Some(&self.inner.cache.dns_ipv6),
+            )
             .await
         {
             Ok(result) => Ok(!result.is_empty()),
@@ -35,7 +49,14 @@ impl Core {
 
     pub async fn dns_exists_ptr(&self, entry: &str) -> trc::Result<bool> {
         if let Ok(addr) = entry.parse::<IpAddr>() {
-            match self.smtp.resolvers.dns.ptr_lookup(addr).await {
+            match self
+                .core
+                .smtp
+                .resolvers
+                .dns
+                .ptr_lookup(addr, Some(&self.inner.cache.dns_ptr))
+                .await
+            {
                 Ok(result) => Ok(!result.is_empty()),
                 Err(Error::DnsRecordNotFound(_)) => Ok(false),
                 Err(err) => Err(err.into()),
@@ -46,7 +67,14 @@ impl Core {
     }
 
     pub async fn dns_exists_ipv4(&self, entry: &str) -> trc::Result<bool> {
-        match self.smtp.resolvers.dns.ipv4_lookup(entry).await {
+        match self
+            .core
+            .smtp
+            .resolvers
+            .dns
+            .ipv4_lookup(entry, Some(&self.inner.cache.dns_ipv4))
+            .await
+        {
             Ok(result) => Ok(!result.is_empty()),
             Err(Error::DnsRecordNotFound(_)) => Ok(false),
             Err(err) => Err(err.into()),
@@ -54,7 +82,14 @@ impl Core {
     }
 
     pub async fn dns_exists_ipv6(&self, entry: &str) -> trc::Result<bool> {
-        match self.smtp.resolvers.dns.ipv6_lookup(entry).await {
+        match self
+            .core
+            .smtp
+            .resolvers
+            .dns
+            .ipv6_lookup(entry, Some(&self.inner.cache.dns_ipv6))
+            .await
+        {
             Ok(result) => Ok(!result.is_empty()),
             Err(Error::DnsRecordNotFound(_)) => Ok(false),
             Err(err) => Err(err.into()),

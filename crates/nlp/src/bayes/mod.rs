@@ -151,34 +151,35 @@ impl CacheItemWeight for Weights {
 
 impl CacheItemWeight for TokenHash {
     fn weight(&self) -> u64 {
-        self.len as u64
+        std::mem::size_of::<TokenHash>() as u64
     }
 }
 
 impl TokenHash {
-    pub fn serialize_index(prefix: u8, account_id: Option<u32>) -> Vec<u8> {
+    pub fn serialize(&self, prefix: u8, account_id: Option<u32>) -> Vec<u8> {
         if let Some(account_id) = account_id {
-            let mut buf = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
-            buf.push(prefix);
-            buf.extend_from_slice(&account_id.to_be_bytes());
-            buf
+            self.serialize_account(prefix, account_id)
         } else {
-            vec![prefix]
+            self.serialize_global(prefix)
         }
     }
 
-    pub fn serialize(&self, prefix: u8, account_id: Option<u32>) -> Vec<u8> {
-        if let Some(account_id) = account_id {
-            let mut buf = Vec::with_capacity(std::mem::size_of::<u32>() + self.len as usize + 1);
-            buf.push(prefix);
-            buf.extend_from_slice(&account_id.to_be_bytes());
+    pub fn serialize_global(&self, prefix: u8) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.len as usize + 1);
+        buf.push(prefix);
+        if self.len > 0 {
             buf.extend_from_slice(&self.hash[..self.len as usize]);
-            buf
-        } else {
-            let mut buf = Vec::with_capacity(self.len as usize + 1);
-            buf.push(prefix);
-            buf.extend_from_slice(&self.hash[..self.len as usize]);
-            buf
         }
+        buf
+    }
+
+    pub fn serialize_account(&self, prefix: u8, account_id: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(std::mem::size_of::<u32>() + self.len as usize + 1);
+        buf.push(prefix);
+        buf.extend_from_slice(&account_id.to_be_bytes());
+        if self.len > 0 {
+            buf.extend_from_slice(&self.hash[..self.len as usize]);
+        }
+        buf
     }
 }

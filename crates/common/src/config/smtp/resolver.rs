@@ -8,39 +8,33 @@ use std::{
     fmt::Display,
     hash::{DefaultHasher, Hash, Hasher},
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
     time::Duration,
 };
 
 use mail_auth::{
-    common::lru::{DnsCache, LruCache},
     hickory_resolver::{
         config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts},
         system_conf::read_system_conf,
         AsyncResolver, TokioAsyncResolver,
     },
-    Resolver,
+    MessageAuthenticator,
 };
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use utils::config::{utils::ParseValue, Config};
+use utils::{
+    cache::CacheItemWeight,
+    config::{utils::ParseValue, Config},
+};
 
 use crate::Server;
 
 pub struct Resolvers {
-    pub dns: Resolver,
+    pub dns: MessageAuthenticator,
     pub dnssec: DnssecResolver,
-    pub cache: DnsRecordCache,
 }
 
 #[derive(Clone)]
 pub struct DnssecResolver {
     pub resolver: TokioAsyncResolver,
-}
-
-pub struct DnsRecordCache {
-    pub tlsa: LruCache<String, Arc<Tlsa>>,
-    pub mta_sts: LruCache<String, Arc<Policy>>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +74,30 @@ pub struct Policy {
     pub mode: Mode,
     pub mx: Vec<MxPattern>,
     pub max_age: u64,
+}
+
+impl CacheItemWeight for Tlsa {
+    fn weight(&self) -> u64 {
+        self.entries
+            .iter()
+            .map(|entry| (entry.data.len() + std::mem::size_of::<TlsaEntry>()) as u64)
+            .sum::<u64>()
+            + std::mem::size_of::<Tlsa>() as u64
+    }
+}
+
+impl CacheItemWeight for Policy {
+    fn weight(&self) -> u64 {
+        (std::mem::size_of::<Policy>()
+            + self
+                .mx
+                .iter()
+                .map(|mx| match mx {
+                    MxPattern::Equals(t) => t.len(),
+                    MxPattern::StartsWith(t) => t.len(),
+                })
+                .sum::<usize>()) as u64
+    }
 }
 
 impl Resolvers {
@@ -205,36 +223,10 @@ impl Resolvers {
         let mut opts_dnssec = opts.clone();
         opts_dnssec.validate = true;
 
-        let mut capacities = [1024usize; 5];
-        for (pos, key) in ["txt", "mx", "ipv4", "ipv6", "ptr"].into_iter().enumerate() {
-            if let Some(capacity) = config.property(("cache.resolver", key, "size")) {
-                capacities[pos] = capacity;
-            }
-        }
-
         Resolvers {
-            dns: Resolver::with_capacities(
-                resolver_config,
-                opts,
-                capacities[0],
-                capacities[1],
-                capacities[2],
-                capacities[3],
-                capacities[4],
-            )
-            .unwrap(),
+            dns: MessageAuthenticator::new(resolver_config, opts).unwrap(),
             dnssec: DnssecResolver {
                 resolver: AsyncResolver::tokio(config_dnssec, opts_dnssec),
-            },
-            cache: DnsRecordCache {
-                tlsa: LruCache::with_capacity(
-                    config.property("cache.resolver.tlsa.size").unwrap_or(1024),
-                ),
-                mta_sts: LruCache::with_capacity(
-                    config
-                        .property("cache.resolver.mta-sts.size")
-                        .unwrap_or(1024),
-                ),
             },
         }
     }
@@ -357,14 +349,9 @@ impl Default for Resolvers {
         opts_dnssec.validate = true;
 
         Self {
-            dns: Resolver::with_capacities(config, opts, 1024, 1024, 1024, 1024, 1024)
-                .expect("Failed to build DNS resolver"),
+            dns: MessageAuthenticator::new(config, opts).expect("Failed to build DNS resolver"),
             dnssec: DnssecResolver {
                 resolver: AsyncResolver::tokio(config_dnssec, opts_dnssec),
-            },
-            cache: DnsRecordCache {
-                tlsa: LruCache::with_capacity(1024),
-                mta_sts: LruCache::with_capacity(1024),
             },
         }
     }
@@ -410,16 +397,6 @@ impl Clone for Resolvers {
         Self {
             dns: self.dns.clone(),
             dnssec: self.dnssec.clone(),
-            cache: self.cache.clone(),
-        }
-    }
-}
-
-impl Clone for DnsRecordCache {
-    fn clone(&self) -> Self {
-        Self {
-            tlsa: Mutex::new(self.tlsa.lock().clone()),
-            mta_sts: Mutex::new(self.mta_sts.lock().clone()),
         }
     }
 }

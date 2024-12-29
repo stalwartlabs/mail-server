@@ -335,7 +335,10 @@ impl DeliveryAttempt {
                         .smtp
                         .resolvers
                         .dns
-                        .txt_lookup::<TlsRpt>(format!("_smtp._tls.{}.", domain.domain))
+                        .txt_lookup::<TlsRpt>(
+                            format!("_smtp._tls.{}.", domain.domain),
+                            Some(&server.inner.cache.dns_txt),
+                        )
                         .await
                     {
                         Ok(record) => {
@@ -520,7 +523,7 @@ impl DeliveryAttempt {
                     .smtp
                     .resolvers
                     .dns
-                    .mx_lookup(&domain.domain)
+                    .mx_lookup(&domain.domain, Some(&server.inner.cache.dns_mx))
                     .await
                 {
                     Ok(mx) => mx,

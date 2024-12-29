@@ -22,7 +22,7 @@ use store::write::QueueClass;
 use crate::smtp::{
     inbound::{sign::SIGNATURES, TestMessage},
     session::VerifyResponse,
-    TestSMTP,
+    DnsCache, TestSMTP,
 };
 
 const CONFIG: &str = r#"
@@ -56,7 +56,7 @@ async fn report_dmarc() {
 
     // Authorize external report for foobar.org
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.txt_add(
+    core.txt_add(
         "foobar.org._report._dmarc.foobar.net",
         Dmarc::parse(b"v=DMARC1;").unwrap(),
         Instant::now() + Duration::from_secs(10),

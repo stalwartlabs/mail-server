@@ -58,7 +58,14 @@ impl DnsLookup for Server {
             IpLookupStrategy::Ipv6thenIpv4 => (true, true, false),
         };
         let ipv4_addrs = if has_ipv4 {
-            match self.core.smtp.resolvers.dns.ipv4_lookup(key).await {
+            match self
+                .core
+                .smtp
+                .resolvers
+                .dns
+                .ipv4_lookup(key, Some(&self.inner.cache.dns_ipv4))
+                .await
+            {
                 Ok(addrs) => addrs,
                 Err(_) if has_ipv6 => Arc::new(Vec::new()),
                 Err(err) => return Err(err),
@@ -68,7 +75,14 @@ impl DnsLookup for Server {
         };
 
         if has_ipv6 {
-            let ipv6_addrs = match self.core.smtp.resolvers.dns.ipv6_lookup(key).await {
+            let ipv6_addrs = match self
+                .core
+                .smtp
+                .resolvers
+                .dns
+                .ipv6_lookup(key, Some(&self.inner.cache.dns_ipv6))
+                .await
+            {
                 Ok(addrs) => addrs,
                 Err(_) if !ipv4_addrs.is_empty() => Arc::new(Vec::new()),
                 Err(err) => return Err(err),

@@ -28,6 +28,7 @@ use tokio::{
 use crate::{
     directory::internal::TestInternalDirectory,
     jmap::{assert_is_empty, email_set::assert_email_properties, mailbox::destroy_all_mailboxes},
+    smtp::DnsCache,
 };
 
 use super::JMAPTest;
@@ -68,7 +69,7 @@ pub async fn test(params: &mut JMAPTest) {
     let server = params.server.clone();
     let client = &mut params.client;
     let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
-    server.core.smtp.resolvers.dns.ipv4_add(
+    server.ipv4_add(
         "localhost",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + std::time::Duration::from_secs(10),
@@ -92,6 +93,7 @@ pub async fn test(params: &mut JMAPTest) {
     .to_string();
 
     // Test automatic identity creation
+    client.set_default_account_id(&account_id);
     for (identity_id, email) in [(0u64, "jdoe@example.com"), (1u64, "john.doe@example.com")] {
         let identity = client
             .identity_get(&Id::from(identity_id).to_string(), None)
@@ -104,7 +106,6 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Create an identity without using a valid address should fail
     match client
-        .set_default_account_id(&account_id)
         .identity_create("John Doe", "someaddress@domain.com")
         .await
         .unwrap_err()

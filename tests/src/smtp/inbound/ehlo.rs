@@ -13,8 +13,7 @@ use smtp::core::Session;
 use utils::config::Config;
 
 use crate::smtp::{
-    session::{TestSession, VerifyResponse},
-    TestSMTP,
+    session::{TestSession, VerifyResponse}, DnsCache, TestSMTP
 };
 
 const CONFIG: &str = r#"
@@ -43,19 +42,20 @@ async fn ehlo() {
 
     let mut config = Config::new(CONFIG).unwrap();
     let core = Core::parse(&mut config, Default::default(), Default::default()).await;
-    core.smtp.resolvers.dns.txt_add(
+    let server = TestSMTP::from_core(core).server;
+    server.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    server.txt_add(
         "mx2.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
 
     // Reject non-FQDN domains
-    let mut session = Session::test(TestSMTP::from_core(core).server);
+    let mut session = Session::test(server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
     session.stream.tls = false;

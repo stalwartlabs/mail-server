@@ -7,7 +7,7 @@
 use std::time::{Duration, Instant, SystemTime};
 
 use common::{config::smtp::session::Stage, listener::SessionStream, scripts::ScriptModification};
-use mail_auth::{IprevOutput, IprevResult, SpfOutput, SpfResult};
+use mail_auth::{spf::verify::SpfParameters, IprevOutput, IprevResult, SpfOutput, SpfResult};
 use smtp_proto::{MailFrom, MtPriority, MAIL_BY_NOTIFY, MAIL_BY_RETURN, MAIL_REQUIRETLS};
 use trc::SmtpEvent;
 use utils::config::Rate;
@@ -59,7 +59,12 @@ impl<T: SessionStream> Session<T> {
                 .smtp
                 .resolvers
                 .dns
-                .verify_iprev(self.data.remote_ip)
+                .verify_iprev(
+                    self.server
+                        .inner
+                        .cache
+                        .build_auth_parameters(self.data.remote_ip),
+                )
                 .await;
 
             trc::event!(
@@ -435,13 +440,15 @@ impl<T: SessionStream> Session<T> {
                         .smtp
                         .resolvers
                         .dns
-                        .check_host(
-                            self.data.remote_ip,
-                            &mail_from.domain,
-                            &self.data.helo_domain,
-                            &self.hostname,
-                            &mail_from.address_lcase,
-                        )
+                        .check_host(self.server.inner.cache.build_auth_parameters(
+                            SpfParameters::new(
+                                self.data.remote_ip,
+                                &mail_from.domain,
+                                &self.data.helo_domain,
+                                &self.hostname,
+                                &mail_from.address_lcase,
+                            ),
+                        ))
                         .await
                 } else {
                     self.server
@@ -449,13 +456,15 @@ impl<T: SessionStream> Session<T> {
                         .smtp
                         .resolvers
                         .dns
-                        .check_host(
-                            self.data.remote_ip,
-                            &self.data.helo_domain,
-                            &self.data.helo_domain,
-                            &self.hostname,
-                            &format!("postmaster@{}", self.data.helo_domain),
-                        )
+                        .check_host(self.server.inner.cache.build_auth_parameters(
+                            SpfParameters::new(
+                                self.data.remote_ip,
+                                &self.data.helo_domain,
+                                &self.data.helo_domain,
+                                &self.hostname,
+                                &format!("postmaster@{}", self.data.helo_domain),
+                            ),
+                        ))
                         .await
                 };
 

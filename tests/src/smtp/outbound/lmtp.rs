@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use crate::smtp::{
     inbound::TestMessage,
     session::{TestSession, VerifyResponse},
-    TestSMTP,
+    DnsCache, TestSMTP,
 };
 use common::{config::server::ServerProtocol, ipc::QueueEvent};
 use smtp::queue::{spool::SmtpSpool, DeliveryAttempt};
@@ -74,7 +74,7 @@ async fn lmtp_delivery() {
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "lmtp.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),

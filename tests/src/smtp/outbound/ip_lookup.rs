@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use common::config::server::ServerProtocol;
 use mail_auth::{IpLookupStrategy, MX};
 
-use crate::smtp::{session::TestSession, TestSMTP};
+use crate::smtp::{session::TestSession, DnsCache, TestSMTP};
 
 const LOCAL: &str = r#"
 [session.rcpt]
@@ -42,7 +42,7 @@ async fn ip_lookup_strategy() {
         // Add mock DNS entries
         let mut local = TestSMTP::new("smtp_iplookup_local", LOCAL).await;
         let core = local.build_smtp();
-        core.core.smtp.resolvers.dns.mx_add(
+        core.mx_add(
             "foobar.org",
             vec![MX {
                 exchanges: vec!["mx.foobar.org".to_string()],
@@ -51,13 +51,13 @@ async fn ip_lookup_strategy() {
             Instant::now() + Duration::from_secs(10),
         );
         if matches!(strategy, IpLookupStrategy::Ipv6thenIpv4) {
-            core.core.smtp.resolvers.dns.ipv4_add(
+            core.ipv4_add(
                 "mx.foobar.org",
                 vec!["127.0.0.1".parse().unwrap()],
                 Instant::now() + Duration::from_secs(10),
             );
         }
-        core.core.smtp.resolvers.dns.ipv6_add(
+        core.ipv6_add(
             "mx.foobar.org",
             vec!["::1".parse().unwrap()],
             Instant::now() + Duration::from_secs(10),

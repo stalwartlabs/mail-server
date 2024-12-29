@@ -30,7 +30,13 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             .smtp
             .resolvers
             .dns
-            .ip_lookup(entry.as_ref(), IpLookupStrategy::Ipv4thenIpv6, 10)
+            .ip_lookup(
+                entry.as_ref(),
+                IpLookupStrategy::Ipv4thenIpv6,
+                10,
+                Some(&ctx.server.inner.cache.dns_ipv4),
+                Some(&ctx.server.inner.cache.dns_ipv6),
+            )
             .await
         {
             Ok(result) => result
@@ -47,7 +53,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             .smtp
             .resolvers
             .dns
-            .mx_lookup(entry.as_ref())
+            .mx_lookup(entry.as_ref(), Some(&ctx.server.inner.cache.dns_mx))
             .await
         {
             Ok(result) => result
@@ -83,7 +89,15 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         }
     } else if record_type.eq_ignore_ascii_case("ptr") {
         if let Ok(addr) = entry.parse::<IpAddr>() {
-            match ctx.server.core.smtp.resolvers.dns.ptr_lookup(addr).await {
+            match ctx
+                .server
+                .core
+                .smtp
+                .resolvers
+                .dns
+                .ptr_lookup(addr, Some(&ctx.server.inner.cache.dns_ptr))
+                .await
+            {
                 Ok(result) => result
                     .iter()
                     .map(|host| Variable::from(host.to_string()))
@@ -109,7 +123,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             .smtp
             .resolvers
             .dns
-            .ipv4_lookup(entry.as_ref())
+            .ipv4_lookup(entry.as_ref(), Some(&ctx.server.inner.cache.dns_ipv4))
             .await
         {
             Ok(result) => result
@@ -126,7 +140,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             .smtp
             .resolvers
             .dns
-            .ipv6_lookup(entry.as_ref())
+            .ipv6_lookup(entry.as_ref(), Some(&ctx.server.inner.cache.dns_ipv6))
             .await
         {
             Ok(result) => result
@@ -146,11 +160,11 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     let record_type = ctx.arguments[1].to_string();
 
     let result = if record_type.eq_ignore_ascii_case("ip") {
-        ctx.server.core.dns_exists_ip(entry.as_ref()).await
+        ctx.server.dns_exists_ip(entry.as_ref()).await
     } else if record_type.eq_ignore_ascii_case("mx") {
-        ctx.server.core.dns_exists_mx(entry.as_ref()).await
+        ctx.server.dns_exists_mx(entry.as_ref()).await
     } else if record_type.eq_ignore_ascii_case("ptr") {
-        ctx.server.core.dns_exists_ptr(entry.as_ref()).await
+        ctx.server.dns_exists_ptr(entry.as_ref()).await
     } else if record_type.eq_ignore_ascii_case("ipv4") {
         #[cfg(feature = "test_mode")]
         {
@@ -159,9 +173,9 @@ pub async fn exec_exists(ctx: PluginContext<'_>) -> trc::Result<Variable> {
             }
         }
 
-        ctx.server.core.dns_exists_ipv4(entry.as_ref()).await
+        ctx.server.dns_exists_ipv4(entry.as_ref()).await
     } else if record_type.eq_ignore_ascii_case("ipv6") {
-        ctx.server.core.dns_exists_ipv6(entry.as_ref()).await
+        ctx.server.dns_exists_ipv6(entry.as_ref()).await
     } else {
         return Ok((-1).into());
     };

@@ -23,7 +23,7 @@ use mail_auth::{
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
     session::{TestSession, VerifyResponse},
-    TestSMTP,
+    DnsCache, TestSMTP,
 };
 use smtp::outbound::mta_sts::{lookup::STS_TEST_POLICY, parse::ParsePolicy};
 
@@ -71,7 +71,7 @@ async fn mta_sts_verify() {
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -79,12 +79,12 @@ async fn mta_sts_verify() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.txt_add(
         "_smtp._tls.foobar.org",
         TlsRpt::parse(b"v=TLSRPTv1; rua=mailto:reports@foobar.org").unwrap(),
         Instant::now() + Duration::from_secs(10),
@@ -126,7 +126,7 @@ async fn mta_sts_verify() {
     );
 
     // MTA-STS policy fetch failure
-    core.core.smtp.resolvers.dns.txt_add(
+    core.txt_add(
         "_mta-sts.foobar.org",
         MtaSts::parse(b"v=STSv1; id=policy_will_fail;").unwrap(),
         Instant::now() + Duration::from_secs(10),
@@ -202,7 +202,7 @@ async fn mta_sts_verify() {
     remote.queue_receiver.assert_no_events();
 
     // MTA-STS successful validation
-    core.core.smtp.resolvers.dns.txt_add(
+    core.txt_add(
         "_mta-sts.foobar.org",
         MtaSts::parse(b"v=STSv1; id=policy_will_work;").unwrap(),
         Instant::now() + Duration::from_secs(10),

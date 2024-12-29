@@ -121,10 +121,7 @@ impl IMAPTest {
 
         self.server
             .in_memory_store()
-            .counter_get(TokenHash::serialize_index(
-                KV_BAYES_MODEL_USER,
-                account_id.into(),
-            ))
+            .counter_get(TokenHash::default().serialize_account(KV_BAYES_MODEL_USER, account_id))
             .await
             .map(Weights::from)
             .unwrap()

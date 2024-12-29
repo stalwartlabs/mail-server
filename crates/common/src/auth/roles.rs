@@ -9,8 +9,7 @@ use std::sync::{Arc, LazyLock};
 use ahash::AHashSet;
 use directory::{
     backend::internal::{lookup::DirectoryStore, PrincipalField},
-    Permission, Permissions, QueryBy, PERMISSIONS_BITSET_SIZE, ROLE_ADMIN, ROLE_TENANT_ADMIN,
-    ROLE_USER,
+    Permission, Permissions, QueryBy, ROLE_ADMIN, ROLE_TENANT_ADMIN, ROLE_USER,
 };
 use trc::AddContext;
 use utils::cache::CacheItemWeight;
@@ -221,6 +220,6 @@ fn admin_permissions() -> Arc<RolePermissions> {
 
 impl CacheItemWeight for RolePermissions {
     fn weight(&self) -> u64 {
-        (PERMISSIONS_BITSET_SIZE * std::mem::size_of::<usize>() * 2) as u64
+        std::mem::size_of::<RolePermissions>() as u64
     }
 }

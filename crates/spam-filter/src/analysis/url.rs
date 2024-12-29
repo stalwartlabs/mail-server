@@ -270,7 +270,7 @@ impl SpamFilterAnalyzeUrl for Server {
                     {
                         let cured_host = cured_host.to_string();
                         if cured_host != host.fqdn
-                            && matches!(self.core.dns_exists_ip(&cured_host).await, Ok(true))
+                            && matches!(self.dns_exists_ip(&cured_host).await, Ok(true))
                         {
                             ctx.result.add_tag("HOMOGRAPH_URL");
                         }

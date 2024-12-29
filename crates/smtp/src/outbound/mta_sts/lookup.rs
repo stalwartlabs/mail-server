@@ -4,17 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{
-    fmt::Display,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{fmt::Display, sync::Arc, time::Duration};
 
 #[cfg(feature = "test_mode")]
 pub static STS_TEST_POLICY: parking_lot::Mutex<Vec<u8>> = parking_lot::Mutex::new(Vec::new());
 
 use common::{config::smtp::resolver::Policy, Server};
-use mail_auth::{common::lru::DnsCache, mta_sts::MtaSts, report::tlsrpt::ResultType};
+use mail_auth::{mta_sts::MtaSts, report::tlsrpt::ResultType};
 
 use super::{parse::ParsePolicy, Error};
 
@@ -30,14 +26,6 @@ pub trait MtaStsLookup: Sync + Send {
         domain: &str,
         timeout: Duration,
     ) -> impl std::future::Future<Output = Result<Arc<Policy>, Error>> + Send;
-
-    #[cfg(feature = "test_mode")]
-    fn policy_add<'x>(
-        &self,
-        key: impl mail_auth::common::resolver::IntoFqdn<'x>,
-        value: Policy,
-        valid_until: std::time::Instant,
-    );
 }
 
 #[allow(unused_variables)]
@@ -53,13 +41,16 @@ impl MtaStsLookup for Server {
             .smtp
             .resolvers
             .dns
-            .txt_lookup::<MtaSts>(format!("_mta-sts.{domain}."))
+            .txt_lookup::<MtaSts>(
+                format!("_mta-sts.{domain}."),
+                Some(&self.inner.cache.dns_txt),
+            )
             .await
         {
             Ok(record) => record,
             Err(err) => {
                 // Return the cached policy in case of failure
-                return if let Some(value) = self.core.smtp.resolvers.cache.mta_sts.get(domain) {
+                return if let Some(value) = self.inner.cache.dbs_mta_sts.get(domain) {
                     Ok(value)
                 } else {
                     Err(err.into())
@@ -68,7 +59,7 @@ impl MtaStsLookup for Server {
         };
 
         // Check if the policy has been cached
-        if let Some(value) = self.core.smtp.resolvers.cache.mta_sts.get(domain) {
+        if let Some(value) = self.inner.cache.dbs_mta_sts.get(domain) {
             if value.id == record.id {
                 return Ok(value);
             }
@@ -91,36 +82,22 @@ impl MtaStsLookup for Server {
         let bytes = STS_TEST_POLICY.lock().clone();
 
         // Parse policy
-        let policy = Policy::parse(
+        let policy = Arc::new(Policy::parse(
             std::str::from_utf8(&bytes).map_err(|err| Error::InvalidPolicy(err.to_string()))?,
             record.id.clone(),
-        )?;
-        let valid_until = Instant::now()
-            + Duration::from_secs(if (3600..31557600).contains(&policy.max_age) {
+        )?);
+
+        self.inner.cache.dbs_mta_sts.insert(
+            domain.to_string(),
+            policy.clone(),
+            Duration::from_secs(if (3600..31557600).contains(&policy.max_age) {
                 policy.max_age
             } else {
                 86400
-            });
-
-        Ok(self.core.smtp.resolvers.cache.mta_sts.insert(
-            domain.to_string(),
-            Arc::new(policy),
-            valid_until,
-        ))
-    }
-
-    #[cfg(feature = "test_mode")]
-    fn policy_add<'x>(
-        &self,
-        key: impl mail_auth::common::resolver::IntoFqdn<'x>,
-        value: Policy,
-        valid_until: std::time::Instant,
-    ) {
-        self.core.smtp.resolvers.cache.mta_sts.insert(
-            key.into_fqdn().into_owned(),
-            Arc::new(value),
-            valid_until,
+            }),
         );
+
+        Ok(policy)
     }
 }
 

@@ -13,7 +13,7 @@ use store::write::now;
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent},
     session::{TestSession, VerifyResponse},
-    TestSMTP,
+    DnsCache, TestSMTP,
 };
 use smtp::queue::{spool::SmtpSpool, DeliveryAttempt};
 
@@ -84,7 +84,7 @@ async fn smtp_delivery() {
     // Add mock DNS entries
     let core = local.build_smtp();
     for domain in ["foobar.org", "foobar.net", "foobar.com"] {
-        core.core.smtp.resolvers.dns.mx_add(
+        core.mx_add(
             domain,
             vec![MX {
                 exchanges: vec![format!("mx1.{domain}"), format!("mx2.{domain}")],
@@ -92,12 +92,12 @@ async fn smtp_delivery() {
             }],
             Instant::now() + Duration::from_secs(10),
         );
-        core.core.smtp.resolvers.dns.ipv4_add(
+        core.ipv4_add(
             format!("mx1.{domain}"),
             vec!["127.0.0.1".parse().unwrap()],
             Instant::now() + Duration::from_secs(30),
         );
-        core.core.smtp.resolvers.dns.ipv4_add(
+        core.ipv4_add(
             format!("mx2.{domain}"),
             vec!["127.0.0.1".parse().unwrap()],
             Instant::now() + Duration::from_secs(30),

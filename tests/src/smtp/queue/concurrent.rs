@@ -6,10 +6,10 @@
 
 use std::time::{Duration, Instant};
 
-use common::{config::server::ServerProtocol, ipc::QueueEvent};
+use common::{config::server::ServerProtocol, core::BuildServer, ipc::QueueEvent};
 use mail_auth::MX;
 
-use crate::smtp::{session::TestSession, TestSMTP};
+use crate::smtp::{session::TestSession, DnsCache, TestSMTP};
 use smtp::queue::manager::Queue;
 
 const LOCAL: &str = r#"
@@ -53,7 +53,7 @@ async fn concurrent_queue() {
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -61,7 +61,7 @@ async fn concurrent_queue() {
         }],
         Instant::now() + Duration::from_secs(100),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(100),
@@ -76,6 +76,20 @@ async fn concurrent_queue() {
     let mut inners = vec![];
     for _ in 0..20 {
         let (inner, rxs) = local.inner_with_rxs();
+        let server = inner.build_server();
+        server.mx_add(
+            "foobar.org",
+            vec![MX {
+                exchanges: vec!["mx.foobar.org".to_string()],
+                preference: 10,
+            }],
+            Instant::now() + Duration::from_secs(100),
+        );
+        server.ipv4_add(
+            "mx.foobar.org",
+            vec!["127.0.0.1".parse().unwrap()],
+            Instant::now() + Duration::from_secs(100),
+        );
         inners.push(inner.clone());
         tokio::spawn(async move {
             Queue::new(inner, rxs.queue_rx.unwrap()).start().await;

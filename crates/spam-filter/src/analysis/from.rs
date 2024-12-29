@@ -201,11 +201,9 @@ impl SpamFilterAnalyzeFrom for Server {
                 // Mail from no resolve to A or MX
                 if matches!(
                     (
-                        self.core
-                            .dns_exists_ip(&ctx.output.env_from_addr.domain_part.fqdn)
+                        self.dns_exists_ip(&ctx.output.env_from_addr.domain_part.fqdn)
                             .await,
-                        self.core
-                            .dns_exists_mx(&ctx.output.env_from_addr.domain_part.fqdn)
+                        self.dns_exists_mx(&ctx.output.env_from_addr.domain_part.fqdn)
                             .await
                     ),
                     (Ok(false), Ok(false))

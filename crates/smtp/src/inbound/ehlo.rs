@@ -11,7 +11,10 @@ use common::{
     config::smtp::session::{Mechanism, Stage},
     listener::SessionStream,
 };
-use mail_auth::{spf::verify::HasValidLabels, SpfResult};
+use mail_auth::{
+    spf::verify::{HasValidLabels, SpfParameters},
+    SpfResult,
+};
 use smtp_proto::*;
 use trc::SmtpEvent;
 
@@ -47,7 +50,13 @@ impl<T: SessionStream> Session<T> {
                     .smtp
                     .resolvers
                     .dns
-                    .verify_spf_helo(self.data.remote_ip, &self.data.helo_domain, &self.hostname)
+                    .verify_spf(self.server.inner.cache.build_auth_parameters(
+                        SpfParameters::verify_ehlo(
+                            self.data.remote_ip,
+                            &self.data.helo_domain,
+                            &self.hostname,
+                        ),
+                    ))
                     .await;
 
                 trc::event!(

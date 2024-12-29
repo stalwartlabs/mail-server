@@ -21,7 +21,7 @@ use utils::config::Config;
 use crate::smtp::{
     inbound::{sign::SIGNATURES, TestMessage, TestReportingEvent},
     session::{TestSession, VerifyResponse},
-    TempDir, TestSMTP,
+    DnsCache, TempDir, TestSMTP,
 };
 use smtp::core::Session;
 
@@ -98,24 +98,25 @@ async fn dmarc() {
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
+    let test = TestSMTP::from_core(core);
 
     // Add SPF, DKIM and DMARC records
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "mx.example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all ra=spf-failures rr=e:f:s:n").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "foobar.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "ed._domainkey.example.com",
         DomainKey::parse(
             concat!(
@@ -127,7 +128,7 @@ async fn dmarc() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "default._domainkey.example.com",
         DomainKey::parse(
             concat!(
@@ -142,12 +143,12 @@ async fn dmarc() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "_report._domainkey.example.com",
         DomainKeyReport::parse(b"ra=dkim-failures; rp=100; rr=d:o:p:s:u:v:x;").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "_dmarc.example.com",
         Dmarc::parse(
             concat!(
@@ -162,7 +163,6 @@ async fn dmarc() {
     );
 
     // SPF must pass
-    let test = TestSMTP::from_core(core);
     let mut rr = test.report_receiver;
     let mut qr = test.queue_receiver;
     let mut session = Session::test(test.server.clone());
@@ -240,7 +240,7 @@ async fn dmarc() {
     qr.assert_no_events();
 
     // Unaligned DMARC should be rejected
-    test.server.core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "test.net",
         Spf::parse(b"v=spf1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),

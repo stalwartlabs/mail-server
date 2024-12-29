@@ -17,30 +17,27 @@ use std::{
 use common::{
     config::{
         server::ServerProtocol,
-        smtp::resolver::{DnsRecordCache, DnssecResolver, Resolvers, Tlsa, TlsaEntry},
+        smtp::resolver::{DnssecResolver, Resolvers, Tlsa, TlsaEntry},
     },
     ipc::PolicyType,
     Core,
 };
 use mail_auth::{
-    common::{
-        lru::{DnsCache, LruCache},
-        parse::TxtRecordParser,
-    },
+    common::parse::TxtRecordParser,
     hickory_resolver::{
         config::{ResolverConfig, ResolverOpts},
         AsyncResolver,
     },
     mta_sts::{ReportUri, TlsRpt},
     report::tlsrpt::ResultType,
-    Resolver, MX,
+    MessageAuthenticator, MX,
 };
 use rustls_pki_types::CertificateDer;
 
 use crate::smtp::{
     inbound::{TestMessage, TestQueueEvent, TestReportingEvent},
     session::{TestSession, VerifyResponse},
-    TestSMTP,
+    DnsCache, TestSMTP,
 };
 use smtp::outbound::dane::{dnssec::TlsaLookup, verify::TlsaVerify};
 use smtp::queue::{Error, ErrorDetails, Status};
@@ -90,7 +87,7 @@ async fn dane_verify() {
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -98,12 +95,12 @@ async fn dane_verify() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.txt_add(
+    core.txt_add(
         "_smtp._tls.foobar.org",
         TlsRpt::parse(b"v=TLSRPTv1; rua=mailto:reports@foobar.org").unwrap(),
         Instant::now() + Duration::from_secs(10),
@@ -245,13 +242,9 @@ async fn dane_test() {
 
     let mut core = Core::default();
     core.smtp.resolvers = Resolvers {
-        dns: Resolver::new_cloudflare().unwrap(),
+        dns: MessageAuthenticator::new_cloudflare().unwrap(),
         dnssec: DnssecResolver {
             resolver: AsyncResolver::tokio(conf, opts),
-        },
-        cache: DnsRecordCache {
-            tlsa: LruCache::with_capacity(10),
-            mta_sts: LruCache::with_capacity(10),
         },
     };
     let r = TestSMTP::from_core(core).build_smtp();
@@ -279,7 +272,11 @@ async fn dane_test() {
             match pos {
                 0 => {
                     if hostname != item && !hostname.is_empty() {
-                        r.tlsa_add(hostname, tlsa, Instant::now() + Duration::from_secs(30));
+                        r.tlsa_add(
+                            hostname,
+                            tlsa.into(),
+                            Instant::now() + Duration::from_secs(30),
+                        );
                         tlsa = Tlsa {
                             entries: Vec::new(),
                             has_end_entities: false,
@@ -309,7 +306,11 @@ async fn dane_test() {
             }
         }
     }
-    r.tlsa_add(hostname, tlsa, Instant::now() + Duration::from_secs(30));
+    r.tlsa_add(
+        hostname,
+        tlsa.into(),
+        Instant::now() + Duration::from_secs(30),
+    );
 
     // Add certificates
     assert!(!hosts.is_empty());

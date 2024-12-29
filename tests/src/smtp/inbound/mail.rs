@@ -16,7 +16,7 @@ use utils::config::Config;
 
 use crate::smtp::{
     session::{TestSession, VerifyResponse},
-    TempDir, TestSMTP,
+    DnsCache, TempDir, TestSMTP,
 };
 
 const CONFIG: &str = r#"
@@ -76,34 +76,35 @@ async fn mail() {
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
-    core.smtp.resolvers.dns.txt_add(
+    let server = TestSMTP::from_core(core).server;
+
+    server.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    server.txt_add(
         "mx1.foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.ptr_add(
+    server.ptr_add(
         "10.0.0.1".parse().unwrap(),
         vec!["mx1.foobar.org.".to_string()],
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.ipv4_add(
+    server.ipv4_add(
         "mx1.foobar.org.",
         vec!["10.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.ptr_add(
+    server.ptr_add(
         "10.0.0.2".parse().unwrap(),
         vec!["mx2.foobar.org.".to_string()],
         Instant::now() + Duration::from_secs(5),
     );
 
     // Be rude and do not say EHLO
-    let server = TestSMTP::from_core(core).server;
     let mut session = Session::test(server.clone());
     session.data.remote_ip_str = "10.0.0.1".to_string();
     session.data.remote_ip = session.data.remote_ip_str.parse().unwrap();
@@ -194,7 +195,7 @@ async fn mail() {
         .unwrap();
     session.response().assert_code("550 5.7.25");
     session.data.iprev = None;
-    server.core.smtp.resolvers.dns.ipv4_add(
+    server.ipv4_add(
         "mx2.foobar.org.",
         vec!["10.0.0.2".parse().unwrap()],
         Instant::now() + Duration::from_secs(5),
@@ -206,7 +207,7 @@ async fn mail() {
         .await
         .unwrap();
     session.response().assert_code("550 5.7.23");
-    server.core.smtp.resolvers.dns.txt_add(
+    server.txt_add(
         "foobar.org",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),

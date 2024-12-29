@@ -3868,18 +3868,17 @@ dependencies = [
 
 [[package]]
 name = "mail-auth"
-version = "0.5.1"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01e36ed6613c4c43f2d3e4ff3af1888b3612c74d56fe0eac2cf25706f6a85a6b"
+checksum = "b07f5abe750633593de4a5b1d84c6c7fbe54313c105732cddc7f3aa205d1e31e"
 dependencies = [
  "ahash 0.8.11",
  "flate2",
  "hickory-resolver",
- "lru-cache",
  "mail-builder",
  "mail-parser",
- "parking_lot",
  "quick-xml 0.37.1",
+ "quick_cache",
  "rand 0.8.5",
  "ring 0.17.8",
  "rsa",

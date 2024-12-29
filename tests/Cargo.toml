@@ -6,7 +6,7 @@ resolver = "2"
 
 [features]
 #default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
-default = ["rocks", "redis", "postgres", "mysql", "foundationdb"]
+default = ["rocks"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
 postgres = ["store/postgres"]
@@ -33,7 +33,7 @@ trc = { path = "../crates/trc" }
 managesieve = { path = "../crates/managesieve", features = ["test_mode", "enterprise"] }
 smtp-proto = { version = "0.1" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
-mail-auth = { version = "0.5", features = ["test"] }
+mail-auth = { version = "0.6", features = ["test"] }
 sieve-rs = { version = "0.5" } 
 utils = { path = "../crates/utils", features = ["test_mode"] }
 jmap-client = { version = "0.3", features = ["websockets", "debug", "async"] } 

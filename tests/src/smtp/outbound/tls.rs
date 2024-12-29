@@ -13,7 +13,7 @@ use store::write::now;
 use crate::smtp::{
     inbound::TestMessage,
     session::{TestSession, VerifyResponse},
-    TestSMTP,
+    DnsCache, TestSMTP,
 };
 
 const LOCAL: &str = r#"
@@ -55,7 +55,7 @@ async fn starttls_optional() {
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -63,7 +63,7 @@ async fn starttls_optional() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),

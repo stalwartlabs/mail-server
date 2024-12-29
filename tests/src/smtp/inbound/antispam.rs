@@ -48,7 +48,7 @@ use utils::config::Config;
 use crate::{
     http_server::{spawn_mock_http_server, HttpMessage},
     jmap::enterprise::EnterpriseCore,
-    smtp::{session::TestSession, TempDir, TestSMTP},
+    smtp::{session::TestSession, DnsCache, TempDir, TestSMTP},
 };
 
 const CONFIG: &str = r#"
@@ -165,6 +165,7 @@ async fn antispam() {
     core.enterprise.as_mut().unwrap().spam_filter_llm =
         SpamFilterLlmConfig::parse(&mut config, &ai_apis);
     crate::AssertConfig::assert_no_errors(config);
+    let server = TestSMTP::from_core(core).server;
 
     // Add mock DNS entries
     for (domain, ip) in [
@@ -199,7 +200,12 @@ async fn antispam() {
             "127.0.0.8",
         ),
     ] {
-        core.smtp.resolvers.dns.ipv4_add(
+        server.ipv4_add(
+            domain,
+            vec![ip.parse().unwrap()],
+            Instant::now() + Duration::from_secs(100),
+        );
+        server.dnsbl_add(
             domain,
             vec![ip.parse().unwrap()],
             Instant::now() + Duration::from_secs(100),
@@ -211,7 +217,7 @@ async fn antispam() {
         "gmail.com",
         "custom.disposable.org",
     ] {
-        core.smtp.resolvers.dns.mx_add(
+        server.mx_add(
             mx,
             vec![MX {
                 exchanges: vec!["127.0.0.1".parse().unwrap()],
@@ -220,8 +226,6 @@ async fn antispam() {
             Instant::now() + Duration::from_secs(100),
         );
     }
-
-    let server = TestSMTP::from_core(core).server;
 
     // Spawn mock OpenAI server
     let _tx = spawn_mock_http_server(Arc::new(|req: HttpMessage| {

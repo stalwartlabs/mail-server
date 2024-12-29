@@ -19,7 +19,7 @@ directory = { path =  "../directory" }
 common = { path =  "../common" }
 spam-filter = { path =  "../spam-filter" }
 trc = { path = "../trc" }
-mail-auth = { version = "0.5" }
+mail-auth = { version = "0.6" }
 mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 mail-builder = { version = "0.3", features = ["ludicrous_mode"] } 

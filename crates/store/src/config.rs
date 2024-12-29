@@ -40,6 +40,7 @@ use crate::backend::azure::AzureStore;
 
 #[cfg(feature = "enterprise")]
 enum CompositeStore {
+    #[cfg(any(feature = "postgres", feature = "mysql"))]
     SQLReadReplica(String),
     ShardedBlob(String),
     ShardedInMemory(String),
@@ -220,6 +221,7 @@ impl Stores {
                 }
                 #[cfg(feature = "enterprise")]
                 "sql-read-replica" => {
+                    #[cfg(any(feature = "postgres", feature = "mysql"))]
                     composite_stores.push(CompositeStore::SQLReadReplica(store_id));
                 }
                 #[cfg(feature = "enterprise")]

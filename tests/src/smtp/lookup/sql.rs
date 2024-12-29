@@ -22,8 +22,7 @@ use utils::config::Config;
 use crate::{
     directory::DirectoryStore,
     smtp::{
-        session::{TestSession, VerifyResponse},
-        TempDir, TestSMTP,
+        session::{TestSession, VerifyResponse}, DnsCache, TempDir, TestSMTP
     },
 };
 use smtp::{core::Session, queue::RecipientDomain};
@@ -107,7 +106,13 @@ async fn lookup_sql() {
 
     let core = Core::parse(&mut config, stores, Default::default()).await;
 
-    core.smtp.resolvers.dns.mx_add(
+    // Obtain directory handle
+    let handle = DirectoryStore {
+        store: core.storage.stores.get("sql").unwrap().clone(),
+    };
+    let test = TestSMTP::from_core(core);
+
+    test.server.mx_add(
         "test.org",
         vec![MX {
             exchanges: vec!["mx.foobar.org".to_string()],
@@ -115,13 +120,6 @@ async fn lookup_sql() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-
-    // Obtain directory handle
-    let handle = DirectoryStore {
-        store: core.storage.stores.get("sql").unwrap().clone(),
-    };
-
-    let test = TestSMTP::from_core(core);
 
     // Create tables
     handle.create_test_directory().await;

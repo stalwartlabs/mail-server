@@ -9,7 +9,7 @@ use common::{
     Server,
 };
 use mail_auth::{
-    common::{lru::DnsCache, resolver::IntoFqdn},
+    common::resolver::IntoFqdn,
     hickory_resolver::{
         error::ResolveErrorKind,
         proto::{
@@ -26,14 +26,6 @@ pub trait TlsaLookup: Sync + Send {
         &self,
         key: impl IntoFqdn<'x> + Sync + Send,
     ) -> impl Future<Output = mail_auth::Result<Option<Arc<Tlsa>>>> + Send;
-
-    #[cfg(feature = "test_mode")]
-    fn tlsa_add<'x>(
-        &self,
-        key: impl IntoFqdn<'x>,
-        value: impl Into<Arc<Tlsa>>,
-        valid_until: std::time::Instant,
-    );
 }
 
 impl TlsaLookup for Server {
@@ -42,7 +34,7 @@ impl TlsaLookup for Server {
         key: impl IntoFqdn<'x> + Sync + Send,
     ) -> mail_auth::Result<Option<Arc<Tlsa>>> {
         let key = key.into_fqdn();
-        if let Some(value) = self.core.smtp.resolvers.cache.tlsa.get(key.as_ref()) {
+        if let Some(value) = self.inner.cache.dns_tlsa.get(key.as_ref()) {
             return Ok(Some(value));
         }
 
@@ -106,28 +98,18 @@ impl TlsaLookup for Server {
             }
         }
 
-        Ok(Some(self.core.smtp.resolvers.cache.tlsa.insert(
-            key.into_owned(),
-            Arc::new(Tlsa {
-                entries,
-                has_end_entities,
-                has_intermediates,
-            }),
-            tlsa_lookup.valid_until(),
-        )))
-    }
+        let tlsa = Arc::new(Tlsa {
+            entries,
+            has_end_entities,
+            has_intermediates,
+        });
 
-    #[cfg(feature = "test_mode")]
-    fn tlsa_add<'x>(
-        &self,
-        key: impl IntoFqdn<'x>,
-        value: impl Into<Arc<Tlsa>>,
-        valid_until: std::time::Instant,
-    ) {
-        self.core.smtp.resolvers.cache.tlsa.insert(
-            key.into_fqdn().into_owned(),
-            value.into(),
-            valid_until,
+        self.inner.cache.dns_tlsa.insert_with_expiry(
+            key.into_owned(),
+            tlsa.clone(),
+            tlsa_lookup.valid_until(),
         );
+
+        Ok(Some(tlsa))
     }
 }

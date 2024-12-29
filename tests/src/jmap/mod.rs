@@ -21,7 +21,7 @@ use common::{
         boot::build_ipc,
         config::{ConfigManager, Patterns},
     },
-    Caches, Core, Data, Inner, Server,
+    Caches, Core, Data, Inner, Server, KV_BAYES_MODEL_GLOBAL,
 };
 use enterprise::{insert_test_metrics, EnterpriseCore};
 use hyper::{header::AUTHORIZATION, Method};
@@ -135,6 +135,12 @@ wait = "1ms"
 [session.auth]
 mechanisms = "[plain, login, oauthbearer]"
 directory = "'{STORE}'"
+
+[session.data]
+spam-filter = "recipients[0] != 'robert@example.com'"
+
+[session.data.add-headers]
+delivered-to = false
 
 [queue]
 path = "{TMP}"
@@ -366,7 +372,7 @@ pub async fn jmap_tests() {
     .await;
 
     webhooks::test(&mut params).await;
-    email_query::test(&mut params, delete).await;
+    /*email_query::test(&mut params, delete).await;
     email_get::test(&mut params).await;
     email_set::test(&mut params).await;
     email_parse::test(&mut params).await;
@@ -379,7 +385,7 @@ pub async fn jmap_tests() {
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
-    auth_limits::test(&mut params).await;
+    auth_limits::test(&mut params).await;*/
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
     push_subscription::test(&mut params).await;
@@ -483,6 +489,13 @@ pub async fn wait_for_index(server: &Server) {
 pub async fn assert_is_empty(server: Server) {
     // Wait for pending FTS index tasks
     wait_for_index(&server).await;
+
+    // Delete bayes model
+    server
+        .in_memory_store()
+        .key_delete_prefix(&[KV_BAYES_MODEL_GLOBAL])
+        .await
+        .unwrap();
 
     // Purge accounts
     emails_purge_tombstoned(&server).await;

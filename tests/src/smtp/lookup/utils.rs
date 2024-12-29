@@ -27,7 +27,7 @@ use smtp::{
 };
 use utils::config::Config;
 
-use crate::smtp::TestSMTP;
+use crate::smtp::{DnsCache, TestSMTP};
 
 const CONFIG_V4: &str = r#"
 [queue.outbound.source-ip]
@@ -69,7 +69,7 @@ async fn lookup_ip() {
     let mut config = Config::new(CONFIG_V4).unwrap();
     let test =
         TestSMTP::from_core(Core::parse(&mut config, Default::default(), Default::default()).await);
-    test.server.core.smtp.resolvers.dns.ipv4_add(
+    test.server.ipv4_add(
         "mx.foobar.org",
         vec![
             "172.168.0.100".parse().unwrap(),
@@ -77,7 +77,7 @@ async fn lookup_ip() {
         ],
         Instant::now() + Duration::from_secs(10),
     );
-    test.server.core.smtp.resolvers.dns.ipv6_add(
+    test.server.ipv6_add(
         "mx.foobar.org",
         vec!["e:f::a".parse().unwrap(), "e:f::b".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
@@ -106,7 +106,7 @@ async fn lookup_ip() {
     let mut config = Config::new(CONFIG_V6).unwrap();
     let test =
         TestSMTP::from_core(Core::parse(&mut config, Default::default(), Default::default()).await);
-    test.server.core.smtp.resolvers.dns.ipv4_add(
+    test.server.ipv4_add(
         "mx.foobar.org",
         vec![
             "172.168.0.100".parse().unwrap(),
@@ -114,7 +114,7 @@ async fn lookup_ip() {
         ],
         Instant::now() + Duration::from_secs(10),
     );
-    test.server.core.smtp.resolvers.dns.ipv6_add(
+    test.server.ipv6_add(
         "mx.foobar.org",
         vec!["e:f::a".parse().unwrap(), "e:f::b".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),

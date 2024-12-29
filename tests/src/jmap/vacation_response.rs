@@ -19,6 +19,7 @@ use crate::{
         },
         mailbox::destroy_all_mailboxes,
     },
+    smtp::DnsCache,
 };
 
 use super::JMAPTest;
@@ -47,7 +48,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Start mock SMTP server
     let (mut smtp_rx, smtp_settings) = spawn_mock_smtp_server();
-    server.core.smtp.resolvers.dns.ipv4_add(
+    server.ipv4_add(
         "localhost",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + std::time::Duration::from_secs(10),

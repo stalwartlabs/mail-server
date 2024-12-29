@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::future::Future;
+use std::future::Future;
 
 use common::Server;
 
@@ -40,8 +40,8 @@ impl SpamFilterAnalyzeEhlo for Server {
 
             if matches!(
                 (
-                    self.core.dns_exists_ip(&ctx.output.ehlo_host.fqdn).await,
-                    self.core.dns_exists_mx(&ctx.output.ehlo_host.fqdn).await
+                    self.dns_exists_ip(&ctx.output.ehlo_host.fqdn).await,
+                    self.dns_exists_mx(&ctx.output.ehlo_host.fqdn).await
                 ),
                 (Ok(false), Ok(false))
             ) {

@@ -22,8 +22,9 @@ use hyper::{
     Method, StatusCode,
 };
 use mail_auth::{
-    dmarc::{self},
+    dmarc::{self, verify::DmarcParameters},
     mta_sts::TlsRpt,
+    spf::verify::SpfParameters,
     AuthenticatedMessage, DkimResult, DmarcResult, IpLookupStrategy, IprevOutput, IprevResult,
     SpfOutput, SpfResult,
 };
@@ -333,7 +334,14 @@ async fn delivery_troubleshoot(
 
     // Lookup MX
     let now = Instant::now();
-    let mxs = match server.core.smtp.resolvers.dns.mx_lookup(&domain).await {
+    let mxs = match server
+        .core
+        .smtp
+        .resolvers
+        .dns
+        .mx_lookup(&domain, Some(&server.inner.cache.dns_mx))
+        .await
+    {
         Ok(mxs) => mxs,
         Err(err) => {
             tx.send(DeliveryStage::MxLookupError {
@@ -411,7 +419,10 @@ async fn delivery_troubleshoot(
         .smtp
         .resolvers
         .dns
-        .txt_lookup::<TlsRpt>(format!("_smtp._tls.{domain}."))
+        .txt_lookup::<TlsRpt>(
+            format!("_smtp._tls.{domain}."),
+            Some(&server.inner.cache.dns_txt),
+        )
         .await
     {
         Ok(record) => {
@@ -901,23 +912,38 @@ async fn dmarc_troubleshoot(
         .smtp
         .resolvers
         .dns
-        .verify_spf_helo(remote_ip, &ehlo_domain, &local_host)
+        .verify_spf(
+            server
+                .inner
+                .cache
+                .build_auth_parameters(SpfParameters::verify_ehlo(
+                    remote_ip,
+                    &ehlo_domain,
+                    &local_host,
+                )),
+        )
         .await;
 
-    let iprev = server.core.smtp.resolvers.dns.verify_iprev(remote_ip).await;
+    let iprev = server
+        .core
+        .smtp
+        .resolvers
+        .dns
+        .verify_iprev(server.inner.cache.build_auth_parameters(remote_ip))
+        .await;
     let mail_spf_output = if let Some(mail_from_domain) = mail_from_domain {
         server
             .core
             .smtp
             .resolvers
             .dns
-            .check_host(
+            .check_host(server.inner.cache.build_auth_parameters(SpfParameters::new(
                 remote_ip,
                 mail_from_domain,
                 &ehlo_domain,
                 &local_host,
                 &mail_from,
-            )
+            )))
             .await
     } else {
         server
@@ -925,13 +951,13 @@ async fn dmarc_troubleshoot(
             .smtp
             .resolvers
             .dns
-            .check_host(
+            .check_host(server.inner.cache.build_auth_parameters(SpfParameters::new(
                 remote_ip,
                 &ehlo_domain,
                 &ehlo_domain,
                 &local_host,
                 &format!("postmaster@{ehlo_domain}"),
-            )
+            )))
             .await
     };
 
@@ -945,7 +971,7 @@ async fn dmarc_troubleshoot(
         .smtp
         .resolvers
         .dns
-        .verify_dkim(&auth_message)
+        .verify_dkim(server.inner.cache.build_auth_parameters(&auth_message))
         .await;
     let dkim_pass = dkim_output
         .iter()
@@ -956,7 +982,7 @@ async fn dmarc_troubleshoot(
         .smtp
         .resolvers
         .dns
-        .verify_arc(&auth_message)
+        .verify_arc(server.inner.cache.build_auth_parameters(&auth_message))
         .await;
 
     let dmarc_output = server
@@ -964,13 +990,13 @@ async fn dmarc_troubleshoot(
         .smtp
         .resolvers
         .dns
-        .verify_dmarc(
-            &auth_message,
-            &dkim_output,
-            mail_from_domain.unwrap_or(ehlo_domain.as_str()),
-            &mail_spf_output,
-            |domain| psl::domain_str(domain).unwrap_or(domain),
-        )
+        .verify_dmarc(server.inner.cache.build_auth_parameters(DmarcParameters {
+            message: &auth_message,
+            dkim_output: &dkim_output,
+            rfc5321_mail_from_domain: mail_from_domain.unwrap_or(ehlo_domain.as_str()),
+            spf_output: &mail_spf_output,
+            domain_suffix_fn: |domain| psl::domain_str(domain).unwrap_or(domain),
+        }))
         .await;
     let dmarc_pass = matches!(dmarc_output.spf_result(), DmarcResult::Pass)
         || matches!(dmarc_output.dkim_result(), DmarcResult::Pass);

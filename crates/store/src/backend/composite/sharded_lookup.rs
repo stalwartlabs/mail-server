@@ -111,11 +111,12 @@ impl ShardedInMemory {
         .await
     }
 
+    #[allow(unused_variables)]
     pub async fn key_delete_prefix(&self, prefix: &[u8]) -> trc::Result<()> {
         Box::pin(async move {
+            #[cfg(feature = "redis")]
             for store in &self.stores {
                 match store {
-                    #[cfg(feature = "redis")]
                     InMemoryStore::Redis(store) => store.key_delete_prefix(prefix).await?,
                     InMemoryStore::Static(_) => {
                         return Err(trc::StoreEvent::NotSupported.into_err())

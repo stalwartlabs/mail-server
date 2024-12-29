@@ -172,7 +172,13 @@ impl Server {
                 .smtp
                 .resolvers
                 .dns
-                .ip_lookup(entry.as_ref(), IpLookupStrategy::Ipv4thenIpv6, 10)
+                .ip_lookup(
+                    entry.as_ref(),
+                    IpLookupStrategy::Ipv4thenIpv6,
+                    10,
+                    Some(&self.inner.cache.dns_ipv4),
+                    Some(&self.inner.cache.dns_ipv6),
+                )
                 .await
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
                 .map(|result| {
@@ -187,7 +193,7 @@ impl Server {
                 .smtp
                 .resolvers
                 .dns
-                .mx_lookup(entry.as_ref())
+                .mx_lookup(entry.as_ref(), Some(&self.inner.cache.dns_mx))
                 .await
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
                 .map(|result| {
@@ -220,12 +226,15 @@ impl Server {
                 .smtp
                 .resolvers
                 .dns
-                .ptr_lookup(entry.parse::<IpAddr>().map_err(|err| {
-                    trc::EventType::Eval(trc::EvalEvent::Error)
-                        .into_err()
-                        .details("Failed to parse IP address")
-                        .reason(err)
-                })?)
+                .ptr_lookup(
+                    entry.parse::<IpAddr>().map_err(|err| {
+                        trc::EventType::Eval(trc::EvalEvent::Error)
+                            .into_err()
+                            .details("Failed to parse IP address")
+                            .reason(err)
+                    })?,
+                    Some(&self.inner.cache.dns_ptr),
+                )
                 .await
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
                 .map(|result| {
@@ -240,7 +249,7 @@ impl Server {
                 .smtp
                 .resolvers
                 .dns
-                .ipv4_lookup(entry.as_ref())
+                .ipv4_lookup(entry.as_ref(), Some(&self.inner.cache.dns_ipv4))
                 .await
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
                 .map(|result| {
@@ -255,7 +264,7 @@ impl Server {
                 .smtp
                 .resolvers
                 .dns
-                .ipv6_lookup(entry.as_ref())
+                .ipv6_lookup(entry.as_ref(), Some(&self.inner.cache.dns_ipv6))
                 .await
                 .map_err(|err| trc::Error::from(err).caused_by(trc::location!()))
                 .map(|result| {

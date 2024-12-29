@@ -18,7 +18,7 @@ use utils::config::Config;
 use crate::smtp::{
     inbound::TestMessage,
     session::{TestSession, VerifyResponse},
-    TempDir, TestSMTP,
+    DnsCache, TempDir, TestSMTP,
 };
 use smtp::core::Session;
 
@@ -130,19 +130,20 @@ async fn sign_and_seal() {
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
     let stores = Stores::parse_all(&mut config).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
+    let test = TestSMTP::from_core(core);
 
     // Add SPF, DKIM and DMARC records
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "mx.example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 ip4:10.0.0.2 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "example.com",
         Spf::parse(b"v=spf1 ip4:10.0.0.1 -all").unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "ed._domainkey.scamorza.org",
         DomainKey::parse(
             concat!(
@@ -154,7 +155,7 @@ async fn sign_and_seal() {
         .unwrap(),
         Instant::now() + Duration::from_secs(5),
     );
-    core.smtp.resolvers.dns.txt_add(
+    test.server.txt_add(
         "rsa._domainkey.manchego.org",
         DomainKey::parse(
             concat!(
@@ -171,7 +172,6 @@ async fn sign_and_seal() {
     );
 
     // Test DKIM signing
-    let test = TestSMTP::from_core(core);
     let mut qr = test.queue_receiver;
     let mut session = Session::test(test.server);
     session.data.remote_ip_str = "10.0.0.2".to_string();

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashSet, future::Future};
+use std::{collections::HashSet, future::Future, time::Duration};
 
 use common::{ip_to_bytes, Server, KV_BAYES_MODEL_GLOBAL, KV_BAYES_MODEL_USER};
 use mail_auth::DmarcResult;
@@ -20,6 +20,7 @@ use nlp::{
 };
 use store::dispatch::lookup::KeyValue;
 use trc::AddContext;
+use utils::cache::TtlEntry;
 
 use crate::{SpamFilterContext, TextPart};
 
@@ -47,6 +48,12 @@ pub trait BayesClassifier {
         ctx: &SpamFilterContext<'_>,
         learn_spam: bool,
     ) -> impl Future<Output = ()> + Send;
+
+    fn bayes_weights_for_token(
+        &self,
+        account_id: Option<u32>,
+        token: TokenHash,
+    ) -> impl Future<Output = trc::Result<Weights>> + Send;
 }
 
 impl BayesClassifier for Server {
@@ -126,10 +133,10 @@ impl BayesClassifier for Server {
 
         // Update weight and invalidate cache
         if is_train {
-            let prefix = if ctx.input.account_id.is_none() {
-                KV_BAYES_MODEL_GLOBAL
+            let (is_global, prefix) = if ctx.input.account_id.is_none() {
+                (true, KV_BAYES_MODEL_GLOBAL)
             } else {
-                KV_BAYES_MODEL_USER
+                (false, KV_BAYES_MODEL_USER)
             };
             for (hash, weights) in model.weights {
                 self.in_memory_store()
@@ -139,6 +146,12 @@ impl BayesClassifier for Server {
                     ))
                     .await
                     .caused_by(trc::location!())?;
+                if is_global {
+                    self.inner.cache.bayes.remove(&hash);
+                }
+            }
+            if is_global {
+                self.inner.cache.bayes.remove(&TokenHash::default());
             }
 
             // Update training counts
@@ -149,7 +162,7 @@ impl BayesClassifier for Server {
             };
             self.in_memory_store()
                 .counter_incr(KeyValue::new(
-                    TokenHash::serialize_index(prefix, ctx.input.account_id),
+                    TokenHash::default().serialize(prefix, ctx.input.account_id),
                     i64::from(weights),
                 ))
                 .await
@@ -169,19 +182,10 @@ impl BayesClassifier for Server {
         };
 
         // Obtain training counts
-        let prefix = if ctx.input.account_id.is_none() {
-            KV_BAYES_MODEL_GLOBAL
-        } else {
-            KV_BAYES_MODEL_USER
-        };
         let (spam_learns, ham_learns) = self
-            .in_memory_store()
-            .counter_get(TokenHash::serialize_index(prefix, ctx.input.account_id))
+            .bayes_weights_for_token(ctx.input.account_id, TokenHash::default())
             .await
-            .map(|w| {
-                let w = Weights::from(w);
-                (w.spam, w.ham)
-            })?;
+            .map(|w| (w.spam, w.ham))?;
 
         // Make sure we have enough training data
         if spam_learns < classifier.min_learns || ham_learns < classifier.min_learns {
@@ -205,10 +209,9 @@ impl BayesClassifier for Server {
         // Classify metadata tokens
         for token in ctx.spam_tokens() {
             let weights = self
-                .in_memory_store()
-                .counter_get(
-                    TokenHash::from(Gram::Uni { t1: &token })
-                        .serialize(prefix, ctx.input.account_id),
+                .bayes_weights_for_token(
+                    ctx.input.account_id,
+                    TokenHash::from(Gram::Uni { t1: &token }),
                 )
                 .await
                 .map(Weights::from)?;
@@ -227,8 +230,7 @@ impl BayesClassifier for Server {
             5,
         ) {
             let weights = self
-                .in_memory_store()
-                .counter_get(token.inner.serialize(prefix, ctx.input.account_id))
+                .bayes_weights_for_token(ctx.input.account_id, token.inner)
                 .await
                 .map(Weights::from)?;
             osb_tokens.push(OsbToken {
@@ -254,8 +256,7 @@ impl BayesClassifier for Server {
                     5,
                 ) {
                     let weights = self
-                        .in_memory_store()
-                        .counter_get(token.inner.serialize(prefix, ctx.input.account_id))
+                        .bayes_weights_for_token(ctx.input.account_id, token.inner)
                         .await
                         .map(Weights::from)?;
                     osb_tokens.push(OsbToken {
@@ -270,8 +271,7 @@ impl BayesClassifier for Server {
                     5,
                 ) {
                     let weights = self
-                        .in_memory_store()
-                        .counter_get(token.inner.serialize(prefix, ctx.input.account_id))
+                        .bayes_weights_for_token(ctx.input.account_id, token.inner)
                         .await
                         .map(Weights::from)?;
                     osb_tokens.push(OsbToken {
@@ -317,19 +317,10 @@ impl BayesClassifier for Server {
         }
 
         // Obtain training counts
-        let prefix = if ctx.input.account_id.is_none() {
-            KV_BAYES_MODEL_GLOBAL
-        } else {
-            KV_BAYES_MODEL_USER
-        };
         let (spam_learns, ham_learns) = self
-            .in_memory_store()
-            .counter_get(TokenHash::serialize_index(prefix, ctx.input.account_id))
+            .bayes_weights_for_token(ctx.input.account_id, TokenHash::default())
             .await
-            .map(|w| {
-                let w = Weights::from(w);
-                (w.spam as f64, w.ham as f64)
-            })?;
+            .map(|w| (w.spam as f64, w.ham as f64))?;
 
         let result = if spam_learns > 0.0 || ham_learns > 0.0 {
             if learn_spam {
@@ -379,6 +370,45 @@ impl BayesClassifier for Server {
             trc::error!(err.span_id(ctx.input.span_id).caused_by(trc::location!()));
         }
     }
+
+    async fn bayes_weights_for_token(
+        &self,
+        account_id: Option<u32>,
+        token: TokenHash,
+    ) -> trc::Result<Weights> {
+        match account_id {
+            None => {
+                match self
+                    .inner
+                    .cache
+                    .bayes
+                    .get_value_or_guard_async(&token)
+                    .await
+                {
+                    Ok(weights) => Ok(weights),
+                    Err(guard) => {
+                        let weights = self
+                            .in_memory_store()
+                            .counter_get(token.serialize_global(KV_BAYES_MODEL_GLOBAL))
+                            .await?;
+                        let expiry = if weights != 0 {
+                            Duration::from_secs(3 * 60 * 60)
+                        } else {
+                            Duration::from_secs(60 * 60)
+                        };
+                        let weights = Weights::from(weights);
+                        let _ = guard.insert(TtlEntry::new(weights, expiry));
+                        Ok(weights)
+                    }
+                }
+            }
+            Some(account_id) => self
+                .in_memory_store()
+                .counter_get(token.serialize_account(KV_BAYES_MODEL_USER, account_id))
+                .await
+                .map(Weights::from),
+        }
+    }
 }
 
 const P_FROM_NAME: u8 = 0;
@@ -403,8 +433,8 @@ impl SpamFilterContext<'_> {
                 }
             }
             if let Some(name) = &self.output.from.name {
-                for name_part in name.split_whitespace() {
-                    tokens.insert(add_prefix(P_FROM_NAME, name_part.to_lowercase().as_bytes()));
+                for name_part in name.to_lowercase().split_whitespace() {
+                    tokens.insert(add_prefix(P_FROM_NAME, name_part.as_bytes()));
                 }
             }
         }

@@ -16,7 +16,7 @@ use reqwest::{header::AUTHORIZATION, Method, StatusCode};
 
 use crate::{
     jmap::ManagementApi,
-    smtp::{session::TestSession, TestSMTP},
+    smtp::{session::TestSession, DnsCache, TestSMTP},
 };
 use smtp::queue::{manager::SpawnQueue, QueueId, Status};
 
@@ -79,7 +79,7 @@ async fn manage_queue() {
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["mx1.foobar.org".to_string()],
@@ -88,7 +88,7 @@ async fn manage_queue() {
         Instant::now() + Duration::from_secs(10),
     );
 
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx1.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),

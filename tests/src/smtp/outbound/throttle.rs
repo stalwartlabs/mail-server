@@ -13,7 +13,7 @@ use mail_auth::MX;
 use store::write::now;
 
 use crate::smtp::{
-    inbound::TestQueueEvent, queue::manager::new_message, session::TestSession, TestSMTP,
+    inbound::TestQueueEvent, queue::manager::new_message, session::TestSession, DnsCache, TestSMTP,
 };
 use smtp::queue::{throttle::IsAllowed, Domain, Message, QueueEnvelope, Schedule, Status};
 
@@ -213,7 +213,7 @@ async fn throttle_outbound() {
     assert!(due > 0, "Due: {}", due);
 
     // Expect concurrency throttle for mx 'mx.test.org'
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "test.org",
         vec![MX {
             exchanges: vec!["mx.test.org".to_string()],
@@ -221,7 +221,7 @@ async fn throttle_outbound() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx.test.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
@@ -256,7 +256,7 @@ async fn throttle_outbound() {
     in_flight.clear();
 
     // Expect rate limit throttle for mx 'mx.test.net'
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "test.net",
         vec![MX {
             exchanges: vec!["mx.test.net".to_string()],
@@ -264,7 +264,7 @@ async fn throttle_outbound() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "mx.test.net",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),

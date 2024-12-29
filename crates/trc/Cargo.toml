@@ -6,7 +6,7 @@ resolver = "2"
 
 [dependencies]
 event_macro = { path = "./event-macro" }
-mail-auth = { version = "0.5" }
+mail-auth = { version = "0.6" }
 mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
 base64 = "0.22.1"
 serde = "1.0"

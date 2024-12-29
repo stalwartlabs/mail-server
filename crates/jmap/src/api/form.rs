@@ -14,6 +14,7 @@ use common::{
     psl, Server, KV_RATE_LIMIT_CONTACT,
 };
 use hyper::StatusCode;
+use mail_auth::common::cache::NoCache;
 use mail_builder::{
     headers::{
         address::{Address, EmailAddress},
@@ -113,7 +114,7 @@ impl FormHandler for Server {
                     .smtp
                     .resolvers
                     .dns
-                    .mx_lookup(domain)
+                    .mx_lookup(domain, None::<&NoCache<_, _>>)
                     .await
                     .is_err()
                 {

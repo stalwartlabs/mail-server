@@ -10,7 +10,7 @@ use common::config::server::ServerProtocol;
 use mail_auth::MX;
 use store::write::now;
 
-use crate::smtp::{session::TestSession, TestSMTP};
+use crate::smtp::{session::TestSession, DnsCache, TestSMTP};
 
 const LOCAL: &str = r#"
 [queue.outbound]
@@ -61,7 +61,7 @@ async fn fallback_relay() {
 
     // Add mock DNS entries
     let core = local.build_smtp();
-    core.core.smtp.resolvers.dns.mx_add(
+    core.mx_add(
         "foobar.org",
         vec![MX {
             exchanges: vec!["_dns_error.foobar.org".to_string()],
@@ -69,12 +69,12 @@ async fn fallback_relay() {
         }],
         Instant::now() + Duration::from_secs(10),
     );
-    /*core.core.smtp.resolvers.dns.ipv4_add(
+    /*core.ipv4_add(
         "unreachable.foobar.org",
         vec!["127.0.0.2".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );*/
-    core.core.smtp.resolvers.dns.ipv4_add(
+    core.ipv4_add(
         "fallback.foobar.org",
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),

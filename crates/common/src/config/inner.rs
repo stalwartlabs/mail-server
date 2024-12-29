@@ -4,12 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    sync::Arc,
+};
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
+use mail_auth::{Parameters, Txt, MX};
 use mail_send::smtp::tls::build_tls_connector;
+use nlp::bayes::{TokenHash, Weights};
 use parking_lot::RwLock;
 use utils::{
     cache::{Cache, CacheWithTtl},
@@ -18,7 +23,11 @@ use utils::{
 };
 
 use crate::{
-    listener::blocked::BlockedIps, manager::webadmin::WebAdminManager, Caches, Data,
+    auth::{roles::RolePermissions, AccessToken},
+    config::smtp::resolver::{Policy, Tlsa},
+    listener::blocked::BlockedIps,
+    manager::webadmin::WebAdminManager,
+    Account, AccountId, Caches, Data, Mailbox, MailboxId, MailboxState, NextMailboxState, Threads,
     ThrottleKeyHasherBuilder, TlsConnectors,
 };
 
@@ -97,16 +106,131 @@ impl Data {
 
 impl Caches {
     pub fn parse(config: &mut Config) -> Self {
+        const MB_10: u64 = 10 * 1024 * 1024;
+        const MB_5: u64 = 5 * 1024 * 1024;
+        const MB_1: u64 = 1024 * 1024;
+
         Caches {
-            access_tokens: CacheWithTtl::from_config(config, "cache.access-tokens"),
-            http_auth: CacheWithTtl::from_config(config, "cache.http-auth"),
-            permissions: Cache::from_config(config, "cache.permissions"),
+            access_tokens: CacheWithTtl::from_config(
+                config,
+                "access-tokens",
+                MB_10,
+                (std::mem::size_of::<AccessToken>() + 255) as u64,
+            ),
+            http_auth: CacheWithTtl::from_config(
+                config,
+                "http-auth",
+                MB_1,
+                (50 + std::mem::size_of::<u32>()) as u64,
+            ),
+            permissions: Cache::from_config(
+                config,
+                "permissions",
+                MB_10,
+                std::mem::size_of::<RolePermissions>() as u64,
+            ),
             permissions_version: 0.into(),
-            account: Cache::from_config(config, "cache.account"),
-            mailbox: Cache::from_config(config, "cache.mailbox"),
-            threads: Cache::from_config(config, "cache.threads"),
-            bayes: CacheWithTtl::from_config(config, "cache.bayes"),
-            dnsbl: CacheWithTtl::from_config(config, "cache.dnsbl"),
+            account: Cache::from_config(
+                config,
+                "account",
+                MB_10,
+                (std::mem::size_of::<AccountId>()
+                    + std::mem::size_of::<Account>()
+                    + (15 * (std::mem::size_of::<Mailbox>() + 60))) as u64,
+            ),
+            mailbox: Cache::from_config(
+                config,
+                "mailbox",
+                MB_10,
+                (std::mem::size_of::<MailboxId>()
+                    + std::mem::size_of::<MailboxState>()
+                    + std::mem::size_of::<NextMailboxState>()
+                    + (1024 * std::mem::size_of::<u64>())) as u64,
+            ),
+            threads: Cache::from_config(
+                config,
+                "threads",
+                MB_10,
+                (std::mem::size_of::<Threads>() + (500 * std::mem::size_of::<u64>())) as u64,
+            ),
+            bayes: CacheWithTtl::from_config(
+                config,
+                "bayes",
+                MB_10,
+                (std::mem::size_of::<TokenHash>() + std::mem::size_of::<Weights>()) as u64,
+            ),
+            dns_txt: CacheWithTtl::from_config(
+                config,
+                "dns.txt",
+                MB_5,
+                (std::mem::size_of::<Txt>() + 255) as u64,
+            ),
+            dns_mx: CacheWithTtl::from_config(
+                config,
+                "dns.mx",
+                MB_5,
+                ((std::mem::size_of::<MX>() + 255) * 2) as u64,
+            ),
+            dns_ptr: CacheWithTtl::from_config(
+                config,
+                "dns.ptr",
+                MB_1,
+                (std::mem::size_of::<IpAddr>() + 255) as u64,
+            ),
+            dns_ipv4: CacheWithTtl::from_config(
+                config,
+                "dns.ipv4",
+                MB_5,
+                ((std::mem::size_of::<Ipv4Addr>() + 255) * 2) as u64,
+            ),
+            dns_ipv6: CacheWithTtl::from_config(
+                config,
+                "dns.ipv6",
+                MB_5,
+                ((std::mem::size_of::<Ipv6Addr>() + 255) * 2) as u64,
+            ),
+            dns_tlsa: CacheWithTtl::from_config(
+                config,
+                "dns.tlsa",
+                MB_1,
+                (std::mem::size_of::<Tlsa>() + 255) as u64,
+            ),
+            dbs_mta_sts: CacheWithTtl::from_config(
+                config,
+                "dns.mta-sts",
+                MB_1,
+                (std::mem::size_of::<Policy>() + 255) as u64,
+            ),
+            dns_rbl: CacheWithTtl::from_config(
+                config,
+                "dns.rbl",
+                MB_5,
+                ((std::mem::size_of::<Ipv4Addr>() + 255) * 2) as u64,
+            ),
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    #[inline(always)]
+    pub fn build_auth_parameters<T>(
+        &self,
+        params: T,
+    ) -> Parameters<
+        '_,
+        T,
+        CacheWithTtl<String, Txt>,
+        CacheWithTtl<String, Arc<Vec<MX>>>,
+        CacheWithTtl<String, Arc<Vec<Ipv4Addr>>>,
+        CacheWithTtl<String, Arc<Vec<Ipv6Addr>>>,
+        CacheWithTtl<IpAddr, Arc<Vec<String>>>,
+    > {
+        Parameters {
+            params,
+            cache_txt: Some(&self.dns_txt),
+            cache_mx: Some(&self.dns_mx),
+            cache_ptr: Some(&self.dns_ptr),
+            cache_ipv4: Some(&self.dns_ipv4),
+            cache_ipv6: Some(&self.dns_ipv6),
         }
     }
 }
