@@ -650,6 +650,20 @@ async fn handle_session<T: SessionStream>(inner: Arc<Inner>, session: SessionDat
                                 .and_then(|h| h.parse::<IpAddr>().ok())
                         })
                     {
+                        // Check if the forwarded IP has been blocked
+                        if server.is_ip_blocked(&forwarded_for) {
+                            trc::event!(
+                                Security(trc::SecurityEvent::IpBlocked),
+                                ListenerId = instance.id.clone(),
+                                RemoteIp = forwarded_for,
+                                SpanId = session.session_id,
+                            );
+
+                            return Ok::<_, hyper::Error>(
+                                StatusCode::FORBIDDEN.into_http_response().build(),
+                            );
+                        }
+
                         trc::event!(
                             Http(trc::HttpEvent::RequestUrl),
                             SpanId = session.session_id,
