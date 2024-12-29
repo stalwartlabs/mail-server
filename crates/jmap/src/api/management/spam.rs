@@ -6,9 +6,7 @@
 
 use std::{net::IpAddr, sync::Arc};
 
-use common::{
-    auth::AccessToken, config::spamfilter::SpamFilterAction, scripts::ScriptModification, Server,
-};
+use common::{auth::AccessToken, config::spamfilter::SpamFilterAction, Server};
 use directory::{
     backend::internal::manage::{self, ManageDirectory},
     Permission,
@@ -35,23 +33,6 @@ use super::{
     decode_path_element,
     troubleshoot::{AuthResult, DmarcPolicy},
 };
-
-#[derive(Debug, serde::Serialize)]
-#[serde(tag = "action")]
-#[serde(rename_all = "lowercase")]
-pub enum Response {
-    Accept {
-        modifications: Vec<ScriptModification>,
-    },
-    Replace {
-        message: String,
-        modifications: Vec<ScriptModification>,
-    },
-    Reject {
-        reason: String,
-    },
-    Discard,
-}
 
 pub trait ManageSpamHandler: Sync + Send {
     fn handle_manage_spam(
