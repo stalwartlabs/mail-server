@@ -22,7 +22,8 @@ use utils::config::Config;
 use crate::{
     directory::DirectoryStore,
     smtp::{
-        session::{TestSession, VerifyResponse}, DnsCache, TempDir, TestSMTP
+        session::{TestSession, VerifyResponse},
+        DnsCache, TempDir, TestSMTP,
     },
 };
 use smtp::{core::Session, queue::RecipientDomain};
@@ -102,7 +103,7 @@ async fn lookup_sql() {
     // Parse settings
     let temp_dir = TempDir::new("smtp_lookup_tests", true);
     let mut config = Config::new(temp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
 
     let core = Core::parse(&mut config, stores, Default::default()).await;
 

@@ -19,7 +19,7 @@ use crate::{InMemoryStore, Stores};
 use super::{HttpStore, HttpStoreConfig, HttpStoreFormat};
 
 impl Stores {
-    pub fn parse_http_stores(&mut self, config: &mut Config) {
+    pub fn parse_http_stores(&mut self, config: &mut Config, is_reload: bool) {
         // Parse remote lists
         for id in config
             .sub_keys("http-lookup", ".url")
@@ -104,12 +104,13 @@ impl Stores {
 
                     entry.insert(InMemoryStore::Http(store.into()));
                 }
-                Entry::Occupied(e) => {
+                Entry::Occupied(e) if !is_reload => {
                     config.new_build_error(
                         ("http-lookup", e.key().as_str()),
-                        "An im-memory store with this id already exists",
+                        "An in-memory store with this id already exists",
                     );
                 }
+                _ => {}
             }
         }
     }

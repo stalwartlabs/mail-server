@@ -18,7 +18,7 @@ pub async fn blob_tests() {
     let temp_dir = TempDir::new("blob_tests", true);
     let mut config =
         Config::new(CONFIG.replace("{TMP}", temp_dir.path.as_path().to_str().unwrap())).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
 
     for (store_id, blob_store) in &stores.blob_stores {
         println!("Testing blob store {}...", store_id);

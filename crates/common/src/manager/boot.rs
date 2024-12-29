@@ -326,7 +326,7 @@ impl BootManager {
                 }
 
                 // Parse in-memory stores
-                stores.parse_in_memory(&mut config).await;
+                stores.parse_in_memory(&mut config, false).await;
 
                 // Parse settings
                 let core = Core::parse(&mut config, stores, manager).await;

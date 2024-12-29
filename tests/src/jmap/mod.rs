@@ -575,7 +575,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     servers.bind_and_drop_priv(&mut config);
 
     // Build stores
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
 
     // Parse core
     let config_manager = ConfigManager {

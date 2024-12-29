@@ -14,7 +14,7 @@ use crate::{InMemoryStore, Stores, Value};
 pub type StaticMemoryStore = GlobMap<Value<'static>>;
 
 impl Stores {
-    pub fn parse_static_stores(&mut self, config: &mut Config) {
+    pub fn parse_static_stores(&mut self, config: &mut Config, is_reload: bool) {
         let mut lookups = AHashMap::new();
         let mut errors = Vec::new();
 
@@ -86,12 +86,13 @@ impl Stores {
                 Entry::Vacant(entry) => {
                     entry.insert(InMemoryStore::Static(store.into()));
                 }
-                Entry::Occupied(e) => {
+                Entry::Occupied(e) if !is_reload => {
                     config.new_build_error(
                         ("lookup", e.key().as_str()),
-                        "An im-memory store with this id already exists",
+                        "An in-memory store with this id already exists",
                     );
                 }
+                _ => {}
             }
         }
     }

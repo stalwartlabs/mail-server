@@ -103,7 +103,7 @@ async fn milter_session() {
     // Configure tests
     let tmp_dir = TempDir::new("smtp_milter_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG_MILTER)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let _rx = spawn_mock_milter_server();
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -236,7 +236,7 @@ async fn mta_hook_session() {
     // Configure tests
     let tmp_dir = TempDir::new("smtp_mta_hook_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG_JMILTER)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let _rx = spawn_mock_mta_hook_server();
     tokio::time::sleep(Duration::from_millis(100)).await;

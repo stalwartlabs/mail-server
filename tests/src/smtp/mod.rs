@@ -201,7 +201,7 @@ impl TestSMTP {
         let mut config =
             Config::new(temp_dir.update_config(add_test_certs(CONFIG) + config.as_ref())).unwrap();
         config.resolve_all_macros().await;
-        let stores = Stores::parse_all(&mut config).await;
+        let stores = Stores::parse_all(&mut config, false).await;
         let core = Core::parse(&mut config, stores, Default::default()).await;
         let data = Data::parse(&mut config);
 

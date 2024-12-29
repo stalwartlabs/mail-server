@@ -53,7 +53,7 @@ impl Server {
     pub async fn reload_lookups(&self) -> trc::Result<ReloadResult> {
         let mut config = self.core.storage.config.build_config("lookup").await?;
         let mut stores = Stores::default();
-        stores.parse_static_stores(&mut config);
+        stores.parse_static_stores(&mut config, true);
 
         let mut core = self.core.as_ref().clone();
         for (id, store) in stores.in_memory_stores {
@@ -79,7 +79,7 @@ impl Server {
             purge_schedules: Default::default(),
         };
         stores.parse_stores(&mut config).await;
-        stores.parse_in_memory(&mut config).await;
+        stores.parse_in_memory(&mut config, true).await;
 
         // Parse tracers
         let tracers = Telemetry::parse(&mut config, &stores);

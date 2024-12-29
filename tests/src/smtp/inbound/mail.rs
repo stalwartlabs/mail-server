@@ -74,7 +74,7 @@ async fn mail() {
 
     let tmp_dir = TempDir::new("smtp_mail_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let server = TestSMTP::from_core(core).server;
 

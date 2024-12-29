@@ -89,7 +89,7 @@ async fn rcpt() {
 
     let tmp_dir = TempDir::new("smtp_rcpt_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
 
     // RCPT without MAIL FROM

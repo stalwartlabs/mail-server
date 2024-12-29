@@ -47,9 +47,9 @@ enum CompositeStore {
 }
 
 impl Stores {
-    pub async fn parse_all(config: &mut Config) -> Self {
+    pub async fn parse_all(config: &mut Config, is_reload: bool) -> Self {
         let mut stores = Self::parse(config).await;
-        stores.parse_in_memory(config).await;
+        stores.parse_in_memory(config, is_reload).await;
         stores
     }
 
@@ -311,12 +311,12 @@ impl Stores {
         }
     }
 
-    pub async fn parse_in_memory(&mut self, config: &mut Config) {
+    pub async fn parse_in_memory(&mut self, config: &mut Config, is_reload: bool) {
         // Parse memory stores
-        self.parse_static_stores(config);
+        self.parse_static_stores(config, is_reload);
 
         // Parse http stores
-        self.parse_http_stores(config);
+        self.parse_http_stores(config, is_reload);
 
         // Parse purge schedules
         if let Some(store) = config

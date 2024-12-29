@@ -352,7 +352,7 @@ impl DirectoryTest {
                 config_file.replace("type = \"memory\"", "type = \"memory\"\ndisable = true")
         }
         let mut config = utils::config::Config::new(&config_file).unwrap();
-        let stores = Stores::parse_all(&mut config).await;
+        let stores = Stores::parse_all(&mut config, false).await;
         let directories = Directories::parse(
             &mut config,
             &stores,

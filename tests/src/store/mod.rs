@@ -81,7 +81,7 @@ pub async fn store_tests() {
     let mut config = Config::new(CONFIG.replace("{TMP}", &temp_dir.path.to_string_lossy()))
         .unwrap()
         .assert_no_errors();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
 
     let store_id = std::env::var("STORE")
         .expect("Missing store type. Try running `STORE=<store_type> cargo test`");

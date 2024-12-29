@@ -301,6 +301,12 @@ impl CacheItemWeight for IpAddr {
     }
 }
 
+impl CacheItemWeight for bool {
+    fn weight(&self) -> u64 {
+        std::mem::size_of::<bool>() as u64
+    }
+}
+
 impl<T: Clone + CacheItemWeight> TtlEntry<T> {
     pub fn new(value: T, expires: Duration) -> Self {
         Self {

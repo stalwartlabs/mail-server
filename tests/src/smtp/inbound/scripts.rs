@@ -133,7 +133,7 @@ async fn sieve_scripts() {
     let tmp_dir = TempDir::new("smtp_sieve_test", true);
     let mut config = Config::new(tmp_dir.update_config(config)).unwrap();
     config.resolve_all_macros().await;
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     config.assert_no_errors();
 

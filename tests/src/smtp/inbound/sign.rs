@@ -128,7 +128,7 @@ async fn sign_and_seal() {
 
     let tmp_dir = TempDir::new("smtp_sign_test", true);
     let mut config = Config::new(tmp_dir.update_config(CONFIG.to_string() + SIGNATURES)).unwrap();
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
     let test = TestSMTP::from_core(core);
 

@@ -325,7 +325,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     servers.bind_and_drop_priv(&mut config);
 
     // Build stores
-    let stores = Stores::parse_all(&mut config).await;
+    let stores = Stores::parse_all(&mut config, false).await;
 
     // Parse core
     let tracers = Telemetry::parse(&mut config, &stores);
