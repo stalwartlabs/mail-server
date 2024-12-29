@@ -1058,6 +1058,28 @@ impl From<&SpfOutput> for AuthResult {
     }
 }
 
+impl From<AuthResult> for SpfOutput {
+    fn from(value: AuthResult) -> Self {
+        match value {
+            AuthResult::Pass => SpfOutput::new(String::new()).with_result(SpfResult::Pass),
+            AuthResult::Fail { .. } => SpfOutput::new(String::new()).with_result(SpfResult::Fail),
+            AuthResult::SoftFail { .. } => {
+                SpfOutput::new(String::new()).with_result(SpfResult::SoftFail)
+            }
+            AuthResult::Neutral { .. } => {
+                SpfOutput::new(String::new()).with_result(SpfResult::Neutral)
+            }
+            AuthResult::TempError { .. } => {
+                SpfOutput::new(String::new()).with_result(SpfResult::TempError)
+            }
+            AuthResult::PermError { .. } => {
+                SpfOutput::new(String::new()).with_result(SpfResult::PermError)
+            }
+            AuthResult::None => SpfOutput::new(String::new()).with_result(SpfResult::None),
+        }
+    }
+}
+
 impl From<&IprevOutput> for AuthResult {
     fn from(value: &IprevOutput) -> Self {
         match &value.result {
@@ -1072,6 +1094,25 @@ impl From<&IprevOutput> for AuthResult {
                 details: error.to_string().into(),
             },
             IprevResult::None => AuthResult::None,
+        }
+    }
+}
+
+impl From<AuthResult> for IprevResult {
+    fn from(value: AuthResult) -> Self {
+        match value {
+            AuthResult::Pass => IprevResult::Pass,
+            AuthResult::Fail { details } => {
+                IprevResult::Fail(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            AuthResult::TempError { details } => {
+                IprevResult::TempError(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            AuthResult::PermError { details } => {
+                IprevResult::PermError(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            AuthResult::None => IprevResult::None,
+            _ => IprevResult::None,
         }
     }
 }
@@ -1097,6 +1138,27 @@ impl From<&DkimResult> for AuthResult {
     }
 }
 
+impl From<AuthResult> for DkimResult {
+    fn from(value: AuthResult) -> Self {
+        match value {
+            AuthResult::Pass => DkimResult::Pass,
+            AuthResult::Neutral { details } => {
+                DkimResult::Neutral(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            AuthResult::Fail { details } => {
+                DkimResult::Fail(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            AuthResult::PermError { details } => {
+                DkimResult::PermError(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            AuthResult::TempError { details } => {
+                DkimResult::TempError(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            _ => DkimResult::None,
+        }
+    }
+}
+
 impl From<&DmarcResult> for AuthResult {
     fn from(value: &DmarcResult) -> Self {
         match value {
@@ -1115,6 +1177,25 @@ impl From<&DmarcResult> for AuthResult {
     }
 }
 
+impl From<AuthResult> for DmarcResult {
+    fn from(value: AuthResult) -> Self {
+        match value {
+            AuthResult::Pass => DmarcResult::Pass,
+            AuthResult::Fail { details } => {
+                DmarcResult::Fail(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            AuthResult::TempError { details } => {
+                DmarcResult::TempError(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            AuthResult::PermError { details } => {
+                DmarcResult::PermError(mail_auth::Error::Io(details.unwrap_or_default()))
+            }
+            AuthResult::None => DmarcResult::None,
+            _ => DmarcResult::None,
+        }
+    }
+}
+
 impl From<&dmarc::Policy> for DmarcPolicy {
     fn from(value: &dmarc::Policy) -> Self {
         match value {
@@ -1122,6 +1203,17 @@ impl From<&dmarc::Policy> for DmarcPolicy {
             dmarc::Policy::Quarantine => DmarcPolicy::Quarantine,
             dmarc::Policy::Reject => DmarcPolicy::Reject,
             dmarc::Policy::Unspecified => DmarcPolicy::Unspecified,
+        }
+    }
+}
+
+impl From<DmarcPolicy> for dmarc::Policy {
+    fn from(value: DmarcPolicy) -> Self {
+        match value {
+            DmarcPolicy::None => dmarc::Policy::None,
+            DmarcPolicy::Quarantine => dmarc::Policy::Quarantine,
+            DmarcPolicy::Reject => dmarc::Policy::Reject,
+            DmarcPolicy::Unspecified => dmarc::Policy::Unspecified,
         }
     }
 }

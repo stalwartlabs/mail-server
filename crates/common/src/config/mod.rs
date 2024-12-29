@@ -116,7 +116,7 @@ impl Core {
                 } else {
                     config.new_parse_error(
                         "storage.lookup",
-                        format!("Lookup store {id:?} not found"),
+                        format!("In-memory store {id:?} not found"),
                     );
                     None
                 }

@@ -14,7 +14,7 @@ pub mod queue;
 pub mod reload;
 pub mod report;
 pub mod settings;
-pub mod sieve;
+pub mod spam;
 pub mod stores;
 pub mod troubleshoot;
 
@@ -35,7 +35,7 @@ use reload::ManageReload;
 use report::ManageReports;
 use serde::Serialize;
 use settings::ManageSettings;
-use sieve::SieveHandler;
+use spam::ManageSpamHandler;
 use store::write::now;
 use stores::ManageStore;
 use troubleshoot::TroubleshootApi;
@@ -117,7 +117,10 @@ impl ManagementApi for Server {
             "logs" if req.method() == Method::GET => {
                 self.handle_view_logs(req, &access_token).await
             }
-            "sieve" => self.handle_run_sieve(req, path, body, &access_token).await,
+            "spam-filter" => {
+                self.handle_manage_spam(req, path, body, session, &access_token)
+                    .await
+            }
             "restart" if req.method() == Method::GET => {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::Restart)?;

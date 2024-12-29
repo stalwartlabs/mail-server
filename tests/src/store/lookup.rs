@@ -29,7 +29,7 @@ pub async fn lookup_tests() {
 
     for (store_id, store) in stores.in_memory_stores {
         let is_mysql = store_id == "mysql";
-        println!("Testing lookup store {}...", store_id);
+        println!("Testing in-memory store {}...", store_id);
         if let InMemoryStore::Store(store) = &store {
             store.destroy().await;
         } else {

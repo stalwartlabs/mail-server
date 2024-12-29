@@ -325,7 +325,7 @@ impl BootManager {
                     }
                 }
 
-                // Parse lookup stores
+                // Parse in-memory stores
                 stores.parse_in_memory(&mut config).await;
 
                 // Parse settings

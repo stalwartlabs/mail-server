@@ -728,7 +728,7 @@ impl Purge for Server {
                             .ctx(trc::Key::Key, prefix));
                     }
                 } else if let Err(err) = store.purge_in_memory_store().await {
-                    trc::error!(err.details("Failed to purge lookup store"));
+                    trc::error!(err.details("Failed to purge in-memory store"));
                 }
             }
             PurgeType::Account(account_id) => {
