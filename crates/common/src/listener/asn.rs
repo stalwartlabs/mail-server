@@ -16,11 +16,7 @@ use mail_auth::common::resolver::ToReverseName;
 use store::write::now;
 use tokio::sync::Semaphore;
 
-use crate::{
-    config::network::{AsnGeoLookupConfig, AsnGeoLookupResource},
-    manager::fetch_resource,
-    Server,
-};
+use crate::{config::network::AsnGeoLookupConfig, manager::fetch_resource, Server};
 
 pub struct AsnGeoLookupData {
     pub lock: Semaphore,
@@ -153,18 +149,19 @@ impl Server {
                 expires,
                 timeout,
                 max_size,
-                resources,
+                asn_resources,
+                geo_resources,
+                headers,
             } = &server.core.network.asn_geo_lookup
             {
                 let mut asn_data = Data::new();
                 let mut country_data = Data::new();
 
-                for lookup in resources {
-                    let (url, headers, is_asn) = match lookup {
-                        AsnGeoLookupResource::Asn { url, headers } => (url, headers, true),
-                        AsnGeoLookupResource::Geo { url, headers } => (url, headers, false),
-                    };
-
+                for (is_asn, url) in asn_resources
+                    .iter()
+                    .map(|url| (true, url))
+                    .chain(geo_resources.iter().map(|url| (false, url)))
+                {
                     let time = Instant::now();
                     match fetch_resource(url, headers.clone().into(), *timeout, *max_size)
                         .await

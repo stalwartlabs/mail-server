@@ -23,7 +23,7 @@ use config::{
         resolver::{Policy, Tlsa},
         SmtpConfig,
     },
-    spamfilter::SpamFilterConfig,
+    spamfilter::{IpResolver, SpamFilterConfig},
     storage::Storage,
     telemetry::Metrics,
 };
@@ -152,7 +152,7 @@ pub struct Caches {
     pub dns_ipv6: CacheWithTtl<String, Arc<Vec<Ipv6Addr>>>,
     pub dns_tlsa: CacheWithTtl<String, Arc<Tlsa>>,
     pub dbs_mta_sts: CacheWithTtl<String, Arc<Policy>>,
-    pub dns_rbl: CacheWithTtl<String, Option<Arc<Vec<Ipv4Addr>>>>,
+    pub dns_rbl: CacheWithTtl<String, Option<Arc<IpResolver>>>,
 }
 
 pub struct Ipc {

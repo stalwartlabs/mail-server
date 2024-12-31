@@ -4,17 +4,22 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 
 use ahash::AHashSet;
+use mail_auth::common::resolver::ToReverseName;
 use nlp::bayes::BayesClassifier;
 use tokio::net::lookup_host;
 use utils::{
+    cache::CacheItemWeight,
     config::{utils::ParseValue, Config},
     glob::GlobMap,
 };
 
-use super::{if_block::IfBlock, tokenizer::TokenMap};
+use super::{functions::ResolveVariable, if_block::IfBlock, tokenizer::TokenMap, Variable};
 
 #[derive(Debug, Clone, Default)]
 pub struct SpamFilterConfig {
@@ -545,7 +550,7 @@ impl BayesConfig {
                 .property_or_default("spam-filter.bayes.auto-learn.threshold.spam", "6.0")
                 .unwrap_or(6.0),
             auto_learn_ham_threshold: config
-                .property_or_default("spam-filter.bayes.auto-learn.threshold.ham", "-2.0")
+                .property_or_default("spam-filter.bayes.auto-learn.threshold.ham", "-1.0")
                 .unwrap_or(-2.0),
             score_spam: config
                 .property_or_default("spam-filter.bayes.score.spam", "0.7")
@@ -807,5 +812,57 @@ impl Element {
             }
             Element::Any => map,
         }
+    }
+}
+
+pub struct IpResolver {
+    ip: IpAddr,
+    ip_string: String,
+    reverse: String,
+    octets: Variable<'static>,
+}
+
+impl ResolveVariable for IpResolver {
+    fn resolve_variable(&self, variable: u32) -> Variable<'_> {
+        match variable {
+            V_IP => Variable::String(self.ip_string.as_str().into()),
+            V_IP_REVERSE => Variable::String(self.reverse.as_str().into()),
+            V_IP_OCTETS => self.octets.clone(),
+            V_IP_IS_V4 => Variable::Integer(self.ip.is_ipv4() as _),
+            V_IP_IS_V6 => Variable::Integer(self.ip.is_ipv6() as _),
+            _ => Variable::Integer(0),
+        }
+    }
+
+    fn resolve_global(&self, _: &str) -> Variable<'_> {
+        Variable::Integer(0)
+    }
+}
+
+impl IpResolver {
+    pub fn new(ip: IpAddr) -> Self {
+        Self {
+            ip_string: ip.to_string(),
+            reverse: ip.to_reverse_name(),
+            octets: Variable::Array(match ip {
+                IpAddr::V4(ipv4_addr) => ipv4_addr
+                    .octets()
+                    .iter()
+                    .map(|o| Variable::Integer(*o as _))
+                    .collect(),
+                IpAddr::V6(ipv6_addr) => ipv6_addr
+                    .octets()
+                    .iter()
+                    .map(|o| Variable::Integer(*o as _))
+                    .collect(),
+            }),
+            ip,
+        }
+    }
+}
+
+impl CacheItemWeight for IpResolver {
+    fn weight(&self) -> u64 {
+        (std::mem::size_of::<IpResolver>() + self.ip_string.len() + self.reverse.len()) as u64
     }
 }

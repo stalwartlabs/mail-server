@@ -30,10 +30,10 @@ pub const WEBADMIN_KEY: &[u8] = "STALWART_WEBADMIN".as_bytes();
 impl ConfigManager {
     pub async fn fetch_resource(&self, resource_id: &str) -> Result<Vec<u8>, String> {
         if let Some(url) = self
-            .get(&format!("config.resource.{resource_id}"))
+            .get(&format!("{resource_id}.resource"))
             .await
             .map_err(|err| {
-                format!("Failed to fetch configuration key 'resource.{resource_id}': {err}",)
+                format!("Failed to fetch configuration key '{resource_id}.resource': {err}",)
             })?
         {
             fetch_resource(&url, None, Duration::from_secs(60), MAX_SIZE).await

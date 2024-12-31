@@ -14,6 +14,7 @@ use common::{
     config::{
         server::{Listeners, ServerProtocol},
         smtp::resolver::Tlsa,
+        spamfilter::IpResolver,
     },
     ipc::{QueueEvent, ReportingEvent},
     manager::boot::{build_ipc, IpcReceivers},
@@ -315,7 +316,14 @@ impl DnsCache for Server {
     fn dnsbl_add(&self, name: &str, value: Vec<Ipv4Addr>, valid_until: std::time::Instant) {
         self.inner.cache.dns_rbl.insert_with_expiry(
             name.to_string(),
-            Some(Arc::new(value)),
+            Some(Arc::new(IpResolver::new(
+                value
+                    .iter()
+                    .copied()
+                    .next()
+                    .unwrap_or(Ipv4Addr::BROADCAST)
+                    .into(),
+            ))),
             valid_until,
         );
     }

@@ -8,10 +8,7 @@
 mod tests {
     use std::time::{Duration, Instant};
 
-    use common::{
-        config::network::{AsnGeoLookupConfig, AsnGeoLookupResource},
-        Core, Server,
-    };
+    use common::{config::network::AsnGeoLookupConfig, Core, Server};
 
     #[tokio::test]
     #[ignore]
@@ -55,31 +52,28 @@ mod tests {
             expires: Duration::from_secs(86400),
             timeout: Duration::from_secs(100),
             max_size: 100 * 1024 * 1024,
-            resources: vec![
-                AsnGeoLookupResource::Asn {
-                    //url: "file:///Users/me/code/playground/asn-ipv4.csv".to_string(),
-                    url: "https://cdn.jsdelivr.net/npm/@ip-location-db/asn/asn-ipv4.csv".to_string(),
-                    headers: Default::default(),
-                },
-                AsnGeoLookupResource::Asn {
-                    //url: "file:///Users/me/code/playground/asn-ipv6.csv".to_string(),
-                    url: "https://cdn.jsdelivr.net/npm/@ip-location-db/asn/asn-ipv6.csv".to_string(),
-                    headers: Default::default(),
-                },
-                AsnGeoLookupResource::Geo {
-                    //url: "file:///Users/me/code/playground/geolite2-geo-whois-asn-country-ipv4.csv"
-                    //    .to_string(),
-                    url: "https://cdn.jsdelivr.net/npm/@ip-location-db/geolite2-geo-whois-asn-country/geolite2-geo-whois-asn-country-ipv4.csv"
-                       .to_string(),
-                    headers: Default::default(),
-                },
-                AsnGeoLookupResource::Geo {
-                    //url: "file:///Users/me/code/playground/geolite2-geo-whois-asn-country-ipv6.csv"
-                    //    .to_string(),
-                    url: "https://cdn.jsdelivr.net/npm/@ip-location-db/geolite2-geo-whois-asn-country/geolite2-geo-whois-asn-country-ipv4.csv"
-                        .to_string(),
-                    headers: Default::default(),
-                },
+            headers: Default::default(),
+            asn_resources: vec![
+                //url: "file:///Users/me/code/playground/asn-ipv4.csv".to_string(),
+                //url: "file:///Users/me/code/playground/asn-ipv6.csv".to_string(),
+                "https://cdn.jsdelivr.net/npm/@ip-location-db/asn/asn-ipv4.csv".to_string(),
+                "https://cdn.jsdelivr.net/npm/@ip-location-db/asn/asn-ipv6.csv".to_string(),
+            ],
+            geo_resources: vec![
+                //url: "file:///Users/me/code/playground/geolite2-geo-whois-asn-country-ipv4.csv"
+                //    .to_string(),
+                //url: "file:///Users/me/code/playground/geolite2-geo-whois-asn-country-ipv6.csv"
+                //    .to_string(),
+                concat!(
+                    "https://cdn.jsdelivr.net/npm/@ip-location-db/geolite2-geo-whois-",
+                    "asn-country/geolite2-geo-whois-asn-country-ipv4.csv"
+                )
+                .to_string(),
+                concat!(
+                    "https://cdn.jsdelivr.net/npm/@ip-location-db/geolite2-geo-whois-",
+                    "asn-country/geolite2-geo-whois-asn-country-ipv6.csv"
+                )
+                .to_string(),
             ],
         };
         let server = Server {

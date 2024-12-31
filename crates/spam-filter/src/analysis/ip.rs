@@ -7,7 +7,7 @@
 use std::{future::Future, net::IpAddr};
 
 use common::{
-    config::spamfilter::{Element, Location},
+    config::spamfilter::{Element, IpResolver, Location},
     Server,
 };
 use mail_auth::IprevResult;
@@ -15,10 +15,7 @@ use mail_parser::{HeaderName, HeaderValue, Host};
 use nlp::tokenizers::types::TokenType;
 
 use crate::{
-    modules::{
-        dnsbl::is_dnsbl,
-        expression::{IpResolver, SpamFilterResolver},
-    },
+    modules::{dnsbl::is_dnsbl, expression::SpamFilterResolver},
     SpamFilterContext, TextPart,
 };
 

@@ -385,7 +385,13 @@ impl TelemetryApi for Server {
                     .enterprise
                     .as_ref()
                     .and_then(|e| e.metrics_store.as_ref())
-                    .ok_or_else(|| manage::unsupported("No metrics store has been configured"))?
+                    .ok_or_else(|| {
+                        manage::error(
+                            "No metrics store has been defined",
+                            "You need to configure a metrics store in order to use this feature."
+                                .into(),
+                        )
+                    })?
                     .store
                     .query_metrics(after, before)
                     .await?;

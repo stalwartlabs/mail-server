@@ -755,7 +755,7 @@ impl Default for SessionConfig {
                 is_allowed: IfBlock::new::<()>(
                     "session.mail.is-allowed",
                     [],
-                    "!is_empty(authenticated_as) || !key_exists('spam-block', sender_domain)",
+                    "!is_empty(authenticated_as) || !key_exists('blocked-domains', sender_domain)",
                 ),
             },
             rcpt: Rcpt {

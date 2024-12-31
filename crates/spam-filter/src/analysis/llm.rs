@@ -69,7 +69,20 @@ impl SpamFilterAnalyzeLlm for Server {
                                     confidence = Some(value);
                                 }
                             } else if config.index_explanation.map_or(false, |i| i == idx) {
-                                explanation = Some(value.replace('\n', " "));
+                                let explanation = explanation.get_or_insert_with(|| {
+                                    String::with_capacity(std::cmp::min(value.len(), 255))
+                                });
+
+                                for value in value.chars() {
+                                    if !value.is_whitespace() {
+                                        explanation.push(value);
+                                    } else {
+                                        explanation.push(' ');
+                                    }
+                                    if explanation.len() == 255 {
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -86,10 +99,9 @@ impl SpamFilterAnalyzeLlm for Server {
                         _ => return,
                     };
 
-                    if let (Some(header), Some(mut explanation)) =
+                    if let (Some(header), Some(explanation)) =
                         (&self.core.spam.headers.llm, explanation)
                     {
-                        explanation.truncate(512);
                         ctx.result.header =
                             format!("{header}: {category} ({explanation})\r\n",).into();
                     }

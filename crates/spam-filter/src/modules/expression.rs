@@ -4,13 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::net::IpAddr;
-
 use common::{
     config::spamfilter::*,
     expr::{functions::ResolveVariable, Variable},
 };
-use mail_auth::common::resolver::ToReverseName;
 use mail_parser::{Header, HeaderValue};
 
 use crate::{analysis::url::UrlParts, Recipient, SpamFilterContext, TextPart};
@@ -438,51 +435,5 @@ impl ResolveVariable for StringListResolver<'_> {
 
     fn resolve_global(&self, _: &str) -> Variable<'_> {
         Variable::Integer(0)
-    }
-}
-
-pub struct IpResolver {
-    ip: IpAddr,
-    ip_string: String,
-    reverse: String,
-    octets: Variable<'static>,
-}
-
-impl ResolveVariable for IpResolver {
-    fn resolve_variable(&self, variable: u32) -> Variable<'_> {
-        match variable {
-            V_IP => Variable::String(self.ip_string.as_str().into()),
-            V_IP_REVERSE => Variable::String(self.reverse.as_str().into()),
-            V_IP_OCTETS => self.octets.clone(),
-            V_IP_IS_V4 => Variable::Integer(self.ip.is_ipv4() as _),
-            V_IP_IS_V6 => Variable::Integer(self.ip.is_ipv6() as _),
-            _ => Variable::Integer(0),
-        }
-    }
-
-    fn resolve_global(&self, _: &str) -> Variable<'_> {
-        Variable::Integer(0)
-    }
-}
-
-impl IpResolver {
-    pub fn new(ip: IpAddr) -> Self {
-        Self {
-            ip_string: ip.to_string(),
-            reverse: ip.to_reverse_name(),
-            octets: Variable::Array(match ip {
-                IpAddr::V4(ipv4_addr) => ipv4_addr
-                    .octets()
-                    .iter()
-                    .map(|o| Variable::Integer(*o as _))
-                    .collect(),
-                IpAddr::V6(ipv6_addr) => ipv6_addr
-                    .octets()
-                    .iter()
-                    .map(|o| Variable::Integer(*o as _))
-                    .collect(),
-            }),
-            ip,
-        }
     }
 }

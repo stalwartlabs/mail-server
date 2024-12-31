@@ -4,15 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{net::IpAddr, sync::Arc};
+use std::net::IpAddr;
 
-use common::{auth::AccessToken, config::spamfilter::SpamFilterAction, Server};
+use common::{auth::AccessToken, config::spamfilter::SpamFilterAction, psl, Server};
 use directory::{
     backend::internal::manage::{self, ManageDirectory},
     Permission,
 };
 use hyper::Method;
-use mail_auth::{ArcOutput, DkimOutput, IprevOutput};
+use mail_auth::{
+    dmarc::verify::DmarcParameters, spf::verify::SpfParameters, AuthenticatedMessage, DmarcResult,
+};
 use mail_parser::{Message, MessageParser};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -29,10 +31,7 @@ use crate::api::{
     HttpRequest, HttpResponse, JsonResponse,
 };
 
-use super::{
-    decode_path_element,
-    troubleshoot::{AuthResult, DmarcPolicy},
-};
+use super::decode_path_element;
 
 pub trait ManageSpamHandler: Sync + Send {
     fn handle_manage_spam(
@@ -50,27 +49,12 @@ pub trait ManageSpamHandler: Sync + Send {
 pub struct SpamClassifyRequest {
     pub message: String,
 
-    // Sender authentication
-    pub arc_result: AuthResult,
-    pub spf_ehlo_result: AuthResult,
-    pub spf_mail_from_result: AuthResult,
-    pub dkim_result: AuthResult,
-    pub dmarc_result: AuthResult,
-    pub dmarc_policy: DmarcPolicy,
-    pub iprev_result: AuthResult,
-
     // Session details
     pub remote_ip: IpAddr,
     #[serde(default)]
-    pub remote_ip_ptr: Option<String>,
-    #[serde(default)]
-    pub ehlo_domain: Option<String>,
+    pub ehlo_domain: String,
     #[serde(default)]
     pub authenticated_as: Option<String>,
-    #[serde(default)]
-    pub asn: Option<u32>,
-    #[serde(default)]
-    pub country: Option<String>,
 
     // TLS
     #[serde(default)]
@@ -114,12 +98,12 @@ impl ManageSpamHandler for Server {
         match (path.get(1).copied(), path.get(2).copied(), req.method()) {
             (Some("train"), Some(class @ ("ham" | "spam")), &Method::POST) => {
                 let message = parse_message_or_err(body.as_deref().unwrap_or_default())?;
-                let input = if let Some(account) = path.get(3).copied() {
+                let input = if let Some(account) = path.get(3).copied().filter(|a| !a.is_empty()) {
                     let account_id = self
                         .store()
                         .get_principal_id(decode_path_element(account).as_ref())
                         .await?
-                        .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
+                        .ok_or_else(|| manage::not_found(account.to_string()))?;
                     SpamFilterInput::from_account_message(&message, account_id, session.session_id)
                 } else {
                     SpamFilterInput::from_message(&message, session.session_id)
@@ -141,48 +125,129 @@ impl ManageSpamHandler for Server {
                     trc::EventType::Resource(trc::ResourceEvent::BadParameters).from_json_error(err)
                 })?;
 
-                // Built classifier input
+                // Built spam filter input
                 let message = parse_message_or_err(request.message.as_bytes())?;
-                let arc_result = ArcOutput::default().with_result(request.arc_result.into());
-                let spf_ehlo_result = request.spf_ehlo_result.into();
-                let spf_mail_from_result = request.spf_mail_from_result.into();
-                let dkim_result = vec![match request.dkim_result {
-                    AuthResult::Pass => DkimOutput::pass(),
-                    AuthResult::Fail { details } => {
-                        DkimOutput::fail(mail_auth::Error::Io(details.unwrap_or_default()))
-                    }
-                    AuthResult::Neutral { details } => {
-                        DkimOutput::neutral(mail_auth::Error::Io(details.unwrap_or_default()))
-                    }
-                    AuthResult::TempError { details } => {
-                        DkimOutput::temp_err(mail_auth::Error::Io(details.unwrap_or_default()))
-                    }
-                    AuthResult::PermError { details } => {
-                        DkimOutput::perm_err(mail_auth::Error::Io(details.unwrap_or_default()))
-                    }
-                    _ => DkimOutput::neutral(mail_auth::Error::ParseError),
-                }];
-                let dmarc_result = request.dmarc_result.into();
-                let dmarc_policy = request.dmarc_policy.into();
-                let iprev_result = IprevOutput {
-                    result: request.iprev_result.into(),
-                    ptr: request.remote_ip_ptr.map(|ptr| Arc::new(vec![ptr])),
+
+                let remote_ip = request.remote_ip;
+                let ehlo_domain = request.ehlo_domain.to_lowercase();
+                let mail_from = request.env_from.to_lowercase();
+                let mail_from_domain = mail_from.rsplit_once('@').map(|(_, domain)| domain);
+                let local_host = self
+                    .core
+                    .storage
+                    .config
+                    .get("lookup.default.hostname")
+                    .await
+                    .unwrap_or_default()
+                    .unwrap_or_else(|| "local.host".to_string());
+
+                let spf_ehlo_result =
+                    self.core
+                        .smtp
+                        .resolvers
+                        .dns
+                        .verify_spf(self.inner.cache.build_auth_parameters(
+                            SpfParameters::verify_ehlo(remote_ip, &ehlo_domain, &local_host),
+                        ))
+                        .await;
+
+                let iprev_result = self
+                    .core
+                    .smtp
+                    .resolvers
+                    .dns
+                    .verify_iprev(self.inner.cache.build_auth_parameters(remote_ip))
+                    .await;
+
+                let spf_mail_from_result = if let Some(mail_from_domain) = mail_from_domain {
+                    self.core
+                        .smtp
+                        .resolvers
+                        .dns
+                        .check_host(self.inner.cache.build_auth_parameters(SpfParameters::new(
+                            remote_ip,
+                            mail_from_domain,
+                            &ehlo_domain,
+                            &local_host,
+                            &mail_from,
+                        )))
+                        .await
+                } else {
+                    self.core
+                        .smtp
+                        .resolvers
+                        .dns
+                        .check_host(self.inner.cache.build_auth_parameters(SpfParameters::new(
+                            remote_ip,
+                            &ehlo_domain,
+                            &ehlo_domain,
+                            &local_host,
+                            &format!("postmaster@{ehlo_domain}"),
+                        )))
+                        .await
                 };
+
+                let auth_message = AuthenticatedMessage::from_parsed(&message, true);
+
+                let dkim_output = self
+                    .core
+                    .smtp
+                    .resolvers
+                    .dns
+                    .verify_dkim(self.inner.cache.build_auth_parameters(&auth_message))
+                    .await;
+
+                let arc_output = self
+                    .core
+                    .smtp
+                    .resolvers
+                    .dns
+                    .verify_arc(self.inner.cache.build_auth_parameters(&auth_message))
+                    .await;
+
+                let dmarc_output = self
+                    .core
+                    .smtp
+                    .resolvers
+                    .dns
+                    .verify_dmarc(self.inner.cache.build_auth_parameters(DmarcParameters {
+                        message: &auth_message,
+                        dkim_output: &dkim_output,
+                        rfc5321_mail_from_domain: mail_from_domain.unwrap_or(ehlo_domain.as_str()),
+                        spf_output: &spf_mail_from_result,
+                        domain_suffix_fn: |domain| psl::domain_str(domain).unwrap_or(domain),
+                    }))
+                    .await;
+                let dmarc_pass = matches!(dmarc_output.spf_result(), DmarcResult::Pass)
+                    || matches!(dmarc_output.dkim_result(), DmarcResult::Pass);
+                let dmarc_result = if dmarc_pass {
+                    DmarcResult::Pass
+                } else if dmarc_output.spf_result() != &DmarcResult::None {
+                    dmarc_output.spf_result().clone()
+                } else if dmarc_output.dkim_result() != &DmarcResult::None {
+                    dmarc_output.dkim_result().clone()
+                } else {
+                    DmarcResult::None
+                };
+                let dmarc_policy = dmarc_output.policy();
+
+                let asn_geo = self.lookup_asn_country(remote_ip).await;
+
                 let input = SpamFilterInput {
                     message: &message,
                     span_id: session.session_id,
-                    arc_result: Some(&arc_result),
+                    arc_result: Some(&arc_output),
                     spf_ehlo_result: Some(&spf_ehlo_result),
                     spf_mail_from_result: Some(&spf_mail_from_result),
-                    dkim_result: dkim_result.as_slice(),
+                    dkim_result: dkim_output.as_slice(),
                     dmarc_result: Some(&dmarc_result),
                     dmarc_policy: Some(&dmarc_policy),
                     iprev_result: Some(&iprev_result),
                     remote_ip: request.remote_ip,
-                    ehlo_domain: request.ehlo_domain.as_deref(),
+                    ehlo_domain: Some(ehlo_domain.as_str()),
                     authenticated_as: request.authenticated_as.as_deref(),
-                    asn: request.asn,
-                    country: request.country.as_deref(),
+                    asn: asn_geo.asn.as_ref().map(|a| a.id),
+                    country: asn_geo.country.as_ref().map(|c| c.as_str()),
                     is_tls: request.is_tls,
                     env_from: &request.env_from,
                     env_from_flags: request.env_from_flags,

@@ -39,7 +39,9 @@ pub enum AsnGeoLookupConfig {
         expires: Duration,
         timeout: Duration,
         max_size: usize,
-        resources: Vec<AsnGeoLookupResource>,
+        headers: HeaderMap,
+        asn_resources: Vec<String>,
+        geo_resources: Vec<String>,
     },
     Dns {
         zone_ipv4: String,
@@ -51,12 +53,6 @@ pub enum AsnGeoLookupConfig {
     },
     #[default]
     Disabled,
-}
-
-#[derive(Clone)]
-pub enum AsnGeoLookupResource {
-    Asn { url: String, headers: HeaderMap },
-    Geo { url: String, headers: HeaderMap },
 }
 
 #[derive(Clone)]
@@ -196,50 +192,33 @@ impl AsnGeoLookupConfig {
             }
             .into(),
             "resource" => {
-                let mut resources = vec![];
+                let asn_resources = config
+                    .values("server.asn.urls.asn")
+                    .map(|(_, v)| v.to_string())
+                    .collect::<Vec<_>>();
+                let geo_resources = config
+                    .values("server.asn.urls.geo")
+                    .map(|(_, v)| v.to_string())
+                    .collect::<Vec<_>>();
 
-                for id in config
-                    .sub_keys("server.asn.resource", ".url")
-                    .map(|k| k.to_string())
-                    .collect::<Vec<_>>()
-                {
-                    let id = id.as_str();
-                    let url = config
-                        .value_require_non_empty(("server.asn.resource", id, "url"))?
-                        .to_string();
-                    let headers = parse_http_headers(config, ("server.asn.resource", id));
-
-                    resources.push(
-                        match config.value_require(("server.asn.resource", id, "type"))? {
-                            "asn" => AsnGeoLookupResource::Asn { url, headers },
-                            "geo" => AsnGeoLookupResource::Geo { url, headers },
-                            _ => {
-                                config.new_build_error(
-                                    ("server.asn.resource", id),
-                                    "Invalid resource",
-                                );
-                                continue;
-                            }
-                        },
-                    );
-                }
-
-                if resources.is_empty() {
-                    config.new_build_error("server.asn.resource", "No resources found");
+                if asn_resources.is_empty() && geo_resources.is_empty() {
+                    config.new_build_error("server.asn.urls", "No resources found");
                     return None;
                 }
 
                 AsnGeoLookupConfig::Resource {
+                    headers: parse_http_headers(config, "server.asn"),
                     expires: config.property_or_default::<Duration>("server.asn.expires", "1d")?,
                     timeout: config.property_or_default::<Duration>("server.asn.timeout", "5m")?,
                     max_size: config
                         .property("server.asn.max-size")
                         .unwrap_or(100 * 1024 * 1024),
-                    resources,
+                    asn_resources,
+                    geo_resources,
                 }
                 .into()
             }
-            "disabled" | "none" | "false" => AsnGeoLookupConfig::Disabled.into(),
+            "disable" | "disabled" | "none" | "false" => AsnGeoLookupConfig::Disabled.into(),
             _ => {
                 config.new_build_error("server.asn.type", "Invalid value");
                 None

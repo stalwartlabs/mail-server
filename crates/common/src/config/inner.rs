@@ -45,10 +45,10 @@ impl Data {
 
         // Parse capacities
         let shard_amount = config
-            .property::<u64>("cache.shard")
-            .unwrap_or(32)
+            .property::<u64>("limiter.shard")
+            .unwrap_or_else(|| (num_cpus::get() * 2) as u64)
             .next_power_of_two() as usize;
-        let capacity = config.property("cache.capacity").unwrap_or(100);
+        let capacity = config.property("limiter.capacity").unwrap_or(100);
 
         // Parse id generator
         let id_generator = config
@@ -113,7 +113,7 @@ impl Caches {
         Caches {
             access_tokens: CacheWithTtl::from_config(
                 config,
-                "access-tokens",
+                "access-token",
                 MB_10,
                 (std::mem::size_of::<AccessToken>() + 255) as u64,
             ),
@@ -125,8 +125,8 @@ impl Caches {
             ),
             permissions: Cache::from_config(
                 config,
-                "permissions",
-                MB_10,
+                "permission",
+                MB_5,
                 std::mem::size_of::<RolePermissions>() as u64,
             ),
             permissions_version: 0.into(),
@@ -149,7 +149,7 @@ impl Caches {
             ),
             threads: Cache::from_config(
                 config,
-                "threads",
+                "thread",
                 MB_10,
                 (std::mem::size_of::<Threads>() + (500 * std::mem::size_of::<u64>())) as u64,
             ),

@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::{borrow::Cow, future::Future, time::Duration};
 
-use common::config::spamfilter::{Element, Location};
+use common::config::spamfilter::{Element, IpResolver, Location};
 use common::scripts::functions::unicode::CharUtils;
 use common::Server;
 use hyper::{header::LOCATION, Uri};
@@ -17,7 +17,7 @@ use reqwest::redirect::Policy;
 use unicode_security::MixedScript;
 
 use crate::modules::dnsbl::is_dnsbl;
-use crate::modules::expression::{IpResolver, SpamFilterResolver, StringResolver};
+use crate::modules::expression::{SpamFilterResolver, StringResolver};
 use crate::modules::html::SRC;
 use crate::{
     modules::html::{HtmlToken, A, HREF},

@@ -1231,6 +1231,7 @@ dependencies = [
  "mail-send",
  "md5",
  "nlp",
+ "num_cpus",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",

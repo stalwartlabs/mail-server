@@ -6,14 +6,17 @@
 
 use std::{
     net::Ipv4Addr,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
-use common::{config::spamfilter::DnsBlServer, expr::functions::ResolveVariable, Server};
+use common::{
+    config::spamfilter::{DnsBlServer, IpResolver},
+    expr::functions::ResolveVariable,
+    Server,
+};
 use mail_auth::{common::resolver::IntoFqdn, Error};
 use trc::SpamEvent;
-
-use crate::modules::expression::IpResolver;
 
 use super::expression::SpamFilterResolver;
 
@@ -77,13 +80,23 @@ pub(crate) async fn is_dnsbl(
                         Elapsed = time.elapsed()
                     );
 
+                    let entry = Arc::new(IpResolver::new(
+                        result
+                            .entry
+                            .iter()
+                            .copied()
+                            .next()
+                            .unwrap_or(Ipv4Addr::BROADCAST)
+                            .into(),
+                    ));
+
                     server.inner.cache.dns_rbl.insert_with_expiry(
                         zone,
-                        Some(result.entry.clone()),
+                        Some(entry.clone()),
                         result.expires,
                     );
 
-                    result.entry
+                    entry
                 }
                 Err(Error::DnsRecordNotFound(_)) => {
                     trc::event!(
@@ -118,18 +131,7 @@ pub(crate) async fn is_dnsbl(
     server
         .eval_if(
             &config.tags,
-            &SpamFilterResolver::new(
-                resolver.ctx,
-                &IpResolver::new(
-                    result
-                        .iter()
-                        .copied()
-                        .next()
-                        .unwrap_or(Ipv4Addr::BROADCAST)
-                        .into(),
-                ),
-                resolver.location,
-            ),
+            &SpamFilterResolver::new(resolver.ctx, result.as_ref(), resolver.location),
             resolver.ctx.input.span_id,
         )
         .await
