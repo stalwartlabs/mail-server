@@ -223,6 +223,22 @@ async fn manage_reports() {
     assert!(ids.next().unwrap().is_none());
     assert!(ids.next().unwrap().is_some());
     assert!(ids.next().unwrap().is_some());
+
+    // Cancel all reports
+    assert!(api
+        .request::<bool>(Method::DELETE, "/api/queue/reports")
+        .await
+        .unwrap()
+        .unwrap_data());
+    assert_eq!(
+        api.request::<List<String>>(Method::GET, "/api/queue/reports")
+            .await
+            .unwrap()
+            .unwrap_data()
+            .items
+            .len(),
+        0
+    );
 }
 
 impl ManagementApi {

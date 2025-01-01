@@ -69,6 +69,7 @@ pub struct EncryptionParams {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Default)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum EncryptionType {
     PGP {
         algo: Algorithm,

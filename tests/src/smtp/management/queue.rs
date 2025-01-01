@@ -446,6 +446,47 @@ async fn manage_queue() {
         }
     }
 
+    // Bulk cancel
+    assert_eq!(
+        api.request::<List<Message>>(Method::GET, "/api/queue/messages?values=1")
+            .await
+            .unwrap()
+            .unwrap_data()
+            .items
+            .len(),
+        3
+    );
+    assert!(api
+        .request::<bool>(Method::DELETE, "/api/queue/messages?text=example2.com")
+        .await
+        .unwrap()
+        .unwrap_data());
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        api.request::<List<QueueId>>(Method::GET, "/api/queue/messages")
+            .await
+            .unwrap()
+            .unwrap_data()
+            .items
+            .len(),
+        2
+    );
+    assert!(api
+        .request::<bool>(Method::DELETE, "/api/queue/messages")
+        .await
+        .unwrap()
+        .unwrap_data());
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        api.request::<List<QueueId>>(Method::GET, "/api/queue/messages")
+            .await
+            .unwrap()
+            .unwrap_data()
+            .items
+            .len(),
+        0
+    );
+
     // Test authentication error
     assert_eq!(
         reqwest::Client::builder()

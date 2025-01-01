@@ -78,6 +78,10 @@ impl Queue {
                     (on_hold.into(), false)
                 }
                 Ok(Some(QueueEvent::Paused(paused))) => {
+                    self.core
+                        .data
+                        .queue_status
+                        .store(!paused, Ordering::Relaxed);
                     is_paused = paused;
                     (None, false)
                 }

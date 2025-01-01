@@ -134,13 +134,12 @@ impl UndeleteApi for Server {
                     .await?
                     .ok_or_else(|| trc::ResourceEvent::NotFound.into_err())?;
 
-                let requests =
-                    serde_json::from_slice::<Vec<UndeleteRequest<String, String, String>>>(
-                        body.as_deref().unwrap_or_default(),
-                    )
-                    .ok()
-                    .and_then(|request| {
-                        request
+                let requests: Vec<UndeleteRequest<BlobHash, Collection, u64>> =
+                    match serde_json::from_slice::<
+                        Option<Vec<UndeleteRequest<String, String, String>>>,
+                    >(body.as_deref().unwrap_or_default())
+                    {
+                        Ok(Some(requests)) => requests
                             .into_iter()
                             .map(|request| {
                                 UndeleteRequest {
@@ -154,12 +153,14 @@ impl UndeleteApi for Server {
                                     collection: Collection::from_str(request.collection.as_str())
                                         .ok()?,
                                     time: DateTime::parse_rfc3339(request.time.as_str())?
-                                        .to_timestamp(),
+                                        .to_timestamp()
+                                        as u64,
                                     cancel_deletion: if let Some(cancel_deletion) =
                                         request.cancel_deletion
                                     {
-                                        DateTime::parse_rfc3339(cancel_deletion.as_str())?
+                                        (DateTime::parse_rfc3339(cancel_deletion.as_str())?
                                             .to_timestamp()
+                                            as u64)
                                             .into()
                                     } else {
                                         None
@@ -168,8 +169,24 @@ impl UndeleteApi for Server {
                                 .into()
                             })
                             .collect::<Option<Vec<_>>>()
-                    })
-                    .ok_or_else(|| trc::ResourceEvent::BadParameters.into_err())?;
+                            .ok_or_else(|| trc::ResourceEvent::BadParameters.into_err())?,
+                        Ok(None) => {
+                            let deleted = self.core.list_deleted(account_id).await?;
+                            let mut results = Vec::with_capacity(deleted.len());
+                            for blob in deleted {
+                                results.push(UndeleteRequest {
+                                    hash: blob.hash,
+                                    collection: Collection::from(blob.collection),
+                                    time: blob.deleted_at,
+                                    cancel_deletion: blob.expires_at.into(),
+                                });
+                            }
+                            results
+                        }
+                        Err(_) => {
+                            return Err(trc::ResourceEvent::BadParameters.into_err());
+                        }
+                    };
 
                 let mut results = Vec::with_capacity(requests.len());
                 let mut batch = BatchBuilder::new();
@@ -192,7 +209,7 @@ impl UndeleteApi for Server {
                                                 .caused_by(trc::location!())?,
                                             mailbox_ids: vec![INBOX_ID],
                                             keywords: vec![],
-                                            received_at: (request.time as u64).into(),
+                                            received_at: request.time.into(),
                                             source: IngestSource::Restore,
                                             spam_classify: false,
                                             spam_train: false,
@@ -205,7 +222,7 @@ impl UndeleteApi for Server {
                                             if let Some(cancel_deletion) = request.cancel_deletion {
                                                 batch.clear(ValueClass::Blob(BlobOp::Reserve {
                                                     hash: request.hash,
-                                                    until: cancel_deletion as u64,
+                                                    until: cancel_deletion,
                                                 }));
                                             }
                                         }

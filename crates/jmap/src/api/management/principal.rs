@@ -34,7 +34,7 @@ pub enum AccountAuthRequest {
     EnableOtpAuth { url: String },
     DisableOtpAuth { url: Option<String> },
     AddAppPassword { name: String, password: String },
-    RemoveAppPassword { name: String },
+    RemoveAppPassword { name: Option<String> },
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -265,6 +265,126 @@ impl PrincipalManager for Server {
                 }))
                 .into_http_response())
             }
+            (None, &Method::DELETE) => {
+                // List principal ids
+                let params = UrlParams::new(req.uri().query());
+                let filter = params.get("filter");
+                let typ = params.parse::<Type>("type").ok_or_else(|| {
+                    trc::EventType::Resource(trc::ResourceEvent::BadParameters)
+                        .into_err()
+                        .details("Invalid type")
+                })?;
+                if params.get("confirm").map_or(true, |c| c != "true") {
+                    return Err(trc::EventType::Resource(trc::ResourceEvent::BadParameters)
+                        .into_err()
+                        .details("Missing confirmation parameter"));
+                }
+
+                // Validate the access token
+                access_token.assert_has_permission(match typ {
+                    Type::Individual => Permission::IndividualDelete,
+                    Type::Group => Permission::GroupDelete,
+                    Type::List => Permission::MailingListDelete,
+                    Type::Domain => Permission::DomainDelete,
+                    Type::Tenant => Permission::TenantDelete,
+                    Type::Role => Permission::RoleDelete,
+                    Type::ApiKey => Permission::ApiKeyDelete,
+                    Type::OauthClient => Permission::OauthClientDelete,
+                    Type::Resource | Type::Location | Type::Other => Permission::PrincipalDelete,
+                })?;
+
+                let mut tenant = access_token.tenant.map(|t| t.id);
+
+                #[cfg(feature = "enterprise")]
+                if self.core.is_enterprise_edition() {
+                    if tenant.is_none() {
+                        // Limit search to current tenant
+                        if let Some(tenant_name) = params.get("tenant") {
+                            tenant = self
+                                .core
+                                .storage
+                                .data
+                                .get_principal_info(tenant_name)
+                                .await?
+                                .filter(|p| p.typ == Type::Tenant)
+                                .map(|p| p.id);
+                        }
+                    }
+                } else if typ == Type::Tenant {
+                    return Err(manage::enterprise());
+                }
+
+                let principals = self
+                    .core
+                    .storage
+                    .data
+                    .list_principals(filter, tenant, &[typ], &[PrincipalField::Name], 0, 0)
+                    .await?;
+
+                let found = !principals.items.is_empty();
+                if found {
+                    let server = self.clone();
+                    tokio::spawn(async move {
+                        let has_bayes = server
+                            .core
+                            .spam
+                            .bayes
+                            .as_ref()
+                            .map_or(false, |c| c.account_classify);
+                        for principal in principals.items {
+                            // Delete account
+                            if let Err(err) = server
+                                .store()
+                                .delete_principal(QueryBy::Id(principal.id()))
+                                .await
+                            {
+                                trc::error!(err.details("Failed to delete principal"));
+                                continue;
+                            }
+
+                            if matches!(typ, Type::Individual | Type::Group) {
+                                // Remove FTS index
+                                if let Err(err) =
+                                    server.core.storage.fts.remove_all(principal.id()).await
+                                {
+                                    trc::error!(err.details("Failed to delete FTS index"));
+                                }
+
+                                // Delete bayes model
+                                if has_bayes {
+                                    let mut key =
+                                        Vec::with_capacity(std::mem::size_of::<u32>() + 1);
+                                    key.push(KV_BAYES_MODEL_USER);
+                                    key.extend_from_slice(&principal.id().to_be_bytes());
+
+                                    if let Err(err) =
+                                        server.in_memory_store().key_delete_prefix(&key).await
+                                    {
+                                        trc::error!(
+                                            err.details("Failed to delete user bayes model")
+                                        );
+                                    }
+                                }
+                            }
+                        }
+
+                        if matches!(typ, Type::Role | Type::Tenant) {
+                            // Update permissions cache
+                            server.inner.cache.permissions.clear();
+                            server
+                                .inner
+                                .cache
+                                .permissions_version
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                    "data": found,
+                }))
+                .into_http_response())
+            }
             (Some(name), method) => {
                 // Fetch, update or delete principal
                 let name = decode_path_element(name);
@@ -344,31 +464,31 @@ impl PrincipalManager for Server {
                         })?;
 
                         // Delete account
-                        self.core
-                            .storage
-                            .data
+                        self.store()
                             .delete_principal(QueryBy::Id(account_id))
                             .await?;
 
-                        // Remove FTS index
                         if matches!(typ, Type::Individual | Type::Group) {
+                            // Remove FTS index
                             self.core.storage.fts.remove_all(account_id).await?;
-                        }
 
-                        // Delete bayes model
-                        if self
-                            .core
-                            .spam
-                            .bayes
-                            .as_ref()
-                            .map_or(false, |c| c.account_classify)
-                        {
-                            let mut key = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
-                            key.push(KV_BAYES_MODEL_USER);
-                            key.extend_from_slice(&account_id.to_be_bytes());
+                            // Delete bayes model
+                            if self
+                                .core
+                                .spam
+                                .bayes
+                                .as_ref()
+                                .map_or(false, |c| c.account_classify)
+                            {
+                                let mut key = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
+                                key.push(KV_BAYES_MODEL_USER);
+                                key.extend_from_slice(&account_id.to_be_bytes());
 
-                            if let Err(err) = self.in_memory_store().key_delete_prefix(&key).await {
-                                trc::error!(err.details("Failed to delete user bayes model"));
+                                if let Err(err) =
+                                    self.in_memory_store().key_delete_prefix(&key).await
+                                {
+                                    trc::error!(err.details("Failed to delete user bayes model"));
+                                }
                             }
                         }
 
@@ -668,9 +788,10 @@ impl PrincipalManager for Server {
                 AccountAuthRequest::AddAppPassword { name, password } => {
                     (PrincipalAction::AddItem, format!("$app${name}${password}"))
                 }
-                AccountAuthRequest::RemoveAppPassword { name } => {
-                    (PrincipalAction::RemoveItem, format!("$app${name}"))
-                }
+                AccountAuthRequest::RemoveAppPassword { name } => (
+                    PrincipalAction::RemoveItem,
+                    format!("$app${}", name.unwrap_or_default()),
+                ),
             };
 
             actions.push(PrincipalUpdate {

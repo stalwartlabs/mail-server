@@ -27,6 +27,7 @@ pub struct Config {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum ConfigWarning {
     Missing,
     AppliedDefault { default: String },
@@ -37,6 +38,7 @@ pub enum ConfigWarning {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum ConfigError {
     Parse { error: String },
     Build { error: String },

@@ -72,6 +72,7 @@ impl Data {
             jmap_id_gen: id_generator.clone(),
             queue_id_gen: id_generator.clone(),
             span_id_gen: id_generator,
+            queue_status: true.into(),
             webadmin: config
                 .value("webadmin.path")
                 .map(|path| WebAdminManager::new(path.into()))
@@ -245,6 +246,7 @@ impl Default for Data {
             jmap_id_gen: Default::default(),
             queue_id_gen: Default::default(),
             span_id_gen: Default::default(),
+            queue_status: true.into(),
             webadmin: Default::default(),
             config_version: Default::default(),
             jmap_limiter: Default::default(),

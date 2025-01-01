@@ -18,12 +18,15 @@ use std::future::Future;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum UpdateSettings {
     Delete {
         keys: Vec<String>,
     },
     Clear {
         prefix: String,
+        #[serde(default)]
+        filter: Option<String>,
     },
     Insert {
         prefix: Option<String>,
@@ -151,26 +154,29 @@ impl ManageSettings for Server {
                     }))
                     .into_http_response())
                 } else {
-                    let total = settings.len();
-                    let items = settings
-                        .into_iter()
-                        .filter_map(|(k, v)| {
-                            if filter.is_empty()
-                                || k.to_lowercase().contains(&filter)
-                                || v.to_lowercase().contains(&filter)
-                            {
-                                let k = k.strip_prefix(&prefix).map(|k| k.to_string()).unwrap_or(k);
-                                Some(json!({
-                                    "_id": k,
-                                    "_value": v,
-                                }))
+                    let mut total = 0;
+                    let mut items = Vec::new();
+
+                    for (k, v) in settings {
+                        if filter.is_empty()
+                            || k.to_lowercase().contains(&filter)
+                            || v.to_lowercase().contains(&filter)
+                        {
+                            if offset == 0 {
+                                if limit == 0 || items.len() < limit {
+                                    let k =
+                                        k.strip_prefix(&prefix).map(|k| k.to_string()).unwrap_or(k);
+                                    items.push(json!({
+                                        "_id": k,
+                                        "_value": v,
+                                    }));
+                                }
                             } else {
-                                None
+                                offset -= 1;
                             }
-                        })
-                        .skip(offset)
-                        .take(if limit == 0 { total } else { limit })
-                        .collect::<Vec<_>>();
+                            total += 1;
+                        }
+                    }
 
                     Ok(JsonResponse::new(json!({
                         "data": {
@@ -282,8 +288,20 @@ impl ManageSettings for Server {
                                 self.core.storage.config.clear(key).await?;
                             }
                         }
-                        UpdateSettings::Clear { prefix } => {
-                            self.core.storage.config.clear_prefix(&prefix).await?;
+                        UpdateSettings::Clear { prefix, filter } => {
+                            if let Some(filter) = filter {
+                                for (key, value) in
+                                    self.core.storage.config.list(&prefix, false).await?
+                                {
+                                    if value.to_lowercase().contains(&filter)
+                                        || key.to_lowercase().contains(&filter)
+                                    {
+                                        self.core.storage.config.clear(key).await?;
+                                    }
+                                }
+                            } else {
+                                self.core.storage.config.clear_prefix(&prefix).await?;
+                            }
                         }
                         UpdateSettings::Insert {
                             prefix,

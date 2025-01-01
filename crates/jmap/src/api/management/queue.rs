@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::future::Future;
+use std::{future::Future, sync::atomic::Ordering};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use common::{auth::AccessToken, ipc::QueueEvent, Server};
@@ -81,6 +81,7 @@ pub struct Recipient {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum Report {
     Tls {
         id: String,
@@ -171,109 +172,24 @@ impl QueueManagement for Server {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::MessageQueueList)?;
 
-                let text = params.get("text");
-                let from = params.get("from");
-                let to = params.get("to");
-                let before = params
-                    .parse::<FutureTimestamp>("before")
-                    .map(|t| t.into_inner());
-                let after = params
-                    .parse::<FutureTimestamp>("after")
-                    .map(|t| t.into_inner());
-                let page = params.parse::<usize>("page").unwrap_or_default();
-                let limit = params.parse::<usize>("limit").unwrap_or_default();
-                let values = params.has_key("values");
+                let result = fetch_queued_messages(self, &params, &tenant_domains).await?;
 
-                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
-                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
-                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+                let queue_status = self.inner.data.queue_status.load(Ordering::Relaxed);
 
-                let mut result_ids = Vec::new();
-                let mut result_values = Vec::new();
-                let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_start)));
-                let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_end)));
-                let has_filters = text.is_some()
-                    || from.is_some()
-                    || to.is_some()
-                    || before.is_some()
-                    || after.is_some();
-                let mut offset = page.saturating_sub(1) * limit;
-                let mut total = 0;
-                let mut total_returned = 0;
-                self.core
-                    .storage
-                    .data
-                    .iterate(
-                        IterateParams::new(from_key, to_key).ascending(),
-                        |key, value| {
-                            let message = Bincode::<queue::Message>::deserialize(value)
-                                .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?
-                                .inner;
-                            let matches = tenant_domains
-                                .as_ref()
-                                .map_or(true, |domains| message.has_domain(domains))
-                                && (!has_filters
-                                    || (text
-                                        .as_ref()
-                                        .map(|text| {
-                                            message.return_path.contains(text)
-                                                || message
-                                                    .recipients
-                                                    .iter()
-                                                    .any(|r| r.address_lcase.contains(text))
-                                        })
-                                        .unwrap_or_else(|| {
-                                            from.as_ref().map_or(true, |from| {
-                                                message.return_path.contains(from)
-                                            }) && to.as_ref().map_or(true, |to| {
-                                                message
-                                                    .recipients
-                                                    .iter()
-                                                    .any(|r| r.address_lcase.contains(to))
-                                            })
-                                        })
-                                        && before.as_ref().map_or(true, |before| {
-                                            message.next_delivery_event() < *before
-                                        })
-                                        && after.as_ref().map_or(true, |after| {
-                                            message.next_delivery_event() > *after
-                                        })));
-
-                            if matches {
-                                if offset == 0 {
-                                    if limit == 0 || total_returned < limit {
-                                        if values {
-                                            result_values.push(Message::from(&message));
-                                        } else {
-                                            result_ids.push(key.deserialize_be_u64(0)?);
-                                        }
-                                        total_returned += 1;
-                                    }
-                                } else {
-                                    offset -= 1;
-                                }
-
-                                total += 1;
-                            }
-
-                            Ok(max_total == 0 || total < max_total)
-                        },
-                    )
-                    .await
-                    .caused_by(trc::location!())?;
-
-                Ok(if values {
+                Ok(if !result.values.is_empty() {
                     JsonResponse::new(json!({
                             "data":{
-                                "items": result_values,
-                                "total": total,
+                                "items": result.values,
+                                "total": result.total,
+                                "status": queue_status,
                             },
                     }))
                 } else {
                     JsonResponse::new(json!({
                             "data": {
-                                "items": result_ids,
-                                "total": total,
+                                "items": result.ids,
+                                "total":  result.total,
+                                "status": queue_status,
                             },
                     }))
                 }
@@ -299,6 +215,61 @@ impl QueueManagement for Server {
                 } else {
                     Err(trc::ResourceEvent::NotFound.into_err())
                 }
+            }
+            ("messages", None, &Method::PATCH) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueUpdate)?;
+
+                let time = params
+                    .parse::<FutureTimestamp>("at")
+                    .map(|t| t.into_inner())
+                    .unwrap_or_else(now);
+                let result = fetch_queued_messages(self, &params, &tenant_domains).await?;
+
+                let found = !result.ids.is_empty();
+                if found {
+                    let server = self.clone();
+                    tokio::spawn(async move {
+                        for id in result.ids {
+                            if let Some(mut message) = server.read_message(id).await {
+                                let prev_event = message.next_event().unwrap_or_default();
+                                let mut has_changes = false;
+
+                                for domain in &mut message.domains {
+                                    if matches!(
+                                        domain.status,
+                                        Status::Scheduled | Status::TemporaryFailure(_)
+                                    ) {
+                                        domain.retry.due = time;
+                                        if domain.expires > time {
+                                            domain.expires = time + 10;
+                                        }
+                                        has_changes = true;
+                                    }
+                                }
+
+                                if has_changes {
+                                    let next_event = message.next_event().unwrap_or_default();
+                                    message
+                                        .save_changes(&server, prev_event.into(), next_event.into())
+                                        .await;
+                                }
+                            }
+                        }
+
+                        let _ = server
+                            .inner
+                            .ipc
+                            .queue_tx
+                            .send(QueueEvent::Refresh(None))
+                            .await;
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                        "data": found,
+                }))
+                .into_http_response())
             }
             ("messages", Some(queue_id), &Method::PATCH) => {
                 // Validate the access token
@@ -358,6 +329,50 @@ impl QueueManagement for Server {
                 } else {
                     Err(trc::ResourceEvent::NotFound.into_err())
                 }
+            }
+            ("messages", None, &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueDelete)?;
+
+                let result = fetch_queued_messages(self, &params, &tenant_domains).await?;
+
+                let found = !result.ids.is_empty();
+                if found {
+                    let server = self.clone();
+                    tokio::spawn(async move {
+                        let is_active = server.inner.data.queue_status.load(Ordering::Relaxed);
+
+                        if is_active {
+                            let _ = server
+                                .inner
+                                .ipc
+                                .queue_tx
+                                .send(QueueEvent::Paused(true))
+                                .await;
+                        }
+
+                        for id in result.ids {
+                            if let Some(message) = server.read_message(id).await {
+                                let prev_event = message.next_event().unwrap_or_default();
+                                message.remove(&server, prev_event).await;
+                            }
+                        }
+
+                        if is_active {
+                            let _ = server
+                                .inner
+                                .ipc
+                                .queue_tx
+                                .send(QueueEvent::Paused(false))
+                                .await;
+                        }
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                        "data": found,
+                }))
+                .into_http_response())
             }
             ("messages", Some(queue_id), &Method::DELETE) => {
                 // Validate the access token
@@ -450,83 +465,12 @@ impl QueueManagement for Server {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::OutgoingReportList)?;
 
-                let domain = params.get("domain").map(|d| d.to_lowercase());
-                let type_ = params.get("type").and_then(|t| match t {
-                    "dmarc" => 0u8.into(),
-                    "tls" => 1u8.into(),
-                    _ => None,
-                });
-                let page: usize = params.parse("page").unwrap_or_default();
-                let limit: usize = params.parse("limit").unwrap_or_default();
-
-                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
-                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
-                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
-
-                let mut result = Vec::new();
-                let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
-                    ReportEvent {
-                        due: range_start,
-                        policy_hash: 0,
-                        seq_id: 0,
-                        domain: String::new(),
-                    },
-                )));
-                let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
-                    ReportEvent {
-                        due: range_end,
-                        policy_hash: 0,
-                        seq_id: 0,
-                        domain: String::new(),
-                    },
-                )));
-                let mut offset = page.saturating_sub(1) * limit;
-                let mut total = 0;
-                let mut total_returned = 0;
-                self.core
-                    .storage
-                    .data
-                    .iterate(
-                        IterateParams::new(from_key, to_key).ascending().no_values(),
-                        |key, _| {
-                            if type_.map_or(true, |t| t == *key.last().unwrap()) {
-                                let event = ReportEvent::deserialize(key)?;
-                                if tenant_domains
-                                    .as_ref()
-                                    .map_or(true, |domains| domains.contains(&event.domain))
-                                    && event.seq_id != 0
-                                    && domain.as_ref().map_or(true, |d| event.domain.contains(d))
-                                {
-                                    if offset == 0 {
-                                        if limit == 0 || total_returned < limit {
-                                            result.push(
-                                                if *key.last().unwrap() == 0 {
-                                                    QueueClass::DmarcReportHeader(event)
-                                                } else {
-                                                    QueueClass::TlsReportHeader(event)
-                                                }
-                                                .queue_id(),
-                                            );
-                                            total_returned += 1;
-                                        }
-                                    } else {
-                                        offset -= 1;
-                                    }
-
-                                    total += 1;
-                                }
-                            }
-
-                            Ok(max_total == 0 || total < max_total)
-                        },
-                    )
-                    .await
-                    .caused_by(trc::location!())?;
+                let result = fetch_queued_reports(self, &params, &tenant_domains).await?;
 
                 Ok(JsonResponse::new(json!({
                         "data": {
-                            "items": result,
-                            "total": total,
+                            "items": result.ids.into_iter().map(|id| id.queue_id()).collect::<Vec<_>>(),
+                            "total": result.total,
                         },
                 }))
                 .into_http_response())
@@ -577,6 +521,34 @@ impl QueueManagement for Server {
                     Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
+            ("reports", None, &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::OutgoingReportDelete)?;
+
+                let result = fetch_queued_reports(self, &params, &tenant_domains).await?;
+                let found = !result.ids.is_empty();
+                if found {
+                    let server = self.clone();
+                    tokio::spawn(async move {
+                        for id in result.ids {
+                            match id {
+                                QueueClass::DmarcReportHeader(event) => {
+                                    server.delete_dmarc_report(event).await;
+                                }
+                                QueueClass::TlsReportHeader(event) => {
+                                    server.delete_tls_report(vec![event]).await;
+                                }
+                                _ => (),
+                            }
+                        }
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                        "data": found,
+                }))
+                .into_http_response())
+            }
             ("reports", Some(report_id), &Method::DELETE) => {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::OutgoingReportDelete)?;
@@ -609,6 +581,33 @@ impl QueueManagement for Server {
                 } else {
                     Err(trc::ResourceEvent::NotFound.into_err())
                 }
+            }
+            ("status", None, &Method::GET) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueGet)?;
+
+                Ok(JsonResponse::new(json!({
+                        "data": self.inner.data.queue_status.load(Ordering::Relaxed),
+                }))
+                .into_http_response())
+            }
+            ("status", Some(action), &Method::PATCH) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::MessageQueueUpdate)?;
+
+                let prev_status = self.inner.data.queue_status.load(Ordering::Relaxed);
+
+                let _ = self
+                    .inner
+                    .ipc
+                    .queue_tx
+                    .send(QueueEvent::Paused(action == "stop"))
+                    .await;
+
+                Ok(JsonResponse::new(json!({
+                        "data": prev_status,
+                }))
+                .into_http_response())
             }
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
@@ -676,6 +675,197 @@ impl From<&queue::Message> for Message {
             blob_hash: URL_SAFE_NO_PAD.encode::<&[u8]>(message.blob_hash.as_ref()),
         }
     }
+}
+
+struct QueuedMessages {
+    ids: Vec<u64>,
+    values: Vec<Message>,
+    total: usize,
+}
+
+async fn fetch_queued_messages(
+    server: &Server,
+    params: &UrlParams<'_>,
+    tenant_domains: &Option<Vec<String>>,
+) -> trc::Result<QueuedMessages> {
+    let text = params.get("text");
+    let from = params.get("from");
+    let to = params.get("to");
+    let before = params
+        .parse::<FutureTimestamp>("before")
+        .map(|t| t.into_inner());
+    let after = params
+        .parse::<FutureTimestamp>("after")
+        .map(|t| t.into_inner());
+    let page = params.parse::<usize>("page").unwrap_or_default();
+    let limit = params.parse::<usize>("limit").unwrap_or_default();
+    let values = params.has_key("values");
+
+    let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+    let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+    let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+
+    let mut result = QueuedMessages {
+        ids: Vec::new(),
+        values: Vec::new(),
+        total: 0,
+    };
+    let from_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_start)));
+    let to_key = ValueKey::from(ValueClass::Queue(QueueClass::Message(range_end)));
+    let has_filters =
+        text.is_some() || from.is_some() || to.is_some() || before.is_some() || after.is_some();
+    let mut offset = page.saturating_sub(1) * limit;
+    let mut total_returned = 0;
+
+    server
+        .core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(from_key, to_key).ascending(),
+            |key, value| {
+                let message = Bincode::<queue::Message>::deserialize(value)
+                    .add_context(|ctx| ctx.ctx(trc::Key::Key, key))?
+                    .inner;
+                let matches = tenant_domains
+                    .as_ref()
+                    .map_or(true, |domains| message.has_domain(domains))
+                    && (!has_filters
+                        || (text
+                            .as_ref()
+                            .map(|text| {
+                                message.return_path.contains(text)
+                                    || message
+                                        .recipients
+                                        .iter()
+                                        .any(|r| r.address_lcase.contains(text))
+                            })
+                            .unwrap_or_else(|| {
+                                from.as_ref()
+                                    .map_or(true, |from| message.return_path.contains(from))
+                                    && to.as_ref().map_or(true, |to| {
+                                        message
+                                            .recipients
+                                            .iter()
+                                            .any(|r| r.address_lcase.contains(to))
+                                    })
+                            })
+                            && before
+                                .as_ref()
+                                .map_or(true, |before| message.next_delivery_event() < *before)
+                            && after
+                                .as_ref()
+                                .map_or(true, |after| message.next_delivery_event() > *after)));
+
+                if matches {
+                    if offset == 0 {
+                        if limit == 0 || total_returned < limit {
+                            if values {
+                                result.values.push(Message::from(&message));
+                            } else {
+                                result.ids.push(key.deserialize_be_u64(0)?);
+                            }
+                            total_returned += 1;
+                        }
+                    } else {
+                        offset -= 1;
+                    }
+
+                    result.total += 1;
+                }
+
+                Ok(max_total == 0 || result.total < max_total)
+            },
+        )
+        .await
+        .caused_by(trc::location!())
+        .map(|_| result)
+}
+
+struct QueuedReports {
+    ids: Vec<QueueClass>,
+    total: usize,
+}
+
+async fn fetch_queued_reports(
+    server: &Server,
+    params: &UrlParams<'_>,
+    tenant_domains: &Option<Vec<String>>,
+) -> trc::Result<QueuedReports> {
+    let domain = params.get("domain").map(|d| d.to_lowercase());
+    let type_ = params.get("type").and_then(|t| match t {
+        "dmarc" => 0u8.into(),
+        "tls" => 1u8.into(),
+        _ => None,
+    });
+    let page: usize = params.parse("page").unwrap_or_default();
+    let limit: usize = params.parse("limit").unwrap_or_default();
+
+    let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+    let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+    let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+
+    let mut result = QueuedReports {
+        ids: Vec::new(),
+        total: 0,
+    };
+    let from_key = ValueKey::from(ValueClass::Queue(QueueClass::DmarcReportHeader(
+        ReportEvent {
+            due: range_start,
+            policy_hash: 0,
+            seq_id: 0,
+            domain: String::new(),
+        },
+    )));
+    let to_key = ValueKey::from(ValueClass::Queue(QueueClass::TlsReportHeader(
+        ReportEvent {
+            due: range_end,
+            policy_hash: 0,
+            seq_id: 0,
+            domain: String::new(),
+        },
+    )));
+    let mut offset = page.saturating_sub(1) * limit;
+    let mut total_returned = 0;
+
+    server
+        .core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(from_key, to_key).ascending().no_values(),
+            |key, _| {
+                if type_.map_or(true, |t| t == *key.last().unwrap()) {
+                    let event = ReportEvent::deserialize(key)?;
+                    if tenant_domains
+                        .as_ref()
+                        .map_or(true, |domains| domains.contains(&event.domain))
+                        && event.seq_id != 0
+                        && domain.as_ref().map_or(true, |d| event.domain.contains(d))
+                    {
+                        if offset == 0 {
+                            if limit == 0 || total_returned < limit {
+                                result.ids.push(if *key.last().unwrap() == 0 {
+                                    QueueClass::DmarcReportHeader(event)
+                                } else {
+                                    QueueClass::TlsReportHeader(event)
+                                });
+                                total_returned += 1;
+                            }
+                        } else {
+                            offset -= 1;
+                        }
+
+                        result.total += 1;
+                    }
+                }
+
+                Ok(max_total == 0 || result.total < max_total)
+            },
+        )
+        .await
+        .caused_by(trc::location!())
+        .map(|_| result)
 }
 
 impl Report {

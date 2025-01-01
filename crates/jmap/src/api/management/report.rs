@@ -97,142 +97,15 @@ impl ManageReports for Server {
                 access_token.assert_has_permission(Permission::IncomingReportList)?;
 
                 let params = UrlParams::new(req.uri().query());
-                let filter = params.get("text");
-                let page: usize = params.parse::<usize>("page").unwrap_or_default();
-                let limit: usize = params.parse::<usize>("limit").unwrap_or_default();
 
-                let range_start = params.parse::<u64>("range-start").unwrap_or_default();
-                let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
-                let max_total = params.parse::<usize>("max-total").unwrap_or_default();
-
-                let (from_key, to_key, typ) = match class {
-                    "dmarc" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
-                            id: range_start,
-                            expires: 0,
-                        })),
-                        ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
-                            id: range_end,
-                            expires: u64::MAX,
-                        })),
-                        ReportType::Dmarc,
-                    ),
-                    "tls" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Tls {
-                            id: range_start,
-                            expires: 0,
-                        })),
-                        ValueKey::from(ValueClass::Report(ReportClass::Tls {
-                            id: range_end,
-                            expires: u64::MAX,
-                        })),
-                        ReportType::Tls,
-                    ),
-                    "arf" => (
-                        ValueKey::from(ValueClass::Report(ReportClass::Arf {
-                            id: range_start,
-                            expires: 0,
-                        })),
-                        ValueKey::from(ValueClass::Report(ReportClass::Arf {
-                            id: range_end,
-                            expires: u64::MAX,
-                        })),
-                        ReportType::Arf,
-                    ),
-                    _ => unreachable!(),
-                };
-
-                let mut results = Vec::new();
-                let mut offset = page.saturating_sub(1) * limit;
-                let mut total = 0;
-                let mut last_id = 0;
-                let has_filters = filter.is_some() || tenant_domains.is_some();
-                self.core
-                    .storage
-                    .data
-                    .iterate(
-                        IterateParams::new(from_key, to_key)
-                            .set_values(has_filters)
-                            .descending(),
-                        |key, value| {
-                            // Skip chunked records
-                            let id = key.deserialize_be_u64(U64_LEN + 1)?;
-                            if id == last_id {
-                                return Ok(true);
-                            }
-                            last_id = id;
-
-                            // TODO: Support filtering chunked records (over 10MB) on FDB
-                            let matches = if has_filters {
-                                match typ {
-                                    ReportType::Dmarc => {
-                                        let report = Bincode::<
-                                            IncomingReport<mail_auth::report::Report>,
-                                        >::deserialize(
-                                            value
-                                        )
-                                        .caused_by(trc::location!())?
-                                        .inner;
-
-                                        filter.map_or(true, |f| report.contains(f))
-                                            && tenant_domains
-                                                .as_ref()
-                                                .map_or(true, |domains| report.has_domain(domains))
-                                    }
-                                    ReportType::Tls => {
-                                        let report =
-                                            Bincode::<IncomingReport<TlsReport>>::deserialize(
-                                                value,
-                                            )
-                                            .caused_by(trc::location!())?
-                                            .inner;
-
-                                        filter.map_or(true, |f| report.contains(f))
-                                            && tenant_domains
-                                                .as_ref()
-                                                .map_or(true, |domains| report.has_domain(domains))
-                                    }
-                                    ReportType::Arf => {
-                                        let report =
-                                            Bincode::<IncomingReport<Feedback>>::deserialize(value)
-                                                .caused_by(trc::location!())?
-                                                .inner;
-
-                                        filter.map_or(true, |f| report.contains(f))
-                                            && tenant_domains
-                                                .as_ref()
-                                                .map_or(true, |domains| report.has_domain(domains))
-                                    }
-                                }
-                            } else {
-                                true
-                            };
-
-                            if matches {
-                                if offset == 0 {
-                                    if limit == 0 || results.len() < limit {
-                                        results.push(format!(
-                                            "{}_{}",
-                                            id,
-                                            key.deserialize_be_u64(1)?
-                                        ));
-                                    }
-                                } else {
-                                    offset -= 1;
-                                }
-
-                                total += 1;
-                            }
-
-                            Ok(max_total == 0 || total < max_total)
-                        },
-                    )
-                    .await
-                    .caused_by(trc::location!())?;
+                let IncomingReports { ids, total } =
+                    fetch_incoming_reports(self, class, &params, &tenant_domains).await?;
 
                 Ok(JsonResponse::new(json!({
                         "data": {
-                            "items": results,
+                            "items": ids.into_iter().map(|(id, expires)| {
+                                format!("{id}_{expires}")
+                            }).collect::<Vec<_>>(),
                             "total": total,
                         },
                 }))
@@ -312,6 +185,59 @@ impl ManageReports for Server {
                     Err(trc::ResourceEvent::NotFound.into_err())
                 }
             }
+            (class @ ("dmarc" | "tls" | "arf"), None, &Method::DELETE) => {
+                // Validate the access token
+                access_token.assert_has_permission(Permission::IncomingReportDelete)?;
+
+                let params = UrlParams::new(req.uri().query());
+
+                let IncomingReports { ids, .. } =
+                    fetch_incoming_reports(self, class, &params, &tenant_domains).await?;
+
+                let found = !ids.is_empty();
+                if found {
+                    let class = match class {
+                        "dmarc" => ReportClass::Dmarc { id: 0, expires: 0 },
+                        "tls" => ReportClass::Tls { id: 0, expires: 0 },
+                        "arf" => ReportClass::Arf { id: 0, expires: 0 },
+                        _ => unreachable!(),
+                    };
+                    let server = self.clone();
+                    tokio::spawn(async move {
+                        let mut batch = BatchBuilder::new();
+
+                        for (id, expires) in ids {
+                            let report_id = match &class {
+                                ReportClass::Dmarc { .. } => ReportClass::Dmarc { id, expires },
+                                ReportClass::Tls { .. } => ReportClass::Tls { id, expires },
+                                ReportClass::Arf { .. } => ReportClass::Arf { id, expires },
+                            };
+
+                            batch.clear(ValueClass::Report(report_id));
+
+                            if batch.ops.len() > 1000 {
+                                if let Err(err) =
+                                    server.core.storage.data.write(batch.build()).await
+                                {
+                                    trc::error!(err.caused_by(trc::location!()));
+                                }
+                                batch = BatchBuilder::new();
+                            }
+                        }
+
+                        if !batch.ops.is_empty() {
+                            if let Err(err) = server.core.storage.data.write(batch.build()).await {
+                                trc::error!(err.caused_by(trc::location!()));
+                            }
+                        }
+                    });
+                }
+
+                Ok(JsonResponse::new(json!({
+                        "data": found,
+                }))
+                .into_http_response())
+            }
             (class @ ("dmarc" | "tls" | "arf"), Some(report_id), &Method::DELETE) => {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::IncomingReportDelete)?;
@@ -369,6 +295,147 @@ impl ManageReports for Server {
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
+}
+
+struct IncomingReports {
+    ids: Vec<(u64, u64)>,
+    total: usize,
+}
+
+async fn fetch_incoming_reports(
+    server: &Server,
+    class: &str,
+    params: &UrlParams<'_>,
+    tenant_domains: &Option<Vec<String>>,
+) -> trc::Result<IncomingReports> {
+    let filter = params.get("text");
+    let page: usize = params.parse::<usize>("page").unwrap_or_default();
+    let limit: usize = params.parse::<usize>("limit").unwrap_or_default();
+
+    let range_start = params.parse::<u64>("range-start").unwrap_or_default();
+    let range_end = params.parse::<u64>("range-end").unwrap_or(u64::MAX);
+    let max_total = params.parse::<usize>("max-total").unwrap_or_default();
+
+    let (from_key, to_key, typ) = match class {
+        "dmarc" => (
+            ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
+                id: range_start,
+                expires: 0,
+            })),
+            ValueKey::from(ValueClass::Report(ReportClass::Dmarc {
+                id: range_end,
+                expires: u64::MAX,
+            })),
+            ReportType::Dmarc,
+        ),
+        "tls" => (
+            ValueKey::from(ValueClass::Report(ReportClass::Tls {
+                id: range_start,
+                expires: 0,
+            })),
+            ValueKey::from(ValueClass::Report(ReportClass::Tls {
+                id: range_end,
+                expires: u64::MAX,
+            })),
+            ReportType::Tls,
+        ),
+        "arf" => (
+            ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                id: range_start,
+                expires: 0,
+            })),
+            ValueKey::from(ValueClass::Report(ReportClass::Arf {
+                id: range_end,
+                expires: u64::MAX,
+            })),
+            ReportType::Arf,
+        ),
+        _ => unreachable!(),
+    };
+
+    let mut results = IncomingReports {
+        ids: Vec::new(),
+        total: 0,
+    };
+    let mut offset = page.saturating_sub(1) * limit;
+    let mut last_id = 0;
+    let has_filters = filter.is_some() || tenant_domains.is_some();
+
+    server
+        .core
+        .storage
+        .data
+        .iterate(
+            IterateParams::new(from_key, to_key)
+                .set_values(has_filters)
+                .descending(),
+            |key, value| {
+                // Skip chunked records
+                let id = key.deserialize_be_u64(U64_LEN + 1)?;
+                if id == last_id {
+                    return Ok(true);
+                }
+                last_id = id;
+
+                // TODO: Support filtering chunked records (over 10MB) on FDB
+                let matches = if has_filters {
+                    match typ {
+                        ReportType::Dmarc => {
+                            let report =
+                                Bincode::<IncomingReport<mail_auth::report::Report>>::deserialize(
+                                    value,
+                                )
+                                .caused_by(trc::location!())?
+                                .inner;
+
+                            filter.map_or(true, |f| report.contains(f))
+                                && tenant_domains
+                                    .as_ref()
+                                    .map_or(true, |domains| report.has_domain(domains))
+                        }
+                        ReportType::Tls => {
+                            let report = Bincode::<IncomingReport<TlsReport>>::deserialize(value)
+                                .caused_by(trc::location!())?
+                                .inner;
+
+                            filter.map_or(true, |f| report.contains(f))
+                                && tenant_domains
+                                    .as_ref()
+                                    .map_or(true, |domains| report.has_domain(domains))
+                        }
+                        ReportType::Arf => {
+                            let report = Bincode::<IncomingReport<Feedback>>::deserialize(value)
+                                .caused_by(trc::location!())?
+                                .inner;
+
+                            filter.map_or(true, |f| report.contains(f))
+                                && tenant_domains
+                                    .as_ref()
+                                    .map_or(true, |domains| report.has_domain(domains))
+                        }
+                    }
+                } else {
+                    true
+                };
+
+                if matches {
+                    if offset == 0 {
+                        if limit == 0 || results.ids.len() < limit {
+                            results.ids.push((id, key.deserialize_be_u64(1)?));
+                        }
+                    } else {
+                        offset -= 1;
+                    }
+
+                    results.total += 1;
+                }
+
+                Ok(max_total == 0 || results.total < max_total)
+            },
+        )
+        .await
+        .caused_by(trc::location!())
+        .map(|_| results)
 }
 
 fn parse_incoming_report_id(class: &str, id: &str) -> Option<ReportClass> {

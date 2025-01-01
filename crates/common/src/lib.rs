@@ -8,7 +8,10 @@ use std::{
     collections::BTreeMap,
     hash::{BuildHasher, Hasher},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    sync::{atomic::AtomicU8, Arc},
+    sync::{
+        atomic::{AtomicBool, AtomicU8},
+        Arc,
+    },
 };
 
 use ahash::{AHashMap, AHashSet, RandomState};
@@ -118,6 +121,7 @@ pub struct Data {
     pub jmap_id_gen: SnowflakeIdGenerator,
     pub queue_id_gen: SnowflakeIdGenerator,
     pub span_id_gen: SnowflakeIdGenerator,
+    pub queue_status: AtomicBool,
 
     pub webadmin: WebAdminManager,
     pub config_version: AtomicU8,
