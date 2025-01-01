@@ -135,6 +135,7 @@ impl OAuthApiHandler for Server {
                     "data": {
                         "code": client_code,
                         "permissions": access_token.permissions(),
+                        "version": env!("CARGO_PKG_VERSION"),
                         "isEnterprise": is_enterprise,
                     },
                 })

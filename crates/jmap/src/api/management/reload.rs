@@ -129,12 +129,13 @@ impl ManageReload for Server {
                 let overwrite = UrlParams::new(req.uri().query()).has_key("overwrite");
 
                 Ok(JsonResponse::new(json!({
-                    "data":  self
+                    "data": self
                     .core
                     .storage
                     .config
-                    .update_config_resource("spam-filter", overwrite)
-                    .await?,
+                    .update_spam_rules(overwrite)
+                    .await?
+                    .map(|v| v.to_string()),
                 }))
                 .into_http_response())
             }

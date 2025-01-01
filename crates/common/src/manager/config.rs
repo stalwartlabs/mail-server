@@ -20,6 +20,7 @@ use trc::AddContext;
 use utils::{
     config::{Config, ConfigKey},
     glob::GlobPattern,
+    Semver,
 };
 
 #[derive(Default)]
@@ -50,9 +51,8 @@ pub enum MatchType {
     All,
 }
 
-pub(crate) struct ExternalConfig {
-    pub id: String,
-    pub version: String,
+pub(crate) struct ExternalSpamRules {
+    pub version: Semver,
     pub keys: Vec<ConfigKey>,
 }
 
@@ -329,73 +329,69 @@ impl ConfigManager {
             })
     }
 
-    pub async fn update_config_resource(
-        &self,
-        resource_id: &str,
-        overwrite: bool,
-    ) -> trc::Result<Option<String>> {
-        let external = self
-            .fetch_config_resource(resource_id)
-            .await
-            .map_err(|reason| {
-                trc::EventType::Config(trc::ConfigEvent::FetchError)
-                    .caused_by(trc::location!())
-                    .details("Failed to fetch external configuration")
-                    .ctx(trc::Key::Reason, reason)
-            })?;
+    pub async fn update_spam_rules(&self, overwrite: bool) -> trc::Result<Option<Semver>> {
+        let external = self.fetch_spam_rules().await.map_err(|reason| {
+            trc::EventType::Config(trc::ConfigEvent::FetchError)
+                .caused_by(trc::location!())
+                .details("Failed to update spam filter rules")
+                .ctx(trc::Key::Reason, reason)
+        })?;
 
-        if self
-            .get(&external.id)
-            .await?
-            .map_or(true, |v| v != external.version)
-        {
+        if self.get("version.spam-filter").await?.map_or(true, |v| {
+            v.as_str().try_into().map_or(true, |v| external.version > v)
+        }) {
+            // Delete previous STWT_* rules
+            for prefix in [
+                "spam-filter.rule.stwt_",
+                "spam-filter.dnsbl.server.stwt_",
+                "http-lookup.stwt_",
+            ] {
+                self.clear_prefix(prefix).await?;
+            }
+
             self.set(external.keys, overwrite).await?;
 
             trc::event!(
                 Config(trc::ConfigEvent::ImportExternal),
-                Version = external.version.clone(),
-                Id = resource_id.to_string(),
+                Version = external.version.to_string(),
+                Id = "spam-filter",
             );
 
             Ok(Some(external.version))
         } else {
             trc::event!(
                 Config(trc::ConfigEvent::AlreadyUpToDate),
-                Version = external.version,
-                Id = resource_id.to_string(),
+                Version = external.version.to_string(),
+                Id = "spam-filter",
             );
 
             Ok(None)
         }
     }
 
-    pub(crate) async fn fetch_config_resource(
-        &self,
-        resource_id: &str,
-    ) -> Result<ExternalConfig, String> {
-        let config = String::from_utf8(self.fetch_resource(resource_id).await?)
+    pub(crate) async fn fetch_spam_rules(&self) -> Result<ExternalSpamRules, String> {
+        let config = String::from_utf8(self.fetch_resource("spam-filter").await?)
             .map_err(|err| format!("Configuration file has invalid UTF-8: {err}"))?;
         let config = Config::new(config)
             .map_err(|err| format!("Failed to parse external configuration: {err}"))?;
 
         // Import configuration
-        let mut external = ExternalConfig {
-            id: String::new(),
-            version: String::new(),
+        let mut external = ExternalSpamRules {
+            version: Semver::default(),
             keys: Vec::new(),
         };
+        let mut required_semver = Semver::default();
+        let server_semver: Semver = env!("CARGO_PKG_VERSION").try_into().unwrap();
         for (key, value) in config.keys {
-            if key.starts_with("version.") {
-                external.id.clone_from(&key);
-                external.version.clone_from(&value);
+            if key == "version.spam-filter" {
+                external.version = value.as_str().try_into().unwrap_or_default();
                 external.keys.push(ConfigKey::from((key, value)));
+            } else if key == "version.server" {
+                required_semver = value.as_str().try_into().unwrap_or_default();
             } else if key.starts_with("spam-filter.")
                 || key.starts_with("http-lookup.")
                 || (key.starts_with("lookup.") && !key.starts_with("lookup.default."))
                 || key.starts_with("server.asn.")
-                || key.starts_with("queue.quota.")
-                || key.starts_with("queue.throttle.")
-                || key.starts_with("session.throttle.")
             {
                 external.keys.push(ConfigKey::from((key, value)));
             } else {
@@ -403,15 +399,21 @@ impl ConfigManager {
                     Config(trc::ConfigEvent::ExternalKeyIgnored),
                     Key = key,
                     Value = value,
-                    Id = resource_id.to_string(),
+                    Id = "spam-filter",
                 );
             }
         }
 
-        if !external.version.is_empty() {
+        if !required_semver.is_valid() {
+            Err("External spam filter rules do not contain a valid server version".to_string())
+        } else if required_semver > server_semver {
+            Err(format!(
+                "External spam filter rules require server version {required_semver}, but this is version {server_semver}",
+            ))
+        } else if external.version.is_valid() {
             Ok(external)
         } else {
-            Err("External configuration file does not contain a version key".to_string())
+            Err("External spam filter rules do not contain a version key".to_string())
         }
     }
 

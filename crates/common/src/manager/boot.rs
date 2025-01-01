@@ -235,17 +235,17 @@ impl BootManager {
                     )));
                 }
 
-                // Download SPAM filters if missing
+                // Download Spam filter rules if missing
                 if config
                     .value("version.spam-filter")
                     .filter(|v| !v.is_empty())
                     .is_none()
                 {
-                    match manager.fetch_config_resource("spam-filter").await {
+                    match manager.fetch_spam_rules().await {
                         Ok(external_config) => {
                             trc::event!(
                                 Config(trc::ConfigEvent::ImportExternal),
-                                Version = external_config.version,
+                                Version = external_config.version.to_string(),
                                 Id = "spam-filter"
                             );
                             insert_keys.extend(external_config.keys);
@@ -357,6 +357,20 @@ impl BootManager {
                         trc::event!(
                             Resource(trc::ResourceEvent::Error),
                             Details = "Failed to update webadmin",
+                            CausedBy = err
+                        );
+                    }
+                }
+
+                // Spam filter auto-update
+                if config
+                    .property_or_default::<bool>("spam-filter.auto-update", "false")
+                    .unwrap_or_default()
+                {
+                    if let Err(err) = core.storage.config.update_spam_rules(false).await {
+                        trc::event!(
+                            Resource(trc::ResourceEvent::Error),
+                            Details = "Failed to update spam-filter",
                             CausedBy = err
                         );
                     }
