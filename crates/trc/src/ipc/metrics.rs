@@ -436,6 +436,7 @@ impl EventType {
                 | StoreEvent::PostgresqlError
                 | StoreEvent::RocksdbError
                 | StoreEvent::SqliteError
+                | StoreEvent::RqliteError
                 | StoreEvent::LdapError
                 | StoreEvent::ElasticsearchError
                 | StoreEvent::RedisError

@@ -863,6 +863,7 @@ impl EventType {
             EventType::Spam(SpamEvent::Dnsbl) => 562,
             EventType::Spam(SpamEvent::DnsblError) => 563,
             EventType::Spam(SpamEvent::Pyzor) => 564,
+            EventType::Store(StoreEvent::RqliteError) => 565,
         }
     }
 
@@ -1466,6 +1467,7 @@ impl EventType {
             562 => Some(EventType::Spam(SpamEvent::Dnsbl)),
             563 => Some(EventType::Spam(SpamEvent::DnsblError)),
             564 => Some(EventType::Spam(SpamEvent::Pyzor)),
+            565 => Some(EventType::Store(StoreEvent::RqliteError)),
             _ => None,
         }
     }

@@ -302,7 +302,7 @@ impl StoreEvent {
             Self::MysqlError => "MySQL error",
             Self::PostgresqlError => "PostgreSQL error",
             Self::RocksdbError => "RocksDB error",
-            Self::SqliteError => "SQLite error",
+            Self::RqliteError => "RQLite error",
             Self::LdapError => "LDAP error",
             Self::ElasticsearchError => "ElasticSearch error",
             Self::RedisError => "Redis error",

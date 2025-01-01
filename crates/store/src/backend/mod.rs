@@ -23,6 +23,8 @@ pub mod postgres;
 pub mod redis;
 #[cfg(feature = "rocks")]
 pub mod rocksdb;
+#[cfg(feature = "rqlite")]
+pub mod rqlite;
 #[cfg(feature = "s3")]
 pub mod s3;
 #[cfg(feature = "sqlite")]

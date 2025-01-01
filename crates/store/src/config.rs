@@ -23,6 +23,9 @@ use crate::backend::mysql::MysqlStore;
 #[cfg(feature = "sqlite")]
 use crate::backend::sqlite::SqliteStore;
 
+#[cfg(feature = "rqlite")]
+use crate::backend::rqlite::RqliteStore;
+
 #[cfg(feature = "foundation")]
 use crate::backend::foundationdb::FdbStore;
 
@@ -179,6 +182,28 @@ impl Stores {
                     }
 
                     if let Some(db) = SqliteStore::open(config, prefix).map(Store::from) {
+                        self.stores.insert(store_id.clone(), db.clone());
+                        self.fts_stores.insert(store_id.clone(), db.clone().into());
+                        self.blob_stores.insert(
+                            store_id.clone(),
+                            BlobStore::from(db.clone()).with_compression(compression_algo),
+                        );
+                        self.in_memory_stores.insert(store_id.clone(), db.into());
+                    }
+                }
+                #[cfg(feature = "rqlite")]
+                "rqlite" => {
+                    // Avoid opening the same store twice
+                    if is_reload
+                        && self
+                            .stores
+                            .values()
+                            .any(|store| matches!(store, Store::RQLite(_)))
+                    {
+                        continue;
+                    }
+
+                    if let Some(db) = RqliteStore::open(config, prefix).await.map(Store::from) {
                         self.stores.insert(store_id.clone(), db.clone());
                         self.fts_stores.insert(store_id.clone(), db.clone().into());
                         self.blob_stores.insert(

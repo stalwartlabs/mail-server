@@ -1,7 +1,7 @@
 #!/bin/bash
 
 BASE_DIR="/Users/me/Downloads/stalwart-test"
-FEATURES="sqlite foundationdb postgres mysql rocks elastic s3 redis"
+FEATURES="sqlite rqlite foundationdb postgres mysql rocks elastic s3 redis"
 
 # Delete previous tests
 rm -rf $BASE_DIR

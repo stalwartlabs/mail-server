@@ -820,6 +820,7 @@ pub enum StoreEvent {
     PostgresqlError,
     RocksdbError,
     SqliteError,
+    RqliteError,
     LdapError,
     ElasticsearchError,
     RedisError,
