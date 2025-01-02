@@ -11,19 +11,73 @@ use std::{
 };
 
 use common::{
-    config::spamfilter::{DnsBlServer, IpResolver},
+    config::spamfilter::{DnsBlServer, Element, IpResolver, Location},
     expr::functions::ResolveVariable,
     Server,
 };
 use mail_auth::{common::resolver::IntoFqdn, Error};
 use trc::SpamEvent;
 
+use crate::SpamFilterContext;
+
 use super::expression::SpamFilterResolver;
 
-pub(crate) async fn is_dnsbl(
+pub(crate) async fn check_dnsbl(
+    server: &Server,
+    ctx: &mut SpamFilterContext<'_>,
+    resolver: &impl ResolveVariable,
+    scope: Element,
+    location: Location,
+) {
+    let (mut checks, max_checks) = match scope {
+        Element::Email => (
+            ctx.result.rbl_email_checks,
+            server.core.spam.dnsbl.max_email_checks,
+        ),
+        Element::Ip => (
+            ctx.result.rbl_ip_checks,
+            server.core.spam.dnsbl.max_ip_checks,
+        ),
+        Element::Url => (
+            ctx.result.rbl_url_checks,
+            server.core.spam.dnsbl.max_url_checks,
+        ),
+        Element::Domain => (
+            ctx.result.rbl_domain_checks,
+            server.core.spam.dnsbl.max_domain_checks,
+        ),
+        Element::Header | Element::Body | Element::Any => unreachable!(),
+    };
+
+    for dnsbl in &server.core.spam.dnsbl.servers {
+        if dnsbl.scope == scope && checks < max_checks {
+            if let Some(tag) = is_dnsbl(
+                server,
+                dnsbl,
+                SpamFilterResolver::new(ctx, resolver, location),
+                &mut checks,
+            )
+            .await
+            {
+                ctx.result.add_tag(tag);
+            }
+        }
+    }
+
+    match scope {
+        Element::Email => ctx.result.rbl_email_checks = checks,
+        Element::Ip => ctx.result.rbl_ip_checks = checks,
+        Element::Url => ctx.result.rbl_url_checks = checks,
+        Element::Domain => ctx.result.rbl_domain_checks = checks,
+        Element::Header | Element::Body | Element::Any => unreachable!(),
+    }
+}
+
+async fn is_dnsbl(
     server: &Server,
     config: &DnsBlServer,
     resolver: SpamFilterResolver<'_, impl ResolveVariable>,
+    checks: &mut usize,
 ) -> Option<String> {
     let time = Instant::now();
     let zone = server
@@ -60,6 +114,8 @@ pub(crate) async fn is_dnsbl(
         Some(Some(result)) => result,
         Some(None) => return None,
         None => {
+            *checks += 1;
+
             match server
                 .core
                 .smtp

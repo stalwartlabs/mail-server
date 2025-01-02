@@ -118,7 +118,7 @@ impl<T: Iterator<Item = BayesInputToken>> Iterator for BayesTokenizer<T> {
     }
 }
 
-impl<T: AsRef<str>> TokenType<T> {
+impl<T: AsRef<str>, E: AsRef<str>, U: AsRef<str>, I: AsRef<str>> TokenType<T, E, U, I> {
     pub fn to_bayes_token(&self) -> Option<BayesInputToken> {
         match self {
             TokenType::Alphabetic(word) => {
@@ -138,7 +138,10 @@ impl<T: AsRef<str>> TokenType<T> {
             TokenType::UrlNoScheme(word) => {
                 BayesInputToken::Raw(url_host_as_bytes(word.as_ref())).into()
             }
-            TokenType::Alphanumeric(word) | TokenType::Email(word) | TokenType::UrlNoHost(word) => {
+            TokenType::Alphanumeric(word) | TokenType::UrlNoHost(word) => {
+                BayesInputToken::Raw(word.as_ref().to_lowercase().into_bytes()).into()
+            }
+            TokenType::Email(word) => {
                 BayesInputToken::Raw(word.as_ref().to_lowercase().into_bytes()).into()
             }
             TokenType::Other(ch) => {

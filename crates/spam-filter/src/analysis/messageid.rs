@@ -61,7 +61,7 @@ impl SpamFilterAnalyzeMid for Server {
                 // From address present in Message-ID checks
                 for (part, sender) in [
                     ("FROM", &ctx.output.from.email),
-                    ("ENVFROM", &ctx.output.env_from_addr),
+                    ("ENV_FROM", &ctx.output.env_from_addr),
                 ] {
                     if !sender.address.is_empty() {
                         if mid.contains(&sender.address) {

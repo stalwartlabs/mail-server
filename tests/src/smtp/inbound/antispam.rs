@@ -117,8 +117,9 @@ allow-invalid-certs = true
 "known-dmarc-domains" = {"dmarc-allow.org"}
 "spam-traps" = {"spamtrap@*"}
 "trusted-domains" = {"stalw.art"}
-"freemail-providers" = {"gmail.com", "googlemail.com", "yahoomail.com", "*freemail.org"}
+"freemail-providers" = {"gmail.com", "googlemail.com", "yahoomail.com", "outlook.com", "*freemail.org"}
 "disposable-providers" = {"guerrillamail.com", "*disposable.org"}
+"surbl-hashbl" = {"bit.ly", "drive.google.com", "lnkiy.in"}
 "#;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -188,15 +189,15 @@ async fn antispam() {
             "127.0.1.3",
         ),
         (
-            "94c57fe69a113e875f772bdea55bf2c3.hashbl.surbl.org",
+            "ba76e47680ba70a0cbff8d6c92139683.hashbl.surbl.org",
             "127.0.0.16",
         ),
         (
-            "64aca53deb83db2ba30a59604ada2d80.hashbl.surbl.org",
+            "0ac5b387a1c6d8461a78bbf7b172a2a1.hashbl.surbl.org",
             "127.0.0.64",
         ),
         (
-            "02159eed92622b2fb8c83c659f269007.hashbl.surbl.org",
+            "637d6717761b5de0c84108c894bb68f2.hashbl.surbl.org",
             "127.0.0.8",
         ),
     ] {
@@ -542,6 +543,7 @@ async fn antispam() {
                     server.spam_filter_analyze_headers(&mut spam_ctx).await;
                     spam_ctx.result.tags.retain(|t| t.starts_with("X_HDR_"));
                     server.spam_filter_analyze_recipient(&mut spam_ctx).await;
+                    server.spam_filter_analyze_domain(&mut spam_ctx).await;
                     server.spam_filter_analyze_rules(&mut spam_ctx).await;
                     spam_ctx.result.tags.retain(|t| !t.starts_with("X_HDR_"));
                 }

@@ -12,7 +12,7 @@ use super::Token;
 pub struct TypesTokenizer<'x> {
     text: &'x str,
     iter: CharIndices<'x>,
-    tokens: Vec<Token<TokenType<&'x str>>>,
+    tokens: Vec<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>>,
     peek_pos: usize,
     last_ch_is_space: bool,
     last_token_is_dot: bool,
@@ -24,7 +24,7 @@ pub struct TypesTokenizer<'x> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenType<T> {
+pub enum TokenType<T, E, U, I> {
     Alphabetic(T),
     Alphanumeric(T),
     Integer(T),
@@ -33,18 +33,18 @@ pub enum TokenType<T> {
     Space,
 
     // Detected types
-    Url(T),
-    UrlNoScheme(T),
+    Url(U),
+    UrlNoScheme(U),
     UrlNoHost(T),
-    IpAddr(T),
-    Email(T),
+    IpAddr(I),
+    Email(E),
     Float(T),
 }
 
-impl Copy for Token<TokenType<&'_ str>> {}
+impl Copy for Token<TokenType<&'_ str, &'_ str, &'_ str, &'_ str>> {}
 
 impl<'x> Iterator for TypesTokenizer<'x> {
-    type Item = Token<TokenType<&'x str>>;
+    type Item = Token<TokenType<&'x str, &'x str, &'x str, &'x str>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let token = self.peek()?;
@@ -207,7 +207,7 @@ impl<'x> TypesTokenizer<'x> {
         }
     }
 
-    fn next_(&mut self) -> Option<Token<TokenType<&'x str>>> {
+    fn next_(&mut self) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         if self.tokens.is_empty() && !self.eof {
             self.consume();
         }
@@ -218,7 +218,7 @@ impl<'x> TypesTokenizer<'x> {
         }
     }
 
-    fn peek(&mut self) -> Option<Token<TokenType<&'x str>>> {
+    fn peek(&mut self) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         while self.tokens.len() <= self.peek_pos && !self.eof {
             self.consume();
         }
@@ -242,8 +242,8 @@ impl<'x> TypesTokenizer<'x> {
 
     fn try_parse_url(
         &mut self,
-        scheme_token: Option<Token<TokenType<&'_ str>>>,
-    ) -> Option<Token<TokenType<&'x str>>> {
+        scheme_token: Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>>,
+    ) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         let (has_scheme, allow_blank_host) = scheme_token.as_ref().map_or((false, false), |t| {
             (
                 true,
@@ -459,7 +459,7 @@ impl<'x> TypesTokenizer<'x> {
         .into()
     }
 
-    fn try_parse_email(&mut self) -> Option<Token<TokenType<&'x str>>> {
+    fn try_parse_email(&mut self) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         // Start token is a valid local part atom
         let start_token = self.peek()?;
         let mut last_is_dot = false;
@@ -602,7 +602,7 @@ impl<'x> TypesTokenizer<'x> {
         None
     }
 
-    fn try_parse_number(&mut self) -> Option<Token<TokenType<&'x str>>> {
+    fn try_parse_number(&mut self) -> Option<Token<TokenType<&'x str, &'x str, &'x str, &'x str>>> {
         self.peek_rewind();
         let mut start_pos = usize::MAX;
         let mut end_pos = usize::MAX;
@@ -685,7 +685,7 @@ impl<'x> TypesTokenizer<'x> {
     }
 }
 
-impl<T> TokenType<T> {
+impl<T, E, U, I> TokenType<T, E, U, I> {
     fn is_email_atom(&self) -> bool {
         matches!(
             self,
@@ -724,40 +724,6 @@ impl<T> TokenType<T> {
                 | TokenType::Alphanumeric(_)
                 | TokenType::Other(_)
         ) || (!is_start && matches!(self, TokenType::Punctuation('-')))
-    }
-}
-
-impl<T: AsRef<str>> TokenType<T> {
-    pub fn hostname(&self) -> Option<&str> {
-        match self {
-            TokenType::Url(url) => url.as_ref().split_once("://").map(|(_, host)| {
-                host.split_once('/')
-                    .map_or(host, |(h, _)| h.split_once(':').map_or(h, |(h, _)| h))
-            }),
-            TokenType::UrlNoScheme(url) => {
-                let url = url.as_ref();
-                url.split_once('/').map_or(url, |(host, _)| host).into()
-            }
-            TokenType::Email(email) => email.as_ref().rsplit_once('@').map(|(_, domain)| domain),
-            _ => None,
-        }
-    }
-
-    pub fn hostname_sld(&self) -> Option<&str> {
-        self.hostname().and_then(|host| psl::domain_str(host))
-    }
-
-    pub fn url_lowercase(&self, with_scheme_only: bool) -> Option<String> {
-        match self {
-            TokenType::Url(url) => url.as_ref().trim().to_lowercase().into(),
-            TokenType::UrlNoScheme(url) if !with_scheme_only => {
-                let url = url.as_ref();
-                format!("https://{}", url.trim().to_lowercase())
-                    .to_lowercase()
-                    .into()
-            }
-            _ => None,
-        }
     }
 }
 

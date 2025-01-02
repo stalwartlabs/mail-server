@@ -155,6 +155,8 @@ pub enum Location {
     HeaderTo,
     HeaderCc,
     HeaderBcc,
+    HeaderMid,
+    HeaderDnt,
     Ehlo,
     BodyText,
     BodyHtml,
@@ -271,16 +273,16 @@ impl DnsBlConfig {
 
         DnsBlConfig {
             max_ip_checks: config
-                .property_or_default("spam-filter.dnsbl.max-check.ip", "20")
+                .property_or_default("spam-filter.dnsbl.max-check.ip", "50")
                 .unwrap_or(20),
             max_domain_checks: config
-                .property_or_default("spam-filter.dnsbl.max-check.domain", "20")
+                .property_or_default("spam-filter.dnsbl.max-check.domain", "50")
                 .unwrap_or(20),
             max_email_checks: config
-                .property_or_default("spam-filter.dnsbl.max-check.email", "20")
+                .property_or_default("spam-filter.dnsbl.max-check.email", "50")
                 .unwrap_or(20),
             max_url_checks: config
-                .property_or_default("spam-filter.dnsbl.max-check.url", "20")
+                .property_or_default("spam-filter.dnsbl.max-check.url", "50")
                 .unwrap_or(20),
             servers,
         }
@@ -634,6 +636,8 @@ impl Location {
             Location::HeaderTo => "to",
             Location::HeaderCc => "cc",
             Location::HeaderBcc => "bcc",
+            Location::HeaderMid => "message_id",
+            Location::HeaderDnt => "dnt",
             Location::Ehlo => "ehlo",
             Location::BodyText => "body_text",
             Location::BodyHtml => "body_html",
@@ -691,6 +695,8 @@ pub const V_SPAM_BODY_RAW: u32 = 134;
 pub const V_SPAM_SUBJECT: u32 = 135;
 pub const V_SPAM_SUBJECT_THREAD: u32 = 136;
 pub const V_SPAM_LOCATION: u32 = 137;
+pub const V_WORDS_SUBJECT: u32 = 138;
+pub const V_WORDS_BODY: u32 = 139;
 
 pub const V_RCPT_EMAIL: u32 = 0;
 pub const V_RCPT_NAME: u32 = 1;
@@ -759,9 +765,11 @@ impl Element {
             ("body", V_SPAM_BODY_TEXT),
             ("body.text", V_SPAM_BODY_TEXT),
             ("body.html", V_SPAM_BODY_HTML),
+            ("body.words", V_WORDS_BODY),
             ("body.raw", V_SPAM_BODY_RAW),
             ("subject", V_SPAM_SUBJECT),
             ("subject.thread", V_SPAM_SUBJECT_THREAD),
+            ("subject.words", V_WORDS_SUBJECT),
             ("location", V_SPAM_LOCATION),
         ]);
 

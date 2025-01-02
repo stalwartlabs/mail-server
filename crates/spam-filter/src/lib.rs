@@ -7,6 +7,7 @@
 pub mod analysis;
 pub mod modules;
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::net::{IpAddr, Ipv4Addr};
@@ -68,25 +69,31 @@ pub struct SpamFilterOutput<'x> {
     pub subject_lc: String,
     pub subject_thread: String,
     pub subject_thread_lc: String,
-    pub subject_tokens: Vec<TokenType<&'x str>>,
+    pub subject_tokens: Vec<TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts<'x>>>,
 
     pub ips: AHashSet<ElementLocation<IpAddr>>,
-    pub urls: HashSet<ElementLocation<UrlParts>>,
+    pub urls: HashSet<ElementLocation<UrlParts<'x>>>,
     pub emails: HashSet<ElementLocation<Recipient>>,
     pub domains: HashSet<ElementLocation<String>>,
 
     pub text_parts: Vec<TextPart<'x>>,
 }
 
+#[derive(Debug)]
+pub struct IpParts<'x> {
+    ip: Option<IpAddr>,
+    text: Cow<'x, str>,
+}
+
 pub enum TextPart<'x> {
     Plain {
         text_body: &'x str,
-        tokens: Vec<TokenType<&'x str>>,
+        tokens: Vec<TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts<'x>>>,
     },
     Html {
         html_tokens: Vec<HtmlToken>,
         text_body: String,
-        tokens: Vec<TokenType<String>>,
+        tokens: Vec<TokenType<Cow<'x, str>, Email, UrlParts<'x>, IpParts<'x>>>,
     },
     None,
 }

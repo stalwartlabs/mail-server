@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashSet, future::Future, time::Duration};
+use std::{borrow::Cow, collections::HashSet, future::Future, time::Duration};
 
 use common::{ip_to_bytes, Server, KV_BAYES_MODEL_GLOBAL, KV_BAYES_MODEL_USER};
 use mail_auth::DmarcResult;
@@ -22,7 +22,7 @@ use store::dispatch::lookup::KeyValue;
 use trc::AddContext;
 use utils::cache::TtlEntry;
 
-use crate::{SpamFilterContext, TextPart};
+use crate::{analysis::url::UrlParts, Email, IpParts, SpamFilterContext, TextPart};
 
 pub trait BayesClassifier {
     fn bayes_train(
@@ -97,10 +97,7 @@ impl BayesClassifier for Server {
             }) => {
                 model.train(
                     OsbTokenizer::new(
-                        BayesTokenizer::new(
-                            text_body,
-                            tokens.iter().filter_map(to_bayes_token_owned),
-                        ),
+                        BayesTokenizer::new(text_body, tokens.iter().filter_map(to_bayes_token)),
                         5,
                     ),
                     is_spam,
@@ -252,7 +249,7 @@ impl BayesClassifier for Server {
                 text_body, tokens, ..
             }) => {
                 for token in OsbTokenizer::<_, TokenHash>::new(
-                    BayesTokenizer::new(text_body, tokens.iter().filter_map(to_bayes_token_owned)),
+                    BayesTokenizer::new(text_body, tokens.iter().filter_map(to_bayes_token)),
                     5,
                 ) {
                     let weights = self
@@ -455,10 +452,26 @@ fn add_prefix(prefix: u8, key: &[u8]) -> Vec<u8> {
     buf
 }
 
-fn to_bayes_token(token: &TokenType<&str>) -> Option<BayesInputToken> {
+fn to_bayes_token(
+    token: &TokenType<Cow<'_, str>, Email, UrlParts<'_>, IpParts<'_>>,
+) -> Option<BayesInputToken> {
     token.to_bayes_token()
 }
 
-fn to_bayes_token_owned(token: &TokenType<String>) -> Option<BayesInputToken> {
-    token.to_bayes_token()
+impl AsRef<str> for Email {
+    fn as_ref(&self) -> &str {
+        &self.address
+    }
+}
+
+impl AsRef<str> for UrlParts<'_> {
+    fn as_ref(&self) -> &str {
+        &self.url
+    }
+}
+
+impl AsRef<str> for IpParts<'_> {
+    fn as_ref(&self) -> &str {
+        &self.text
+    }
 }

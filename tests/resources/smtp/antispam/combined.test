@@ -6,8 +6,8 @@ spf.result none
 spf_ehlo.result none
 dmarc.result none
 remote_ip 195.210.29.48
-expect_header X-Spam-Result: ARC_NA (0.00), DKIM_NA (0.00), DMARC_NA (0.00), FROM_EQ_ENVFROM (0.00), FROM_HAS_DN (0.00), HAS_DATA_URI (0.00), MID_RHS_MATCH_ENVFROM (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_ZERO (0.00), SPF_NA (0.00), SUBJECT_ENDS_EXCLAIM (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), ONCE_RECEIVED (0.10), RCVD_NO_TLS_LAST (0.10), MIME_HTML_ONLY (0.20), HELO_NORES_A_OR_MX (0.30), AUTH_NA (1.00), DATE_IN_PAST (1.00), MID_RHS_MATCH_FROM (1.00), RDNS_NONE (1.00), FROMHOST_NORES_A_OR_MX (1.50), HTML_SHORT_LINK_IMG_1 (2.00), PYZOR (3.50)
-expect_header X-Spam-Status: Yes, score=11.70
+expect_header X-Spam-Result: ARC_NA (0.00), DKIM_NA (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_DATA_URI (0.00), MID_RHS_MATCH_ENV_FROM (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_ZERO (0.00), SPF_NA (0.00), SUBJECT_ENDS_EXCLAIM (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), ONCE_RECEIVED (0.10), RCVD_NO_TLS_LAST (0.10), MIME_HTML_ONLY (0.20), HELO_NORES_A_OR_MX (0.30), AUTH_NA (1.00), DATE_IN_PAST (1.00), DMARC_NA (1.00), MID_RHS_MATCH_FROM (1.00), FROMHOST_NORES_A_OR_MX (1.50), HTML_SHORT_LINK_IMG_1 (2.00), RDNS_NONE (2.00), PYZOR (3.50)
+expect_header X-Spam-Status: Yes, score=13.70
 
 From: Client Services <noreply@tetheer.com>
 To: licensing@stalw.art
@@ -49,7 +49,7 @@ dkim.domains tenthrevolution.com
 dmarc.result pass
 remote_ip 185.58.86.181
 tls.version TLSv1.3
-expect_header X-Spam-Result: DMARC_POLICY_ALLOW (-0.50), DKIM_ALLOW (-0.20), SPF_ALLOW (-0.20), MIME_GOOD (-0.10), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENVFROM (0.00), FROM_HAS_DN (0.00), HAS_ATTACHMENT (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_THREE (0.00), TO_DN_EQ_ADDR_ALL (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), SUBJECT_ENDS_SPACES (0.50), URI_COUNT_ODD (0.50), DATE_IN_PAST (1.00), FORGED_RCVD_TRAIL (1.00), FROMHOST_NORES_A_OR_MX (1.50)
+expect_header X-Spam-Result: DMARC_POLICY_ALLOW (-0.50), DKIM_ALLOW (-0.20), SPF_ALLOW (-0.20), MIME_GOOD (-0.10), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_ATTACHMENT (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_THREE (0.00), TO_DN_EQ_ADDR_ALL (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), SUBJECT_ENDS_SPACES (0.50), URI_COUNT_ODD (0.50), DATE_IN_PAST (1.00), FORGED_RCVD_TRAIL (1.00), FROMHOST_NORES_A_OR_MX (1.50)
 expect_header X-Spam-Status: No, score=3.90
 
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=tenthrevolution.com;
@@ -574,8 +574,8 @@ dmarc.result fail
 dmarc.policy reject
 remote_ip 51.89.165.39
 tls.version TLS1_2
-expect_header X-Spam-Result: DKIM_ALLOW (-0.20), HAS_LIST_UNSUB (-0.01), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENVFROM (0.00), FROM_HAS_DN (0.00), HAS_REPLYTO (0.00), MID_RHS_MATCH_ENVFROM (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_ZERO (0.00), REPLYTO_ADDR_EQ_FROM (0.00), REPLYTO_EQ_FROM (0.00), SPF_SOFTFAIL (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), ONCE_RECEIVED (0.10), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), DATE_IN_PAST (1.00), MID_RHS_MATCH_FROM (1.00), RDNS_NONE (1.00), R_PARTS_DIFFER (1.00), FROMHOST_NORES_A_OR_MX (1.50), DMARC_POLICY_REJECT (2.00), HTML_SHORT_LINK_IMG_1 (2.00), VIOLATED_DIRECT_SPF (3.50)
-expect_header X-Spam-Status: Yes, score=13.29
+expect_header X-Spam-Result: DKIM_ALLOW (-0.20), HAS_LIST_UNSUB (-0.01), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_REPLYTO (0.00), MID_RHS_MATCH_ENV_FROM (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_ZERO (0.00), REPLYTO_ADDR_EQ_FROM (0.00), REPLYTO_EQ_FROM (0.00), SPF_SOFTFAIL (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), ONCE_RECEIVED (0.10), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), DATE_IN_PAST (1.00), MID_RHS_MATCH_FROM (1.00), R_PARTS_DIFFER (1.00), FROMHOST_NORES_A_OR_MX (1.50), HTML_SHORT_LINK_IMG_1 (2.00), RDNS_NONE (2.00), VIOLATED_DIRECT_SPF (3.50), DMARC_POLICY_REJECT (4.00)
+expect_header X-Spam-Status: Yes, score=16.29
 
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=sectionalism; d=grupokonecta.net;
  h=To:Subject:Message-ID:Date:From:Reply-To:MIME-Version:List-Unsubscribe:
@@ -778,4 +778,233 @@ e; CLICK AQU&Iacute; CLICK AQU&Iacute; CLICK AQU&Iacute; CLICK AQU&Iacute;"=
 
 --b1_3d217f30a568faa9ce3dd7dc73399561--
 
+<!-- NEXT TEST -->
+envelope_from miah.join@outlook.com
+envelope_to hello@stalw.art
+helo_domain HK2PR02CU002.outbound.protection.outlook.com
+iprev.result pass
+dkim.result pass
+dkim.domains outlook.com
+spf.result pass
+spf_ehlo.result pass
+dmarc.result pass
+dmarc.policy reject
+remote_ip 52.103.64.5
+tls.version TLS1_2
+expect_header X-Spam-Result: DMARC_POLICY_ALLOW (-0.50), DKIM_ALLOW (-0.20), SPF_ALLOW (-0.20), ARC_NA (0.00), ARC_SIGNED (0.00), DKIM_SIGNED (0.00), FREEMAIL_FROM (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_SEO_WORD (0.00), HAS_X_PRIO_ONE (0.00), MID_RHS_MATCH_ENV_FROMTLD (0.00), MID_RHS_MATCH_FROMTLD (0.00), RCPT_COUNT_ONE (0.00), RCPT_IN_BODY (0.00), RCVD_COUNT_TWO (0.00), TO_DN_EQ_ADDR_ALL (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), DATE_IN_PAST (1.00), HEADER_EMPTY_DELIMITER (1.00), FROMHOST_NORES_A_OR_MX (1.50), SEO_SPAM (5.00)
+expect_header X-Spam-Status: Yes, score=8.00
+
+Return-Path: <miah.join@outlook.com>
+ARC-Seal: i=1; a=rsa-sha256; s=arcselector10001; d=microsoft.com; cv=none;
+ b=sTW55J00fLHM5CSFAdYk6Kpyecib7sSXQWU51a+Eo6514pesoEtpNxM3eYurQfYQY7j+MMcwJ50u9fzJPOUm0JInaQMoDrUWJ5dObEglZtxbN1fpwHLOOP5rjWm+zd9p02jLCCpvoHnu4rIZmog1MO/pCiVRMWemUMzJ2O7mk2zbmode8ryb9tT1ho8XNeCYK9zKmoHwCl2p6TjO4HFQ4SU2hYIWd3//6gfnPDN2qIOgw6Z51zgsEtUYYENIKuHswZFWjt7925Wq380r5Fi+fsaKT8xAWFTq9igFNWKDVU2k7ZL6QlCsXpTRS57rrl1dBYAod1byHHbCOqa+g+VOAA==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=microsoft.com;
+ s=arcselector10001;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-AntiSpam-MessageData-ChunkCount:X-MS-Exchange-AntiSpam-MessageData-0:X-MS-Exchange-AntiSpam-MessageData-1;
+ bh=SVZW4LFWvuTy4mbM+Q+E+yH3a0DZrHFN3U3wHGbAHMQ=;
+ b=NavrW7s0URdfDuEFuzkxV7EUwJtiynvH1o9mzF39USQEfd9l1KyQpzOxo9Po8Dar1qqa/4ECNeUSmetx+NBDArmlTpBak+BKYXAXVRlHheyxILyU/f0RX01+7aifIzLj7LWv7Sx66b9D9/DjaVDbtMvFGPFUzk0JtiATahe7ZU0iKBvsRbGJjS9r0Sq2vHY/SQEUxOxKXUhUQBepSf9k7ibBZK27OhSz9v/jjSDCL/mh5MoOgbq7S8lbxUGS356c/Rm3ZWEInIRcbVqI+P75abEvzRNhRyBDId74h9IZnv+wz9QfGnk8TaFAExRBJ5BzIKlDibTZ+Kzuc+7mvOAKLw==
+ARC-Authentication-Results: i=1; mx.microsoft.com 1; spf=none; dmarc=none;
+ dkim=none; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=outlook.com;
+ s=selector1;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-SenderADCheck;
+ bh=SVZW4LFWvuTy4mbM+Q+E+yH3a0DZrHFN3U3wHGbAHMQ=;
+ b=Q6QpEIbyyvkSgmfTsPeVdPuTyh+6lA/+qAoEm5k5gEDuyqmLjwVELDsOJQAZzwfQfmxN02O5dpbD0mDWKLFR7Ft//121jF9EV06fbGMNXuuBpfZJ24npu+bPbHs66D7USSMEE6zvuf4bnlhVV0iTTxWwhNEawPfaFpuukvlVO1GtPOjH0SeymOnfHM3LrGSkwYpw5aeEGjrJLFQRSN+k8mD7PyoOkJFFBUyqySWdkRsQ5aw9+7f3wbHbDOb4rqkmkC6fUZSMcqpTSpFFS3fDlQQrcnwhh8ir/tq74AuVYyMoUMns81tExoILI78twEHxyGN2zgLw7K9QojJCf+IIEQ==
+Received: from SEYPR04MB7496.apcprd04.prod.outlook.com (2603:1096:101:1db::7)
+ by PUZPR04MB6246.apcprd04.prod.outlook.com (2603:1096:301:ec::5) with
+ Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.8293.20; Tue, 31 Dec
+ 2024 08:24:54 +0000
+Received: from SEYPR04MB7496.apcprd04.prod.outlook.com
+ ([fe80::1aab:cf90:44d8:af4e]) by SEYPR04MB7496.apcprd04.prod.outlook.com
+ ([fe80::1aab:cf90:44d8:af4e%6]) with mapi id 15.20.8293.000; Tue, 31 Dec 2024
+ 08:24:54 +0000
+From: Miah Join <miah.join@outlook.com>
+To: "hello@stalw.art" <hello@stalw.art>
+Subject: SEO-Inquiry
+Thread-Topic: SEO-Inquiry
+Thread-Index: AdtbXSTUEOZ2HAOVQCqvPiaCPhJ+xw==
+Importance: high
+X-Priority: 1
+Sensitivity: private
+Date: Tue, 31 Dec 2024 08:24:22 +0000
+Message-ID:
+ <SEYPR04MB74966F6A34B2B0AC5DA8E6DDFD0A2@SEYPR04MB7496.apcprd04.prod.outlook.com>
+Accept-Language: en-US
+Content-Language: en-US
+X-MS-Has-Attach:
+X-MS-TNEF-Correlator:
+x-ms-publictraffictype: Email
+x-ms-traffictypediagnostic: SEYPR04MB7496:EE_|PUZPR04MB6246:EE_
+x-ms-office365-filtering-correlation-id: d8480a0c-4e45-4278-ad1b-08dd29749a89
+x-ms-exchange-slblob-mailprops:
+ SoURN12IA8vYLoDX/njsxmIBKrA5xww7SXj4BirxWi/11KcMwu1z/THqGhGNTFhVj0W89DLwoSD+IqZucSTc96MoKe9ia4xsvj73oWgcR/6suK5u7GoMSUHmwhrgVtaAkaceSYHenT+iTqqsr6L31R3bTGzhR1r7TEKkTLaJO6pXyfeXy8wUEdMEUOpfggfX/BBwA6KLTGvIE9euGA810m3+uPbUX+cE3WNT2yFsiC+H/YFGbcISQcbwlqT/7fAjiNT6fore4X1HnccC1CzArvmHrHF37pjc/JTEQFUxg7woH0GKJtvsUFbDUPvXjKp9rTRqLHTb8fYVSRdeivWB4lJocoW5VqJ9YichWUGp1ELEDuto7T/ourT4i6Q/Z+D+3/Q67J0SAdD8+XAXHfYKG2rq14F+tz4KxbO6EPp7O6HpaHMSbpzps5/sOJ2gmeHucnICmy81mKE9aq2sfJPPdymPBczv4hB7QO+xQDHFNpypNedZ8cTbtW5MlVn18lgmP0BuDBEgU4WcbKu2bMzgl6HJRQctSSldfkkyfGI/URoo69SEmOZiDuuCzhKQQ09ho6xRG3kpsD9DyRAUQyyo3Wq4J1UgLuRyRVFYwPI4zL+e47La1ilj199UD/SJrbHMMTt6itlRBpnH4N7Ev1ELztRfH5VjQ5aG
+x-microsoft-antispam:
+ BCL:0;ARA:14566002|8060799006|7092599003|8062599003|5062599005|15080799006|461199028|19110799003|440099028|3412199025|102099032;
+x-microsoft-antispam-message-info:
+ =?us-ascii?Q?sSaF+W5EA6WGixAhyYLVcDu/rxF60TPo55Pe5lDbuGq4SQKPFczK5OPYJQHf?=
+ =?us-ascii?Q?6w0tFaoHE+b0IsosJe0H/dJXTmVvChLHdVnaTZiPcDKrZVOcLyvm2WnEoemj?=
+ =?us-ascii?Q?m21GgioEUF/NQdwaXt6AAYv18zt1GxKufXRYIpLkmKM8gV1XQMXPJteH53ax?=
+ =?us-ascii?Q?vifrj3RXruNdM31oe0LrZdIbsbKuvKDSdByf1mB2PVfCgEXIjvfFLgJidnah?=
+ =?us-ascii?Q?d30fWN6LcYhQvtVNfpiJwtroUR5oox/HxRtDbU+fkvn0LLoFX7nxdECueURA?=
+ =?us-ascii?Q?/67CsMYT5/NKrE+oaYmPjDYkLmS+YDBmWdUyuQDJIQ0Lb7vKisWAOFrweDgc?=
+ =?us-ascii?Q?pJUyUtAA5UliC4AO+gI+AH3cv2JaMn+Z7gCf9WpcTCk8PkOEtg4Y1661t4T3?=
+ =?us-ascii?Q?rOHV1Q7ibkz6JYCiIVGl1macRWWcIl1GeUWLUiHduVR/ax3PLUYLHYblCHv0?=
+ =?us-ascii?Q?XVrSCAAa8+vce6+c7ymVd8uBAvfTT/hfYKwSGR2R6V9clhEDjE5TXsIjx1qc?=
+ =?us-ascii?Q?AsCWjvexOp/pWalj3jwJzOE/xKHehhzyIeOJ0kN8snZBJiZpD9VnhYE6Lt8I?=
+ =?us-ascii?Q?4ttzIth0+B9mw24tVTPg2cZ3N9yFsznBvKxtuFYl3Oj3YzacJVbwk+XyRsjQ?=
+ =?us-ascii?Q?LXmGP3d8NPm2Nhy0yfrt4/wxf2th/e+/I3siWDuHcwJiDFdhvoT/AOuUoFl9?=
+ =?us-ascii?Q?5Vs6Amo3CmVo4TGEf+EQNPoLsXjVAMzpk/5TgnKQ2sanXVv1zPGrTT7aErrv?=
+ =?us-ascii?Q?m2fE/VhGQOqKiizPYaMaC6W4YPdrAYOOrpZFOgzFfMoNmyDmIfIucke8DJTg?=
+ =?us-ascii?Q?K630mHxneVrofGWREkohZiDUe/tQsjp/0Hy2x2792Pg2aumt5nc1Aw/QJrwr?=
+ =?us-ascii?Q?VHaKD7O2hL1QLJFbojSSKlWyGQ/CE0DsyUVihC0dWqfdWa8gPlHZ3uzzMN5J?=
+ =?us-ascii?Q?BazCEPgYBVnmiQw/ejBmBpm5iKIA0zgNKGva/8tDikzhviHpCe9lijBuNsu3?=
+ =?us-ascii?Q?OIfW8bDcJpyKB+g5S7EVo9K+lwYq0i86di3dpDvmSBfB99PFK9kqzaAEfAIU?=
+ =?us-ascii?Q?Duh11rVb5jqL5hm7Zhsb9T2kGOiAorAjmrAHQFSyCNO910vF+8s=3D?=
+x-ms-exchange-antispam-messagedata-chunkcount: 1
+x-ms-exchange-antispam-messagedata-0:
+ =?us-ascii?Q?9c/kgRHXQSmmVIMMaHuipN3QMSRVkf870g3+luQav+fyRaGeQw2TxAqSMXIQ?=
+ =?us-ascii?Q?MqoXTcYcUTW8oy80k0fPln9Hz61fG51WDZ2vzG1wnYvfHer1zkAdp/njN/D2?=
+ =?us-ascii?Q?jXEtZZP4w7Fi1Tf3oyRzBLQhMtORyV3RQU/uWIRpjvP/jlu3zfVeIyFtON/q?=
+ =?us-ascii?Q?oJqPzYVyxeLv832rNiqEVsAPLOar26932L6xXlandRXwk6WZTN7J76uUF+i0?=
+ =?us-ascii?Q?FpKfqvx2IHOT/Qc8dJLf3H/iBywKPBINfmUdTdX83EzX9DYFmCJ0mJHhgmFV?=
+ =?us-ascii?Q?2r/JQEN6c+ziSN/sqFBrNvpWaEUGzyB7k4HT+HV9bv/8nx0jVYVdb8Jg/Lxl?=
+ =?us-ascii?Q?nt9FxkqJPCdTjYYQwCzM+74raMHz5o3URpFYGfEYsgBBrqZPa6oNgxZBrLU6?=
+ =?us-ascii?Q?w/m7VsQI9AbLh/jteycxh6INOvPy6SS3m7+FGFpFjwNAfSQLEyghWO0hyyk3?=
+ =?us-ascii?Q?75mJwXHJ53u+J6jMQQPEz6h2SFHN64nrGRbPq6ruSdyEhSj9BdkuEnKb/yAR?=
+ =?us-ascii?Q?07pJ7iBfQVTfQ04xXejXErXvrDZGCcVy3/1AOajGLmcW1iTgoRwF3KKTmKct?=
+ =?us-ascii?Q?g+/IaxelPpT95uCPhSWREdVLoxuQW6pBltFeXod8ou3YpiOoss2h0EplB4Xa?=
+ =?us-ascii?Q?TKPKZSDdPBeCbOwx9GQUhySu57WwarR4Q74+MQwx8zDHdlytk9bLFZrCSCnt?=
+ =?us-ascii?Q?OixF+n8R+5U1D+Vub74mpSguv+2efQNt2lwJei3iDd1mC6WRXdGaC4+WdCEt?=
+ =?us-ascii?Q?uPRtELZCDsLSUE+097ixYl7uMLCe8nHUFuECfu41T1yX9PPMEmpadpxazQCd?=
+ =?us-ascii?Q?USBa0u5BAMvXiZJHfPgf3y255JPI079k+DdhGkhF2cDwLciCHELy5rM52TGT?=
+ =?us-ascii?Q?IrCNmfxb/RmOWBVEsvbhV4glTLJlORemnfACjPfh8SzldzzIj2W8zUUrxJQt?=
+ =?us-ascii?Q?6bdoxj9FbxsJ3wvYQTDqF9olDDPh/2z1g28uXkknEgvcdU/XvlzE+bz3ACnC?=
+ =?us-ascii?Q?yoxmdm3P7/9aIojcU9CeOsnQBDHgBYOxXIK5vNogdrZV9Ew4G2w/gOevLmvA?=
+ =?us-ascii?Q?HAbDE1IaI2hhX0zhg2D/QCZZNpvlDgJzESkffQNSOYsIWlHeWBzOJeq7iM0Y?=
+ =?us-ascii?Q?pXEltktrRe3doxEsnAYKPirbULWz4u+XJXzAOddWBWiYGNi6ua5wuyv7pyRX?=
+ =?us-ascii?Q?CMc1g/sPb+5aGiPpbK4Si7KWv6HpNO3v0ACS0qrmdaaPWSx+wL8tsxO4KBI?=
+ =?us-ascii?Q?=3D?=
+Content-Type: multipart/alternative;
+	boundary="_000_SEYPR04MB74966F6A34B2B0AC5DA8E6DDFD0A2SEYPR04MB7496apcp_"
+MIME-Version: 1.0
+X-OriginatorOrg: outlook.com
+X-MS-Exchange-CrossTenant-AuthAs: Internal
+X-MS-Exchange-CrossTenant-AuthSource: SEYPR04MB7496.apcprd04.prod.outlook.com
+X-MS-Exchange-CrossTenant-RMS-PersistedConsumerOrg: 00000000-0000-0000-0000-000000000000
+X-MS-Exchange-CrossTenant-Network-Message-Id: d8480a0c-4e45-4278-ad1b-08dd29749a89
+X-MS-Exchange-CrossTenant-originalarrivaltime: 31 Dec 2024 08:24:22.5882
+ (UTC)
+X-MS-Exchange-CrossTenant-fromentityheader: Hosted
+X-MS-Exchange-CrossTenant-id: 84df9e7f-e9f6-40af-b435-aaaaaaaaaaaa
+X-MS-Exchange-CrossTenant-rms-persistedconsumerorg: 00000000-0000-0000-0000-000000000000
+X-MS-Exchange-Transport-CrossTenantHeadersStamped: PUZPR04MB6246
+
+--_000_SEYPR04MB74966F6A34B2B0AC5DA8E6DDFD0A2SEYPR04MB7496apcp_
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+Hello, hello@stalw.art
+
+
+
+I'm just checking with you to see if you're interested in (SEO) search engi=
+ne optimization, or if you're interested in Google 1st page for better busi=
+ness.
+
+
+
+If so, I'd love to tell you a little bit more about my abilities and show y=
+ou some of my work. I am a very
+
+Skilled SEO expert with various abilities and can (1st Page on Google). any=
+thing.
+
+
+
+I look forward to hearing from you.
+
+
+
+Thanks,
+
+Miah
+
+--_000_SEYPR04MB74966F6A34B2B0AC5DA8E6DDFD0A2SEYPR04MB7496apcp_
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+<html xmlns:v=3D"urn:schemas-microsoft-com:vml" xmlns:o=3D"urn:schemas-micr=
+osoft-com:office:office" xmlns:w=3D"urn:schemas-microsoft-com:office:word" =
+xmlns:m=3D"http://schemas.microsoft.com/office/2004/12/omml" xmlns=3D"http:=
+//www.w3.org/TR/REC-html40">
+<head>
+<meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dus-ascii"=
+>
+<meta name=3D"Generator" content=3D"Microsoft Word 15 (filtered medium)">
+<style><!--
+/* Font Definitions */
+@font-face
+	{font-family:"Cambria Math";
+	panose-1:2 4 5 3 5 4 6 3 2 4;}
+@font-face
+	{font-family:Calibri;
+	panose-1:2 15 5 2 2 2 4 3 2 4;}
+/* Style Definitions */
+p.MsoNoSpacing, li.MsoNoSpacing, div.MsoNoSpacing
+	{mso-style-priority:1;
+	margin:0in;
+	font-size:11.0pt;
+	font-family:"Calibri",sans-serif;
+	mso-ligatures:standardcontextual;}
+.MsoChpDefault
+	{mso-style-type:export-only;
+	font-size:11.0pt;
+	font-family:"Calibri",sans-serif;}
+.MsoPapDefault
+	{mso-style-type:export-only;
+	margin-bottom:10.0pt;
+	line-height:115%;}
+@page WordSection1
+	{size:595.3pt 841.9pt;
+	margin:1.0in 1.0in 1.0in 1.0in;}
+div.WordSection1
+	{page:WordSection1;}
+--></style><!--[if gte mso 9]><xml>
+<o:shapedefaults v:ext=3D"edit" spidmax=3D"1026" />
+</xml><![endif]--><!--[if gte mso 9]><xml>
+<o:shapelayout v:ext=3D"edit">
+<o:idmap v:ext=3D"edit" data=3D"1" />
+</o:shapelayout></xml><![endif]-->
+</head>
+<body lang=3D"EN-US" style=3D"word-wrap:break-word">
+<div class=3D"WordSection1">
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN">Hello, hello@stalw.art &nbsp=
+;&nbsp;&nbsp;&nbsp;&nbsp;<o:p></o:p></span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN"><o:p>&nbsp;</o:p></span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN">I&#8217;m just checking with=
+ you to see if you&#8217;re interested in
+</span><b><span lang=3D"EN-IN" style=3D"font-size:12.0pt">(SEO) search engi=
+ne optimization</span></b><span lang=3D"EN-IN">, or if you&#8217;re interes=
+ted in Google 1st page for better business.&nbsp;
+<o:p></o:p></span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN"><o:p>&nbsp;</o:p></span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN">If so, I&#8217;d love to tel=
+l you a little bit more about my abilities and show you some of my work. I =
+am a very&nbsp;
+<o:p></o:p></span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN">Skilled SEO expert with vari=
+ous abilities and can (<b>1st Page on Google</b>). anything.&nbsp;
+<o:p></o:p></span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN"><o:p>&nbsp;</o:p></span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN">I look forward to hearing fr=
+om you.&nbsp; <o:p>
+</o:p></span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN"><o:p>&nbsp;</o:p></span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN">Thanks,</span></p>
+<p class=3D"MsoNoSpacing"><span lang=3D"EN-IN">Miah</span></p>
+</div>
+</body>
+</html>
+
+--_000_SEYPR04MB74966F6A34B2B0AC5DA8E6DDFD0A2SEYPR04MB7496apcp_--
 

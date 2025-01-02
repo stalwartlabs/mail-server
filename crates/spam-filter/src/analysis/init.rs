@@ -10,9 +10,11 @@ use nlp::tokenizers::types::{TokenType, TypesTokenizer};
 
 use crate::{
     modules::html::{html_to_tokens, HtmlToken, HEAD},
-    Email, Hostname, Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput,
+    Email, Hostname, IpParts, Recipient, SpamFilterContext, SpamFilterInput, SpamFilterOutput,
     SpamFilterResult, TextPart,
 };
+
+use super::url::UrlParts;
 
 pub trait SpamFilterInit {
     fn spam_filter_init<'x>(&self, input: SpamFilterInput<'x>) -> SpamFilterContext<'x>;
@@ -90,7 +92,22 @@ impl SpamFilterInit for Server {
             .tokenize_urls(true)
             .tokenize_urls_without_scheme(true)
             .tokenize_emails(true)
-            .map(|t| t.word)
+            .map(|t| match t.word {
+                TokenType::Alphabetic(s) => TokenType::Alphabetic(s.into()),
+                TokenType::Alphanumeric(s) => TokenType::Alphanumeric(s.into()),
+                TokenType::Integer(s) => TokenType::Integer(s.into()),
+                TokenType::Other(s) => TokenType::Other(s),
+                TokenType::Punctuation(s) => TokenType::Punctuation(s),
+                TokenType::Space => TokenType::Space,
+                TokenType::Url(url) => TokenType::Url(UrlParts::new(url)),
+                TokenType::UrlNoHost(s) => TokenType::UrlNoHost(s.into()),
+                TokenType::UrlNoScheme(s) => {
+                    TokenType::UrlNoScheme(UrlParts::new(format!("https://{}", s.trim())))
+                }
+                TokenType::IpAddr(i) => TokenType::IpAddr(IpParts::new(i)),
+                TokenType::Email(e) => TokenType::Email(Email::new(e)),
+                TokenType::Float(s) => TokenType::Float(s.into()),
+            })
             .collect::<Vec<_>>();
 
         // Tokenize and convert text parts
@@ -110,7 +127,22 @@ impl SpamFilterInit for Server {
                             .tokenize_urls(true)
                             .tokenize_urls_without_scheme(true)
                             .tokenize_emails(true)
-                            .map(|t| t.word)
+                            .map(|t| match t.word {
+                                TokenType::Alphabetic(s) => TokenType::Alphabetic(s.into()),
+                                TokenType::Alphanumeric(s) => TokenType::Alphanumeric(s.into()),
+                                TokenType::Integer(s) => TokenType::Integer(s.into()),
+                                TokenType::Other(s) => TokenType::Other(s),
+                                TokenType::Punctuation(s) => TokenType::Punctuation(s),
+                                TokenType::Space => TokenType::Space,
+                                TokenType::Url(url) => TokenType::Url(UrlParts::new(url)),
+                                TokenType::UrlNoHost(s) => TokenType::UrlNoHost(s.into()),
+                                TokenType::UrlNoScheme(s) => TokenType::UrlNoScheme(UrlParts::new(
+                                    format!("https://{}", s.trim()),
+                                )),
+                                TokenType::IpAddr(i) => TokenType::IpAddr(IpParts::new(i)),
+                                TokenType::Email(e) => TokenType::Email(Email::new(e)),
+                                TokenType::Float(s) => TokenType::Float(s.into()),
+                            })
                             .collect::<Vec<_>>(),
                     },
                     PartType::Html(html) => {
@@ -153,23 +185,31 @@ impl SpamFilterInit for Server {
                                 .tokenize_emails(true)
                                 .map(|t| match t.word {
                                     TokenType::Alphabetic(s) => {
-                                        TokenType::Alphabetic(s.to_string())
+                                        TokenType::Alphabetic(s.to_string().into())
                                     }
                                     TokenType::Alphanumeric(s) => {
-                                        TokenType::Alphanumeric(s.to_string())
+                                        TokenType::Alphanumeric(s.to_string().into())
                                     }
-                                    TokenType::Integer(s) => TokenType::Integer(s.to_string()),
+                                    TokenType::Integer(s) => {
+                                        TokenType::Integer(s.to_string().into())
+                                    }
                                     TokenType::Other(s) => TokenType::Other(s),
                                     TokenType::Punctuation(s) => TokenType::Punctuation(s),
                                     TokenType::Space => TokenType::Space,
-                                    TokenType::Url(s) => TokenType::Url(s.to_string()),
-                                    TokenType::UrlNoScheme(s) => {
-                                        TokenType::UrlNoScheme(s.to_string())
+                                    TokenType::Url(url) => {
+                                        TokenType::Url(UrlParts::new(url.to_string()))
                                     }
-                                    TokenType::UrlNoHost(s) => TokenType::UrlNoHost(s.to_string()),
-                                    TokenType::IpAddr(s) => TokenType::IpAddr(s.to_string()),
-                                    TokenType::Email(s) => TokenType::Email(s.to_string()),
-                                    TokenType::Float(s) => TokenType::Float(s.to_string()),
+                                    TokenType::UrlNoHost(s) => {
+                                        TokenType::UrlNoHost(s.to_string().into())
+                                    }
+                                    TokenType::UrlNoScheme(s) => TokenType::UrlNoScheme(
+                                        UrlParts::new(format!("https://{}", s.trim())),
+                                    ),
+                                    TokenType::IpAddr(i) => {
+                                        TokenType::IpAddr(IpParts::new(i.to_string()))
+                                    }
+                                    TokenType::Email(e) => TokenType::Email(Email::new(e)),
+                                    TokenType::Float(s) => TokenType::Float(s.to_string().into()),
                                 })
                                 .collect::<Vec<_>>(),
                             html_tokens,

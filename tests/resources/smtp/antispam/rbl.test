@@ -1,5 +1,5 @@
 remote_ip 20.11.0.1
-expect RCVD_IN_DNSWL_LOW
+expect RCVD_IN_DNSWL_LOW RBL_SENDERSCORE_REPUT_0
 
 Subject: test
 
@@ -7,7 +7,7 @@ test
 
 <!-- NEXT TEST -->
 remote_ip 20.11.0.2
-expect RBL_SENDERSCORE RBL_NIXSPAM RBL_SEM RBL_SPAMHAUS_SBL RBL_BARRACUDA RBL_BLOCKLISTDE RBL_VIRUSFREE_BOTNET RBL_SPAMCOP RCVD_IN_DNSWL_MED
+expect RBL_SENDERSCORE_REPUT_0 RBL_NIXSPAM RBL_SEM RBL_SPAMHAUS_SBL RBL_BARRACUDA RBL_BLOCKLISTDE RBL_VIRUSFREE_BOTNET RBL_SPAMCOP RCVD_IN_DNSWL_MED
 
 Subject: test
 
@@ -15,7 +15,7 @@ test
 
 <!-- NEXT TEST -->
 remote_ip 20.11.0.14
-expect RWL_MAILSPIKE_NEUTRAL RECEIVED_SPAMHAUS_SBL RECEIVED_SPAMHAUS_XBL RECEIVED_BLOCKLISTDE RCVD_IN_DNSWL_MED
+expect RBL_SENDERSCORE_REPUT_1 RWL_MAILSPIKE_NEUTRAL RECEIVED_SPAMHAUS_SBL RECEIVED_SPAMHAUS_XBL RECEIVED_BLOCKLISTDE RCVD_IN_DNSWL_MED
 
 Received: from Agni (localhost [20.11.0.5]) (TLS: TLSv1/SSLv3, 168bits,DES-CBC3-SHA) by agni.forevermore.net 
           with esmtp; Mon, 28 Oct 2002 14:48:52 -0800
@@ -58,7 +58,7 @@ Subject: test
 test
 
 <!-- NEXT TEST -->
-expect SURBL_HASHBL_ABUSE SURBL_HASHBL_MALWARE SURBL_HASHBL_PHISH URL_ONLY
+expect SURBL_HASHBL_ABUSE SURBL_HASHBL_MALWARE SURBL_HASHBL_PHISH URL_ONLY REDIRECTOR_URL
 
 From: spammer@spamcorp.net
 Reply-To: User <spammer@spamcorp.net>
@@ -66,6 +66,6 @@ Subject: test
 Content-Type: text/html; charset="utf-8"
 
 <html>
-<a href="https://www.malware.net">test</a>
-<img src="https://www.abuse.net">https://phishing.net/login</a<
+<a href="https://bit.ly/abcde">test</a>
+<img src="https://drive.google.com/path/to/file.exe">https://lnkiy.in/other/path?query=true</a<
 </html>

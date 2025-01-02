@@ -11,13 +11,13 @@ use common::{
     Server,
 };
 use mail_auth::DkimResult;
-use mail_parser::{HeaderName, HeaderValue, Host};
+use mail_parser::{parsers::MessageStream, HeaderName, HeaderValue, Host};
 use nlp::tokenizers::types::TokenType;
 
 use crate::{
     modules::{
-        dnsbl::is_dnsbl,
-        expression::{SpamFilterResolver, StringResolver},
+        dnsbl::check_dnsbl,
+        expression::StringResolver,
         html::{HtmlToken, A, HREF},
     },
     Email, Hostname, Recipient, SpamFilterContext, TextPart,
@@ -52,19 +52,63 @@ impl SpamFilterAnalyzeDomain for Server {
 
         // Add Received headers
         for header in ctx.input.message.headers() {
-            if let (HeaderName::Received, HeaderValue::Received(received)) =
-                (&header.name, &header.value)
-            {
-                for host in [&received.from, &received.helo, &received.by]
-                    .into_iter()
-                    .flatten()
-                {
-                    if let Host::Name(name) = host {
-                        if let Some(name) = Hostname::new(name.as_ref()).sld {
-                            domains.insert(ElementLocation::new(name, Location::HeaderReceived));
+            match (&header.name, &header.value) {
+                (HeaderName::Received, HeaderValue::Received(received)) => {
+                    for host in [&received.from, &received.helo, &received.by]
+                        .into_iter()
+                        .flatten()
+                    {
+                        if let Host::Name(name) = host {
+                            if let Some(name) = Hostname::new(name.as_ref()).sld {
+                                domains
+                                    .insert(ElementLocation::new(name, Location::HeaderReceived));
+                            }
                         }
                     }
                 }
+                (HeaderName::MessageId, value) => {
+                    if let Some(mid_domain) = value
+                        .as_text()
+                        .and_then(|s| s.rsplit_once('@'))
+                        .and_then(|(_, d)| {
+                            let host = Hostname::new(d);
+                            if host.sld.is_some() {
+                                Some(host)
+                            } else {
+                                None
+                            }
+                        })
+                    {
+                        domains.insert(ElementLocation::new(mid_domain.fqdn, Location::HeaderMid));
+                    }
+                }
+                (HeaderName::Other(name), _)
+                    if name.eq_ignore_ascii_case("Disposition-Notification-To") =>
+                {
+                    if let Some(address) = MessageStream::new(
+                        ctx.input
+                            .message
+                            .raw_message
+                            .get(header.offset_start..header.offset_end)
+                            .unwrap_or_default(),
+                    )
+                    .parse_address()
+                    .as_address()
+                    {
+                        for addr in address.iter() {
+                            if let Some(email) = addr.address() {
+                                emails.insert(ElementLocation::new(
+                                    Recipient {
+                                        email: Email::new(email),
+                                        name: None,
+                                    },
+                                    Location::HeaderDnt,
+                                ));
+                            }
+                        }
+                    }
+                }
+                _ => (),
             }
         }
 
@@ -104,46 +148,13 @@ impl SpamFilterAnalyzeDomain for Server {
         for (part_id, part) in ctx.output.text_parts.iter().enumerate() {
             let is_body = ctx.input.message.text_body.contains(&part_id)
                 || ctx.input.message.html_body.contains(&part_id);
-            match part {
-                TextPart::Plain { tokens, .. } => emails.extend(tokens.iter().filter_map(|t| {
-                    if let TokenType::Email(email) = t {
-                        Some(ElementLocation::new(
-                            Recipient {
-                                email: Email::new(email),
-                                name: None,
-                            },
-                            if is_body {
-                                Location::BodyText
-                            } else {
-                                Location::Attachment
-                            },
-                        ))
-                    } else {
-                        None
-                    }
-                })),
+            let tokens = match part {
+                TextPart::Plain { tokens, .. } => tokens,
                 TextPart::Html {
                     tokens,
                     html_tokens,
                     ..
                 } => {
-                    emails.extend(tokens.iter().filter_map(|t| {
-                        if let TokenType::Email(email) = t {
-                            Some(ElementLocation::new(
-                                Recipient {
-                                    email: Email::new(email),
-                                    name: None,
-                                },
-                                if is_body {
-                                    Location::BodyHtml
-                                } else {
-                                    Location::Attachment
-                                },
-                            ))
-                        } else {
-                            None
-                        }
-                    }));
                     emails.extend(html_tokens.iter().filter_map(|token| {
                         if let HtmlToken::StartTag {
                             name: A,
@@ -174,8 +185,34 @@ impl SpamFilterAnalyzeDomain for Server {
                             None
                         }
                     }));
+                    tokens
                 }
-                TextPart::None => (),
+                TextPart::None => continue,
+            };
+
+            for token in tokens {
+                if let TokenType::Email(email) = token {
+                    if is_body && !ctx.result.has_tag("RCPT_IN_BODY") {
+                        for rcpt in ctx.output.all_recipients() {
+                            if rcpt.email.address == email.address {
+                                ctx.result.add_tag("RCPT_IN_BODY");
+                                break;
+                            }
+                        }
+                    }
+
+                    emails.insert(ElementLocation::new(
+                        Recipient {
+                            email: email.clone(),
+                            name: None,
+                        },
+                        if is_body {
+                            Location::BodyText
+                        } else {
+                            Location::Attachment
+                        },
+                    ));
+                }
             }
         }
 
@@ -194,22 +231,7 @@ impl SpamFilterAnalyzeDomain for Server {
             }
 
             // Check Email DNSBL
-            if ctx.result.rbl_email_checks < self.core.spam.dnsbl.max_email_checks {
-                for dnsbl in &self.core.spam.dnsbl.servers {
-                    if dnsbl.scope == Element::Email {
-                        if let Some(tag) = is_dnsbl(
-                            self,
-                            dnsbl,
-                            SpamFilterResolver::new(ctx, &email.element, email.location),
-                        )
-                        .await
-                        {
-                            ctx.result.add_tag(tag);
-                        }
-                    }
-                }
-                ctx.result.rbl_email_checks += 1;
-            }
+            check_dnsbl(self, ctx, &email.element, Element::Email, email.location).await;
 
             domains.insert(ElementLocation::new(
                 email.element.email.domain_part.fqdn.clone(),
@@ -220,30 +242,16 @@ impl SpamFilterAnalyzeDomain for Server {
         // Validate domains
         for domain in &domains {
             // Skip trusted domains
-            if is_trusted_domain(self, &domain.element, ctx.input.span_id).await {
-                continue;
-            }
-
-            // Check Domain DNSBL
-            if ctx.result.rbl_domain_checks < self.core.spam.dnsbl.max_domain_checks {
-                for dnsbl in &self.core.spam.dnsbl.servers {
-                    if dnsbl.scope == Element::Domain {
-                        if let Some(tag) = is_dnsbl(
-                            self,
-                            dnsbl,
-                            SpamFilterResolver::new(
-                                ctx,
-                                &StringResolver(domain.element.as_str()),
-                                domain.location,
-                            ),
-                        )
-                        .await
-                        {
-                            ctx.result.add_tag(tag);
-                        }
-                    }
-                }
-                ctx.result.rbl_domain_checks += 1;
+            if !is_trusted_domain(self, &domain.element, ctx.input.span_id).await {
+                // Check Domain DNSBL
+                check_dnsbl(
+                    self,
+                    ctx,
+                    &StringResolver(domain.element.as_str()),
+                    Element::Domain,
+                    domain.location,
+                )
+                .await;
             }
         }
         ctx.output.emails = emails;

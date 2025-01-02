@@ -123,13 +123,13 @@ impl SpamFilterAnalyzeFrom for Server {
             }
 
             if !env_from_empty && ctx.output.env_from_addr.address == from_addr.address {
-                ctx.result.add_tag("FROM_EQ_ENVFROM");
+                ctx.result.add_tag("FROM_EQ_ENV_FROM");
             } else if from_addr_is_valid {
                 if from_addr.domain_part.sld == ctx.output.ehlo_host.sld {
-                    ctx.result.add_tag("FROMTLD_EQ_ENVFROMTLD");
+                    ctx.result.add_tag("FROMTLD_EQ_ENV_FROMTLD");
                 } else if !ctx.output.env_from_postmaster {
                     ctx.result.add_tag("FORGED_SENDER");
-                    ctx.result.add_tag("FROM_NEQ_ENVFROM");
+                    ctx.result.add_tag("FROM_NEQ_ENV_FROM");
                 }
             }
 
@@ -212,7 +212,7 @@ impl SpamFilterAnalyzeFrom for Server {
                     ctx.result.add_tag("FROMHOST_NORES_A_OR_MX");
                 }
             } else {
-                ctx.result.add_tag("ENVFROM_INVALID");
+                ctx.result.add_tag("ENV_FROM_INVALID");
             }
 
             // Check whether disposition notification address is different to return path

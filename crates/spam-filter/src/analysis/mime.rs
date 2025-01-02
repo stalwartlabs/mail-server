@@ -10,12 +10,11 @@ use common::{
     scripts::functions::{array::cosine_similarity, unicode::CharUtils},
     Server,
 };
-use hyper::Uri;
 use mail_parser::{HeaderName, MimeHeaders, PartType};
 use nlp::tokenizers::types::TokenType;
 use unicode_security::MixedScript;
 
-use crate::{Hostname, SpamFilterContext, TextPart};
+use crate::{SpamFilterContext, TextPart};
 
 pub trait SpamFilterAnalyzeMime: Sync + Send {
     fn spam_filter_analyze_mime(
@@ -171,25 +170,36 @@ impl SpamFilterAnalyzeMime for Server {
                             let mut html_part_uris = 0;
 
                             for text_part in part_ids.iter().map(|id| &ctx.output.text_parts[*id]) {
-                                match text_part {
+                                let (tokens, words, uri_count) = match text_part {
                                     TextPart::Plain { tokens, .. } if !has_plain_part => {
-                                        words_and_uris(
-                                            tokens,
-                                            &mut text_part_words,
-                                            &mut text_part_uris,
-                                        );
                                         has_plain_part = true;
+                                        (tokens, &mut text_part_words, &mut text_part_uris)
                                     }
                                     TextPart::Html { tokens, .. } if !has_html_part => {
-                                        words_and_uris(
-                                            tokens,
-                                            &mut html_part_words,
-                                            &mut html_part_uris,
-                                        );
                                         has_html_part = true;
+                                        (tokens, &mut html_part_words, &mut html_part_uris)
                                     }
-                                    _ => (),
+                                    _ => continue,
+                                };
+
+                                let mut uris = HashSet::new();
+                                for token in tokens {
+                                    match token {
+                                        TokenType::Alphabetic(v) | TokenType::Alphanumeric(v) => {
+                                            words.push(v.as_ref());
+                                        }
+                                        TokenType::Url(v) => {
+                                            if let Some(host) =
+                                                v.url_parsed.as_ref().map(|uri| &uri.host)
+                                            {
+                                                uris.insert(host.sld_or_default());
+                                            }
+                                        }
+                                        _ => (),
+                                    }
                                 }
+
+                                *uri_count = uris.len();
                             }
 
                             //  Multipart message mostly text/html MIME
@@ -417,33 +427,4 @@ impl SpamFilterAnalyzeMime for Server {
             ctx.result.add_tag("BOGUS_ENCRYPTED_AND_TEXT");
         }
     }
-}
-
-fn words_and_uris<'x, T: AsRef<str>>(
-    tokens: &'x [TokenType<T>],
-    words: &mut Vec<&'x str>,
-    uri_count: &mut usize,
-) {
-    let mut uris = HashSet::new();
-
-    for token in tokens {
-        match token {
-            TokenType::Alphabetic(v) | TokenType::Alphanumeric(v) => {
-                words.push(v.as_ref());
-            }
-            TokenType::Url(v) => {
-                if let Some(host) = v
-                    .as_ref()
-                    .parse::<Uri>()
-                    .ok()
-                    .and_then(|uri| uri.host().map(Hostname::new))
-                {
-                    uris.insert(host.sld.unwrap_or(host.fqdn));
-                }
-            }
-            _ => (),
-        }
-    }
-
-    *uri_count = uris.len();
 }

@@ -114,3 +114,11 @@ Partner: 12345678<br>
 Portal: <a href="https://www.localhost.de/example.php" target="_blank">IP-Sperre einsehen</a>
 </html>
 
+<!-- NEXT TEST -->
+expect RCPT_DOMAIN_IN_BODY
+
+To: hello@world.com
+Subject: Special offer 
+
+An offer for world.com
+

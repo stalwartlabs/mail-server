@@ -11,7 +11,7 @@ use mail_parser::HeaderName;
 use nlp::tokenizers::types::TokenType;
 use smtp_proto::{MAIL_BODY_8BITMIME, MAIL_BODY_BINARYMIME, MAIL_SMTPUTF8};
 
-use crate::{Email, SpamFilterContext};
+use crate::SpamFilterContext;
 
 pub trait SpamFilterAnalyzeSubject: Sync + Send {
     fn spam_filter_analyze_subject(
@@ -97,35 +97,54 @@ impl SpamFilterAnalyzeSubject for Server {
 
         for token in &ctx.output.subject_tokens {
             match token {
-                TokenType::Url(_) => {
+                TokenType::Url(url) => {
                     // Subject contains URL
                     ctx.result.add_tag("URL_IN_SUBJECT");
+
+                    if let Some(url_parsed) = &url.url_parsed {
+                        let host = url_parsed.host.sld_or_default();
+                        for rcpt in ctx.output.all_recipients() {
+                            if rcpt.email.domain_part.sld_or_default() == host {
+                                ctx.result.add_tag("RCPT_DOMAIN_IN_SUBJECT");
+                                break;
+                            }
+                        }
+                    }
                 }
-                TokenType::Email(address) => {
+                TokenType::UrlNoScheme(url) => {
+                    if let Some(url_parsed) = &url.url_parsed {
+                        let host = url_parsed.host.sld_or_default();
+                        for rcpt in ctx.output.all_recipients() {
+                            if rcpt.email.domain_part.sld_or_default() == host {
+                                ctx.result.add_tag("RCPT_DOMAIN_IN_SUBJECT");
+                                break;
+                            }
+                        }
+                    }
+                }
+                TokenType::Email(email) => {
                     // Subject contains recipient
-                    let email = Email::new(address);
-                    if ctx.output.env_to_addr.contains(&email)
+                    if ctx.output.env_to_addr.contains(email)
                         || ctx
                             .output
                             .all_recipients()
                             .any(|r| r.email.address == email.address)
                     {
                         ctx.result.add_tag("RCPT_IN_SUBJECT");
+                    } else {
+                        let host = email.domain_part.sld_or_default();
+                        for rcpt in ctx.output.all_recipients() {
+                            if rcpt.email.address == email.address {
+                                ctx.result.add_tag("RCPT_IN_SUBJECT");
+                                break;
+                            } else if rcpt.email.domain_part.sld_or_default() == host {
+                                ctx.result.add_tag("RCPT_DOMAIN_IN_SUBJECT");
+                                break;
+                            }
+                        }
                     }
-                    continue;
                 }
                 _ => {}
-            }
-
-            if let Some(hostname) = token.hostname_sld() {
-                let hostname = Some(hostname.to_lowercase());
-                if ctx
-                    .output
-                    .all_recipients()
-                    .any(|r| r.email.domain_part.sld == hostname)
-                {
-                    ctx.result.add_tag("RCPT_DOMAIN_IN_SUBJECT");
-                }
             }
         }
 

@@ -189,3 +189,10 @@ To: user@test.org
 Cc: "Test" <test@test.org >
 
 Test
+<!-- NEXT TEST -->
+expect RCPT_IN_BODY TO_DN_NONE RCPT_COUNT_ONE
+
+To: hello@world.com
+Subject: Special offer 
+
+An offer for hello@world.com

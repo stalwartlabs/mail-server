@@ -9,6 +9,7 @@ use common::{
     expr::{functions::ResolveVariable, Variable},
 };
 use mail_parser::{Header, HeaderValue};
+use nlp::tokenizers::types::TokenType;
 
 use crate::{analysis::url::UrlParts, Recipient, SpamFilterContext, TextPart};
 
@@ -224,6 +225,42 @@ impl<T: ResolveVariable> ResolveVariable for SpamFilterResolver<'_, T> {
             V_SPAM_SUBJECT => self.ctx.output.subject_lc.as_str().into(),
             V_SPAM_SUBJECT_THREAD => self.ctx.output.subject_thread_lc.as_str().into(),
             V_SPAM_LOCATION => self.location.as_str().into(),
+            V_WORDS_SUBJECT => self
+                .ctx
+                .output
+                .subject_tokens
+                .iter()
+                .filter_map(|w| match w {
+                    TokenType::Alphabetic(w)
+                    | TokenType::Alphanumeric(w)
+                    | TokenType::Integer(w)
+                    | TokenType::Float(w) => Some(Variable::String(w.as_ref().into())),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .into(),
+            V_WORDS_BODY => self
+                .ctx
+                .input
+                .message
+                .html_body
+                .first()
+                .and_then(|idx| self.ctx.output.text_parts.get(*idx))
+                .map(|part| match part {
+                    TextPart::Plain { tokens, .. } | TextPart::Html { tokens, .. } => tokens
+                        .iter()
+                        .filter_map(|w| match w {
+                            TokenType::Alphabetic(w)
+                            | TokenType::Alphanumeric(w)
+                            | TokenType::Integer(w)
+                            | TokenType::Float(w) => Some(Variable::String(w.as_ref().into())),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    TextPart::None => vec![],
+                })
+                .unwrap_or_default()
+                .into(),
             _ => Variable::Integer(0),
         }
     }
@@ -346,7 +383,7 @@ impl ResolveVariable for Recipient {
     }
 }
 
-impl ResolveVariable for UrlParts {
+impl ResolveVariable for UrlParts<'_> {
     fn resolve_variable(&self, variable: u32) -> Variable<'_> {
         match variable {
             V_URL_FULL => Variable::String(self.url.as_str().into()),

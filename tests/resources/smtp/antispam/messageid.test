@@ -81,7 +81,7 @@ Message-ID: <1234@host.domain.co.uk>
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.co.uk
-expect MID_RHS_MATCH_ENVFROMTLD
+expect MID_RHS_MATCH_ENV_FROMTLD
 
 Message-ID: <1234@host.domain.co.uk>
 
