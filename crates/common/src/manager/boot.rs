@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use arc_swap::ArcSwap;
 use pwhash::sha512_crypt;
@@ -15,11 +19,12 @@ use store::{
 use tokio::sync::{mpsc, Notify};
 use utils::{
     config::{Config, ConfigKey},
-    failed, UnwrapFailure,
+    failed, Semver, UnwrapFailure,
 };
 
 use crate::{
-    config::{server::Listeners, telemetry::Telemetry},
+    config::{network::AsnGeoLookupConfig, server::Listeners, telemetry::Telemetry},
+    core::BuildServer,
     ipc::{DeliveryEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
     Caches, Core, Data, Inner, Ipc, IPC_CHANNEL_BUFFER,
 };
@@ -236,48 +241,89 @@ impl BootManager {
                 }
 
                 // Download Spam filter rules if missing
-                if config
-                    .value("version.spam-filter")
-                    .filter(|v| !v.is_empty())
-                    .is_none()
-                {
-                    match manager.fetch_spam_rules().await {
-                        Ok(external_config) => {
-                            trc::event!(
-                                Config(trc::ConfigEvent::ImportExternal),
-                                Version = external_config.version.to_string(),
-                                Id = "spam-filter"
-                            );
-                            insert_keys.extend(external_config.keys);
-                        }
-                        Err(err) => {
-                            config.new_build_error(
-                                "*",
-                                format!("Failed to fetch spam filter: {err}"),
-                            );
-                        }
+                let is_pre_0_11 = match config.value("version.spam-filter").and_then(|v| {
+                    if !v.is_empty() {
+                        Some(Semver::try_from(v))
+                    } else {
+                        None
                     }
+                }) {
+                    Some(Err(_)) => {
+                        if std::env::var("DO_NOT_MIGRATE").is_err() {
+                            let _ = manager.clear_prefix("lookup.spam-").await;
+                            let _ = manager
+                                .clear_prefix("sieve.trusted.scripts.spam-filter")
+                                .await;
+                            let _ = manager
+                                .clear_prefix("sieve.trusted.scripts.track-replies")
+                                .await;
+                            let _ = manager.clear_prefix("sieve.trusted.scripts.greylist").await;
+                            let _ = manager.clear_prefix("sieve.trusted.scripts.train").await;
+                            let _ = manager.clear_prefix("session.data.script").await;
+                            let _ = manager.clear("version.spam-filter").await;
 
-                    // Add default settings
-                    for key in [
-                        ("queue.quota.size.messages", "100000"),
-                        ("queue.quota.size.size", "10737418240"),
-                        ("queue.quota.size.enable", "true"),
-                        ("queue.throttle.rcpt.key", "rcpt_domain"),
-                        ("queue.throttle.rcpt.concurrency", "5"),
-                        ("queue.throttle.rcpt.enable", "true"),
-                        ("session.throttle.ip.key", "remote_ip"),
-                        ("session.throttle.ip.concurrency", "5"),
-                        ("session.throttle.ip.enable", "true"),
-                        ("session.throttle.sender.key.0", "sender_domain"),
-                        ("session.throttle.sender.key.1", "rcpt"),
-                        ("session.throttle.sender.rate", "25/1h"),
-                        ("session.throttle.sender.enable", "true"),
-                        ("report.analysis.addresses", "postmaster@*"),
-                    ] {
-                        insert_keys.push(ConfigKey::from(key));
+                            match manager.fetch_spam_rules().await {
+                                Ok(external_config) => {
+                                    trc::event!(
+                                        Config(trc::ConfigEvent::ImportExternal),
+                                        Version = external_config.version.to_string(),
+                                        Id = "spam-filter"
+                                    );
+                                    insert_keys.extend(external_config.keys);
+                                }
+                                Err(err) => {
+                                    config.new_build_error(
+                                        "*",
+                                        format!("Failed to fetch spam filter: {err}"),
+                                    );
+                                }
+                            }
+                        }
+
+                        true
                     }
-                }
+                    Some(Ok(_)) => false,
+                    None => {
+                        match manager.fetch_spam_rules().await {
+                            Ok(external_config) => {
+                                trc::event!(
+                                    Config(trc::ConfigEvent::ImportExternal),
+                                    Version = external_config.version.to_string(),
+                                    Id = "spam-filter"
+                                );
+                                insert_keys.extend(external_config.keys);
+                            }
+                            Err(err) => {
+                                config.new_build_error(
+                                    "*",
+                                    format!("Failed to fetch spam filter: {err}"),
+                                );
+                            }
+                        }
+
+                        // Add default settings
+                        for key in [
+                            ("queue.quota.size.messages", "100000"),
+                            ("queue.quota.size.size", "10737418240"),
+                            ("queue.quota.size.enable", "true"),
+                            ("queue.throttle.rcpt.key", "rcpt_domain"),
+                            ("queue.throttle.rcpt.concurrency", "5"),
+                            ("queue.throttle.rcpt.enable", "true"),
+                            ("session.throttle.ip.key", "remote_ip"),
+                            ("session.throttle.ip.concurrency", "5"),
+                            ("session.throttle.ip.enable", "true"),
+                            ("session.throttle.sender.key.0", "sender_domain"),
+                            ("session.throttle.sender.key.1", "rcpt"),
+                            ("session.throttle.sender.rate", "25/1h"),
+                            ("session.throttle.sender.enable", "true"),
+                            ("report.analysis.addresses", "postmaster@*"),
+                        ] {
+                            insert_keys.push(ConfigKey::from(key));
+                        }
+
+                        false
+                    }
+                };
 
                 // Download webadmin if missing
                 if let Some(blob_store) = config
@@ -349,9 +395,10 @@ impl BootManager {
                 );
 
                 // Webadmin auto-update
-                if config
-                    .property_or_default::<bool>("webadmin.auto-update", "false")
-                    .unwrap_or_default()
+                if is_pre_0_11
+                    || config
+                        .property_or_default::<bool>("webadmin.auto-update", "false")
+                        .unwrap_or_default()
                 {
                     if let Err(err) = data.webadmin.update(&core).await {
                         trc::event!(
@@ -377,6 +424,10 @@ impl BootManager {
                 }
 
                 // Build shared inner
+                let has_remote_asn = matches!(
+                    core.network.asn_geo_lookup,
+                    AsnGeoLookupConfig::Resource { .. }
+                );
                 let (ipc, ipc_rxs) = build_ipc();
                 let inner = Arc::new(Inner {
                     shared_core: ArcSwap::from_pointee(core),
@@ -384,6 +435,14 @@ impl BootManager {
                     ipc,
                     cache,
                 });
+
+                // Fetch ASN database
+                if has_remote_asn {
+                    inner
+                        .build_server()
+                        .lookup_asn_country(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)))
+                        .await;
+                }
 
                 // Parse TCP acceptors
                 servers.parse_tcp_acceptors(&mut config, inner.clone());

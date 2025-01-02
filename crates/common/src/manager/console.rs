@@ -195,7 +195,7 @@ pub async fn store_console(store: Store) {
                 }
             }
             "put" => {
-                if parts.len() != 2 {
+                if parts.len() < 2 {
                     println!("Usage: put <key> [<value>]");
                 } else if let Some(key) = parse_key(parts[1]) {
                     let value = parts.get(2).map(|v| parse_value(v)).unwrap_or_default();
