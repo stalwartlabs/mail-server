@@ -685,7 +685,7 @@ impl CryptoHandler for Server {
         let request = serde_json::from_slice::<EncryptionType>(body.as_deref().unwrap_or_default())
             .map_err(|err| trc::ResourceEvent::BadParameters.into_err().reason(err))?;
 
-        let (method, algo, certs) = match request {
+        let (method, algo, mut certs) = match request {
             EncryptionType::PGP { algo, certs } => (EncryptionMethod::PGP, algo, certs),
             EncryptionType::SMIME { algo, certs } => (EncryptionMethod::SMIME, algo, certs),
             EncryptionType::Disabled => {
@@ -703,6 +703,9 @@ impl CryptoHandler for Server {
                 .into_http_response());
             }
         };
+        if !certs.ends_with("\n") {
+            certs.push('\n');
+        }
 
         // Make sure Encryption is enabled
         if !self.core.jmap.encrypt {
