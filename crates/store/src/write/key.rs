@@ -11,15 +11,16 @@ use crate::{
     BitmapKey, Deserialize, IndexKey, IndexKeyPrefix, Key, LogKey, ValueKey, SUBSPACE_ACL,
     SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_BLOB_LINK,
     SUBSPACE_BLOB_RESERVE, SUBSPACE_COUNTER, SUBSPACE_DIRECTORY, SUBSPACE_FTS_INDEX,
-    SUBSPACE_INDEXES, SUBSPACE_LOGS, SUBSPACE_LOOKUP_VALUE, SUBSPACE_PROPERTY,
-    SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA, SUBSPACE_REPORT_IN,
-    SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE, SUBSPACE_TELEMETRY_INDEX,
-    SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U32_LEN, U64_LEN, WITH_SUBSPACE,
+    SUBSPACE_INDEXES, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_IN_MEMORY_VALUE, SUBSPACE_LOGS,
+    SUBSPACE_PROPERTY, SUBSPACE_QUEUE_EVENT, SUBSPACE_QUEUE_MESSAGE, SUBSPACE_QUOTA,
+    SUBSPACE_REPORT_IN, SUBSPACE_REPORT_OUT, SUBSPACE_SETTINGS, SUBSPACE_TASK_QUEUE,
+    SUBSPACE_TELEMETRY_INDEX, SUBSPACE_TELEMETRY_METRIC, SUBSPACE_TELEMETRY_SPAN, U32_LEN, U64_LEN,
+    WITH_SUBSPACE,
 };
 
 use super::{
-    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, LookupClass, QueueClass, ReportClass,
-    ReportEvent, ResolveId, TagValue, TaskQueueClass, TelemetryClass, ValueClass,
+    AnyKey, AssignedIds, BitmapClass, BlobOp, DirectoryClass, InMemoryClass, QueueClass,
+    ReportClass, ReportEvent, ResolveId, TagValue, TaskQueueClass, TelemetryClass, ValueClass,
 };
 
 pub struct KeySerializer {
@@ -306,9 +307,9 @@ impl<T: ResolveId> ValueClass<T> {
                     .write(*id as u32),
             },
             ValueClass::Config(key) => serializer.write(key.as_slice()),
-            ValueClass::Lookup(lookup) => match lookup {
-                LookupClass::Key(key) => serializer.write(key.as_slice()),
-                LookupClass::Counter(key) => serializer.write(key.as_slice()),
+            ValueClass::InMemory(lookup) => match lookup {
+                InMemoryClass::Key(key) => serializer.write(key.as_slice()),
+                InMemoryClass::Counter(key) => serializer.write(key.as_slice()),
             },
             ValueClass::Directory(directory) => match directory {
                 DirectoryClass::NameToId(name) => serializer.write(0u8).write(name.as_slice()),
@@ -541,7 +542,7 @@ impl<T> ValueClass<T> {
                 }
             }
             ValueClass::Acl(_) => U32_LEN * 3 + 2,
-            ValueClass::Lookup(LookupClass::Counter(v) | LookupClass::Key(v))
+            ValueClass::InMemory(InMemoryClass::Counter(v) | InMemoryClass::Key(v))
             | ValueClass::Config(v) => v.len(),
             ValueClass::Directory(d) => match d {
                 DirectoryClass::NameToId(v) | DirectoryClass::EmailToId(v) => v.len(),
@@ -595,9 +596,9 @@ impl<T> ValueClass<T> {
                 }
             },
             ValueClass::Config(_) => SUBSPACE_SETTINGS,
-            ValueClass::Lookup(lookup) => match lookup {
-                LookupClass::Key(_) => SUBSPACE_LOOKUP_VALUE,
-                LookupClass::Counter(_) => SUBSPACE_COUNTER,
+            ValueClass::InMemory(lookup) => match lookup {
+                InMemoryClass::Key(_) => SUBSPACE_IN_MEMORY_VALUE,
+                InMemoryClass::Counter(_) => SUBSPACE_IN_MEMORY_COUNTER,
             },
             ValueClass::Directory(directory) => match directory {
                 DirectoryClass::UsedQuota(_) => SUBSPACE_QUOTA,
@@ -625,7 +626,7 @@ impl<T> ValueClass<T> {
     pub fn is_counter(&self, collection: u8) -> bool {
         match self {
             ValueClass::Directory(DirectoryClass::UsedQuota(_))
-            | ValueClass::Lookup(LookupClass::Counter(_))
+            | ValueClass::InMemory(InMemoryClass::Counter(_))
             | ValueClass::Queue(QueueClass::QuotaCount(_) | QueueClass::QuotaSize(_)) => true,
             ValueClass::Property(84) if collection == 1 => true, // TODO: Find a more elegant way to do this
             _ => false,

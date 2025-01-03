@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use trc::AddContext;
 use utils::config::Rate;
 
-use crate::{backend::http::lookup::HttpStoreGet, write::LookupClass};
+use crate::{backend::http::lookup::HttpStoreGet, write::InMemoryClass};
 #[allow(unused_imports)]
 use crate::{
     write::{
@@ -31,7 +31,7 @@ impl InMemoryStore {
             InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Key(kv.key)),
+                    class: ValueClass::InMemory(InMemoryClass::Key(kv.key)),
                     op: ValueOp::Set(
                         KeySerializer::new(kv.value.len() + U64_LEN)
                             .write(kv.expires.map_or(u64::MAX, |expires| now() + expires))
@@ -60,7 +60,7 @@ impl InMemoryStore {
 
                 if let Some(expires) = kv.expires {
                     batch.ops.push(Operation::Value {
-                        class: ValueClass::Lookup(LookupClass::Key(kv.key.clone())),
+                        class: ValueClass::InMemory(InMemoryClass::Key(kv.key.clone())),
                         op: ValueOp::Set(
                             KeySerializer::new(U64_LEN * 2)
                                 .write(0u64)
@@ -72,7 +72,7 @@ impl InMemoryStore {
                 }
 
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Counter(kv.key)),
+                    class: ValueClass::InMemory(InMemoryClass::Counter(kv.key)),
                     op: ValueOp::AddAndGet(kv.value),
                 });
 
@@ -97,7 +97,7 @@ impl InMemoryStore {
             InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Key(key.into().into_bytes())),
+                    class: ValueClass::InMemory(InMemoryClass::Key(key.into().into_bytes())),
                     op: ValueOp::Clear,
                 });
                 store.write(batch.build()).await.map(|_| ())
@@ -118,7 +118,7 @@ impl InMemoryStore {
             InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Counter(key.into().into_bytes())),
+                    class: ValueClass::InMemory(InMemoryClass::Counter(key.into().into_bytes())),
                     op: ValueOp::Clear,
                 });
                 store.write(batch.build()).await.map(|_| ())
@@ -148,17 +148,19 @@ impl InMemoryStore {
 
                 store
                     .delete_range(
-                        ValueKey::from(ValueClass::Lookup(LookupClass::Counter(
+                        ValueKey::from(ValueClass::InMemory(InMemoryClass::Counter(
                             from_range.clone(),
                         ))),
-                        ValueKey::from(ValueClass::Lookup(LookupClass::Counter(to_range.clone()))),
+                        ValueKey::from(ValueClass::InMemory(InMemoryClass::Counter(
+                            to_range.clone(),
+                        ))),
                     )
                     .await?;
 
                 store
                     .delete_range(
-                        ValueKey::from(ValueClass::Lookup(LookupClass::Key(from_range))),
-                        ValueKey::from(ValueClass::Lookup(LookupClass::Key(to_range))),
+                        ValueKey::from(ValueClass::InMemory(InMemoryClass::Key(from_range))),
+                        ValueKey::from(ValueClass::InMemory(InMemoryClass::Key(to_range))),
                     )
                     .await
             }
@@ -179,9 +181,9 @@ impl InMemoryStore {
     ) -> trc::Result<Option<T>> {
         match self {
             InMemoryStore::Store(store) => store
-                .get_value::<LookupValue<T>>(ValueKey::from(ValueClass::Lookup(LookupClass::Key(
-                    key.into().into_bytes(),
-                ))))
+                .get_value::<LookupValue<T>>(ValueKey::from(ValueClass::InMemory(
+                    InMemoryClass::Key(key.into().into_bytes()),
+                )))
                 .await
                 .map(|value| value.and_then(|v| v.into())),
             #[cfg(feature = "redis")]
@@ -202,9 +204,9 @@ impl InMemoryStore {
         match self {
             InMemoryStore::Store(store) => {
                 store
-                    .get_counter(ValueKey::from(ValueClass::Lookup(LookupClass::Counter(
-                        key.into().into_bytes(),
-                    ))))
+                    .get_counter(ValueKey::from(ValueClass::InMemory(
+                        InMemoryClass::Counter(key.into().into_bytes()),
+                    )))
                     .await
             }
             #[cfg(feature = "redis")]
@@ -221,9 +223,9 @@ impl InMemoryStore {
     pub async fn key_exists(&self, key: impl Into<LookupKey<'_>>) -> trc::Result<bool> {
         match self {
             InMemoryStore::Store(store) => store
-                .get_value::<LookupValue<()>>(ValueKey::from(ValueClass::Lookup(LookupClass::Key(
-                    key.into().into_bytes(),
-                ))))
+                .get_value::<LookupValue<()>>(ValueKey::from(ValueClass::InMemory(
+                    InMemoryClass::Key(key.into().into_bytes()),
+                )))
                 .await
                 .map(|value| matches!(value, Some(LookupValue::Value(())))),
             #[cfg(feature = "redis")]
@@ -283,9 +285,9 @@ impl InMemoryStore {
         match self {
             InMemoryStore::Store(store) => {
                 // Delete expired keys and counters
-                let from_key = ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![0u8])));
+                let from_key = ValueKey::from(ValueClass::InMemory(InMemoryClass::Key(vec![0u8])));
                 let to_key =
-                    ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![u8::MAX; 10])));
+                    ValueKey::from(ValueClass::InMemory(InMemoryClass::Key(vec![u8::MAX; 10])));
 
                 let current_time = now();
                 let mut expired_keys = Vec::new();
@@ -313,7 +315,7 @@ impl InMemoryStore {
                     let mut batch = BatchBuilder::new();
                     for key in expired_keys {
                         batch.ops.push(Operation::Value {
-                            class: ValueClass::Lookup(LookupClass::Key(key)),
+                            class: ValueClass::InMemory(InMemoryClass::Key(key)),
                             op: ValueOp::Clear,
                         });
                         if batch.ops.len() >= 1000 {
@@ -336,11 +338,11 @@ impl InMemoryStore {
                     let mut batch = BatchBuilder::new();
                     for key in expired_counters {
                         batch.ops.push(Operation::Value {
-                            class: ValueClass::Lookup(LookupClass::Counter(key.clone())),
+                            class: ValueClass::InMemory(InMemoryClass::Counter(key.clone())),
                             op: ValueOp::Clear,
                         });
                         batch.ops.push(Operation::Value {
-                            class: ValueClass::Lookup(LookupClass::Key(key)),
+                            class: ValueClass::InMemory(InMemoryClass::Key(key)),
                             op: ValueOp::Clear,
                         });
                         if batch.ops.len() >= 1000 {

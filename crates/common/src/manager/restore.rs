@@ -15,7 +15,7 @@ use store::{
     roaring::RoaringBitmap,
     write::{
         key::DeserializeBigEndian, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass,
-        LookupClass, MaybeDynamicId, MaybeDynamicValue, Operation, TagValue, TaskQueueClass,
+        InMemoryClass, MaybeDynamicId, MaybeDynamicValue, Operation, TagValue, TaskQueueClass,
         ValueClass,
     },
     BlobStore, Serialize, Store, U32_LEN,
@@ -167,11 +167,11 @@ async fn restore_file(store: Store, blob_store: BlobStore, path: &Path) {
                         batch.set(ValueClass::Config(key), value);
                     }
                     Family::LookupValue => {
-                        batch.set(ValueClass::Lookup(LookupClass::Key(key)), value);
+                        batch.set(ValueClass::InMemory(InMemoryClass::Key(key)), value);
                     }
                     Family::LookupCounter => {
                         batch.add(
-                            ValueClass::Lookup(LookupClass::Counter(key)),
+                            ValueClass::InMemory(InMemoryClass::Counter(key)),
                             i64::deserialize(&value).expect("Failed to deserialize counter"),
                         );
                     }

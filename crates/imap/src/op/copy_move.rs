@@ -225,7 +225,7 @@ impl<T: SessionStream> SessionData<T> {
                     }
                 }
 
-                // Perepare write batch
+                // Prepare write batch
                 let mut batch = BatchBuilder::new();
                 batch
                     .with_account_id(account_id)

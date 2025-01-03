@@ -144,7 +144,7 @@ pub enum TagValue<T> {
 pub enum ValueClass<T> {
     Property(u8),
     Acl(u32),
-    Lookup(LookupClass),
+    InMemory(InMemoryClass),
     FtsIndex(BitmapHash),
     TaskQueue(TaskQueueClass),
     Directory(DirectoryClass<T>),
@@ -176,7 +176,7 @@ pub struct AnyClass {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum LookupClass {
+pub enum InMemoryClass {
     Key(Vec<u8>),
     Counter(Vec<u8>),
 }

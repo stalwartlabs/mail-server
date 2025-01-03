@@ -142,7 +142,8 @@ pub const SUBSPACE_BLOB_LINK: u8 = b'k';
 pub const SUBSPACE_BLOBS: u8 = b't';
 pub const SUBSPACE_LOGS: u8 = b'l';
 pub const SUBSPACE_COUNTER: u8 = b'n';
-pub const SUBSPACE_LOOKUP_VALUE: u8 = b'm';
+pub const SUBSPACE_IN_MEMORY_VALUE: u8 = b'm';
+pub const SUBSPACE_IN_MEMORY_COUNTER: u8 = b'y';
 pub const SUBSPACE_PROPERTY: u8 = b'p';
 pub const SUBSPACE_SETTINGS: u8 = b's';
 pub const SUBSPACE_QUEUE_MESSAGE: u8 = b'e';
@@ -155,7 +156,6 @@ pub const SUBSPACE_TELEMETRY_SPAN: u8 = b'o';
 pub const SUBSPACE_TELEMETRY_INDEX: u8 = b'w';
 pub const SUBSPACE_TELEMETRY_METRIC: u8 = b'x';
 
-pub const SUBSPACE_RESERVED_1: u8 = b'y';
 pub const SUBSPACE_RESERVED_2: u8 = b'z';
 
 #[derive(Clone)]

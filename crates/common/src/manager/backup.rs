@@ -17,7 +17,7 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     write::{
         key::DeserializeBigEndian, AnyKey, BitmapClass, BitmapHash, BlobOp, DirectoryClass,
-        LookupClass, QueueClass, QueueEvent, TagValue, ValueClass,
+        InMemoryClass, QueueClass, QueueEvent, TagValue, ValueClass,
     },
     BitmapKey, Deserialize, IndexKey, IterateParams, LogKey, Serialize, ValueKey,
     SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, U32_LEN, U64_LEN,
@@ -538,13 +538,13 @@ impl Core {
                                 account_id: 0,
                                 collection: 0,
                                 document_id: 0,
-                                class: ValueClass::Lookup(LookupClass::Key(vec![0])),
+                                class: ValueClass::InMemory(InMemoryClass::Key(vec![0])),
                             },
                             ValueKey {
                                 account_id: u32::MAX,
                                 collection: u8::MAX,
                                 document_id: u32::MAX,
-                                class: ValueClass::Lookup(LookupClass::Key(vec![
+                                class: ValueClass::InMemory(InMemoryClass::Key(vec![
                                     u8::MAX,
                                     u8::MAX,
                                     u8::MAX,
@@ -578,13 +578,13 @@ impl Core {
                                 account_id: 0,
                                 collection: 0,
                                 document_id: 0,
-                                class: ValueClass::Lookup(LookupClass::Counter(vec![0])),
+                                class: ValueClass::InMemory(InMemoryClass::Counter(vec![0])),
                             },
                             ValueKey {
                                 account_id: u32::MAX,
                                 collection: u8::MAX,
                                 document_id: u32::MAX,
-                                class: ValueClass::Lookup(LookupClass::Counter(vec![
+                                class: ValueClass::InMemory(InMemoryClass::Counter(vec![
                                     u8::MAX,
                                     u8::MAX,
                                     u8::MAX,
@@ -611,9 +611,9 @@ impl Core {
 
                 for key in counters {
                     let value = store
-                        .get_counter(ValueKey::from(ValueClass::Lookup(LookupClass::Counter(
-                            key.clone(),
-                        ))))
+                        .get_counter(ValueKey::from(ValueClass::InMemory(
+                            InMemoryClass::Counter(key.clone()),
+                        )))
                         .await
                         .failed("Failed to get counter");
 

@@ -10,7 +10,7 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     rand,
     write::{
-        AnyKey, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass, LookupClass,
+        AnyKey, BatchBuilder, BitmapClass, BitmapHash, BlobOp, DirectoryClass, InMemoryClass,
         MaybeDynamicId, MaybeDynamicValue, Operation, QueueClass, QueueEvent, TagValue, ValueClass,
     },
     *,
@@ -163,11 +163,11 @@ pub async fn test(db: Store) {
             random_bytes(idx),
         );
         batch.set(
-            ValueClass::Lookup(LookupClass::Key(random_bytes(idx))),
+            ValueClass::InMemory(InMemoryClass::Key(random_bytes(idx))),
             random_bytes(idx),
         );
         batch.add(
-            ValueClass::Lookup(LookupClass::Counter(random_bytes(idx))),
+            ValueClass::InMemory(InMemoryClass::Counter(random_bytes(idx))),
             rand::random(),
         );
         batch.set(
@@ -286,7 +286,8 @@ impl Snapshot {
             (SUBSPACE_BLOBS, true),
             (SUBSPACE_LOGS, true),
             (SUBSPACE_COUNTER, !is_sql),
-            (SUBSPACE_LOOKUP_VALUE, true),
+            (SUBSPACE_IN_MEMORY_COUNTER, !is_sql),
+            (SUBSPACE_IN_MEMORY_VALUE, true),
             (SUBSPACE_PROPERTY, true),
             (SUBSPACE_SETTINGS, true),
             (SUBSPACE_QUEUE_MESSAGE, true),

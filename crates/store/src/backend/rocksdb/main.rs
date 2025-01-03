@@ -50,7 +50,7 @@ impl RocksDbStore {
         }
 
         // Counters
-        for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
+        for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA, SUBSPACE_IN_MEMORY_COUNTER] {
             let mut cf_opts = Options::default();
             cf_opts.set_merge_operator_associative("merge", numeric_value_merge);
             cfs.push(ColumnFamilyDescriptor::new(
@@ -77,7 +77,7 @@ impl RocksDbStore {
             SUBSPACE_TASK_QUEUE,
             SUBSPACE_BLOB_RESERVE,
             SUBSPACE_BLOB_LINK,
-            SUBSPACE_LOOKUP_VALUE,
+            SUBSPACE_IN_MEMORY_VALUE,
             SUBSPACE_PROPERTY,
             SUBSPACE_SETTINGS,
             SUBSPACE_QUEUE_MESSAGE,

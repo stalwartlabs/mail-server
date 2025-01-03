@@ -595,7 +595,7 @@ impl Store {
             SUBSPACE_BLOB_RESERVE,
             SUBSPACE_BLOB_LINK,
             SUBSPACE_LOGS,
-            SUBSPACE_LOOKUP_VALUE,
+            SUBSPACE_IN_MEMORY_VALUE,
             SUBSPACE_COUNTER,
             SUBSPACE_PROPERTY,
             SUBSPACE_SETTINGS,
@@ -694,11 +694,11 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     pub async fn lookup_expire_all(&self) {
-        use crate::write::LookupClass;
+        use crate::write::InMemoryClass;
 
         // Delete all temporary counters
-        let from_key = ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![0u8])));
-        let to_key = ValueKey::from(ValueClass::Lookup(LookupClass::Key(vec![u8::MAX; 10])));
+        let from_key = ValueKey::from(ValueClass::InMemory(InMemoryClass::Key(vec![0u8])));
+        let to_key = ValueKey::from(ValueClass::InMemory(InMemoryClass::Key(vec![u8::MAX; 10])));
 
         let mut expired_keys = Vec::new();
         let mut expired_counters = Vec::new();
@@ -719,7 +719,7 @@ impl Store {
             let mut batch = BatchBuilder::new();
             for key in expired_keys {
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Key(key)),
+                    class: ValueClass::InMemory(InMemoryClass::Key(key)),
                     op: ValueOp::Clear,
                 });
                 if batch.ops.len() >= 1000 {
@@ -736,11 +736,11 @@ impl Store {
             let mut batch = BatchBuilder::new();
             for key in expired_counters {
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Counter(key.clone())),
+                    class: ValueClass::InMemory(InMemoryClass::Counter(key.clone())),
                     op: ValueOp::Clear,
                 });
                 batch.ops.push(Operation::Value {
-                    class: ValueClass::Lookup(LookupClass::Key(key)),
+                    class: ValueClass::InMemory(InMemoryClass::Key(key)),
                     op: ValueOp::Clear,
                 });
                 if batch.ops.len() >= 1000 {
@@ -773,7 +773,8 @@ impl Store {
             (SUBSPACE_ACL, true),
             //(SUBSPACE_DIRECTORY, true),
             (SUBSPACE_TASK_QUEUE, true),
-            (SUBSPACE_LOOKUP_VALUE, true),
+            (SUBSPACE_IN_MEMORY_VALUE, true),
+            (SUBSPACE_IN_MEMORY_COUNTER, false),
             (SUBSPACE_PROPERTY, true),
             (SUBSPACE_SETTINGS, true),
             (SUBSPACE_QUEUE_MESSAGE, true),

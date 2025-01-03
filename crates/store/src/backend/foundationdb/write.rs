@@ -24,7 +24,8 @@ use crate::{
         AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId, ValueOp,
         MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
     },
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN, WITH_SUBSPACE,
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
+    U32_LEN, WITH_SUBSPACE,
 };
 
 use super::{
@@ -304,7 +305,7 @@ impl FdbStore {
     pub(crate) async fn purge_store(&self) -> trc::Result<()> {
         // Obtain all zero counters
         let mut delete_keys = Vec::new();
-        for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA] {
+        for subspace in [SUBSPACE_COUNTER, SUBSPACE_QUOTA, SUBSPACE_IN_MEMORY_COUNTER] {
             let trx = self.db.create_trx().map_err(into_error)?;
             let from_key = [subspace, 0u8];
             let to_key = [subspace, u8::MAX, u8::MAX, u8::MAX, u8::MAX, u8::MAX];

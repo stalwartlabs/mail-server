@@ -17,8 +17,7 @@ use crate::{
     write::{
         key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
         ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
-    },
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
+    }, BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U32_LEN
 };
 
 use super::{into_error, PostgresStore};
@@ -335,7 +334,7 @@ impl PostgresStore {
     pub(crate) async fn purge_store(&self) -> trc::Result<()> {
         let conn = self.conn_pool.get().await.map_err(into_error)?;
 
-        for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
+        for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER] {
             let s = conn
                 .prepare_cached(&format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))
                 .await

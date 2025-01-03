@@ -16,7 +16,13 @@ use directory::{
     Permission,
 };
 use hyper::Method;
+use jmap_proto::{
+    object::{index::ObjectIndexBuilder, Object},
+    types::{collection::Collection, property::Property, value::Value},
+};
 use serde_json::json;
+use store::write::{assert::HashedValue, BatchBuilder, ValueClass, F_VALUE};
+use trc::AddContext;
 use utils::url_params::UrlParams;
 
 use crate::{
@@ -24,7 +30,10 @@ use crate::{
         http::{HttpSessionData, ToHttpResponse},
         HttpRequest, HttpResponse, JsonResponse,
     },
+    email::ingest::EmailIngest,
+    mailbox::{set::SCHEMA, UidMailbox},
     services::index::Indexer,
+    JmapMethods,
 };
 
 use super::decode_path_element;
@@ -261,6 +270,22 @@ impl ManageStore for Server {
                 }
             }
             // SPDX-SnippetEnd
+            (Some("uids"), Some(account_id), None, &Method::DELETE) => {
+                let account_id = self
+                    .core
+                    .storage
+                    .data
+                    .get_principal_id(decode_path_element(account_id).as_ref())
+                    .await?
+                    .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
+
+                let result = reset_imap_uids(self, account_id).await?;
+
+                Ok(JsonResponse::new(json!({
+                    "data": result,
+                }))
+                .into_http_response())
+            }
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
@@ -282,4 +307,92 @@ impl ManageStore for Server {
         }))
         .into_http_response())
     }
+}
+
+pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u32, u32)> {
+    let mut mailbox_count = 0;
+    let mut email_count = 0;
+
+    for mailbox_id in server
+        .get_document_ids(account_id, Collection::Mailbox)
+        .await?
+        .unwrap_or_default()
+    {
+        let mailbox = server
+            .get_property::<HashedValue<Object<Value>>>(
+                account_id,
+                Collection::Mailbox,
+                mailbox_id,
+                Property::Value,
+            )
+            .await
+            .caused_by(trc::location!())?
+            .ok_or_else(|| trc::ImapEvent::Error.into_err().caused_by(trc::location!()))?;
+
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Mailbox)
+            .update_document(mailbox_id)
+            .custom(
+                ObjectIndexBuilder::new(SCHEMA)
+                    .with_current(mailbox)
+                    .with_changes(Object::with_capacity(1).with_property(
+                        Property::Cid,
+                        Value::UnsignedInt(rand::random::<u32>() as u64),
+                    )),
+            )
+            .clear(Property::EmailIds);
+        server
+            .write_batch(batch)
+            .await
+            .caused_by(trc::location!())?;
+        mailbox_count += 1;
+    }
+
+    // Reset all UIDs
+    for message_id in server
+        .get_document_ids(account_id, Collection::Email)
+        .await
+        .caused_by(trc::location!())?
+        .unwrap_or_default()
+    {
+        let uids = server
+            .get_property::<HashedValue<Vec<UidMailbox>>>(
+                account_id,
+                Collection::Email,
+                message_id,
+                Property::MailboxIds,
+            )
+            .await
+            .caused_by(trc::location!())?;
+        let mut uids = if let Some(uids) = uids.filter(|uids| !uids.inner.is_empty()) {
+            uids
+        } else {
+            continue;
+        };
+
+        for uid_mailbox in &mut uids.inner {
+            uid_mailbox.uid = server
+                .assign_imap_uid(account_id, uid_mailbox.mailbox_id)
+                .await
+                .caused_by(trc::location!())?;
+        }
+
+        // Prepare write batch
+        let mut batch = BatchBuilder::new();
+        batch
+            .with_account_id(account_id)
+            .with_collection(Collection::Email)
+            .update_document(message_id)
+            .assert_value(ValueClass::Property(Property::MailboxIds.into()), &uids)
+            .value(Property::MailboxIds, uids.inner, F_VALUE);
+        server
+            .write_batch(batch)
+            .await
+            .caused_by(trc::location!())?;
+        email_count += 1;
+    }
+
+    Ok((mailbox_count, email_count))
 }

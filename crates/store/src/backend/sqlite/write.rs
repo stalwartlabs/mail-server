@@ -11,8 +11,7 @@ use crate::{
     write::{
         key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
         ValueOp,
-    },
-    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
+    }, BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U32_LEN
 };
 
 use super::{into_error, SqliteStore};
@@ -259,7 +258,7 @@ impl SqliteStore {
     pub(crate) async fn purge_store(&self) -> trc::Result<()> {
         let conn = self.conn_pool.get().map_err(into_error)?;
         self.spawn_worker(move || {
-            for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
+            for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER] {
                 conn.prepare_cached(&format!("DELETE FROM {} WHERE v = 0", char::from(subspace),))
                     .map_err(into_error)?
                     .execute([])

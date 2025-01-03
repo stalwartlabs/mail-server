@@ -19,12 +19,10 @@ use rocksdb::{
 
 use super::{into_error, CfHandle, RocksDbStore, CF_INDEXES, CF_LOGS};
 use crate::{
-    backend::deserialize_i64_le,
-    write::{
+    backend::deserialize_i64_le, write::{
         key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
         ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
-    },
-    BitmapKey, Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_QUOTA, U32_LEN,
+    }, BitmapKey, Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U32_LEN
 };
 
 impl RocksDbStore {
@@ -84,7 +82,7 @@ impl RocksDbStore {
     pub(crate) async fn purge_store(&self) -> trc::Result<()> {
         let db = self.db.clone();
         self.spawn_worker(move || {
-            for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER] {
+            for subspace in [SUBSPACE_QUOTA, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER] {
                 let cf = db
                     .cf_handle(std::str::from_utf8(&[subspace]).unwrap())
                     .unwrap();
