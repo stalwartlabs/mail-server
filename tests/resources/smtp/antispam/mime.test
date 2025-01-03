@@ -33,7 +33,7 @@ Content-Type: text/html; charset="us-ascii"
 
 Test
 <!-- NEXT TEST -->
-expect R_BAD_CTE_7BIT SINGLE_SHORT_PART
+expect BAD_CTE_7BIT SINGLE_SHORT_PART
 
 Content-Type: text/plain
 Content-Transfer-Encoding: 7bit
@@ -41,7 +41,7 @@ MIME-Version: 1.0
 
 Téstíng
 <!-- NEXT TEST -->
-expect R_MISSING_CHARSET SINGLE_SHORT_PART
+expect MISSING_CHARSET SINGLE_SHORT_PART
 
 Content-Type: text/plain
 Content-Transfer-Encoding: 8bit
@@ -139,7 +139,7 @@ culpa qui officia deserunt mollit anim id est laborum.
 
 --boundary--
 <!-- NEXT TEST -->
-expect R_PARTS_DIFFER
+expect PARTS_DIFFER
 
 MIME-Version: 1.0
 Content-Type: multipart/alternative;
@@ -353,7 +353,7 @@ this is a test
 
 --boundary--
 <!-- NEXT TEST -->
-expect R_MIXED_CHARSET SINGLE_SHORT_PART
+expect MIXED_CHARSET SINGLE_SHORT_PART
 
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 8bit

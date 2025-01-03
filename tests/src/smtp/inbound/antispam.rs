@@ -512,6 +512,7 @@ async fn antispam() {
             match test_name {
                 "html" => {
                     server.spam_filter_analyze_html(&mut spam_ctx).await;
+                    server.spam_filter_analyze_rules(&mut spam_ctx).await;
                 }
                 "subject" => {
                     server.spam_filter_analyze_headers(&mut spam_ctx).await;
@@ -521,7 +522,11 @@ async fn antispam() {
                     spam_ctx.result.tags.retain(|t| !t.starts_with("X_HDR_"));
                 }
                 "received" => {
+                    server.spam_filter_analyze_headers(&mut spam_ctx).await;
+                    spam_ctx.result.tags.retain(|t| t.starts_with("X_HDR_"));
                     server.spam_filter_analyze_received(&mut spam_ctx).await;
+                    server.spam_filter_analyze_rules(&mut spam_ctx).await;
+                    spam_ctx.result.tags.retain(|t| !t.starts_with("X_HDR_"));
                 }
                 "messageid" => {
                     server.spam_filter_analyze_message_id(&mut spam_ctx).await;

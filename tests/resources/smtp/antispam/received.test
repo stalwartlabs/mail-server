@@ -50,10 +50,10 @@ Subject: test
 test
 
 <!-- NEXT TEST -->
-expect DIRECT_TO_MX ONCE_RECEIVED RCVD_COUNT_ZERO RCVD_NO_TLS_LAST
+expect DIRECT_TO_MX RCVD_COUNT_ZERO RCVD_NO_TLS_LAST
 
 To: user@domain.com
-X-Mailer: MUA
+X-Mailer: MUA 1.2
 Subject: test
 
 test

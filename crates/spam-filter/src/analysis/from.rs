@@ -184,7 +184,7 @@ impl SpamFilterAnalyzeFrom for Server {
                 && !from_addr.address.is_empty()
                 && !from_raw_utf8.contains(" <")
             {
-                ctx.result.add_tag("R_NO_SPACE_IN_FROM");
+                ctx.result.add_tag("NO_SPACE_IN_FROM");
             }
 
             // Check whether read confirmation address is different to from address

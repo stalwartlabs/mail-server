@@ -23,76 +23,64 @@ impl SpamFilterAnalyzeReceived for Server {
         let mut rcvd_count = 0;
         let mut rcvd_from_ip = 0;
         let mut tls_count = 0;
-        let mut has_ua = false;
 
         for header in ctx.input.message.headers() {
-            match &header.name {
-                HeaderName::Received => {
-                    if !ctx
-                        .input
-                        .message
-                        .raw_message()
-                        .get(header.offset_start..header.offset_end)
-                        .unwrap_or_default()
-                        .is_ascii()
-                    {
-                        // Received headers have non-ASCII characters
-                        ctx.result.add_tag("RCVD_ILLEGAL_CHARS");
-                    }
-
-                    if let Some(received) = header.value().as_received() {
-                        let helo_domain = received.from().or_else(|| received.helo());
-                        let ip_rev = received.from_iprev();
-
-                        if matches!(&helo_domain, Some(Host::Name(hostname)) if hostname.eq_ignore_ascii_case("user"))
-                        {
-                            // HELO domain is "user"
-                            ctx.result.add_tag("RCVD_HELO_USER");
-                        } else if let (Some(Host::Name(helo_domain)), Some(ip_rev)) =
-                            (helo_domain, ip_rev)
-                        {
-                            if helo_domain.to_lowercase() != ip_rev.to_lowercase() {
-                                // HELO domain does not match PTR record
-                                ctx.result.add_tag("FORGED_RCVD_TRAIL");
-                            }
-                        }
-
-                        if let Some(delivered_for) = received.for_().map(|s| s.to_lowercase()) {
-                            if ctx
-                                .output
-                                .all_recipients()
-                                .any(|r| r.email.address == delivered_for)
-                            {
-                                // Recipient appears on Received trail
-                                ctx.result.add_tag("PREVIOUSLY_DELIVERED");
-                            }
-                        }
-
-                        if matches!(received.from, Some(Host::IpAddr(_))) {
-                            // Received from an IP address rather than a FQDN
-                            rcvd_from_ip += 1;
-                        }
-
-                        if received.tls_version().is_some() {
-                            // Received with TLS
-                            tls_count += 1;
-                        }
-                    } else {
-                        // Received header is not RFC 5322 compliant
-                        ctx.result.add_tag("RCVD_UNPARSABLE");
-                    }
-
-                    rcvd_count += 1;
+            if let HeaderName::Received = &header.name {
+                if !ctx
+                    .input
+                    .message
+                    .raw_message()
+                    .get(header.offset_start..header.offset_end)
+                    .unwrap_or_default()
+                    .is_ascii()
+                {
+                    // Received headers have non-ASCII characters
+                    ctx.result.add_tag("RCVD_ILLEGAL_CHARS");
                 }
-                HeaderName::Other(name) => {
-                    if !has_ua
-                        && (name.eq_ignore_ascii_case("User-Agent")
-                            || name.eq_ignore_ascii_case("X-Mailer"))
+
+                if let Some(received) = header.value().as_received() {
+                    let helo_domain = received.from().or_else(|| received.helo());
+                    let ip_rev = received.from_iprev();
+
+                    if matches!(&helo_domain, Some(Host::Name(hostname)) if hostname.eq_ignore_ascii_case("user"))
                     {
-                        has_ua = true;
+                        // HELO domain is "user"
+                        ctx.result.add_tag("RCVD_HELO_USER");
+                    } else if let (Some(Host::Name(helo_domain)), Some(ip_rev)) =
+                        (helo_domain, ip_rev)
+                    {
+                        if helo_domain.to_lowercase() != ip_rev.to_lowercase() {
+                            // HELO domain does not match PTR record
+                            ctx.result.add_tag("FORGED_RCVD_TRAIL");
+                        }
                     }
+
+                    if let Some(delivered_for) = received.for_().map(|s| s.to_lowercase()) {
+                        if ctx
+                            .output
+                            .all_recipients()
+                            .any(|r| r.email.address == delivered_for)
+                        {
+                            // Recipient appears on Received trail
+                            ctx.result.add_tag("PREVIOUSLY_DELIVERED");
+                        }
+                    }
+
+                    if matches!(received.from, Some(Host::IpAddr(_))) {
+                        // Received from an IP address rather than a FQDN
+                        rcvd_from_ip += 1;
+                    }
+
+                    if received.tls_version().is_some() {
+                        // Received with TLS
+                        tls_count += 1;
+                    }
+                } else {
+                    // Received header is not RFC 5322 compliant
+                    ctx.result.add_tag("RCVD_UNPARSABLE");
                 }
-                _ => {}
+
+                rcvd_count += 1;
             }
         }
 
@@ -118,15 +106,6 @@ impl SpamFilterAnalyzeReceived for Server {
         match rcvd_count {
             0 => {
                 ctx.result.add_tag("RCVD_COUNT_ZERO");
-
-                // One received header in a message (currently zero
-                // but one header will be added later by the MTA)
-                ctx.result.add_tag("ONCE_RECEIVED");
-
-                // Message has been directly delivered from MUA to local MX
-                if has_ua {
-                    ctx.result.add_tag("DIRECT_TO_MX");
-                }
             }
             1 => {
                 ctx.result.add_tag("RCVD_COUNT_ONE");

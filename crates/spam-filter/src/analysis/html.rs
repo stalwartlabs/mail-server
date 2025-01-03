@@ -38,11 +38,6 @@ impl SpamFilterAnalyzeHtml for Server {
         }) {
             ctx.result.add_tag("MIME_HTML_ONLY");
         }
-        let mut last_href: Option<Href> = None;
-        let mut html_img_words = 0;
-        let mut html_text_chars = 0;
-        let mut in_head: i32 = 0;
-        let mut in_body: i32 = 0;
 
         for (part_id, part) in ctx.output.text_parts.iter().enumerate() {
             let is_body_part = ctx.input.message.text_body.contains(&part_id)
@@ -58,7 +53,12 @@ impl SpamFilterAnalyzeHtml for Server {
             } else {
                 continue;
             };
+
             let mut has_link_to_img = false;
+            let mut last_href: Option<Href> = None;
+            let mut html_img_words = 0;
+            let mut in_head: i32 = 0;
+            let mut in_body: i32 = 0;
 
             for token in html_tokens {
                 match token {
@@ -121,6 +121,11 @@ impl SpamFilterAnalyzeHtml for Server {
                                             {
                                                 // Has Data URI encoding
                                                 ctx.result.add_tag("HAS_DATA_URI");
+                                            } else if src.starts_with("https://")
+                                                || src.starts_with("http://")
+                                            {
+                                                // Has external image
+                                                ctx.result.add_tag("HAS_EXTERNAL_IMG");
                                             }
                                             continue;
                                         }
@@ -139,8 +144,13 @@ impl SpamFilterAnalyzeHtml for Server {
                             }
                             let dimensions = img_width + img_height;
 
-                            if last_href.is_some() && dimensions >= 210 {
-                                has_link_to_img = true;
+                            if last_href.is_some() {
+                                if dimensions >= 210 {
+                                    ctx.result.add_tag("HAS_LINK_TO_LARGE_IMG");
+                                    has_link_to_img = true;
+                                } else {
+                                    ctx.result.add_tag("HAS_LINK_TO_IMG");
+                                }
                             }
 
                             if dimensions > 100 {
@@ -266,10 +276,6 @@ impl SpamFilterAnalyzeHtml for Server {
                                 }
                             }
                         }
-
-                        if is_body_part {
-                            html_text_chars += text.chars().filter(|t| t.is_alphanumeric()).count();
-                        }
                     }
                     _ => (),
                 }
@@ -281,36 +287,38 @@ impl SpamFilterAnalyzeHtml for Server {
                     ctx.result.add_tag("HTML_UNBALANCED_TAG");
                 }
 
-                if has_link_to_img {
-                    match html_text_chars {
-                        0..1024 => {
-                            ctx.result.add_tag("HTML_SHORT_LINK_IMG_1");
-                        }
-                        1024..1536 => {
-                            ctx.result.add_tag("HTML_SHORT_LINK_IMG_2");
-                        }
-                        1536..2048 => {
-                            ctx.result.add_tag("HTML_SHORT_LINK_IMG_3");
-                        }
-                        _ => (),
-                    }
-                }
-
                 let mut html_words = 0;
                 let mut html_uris = 0;
+                let mut html_text_chars = 0;
 
                 for token in tokens {
                     match token {
-                        TokenType::Alphabetic(_)
-                        | TokenType::Alphanumeric(_)
-                        | TokenType::Email(_) => {
+                        TokenType::Alphabetic(s) | TokenType::Alphanumeric(s) => {
                             html_words += 1;
+                            html_text_chars += s.len();
+                        }
+                        TokenType::Email(s) => {
+                            html_words += 1;
+                            html_text_chars += s.address.len();
                         }
                         TokenType::Url(_) | TokenType::UrlNoScheme(_) => {
                             html_uris += 1;
                         }
                         _ => (),
                     }
+                }
+
+                match html_text_chars {
+                    0..1024 => {
+                        ctx.result.add_tag("HTML_SHORT_1");
+                    }
+                    1024..1536 => {
+                        ctx.result.add_tag("HTML_SHORT_2");
+                    }
+                    1536..2048 => {
+                        ctx.result.add_tag("HTML_SHORT_3");
+                    }
+                    _ => (),
                 }
 
                 if (!has_link_to_img || html_text_chars >= 2048)

@@ -36,7 +36,7 @@ impl SpamFilterAnalyzeHeaders for Server {
                 } else if ch == '-' {
                     tag.push('_');
                 } else {
-                    tag.push('X');
+                    tag.push(' ');
                 }
             }
             ctx.result.add_tag(tag);

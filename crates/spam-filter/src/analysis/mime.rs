@@ -217,7 +217,7 @@ impl SpamFilterAnalyzeMime for Server {
                                 && (!text_part_words.is_empty() || !html_part_words.is_empty())
                                 && cosine_similarity(&text_part_words, &html_part_words) < 0.95
                             {
-                                ctx.result.add_tag("R_PARTS_DIFFER");
+                                ctx.result.add_tag("PARTS_DIFFER");
                             }
 
                             // Odd URI count between parts
@@ -269,7 +269,7 @@ impl SpamFilterAnalyzeMime for Server {
                                 .map_or(false, |bytes| !bytes.is_ascii())
                             {
                                 // MIME text part claims to be ASCII but isn't
-                                ctx.result.add_tag("R_BAD_CTE_7BIT");
+                                ctx.result.add_tag("BAD_CTE_7BIT");
                             }
                             is_7bit = true;
                         }
@@ -292,7 +292,7 @@ impl SpamFilterAnalyzeMime for Server {
                             .map_or(true, |c| c.is_empty())
                     {
                         // Charset header is missing
-                        ctx.result.add_tag("R_MISSING_CHARSET");
+                        ctx.result.add_tag("MISSING_CHARSET");
                     }
 
                     if ctx
@@ -310,7 +310,7 @@ impl SpamFilterAnalyzeMime for Server {
                         })
                     {
                         // Text part contains multiple scripts
-                        ctx.result.add_tag("R_MIXED_CHARSET");
+                        ctx.result.add_tag("MIXED_CHARSET");
                     }
 
                     has_text_part = true;

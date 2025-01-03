@@ -128,7 +128,7 @@ From: "=?iso-8859-1?Q?Die_Hasen_und_die_Fr=F6sche?=" <hello@domain.org>
 Test
 <!-- NEXT TEST -->
 envelope_from hello@domain.org
-expect R_NO_SPACE_IN_FROM FROM_EQ_ENV_FROM FROM_HAS_DN
+expect NO_SPACE_IN_FROM FROM_EQ_ENV_FROM FROM_HAS_DN
 
 From: "Hello"<hello@domain.org>
 

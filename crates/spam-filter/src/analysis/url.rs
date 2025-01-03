@@ -145,7 +145,7 @@ impl SpamFilterAnalyzeUrl for Server {
                 }
 
                 if ch.is_obscured() {
-                    ctx.result.add_tag("R_SUSPICIOUS_URL");
+                    ctx.result.add_tag("SUSPICIOUS_URL");
                 }
             }
 
@@ -159,7 +159,7 @@ impl SpamFilterAnalyzeUrl for Server {
                 url_parsed
             } else {
                 // URL could not be parsed
-                ctx.result.add_tag("R_UNPARSABLE_URL");
+                ctx.result.add_tag("UNPARSABLE_URL");
                 continue;
             };
             let host_sld = url_parsed.host.sld_or_default();
@@ -260,7 +260,7 @@ impl SpamFilterAnalyzeUrl for Server {
                 .await;
             } else {
                 // URL is an ip address
-                ctx.result.add_tag("R_SUSPICIOUS_URL");
+                ctx.result.add_tag("SUSPICIOUS_URL");
             }
 
             // Check URL DNSBL

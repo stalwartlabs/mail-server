@@ -6,7 +6,7 @@ spf.result none
 spf_ehlo.result none
 dmarc.result none
 remote_ip 195.210.29.48
-expect_header X-Spam-Result: ARC_NA (0.00), DKIM_NA (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_DATA_URI (0.00), MID_RHS_MATCH_ENV_FROM (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_ZERO (0.00), SPF_NA (0.00), SUBJECT_ENDS_EXCLAIM (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), ONCE_RECEIVED (0.10), RCVD_NO_TLS_LAST (0.10), MIME_HTML_ONLY (0.20), HELO_NORES_A_OR_MX (0.30), AUTH_NA (1.00), DATE_IN_PAST (1.00), DMARC_NA (1.00), MID_RHS_MATCH_FROM (1.00), FROMHOST_NORES_A_OR_MX (1.50), HTML_SHORT_LINK_IMG_1 (2.00), RDNS_NONE (2.00), PYZOR (3.50)
+expect_header X-Spam-Result: ARC_NA (0.00), DKIM_NA (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_DATA_URI (0.00), HAS_LINK_TO_LARGE_IMG (0.00), HTML_SHORT_1 (0.00), MID_RHS_MATCH_ENV_FROM (0.00), RCPT_COUNT_ONE (0.00), SPF_NA (0.00), SUBJECT_ENDS_EXCLAIM (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_COUNT_ZERO (0.10), RCVD_NO_TLS_LAST (0.10), MIME_HTML_ONLY (0.20), HELO_NORES_A_OR_MX (0.30), AUTH_NA (1.00), DATE_IN_PAST (1.00), DMARC_NA (1.00), MID_RHS_MATCH_FROM (1.00), FROMHOST_NORES_A_OR_MX (1.50), HTML_SHORT_LINK_IMG_1 (2.00), RDNS_NONE (2.00), PYZOR (3.50)
 expect_header X-Spam-Status: Yes, score=13.70
 
 From: Client Services <noreply@tetheer.com>
@@ -49,7 +49,7 @@ dkim.domains tenthrevolution.com
 dmarc.result pass
 remote_ip 185.58.86.181
 tls.version TLSv1.3
-expect_header X-Spam-Result: DMARC_POLICY_ALLOW (-0.50), DKIM_ALLOW (-0.20), SPF_ALLOW (-0.20), MIME_GOOD (-0.10), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_ATTACHMENT (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_THREE (0.00), TO_DN_EQ_ADDR_ALL (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), SUBJECT_ENDS_SPACES (0.50), URI_COUNT_ODD (0.50), DATE_IN_PAST (1.00), FORGED_RCVD_TRAIL (1.00), FROMHOST_NORES_A_OR_MX (1.50)
+expect_header X-Spam-Result: DMARC_POLICY_ALLOW (-0.50), DKIM_ALLOW (-0.20), SPF_ALLOW (-0.20), MIME_GOOD (-0.10), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_ATTACHMENT (0.00), HTML_SHORT_2 (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_THREE (0.00), TO_DN_EQ_ADDR_ALL (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), SUBJECT_ENDS_SPACES (0.50), URI_COUNT_ODD (0.50), DATE_IN_PAST (1.00), FORGED_RCVD_TRAIL (1.00), FROMHOST_NORES_A_OR_MX (1.50)
 expect_header X-Spam-Status: No, score=3.90
 
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=tenthrevolution.com;
@@ -574,7 +574,7 @@ dmarc.result fail
 dmarc.policy reject
 remote_ip 51.89.165.39
 tls.version TLS1_2
-expect_header X-Spam-Result: DKIM_ALLOW (-0.20), HAS_LIST_UNSUB (-0.01), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_REPLYTO (0.00), MID_RHS_MATCH_ENV_FROM (0.00), RCPT_COUNT_ONE (0.00), RCVD_COUNT_ZERO (0.00), REPLYTO_ADDR_EQ_FROM (0.00), REPLYTO_EQ_FROM (0.00), SPF_SOFTFAIL (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), ONCE_RECEIVED (0.10), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), DATE_IN_PAST (1.00), MID_RHS_MATCH_FROM (1.00), R_PARTS_DIFFER (1.00), FROMHOST_NORES_A_OR_MX (1.50), HTML_SHORT_LINK_IMG_1 (2.00), RDNS_NONE (2.00), VIOLATED_DIRECT_SPF (3.50), DMARC_POLICY_REJECT (4.00)
+expect_header X-Spam-Result: DKIM_ALLOW (-0.20), HAS_LIST_UNSUB (-0.01), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_EXTERNAL_IMG (0.00), HAS_LINK_TO_LARGE_IMG (0.00), HAS_REPLYTO (0.00), HTML_SHORT_1 (0.00), MID_RHS_MATCH_ENV_FROM (0.00), RCPT_COUNT_ONE (0.00), REPLYTO_ADDR_EQ_FROM (0.00), REPLYTO_EQ_FROM (0.00), SPF_SOFTFAIL (0.00), TO_DN_NONE (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_COUNT_ZERO (0.10), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), DATE_IN_PAST (1.00), MID_RHS_MATCH_FROM (1.00), PARTS_DIFFER (1.00), FROMHOST_NORES_A_OR_MX (1.50), HTML_SHORT_LINK_IMG_1 (2.00), RDNS_NONE (2.00), VIOLATED_DIRECT_SPF (3.50), DMARC_POLICY_REJECT (4.00)
 expect_header X-Spam-Status: Yes, score=16.29
 
 DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=sectionalism; d=grupokonecta.net;
@@ -791,7 +791,7 @@ dmarc.result pass
 dmarc.policy reject
 remote_ip 52.103.64.5
 tls.version TLS1_2
-expect_header X-Spam-Result: DMARC_POLICY_ALLOW (-0.50), DKIM_ALLOW (-0.20), SPF_ALLOW (-0.20), ARC_NA (0.00), ARC_SIGNED (0.00), DKIM_SIGNED (0.00), FREEMAIL_FROM (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_SEO_WORD (0.00), HAS_X_PRIO_ONE (0.00), MID_RHS_MATCH_ENV_FROMTLD (0.00), MID_RHS_MATCH_FROMTLD (0.00), RCPT_COUNT_ONE (0.00), RCPT_IN_BODY (0.00), RCVD_COUNT_TWO (0.00), TO_DN_EQ_ADDR_ALL (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), DATE_IN_PAST (1.00), HEADER_EMPTY_DELIMITER (1.00), FROMHOST_NORES_A_OR_MX (1.50), SEO_SPAM (5.00)
+expect_header X-Spam-Result: DMARC_POLICY_ALLOW (-0.50), DKIM_ALLOW (-0.20), SPF_ALLOW (-0.20), ARC_NA (0.00), ARC_SIGNED (0.00), DKIM_SIGNED (0.00), FREEMAIL_FROM (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_SEO_WORD (0.00), HAS_X_PRIO_ONE (0.00), HTML_SHORT_1 (0.00), MID_RHS_MATCH_ENV_FROMTLD (0.00), MID_RHS_MATCH_FROMTLD (0.00), RCPT_COUNT_ONE (0.00), RCPT_IN_BODY (0.00), RCVD_COUNT_TWO (0.00), TO_DN_EQ_ADDR_ALL (0.00), TO_MATCH_ENVRCPT_ALL (0.00), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), DATE_IN_PAST (1.00), HEADER_EMPTY_DELIMITER (1.00), FROMHOST_NORES_A_OR_MX (1.50), SEO_SPAM (5.00)
 expect_header X-Spam-Status: Yes, score=8.00
 
 Return-Path: <miah.join@outlook.com>
@@ -1008,3 +1008,104 @@ om you.&nbsp; <o:p>
 
 --_000_SEYPR04MB74966F6A34B2B0AC5DA8E6DDFD0A2SEYPR04MB7496apcp_--
 
+<!-- NEXT TEST -->
+envelope_from marketing@landeray.com
+envelope_to hello@stalw.art
+helo_domain terminal4.landeray.com
+iprev.result pass
+dkim.result pass
+dkim.domains outlook.com
+spf.result pass
+spf_ehlo.result pass
+dmarc.result pass
+dmarc.policy reject
+remote_ip 173.224.123.255
+tls.version TLS1_2
+expect_header X-Spam-Result: DMARC_POLICY_ALLOW (-0.50), DKIM_ALLOW (-0.20), SPF_ALLOW (-0.20), ARC_NA (0.00), DKIM_SIGNED (0.00), FROM_EQ_ENV_FROM (0.00), FROM_HAS_DN (0.00), HAS_EXTERNAL_IMG (0.00), HAS_REPLYTO (0.00), HAS_X_PRIO_THREE (0.00), HTML_SHORT_1 (0.00), RCPT_COUNT_ONE (0.00), REPLYTO_DN_EQ_FROM_DN (0.00), REPLYTO_DOM_EQ_FROM_DOM (0.00), TO_DN_ALL (0.00), TO_EQ_FROM (0.00), RCVD_COUNT_ZERO (0.10), RCVD_NO_TLS_LAST (0.10), HELO_NORES_A_OR_MX (0.30), MID_RHS_NOT_FQDN (0.50), UNPARSABLE_URL (0.50), FROMHOST_NORES_A_OR_MX (1.50), DIRECT_TO_MX (2.00), FORGED_RECIPIENTS (2.00), SUBJ_ALL_CAPS (3.00)
+expect_header X-Spam-Status: Yes, score=9.10
+
+Return-Path: <marketing@landeray.com>
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; s=default; d=landeray.com;
+ h=Message-ID:Reply-To:From:To:Subject:Date:MIME-Version:Content-Type;
+ i=marketing@landeray.com;
+ bh=nlE2QLcR2WpTkMQ4zUwkF7IBIw4eOeAhkKS/HXiMvSs=;
+ b=EwWEML/WtTA6nI6CuagI2LRBWAZuRHk6IJiDNA3R77dTpa80gHPkfzF3NBcKcVIiCYcf6i4HCniZ
+   bF4DT8VZrFfLCSykeL2t5FLjYwFcjXjX7qCvyaR0hLfyFRSCDO9RytMw8Q3WoODc/jMXWrdxYpqu
+   phP9D5Q/N8vzSneReGOCV62Me1ss947uc43zYZXvVwuXeyLbU0yPzJtTTEODFXmVp2Ul/M7w963E
+   UxzrNlTd/lEIUXVvxAOL2DKGxY8oXslevI0euO8E8TQms3SlY6LySkDia1h+N+mVpbPPeE3txZhS
+   LJwn2MBX59b+W3aMafAt4Ae/UVOOBlMT7FhhvA==
+Message-ID: <FA171967DC4F4DC39B03EEF3E42FBDEE@christian>
+Reply-To: "RESERVAS Y CONSULTAS" <noreply@landeray.com>
+From: "RESERVAS Y CONSULTAS" <marketing@landeray.com>
+To: "Marketing Online" <marketing@landeray.com>
+Subject: BRISZA ASIA TEMPORADA 2025
+Date: Fri, 3 Jan 2025 14:06:03 +0000
+Organization: CLIENTE-DISCOTECA
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+	boundary="----=_NextPart_000_0E52_01DB5DE8.9FAFDC60"
+X-Priority: 3
+X-MSMail-Priority: Normal
+X-Mailer: Microsoft Outlook Express 6.00.2900.5512
+X-MimeOLE: Produced By Microsoft MimeOLE V6.00.2900.5579
+
+This is a multi-part message in MIME format.
+
+------=_NextPart_000_0E52_01DB5DE8.9FAFDC60
+Content-Type: text/plain;
+	charset="iso-8859-1"
+Content-Transfer-Encoding: quoted-printable
+
+Consulta v=EDa WhatsApp: https://api.whatsapp.com/send?phone=3D5199504167=
+6&text=3DDeseo realizar una reserva en BRISZA
+
+
+Si no puedes visualizar la imagen haz click aqu=ED https://i.imgur.com/O1=
+2POZ2.png
+
+
+
+Si esta informaci=F3n no es de su inter=E9s. Favor de escribirnos un corr=
+eo en blanco a eliminarcorreo2016@gmail.com con el Asunto "REMOVER". Grac=
+ias.
+
+------=_NextPart_000_0E52_01DB5DE8.9FAFDC60
+Content-Type: text/html;
+	charset="iso-8859-1"
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML><HEAD>
+<META content=3D"text/html; charset=3Diso-8859-1" http-equiv=3DContent-Ty=
+pe>
+<META name=3DGENERATOR content=3D"MSHTML 6.00.6000.16788">
+<STYLE></STYLE>
+</HEAD>
+<BODY bgColor=3D#ffffff>
+<DIV align=3Dleft><FONT face=3DCalibri>Consulta v=EDa WhatsApp: <A=20
+href=3D"https://api.whatsapp.com/send?phone=3D51995041676&text=3DDeseo re=
+alizar una reserva en BRISZA">https://api.whatsapp.com/send?phone=3D51995=
+041676&amp;text=3DDeseo=20
+realizar una reserva en BRISZA</A></FONT></DIV>
+<DIV align=3Dleft><FONT face=3DCalibri></FONT>&nbsp;</DIV>
+<DIV align=3Dleft><FONT face=3DCalibri></FONT>&nbsp;</DIV>
+<DIV align=3Dcenter><FONT face=3DCalibri>Si no puedes visualizar la image=
+n haz click=20
+aqu=ED </FONT><FONT face=3DCalibri><A=20
+href=3D"https://i.imgur.com/O12POZ2.png">https://i.imgur.com/O12POZ2.png<=
+/A></FONT></DIV>
+<DIV align=3Dcenter><FONT size=3D2 face=3DArial></FONT>&nbsp;</DIV>
+<DIV align=3Dcenter><IMG border=3D0 hspace=3D0 alt=3D""=20
+src=3D"https://i.imgur.com/O12POZ2.png"></DIV>
+<DIV align=3Dcenter>&nbsp;</DIV>
+<DIV align=3Dcenter>
+<DIV align=3Dcenter><SPAN><FONT size=3D3 face=3DCalibri>Si esta informaci=
+=F3n no es de=20
+su inter=E9s. Favor de escribirnos un correo en blanco a&nbsp;</FONT><A=20
+href=3D"mailto:eliminarcorreo2016@gmail.com"><FONT size=3D3=20
+face=3DCalibri>eliminarcorreo2016@gmail.com</FONT></A></SPAN><SPAN><FONT =
+size=3D3=20
+face=3DCalibri>&nbsp;con el Asunto "REMOVER".=20
+Gracias.</FONT></SPAN></DIV></DIV></BODY></HTML>
+
+------=_NextPart_000_0E52_01DB5DE8.9FAFDC60--

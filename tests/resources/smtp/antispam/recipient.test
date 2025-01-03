@@ -58,7 +58,7 @@ Cc: goodbye@world.com
 
 Test
 <!-- NEXT TEST -->
-expect RCPT_COUNT_ZERO R_UNDISC_RCPT
+expect RCPT_COUNT_ZERO UNDISC_RCPT
 
 To: Undisclosed recipients:;
 
