@@ -732,7 +732,6 @@ pub enum ConfigEvent {
     ParseWarning,
     BuildWarning,
     ImportExternal,
-    ExternalKeyIgnored,
     AlreadyUpToDate,
 }
 

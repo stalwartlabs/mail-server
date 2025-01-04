@@ -125,15 +125,17 @@ impl ManageReload for Server {
             (Some("spam-filter"), &Method::GET) => {
                 // Validate the access token
                 access_token.assert_has_permission(Permission::SpamFilterUpdate)?;
+                let params = UrlParams::new(req.uri().query());
 
-                let overwrite = UrlParams::new(req.uri().query()).has_key("overwrite");
+                let overwrite = params.has_key("overwrite");
+                let force = params.has_key("force");
 
                 Ok(JsonResponse::new(json!({
                     "data": self
                     .core
                     .storage
                     .config
-                    .update_spam_rules(overwrite)
+                    .update_spam_rules(force, overwrite)
                     .await?
                     .map(|v| v.to_string()),
                 }))

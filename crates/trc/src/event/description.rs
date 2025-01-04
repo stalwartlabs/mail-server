@@ -1319,7 +1319,6 @@ impl ConfigEvent {
             ConfigEvent::ParseWarning => "Configuration parse warning",
             ConfigEvent::BuildWarning => "Configuration build warning",
             ConfigEvent::ImportExternal => "Importing external configuration",
-            ConfigEvent::ExternalKeyIgnored => "External configuration key ignored",
             ConfigEvent::AlreadyUpToDate => "Configuration already up to date",
         }
     }
@@ -1337,7 +1336,6 @@ impl ConfigEvent {
             ConfigEvent::ParseWarning => "A warning occurred while parsing the configuration",
             ConfigEvent::BuildWarning => "A warning occurred while building the configuration",
             ConfigEvent::ImportExternal => "An external configuration is being imported",
-            ConfigEvent::ExternalKeyIgnored => "An external configuration key is ignored",
             ConfigEvent::AlreadyUpToDate => "The configuration is already up to date",
         }
     }

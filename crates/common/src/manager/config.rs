@@ -329,24 +329,57 @@ impl ConfigManager {
             })
     }
 
-    pub async fn update_spam_rules(&self, overwrite: bool) -> trc::Result<Option<Semver>> {
-        let external = self.fetch_spam_rules().await.map_err(|reason| {
+    pub async fn update_spam_rules(
+        &self,
+        force_update: bool,
+        overwrite: bool,
+    ) -> trc::Result<Option<Semver>> {
+        let current_version = self
+            .get("version.spam-filter")
+            .await?
+            .and_then(|v| Semver::try_from(v.as_str()).ok());
+        let is_update = current_version.is_some();
+
+        let mut external = self.fetch_spam_rules().await.map_err(|reason| {
             trc::EventType::Config(trc::ConfigEvent::FetchError)
                 .caused_by(trc::location!())
                 .details("Failed to update spam filter rules")
                 .ctx(trc::Key::Reason, reason)
         })?;
 
-        if self.get("version.spam-filter").await?.map_or(true, |v| {
-            v.as_str().try_into().map_or(true, |v| external.version > v)
-        }) {
-            // Delete previous STWT_* rules
-            for prefix in [
-                "spam-filter.rule.stwt_",
-                "spam-filter.dnsbl.server.stwt_",
-                "http-lookup.stwt_",
-            ] {
-                self.clear_prefix(prefix).await?;
+        if current_version.map_or(true, |v| external.version > v || force_update) {
+            if is_update {
+                // Delete previous STWT_* rules
+                let mut rule_settings = AHashMap::new();
+                for prefix in [
+                    "spam-filter.rule.stwt_",
+                    "spam-filter.dnsbl.server.stwt_",
+                    "http-lookup.stwt_",
+                ] {
+                    for (key, value) in self.list(prefix, false).await? {
+                        if key.ends_with(".enable") {
+                            rule_settings.insert(key, value);
+                        }
+                    }
+
+                    self.clear_prefix(prefix).await?;
+                }
+
+                // Update keys
+                if !rule_settings.is_empty() {
+                    for key in &mut external.keys {
+                        if let Some(value) = rule_settings.remove(&key.key) {
+                            key.value = value;
+                        }
+                    }
+                }
+
+                if !overwrite {
+                    // Do not overwrite ASN or LLM settings
+                    external.keys.retain(|key| {
+                        !key.key.starts_with("spam-filter.llm.") && !key.key.starts_with("asn.")
+                    });
+                }
             }
 
             self.set(external.keys, overwrite).await?;
@@ -391,16 +424,9 @@ impl ConfigManager {
             } else if key.starts_with("spam-filter.")
                 || key.starts_with("http-lookup.")
                 || (key.starts_with("lookup.") && !key.starts_with("lookup.default."))
-                || key.starts_with("server.asn.")
+                || key.starts_with("asn.")
             {
                 external.keys.push(ConfigKey::from((key, value)));
-            } else {
-                trc::event!(
-                    Config(trc::ConfigEvent::ExternalKeyIgnored),
-                    Key = key,
-                    Value = value,
-                    Id = "spam-filter",
-                );
             }
         }
 

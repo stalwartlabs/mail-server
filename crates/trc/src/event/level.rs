@@ -240,8 +240,7 @@ impl EventType {
                 ConfigEvent::DefaultApplied
                 | ConfigEvent::MissingSetting
                 | ConfigEvent::UnusedSetting
-                | ConfigEvent::AlreadyUpToDate
-                | ConfigEvent::ExternalKeyIgnored => Level::Debug,
+                | ConfigEvent::AlreadyUpToDate => Level::Debug,
                 ConfigEvent::ParseWarning | ConfigEvent::BuildWarning => Level::Warn,
                 ConfigEvent::ImportExternal => Level::Info,
             },

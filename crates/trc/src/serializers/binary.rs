@@ -362,7 +362,6 @@ impl EventType {
             EventType::Config(ConfigEvent::BuildError) => 54,
             EventType::Config(ConfigEvent::BuildWarning) => 55,
             EventType::Config(ConfigEvent::DefaultApplied) => 56,
-            EventType::Config(ConfigEvent::ExternalKeyIgnored) => 57,
             EventType::Config(ConfigEvent::FetchError) => 58,
             EventType::Config(ConfigEvent::ImportExternal) => 59,
             EventType::Config(ConfigEvent::MacroError) => 60,
@@ -916,7 +915,6 @@ impl EventType {
             45 => Some(EventType::Cluster(ClusterEvent::PeerBackOnline)),
             46 => Some(EventType::Cluster(ClusterEvent::PeerDiscovered)),
             47 => Some(EventType::Cluster(ClusterEvent::PeerHasChanges)),
-            48 => Some(EventType::Cluster(ClusterEvent::PeerHasChanges)), // TODO: recycle
             49 => Some(EventType::Cluster(ClusterEvent::PeerLeaving)),
             50 => Some(EventType::Cluster(ClusterEvent::PeerOffline)),
             51 => Some(EventType::Cluster(ClusterEvent::PeerSuspected)),
@@ -925,7 +923,6 @@ impl EventType {
             54 => Some(EventType::Config(ConfigEvent::BuildError)),
             55 => Some(EventType::Config(ConfigEvent::BuildWarning)),
             56 => Some(EventType::Config(ConfigEvent::DefaultApplied)),
-            57 => Some(EventType::Config(ConfigEvent::ExternalKeyIgnored)),
             58 => Some(EventType::Config(ConfigEvent::FetchError)),
             59 => Some(EventType::Config(ConfigEvent::ImportExternal)),
             60 => Some(EventType::Config(ConfigEvent::MacroError)),
@@ -1471,7 +1468,7 @@ impl EventType {
     }
 }
 
-//  147 148 335 336 376 458 459
+// 57 48 147 148 335 336 376 458 459
 
 impl Key {
     fn code(&self) -> u64 {

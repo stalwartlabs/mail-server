@@ -249,34 +249,32 @@ impl BootManager {
                     }
                 }) {
                     Some(Err(_)) => {
-                        if std::env::var("DO_NOT_MIGRATE").is_err() {
-                            let _ = manager.clear_prefix("lookup.spam-").await;
-                            let _ = manager
-                                .clear_prefix("sieve.trusted.scripts.spam-filter")
-                                .await;
-                            let _ = manager
-                                .clear_prefix("sieve.trusted.scripts.track-replies")
-                                .await;
-                            let _ = manager.clear_prefix("sieve.trusted.scripts.greylist").await;
-                            let _ = manager.clear_prefix("sieve.trusted.scripts.train").await;
-                            let _ = manager.clear_prefix("session.data.script").await;
-                            let _ = manager.clear("version.spam-filter").await;
+                        let _ = manager.clear_prefix("lookup.spam-").await;
+                        let _ = manager
+                            .clear_prefix("sieve.trusted.scripts.spam-filter")
+                            .await;
+                        let _ = manager
+                            .clear_prefix("sieve.trusted.scripts.track-replies")
+                            .await;
+                        let _ = manager.clear_prefix("sieve.trusted.scripts.greylist").await;
+                        let _ = manager.clear_prefix("sieve.trusted.scripts.train").await;
+                        //let _ = manager.clear_prefix("session.data.script").await;
+                        let _ = manager.clear("version.spam-filter").await;
 
-                            match manager.fetch_spam_rules().await {
-                                Ok(external_config) => {
-                                    trc::event!(
-                                        Config(trc::ConfigEvent::ImportExternal),
-                                        Version = external_config.version.to_string(),
-                                        Id = "spam-filter"
-                                    );
-                                    insert_keys.extend(external_config.keys);
-                                }
-                                Err(err) => {
-                                    config.new_build_error(
-                                        "*",
-                                        format!("Failed to fetch spam filter: {err}"),
-                                    );
-                                }
+                        match manager.fetch_spam_rules().await {
+                            Ok(external_config) => {
+                                trc::event!(
+                                    Config(trc::ConfigEvent::ImportExternal),
+                                    Version = external_config.version.to_string(),
+                                    Id = "spam-filter"
+                                );
+                                insert_keys.extend(external_config.keys);
+                            }
+                            Err(err) => {
+                                config.new_build_error(
+                                    "*",
+                                    format!("Failed to fetch spam filter: {err}"),
+                                );
                             }
                         }
 
@@ -414,7 +412,7 @@ impl BootManager {
                     .property_or_default::<bool>("spam-filter.auto-update", "false")
                     .unwrap_or_default()
                 {
-                    if let Err(err) = core.storage.config.update_spam_rules(false).await {
+                    if let Err(err) = core.storage.config.update_spam_rules(false, false).await {
                         trc::event!(
                             Resource(trc::ResourceEvent::Error),
                             Details = "Failed to update spam-filter",
