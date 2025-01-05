@@ -7,12 +7,14 @@
 use std::{collections::HashSet, future::Future, vec};
 
 use common::{
-    scripts::functions::{array::cosine_similarity, unicode::CharUtils},
+    scripts::{
+        functions::{array::cosine_similarity, unicode::CharUtils},
+        IsMixedCharset,
+    },
     Server,
 };
 use mail_parser::{HeaderName, MimeHeaders, PartType};
 use nlp::tokenizers::types::TokenType;
-use unicode_security::MixedScript;
 
 use crate::{SpamFilterContext, TextPart};
 
@@ -304,8 +306,8 @@ impl SpamFilterAnalyzeMime for Server {
                                 || ctx.input.message.html_body.contains(&part_id)
                         })
                         .map_or(false, |p| match p {
-                            TextPart::Plain { text_body, .. } => !text_body.is_single_script(),
-                            TextPart::Html { text_body, .. } => !text_body.is_single_script(),
+                            TextPart::Plain { text_body, .. } => text_body.is_mixed_charset(),
+                            TextPart::Html { text_body, .. } => text_body.is_mixed_charset(),
                             TextPart::None => false,
                         })
                     {

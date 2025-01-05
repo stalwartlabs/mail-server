@@ -10,11 +10,11 @@ use std::{borrow::Cow, future::Future, time::Duration};
 
 use common::config::spamfilter::{Element, IpResolver, Location};
 use common::scripts::functions::unicode::CharUtils;
+use common::scripts::IsMixedCharset;
 use common::Server;
 use hyper::{header::LOCATION, Uri};
 use nlp::tokenizers::types::TokenType;
 use reqwest::redirect::Policy;
-use unicode_security::MixedScript;
 
 use crate::modules::dnsbl::check_dnsbl;
 use crate::modules::expression::StringResolver;
@@ -244,7 +244,7 @@ impl SpamFilterAnalyzeUrl for Server {
                         }
                     }
 
-                    if !host.fqdn.is_single_script() {
+                    if host.fqdn.is_mixed_charset() {
                         ctx.result.add_tag("MIXED_CHARSET_URL");
                     }
                 }

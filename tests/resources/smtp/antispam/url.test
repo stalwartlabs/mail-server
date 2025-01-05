@@ -26,7 +26,7 @@ expect MIXED_CHARSET_URL
 
 Subject: test
 
-my site is https://www.xn--80ak6aa92e.com/
+my site is https://www.xn--1ca81o6aa92e.com/
 <!-- NEXT TEST -->
 expect UNPARSABLE_URL
 

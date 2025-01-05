@@ -5,7 +5,8 @@
  */
 
 use sieve::{runtime::Variable, Context};
-use unicode_security::MixedScript;
+
+use crate::scripts::IsMixedCharset;
 
 pub fn fn_is_ascii<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     match &v[0] {
@@ -80,12 +81,12 @@ pub fn fn_unicode_skeleton<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable
         .into()
 }
 
-pub fn fn_is_single_script<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
+pub fn fn_is_mixed_charset<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     let text = v[0].to_string();
     if !text.is_empty() {
-        text.as_ref().is_single_script()
+        text.as_ref().is_mixed_charset()
     } else {
-        true
+        false
     }
     .into()
 }

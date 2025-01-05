@@ -51,7 +51,7 @@ pub fn register_functions_trusted() -> FunctionMap {
         .with_function("winnow", fn_winnow)
         .with_function("has_zwsp", fn_has_zwsp)
         .with_function("has_obscured", fn_has_obscured)
-        .with_function("is_single_script", fn_is_single_script)
+        .with_function("is_mixed_charset", fn_is_mixed_charset)
         .with_function("puny_decode", fn_puny_decode)
         .with_function("unicode_skeleton", fn_unicode_skeleton)
         .with_function("cure_text", fn_cure_text)
