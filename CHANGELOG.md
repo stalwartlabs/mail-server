@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.11.0] - 2025-01-06
+
+This version includes breaking changes to the configuration file. Please read [UPGRADING.md](UPGRADING.md) for details.
+
+### Added
+- Spam filter rewritten in Rust for a significant performance improvement.
+- Multiple spam filter improvements (#947) such as training spam/ham when moving between inbox and spam folders (#819).
+- Improved distributed locking and handling of large distributed SMTP queues.
+- ASN and GeoIP lookups.
+- Bulk operations REST endpoints (#925).
+- Faster S3-FIFO caching.
+- Support adding the `Delivered-To` header (#916).
+- Semver compatibility checks when upgrading (#844).
+- Sharded In-Memory Store.
+
+### Changed
+- Removed authentication rate limit (no longer necessary since there is fail2ban).
+- Pipes have been deprecated in favor of MTA hooks.
+
+### Fixed
+- OpenPGP EOF error (#1024).
+- Convert emails obtained from external directories to lowercase (#1004).
+- LDAP: Support both name and email fields to be mapped to the same attribute.
+- Admin role can't be assigned if an acccount with the same name exists.
+- Fix macro detection in DNS record generation (#978).
+- Use host FQDN in install script (#1003).
+
 ## [0.10.7] - 2024-12-04
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.

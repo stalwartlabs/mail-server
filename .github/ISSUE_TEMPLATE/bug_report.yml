@@ -31,9 +31,9 @@ body:
       label: Version
       description: What version of our software are you running?
       options:
+        - v0.11.x
         - v0.10.x
-        - v0.9.x
-        - v0.8.x or lower
+        - v0.9.x or lower
     validations:
       required: true
   - type: dropdown
@@ -58,6 +58,7 @@ body:
         - SQLite
         - Filesystem
         - S3-compatible
+        - Azure
   - type: dropdown
     id: directory
     attributes:

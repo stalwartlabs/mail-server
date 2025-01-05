@@ -1,3 +1,16 @@
+Upgrading from `v0.10.x` to `v0.11.0`
+------------------------------------
+
+Version `0.11.0` introduces breaking changes to the spam filter configuration. No data migration is required but, if changes were made to the previous spam filter, the configuration of the new spam filter should be reviewed. In particular:
+
+- `lookup.spam-*` settings are no longer used, these have been replaced by `spam-filter.*` settings. Review the [updated documentation](http://stalw.art/docs/spamfilter/overview).
+- Previous `spam-filter` and `track-replies` Sieve scripts cannot be used with the new version. They have been replaced by a built-in spam filter written in Rust.
+- Cache settings have changed, see the [documentation](https://stalw.art/docs/server/cache) for details.
+- Support for Pipes was removed in favor of MTA hooks and Milter.
+- `config.resource.spam-filter` is now `spam-filter.resource`.
+- `config.resource.webadmin` is now `spam-filter.webadmin`.
+- `authentication.rate-limit` was removed as security is handled by fail2ban.
+
 Upgrading from `v0.9.x` to `v0.10.0`
 -----------------------------------
 
