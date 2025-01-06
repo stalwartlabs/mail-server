@@ -138,7 +138,7 @@ create_service_linux() {
     local _dir="$1"
     cat <<EOF | sed "s|__PATH__|$_dir|g" > /etc/systemd/system/stalwart-mail.service
 [Unit]
-Description=Stalwart Mail Server Server
+Description=Stalwart Mail Server
 Conflicts=postfix.service sendmail.service exim4.service
 ConditionPathExists=__PATH__/etc/config.toml
 After=network-online.target
