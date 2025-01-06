@@ -135,7 +135,8 @@ jobs:
             artifact stalwart-mail stalwart-mail-foundationdb
           fi
 
-          build -p mail-server -p stalwart-cli
+          build -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure enterprise"
+          build -p stalwart-cli
 
           artifact stalwart-mail
           artifact stalwart-cli
