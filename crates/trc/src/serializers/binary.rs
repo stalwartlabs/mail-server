@@ -174,9 +174,9 @@ impl Value {
             }
             Value::Event(v) => {
                 buf.push(11u8);
-                leb128_write(buf, v.inner.code());
-                leb128_write(buf, v.keys.len() as u64);
-                for (k, v) in &v.keys {
+                leb128_write(buf, v.0.inner.code());
+                leb128_write(buf, v.0.keys.len() as u64);
+                for (k, v) in &v.0.keys {
                     leb128_write(buf, k.code());
                     v.serialize(buf);
                 }
@@ -258,7 +258,9 @@ impl Value {
                     let value = Value::deserialize(iter)?;
                     keys.push((key, value));
                 }
-                Some(Value::Event(Event::with_keys(code, keys)))
+                Some(Value::Event(Error(
+                    Event::with_keys(code, keys).into_boxed(),
+                )))
             }
             12 => {
                 let len = leb128_read(iter)?;

@@ -426,15 +426,18 @@ async fn eval_if() {
         //println!("============= Testing {:?} ==================", key);
         let (_, expected_result) = key.rsplit_once('-').unwrap();
         assert_eq!(
-            IfBlock {
-                key: key.to_string(),
-                if_then: vec![IfThen {
-                    expr: Expression::try_parse(&mut config, key.as_str(), &token_map).unwrap(),
-                    then: Expression::from(true),
-                }],
-                default: Expression::from(false),
-            }
-            .eval(&envelope, &core, 0)
+            core.eval_if::<Variable, _>(
+                &IfBlock {
+                    key: key.to_string(),
+                    if_then: vec![IfThen {
+                        expr: Expression::try_parse(&mut config, key.as_str(), &token_map).unwrap(),
+                        then: Expression::from(true),
+                    }],
+                    default: Expression::from(false),
+                },
+                &envelope,
+                0
+            )
             .await
             .unwrap()
             .to_bool(),
@@ -485,7 +488,7 @@ async fn eval_dynvalue() {
             .unwrap_or_else(|| panic!("Missing expect for test {test_name:?}"));
 
         assert_eq!(
-            String::try_from(if_block.eval(&envelope, &core, 0).await.unwrap()).ok(),
+            core.eval_if::<String, _>(&if_block, &envelope, 0).await,
             expected,
             "failed for test {test_name:?}"
         );

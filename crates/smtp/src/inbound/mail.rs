@@ -75,7 +75,7 @@ impl<T: SessionStream> Session<T> {
                 }),
                 SpanId = self.data.session_id,
                 Domain = self.data.helo_domain.clone(),
-                Result = trc::Event::from(&iprev),
+                Result = trc::Error::from(&iprev),
                 Elapsed = time.elapsed(),
             );
 
@@ -482,7 +482,7 @@ impl<T: SessionStream> Session<T> {
                         "<>"
                     }
                     .to_string(),
-                    Result = trc::Event::from(&spf_output),
+                    Result = trc::Error::from(&spf_output),
                     Elapsed = time.elapsed(),
                 );
 

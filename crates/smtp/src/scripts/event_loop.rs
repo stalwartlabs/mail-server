@@ -288,7 +288,7 @@ impl RunScript for Server {
                                                 signature.write_header(&mut headers);
                                             }
                                             Err(err) => {
-                                                trc::error!(trc::Event::from(err)
+                                                trc::error!(trc::Error::from(err)
                                                     .span_id(session_id)
                                                     .caused_by(trc::location!())
                                                     .details("DKIM sign failed"));

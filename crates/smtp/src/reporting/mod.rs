@@ -230,7 +230,7 @@ impl SmtpReporting for Server {
                             signature.write_header(&mut headers);
                         }
                         Err(err) => {
-                            trc::error!(trc::Event::from(err)
+                            trc::error!(trc::Error::from(err)
                                 .span_id(message.span_id)
                                 .details("Failed to sign message")
                                 .caused_by(trc::location!()));

@@ -303,7 +303,7 @@ pub fn event(input: TokenStream) -> TokenStream {
             (trc::Key::#key, trc::Value::from(#value))
         }
     });
-    // This avoid having to evaluate expensive values when we know we are not interested in the event
+    // This avoids having to evaluate expensive values when we know we are not interested in the event
     let key_value_metric_tokens = key_values.iter().filter_map(|(key, value)| {
         if key.is_metric_key() {
             Some(quote! {

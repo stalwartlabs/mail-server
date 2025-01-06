@@ -35,7 +35,16 @@ impl Server {
             return None;
         }
 
-        match if_block.eval(resolver, self, session_id).await {
+        match (EvalContext {
+            resolver,
+            core: self,
+            expr: if_block,
+            captures: Vec::new(),
+            session_id,
+        })
+        .eval()
+        .await
+        {
             Ok(result) => {
                 trc::event!(
                     Eval(EvalEvent::Result),
@@ -82,7 +91,16 @@ impl Server {
             return None;
         }
 
-        match expr.eval(resolver, self, &mut Vec::new(), session_id).await {
+        match (EvalContext {
+            resolver,
+            core: self,
+            expr,
+            captures: &mut Vec::new(),
+            session_id,
+        })
+        .eval()
+        .await
+        {
             Ok(result) => {
                 trc::event!(
                     Eval(EvalEvent::Result),
@@ -119,60 +137,71 @@ impl Server {
     }
 }
 
-impl IfBlock {
-    pub async fn eval<'x, V: ResolveVariable>(
-        &'x self,
-        resolver: &'x V,
-        core: &Server,
-        session_id: u64,
-    ) -> trc::Result<Variable<'x>> {
-        let mut captures = Vec::new();
+struct EvalContext<'x, 'y, V: ResolveVariable, T, C> {
+    resolver: &'x V,
+    core: &'y Server,
+    expr: &'x T,
+    captures: C,
+    session_id: u64,
+}
 
-        for if_then in &self.if_then {
-            if if_then
-                .expr
-                .eval(resolver, core, &mut captures, session_id)
-                .await?
-                .to_bool()
+impl<'x, 'y, V: ResolveVariable> EvalContext<'x, 'y, V, IfBlock, Vec<String>> {
+    async fn eval(&mut self) -> trc::Result<Variable<'x>> {
+        for if_then in &self.expr.if_then {
+            if (EvalContext {
+                resolver: self.resolver,
+                core: self.core,
+                expr: &if_then.expr,
+                captures: &mut self.captures,
+                session_id: self.session_id,
+            })
+            .eval()
+            .await?
+            .to_bool()
             {
-                return if_then
-                    .then
-                    .eval(resolver, core, &mut captures, session_id)
-                    .await;
+                return (EvalContext {
+                    resolver: self.resolver,
+                    core: self.core,
+                    expr: &if_then.then,
+                    captures: &mut self.captures,
+                    session_id: self.session_id,
+                })
+                .eval()
+                .await;
             }
         }
 
-        self.default
-            .eval(resolver, core, &mut captures, session_id)
-            .await
+        (EvalContext {
+            resolver: self.resolver,
+            core: self.core,
+            expr: &self.expr.default,
+            captures: &mut self.captures,
+            session_id: self.session_id,
+        })
+        .eval()
+        .await
     }
 }
 
-impl Expression {
-    async fn eval<'x, 'y, V: ResolveVariable>(
-        &'x self,
-        resolver: &'x V,
-        core: &Server,
-        captures: &'y mut Vec<String>,
-        session_id: u64,
-    ) -> trc::Result<Variable<'x>> {
+impl<'x, 'y, V: ResolveVariable> EvalContext<'x, 'y, V, Expression, &mut Vec<String>> {
+    async fn eval(&mut self) -> trc::Result<Variable<'x>> {
         let mut stack = Vec::new();
-        let mut exprs = self.items.iter();
+        let mut exprs = self.expr.items.iter();
 
         while let Some(expr) = exprs.next() {
             match expr {
                 ExpressionItem::Variable(v) => {
-                    stack.push(resolver.resolve_variable(*v));
+                    stack.push(self.resolver.resolve_variable(*v));
                 }
                 ExpressionItem::Global(v) => {
-                    stack.push(resolver.resolve_global(v));
+                    stack.push(self.resolver.resolve_global(v));
                 }
                 ExpressionItem::Constant(val) => {
                     stack.push(Variable::from(val));
                 }
                 ExpressionItem::Capture(v) => {
                     stack.push(Variable::String(Cow::Owned(
-                        captures
+                        self.captures
                             .get(*v as usize)
                             .map(|v| v.as_str())
                             .unwrap_or_default()
@@ -216,8 +245,12 @@ impl Expression {
                     let result = if let Some((_, fnc, _)) = FUNCTIONS.get(*id as usize) {
                         (fnc)(arguments)
                     } else {
-                        core.eval_fnc(*id - FUNCTIONS.len() as u32, arguments, session_id)
-                            .await?
+                        Box::pin(self.core.eval_fnc(
+                            *id - FUNCTIONS.len() as u32,
+                            arguments,
+                            self.session_id,
+                        ))
+                        .await?
                     };
 
                     stack.push(result);
@@ -247,23 +280,26 @@ impl Expression {
                     stack.push(Variable::Array(items));
                 }
                 ExpressionItem::Regex(regex) => {
-                    captures.clear();
+                    self.captures.clear();
                     let value = stack.pop().unwrap_or_default().into_string();
 
                     if let Some(captures_) = regex.captures(value.as_ref()) {
                         for capture in captures_.iter() {
-                            captures.push(capture.map_or("", |m| m.as_str()).to_string());
+                            self.captures
+                                .push(capture.map_or("", |m| m.as_str()).to_string());
                         }
                     }
 
-                    stack.push(Variable::Integer(!captures.is_empty() as i64));
+                    stack.push(Variable::Integer(!self.captures.is_empty() as i64));
                 }
             }
         }
 
         Ok(stack.pop().unwrap_or_default())
     }
+}
 
+impl Expression {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }

@@ -21,7 +21,10 @@ pub use event_macro::event;
 use event_macro::{event_family, event_type, key_names, total_event_count};
 
 pub type Result<T> = std::result::Result<T, Error>;
-pub type Error = Event<EventType>;
+
+#[derive(Debug, Clone)]
+#[repr(transparent)]
+pub struct Error(Box<Event<EventType>>);
 
 #[derive(Debug, Clone)]
 pub struct Event<T> {
@@ -61,7 +64,7 @@ pub enum Value {
     Bool(bool),
     Ipv4(Ipv4Addr),
     Ipv6(Ipv6Addr),
-    Event(Event<EventType>),
+    Event(Error),
     Array(Vec<Value>),
     #[default]
     None,

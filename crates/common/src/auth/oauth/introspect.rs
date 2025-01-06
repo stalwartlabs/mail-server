@@ -85,7 +85,7 @@ impl Server {
             }),
             Err(err)
                 if matches!(
-                    err.inner,
+                    err.event_type(),
                     EventType::Auth(AuthEvent::Error) | EventType::Auth(AuthEvent::TokenExpired)
                 ) =>
             {

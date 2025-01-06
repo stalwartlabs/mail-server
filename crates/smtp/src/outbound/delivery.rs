@@ -374,7 +374,7 @@ impl DeliveryAttempt {
                                 TlsRpt(TlsRptEvent::RecordFetchError),
                                 SpanId = message.span_id,
                                 Domain = domain.domain.clone(),
-                                CausedBy = trc::Event::from(err),
+                                CausedBy = trc::Error::from(err),
                                 Elapsed = time.elapsed(),
                             );
                             None
@@ -466,7 +466,7 @@ impl DeliveryAttempt {
                                     MtaSts(MtaStsEvent::PolicyFetchError),
                                     SpanId = message.span_id,
                                     Domain = domain.domain.clone(),
-                                    CausedBy = trc::Event::from(err.clone()),
+                                    CausedBy = trc::Error::from(err.clone()),
                                     Strict = strict,
                                     Elapsed = time.elapsed(),
                                 );
@@ -532,7 +532,7 @@ impl DeliveryAttempt {
                             Delivery(DeliveryEvent::MxLookupFailed),
                             SpanId = message.span_id,
                             Domain = domain.domain.clone(),
-                            CausedBy = trc::Event::from(err.clone()),
+                            CausedBy = trc::Error::from(err.clone()),
                             Elapsed = time.elapsed(),
                         );
 
@@ -820,7 +820,7 @@ impl DeliveryAttempt {
                                     SpanId = message.span_id,
                                     Domain = domain.domain.clone(),
                                     Hostname = envelope.mx.to_string(),
-                                    CausedBy = trc::Event::from(err.clone()),
+                                    CausedBy = trc::Error::from(err.clone()),
                                     Strict = strict,
                                     Elapsed = time.elapsed(),
                                 );

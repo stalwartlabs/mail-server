@@ -140,7 +140,7 @@ impl<T: SessionStream> Session<T> {
                 }),
                 SpanId = self.data.session_id,
                 Strict = strict,
-                Result = dkim_output.iter().map(trc::Event::from).collect::<Vec<_>>(),
+                Result = dkim_output.iter().map(trc::Error::from).collect::<Vec<_>>(),
                 Elapsed = time.elapsed(),
             );
 
@@ -194,7 +194,7 @@ impl<T: SessionStream> Session<T> {
                 }),
                 SpanId = self.data.session_id,
                 Strict = strict,
-                Result = trc::Event::from(arc_output.result()),
+                Result = trc::Error::from(arc_output.result()),
                 Elapsed = time.elapsed(),
             );
 
@@ -295,7 +295,7 @@ impl<T: SessionStream> Session<T> {
                     Strict = strict,
                     Domain = dmarc_output.domain().to_string(),
                     Policy = dmarc_policy.to_string(),
-                    Result = trc::Event::from(&dmarc_result),
+                    Result = trc::Error::from(&dmarc_result),
                     Elapsed = time.elapsed(),
                 );
 
@@ -417,7 +417,7 @@ impl<T: SessionStream> Session<T> {
                         set.write_header(&mut headers);
                     }
                     Err(err) => {
-                        trc::error!(trc::Event::from(err)
+                        trc::error!(trc::Error::from(err)
                             .span_id(self.data.session_id)
                             .details("Failed to ARC seal message"));
                     }
@@ -649,7 +649,7 @@ impl<T: SessionStream> Session<T> {
                         signature.write_header(&mut headers);
                     }
                     Err(err) => {
-                        trc::error!(trc::Event::from(err)
+                        trc::error!(trc::Error::from(err)
                             .span_id(self.data.session_id)
                             .details("Failed to DKIM sign message"));
                     }

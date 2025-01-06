@@ -257,11 +257,11 @@ fn build_any_value(value: &trc::Value) -> AnyValue {
         trc::Value::Event(v) => AnyValue::Map(Box::new(
             [(
                 Key::from_static_str("eventName"),
-                AnyValue::String(v.inner.name().into()),
+                AnyValue::String(v.event_type().name().into()),
             )]
             .into_iter()
             .chain(
-                v.keys
+                v.keys()
                     .iter()
                     .map(|(k, v)| (build_key(k), build_any_value(v))),
             )

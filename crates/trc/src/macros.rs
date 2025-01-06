@@ -25,7 +25,7 @@ macro_rules! error {
         let event_id = err.as_ref().id();
 
         if $crate::Collector::is_metric(event_id) {
-            $crate::Collector::record_metric(*err.as_ref(), event_id, &err.keys);
+            $crate::Collector::record_metric(*err.as_ref(), event_id, err.keys());
         }
         if $crate::Collector::has_interest(event_id) {
             err.send();

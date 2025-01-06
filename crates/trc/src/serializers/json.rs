@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::{Event, EventDetails, EventType, Key, Value};
+use crate::{Error, Event, EventDetails, Key, Value};
 use ahash::AHashSet;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use mail_parser::DateTime;
@@ -156,24 +156,24 @@ impl Serialize for JsonEventSerializer<Keys<'_>> {
     }
 }
 
-impl Serialize for JsonEventSerializer<&Event<EventType>> {
+impl Serialize for JsonEventSerializer<&Error> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut map = serializer.serialize_map(None)?;
-        map.serialize_entry("type", self.inner.inner.name())?;
+        map.serialize_entry("type", self.inner.0.inner.name())?;
         if self.with_description {
-            map.serialize_entry("text", self.inner.inner.description())?;
+            map.serialize_entry("text", self.inner.0.inner.description())?;
         }
         if self.with_explanation {
-            map.serialize_entry("details", self.inner.inner.explain())?;
+            map.serialize_entry("details", self.inner.0.inner.explain())?;
         }
         map.serialize_entry(
             "data",
             &JsonEventSerializer {
                 inner: Keys {
-                    keys: self.inner.keys.as_slice(),
+                    keys: self.inner.0.keys.as_slice(),
                     span_keys: &[],
                 },
                 with_spans: self.with_spans,

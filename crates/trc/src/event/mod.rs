@@ -55,19 +55,33 @@ impl<T> Event<T> {
             }
         })
     }
+
+    pub fn into_boxed(self) -> Box<Self> {
+        Box::new(self)
+    }
 }
 
-impl Event<EventType> {
+impl Error {
+    #[inline(always)]
+    pub fn new(inner: EventType) -> Self {
+        Error(Box::new(Event::new(inner)))
+    }
+
+    #[inline(always)]
+    pub fn set_ctx(&mut self, key: Key, value: impl Into<Value>) {
+        self.0.keys.push((key, value.into()));
+    }
+
     #[inline(always)]
     pub fn ctx(mut self, key: Key, value: impl Into<Value>) -> Self {
-        self.keys.push((key, value.into()));
+        self.0.keys.push((key, value.into()));
         self
     }
 
     #[inline(always)]
     pub fn ctx_unique(mut self, key: Key, value: impl Into<Value>) -> Self {
-        if self.keys.iter().all(|(k, _)| *k != key) {
-            self.keys.push((key, value.into()));
+        if self.0.keys.iter().all(|(k, _)| *k != key) {
+            self.0.keys.push((key, value.into()));
         }
         self
     }
@@ -82,7 +96,12 @@ impl Event<EventType> {
 
     #[inline(always)]
     pub fn matches(&self, inner: EventType) -> bool {
-        self.inner == inner
+        self.0.inner == inner
+    }
+
+    #[inline(always)]
+    pub fn event_type(&self) -> EventType {
+        self.0.inner
     }
 
     #[inline(always)]
@@ -136,12 +155,38 @@ impl Event<EventType> {
     }
 
     #[inline(always)]
+    pub fn keys(&self) -> &[(Key, Value)] {
+        &self.0.keys
+    }
+
+    #[inline(always)]
+    pub fn value(&self, key: Key) -> Option<&Value> {
+        self.0.value(key)
+    }
+
+    #[inline(always)]
+    pub fn value_as_str(&self, key: Key) -> Option<&str> {
+        self.0.value_as_str(key)
+    }
+
+    #[inline(always)]
+    pub fn value_as_uint(&self, key: Key) -> Option<u64> {
+        self.0.value_as_uint(key)
+    }
+
+    #[inline(always)]
+    pub fn take_value(&mut self, key: Key) -> Option<Value> {
+        self.0.take_value(key)
+    }
+
+    #[inline(always)]
     pub fn is_assertion_failure(&self) -> bool {
-        self.inner == EventType::Store(StoreEvent::AssertValueFailed)
+        self.0.inner == EventType::Store(StoreEvent::AssertValueFailed)
     }
 
     pub fn key(&self, key: Key) -> Option<&Value> {
-        self.keys
+        self.0
+            .keys
             .iter()
             .find_map(|(k, v)| if *k == key { Some(v) } else { None })
     }
@@ -149,7 +194,7 @@ impl Event<EventType> {
     #[inline(always)]
     pub fn is_jmap_method_error(&self) -> bool {
         !matches!(
-            self.inner,
+            self.0.inner,
             EventType::Jmap(
                 JmapEvent::UnknownCapability | JmapEvent::NotJson | JmapEvent::NotRequest
             )
@@ -159,7 +204,7 @@ impl Event<EventType> {
     #[inline(always)]
     pub fn must_disconnect(&self) -> bool {
         matches!(
-            self.inner,
+            self.0.inner,
             EventType::Network(_)
                 | EventType::Auth(AuthEvent::TooManyAttempts)
                 | EventType::Limit(LimitEvent::ConcurrentRequest | LimitEvent::TooManyRequests)
@@ -169,7 +214,7 @@ impl Event<EventType> {
 
     #[inline(always)]
     pub fn should_write_err(&self) -> bool {
-        !matches!(self.inner, EventType::Network(_) | EventType::Security(_))
+        !matches!(self.0.inner, EventType::Network(_) | EventType::Security(_))
     }
 
     pub fn corrupted_key(key: &[u8], value: Option<&[u8]>, caused_by: &'static str) -> Error {
@@ -644,7 +689,10 @@ impl<T> AddContext<T> for Result<T> {
     fn caused_by(self, location: &'static str) -> Result<T> {
         match self {
             Ok(value) => Ok(value),
-            Err(err) => Err(err.ctx(Key::CausedBy, location)),
+            Err(mut err) => {
+                err.set_ctx(Key::CausedBy, location);
+                Err(err)
+            }
         }
     }
 
@@ -664,9 +712,9 @@ impl std::error::Error for Error {}
 impl Eq for Error {}
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
-        if self.inner == other.inner && self.keys.len() == other.keys.len() {
-            for kv in self.keys.iter() {
-                if !other.keys.iter().any(|okv| kv == okv) {
+        if self.0.inner == other.0.inner && self.0.keys.len() == other.0.keys.len() {
+            for kv in self.0.keys.iter() {
+                if !other.0.keys.iter().any(|okv| kv == okv) {
                     return false;
                 }
             }

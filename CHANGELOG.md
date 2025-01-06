@@ -4,7 +4,8 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [0.11.0] - 2025-01-06
 
-This version includes breaking changes to the configuration file. Please read [UPGRADING.md](UPGRADING.md) for details.
+This version includes breaking changes to the configuration file, please read [UPGRADING.md](UPGRADING.md) for details.
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
 
 ### Added
 - Spam filter rewritten in Rust for a significant performance improvement.

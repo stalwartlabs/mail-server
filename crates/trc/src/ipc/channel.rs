@@ -16,7 +16,7 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 use crate::{
     ipc::collector::{Update, COLLECTOR_THREAD, COLLECTOR_UPDATES},
-    Event, EventType,
+    Error, Event, EventType,
 };
 
 use super::collector::{Collector, CollectorThread};
@@ -111,5 +111,11 @@ impl Event<EventType> {
     pub fn send_with_metrics(self) {
         Collector::record_metric(self.inner, self.inner.id(), &self.keys);
         self.send();
+    }
+}
+
+impl Error {
+    pub fn send(self) {
+        self.0.send();
     }
 }
