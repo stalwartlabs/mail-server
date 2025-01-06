@@ -52,28 +52,6 @@ Subject: test
 
 Test
 <!-- NEXT TEST -->
-dmarc.result pass
-dkim.result pass
-spf.result pass
-expect ALLOWLIST_DMARC DMARC_POLICY_ALLOW DKIM_ALLOW SPF_ALLOW ARC_NA
-
-From: user@dmarc-allow.org
-Subject: test
-
-Test
-
-<!-- NEXT TEST -->
-dmarc.result fail
-dkim.result fail
-spf.result fail
-expect BLOCKLIST_DMARC DMARC_POLICY_SOFTFAIL DKIM_REJECT SPF_FAIL ARC_NA
-
-From: user@dmarc-allow.org
-Subject: test
-
-Test
-
-<!-- NEXT TEST -->
 dkim.result pass
 dkim.domains spf-dkim-allow.org
 spf.result pass

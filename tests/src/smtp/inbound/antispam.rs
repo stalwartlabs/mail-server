@@ -114,7 +114,6 @@ allow-invalid-certs = true
                 "hta" = "BAD|NZ" }
 [lookup]
 "url-redirectors" = {"bit.ly", "redirect.io", "redirect.me", "redirect.org", "redirect.com", "redirect.net", "t.ly", "tinyurl.com"}
-"known-dmarc-domains" = {"dmarc-allow.org"}
 "spam-traps" = {"spamtrap@*"}
 "trusted-domains" = {"stalw.art"}
 "freemail-providers" = {"gmail.com", "googlemail.com", "yahoomail.com", "outlook.com", "*freemail.org"}
@@ -549,6 +548,8 @@ async fn antispam() {
                     spam_ctx.result.tags.retain(|t| t.starts_with("X_HDR_"));
                     server.spam_filter_analyze_recipient(&mut spam_ctx).await;
                     server.spam_filter_analyze_domain(&mut spam_ctx).await;
+                    server.spam_filter_analyze_subject(&mut spam_ctx).await;
+                    server.spam_filter_analyze_url(&mut spam_ctx).await;
                     server.spam_filter_analyze_rules(&mut spam_ctx).await;
                     spam_ctx.result.tags.retain(|t| !t.starts_with("X_HDR_"));
                 }
