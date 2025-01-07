@@ -8,7 +8,7 @@ Version `0.11.0` introduces breaking changes to the spam filter configuration. A
 - Cache settings have changed, see the [documentation](https://stalw.art/docs/server/cache) for details.
 - Support for Pipes was removed in favor of MTA hooks and Milter.
 - `config.resource.spam-filter` is now `spam-filter.resource`.
-- `config.resource.webadmin` is now `spam-filter.webadmin`.
+- `config.resource.webadmin` is now `webadmin.resource`.
 - `authentication.rate-limit` was removed as security is handled by fail2ban.
 
 Upgrading from `v0.9.x` to `v0.10.0`

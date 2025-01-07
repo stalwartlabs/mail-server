@@ -26,7 +26,7 @@ To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web
 - OpenPGP EOF error (#1024).
 - Convert emails obtained from external directories to lowercase (#1004).
 - LDAP: Support both name and email fields to be mapped to the same attribute.
-- Admin role can't be assigned if an acccount with the same name exists.
+- Admin role can't be assigned if an account with the same name exists.
 - Fix macro detection in DNS record generation (#978).
 - Use host FQDN in install script (#1003).
 
