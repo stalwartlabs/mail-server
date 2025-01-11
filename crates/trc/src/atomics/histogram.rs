@@ -8,11 +8,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::MetricType;
 
-use super::array::AtomicU64Array;
+use super::array::AtomicU32Array;
 
 pub struct AtomicHistogram<const N: usize> {
     id: MetricType,
-    buckets: AtomicU64Array<N>,
+    buckets: AtomicU32Array<N>,
     upper_bounds: [u64; N],
     sum: AtomicU64,
     count: AtomicU64,
@@ -23,7 +23,7 @@ pub struct AtomicHistogram<const N: usize> {
 impl<const N: usize> AtomicHistogram<N> {
     pub const fn new(id: MetricType, upper_bounds: [u64; N]) -> Self {
         Self {
-            buckets: AtomicU64Array::new(),
+            buckets: AtomicU32Array::new(),
             upper_bounds,
             sum: AtomicU64::new(0),
             count: AtomicU64::new(0),
@@ -41,7 +41,7 @@ impl<const N: usize> AtomicHistogram<N> {
 
         for (idx, upper_bound) in self.upper_bounds.iter().enumerate() {
             if value < *upper_bound {
-                self.buckets.add(idx, value);
+                self.buckets.add(idx, 1);
                 return;
             }
         }
@@ -93,13 +93,13 @@ impl<const N: usize> AtomicHistogram<N> {
         self.buckets
             .inner()
             .iter()
-            .map(|bucket| bucket.load(Ordering::Relaxed))
+            .map(|bucket| bucket.load(Ordering::Relaxed) as u64)
     }
 
     pub fn buckets_vec(&self) -> Vec<u64> {
         let mut vec = Vec::with_capacity(N);
         for bucket in self.buckets.inner().iter() {
-            vec.push(bucket.load(Ordering::Relaxed));
+            vec.push(bucket.load(Ordering::Relaxed) as u64);
         }
         vec
     }
