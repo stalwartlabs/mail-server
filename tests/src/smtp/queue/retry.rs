@@ -93,8 +93,8 @@ async fn queue_retry() {
             Some(QueueEvent::Refresh(Some(queue_id)) | QueueEvent::WorkerDone(queue_id)) => {
                 in_fight.remove(&queue_id);
             }
-            Some(QueueEvent::OnHold(event)) => {
-                panic!("unexpected on hold event: {:?}", event);
+            Some(QueueEvent::OnHold { queue_id, status }) => {
+                panic!("unexpected on hold event {queue_id}: {status:?}");
             }
             Some(QueueEvent::Refresh(None)) => (),
             None | Some(QueueEvent::Stop) | Some(QueueEvent::Paused(_)) => break,
@@ -121,9 +121,7 @@ async fn queue_retry() {
             } else {
                 retries.push(event.due.saturating_sub(now));
                 in_fight.insert(event.queue_id);
-                assert!(DeliveryAttempt::new(event)
-                    .try_deliver(core.clone())
-                    .is_none());
+                DeliveryAttempt::new(event).try_deliver(core.clone());
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }

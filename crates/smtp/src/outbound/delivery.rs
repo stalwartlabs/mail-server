@@ -18,7 +18,7 @@ use common::config::{
     server::ServerProtocol,
     smtp::{queue::RequireOptional, report::AggregateFrequency},
 };
-use common::ipc::{OnHold, PolicyType, QueueEvent, QueuedMessage, TlsEvent};
+use common::ipc::{OnHold, PolicyType, QueueEvent, TlsEvent};
 use common::Server;
 use mail_auth::{
     mta_sts::TlsRpt,
@@ -41,16 +41,7 @@ use super::{lookup::ToNextHop, mta_sts, session::SessionParams, NextHop, TlsStra
 use crate::queue::{throttle, DeliveryAttempt, Domain, Error, QueueEnvelope, Status};
 
 impl DeliveryAttempt {
-    pub fn try_deliver(mut self, server: Server) -> Option<OnHold<QueuedMessage>> {
-        // Global concurrency limiter
-        if let Err(limiter) = server.is_outbound_allowed(&mut self.in_flight) {
-            return Some(OnHold {
-                next_due: None,
-                limiters: vec![limiter],
-                message: self.event,
-            });
-        }
-
+    pub fn try_deliver(self, server: Server) {
         tokio::spawn(async move {
             // Lock queue event
             let queue_id = self.event.queue_id;
@@ -123,11 +114,12 @@ impl DeliveryAttempt {
                     QueueEvent::WorkerDone(queue_id)
                 }
             } else {
-                QueueEvent::OnHold(OnHold {
-                    next_due: Some(LOCK_EXPIRY + 1),
-                    limiters: vec![],
-                    message: self.event,
-                })
+                QueueEvent::OnHold {
+                    queue_id: self.event.queue_id,
+                    status: OnHold::Locked {
+                        until: now() + LOCK_EXPIRY + 1,
+                    },
+                }
             };
 
             // Notify queue manager
@@ -139,8 +131,6 @@ impl DeliveryAttempt {
                 );
             }
         });
-
-        None
     }
 
     async fn deliver_task(mut self, server: Server, mut message: Message) -> QueueEvent {
@@ -193,11 +183,13 @@ impl DeliveryAttempt {
                             SpanId = span_id,
                         );
 
-                        QueueEvent::OnHold(OnHold {
-                            next_due,
-                            limiters: vec![limiter],
-                            message: self.event,
-                        })
+                        QueueEvent::OnHold {
+                            queue_id: self.event.queue_id,
+                            status: OnHold::ConcurrencyLimited {
+                                next_due,
+                                limiters: vec![limiter],
+                            },
+                        }
                     }
                     throttle::Error::Rate { retry_at } => {
                         // Save changes to disk
@@ -1339,11 +1331,13 @@ impl DeliveryAttempt {
                 SpanId = span_id,
             );
 
-            QueueEvent::OnHold(OnHold {
-                next_due,
-                limiters: on_hold,
-                message: self.event,
-            })
+            QueueEvent::OnHold {
+                queue_id: self.event.queue_id,
+                status: OnHold::ConcurrencyLimited {
+                    next_due,
+                    limiters: on_hold,
+                },
+            }
         } else if let Some(due) = message.next_event() {
             trc::event!(
                 Queue(trc::QueueEvent::Rescheduled),

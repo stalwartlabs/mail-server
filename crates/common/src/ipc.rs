@@ -128,16 +128,21 @@ pub struct EncryptionKeys {
 pub enum QueueEvent {
     Refresh(Option<u64>),
     WorkerDone(u64),
-    OnHold(OnHold<QueuedMessage>),
+    OnHold { queue_id: u64, status: OnHold },
     Paused(bool),
     Stop,
 }
 
 #[derive(Debug)]
-pub struct OnHold<T> {
-    pub next_due: Option<u64>,
-    pub limiters: Vec<ConcurrencyLimiter>,
-    pub message: T,
+pub enum OnHold {
+    InFlight,
+    Locked {
+        until: u64,
+    },
+    ConcurrencyLimited {
+        limiters: Vec<ConcurrencyLimiter>,
+        next_due: Option<u64>,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]

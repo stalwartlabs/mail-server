@@ -9,24 +9,25 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use common::{
     core::BuildServer,
-    ipc::{OnHold, QueueEvent, QueuedMessage},
+    ipc::{OnHold, QueueEvent},
     Inner,
 };
+use rand::seq::SliceRandom;
 use store::write::now;
 use tokio::sync::mpsc;
 
 use super::{
     spool::{SmtpSpool, QUEUE_REFRESH},
+    throttle::IsAllowed,
     DeliveryAttempt, Message, QueueId, Status,
 };
 
 pub struct Queue {
     pub core: Arc<Inner>,
-    pub on_hold: Vec<OnHold<QueuedMessage>>,
-    pub in_flight: AHashSet<QueueId>,
+    pub on_hold: AHashMap<QueueId, OnHold>,
     pub next_wake_up: Instant,
     pub rx: mpsc::Receiver<QueueEvent>,
 }
@@ -39,12 +40,13 @@ impl SpawnQueue for mpsc::Receiver<QueueEvent> {
     }
 }
 
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(10 * 60);
+
 impl Queue {
     pub fn new(core: Arc<Inner>, rx: mpsc::Receiver<QueueEvent>) -> Self {
         Queue {
             core,
-            on_hold: Vec::with_capacity(128),
-            in_flight: AHashSet::with_capacity(128),
+            on_hold: AHashMap::with_capacity(128),
             next_wake_up: Instant::now(),
             rx,
         }
@@ -52,9 +54,10 @@ impl Queue {
 
     pub async fn start(&mut self) {
         let mut is_paused = false;
+        let mut next_cleanup = Instant::now() + CLEANUP_INTERVAL;
 
         loop {
-            let (on_hold, refresh_queue) = match tokio::time::timeout(
+            let refresh_queue = match tokio::time::timeout(
                 self.next_wake_up.duration_since(Instant::now()),
                 self.rx.recv(),
             )
@@ -62,20 +65,24 @@ impl Queue {
             {
                 Ok(Some(QueueEvent::Refresh(queue_id))) => {
                     if let Some(queue_id) = queue_id {
-                        self.in_flight.remove(&queue_id);
+                        self.on_hold.remove(&queue_id);
                     }
-
-                    (None, true)
+                    true
                 }
                 Ok(Some(QueueEvent::WorkerDone(queue_id))) => {
-                    self.in_flight.remove(&queue_id);
-
-                    (None, false)
+                    self.on_hold.remove(&queue_id);
+                    !self.on_hold.is_empty()
                 }
-                Ok(Some(QueueEvent::OnHold(on_hold))) => {
-                    self.in_flight.remove(&on_hold.message.queue_id);
+                Ok(Some(QueueEvent::OnHold { queue_id, status })) => {
+                    if let OnHold::Locked { until } = &status {
+                        let due_in = Instant::now() + Duration::from_secs(*until - now());
+                        if due_in < self.next_wake_up {
+                            self.next_wake_up = due_in;
+                        }
+                    }
 
-                    (on_hold.into(), false)
+                    self.on_hold.insert(queue_id, status);
+                    self.on_hold.len() > 1
                 }
                 Ok(Some(QueueEvent::Paused(paused))) => {
                     self.core
@@ -83,97 +90,114 @@ impl Queue {
                         .queue_status
                         .store(!paused, Ordering::Relaxed);
                     is_paused = paused;
-                    (None, false)
+                    false
                 }
-                Err(_) => (None, true),
+                Err(_) => true,
                 Ok(Some(QueueEvent::Stop)) | Ok(None) => {
                     break;
                 }
             };
 
             if !is_paused {
-                // Deliver any concurrency limited messages
-                let server = self.core.build_server();
-                while let Some(queue_event) = self.next_on_hold() {
-                    if let Some(message) =
-                        DeliveryAttempt::new(queue_event).try_deliver(server.clone())
-                    {
-                        self.on_hold(message);
-                    } else {
-                        self.in_flight.insert(queue_event.queue_id);
-                    }
-                }
-
                 // Deliver scheduled messages
                 if refresh_queue || self.next_wake_up <= Instant::now() {
                     let now = now();
                     let mut next_wake_up = QUEUE_REFRESH;
-                    for queue_event in server.next_event().await {
-                        match self.is_on_hold(queue_event.queue_id) {
-                            None => {
-                                if queue_event.due <= now {
-                                    if !self.in_flight.contains(&queue_event.queue_id) {
-                                        if let Some(message) = DeliveryAttempt::new(queue_event)
-                                            .try_deliver(server.clone())
-                                        {
-                                            self.on_hold(message);
-                                        } else {
-                                            self.in_flight.insert(queue_event.queue_id);
+                    let server = self.core.build_server();
+
+                    // Process queue events
+                    let mut queue_events = server.next_event().await;
+
+                    if queue_events.len() > 5 {
+                        queue_events.shuffle(&mut rand::thread_rng());
+                    }
+
+                    for queue_event in &queue_events {
+                        if queue_event.due <= now {
+                            // Check if the message is still on hold
+                            if let Some(on_hold) = self.on_hold.get(&queue_event.queue_id) {
+                                match on_hold {
+                                    OnHold::Locked { until } => {
+                                        if *until > now {
+                                            let due_in = *until - now;
+                                            if due_in < next_wake_up {
+                                                next_wake_up = due_in;
+                                            }
+                                            continue;
                                         }
                                     }
-                                } else {
-                                    let due_in = queue_event.due - now;
-                                    if due_in < next_wake_up {
-                                        next_wake_up = due_in;
+                                    OnHold::ConcurrencyLimited { limiters, next_due } => {
+                                        if !(limiters.iter().any(|l| {
+                                            l.concurrent.load(Ordering::Relaxed) < l.max_concurrent
+                                        }) || next_due.map_or(false, |due| due <= now))
+                                        {
+                                            continue;
+                                        }
                                     }
+                                    OnHold::InFlight => continue,
+                                }
+
+                                self.on_hold.remove(&queue_event.queue_id);
+                            }
+
+                            // Enforce global concurrency limits
+                            let mut in_flight = Vec::new();
+                            match server.is_outbound_allowed(&mut in_flight) {
+                                Ok(_) => {
+                                    self.on_hold.insert(queue_event.queue_id, OnHold::InFlight);
+                                    DeliveryAttempt {
+                                        in_flight,
+                                        event: *queue_event,
+                                    }
+                                    .try_deliver(server.clone());
+                                }
+
+                                Err(limiter) => {
+                                    self.on_hold.insert(
+                                        queue_event.queue_id,
+                                        OnHold::ConcurrencyLimited {
+                                            limiters: vec![limiter],
+                                            next_due: None,
+                                        },
+                                    );
                                 }
                             }
-                            Some(on_hold)
-                                if on_hold.limiters.is_empty()
-                                    && on_hold.next_due.map_or(false, |due| due < next_wake_up) =>
-                            {
-                                next_wake_up = on_hold.next_due.unwrap();
+                        } else {
+                            let due_in = queue_event.due - now;
+                            if due_in < next_wake_up {
+                                next_wake_up = due_in;
                             }
-                            _ => (),
                         }
                     }
-                    self.next_wake_up = Instant::now() + Duration::from_secs(next_wake_up);
+
+                    // Remove expired locks
+                    let now = Instant::now();
+                    if next_cleanup <= now {
+                        next_cleanup = now + CLEANUP_INTERVAL;
+
+                        if !self.on_hold.is_empty() {
+                            let active_queue_ids = queue_events
+                                .into_iter()
+                                .map(|e| e.queue_id)
+                                .collect::<AHashSet<_>>();
+                            let now = store::write::now();
+                            self.on_hold.retain(|queue_id, status| match status {
+                                OnHold::InFlight => true,
+                                OnHold::Locked { until } => *until > now,
+                                OnHold::ConcurrencyLimited { .. } => {
+                                    active_queue_ids.contains(queue_id)
+                                }
+                            });
+                        }
+                    }
+
+                    self.next_wake_up = now + Duration::from_secs(next_wake_up);
                 }
             } else {
                 // Queue is paused
                 self.next_wake_up = Instant::now() + Duration::from_secs(86400);
             }
-
-            // Add message on hold
-            if let Some(on_hold) = on_hold {
-                self.on_hold(on_hold);
-            }
         }
-    }
-
-    pub fn is_on_hold(&self, queue_id: QueueId) -> Option<&OnHold<QueuedMessage>> {
-        self.on_hold.iter().find(|o| o.message.queue_id == queue_id)
-    }
-
-    pub fn on_hold(&mut self, message: OnHold<QueuedMessage>) {
-        self.on_hold.push(OnHold {
-            next_due: message.next_due,
-            limiters: message.limiters,
-            message: message.message,
-        });
-    }
-
-    pub fn next_on_hold(&mut self) -> Option<QueuedMessage> {
-        let now = now();
-        self.on_hold
-            .iter()
-            .position(|o| {
-                o.limiters
-                    .iter()
-                    .any(|l| l.concurrent.load(Ordering::Relaxed) < l.max_concurrent)
-                    || o.next_due.map_or(false, |due| due <= now)
-            })
-            .map(|pos| self.on_hold.remove(pos).message)
     }
 }
 

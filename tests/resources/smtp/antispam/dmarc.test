@@ -127,3 +127,14 @@ From: user@spf-dkim-allow.org
 Subject: test
 
 Test
+<!-- NEXT TEST -->
+spf.result pass
+dkim.result pass
+arc.result pass
+dmarc.result pass
+envelope_from hello@stalw.art
+expect TRUSTED_DOMAIN DMARC_POLICY_ALLOW DKIM_ALLOW SPF_ALLOW ARC_ALLOW
+
+From: <hello@stalw.art>
+
+Test

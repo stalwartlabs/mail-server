@@ -302,7 +302,7 @@ pub trait TestQueueEvent {
     fn assert_refresh(self);
     fn assert_done(self);
     fn assert_refresh_or_done(self);
-    fn unwrap_on_hold(self) -> OnHold<QueuedMessage>;
+    fn unwrap_on_hold(self) -> OnHold;
 }
 
 impl TestQueueEvent for QueueEvent {
@@ -327,9 +327,9 @@ impl TestQueueEvent for QueueEvent {
         }
     }
 
-    fn unwrap_on_hold(self) -> OnHold<QueuedMessage> {
+    fn unwrap_on_hold(self) -> OnHold {
         match self {
-            QueueEvent::OnHold(value) => value,
+            QueueEvent::OnHold { status, .. } => status,
             e => panic!("Unexpected event: {e:?}"),
         }
     }

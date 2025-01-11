@@ -137,7 +137,7 @@ async fn smtp_delivery() {
     loop {
         match local.queue_receiver.try_read_event().await {
             Some(QueueEvent::Refresh(_) | QueueEvent::WorkerDone(_)) => {}
-            Some(QueueEvent::OnHold(_)) | Some(QueueEvent::Paused(_)) => unreachable!(),
+            Some(QueueEvent::OnHold { .. }) | Some(QueueEvent::Paused(_)) => unreachable!(),
             None | Some(QueueEvent::Stop) => break,
         }
 
