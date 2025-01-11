@@ -16,12 +16,15 @@ use super::cli::{Client, ServerCommands};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 pub enum UpdateSettings {
     Delete {
         keys: Vec<String>,
     },
     Clear {
         prefix: String,
+        #[serde(default)]
+        filter: Option<String>,
     },
     Insert {
         prefix: Option<String>,
