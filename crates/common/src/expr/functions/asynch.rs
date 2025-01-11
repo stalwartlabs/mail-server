@@ -125,7 +125,7 @@ impl Server {
         if query
             .as_bytes()
             .get(..6)
-            .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
+            .is_some_and(|q| q.eq_ignore_ascii_case(b"SELECT"))
         {
             let mut rows = store
                 .sql_query::<Rows>(&query, arguments)

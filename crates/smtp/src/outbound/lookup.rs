@@ -35,8 +35,8 @@ pub trait DnsLookup: Sync + Send {
         max_results: usize,
     ) -> impl Future<Output = mail_auth::Result<Vec<IpAddr>>> + Send;
 
-    fn resolve_host<'x>(
-        &'x self,
+    fn resolve_host(
+        &self,
         remote_host: &NextHop<'_>,
         envelope: &impl ResolveVariable,
         max_multihomed: usize,
@@ -114,8 +114,8 @@ impl DnsLookup for Server {
         }
     }
 
-    async fn resolve_host<'x>(
-        &'x self,
+    async fn resolve_host(
+        &self,
         remote_host: &NextHop<'_>,
         envelope: &impl ResolveVariable,
         max_multihomed: usize,

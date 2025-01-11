@@ -72,7 +72,7 @@ impl<T: Iterator<Item = BayesInputToken>> Iterator for BayesTokenizer<T> {
                 BayesInputToken::Word(word) => {
                     if self
                         .stop_words
-                        .map_or(false, |sw| sw.contains(word.as_str()))
+                        .is_some_and(|sw| sw.contains(word.as_str()))
                     {
                         continue;
                     }

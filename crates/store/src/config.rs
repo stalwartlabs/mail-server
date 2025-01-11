@@ -402,6 +402,6 @@ impl IsActiveStore for Config {
 
     fn is_active_in_memory_store(&self, id: &str) -> bool {
         self.value("storage.lookup")
-            .map_or(false, |store_id| store_id == id)
+            .is_some_and(|store_id| store_id == id)
     }
 }

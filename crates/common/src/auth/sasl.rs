@@ -73,7 +73,7 @@ fn extract_oauth_bearer(bytes: &[u8]) -> Option<&str> {
         if is_separator || pos == eof {
             if bytes
                 .get(start_pos..start_pos + 12)
-                .map_or(false, |s| s.eq_ignore_ascii_case(b"auth=Bearer "))
+                .is_some_and(|s| s.eq_ignore_ascii_case(b"auth=Bearer "))
             {
                 return bytes
                     .get(start_pos + 12..if is_separator { pos } else { bytes.len() })

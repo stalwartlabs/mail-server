@@ -49,7 +49,7 @@ impl SpawnReport for mpsc::Receiver<ReportingEvent> {
                     if events
                         .first()
                         .and_then(|e| e.due())
-                        .map_or(false, |due| due <= now)
+                        .is_some_and(|due| due <= now)
                     {
                         let server_ = server.clone();
                         tokio::spawn(async move {

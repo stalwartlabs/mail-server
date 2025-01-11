@@ -112,7 +112,7 @@ impl LdapDirectory {
                                 && err
                                     .value(trc::Key::Code)
                                     .and_then(|v| v.to_uint())
-                                    .map_or(false, |rc| [49, 50].contains(&rc)) =>
+                                    .is_some_and(|rc| [49, 50].contains(&rc)) =>
                         {
                             return Ok(None);
                         }

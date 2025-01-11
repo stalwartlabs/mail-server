@@ -222,7 +222,7 @@ impl TelemetryApi for Server {
                                             if (filter.is_none() && key_filters.is_empty())
                                                 || event
                                                     .span_id()
-                                                    .map_or(false, |span_id| active_span_ids.contains(&span_id))
+                                                    .is_some_and(|span_id| active_span_ids.contains(&span_id))
                                             {
                                                 events.push(event);
                                             } else {

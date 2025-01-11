@@ -157,7 +157,7 @@ impl EmailIngest for Server {
                         .status
                         .as_ref()
                         .and_then(|name| message.header(name.as_str()).and_then(|v| v.as_text()))
-                        .map_or(false, |v| v.contains("Yes"));
+                        .is_some_and(|v| v.contains("Yes"));
 
                     // Classify the message with user's model
                     if let Some(bayes_config) = self

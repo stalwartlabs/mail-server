@@ -269,7 +269,7 @@ fn validate_push_value(
                 .unwrap()
                 .properties
                 .get(&Property::Value)
-                .map_or(false, |v| matches!(v, Value::Text(v) if v == &value))
+                .is_some_and(|v| matches!(v, Value::Text(v) if v == &value))
             {
                 Value::Text(value)
             } else {

@@ -29,7 +29,7 @@ struct Href {
 impl SpamFilterAnalyzeHtml for Server {
     async fn spam_filter_analyze_html(&self, ctx: &mut SpamFilterContext<'_>) {
         // Message only has text/html MIME parts
-        if ctx.input.message.content_type().map_or(false, |ct| {
+        if ctx.input.message.content_type().is_some_and(|ct| {
             ct.ctype().eq_ignore_ascii_case("text")
                 && ct
                     .subtype()
@@ -94,7 +94,7 @@ impl SpamFilterAnalyzeHtml for Server {
                                         //  Uses Data URI encoding to obfuscate plain or HTML in base64
                                         ctx.result.add_tag("DATA_URI_OBFU");
                                     }
-                                } else if href.host.as_ref().map_or(false, |h| h.ip.is_some()) {
+                                } else if href.host.as_ref().is_some_and(|h| h.ip.is_some()) {
                                     // HTML anchor points to an IP address
                                     ctx.result.add_tag("HTTP_TO_IP");
                                 }

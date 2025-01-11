@@ -115,7 +115,7 @@ impl MailboxQuery for Server {
         let mut tree = AHashMap::default();
         if (filter_as_tree || sort_as_tree)
             && (paginate.is_some()
-                || (response.total.map_or(false, |total| total > 0) && filter_as_tree))
+                || (response.total.is_some_and(|total| total > 0) && filter_as_tree))
         {
             for (document_id, value) in self
                 .get_properties::<Object<Value>, _, _>(

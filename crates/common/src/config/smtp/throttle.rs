@@ -83,11 +83,11 @@ fn parse_throttle_item(
         keys,
         concurrency: config
             .property::<Option<u64>>((prefix.as_str(), "concurrency"))
-            .filter(|&v| v.as_ref().map_or(false, |v| *v > 0))
+            .filter(|&v| v.as_ref().is_some_and(|v| *v > 0))
             .unwrap_or_default(),
         rate: config
             .property::<Option<Rate>>((prefix.as_str(), "rate"))
-            .filter(|v| v.as_ref().map_or(false, |r| r.requests > 0))
+            .filter(|v| v.as_ref().is_some_and(|r| r.requests > 0))
             .unwrap_or_default(),
     };
 

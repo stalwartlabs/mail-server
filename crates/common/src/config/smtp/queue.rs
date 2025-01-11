@@ -516,11 +516,11 @@ fn parse_queue_quota_item(config: &mut Config, prefix: impl AsKey, id: &str) -> 
         keys,
         size: config
             .property::<Option<usize>>((prefix.as_str(), "size"))
-            .filter(|&v| v.as_ref().map_or(false, |v| *v > 0))
+            .filter(|&v| v.as_ref().is_some_and(|v| *v > 0))
             .unwrap_or_default(),
         messages: config
             .property::<Option<usize>>((prefix.as_str(), "messages"))
-            .filter(|&v| v.as_ref().map_or(false, |v| *v > 0))
+            .filter(|&v| v.as_ref().is_some_and(|v| *v > 0))
             .unwrap_or_default(),
     };
 

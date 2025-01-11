@@ -46,7 +46,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
     if query
         .as_bytes()
         .get(..6)
-        .map_or(false, |q| q.eq_ignore_ascii_case(b"SELECT"))
+        .is_some_and(|q| q.eq_ignore_ascii_case(b"SELECT"))
     {
         let mut rows = store.sql_query::<Rows>(&query, arguments).await?;
         Ok(match rows.rows.len().cmp(&1) {

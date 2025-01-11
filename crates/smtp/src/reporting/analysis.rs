@@ -80,11 +80,11 @@ impl AnalyzeReport for Server {
                         if part
                             .content_type()
                             .and_then(|ct| ct.subtype())
-                            .map_or(false, |t| t.eq_ignore_ascii_case("xml"))
+                            .is_some_and(|t| t.eq_ignore_ascii_case("xml"))
                             || part
                                 .attachment_name()
                                 .and_then(|n| n.rsplit_once('.'))
-                                .map_or(false, |(_, e)| e.eq_ignore_ascii_case("xml"))
+                                .is_some_and(|(_, e)| e.eq_ignore_ascii_case("xml"))
                         {
                             reports.push(ReportData {
                                 compression: Compression::None,
@@ -131,7 +131,7 @@ impl AnalyzeReport for Server {
                             ("tlsrpt", _) | (_, "json") => Format::Tls(()),
                             _ => {
                                 if attachment_name
-                                    .map_or(false, |n| n.contains(".xml") || n.contains('!'))
+                                    .is_some_and(|n| n.contains(".xml") || n.contains('!'))
                                 {
                                     Format::Dmarc(())
                                 } else {

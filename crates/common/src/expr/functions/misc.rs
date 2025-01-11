@@ -30,14 +30,14 @@ pub(crate) fn fn_is_ip_addr(v: Vec<Variable>) -> Variable {
 pub(crate) fn fn_is_ipv4_addr(v: Vec<Variable>) -> Variable {
     v[0].to_string()
         .parse::<std::net::IpAddr>()
-        .map_or(false, |ip| matches!(ip, IpAddr::V4(_)))
+        .is_ok_and(|ip| matches!(ip, IpAddr::V4(_)))
         .into()
 }
 
 pub(crate) fn fn_is_ipv6_addr(v: Vec<Variable>) -> Variable {
     v[0].to_string()
         .parse::<std::net::IpAddr>()
-        .map_or(false, |ip| matches!(ip, IpAddr::V6(_)))
+        .is_ok_and(|ip| matches!(ip, IpAddr::V6(_)))
         .into()
 }
 

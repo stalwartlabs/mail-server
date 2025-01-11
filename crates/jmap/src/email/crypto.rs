@@ -372,7 +372,7 @@ impl EncryptMessage for Message<'_> {
     }
 
     fn is_encrypted(&self) -> bool {
-        self.content_type().map_or(false, |ct| {
+        self.content_type().is_some_and(|ct| {
             let main_type = ct.c_type.as_ref();
             let sub_type = ct
                 .c_subtype
@@ -384,10 +384,9 @@ impl EncryptMessage for Message<'_> {
                 && (sub_type.eq_ignore_ascii_case("pkcs7-mime")
                     || sub_type.eq_ignore_ascii_case("pkcs7-signature")
                     || (sub_type.eq_ignore_ascii_case("octet-stream")
-                        && self.attachment_name().map_or(false, |name| {
-                            name.rsplit_once('.').map_or(false, |(_, ext)| {
-                                ["p7m", "p7s", "p7c", "p7z"].contains(&ext)
-                            })
+                        && self.attachment_name().is_some_and(|name| {
+                            name.rsplit_once('.')
+                                .is_some_and(|(_, ext)| ["p7m", "p7s", "p7c", "p7z"].contains(&ext))
                         }))))
                 || (main_type.eq_ignore_ascii_case("multipart")
                     && sub_type.eq_ignore_ascii_case("encrypted"))
@@ -514,13 +513,13 @@ fn try_parse_pem(
         // Find type
         let tag = std::str::from_utf8(&buf).unwrap();
         if tag.contains("CERTIFICATE") {
-            if method.map_or(false, |m| m == EncryptionMethod::PGP) {
+            if method.is_some_and(|m| m == EncryptionMethod::PGP) {
                 return Err("Cannot mix OpenPGP and S/MIME certificates".into());
             } else {
                 method = Some(EncryptionMethod::SMIME);
             }
         } else if tag.contains("PGP") {
-            if method.map_or(false, |m| m == EncryptionMethod::SMIME) {
+            if method.is_some_and(|m| m == EncryptionMethod::SMIME) {
                 return Err("Cannot mix OpenPGP and S/MIME certificates".into());
             } else {
                 method = Some(EncryptionMethod::PGP);

@@ -179,7 +179,7 @@ impl HttpStore {
                                     if entry_key.len() > self.config.max_entry_size {
                                         break;
                                     }
-                                } else if index_value.map_or(false, |v| col_num == v) {
+                                } else if index_value.is_some_and(|v| col_num == v) {
                                     entry_value.push(ch);
                                     if entry_value.len() > self.config.max_entry_size {
                                         break;

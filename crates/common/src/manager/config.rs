@@ -454,7 +454,7 @@ impl ConfigManager {
         {
             let is_tls = listener
                 .get("tls.implicit")
-                .map_or(false, |tls| tls == "true");
+                .is_some_and(|tls| tls == "true");
             let protocol = listener
                 .get("protocol")
                 .map(|s| s.as_str())

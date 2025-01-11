@@ -108,7 +108,7 @@ impl Core {
     pub fn is_enterprise_edition(&self) -> bool {
         self.enterprise
             .as_ref()
-            .map_or(false, |e| !e.license.is_expired())
+            .is_some_and(|e| !e.license.is_expired())
     }
 }
 

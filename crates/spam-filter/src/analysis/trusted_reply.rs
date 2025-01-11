@@ -82,7 +82,7 @@ impl SpamFilterAnalyzeTrustedReply for Server {
             .spam
             .bayes
             .as_ref()
-            .map_or(false, |config| config.auto_learn_reply_ham)
+            .is_some_and(|config| config.auto_learn_reply_ham)
         {
             self.bayes_train_if_balanced(ctx, false).await;
         }

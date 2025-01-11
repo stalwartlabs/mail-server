@@ -129,7 +129,7 @@ impl Queue {
                                     OnHold::ConcurrencyLimited { limiters, next_due } => {
                                         if !(limiters.iter().any(|l| {
                                             l.concurrent.load(Ordering::Relaxed) < l.max_concurrent
-                                        }) || next_due.map_or(false, |due| due <= now))
+                                        }) || next_due.is_some_and(|due| due <= now))
                                         {
                                             continue;
                                         }

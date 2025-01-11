@@ -291,7 +291,7 @@ impl Principal {
     }
 
     pub fn has_str_value(&self, key: PrincipalField, value: &str) -> bool {
-        self.fields.get(&key).map_or(false, |v| match v {
+        self.fields.get(&key).is_some_and(|v| match v {
             PrincipalValue::String(v) => v == value,
             PrincipalValue::StringList(l) => l.iter().any(|v| v == value),
             PrincipalValue::Integer(_) | PrincipalValue::IntegerList(_) => false,
@@ -299,7 +299,7 @@ impl Principal {
     }
 
     pub fn has_int_value(&self, key: PrincipalField, value: u64) -> bool {
-        self.fields.get(&key).map_or(false, |v| match v {
+        self.fields.get(&key).is_some_and(|v| match v {
             PrincipalValue::Integer(v) => *v == value,
             PrincipalValue::IntegerList(l) => l.iter().any(|v| *v == value),
             PrincipalValue::String(_) | PrincipalValue::StringList(_) => false,

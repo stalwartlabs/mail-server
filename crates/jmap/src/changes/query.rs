@@ -84,7 +84,7 @@ impl QueryChanges for Server {
                 || query
                     .sort
                     .as_ref()
-                    .map_or(false, |sort| sort.iter().any(|s| !s.is_immutable()));
+                    .is_some_and(|sort| sort.iter().any(|s| !s.is_immutable()));
             let results = match request.arguments {
                 query::RequestArguments::Email(arguments) => {
                     self.email_query(query.with_arguments(arguments), access_token)

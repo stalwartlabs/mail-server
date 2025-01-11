@@ -411,11 +411,11 @@ impl<T> SetRequest<T> {
     }
 
     pub fn has_updates(&self) -> bool {
-        self.update.as_ref().map_or(false, |objs| !objs.is_empty())
+        self.update.as_ref().is_some_and(|objs| !objs.is_empty())
     }
 
     pub fn has_creates(&self) -> bool {
-        self.create.as_ref().map_or(false, |objs| !objs.is_empty())
+        self.create.as_ref().is_some_and(|objs| !objs.is_empty())
     }
 
     pub fn unwrap_create(&mut self) -> VecMap<String, Object<SetValue>> {

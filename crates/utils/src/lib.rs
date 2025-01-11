@@ -102,7 +102,7 @@ impl HttpLimitResponse for Response {
     async fn bytes_with_limit(self, limit: usize) -> reqwest::Result<Option<Vec<u8>>> {
         if self
             .content_length()
-            .map_or(false, |len| len as usize > limit)
+            .is_some_and(|len| len as usize > limit)
         {
             return Ok(None);
         }

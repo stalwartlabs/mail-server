@@ -184,7 +184,7 @@ impl Store {
 
     pub async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
         #[cfg(feature = "test_mode")]
-        if std::env::var("PARANOID_WRITE").map_or(false, |v| v == "1") {
+        if std::env::var("PARANOID_WRITE").is_ok_and(|v| v == "1") {
             let mut account_id = u32::MAX;
             let mut collection = u8::MAX;
             let mut document_id = u32::MAX;

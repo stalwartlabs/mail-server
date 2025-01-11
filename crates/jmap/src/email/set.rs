@@ -435,7 +435,7 @@ impl EmailSet for Server {
                                     }
                                 } else if expected_content_type
                                     .as_ref()
-                                    .map_or(false, |v| v != &content_type)
+                                    .is_some_and(|v| v != &content_type)
                                 {
                                     response.not_created.append(
                                         id,

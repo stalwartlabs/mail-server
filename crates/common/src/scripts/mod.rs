@@ -72,6 +72,6 @@ impl<T: AsRef<str>> IsMixedCharset for T {
             }
         }
 
-        set.map_or(false, |set| set.is_empty())
+        set.is_some_and(|set| set.is_empty())
     }
 }

@@ -91,7 +91,7 @@ impl DirectoryStore for Store {
             DirectoryClass::NameToId(domain.as_bytes().to_vec()),
         )))
         .await
-        .map(|p| p.map_or(false, |p| p.typ == Type::Domain))
+        .map(|p| p.is_some_and(|p| p.typ == Type::Domain))
     }
 
     async fn rcpt(&self, address: &str) -> trc::Result<RcptType> {

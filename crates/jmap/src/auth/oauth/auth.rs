@@ -92,7 +92,7 @@ impl OAuthApiHandler for Server {
                         .details("Client ID is invalid."));
                 } else if redirect_uri
                     .as_ref()
-                    .map_or(false, |uri| uri.starts_with("http://"))
+                    .is_some_and(|uri| uri.starts_with("http://"))
                 {
                     return Err(trc::ManageEvent::Error
                         .into_err()

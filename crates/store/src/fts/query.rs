@@ -296,7 +296,7 @@ impl Store {
                                     bm.insert(*document_id);
                                 } else if position_candidates
                                     .get(document_id)
-                                    .map_or(false, |positions| {
+                                    .is_some_and(|positions| {
                                         postings.matches_positions(positions, pos as u32)
                                     })
                                 {
@@ -360,7 +360,7 @@ impl Store {
                                 bm.insert(document_id);
                             } else if position_candidates
                                 .get(&document_id)
-                                .map_or(false, |positions| {
+                                .is_some_and(|positions| {
                                     postings.matches_positions(positions, pos as u32)
                                 })
                             {

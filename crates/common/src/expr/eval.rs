@@ -145,7 +145,7 @@ struct EvalContext<'x, 'y, V: ResolveVariable, T, C> {
     session_id: u64,
 }
 
-impl<'x, 'y, V: ResolveVariable> EvalContext<'x, 'y, V, IfBlock, Vec<String>> {
+impl<'x, V: ResolveVariable> EvalContext<'x, '_, V, IfBlock, Vec<String>> {
     async fn eval(&mut self) -> trc::Result<Variable<'x>> {
         for if_then in &self.expr.if_then {
             if (EvalContext {
@@ -183,7 +183,7 @@ impl<'x, 'y, V: ResolveVariable> EvalContext<'x, 'y, V, IfBlock, Vec<String>> {
     }
 }
 
-impl<'x, 'y, V: ResolveVariable> EvalContext<'x, 'y, V, Expression, &mut Vec<String>> {
+impl<'x, V: ResolveVariable> EvalContext<'x, '_, V, Expression, &mut Vec<String>> {
     async fn eval(&mut self) -> trc::Result<Variable<'x>> {
         let mut stack = Vec::new();
         let mut exprs = self.expr.items.iter();
@@ -256,7 +256,7 @@ impl<'x, 'y, V: ResolveVariable> EvalContext<'x, 'y, V, Expression, &mut Vec<Str
                     stack.push(result);
                 }
                 ExpressionItem::JmpIf { val, pos } => {
-                    if stack.last().map_or(false, |v| v.to_bool()) == *val {
+                    if stack.last().is_some_and(|v| v.to_bool()) == *val {
                         for _ in 0..*pos {
                             exprs.next();
                         }

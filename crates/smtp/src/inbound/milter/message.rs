@@ -483,13 +483,13 @@ impl SessionData {
             );
             for (header, value) in headers {
                 new_message.extend_from_slice(header.as_ref());
-                if value.first().map_or(false, |c| c.is_ascii_whitespace()) {
+                if value.first().is_some_and(|c| c.is_ascii_whitespace()) {
                     new_message.extend_from_slice(b":");
                 } else {
                     new_message.extend_from_slice(b": ");
                 }
                 new_message.extend_from_slice(value.as_ref());
-                if !value.last().map_or(false, |c| *c == b'\n') {
+                if value.last().is_none_or(|c| *c != b'\n') {
                     new_message.extend_from_slice(b"\r\n");
                 }
             }

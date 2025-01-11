@@ -93,9 +93,9 @@ impl Server {
                             if !part.is_empty() {
                                 if idx == *index_asn {
                                     asn = part.parse::<u32>().ok();
-                                } else if index_asn_name.map_or(false, |i| i == idx) {
+                                } else if index_asn_name.is_some_and(|i| i == idx) {
                                     asn_name = Some(part.to_string());
-                                } else if index_country.map_or(false, |i| i == idx) {
+                                } else if index_country.is_some_and(|i| i == idx) {
                                     country = Some(part.to_string());
                                 }
                             }

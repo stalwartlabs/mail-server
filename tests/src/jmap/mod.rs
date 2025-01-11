@@ -998,7 +998,7 @@ impl<T: Debug> Response<T> {
 
     pub fn expect_request_error(self, value: &str) {
         let err = self.unwrap_request_error();
-        if !err.detail.contains(value) && !err.title.as_ref().map_or(false, |t| t.contains(value)) {
+        if !err.detail.contains(value) && !err.title.as_ref().is_some_and(|t| t.contains(value)) {
             panic!("Expected request error containing {value:?}, found {err:?}")
         }
     }
@@ -1006,8 +1006,8 @@ impl<T: Debug> Response<T> {
     pub fn expect_error(self, value: &str) {
         let (error, details, reason) = self.unwrap_error();
         if !error.contains(value)
-            && !details.as_ref().map_or(false, |d| d.contains(value))
-            && !reason.as_ref().map_or(false, |r| r.contains(value))
+            && !details.as_ref().is_some_and(|d| d.contains(value))
+            && !reason.as_ref().is_some_and(|r| r.contains(value))
         {
             panic!("Expected error containing {value:?}, found {error:?}: {details:?} {reason:?}")
         }

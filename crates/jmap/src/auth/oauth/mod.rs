@@ -216,7 +216,7 @@ impl FormData {
     }
 
     pub fn has_field(&self, key: &str) -> bool {
-        self.fields.get(key).map_or(false, |v| !v.is_empty())
+        self.fields.get(key).is_some_and(|v| !v.is_empty())
     }
 
     pub fn fields(&self) -> impl Iterator<Item = (&String, &String)> {

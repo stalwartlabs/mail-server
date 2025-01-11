@@ -80,7 +80,7 @@ impl FormHandler for Server {
         if form
             .field_honey_pot
             .as_ref()
-            .map_or(false, |field| form_data.has_field(field))
+            .is_some_and(|field| form_data.has_field(field))
         {
             return Err(trc::ResourceEvent::BadParameters
                 .into_err()

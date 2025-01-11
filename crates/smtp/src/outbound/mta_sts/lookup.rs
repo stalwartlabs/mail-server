@@ -21,7 +21,7 @@ use utils::HttpLimitResponse;
 const MAX_POLICY_SIZE: usize = 1024 * 1024;
 
 pub trait MtaStsLookup: Sync + Send {
-    fn lookup_mta_sts_policy<'x>(
+    fn lookup_mta_sts_policy(
         &self,
         domain: &str,
         timeout: Duration,
@@ -30,7 +30,7 @@ pub trait MtaStsLookup: Sync + Send {
 
 #[allow(unused_variables)]
 impl MtaStsLookup for Server {
-    async fn lookup_mta_sts_policy<'x>(
+    async fn lookup_mta_sts_policy(
         &self,
         domain: &str,
         timeout: Duration,
@@ -127,10 +127,7 @@ impl Display for Error {
                     f.write_str("Timeout fetching policy.")
                 } else if err.is_connect() {
                     f.write_str("Could not reach policy host.")
-                } else if err.is_status()
-                    & err
-                        .status()
-                        .map_or(false, |s| s == reqwest::StatusCode::NOT_FOUND)
+                } else if err.is_status() && (err.status() == Some(reqwest::StatusCode::NOT_FOUND))
                 {
                     f.write_str("Policy not found.")
                 } else {

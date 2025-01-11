@@ -149,7 +149,7 @@ impl Server {
         }
 
         // Validate grant type
-        if expected_grant_type.map_or(false, |g| g != grant_type) {
+        if expected_grant_type.is_some_and(|g| g != grant_type) {
             return Err(trc::AuthEvent::Error
                 .into_err()
                 .details("Invalid grant type"));

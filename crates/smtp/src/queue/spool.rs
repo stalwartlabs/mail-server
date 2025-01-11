@@ -475,6 +475,6 @@ impl Message {
             || self
                 .return_path
                 .rsplit_once('@')
-                .map_or(false, |(_, domain)| domains.contains(&domain.to_string()))
+                .is_some_and(|(_, domain)| domains.contains(&domain.to_string()))
     }
 }

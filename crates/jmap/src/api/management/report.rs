@@ -472,7 +472,7 @@ impl Contains for mail_auth::report::Report {
             || self.report_id().contains(text)
             || self
                 .extra_contact_info()
-                .map_or(false, |c| c.to_lowercase().contains(text))
+                .is_some_and(|c| c.to_lowercase().contains(text))
             || self.records().iter().any(|record| record.contains(text))
     }
 }
@@ -481,22 +481,22 @@ impl Contains for mail_auth::report::Record {
     fn contains(&self, filter: &str) -> bool {
         self.envelope_from().contains(filter)
             || self.header_from().contains(filter)
-            || self.envelope_to().map_or(false, |to| to.contains(filter))
+            || self.envelope_to().is_some_and(|to| to.contains(filter))
             || self.dkim_auth_result().iter().any(|dkim| {
                 dkim.domain().contains(filter)
                     || dkim.selector().contains(filter)
                     || dkim
                         .human_result()
                         .as_ref()
-                        .map_or(false, |r| r.contains(filter))
+                        .is_some_and(|r| r.contains(filter))
             })
             || self.spf_auth_result().iter().any(|spf| {
                 spf.domain().contains(filter)
-                    || spf.human_result().map_or(false, |r| r.contains(filter))
+                    || spf.human_result().is_some_and(|r| r.contains(filter))
             })
             || self
                 .source_ip()
-                .map_or(false, |ip| ip.to_string().contains(filter))
+                .is_some_and(|ip| ip.to_string().contains(filter))
     }
 }
 
@@ -504,11 +504,11 @@ impl Contains for TlsReport {
     fn contains(&self, text: &str) -> bool {
         self.organization_name
             .as_ref()
-            .map_or(false, |o| o.to_lowercase().contains(text))
+            .is_some_and(|o| o.to_lowercase().contains(text))
             || self
                 .contact_info
                 .as_ref()
-                .map_or(false, |c| c.to_lowercase().contains(text))
+                .is_some_and(|c| c.to_lowercase().contains(text))
             || self.report_id.contains(text)
             || self.policies.iter().any(|p| p.contains(text))
     }
@@ -534,26 +534,26 @@ impl Contains for Policy {
 impl Contains for FailureDetails {
     fn contains(&self, filter: &str) -> bool {
         self.sending_mta_ip
-            .map_or(false, |s| s.to_string().contains(filter))
+            .is_some_and(|s| s.to_string().contains(filter))
             || self
                 .receiving_ip
-                .map_or(false, |s| s.to_string().contains(filter))
+                .is_some_and(|s| s.to_string().contains(filter))
             || self
                 .receiving_mx_hostname
                 .as_ref()
-                .map_or(false, |s| s.contains(filter))
+                .is_some_and(|s| s.contains(filter))
             || self
                 .receiving_mx_helo
                 .as_ref()
-                .map_or(false, |s| s.contains(filter))
+                .is_some_and(|s| s.contains(filter))
             || self
                 .additional_information
                 .as_ref()
-                .map_or(false, |s| s.contains(filter))
+                .is_some_and(|s| s.contains(filter))
             || self
                 .failure_reason_code
                 .as_ref()
-                .map_or(false, |s| s.contains(filter))
+                .is_some_and(|s| s.contains(filter))
     }
 }
 
@@ -565,29 +565,27 @@ impl Contains for Feedback<'_> {
             .any(|s| s.contains(text))
             || self
                 .original_envelope_id()
-                .map_or(false, |s| s.contains(text))
-            || self
-                .original_mail_from()
-                .map_or(false, |s| s.contains(text))
-            || self.original_rcpt_to().map_or(false, |s| s.contains(text))
+                .is_some_and(|s| s.contains(text))
+            || self.original_mail_from().is_some_and(|s| s.contains(text))
+            || self.original_rcpt_to().is_some_and(|s| s.contains(text))
             || self.reported_domain().iter().any(|s| s.contains(text))
             || self.reported_uri().iter().any(|s| s.contains(text))
-            || self.reporting_mta().map_or(false, |s| s.contains(text))
-            || self.user_agent().map_or(false, |s| s.contains(text))
-            || self.dkim_adsp_dns().map_or(false, |s| s.contains(text))
+            || self.reporting_mta().is_some_and(|s| s.contains(text))
+            || self.user_agent().is_some_and(|s| s.contains(text))
+            || self.dkim_adsp_dns().is_some_and(|s| s.contains(text))
             || self
                 .dkim_canonicalized_body()
-                .map_or(false, |s| s.contains(text))
+                .is_some_and(|s| s.contains(text))
             || self
                 .dkim_canonicalized_header()
-                .map_or(false, |s| s.contains(text))
-            || self.dkim_domain().map_or(false, |s| s.contains(text))
-            || self.dkim_identity().map_or(false, |s| s.contains(text))
-            || self.dkim_selector().map_or(false, |s| s.contains(text))
-            || self.dkim_selector_dns().map_or(false, |s| s.contains(text))
-            || self.spf_dns().map_or(false, |s| s.contains(text))
-            || self.message().map_or(false, |s| s.contains(text))
-            || self.headers().map_or(false, |s| s.contains(text))
+                .is_some_and(|s| s.contains(text))
+            || self.dkim_domain().is_some_and(|s| s.contains(text))
+            || self.dkim_identity().is_some_and(|s| s.contains(text))
+            || self.dkim_selector().is_some_and(|s| s.contains(text))
+            || self.dkim_selector_dns().is_some_and(|s| s.contains(text))
+            || self.spf_dns().is_some_and(|s| s.contains(text))
+            || self.message().is_some_and(|s| s.contains(text))
+            || self.headers().is_some_and(|s| s.contains(text))
     }
 }
 

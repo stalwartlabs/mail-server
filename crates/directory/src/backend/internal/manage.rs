@@ -598,7 +598,7 @@ impl ManageDirectory for Store {
                         .filter(|v| {
                             v.name()
                                 .rsplit_once('@')
-                                .map_or(false, |(_, d)| d.eq_ignore_ascii_case(name))
+                                .is_some_and(|(_, d)| d.eq_ignore_ascii_case(name))
                         })
                         .collect::<Vec<_>>();
                     let total_domain_members = domain_members.len();
@@ -1794,7 +1794,7 @@ impl ManageDirectory for Store {
                             if std::str::from_utf8(key.get(1..).unwrap_or_default())
                                 .unwrap_or_default()
                                 .rsplit_once('@')
-                                .map_or(false, |(_, domain)| domain == domain_name)
+                                .is_some_and(|(_, domain)| domain == domain_name)
                             {
                                 total += 1;
                             }

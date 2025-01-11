@@ -54,8 +54,8 @@ impl SpamFilterAnalyzeMime for Server {
                         if ct.ctype().eq_ignore_ascii_case("multipart")
                             && ct
                                 .subtype()
-                                .map_or(false, |s| s.eq_ignore_ascii_case("report"))
-                            && ct.attribute("report-type").map_or(false, |a| {
+                                .is_some_and(|s| s.eq_ignore_ascii_case("report"))
+                            && ct.attribute("report-type").is_some_and(|a| {
                                 a.eq_ignore_ascii_case("delivery-status")
                                     || a.eq_ignore_ascii_case("disposition-notification")
                             })
@@ -268,7 +268,7 @@ impl SpamFilterAnalyzeMime for Server {
                         "" | "7bit" => {
                             if raw_message
                                 .get(part.raw_body_offset()..part.raw_end_offset())
-                                .map_or(false, |bytes| !bytes.is_ascii())
+                                .is_some_and(|bytes| !bytes.is_ascii())
                             {
                                 // MIME text part claims to be ASCII but isn't
                                 ctx.result.add_tag("BAD_CTE_7BIT");
@@ -305,7 +305,7 @@ impl SpamFilterAnalyzeMime for Server {
                             ctx.input.message.text_body.contains(&part_id)
                                 || ctx.input.message.html_body.contains(&part_id)
                         })
-                        .map_or(false, |p| match p {
+                        .is_some_and(|p| match p {
                             TextPart::Plain { text_body, .. } => text_body.is_mixed_charset(),
                             TextPart::Html { text_body, .. } => text_body.is_mixed_charset(),
                             TextPart::None => false,
@@ -389,14 +389,14 @@ impl SpamFilterAnalyzeMime for Server {
 
                     if ext.is_bad {
                         // Attachment has a bad extension
-                        if sub_ext.map_or(false, |e| e.is_bad) {
+                        if sub_ext.is_some_and(|e| e.is_bad) {
                             ctx.result.add_tag("MIME_DOUBLE_BAD_EXTENSION");
                         } else {
                             ctx.result.add_tag("MIME_BAD_EXTENSION");
                         }
                     }
 
-                    if ext.is_archive && sub_ext.map_or(false, |e| e.is_archive) {
+                    if ext.is_archive && sub_ext.is_some_and(|e| e.is_archive) {
                         // Archive in archive
                         ctx.result.add_tag("MIME_ARCHIVE_IN_ARCHIVE");
                     }

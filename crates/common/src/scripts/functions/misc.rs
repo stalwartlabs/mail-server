@@ -33,14 +33,14 @@ pub fn fn_is_ip_addr<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
 pub fn fn_is_ipv4_addr<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].to_string()
         .parse::<std::net::IpAddr>()
-        .map_or(false, |ip| matches!(ip, IpAddr::V4(_)))
+        .is_ok_and(|ip| matches!(ip, IpAddr::V4(_)))
         .into()
 }
 
 pub fn fn_is_ipv6_addr<'x>(_: &'x Context<'x>, v: Vec<Variable>) -> Variable {
     v[0].to_string()
         .parse::<std::net::IpAddr>()
-        .map_or(false, |ip| matches!(ip, IpAddr::V6(_)))
+        .is_ok_and(|ip| matches!(ip, IpAddr::V6(_)))
         .into()
 }
 

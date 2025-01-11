@@ -187,7 +187,7 @@ impl From<mta_sts::Error> for Status<(), Error> {
                 } else if err.is_status()
                     & err
                         .status()
-                        .map_or(false, |s| s == reqwest::StatusCode::NOT_FOUND)
+                        .is_some_and(|s| s == reqwest::StatusCode::NOT_FOUND)
                 {
                     Status::PermanentFailure(Error::MtaStsError("Policy not found.".to_string()))
                 } else {

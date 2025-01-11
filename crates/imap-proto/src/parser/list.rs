@@ -105,7 +105,7 @@ impl Request<Command> {
 
                 if tokens
                     .next()
-                    .map_or(false, |token| token.eq_ignore_ascii_case(b"return"))
+                    .is_some_and(|token| token.eq_ignore_ascii_case(b"return"))
                 {
                     if tokens
                         .next()

@@ -638,7 +638,7 @@ impl SieveScriptSet for Server {
             .results;
 
         // Check if script is already active
-        if activate_id.map_or(false, |id| active_ids.remove(id)) {
+        if activate_id.is_some_and(|id| active_ids.remove(id)) {
             if active_ids.is_empty() {
                 return Ok(changed_ids);
             } else {

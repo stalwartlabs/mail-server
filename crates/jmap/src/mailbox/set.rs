@@ -724,7 +724,7 @@ impl MailboxSet for Server {
                 }
 
                 // Role of internal folders cannot be modified
-                if update.as_ref().map_or(false, |(document_id, _)| {
+                if update.as_ref().is_some_and(|(document_id, _)| {
                     *document_id == INBOX_ID || *document_id == TRASH_ID
                 }) {
                     return Ok(Err(SetError::invalid_properties()

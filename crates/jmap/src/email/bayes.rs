@@ -85,7 +85,7 @@ impl EmailBayesTrain for Server {
     }
 
     fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool {
-        self.core.spam.bayes.as_ref().map_or(false, |bayes| {
+        self.core.spam.bayes.as_ref().is_some_and(|bayes| {
             bayes.account_classify && access_token.has_permission(Permission::SpamFilterTrain)
         })
     }

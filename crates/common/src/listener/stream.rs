@@ -68,7 +68,7 @@ impl SessionStream for ProxiedStream<TcpStream> {
     fn is_tls(&self) -> bool {
         self.proxy_header()
             .ssl()
-            .map_or(false, |ssl| ssl.client_ssl())
+            .is_some_and(|ssl| ssl.client_ssl())
     }
 
     fn tls_version_and_cipher(&self) -> (Cow<'static, str>, Cow<'static, str>) {

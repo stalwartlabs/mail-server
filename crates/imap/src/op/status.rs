@@ -90,7 +90,7 @@ impl<T: SessionStream> SessionData<T> {
             return if mailbox_name == self.server.core.jmap.shared_folder
                 || mailbox_name
                     .split_once('/')
-                    .map_or(false, |(base_name, path)| {
+                    .is_some_and(|(base_name, path)| {
                         base_name == self.server.core.jmap.shared_folder && !path.contains('/')
                     })
             {

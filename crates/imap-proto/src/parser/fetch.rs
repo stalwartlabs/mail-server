@@ -74,7 +74,7 @@ impl Request<Command> {
                         attributes.push_unique(Attribute::Uid);
                     } else if value.eq_ignore_ascii_case(b"RFC822") {
                         attributes.push_unique(
-                            if tokens.peek().map_or(false, |token| token.is_dot()) {
+                            if tokens.peek().is_some_and(|token| token.is_dot()) {
                                 tokens.next();
                                 let rfc822 = tokens
                                     .next()

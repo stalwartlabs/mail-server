@@ -109,10 +109,7 @@ impl DnsManagement for Server {
             name: format!("{domain_name}."),
             content: format!("10 {server_name}."),
         });
-        if server_name
-            .strip_prefix("mail.")
-            .map_or(true, |s| s != domain_name)
-        {
+        if server_name.strip_prefix("mail.") != Some(domain_name) {
             records.push(DnsRecord {
                 typ: "CNAME".to_string(),
                 name: format!("mail.{domain_name}."),

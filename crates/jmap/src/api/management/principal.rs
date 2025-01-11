@@ -274,7 +274,7 @@ impl PrincipalManager for Server {
                         .into_err()
                         .details("Invalid type")
                 })?;
-                if params.get("confirm").map_or(true, |c| c != "true") {
+                if params.get("confirm") != Some("true") {
                     return Err(trc::EventType::Resource(trc::ResourceEvent::BadParameters)
                         .into_err()
                         .details("Missing confirmation parameter"));
@@ -330,7 +330,7 @@ impl PrincipalManager for Server {
                             .spam
                             .bayes
                             .as_ref()
-                            .map_or(false, |c| c.account_classify);
+                            .is_some_and(|c| c.account_classify);
                         for principal in principals.items {
                             // Delete account
                             if let Err(err) = server
@@ -478,7 +478,7 @@ impl PrincipalManager for Server {
                                 .spam
                                 .bayes
                                 .as_ref()
-                                .map_or(false, |c| c.account_classify)
+                                .is_some_and(|c| c.account_classify)
                             {
                                 let mut key = Vec::with_capacity(std::mem::size_of::<u32>() + 1);
                                 key.push(KV_BAYES_MODEL_USER);

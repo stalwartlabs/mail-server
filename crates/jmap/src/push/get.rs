@@ -210,7 +210,7 @@ impl PushSubscriptionFetch for Server {
                     .properties
                     .get(&Property::VerificationCode)
                     .and_then(|p| p.as_string())
-                    .map_or(false, |v| v == verification_code)
+                    .is_some_and(|v| v == verification_code)
                 {
                     let types = if let Some(Value::List(value)) =
                         subscription.properties.remove(&Property::Types)

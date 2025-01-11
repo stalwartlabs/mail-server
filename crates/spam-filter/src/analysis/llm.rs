@@ -63,12 +63,12 @@ impl SpamFilterAnalyzeLlm for Server {
                                 if config.categories.contains(value.as_str()) {
                                     category = Some(value);
                                 }
-                            } else if config.index_confidence.map_or(false, |i| i == idx) {
+                            } else if config.index_confidence.is_some_and(|i| i == idx) {
                                 let value = value.to_uppercase();
                                 if config.confidence.contains(value.as_str()) {
                                     confidence = Some(value);
                                 }
-                            } else if config.index_explanation.map_or(false, |i| i == idx) {
+                            } else if config.index_explanation.is_some_and(|i| i == idx) {
                                 let explanation = explanation.get_or_insert_with(|| {
                                     String::with_capacity(std::cmp::min(value.len(), 255))
                                 });

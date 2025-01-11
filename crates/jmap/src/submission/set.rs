@@ -260,12 +260,12 @@ impl EmailSubmissionSet for Server {
             .arguments
             .on_success_destroy_email
             .as_ref()
-            .map_or(false, |p| !p.is_empty())
+            .is_some_and(|p| !p.is_empty())
             || request
                 .arguments
                 .on_success_update_email
                 .as_ref()
-                .map_or(false, |p| !p.is_empty()))
+                .is_some_and(|p| !p.is_empty()))
             && response.has_changes()
         {
             *next_call = Call {

@@ -212,7 +212,7 @@ impl Autoconfig for Server {
                 if principal
                     .get_str_array(PrincipalField::Emails)
                     .and_then(|emails| emails.first())
-                    .map_or(false, |email| email.eq_ignore_ascii_case(emailaddress))
+                    .is_some_and(|email| email.eq_ignore_ascii_case(emailaddress))
                 {
                     account_name = principal.take_str(PrincipalField::Name).unwrap_or_default();
                 }

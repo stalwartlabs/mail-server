@@ -313,7 +313,7 @@ impl common::listener::SessionManager for SessionManager {
                             let is_encrypted = req
                                 .headers()
                                 .get(CONTENT_ENCODING)
-                                .map_or(false, |encoding| {
+                                .is_some_and(|encoding| {
                                     encoding.to_str().unwrap() == "aes128gcm"
                                 });
                             let body = fetch_body(&mut req, 1024 * 1024, 0).await.unwrap();

@@ -217,7 +217,7 @@ impl<T: SessionStream> SessionData<T> {
         for attribute in &arguments.attributes {
             match attribute {
                 Attribute::BodySection { sections, .. }
-                    if sections.first().map_or(false, |s| {
+                    if sections.first().is_some_and(|s| {
                         matches!(s, Section::Header | Section::HeaderFields { .. })
                     }) => {}
                 Attribute::Body | Attribute::BodyStructure | Attribute::BinarySize { .. } => {
