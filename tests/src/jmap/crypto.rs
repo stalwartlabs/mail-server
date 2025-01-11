@@ -241,7 +241,7 @@ pub fn check_is_encrypted() {
     )
     .unwrap();
 
-    for raw_message in messages.split("---") {
+    for raw_message in messages.split("!!!") {
         let is_encrypted = raw_message.contains("TRUE");
         let message = MessageParser::new()
             .parse(raw_message.trim().as_bytes())

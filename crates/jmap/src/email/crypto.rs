@@ -17,7 +17,7 @@ use common::{auth::AccessToken, Server};
 use directory::backend::internal::manage;
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::{encoders::base64::base64_encode_mime, mime::make_boundary};
-use mail_parser::{decoders::base64::base64_decode, Message, MessageParser, MimeHeaders};
+use mail_parser::{decoders::base64::base64_decode, Message, MessageParser, MimeHeaders, PartType};
 use openpgp::{
     parse::Parse,
     serialize::stream,
@@ -372,7 +372,7 @@ impl EncryptMessage for Message<'_> {
     }
 
     fn is_encrypted(&self) -> bool {
-        self.content_type().is_some_and(|ct| {
+        if self.content_type().is_some_and(|ct| {
             let main_type = ct.c_type.as_ref();
             let sub_type = ct
                 .c_subtype
@@ -390,7 +390,37 @@ impl EncryptMessage for Message<'_> {
                         }))))
                 || (main_type.eq_ignore_ascii_case("multipart")
                     && sub_type.eq_ignore_ascii_case("encrypted"))
-        })
+        }) {
+            return true;
+        }
+
+        if self.parts.len() <= 2 {
+            let mut text_part = None;
+            let mut is_multipart = false;
+
+            for part in &self.parts {
+                match &part.body {
+                    PartType::Text(text) => {
+                        text_part = Some(text.as_ref());
+                    }
+                    PartType::Multipart(_) => {
+                        is_multipart = true;
+                    }
+                    _ => (),
+                }
+            }
+
+            match text_part {
+                Some(text) if self.parts.len() == 1 || is_multipart => {
+                    if text.trim_start().starts_with("-----BEGIN PGP MESSAGE-----") {
+                        return true;
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        false
     }
 }
 
