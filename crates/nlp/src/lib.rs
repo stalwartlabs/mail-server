@@ -7,7 +7,10 @@ mod test {
     use std::fs;
 
     use crate::{
-        bayes::{tokenize::BayesTokenizer, BayesClassifier, BayesModel},
+        bayes::{
+            tokenize::{tests::ToBayesToken, BayesTokenizer},
+            BayesClassifier, BayesModel,
+        },
         tokenizers::{
             osb::{OsbToken, OsbTokenizer},
             types::TypesTokenizer,

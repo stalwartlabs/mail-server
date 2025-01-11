@@ -10,7 +10,7 @@ use common::{ip_to_bytes, Server, KV_BAYES_MODEL_GLOBAL, KV_BAYES_MODEL_USER};
 use mail_auth::DmarcResult;
 use nlp::{
     bayes::{
-        tokenize::{BayesInputToken, BayesTokenizer},
+        tokenize::{BayesInputToken, BayesTokenizer, SYMBOLS},
         BayesModel, TokenHash, Weights,
     },
     tokenizers::{
@@ -413,6 +413,13 @@ const P_FROM_EMAIL: u8 = 1;
 const P_FROM_DOMAIN: u8 = 2;
 const P_ASN: u8 = 3;
 const P_REMOTE_IP: u8 = 4;
+const P_INTEGER_POS: u8 = 5;
+const P_INTEGER_NEG: u8 = 6;
+const P_FLOAT_POS: u8 = 7;
+const P_FLOAT_NEG: u8 = 8;
+const P_BODY_URL: u8 = 9;
+const P_BODY_IP: u8 = 10;
+const P_BODY_EMAIL: u8 = 11;
 
 impl SpamFilterContext<'_> {
     pub fn spam_tokens(&self) -> HashSet<Vec<u8>> {
@@ -455,7 +462,45 @@ fn add_prefix(prefix: u8, key: &[u8]) -> Vec<u8> {
 fn to_bayes_token(
     token: &TokenType<Cow<'_, str>, Email, UrlParts<'_>, IpParts<'_>>,
 ) -> Option<BayesInputToken> {
-    token.to_bayes_token()
+    match token {
+        TokenType::Alphabetic(word) => Some(BayesInputToken::Word(word.as_ref().to_lowercase())),
+        TokenType::Url(url) | TokenType::UrlNoScheme(url) => url.url_parsed.as_ref().map(|url| {
+            BayesInputToken::Raw(add_prefix(P_BODY_URL, url.host.sld_or_default().as_bytes()))
+        }),
+        TokenType::IpAddr(ip) => ip
+            .ip
+            .as_ref()
+            .map(|ip| BayesInputToken::Raw(add_prefix(P_BODY_IP, &ip_to_bytes(ip)))),
+        TokenType::Alphanumeric(word) | TokenType::UrlNoHost(word) => {
+            BayesInputToken::Raw(word.as_ref().to_lowercase().into_bytes()).into()
+        }
+        TokenType::Email(email) => BayesInputToken::Raw(add_prefix(
+            P_BODY_EMAIL,
+            email.domain_part.sld_or_default().as_bytes(),
+        ))
+        .into(),
+        TokenType::Other(ch) => {
+            if SYMBOLS.contains(ch) {
+                Some(BayesInputToken::Raw(ch.to_string().into_bytes()))
+            } else {
+                None
+            }
+        }
+        TokenType::Integer(word) => number_to_tag(false, word.as_ref()).into(),
+        TokenType::Float(word) => number_to_tag(true, word.as_ref()).into(),
+        TokenType::Punctuation(_) | TokenType::Space => None,
+    }
+}
+
+fn number_to_tag(is_float: bool, num: &str) -> BayesInputToken {
+    let t = match (is_float, num.starts_with('-')) {
+        (true, true) => P_FLOAT_NEG,
+        (true, false) => P_FLOAT_POS,
+        (false, true) => P_INTEGER_NEG,
+        (false, false) => P_INTEGER_POS,
+    };
+
+    BayesInputToken::Raw([t, num.len() as u8].to_vec())
 }
 
 impl AsRef<str> for Email {

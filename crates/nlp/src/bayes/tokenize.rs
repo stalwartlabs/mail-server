@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, net::IpAddr};
+use std::borrow::Cow;
 
 use crate::{
     language::{
@@ -13,7 +13,7 @@ use crate::{
         stopwords::STOP_WORDS,
         Language,
     },
-    tokenizers::{chinese::JIEBA, japanese, types::TokenType},
+    tokenizers::{chinese::JIEBA, japanese},
 };
 
 pub struct BayesTokenizer<T: Iterator<Item = BayesInputToken>> {
@@ -70,10 +70,7 @@ impl<T: Iterator<Item = BayesInputToken>> Iterator for BayesTokenizer<T> {
         for token in self.stream.by_ref() {
             return match token {
                 BayesInputToken::Word(word) => {
-                    if self
-                        .stop_words
-                        .is_some_and(|sw| sw.contains(word.as_str()))
-                    {
+                    if self.stop_words.is_some_and(|sw| sw.contains(word.as_str())) {
                         continue;
                     }
                     match &self.stemmer {
@@ -116,64 +113,6 @@ impl<T: Iterator<Item = BayesInputToken>> Iterator for BayesTokenizer<T> {
 
         None
     }
-}
-
-impl<T: AsRef<str>, E: AsRef<str>, U: AsRef<str>, I: AsRef<str>> TokenType<T, E, U, I> {
-    pub fn to_bayes_token(&self) -> Option<BayesInputToken> {
-        match self {
-            TokenType::Alphabetic(word) => {
-                Some(BayesInputToken::Word(word.as_ref().to_lowercase()))
-            }
-            TokenType::Url(word) => {
-                let word = word.as_ref();
-                word.split_once("://")
-                    .map(|(_, host)| BayesInputToken::Raw(url_host_as_bytes(host)))
-            }
-            TokenType::IpAddr(word) => word.as_ref().parse::<IpAddr>().ok().map(|ip| {
-                BayesInputToken::Raw(match ip {
-                    IpAddr::V4(ip) => ip.octets().to_vec(),
-                    IpAddr::V6(ip) => ip.octets().to_vec(),
-                })
-            }),
-            TokenType::UrlNoScheme(word) => {
-                BayesInputToken::Raw(url_host_as_bytes(word.as_ref())).into()
-            }
-            TokenType::Alphanumeric(word) | TokenType::UrlNoHost(word) => {
-                BayesInputToken::Raw(word.as_ref().to_lowercase().into_bytes()).into()
-            }
-            TokenType::Email(word) => {
-                BayesInputToken::Raw(word.as_ref().to_lowercase().into_bytes()).into()
-            }
-            TokenType::Other(ch) => {
-                if SYMBOLS.contains(ch) {
-                    Some(BayesInputToken::Raw(ch.to_string().into_bytes()))
-                } else {
-                    None
-                }
-            }
-            TokenType::Integer(word) => number_to_tag(false, word.as_ref()).into(),
-            TokenType::Float(word) => number_to_tag(true, word.as_ref()).into(),
-            TokenType::Punctuation(_) | TokenType::Space => None,
-        }
-    }
-}
-
-fn url_host_as_bytes(host: &str) -> Vec<u8> {
-    host.split_once('/')
-        .map_or(host, |(h, _)| h.rsplit_once(':').map_or(h, |(h, _)| h))
-        .to_lowercase()
-        .into_bytes()
-}
-
-fn number_to_tag(is_float: bool, num: &str) -> BayesInputToken {
-    let t = match (is_float, num.starts_with('-')) {
-        (true, true) => b'F',
-        (true, false) => b'f',
-        (false, true) => b'I',
-        (false, false) => b'i',
-    };
-
-    BayesInputToken::Raw([t, num.len() as u8].to_vec())
 }
 
 pub static SYMBOLS: phf::Set<char> = phf::phf_set! {
@@ -1157,10 +1096,79 @@ pub static SYMBOLS: phf::Set<char> = phf::phf_set! {
 };
 
 #[cfg(test)]
-mod tests {
-    use std::borrow::Cow;
+pub mod tests {
+    use std::{borrow::Cow, net::IpAddr};
 
-    use crate::{bayes::tokenize::BayesTokenizer, tokenizers::types::TypesTokenizer};
+    use crate::{
+        bayes::tokenize::BayesTokenizer,
+        tokenizers::types::{TokenType, TypesTokenizer},
+    };
+
+    use super::{BayesInputToken, SYMBOLS};
+
+    pub trait ToBayesToken {
+        fn to_bayes_token(&self) -> Option<BayesInputToken>;
+    }
+
+    impl<T: AsRef<str>, E: AsRef<str>, U: AsRef<str>, I: AsRef<str>> ToBayesToken
+        for TokenType<T, E, U, I>
+    {
+        fn to_bayes_token(&self) -> Option<BayesInputToken> {
+            match self {
+                TokenType::Alphabetic(word) => {
+                    Some(BayesInputToken::Word(word.as_ref().to_lowercase()))
+                }
+                TokenType::Url(word) => {
+                    let word = word.as_ref();
+                    word.split_once("://")
+                        .map(|(_, host)| BayesInputToken::Raw(url_host_as_bytes(host)))
+                }
+                TokenType::IpAddr(word) => word.as_ref().parse::<IpAddr>().ok().map(|ip| {
+                    BayesInputToken::Raw(match ip {
+                        IpAddr::V4(ip) => ip.octets().to_vec(),
+                        IpAddr::V6(ip) => ip.octets().to_vec(),
+                    })
+                }),
+                TokenType::UrlNoScheme(word) => {
+                    BayesInputToken::Raw(url_host_as_bytes(word.as_ref())).into()
+                }
+                TokenType::Alphanumeric(word) | TokenType::UrlNoHost(word) => {
+                    BayesInputToken::Raw(word.as_ref().to_lowercase().into_bytes()).into()
+                }
+                TokenType::Email(word) => {
+                    BayesInputToken::Raw(word.as_ref().to_lowercase().into_bytes()).into()
+                }
+                TokenType::Other(ch) => {
+                    if SYMBOLS.contains(ch) {
+                        Some(BayesInputToken::Raw(ch.to_string().into_bytes()))
+                    } else {
+                        None
+                    }
+                }
+                TokenType::Integer(word) => number_to_tag(false, word.as_ref()).into(),
+                TokenType::Float(word) => number_to_tag(true, word.as_ref()).into(),
+                TokenType::Punctuation(_) | TokenType::Space => None,
+            }
+        }
+    }
+
+    fn url_host_as_bytes(host: &str) -> Vec<u8> {
+        host.split_once('/')
+            .map_or(host, |(h, _)| h.rsplit_once(':').map_or(h, |(h, _)| h))
+            .to_lowercase()
+            .into_bytes()
+    }
+
+    fn number_to_tag(is_float: bool, num: &str) -> BayesInputToken {
+        let t = match (is_float, num.starts_with('-')) {
+            (true, true) => b'F',
+            (true, false) => b'f',
+            (false, true) => b'I',
+            (false, false) => b'i',
+        };
+
+        BayesInputToken::Raw([t, num.len() as u8].to_vec())
+    }
 
     #[test]
     fn bayes_tokenizer() {
