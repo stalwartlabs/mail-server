@@ -59,7 +59,7 @@ impl<T: SessionStream> Session<T> {
                         tokens: vec![receiver::Token::Argument(args.mechanism.into_bytes())],
                     };
                     self.receiver.state = receiver::State::Argument { last_ch: b' ' };
-                    self.write_bytes(b"+ \"\"\r\n".to_vec()).await
+                    self.write_bytes(b"+ \r\n".to_vec()).await
                 }
             }
             _ => Err(trc::AuthEvent::Error
