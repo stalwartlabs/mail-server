@@ -7,6 +7,7 @@
 use std::time::Duration;
 
 use crate::expr::{if_block::IfBlock, tokenizer::TokenMap};
+use ahash::AHashSet;
 use utils::config::{Config, Rate};
 
 use super::*;
@@ -14,6 +15,7 @@ use super::*;
 #[derive(Clone)]
 pub struct Network {
     pub node_id: u64,
+    pub roles: ClusterRoles,
     pub server_name: String,
     pub report_domain: String,
     pub security: Security,
@@ -33,6 +35,15 @@ pub struct ContactForm {
     pub from_subject: FieldOrDefault,
     pub from_name: FieldOrDefault,
     pub field_honey_pot: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct ClusterRoles {
+    pub purge_stores: bool,
+    pub purge_accounts: bool,
+    pub renew_acme: bool,
+    pub calculate_metrics: bool,
+    pub push_metrics: bool,
 }
 
 #[derive(Clone, Default)]
@@ -82,7 +93,7 @@ impl Default for Network {
         Self {
             security: Default::default(),
             contact_form: None,
-            node_id: 0,
+            node_id: 1,
             http_response_url: IfBlock::new::<()>(
                 "server.http.url",
                 [],
@@ -92,6 +103,13 @@ impl Default for Network {
             asn_geo_lookup: AsnGeoLookupConfig::Disabled,
             server_name: Default::default(),
             report_domain: Default::default(),
+            roles: ClusterRoles {
+                purge_stores: true,
+                purge_accounts: true,
+                renew_acme: true,
+                calculate_metrics: true,
+                push_metrics: true,
+            },
         }
     }
 }
@@ -180,7 +198,7 @@ impl Network {
             });
 
         let mut network = Network {
-            node_id: config.property("cluster.node-id").unwrap_or_default(),
+            node_id: config.property("cluster.node-id").unwrap_or(1),
             report_domain,
             server_name,
             security: Security::parse(config),
@@ -189,6 +207,36 @@ impl Network {
             ..Default::default()
         };
         let token_map = &TokenMap::default().with_variables(HTTP_VARS);
+
+        // Node roles
+        for (value, key) in [
+            (
+                &mut network.roles.purge_stores,
+                "cluster.roles.purge.stores",
+            ),
+            (
+                &mut network.roles.purge_accounts,
+                "cluster.roles.purge.accounts",
+            ),
+            (&mut network.roles.renew_acme, "cluster.roles.acme.renew"),
+            (
+                &mut network.roles.calculate_metrics,
+                "cluster.roles.metrics.calculate",
+            ),
+            (
+                &mut network.roles.push_metrics,
+                "cluster.roles.metrics.push",
+            ),
+        ] {
+            let node_ids = config
+                .properties::<u64>(key)
+                .into_iter()
+                .map(|(_, v)| v)
+                .collect::<AHashSet<_>>();
+            if !node_ids.is_empty() && !node_ids.contains(&network.node_id) {
+                *value = false;
+            }
+        }
 
         for (value, key) in [
             (&mut network.http_response_url, "server.http.url"),

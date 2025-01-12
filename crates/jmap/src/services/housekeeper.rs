@@ -78,41 +78,51 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
             );
 
             // Account purge
-            queue.schedule(
-                Instant::now() + server.core.jmap.account_purge_frequency.time_to_next(),
-                ActionClass::Account,
-            );
-
-            // Store purges
-            for (idx, schedule) in server.core.storage.purge_schedules.iter().enumerate() {
+            if server.core.network.roles.purge_accounts {
                 queue.schedule(
-                    Instant::now() + schedule.cron.time_to_next(),
-                    ActionClass::Store(idx),
+                    Instant::now() + server.core.jmap.account_purge_frequency.time_to_next(),
+                    ActionClass::Account,
                 );
             }
 
+            // Store purges
+            if server.core.network.roles.purge_stores {
+                for (idx, schedule) in server.core.storage.purge_schedules.iter().enumerate() {
+                    queue.schedule(
+                        Instant::now() + schedule.cron.time_to_next(),
+                        ActionClass::Store(idx),
+                    );
+                }
+            }
+
             // OTEL Push Metrics
-            if let Some(otel) = &server.core.metrics.otel {
-                OtelMetrics::enable_errors();
-                queue.schedule(Instant::now() + otel.interval, ActionClass::OtelMetrics);
+            if server.core.network.roles.push_metrics {
+                if let Some(otel) = &server.core.metrics.otel {
+                    OtelMetrics::enable_errors();
+                    queue.schedule(Instant::now() + otel.interval, ActionClass::OtelMetrics);
+                }
             }
 
             // Calculate expensive metrics
             queue.schedule(Instant::now(), ActionClass::CalculateMetrics);
 
             // Add all ACME renewals to heap
-            for provider in server.core.acme.providers.values() {
-                match server.init_acme(provider).await {
-                    Ok(renew_at) => {
-                        queue.schedule(
-                            Instant::now() + renew_at,
-                            ActionClass::Acme(provider.id.clone()),
-                        );
-                    }
-                    Err(err) => {
-                        trc::error!(err.details("Failed to initialize ACME certificate manager."));
-                    }
-                };
+            if server.core.network.roles.renew_acme {
+                for provider in server.core.acme.providers.values() {
+                    match server.init_acme(provider).await {
+                        Ok(renew_at) => {
+                            queue.schedule(
+                                Instant::now() + renew_at,
+                                ActionClass::Acme(provider.id.clone()),
+                            );
+                        }
+                        Err(err) => {
+                            trc::error!(
+                                err.details("Failed to initialize ACME certificate manager.")
+                            );
+                        }
+                    };
+                }
             }
 
             // SPDX-SnippetBegin
@@ -431,50 +441,50 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
 
                                 let server = server.clone();
                                 tokio::spawn(async move {
-                                    #[cfg(feature = "enterprise")]
-                                    if server.is_enterprise_edition() {
-                                        // Obtain queue size
-                                        match server.total_queued_messages().await {
-                                            Ok(total) => {
-                                                Collector::update_gauge(
-                                                    MetricType::QueueCount,
-                                                    total,
-                                                );
-                                            }
-                                            Err(err) => {
-                                                trc::error!(
-                                                    err.details("Failed to obtain queue size")
-                                                );
-                                            }
-                                        }
-                                    }
-
-                                    if update_other_metrics {
-                                        match server.total_accounts().await {
-                                            Ok(total) => {
-                                                Collector::update_gauge(
-                                                    MetricType::UserCount,
-                                                    total,
-                                                );
-                                            }
-                                            Err(err) => {
-                                                trc::error!(
-                                                    err.details("Failed to obtain account count")
-                                                );
+                                    if server.core.network.roles.calculate_metrics {
+                                        #[cfg(feature = "enterprise")]
+                                        if server.is_enterprise_edition() {
+                                            // Obtain queue size
+                                            match server.total_queued_messages().await {
+                                                Ok(total) => {
+                                                    Collector::update_gauge(
+                                                        MetricType::QueueCount,
+                                                        total,
+                                                    );
+                                                }
+                                                Err(err) => {
+                                                    trc::error!(
+                                                        err.details("Failed to obtain queue size")
+                                                    );
+                                                }
                                             }
                                         }
 
-                                        match server.total_domains().await {
-                                            Ok(total) => {
-                                                Collector::update_gauge(
-                                                    MetricType::DomainCount,
-                                                    total,
-                                                );
+                                        if update_other_metrics {
+                                            match server.total_accounts().await {
+                                                Ok(total) => {
+                                                    Collector::update_gauge(
+                                                        MetricType::UserCount,
+                                                        total,
+                                                    );
+                                                }
+                                                Err(err) => {
+                                                    trc::error!(err
+                                                        .details("Failed to obtain account count"));
+                                                }
                                             }
-                                            Err(err) => {
-                                                trc::error!(
-                                                    err.details("Failed to obtain domain count")
-                                                );
+
+                                            match server.total_domains().await {
+                                                Ok(total) => {
+                                                    Collector::update_gauge(
+                                                        MetricType::DomainCount,
+                                                        total,
+                                                    );
+                                                }
+                                                Err(err) => {
+                                                    trc::error!(err
+                                                        .details("Failed to obtain domain count"));
+                                                }
                                             }
                                         }
                                     }
