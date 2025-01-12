@@ -481,8 +481,8 @@ impl PyzorConfig {
 impl ReputationConfig {
     pub fn parse(config: &mut Config) -> Option<Self> {
         if !config
-            .property_or_default("spam-filter.reputation.enable", "true")
-            .unwrap_or(true)
+            .property_or_default("spam-filter.reputation.enable", "false")
+            .unwrap_or(false)
         {
             return None;
         }
