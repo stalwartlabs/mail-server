@@ -29,15 +29,15 @@ const CONFIG: &str = r#"
 [session.rcpt]
 relay = true
 
-[lookup.default]
-domain = "example.org"
+[server]
+hostname = "mx.example.org"
 
 [report]
 submitter = "'mx.example.org'"
 
 [report.dmarc.aggregate]
 from-name = "'DMARC Report'"
-from-address = "'reports@' + key_get('default', 'domain')"
+from-address = "'reports@' + config_get('report.domain')"
 org-name = "'Foobar, Inc.'"
 contact-info = "'https://foobar.org/contact'"
 send = "daily"

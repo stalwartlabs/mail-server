@@ -134,11 +134,7 @@ impl Default for QueueConfig {
             ),
             notify: IfBlock::new::<()>("queue.schedule.notify", [], "[1d, 3d]"),
             expire: IfBlock::new::<()>("queue.schedule.expire", [], "5d"),
-            hostname: IfBlock::new::<()>(
-                "queue.outbound.hostname",
-                [],
-                "key_get('default', 'hostname')",
-            ),
+            hostname: IfBlock::new::<()>("queue.outbound.hostname", [], "config_get('server.hostname')"),
             next_hop: IfBlock::new::<()>(
                 "queue.outbound.next-hop",
                 #[cfg(not(feature = "test_mode"))]
@@ -187,12 +183,12 @@ impl Default for QueueConfig {
                 address: IfBlock::new::<()>(
                     "report.dsn.from-address",
                     [],
-                    "'MAILER-DAEMON@' + key_get('default', 'domain')",
+                    "'MAILER-DAEMON@' + config_get('report.domain')",
                 ),
                 sign: IfBlock::new::<()>(
                     "report.dsn.sign",
                     [],
-                    "['rsa-' + key_get('default', 'domain'), 'ed25519-' + key_get('default', 'domain')]",
+                    "['rsa-' + config_get('report.domain'), 'ed25519-' + config_get('report.domain')]",
                 ),
             },
             timeout: QueueOutboundTimeout {

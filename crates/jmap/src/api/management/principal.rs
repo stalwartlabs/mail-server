@@ -146,6 +146,21 @@ impl PrincipalManager for Server {
                     }
                 }
 
+                // Set default report domain if missing
+                let report_domain = if principal.typ() == Type::Domain
+                    && self
+                        .core
+                        .storage
+                        .config
+                        .get("report.domain")
+                        .await
+                        .is_ok_and(|v| v.is_none())
+                {
+                    principal.name().to_lowercase().into()
+                } else {
+                    None
+                };
+
                 // Create principal
                 let result = self
                     .core
@@ -153,6 +168,19 @@ impl PrincipalManager for Server {
                     .data
                     .create_principal(principal, tenant_id, Some(&access_token.permissions))
                     .await?;
+
+                // Set report domain
+                if let Some(report_domain) = report_domain {
+                    if let Err(err) = self
+                        .core
+                        .storage
+                        .config
+                        .set([("report.domain", report_domain)], true)
+                        .await
+                    {
+                        trc::error!(err.details("Failed to set report domain"));
+                    }
+                }
 
                 Ok(JsonResponse::new(json!({
                     "data": result,

@@ -37,7 +37,9 @@ impl Enterprise {
         stores: &Stores,
         data: &Store,
     ) -> Option<Self> {
-        let server_hostname = config.value("lookup.default.hostname")?;
+        let server_hostname = config
+            .value("server.hostname")
+            .or_else(|| config.value("lookup.default.hostname"))?;
         let mut update_license = None;
 
         let license_result = match (

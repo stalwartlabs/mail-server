@@ -109,7 +109,7 @@ impl Default for MailAuthConfig {
                 seal: IfBlock::new::<()>(
                     "auth.arc.seal",
                     [],
-                    "'rsa-' + key_get('default', 'domain')",
+                    "'rsa-' + config_get('report.domain')",
                 ),
             },
             spf: SpfAuthConfig {

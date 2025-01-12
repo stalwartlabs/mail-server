@@ -14,6 +14,8 @@ use super::*;
 #[derive(Clone)]
 pub struct Network {
     pub node_id: u64,
+    pub server_name: String,
+    pub report_domain: String,
     pub security: Security,
     pub contact_form: Option<ContactForm>,
     pub http_response_url: IfBlock,
@@ -84,10 +86,12 @@ impl Default for Network {
             http_response_url: IfBlock::new::<()>(
                 "server.http.url",
                 [],
-                "protocol + '://' + key_get('default', 'hostname') + ':' + local_port",
+                "protocol + '://' + config_get('server.hostname') + ':' + local_port",
             ),
             http_allowed_endpoint: IfBlock::new::<()>("server.http.allowed-endpoint", [], "200"),
             asn_geo_lookup: AsnGeoLookupConfig::Disabled,
+            server_name: Default::default(),
+            report_domain: Default::default(),
         }
     }
 }
@@ -148,8 +152,37 @@ impl FieldOrDefault {
 
 impl Network {
     pub fn parse(config: &mut Config) -> Self {
+        let server_name = config
+            .value("server.hostname")
+            .map(|v| v.to_string())
+            .or_else(|| {
+                config
+                    .value("lookup.default.hostname")
+                    .map(|v| v.to_lowercase())
+            })
+            .unwrap_or_else(|| {
+                hostname::get()
+                    .map(|v| v.to_string_lossy().to_lowercase())
+                    .unwrap_or_else(|_| "localhost".to_string())
+            });
+        let report_domain = config
+            .value("report.domain")
+            .map(|v| v.to_lowercase())
+            .or_else(|| {
+                config
+                    .value("lookup.default.domain")
+                    .map(|v| v.to_lowercase())
+            })
+            .unwrap_or_else(|| {
+                psl::domain_str(&server_name)
+                    .unwrap_or(server_name.as_str())
+                    .to_string()
+            });
+
         let mut network = Network {
             node_id: config.property("cluster.node-id").unwrap_or_default(),
+            report_domain,
+            server_name,
             security: Security::parse(config),
             contact_form: ContactForm::parse(config),
             asn_geo_lookup: AsnGeoLookupConfig::parse(config).unwrap_or_default(),

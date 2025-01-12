@@ -88,6 +88,7 @@ pub struct Expression {
 pub enum ExpressionItem {
     Variable(u32),
     Global(String),
+    Setting(Setting),
     Capture(u32),
     Constant(Constant),
     BinaryOperator(BinaryOperator),
@@ -200,6 +201,7 @@ pub enum Token {
         num_args: u32,
     },
     Constant(Constant),
+    Setting(Setting),
     Regex(Regex),
     BinaryOperator(BinaryOperator),
     UnaryOperator(UnaryOperator),
@@ -208,6 +210,25 @@ pub enum Token {
     OpenBracket,
     CloseBracket,
     Comma,
+}
+
+#[derive(Debug, Clone)]
+pub enum Setting {
+    Hostname,
+    ReportDomain,
+    NodeId,
+    Other(String),
+}
+
+impl From<String> for Setting {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "server.hostname" => Setting::Hostname,
+            "report.domain" => Setting::ReportDomain,
+            "cluster.node-id" => Setting::NodeId,
+            _ => Setting::Other(value),
+        }
+    }
 }
 
 impl From<usize> for Variable<'_> {

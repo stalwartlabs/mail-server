@@ -56,7 +56,7 @@ use crate::{
 };
 
 const SERVER: &str = r#"
-[lookup.default]
+[server]
 hostname = "imap.example.org"
 
 [server.listener.imap]

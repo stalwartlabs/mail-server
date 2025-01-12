@@ -40,7 +40,7 @@ impl SmtpDirectory {
                 is_lmtp,
                 credentials: None,
                 local_host: config
-                    .value("lookup.default.hostname")
+                    .value("server.hostname")
                     .unwrap_or("[127.0.0.1]")
                     .to_string(),
                 say_ehlo: false,

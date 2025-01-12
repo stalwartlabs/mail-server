@@ -14,12 +14,12 @@ use crate::Server;
 use super::{
     functions::{ResolveVariable, FUNCTIONS},
     if_block::IfBlock,
-    BinaryOperator, Constant, Expression, ExpressionItem, UnaryOperator, Variable,
+    BinaryOperator, Constant, Expression, ExpressionItem, Setting, UnaryOperator, Variable,
 };
 
 impl Server {
     pub async fn eval_if<'x, R: TryFrom<Variable<'x>>, V: ResolveVariable>(
-        &self,
+        &'x self,
         if_block: &'x IfBlock,
         resolver: &'x V,
         session_id: u64,
@@ -81,7 +81,7 @@ impl Server {
     }
 
     pub async fn eval_expr<'x, R: TryFrom<Variable<'x>>, V: ResolveVariable>(
-        &self,
+        &'x self,
         expr: &'x Expression,
         resolver: &'x V,
         expr_id: &str,
@@ -137,15 +137,15 @@ impl Server {
     }
 }
 
-struct EvalContext<'x, 'y, V: ResolveVariable, T, C> {
+struct EvalContext<'x, V: ResolveVariable, T, C> {
     resolver: &'x V,
-    core: &'y Server,
+    core: &'x Server,
     expr: &'x T,
     captures: C,
     session_id: u64,
 }
 
-impl<'x, V: ResolveVariable> EvalContext<'x, '_, V, IfBlock, Vec<String>> {
+impl<'x, V: ResolveVariable> EvalContext<'x, V, IfBlock, Vec<String>> {
     async fn eval(&mut self) -> trc::Result<Variable<'x>> {
         for if_then in &self.expr.if_then {
             if (EvalContext {
@@ -183,7 +183,7 @@ impl<'x, V: ResolveVariable> EvalContext<'x, '_, V, IfBlock, Vec<String>> {
     }
 }
 
-impl<'x, V: ResolveVariable> EvalContext<'x, '_, V, Expression, &mut Vec<String>> {
+impl<'x, V: ResolveVariable> EvalContext<'x, V, Expression, &mut Vec<String>> {
     async fn eval(&mut self) -> trc::Result<Variable<'x>> {
         let mut stack = Vec::new();
         let mut exprs = self.expr.items.iter();
@@ -208,6 +208,25 @@ impl<'x, V: ResolveVariable> EvalContext<'x, '_, V, Expression, &mut Vec<String>
                             .to_string(),
                     )));
                 }
+                ExpressionItem::Setting(setting) => match setting {
+                    Setting::Hostname => {
+                        stack.push(self.core.core.network.server_name.as_str().into())
+                    }
+                    Setting::ReportDomain => {
+                        stack.push(self.core.core.network.report_domain.as_str().into())
+                    }
+                    Setting::NodeId => stack.push(self.core.core.network.node_id.into()),
+                    Setting::Other(key) => stack.push(
+                        self.core
+                            .core
+                            .storage
+                            .config
+                            .get(key)
+                            .await?
+                            .unwrap_or_default()
+                            .into(),
+                    ),
+                },
                 ExpressionItem::UnaryOperator(op) => {
                     let value = stack.pop().unwrap_or_default();
                     stack.push(match op {

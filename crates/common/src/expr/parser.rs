@@ -109,6 +109,16 @@ impl<'x> ExpressionParser<'x> {
                             self.output.push(ExpressionItem::Regex(regex.clone()));
                             self.operator_stack.pop();
                         }
+                        Some((Token::Setting(setting), _)) => {
+                            if self.arg_count.pop().unwrap() != 0 {
+                                return Err(
+                                    "Expression function \"config_get\" expected 1 argument"
+                                        .to_string(),
+                                );
+                            }
+                            self.output.push(ExpressionItem::Setting(setting.clone()));
+                            self.operator_stack.pop();
+                        }
                         _ => {}
                     }
 
@@ -156,16 +166,10 @@ impl<'x> ExpressionParser<'x> {
                     self.operator_stack
                         .push((Token::BinaryOperator(bop), jmp_pos));
                 }
-                Token::Function { id, name, num_args } => {
+                token @ (Token::Function { .. } | Token::Regex(_) | Token::Setting(_)) => {
                     self.inc_arg_count();
                     self.arg_count.push(0);
-                    self.operator_stack
-                        .push((Token::Function { id, name, num_args }, None))
-                }
-                Token::Regex(regex) => {
-                    self.inc_arg_count();
-                    self.arg_count.push(0);
-                    self.operator_stack.push((Token::Regex(regex), None))
+                    self.operator_stack.push((token, None))
                 }
                 Token::OpenBracket => {
                     // Array functions

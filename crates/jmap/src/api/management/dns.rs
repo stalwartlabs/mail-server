@@ -77,13 +77,7 @@ impl DnsManagement for Server {
 
     async fn build_dns_records(&self, domain_name: &str) -> trc::Result<Vec<DnsRecord>> {
         // Obtain server name
-        let server_name = self
-            .core
-            .storage
-            .config
-            .get("lookup.default.hostname")
-            .await?
-            .unwrap_or_else(|| "localhost".to_string());
+        let server_name = &self.core.network.server_name;
         let mut records = Vec::new();
 
         // Obtain DKIM keys

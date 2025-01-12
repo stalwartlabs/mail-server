@@ -318,14 +318,7 @@ async fn delivery_troubleshoot(
         (domain_or_email, None)
     };
 
-    let local_host = server
-        .core
-        .storage
-        .config
-        .get("lookup.default.hostname")
-        .await
-        .unwrap_or_default()
-        .unwrap_or_else(|| "local.host".to_string());
+    let local_host = &server.core.network.server_name;
 
     tx.send(DeliveryStage::MxLookupStart {
         domain: domain.to_string(),
@@ -897,14 +890,7 @@ async fn dmarc_troubleshoot(
     let mail_from = request.mail_from.to_lowercase();
     let mail_from_domain = mail_from.rsplit_once('@').map(|(_, domain)| domain);
 
-    let local_host = server
-        .core
-        .storage
-        .config
-        .get("lookup.default.hostname")
-        .await
-        .unwrap_or_default()
-        .unwrap_or_else(|| "local.host".to_string());
+    let local_host = &server.core.network.server_name;
 
     let now = Instant::now();
     let ehlo_spf_output = server
@@ -919,7 +905,7 @@ async fn dmarc_troubleshoot(
                 .build_auth_parameters(SpfParameters::verify_ehlo(
                     remote_ip,
                     &ehlo_domain,
-                    &local_host,
+                    local_host,
                 )),
         )
         .await;
@@ -941,7 +927,7 @@ async fn dmarc_troubleshoot(
                 remote_ip,
                 mail_from_domain,
                 &ehlo_domain,
-                &local_host,
+                local_host,
                 &mail_from,
             )))
             .await
@@ -955,7 +941,7 @@ async fn dmarc_troubleshoot(
                 remote_ip,
                 &ehlo_domain,
                 &ehlo_domain,
-                &local_host,
+                local_host,
                 &format!("postmaster@{ehlo_domain}"),
             )))
             .await

@@ -100,6 +100,13 @@ impl<'x> Tokenizer<'x> {
                         self.buf.clear();
                         self.find_char(b",")?;
                         (Token::Regex(regex).into(), b'(')
+                    } else if ch == b'(' && self.buf.eq(b"config_get") {
+                        // Parse setting
+                        let stop_ch = self.find_char(b"\"'")?;
+                        let setting_str = self.parse_string(stop_ch)?;
+                        self.has_alpha = false;
+                        self.buf.clear();
+                        (Token::Setting(Setting::from(setting_str)).into(), b'(')
                     } else if !self.buf.is_empty() {
                         self.is_start = false;
                         (self.parse_buf()?.into(), ch)

@@ -132,14 +132,7 @@ impl ManageSpamHandler for Server {
                 let ehlo_domain = request.ehlo_domain.to_lowercase();
                 let mail_from = request.env_from.to_lowercase();
                 let mail_from_domain = mail_from.rsplit_once('@').map(|(_, domain)| domain);
-                let local_host = self
-                    .core
-                    .storage
-                    .config
-                    .get("lookup.default.hostname")
-                    .await
-                    .unwrap_or_default()
-                    .unwrap_or_else(|| "local.host".to_string());
+                let local_host = &self.core.network.server_name;
 
                 let spf_ehlo_result =
                     self.core
@@ -147,7 +140,7 @@ impl ManageSpamHandler for Server {
                         .resolvers
                         .dns
                         .verify_spf(self.inner.cache.build_auth_parameters(
-                            SpfParameters::verify_ehlo(remote_ip, &ehlo_domain, &local_host),
+                            SpfParameters::verify_ehlo(remote_ip, &ehlo_domain, local_host),
                         ))
                         .await;
 
@@ -168,7 +161,7 @@ impl ManageSpamHandler for Server {
                             remote_ip,
                             mail_from_domain,
                             &ehlo_domain,
-                            &local_host,
+                            local_host,
                             &mail_from,
                         )))
                         .await
@@ -181,7 +174,7 @@ impl ManageSpamHandler for Server {
                             remote_ip,
                             &ehlo_domain,
                             &ehlo_domain,
-                            &local_host,
+                            local_host,
                             &format!("postmaster@{ehlo_domain}"),
                         )))
                         .await

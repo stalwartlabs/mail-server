@@ -180,17 +180,7 @@ impl Autoconfig for Server {
         })?;
 
         // Obtain server name
-        let server_name = self
-            .core
-            .storage
-            .config
-            .get("lookup.default.hostname")
-            .await?
-            .ok_or_else(|| {
-                trc::EventType::Config(trc::ConfigEvent::BuildError)
-                    .caused_by(trc::location!())
-                    .details("Server name not configured")
-            })?;
+        let server_name = self.core.network.server_name.to_string();
 
         // Find the account name by e-mail address
         let mut account_name = emailaddress.to_string();

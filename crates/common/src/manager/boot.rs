@@ -195,18 +195,6 @@ impl BootManager {
             StoreOp::None => {
                 // Add hostname lookup if missing
                 let mut insert_keys = Vec::new();
-                if config
-                    .value("lookup.default.hostname")
-                    .filter(|v| !v.is_empty())
-                    .is_none()
-                {
-                    insert_keys.push(ConfigKey::from((
-                        "lookup.default.hostname",
-                        hostname::get()
-                            .map(|v| v.to_string_lossy().into_owned())
-                            .unwrap_or_else(|_| "localhost".to_string()),
-                    )));
-                }
 
                 // Generate an OAuth key if missing
                 if config

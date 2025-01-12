@@ -265,7 +265,7 @@ impl Scripting {
 
         let hostname = config
             .value("sieve.trusted.hostname")
-            .or_else(|| config.value("lookup.default.hostname"))
+            .or_else(|| config.value("server.hostname"))
             .unwrap_or("localhost")
             .to_string();
         trusted_runtime.set_local_hostname(hostname.clone());
@@ -327,7 +327,7 @@ impl Scripting {
                     IfBlock::new::<()>(
                         "sieve.trusted.from-addr",
                         [],
-                        "'MAILER-DAEMON@' + key_get('default', 'domain')",
+                        "'MAILER-DAEMON@' + config_get('report.domain')",
                     )
                 }),
             from_name: IfBlock::try_parse(config, "sieve.trusted.from-name", &token_map)
@@ -342,8 +342,8 @@ impl Scripting {
                         "sieve.trusted.sign",
                         [],
                         concat!(
-                            "['rsa-' + key_get('default', 'domain'), ",
-                            "'ed25519-' + key_get('default', 'domain')]"
+                            "['rsa-' + config_get('report.domain'), ",
+                            "'ed25519-' + config_get('report.domain')]"
                         ),
                     )
                 },
@@ -363,7 +363,7 @@ impl Default for Scripting {
             from_addr: IfBlock::new::<()>(
                 "sieve.trusted.from-addr",
                 [],
-                "'MAILER-DAEMON@' + key_get('default', 'domain')",
+                "'MAILER-DAEMON@' + config_get('report.domain')",
             ),
             from_name: IfBlock::new::<()>("sieve.trusted.from-name", [], "'Mailer Daemon'"),
             return_path: IfBlock::empty("sieve.trusted.return-path"),
@@ -371,8 +371,8 @@ impl Default for Scripting {
                 "sieve.trusted.sign",
                 [],
                 concat!(
-                    "['rsa-' + key_get('default', 'domain'), ",
-                    "'ed25519-' + key_get('default', 'domain')]"
+                    "['rsa-' + config_get('report.domain'), ",
+                    "'ed25519-' + config_get('report.domain')]"
                 ),
             ),
             untrusted_scripts: AHashMap::new(),

@@ -423,7 +423,7 @@ impl ConfigManager {
                 required_semver = value.as_str().try_into().unwrap_or_default();
             } else if key.starts_with("spam-filter.")
                 || key.starts_with("http-lookup.")
-                || (key.starts_with("lookup.") && !key.starts_with("lookup.default."))
+                || key.starts_with("lookup.")
                 || key.starts_with("asn.")
             {
                 external.keys.push(ConfigKey::from((key, value)));
@@ -537,7 +537,6 @@ impl Patterns {
                 Pattern::Include(MatchType::Equal("storage.lookup".to_string())),
                 Pattern::Include(MatchType::Equal("storage.fts".to_string())),
                 Pattern::Include(MatchType::Equal("storage.directory".to_string())),
-                Pattern::Include(MatchType::Equal("lookup.default.hostname".to_string())),
                 Pattern::Include(MatchType::Equal("enterprise.license-key".to_string())),
             ];
         }

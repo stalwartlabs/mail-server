@@ -702,13 +702,13 @@ impl Default for SessionConfig {
                 hostname: IfBlock::new::<()>(
                     "server.connect.hostname",
                     [],
-                    "key_get('default', 'hostname')",
+                    "config_get('server.hostname')",
                 ),
                 script: IfBlock::empty("session.connect.script"),
                 greeting: IfBlock::new::<()>(
                     "session.connect.greeting",
                     [],
-                    "key_get('default', 'hostname') + ' Stalwart ESMTP at your service'",
+                    "config_get('server.hostname') + ' Stalwart ESMTP at your service'",
                 ),
             },
             ehlo: Ehlo {
