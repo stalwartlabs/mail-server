@@ -109,7 +109,7 @@ async fn throttle_outbound() {
         .await
         .try_deliver(core.clone());
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.queue_receiver.read_event().await.unwrap_on_hold();
+    local.queue_receiver.read_event().await.assert_on_hold();
     in_flight.clear();
 
     // Expect rate limit throttle for sender domain 'foobar.net'
@@ -172,7 +172,7 @@ async fn throttle_outbound() {
         .await
         .try_deliver(core.clone());
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.queue_receiver.read_event().await.unwrap_on_hold();
+    local.queue_receiver.read_event().await.assert_on_hold();
     in_flight.clear();
 
     // Expect rate limit throttle for recipient domain 'example.net'
@@ -252,7 +252,7 @@ async fn throttle_outbound() {
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone());
-    local.queue_receiver.read_event().await.unwrap_on_hold();
+    local.queue_receiver.read_event().await.assert_on_hold();
     in_flight.clear();
 
     // Expect rate limit throttle for mx 'mx.test.net'

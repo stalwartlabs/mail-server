@@ -735,6 +735,14 @@ pub async fn test(params: &JMAPTest) {
         .unwrap()
         .unwrap_data();
 
+    server
+        .core
+        .storage
+        .config
+        .clear("report.domain")
+        .await
+        .unwrap();
+
     assert_is_empty(server).await;
 }
 

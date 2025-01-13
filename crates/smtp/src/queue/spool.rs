@@ -308,7 +308,7 @@ impl Message {
             .inner
             .ipc
             .queue_tx
-            .send(QueueEvent::Refresh(None))
+            .send(QueueEvent::Refresh)
             .await
             .is_err()
         {

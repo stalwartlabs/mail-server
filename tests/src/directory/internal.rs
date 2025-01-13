@@ -9,7 +9,7 @@ use directory::{
     backend::{
         internal::{
             lookup::DirectoryStore,
-            manage::{self, ManageDirectory, UpdatePrincipal},
+            manage::{self, ChangedPrincipals, ManageDirectory, UpdatePrincipal},
             PrincipalField, PrincipalUpdate, PrincipalValue,
         },
         RcptType,
@@ -742,8 +742,8 @@ pub trait TestInternalDirectory {
     async fn create_test_group(&self, login: &str, name: &str, emails: &[&str]) -> u32;
     async fn create_test_list(&self, login: &str, name: &str, emails: &[&str]) -> u32;
     async fn set_test_quota(&self, login: &str, quota: u32);
-    async fn add_to_group(&self, login: &str, group: &str);
-    async fn remove_from_group(&self, login: &str, group: &str);
+    async fn add_to_group(&self, login: &str, group: &str) -> ChangedPrincipals;
+    async fn remove_from_group(&self, login: &str, group: &str) -> ChangedPrincipals;
     async fn remove_test_alias(&self, login: &str, alias: &str);
     async fn create_test_domains(&self, domains: &[&str]);
 }
@@ -866,7 +866,7 @@ impl TestInternalDirectory for Store {
         .unwrap();
     }
 
-    async fn add_to_group(&self, login: &str, group: &str) {
+    async fn add_to_group(&self, login: &str, group: &str) -> ChangedPrincipals {
         self.update_principal(UpdatePrincipal::by_name(login).with_updates(vec![
             PrincipalUpdate::add_item(
                 PrincipalField::MemberOf,
@@ -874,10 +874,10 @@ impl TestInternalDirectory for Store {
             ),
         ]))
         .await
-        .unwrap();
+        .unwrap()
     }
 
-    async fn remove_from_group(&self, login: &str, group: &str) {
+    async fn remove_from_group(&self, login: &str, group: &str) -> ChangedPrincipals {
         self.update_principal(UpdatePrincipal::by_name(login).with_updates(vec![
             PrincipalUpdate::remove_item(
                 PrincipalField::MemberOf,
@@ -885,7 +885,7 @@ impl TestInternalDirectory for Store {
             ),
         ]))
         .await
-        .unwrap();
+        .unwrap()
     }
 
     async fn remove_test_alias(&self, login: &str, alias: &str) {

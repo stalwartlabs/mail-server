@@ -9,7 +9,11 @@ use std::borrow::Cow;
 use trc::AddContext;
 use utils::config::Rate;
 
-use crate::{backend::http::lookup::HttpStoreGet, write::InMemoryClass};
+use crate::{
+    backend::http::lookup::HttpStoreGet,
+    write::{assert::AssertValue, InMemoryClass, MaybeDynamicId},
+    Serialize,
+};
 #[allow(unused_imports)]
 use crate::{
     write::{
@@ -271,13 +275,56 @@ impl InMemoryStore {
     }
 
     pub async fn try_lock(&self, prefix: u8, key: &[u8], duration: u64) -> trc::Result<bool> {
-        self.counter_incr(KeyValue::with_prefix(prefix, key, 1).expires(duration))
-            .await
-            .map(|count| count == 1)
+        match self {
+            InMemoryStore::Store(store) => {
+                let key = KeyValue::<()>::build_key(prefix, key);
+                let lock_expiry = store
+                    .get_value::<u64>(ValueKey::from(ValueClass::InMemory(InMemoryClass::Key(
+                        key.clone(),
+                    ))))
+                    .await
+                    .caused_by(trc::location!())?;
+                let now = now();
+                if lock_expiry.is_some_and(|expiry| expiry > now) {
+                    return Ok(false);
+                }
+
+                let key: ValueClass<MaybeDynamicId> = ValueClass::InMemory(InMemoryClass::Key(key));
+                let mut batch = BatchBuilder::new();
+                batch.assert_value(
+                    key.clone(),
+                    match lock_expiry {
+                        Some(value) => AssertValue::U64(value),
+                        None => AssertValue::None,
+                    },
+                );
+                batch.set(key.clone(), (now + duration).serialize());
+                match store.write(batch.build()).await {
+                    Ok(_) => Ok(true),
+                    Err(err) if err.is_assertion_failure() => Ok(false),
+                    Err(err) => Err(err
+                        .details("Failed to lock event.")
+                        .caused_by(trc::location!())),
+                }
+            }
+            #[cfg(feature = "redis")]
+            InMemoryStore::Redis(store) => store
+                .key_incr(&KeyValue::<()>::build_key(prefix, key), 1, duration.into())
+                .await
+                .map(|count| count == 1),
+            #[cfg(feature = "enterprise")]
+            InMemoryStore::Sharded(store) => store
+                .counter_incr(KeyValue::with_prefix(prefix, key, 1).expires(duration))
+                .await
+                .map(|count| count == 1),
+            InMemoryStore::Static(_) | InMemoryStore::Http(_) => {
+                Err(trc::StoreEvent::NotSupported.into_err())
+            }
+        }
     }
 
     pub async fn remove_lock(&self, prefix: u8, key: &[u8]) -> trc::Result<()> {
-        self.counter_delete(KeyValue::<()>::build_key(prefix, key))
+        self.key_delete(KeyValue::<()>::build_key(prefix, key))
             .await
     }
 

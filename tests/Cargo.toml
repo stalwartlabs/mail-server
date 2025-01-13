@@ -7,7 +7,7 @@ resolver = "2"
 [features]
 #default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
 #default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis", "foundationdb"]
-default = ["rocks"]
+default = ["rocks", "redis"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
 postgres = ["store/postgres"]

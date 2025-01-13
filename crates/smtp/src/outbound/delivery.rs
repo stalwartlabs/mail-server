@@ -18,12 +18,13 @@ use common::config::{
     server::ServerProtocol,
     smtp::{queue::RequireOptional, report::AggregateFrequency},
 };
-use common::ipc::{OnHold, PolicyType, QueueEvent, TlsEvent};
+use common::ipc::{PolicyType, QueueEvent, QueueEventStatus, TlsEvent};
 use common::Server;
 use mail_auth::{
     mta_sts::TlsRpt,
     report::tlsrpt::{FailureDetails, ResultType},
 };
+use rand::Rng;
 use smtp_proto::MAIL_REQUIRETLS;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -45,7 +46,7 @@ impl DeliveryAttempt {
         tokio::spawn(async move {
             // Lock queue event
             let queue_id = self.event.queue_id;
-            let queue_event = if server.try_lock_event(queue_id).await {
+            let status = if server.try_lock_event(queue_id).await {
                 if let Some(mut message) = server.read_message(queue_id).await {
                     // Generate span id
                     message.span_id = server.inner.data.span_id_gen.generate().unwrap_or_else(now);
@@ -111,19 +112,23 @@ impl DeliveryAttempt {
                     // Unlock event
                     server.unlock_event(queue_id).await;
 
-                    QueueEvent::WorkerDone(queue_id)
+                    QueueEventStatus::Completed
                 }
             } else {
-                QueueEvent::OnHold {
-                    queue_id: self.event.queue_id,
-                    status: OnHold::Locked {
-                        until: now() + LOCK_EXPIRY + 1,
-                    },
+                QueueEventStatus::Locked {
+                    until: now() + LOCK_EXPIRY + rand::thread_rng().gen_range(5..10),
                 }
             };
 
             // Notify queue manager
-            if server.inner.ipc.queue_tx.send(queue_event).await.is_err() {
+            if server
+                .inner
+                .ipc
+                .queue_tx
+                .send(QueueEvent::WorkerDone { queue_id, status })
+                .await
+                .is_err()
+            {
                 trc::event!(
                     Server(ServerEvent::ThreadError),
                     Reason = "Channel closed.",
@@ -133,11 +138,10 @@ impl DeliveryAttempt {
         });
     }
 
-    async fn deliver_task(mut self, server: Server, mut message: Message) -> QueueEvent {
+    async fn deliver_task(mut self, server: Server, mut message: Message) -> QueueEventStatus {
         // Check that the message still has recipients to be delivered
         let has_pending_delivery = message.has_pending_delivery();
         let span_id = message.span_id;
-        let queue_id = message.queue_id;
 
         // Send any due Delivery Status Notifications
         server.send_dsn(&mut message).await;
@@ -150,7 +154,7 @@ impl DeliveryAttempt {
                 message
                     .save_changes(&server, self.event.due.into(), due.into())
                     .await;
-                return QueueEvent::Refresh(queue_id.into());
+                return QueueEventStatus::Deferred;
             }
         } else {
             trc::event!(
@@ -162,7 +166,7 @@ impl DeliveryAttempt {
             // All message recipients expired, do not re-queue. (DSN has been already sent)
             message.remove(&server, self.event.due).await;
 
-            return QueueEvent::WorkerDone(queue_id);
+            return QueueEventStatus::Completed;
         }
 
         // Throttle sender
@@ -183,12 +187,9 @@ impl DeliveryAttempt {
                             SpanId = span_id,
                         );
 
-                        QueueEvent::OnHold {
-                            queue_id: self.event.queue_id,
-                            status: OnHold::ConcurrencyLimited {
-                                next_due,
-                                limiters: vec![limiter],
-                            },
+                        QueueEventStatus::Limited {
+                            limiters: vec![limiter],
+                            next_due,
                         }
                     }
                     throttle::Error::Rate { retry_at } => {
@@ -209,7 +210,7 @@ impl DeliveryAttempt {
                             .save_changes(&server, self.event.due.into(), next_event.into())
                             .await;
 
-                        QueueEvent::Refresh(queue_id.into())
+                        QueueEventStatus::Deferred
                     }
                 };
 
@@ -1331,12 +1332,9 @@ impl DeliveryAttempt {
                 SpanId = span_id,
             );
 
-            QueueEvent::OnHold {
-                queue_id: self.event.queue_id,
-                status: OnHold::ConcurrencyLimited {
-                    next_due,
-                    limiters: on_hold,
-                },
+            QueueEventStatus::Limited {
+                limiters: on_hold,
+                next_due,
             }
         } else if let Some(due) = message.next_event() {
             trc::event!(
@@ -1352,7 +1350,7 @@ impl DeliveryAttempt {
                 .save_changes(&server, self.event.due.into(), due.into())
                 .await;
 
-            QueueEvent::Refresh(queue_id.into())
+            QueueEventStatus::Deferred
         } else {
             trc::event!(
                 Delivery(DeliveryEvent::Completed),
@@ -1363,7 +1361,7 @@ impl DeliveryAttempt {
             // Delete message from queue
             message.remove(&server, self.event.due).await;
 
-            QueueEvent::WorkerDone(queue_id)
+            QueueEventStatus::Completed
         }
     }
 }

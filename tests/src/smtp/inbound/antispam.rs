@@ -77,6 +77,9 @@ category = 0
 confidence = 1
 explanation = 2
 
+[spam-filter.reputation]
+enable = true
+
 [session.rcpt]
 relay = true
 

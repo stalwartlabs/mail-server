@@ -257,12 +257,7 @@ impl QueueManagement for Server {
                             }
                         }
 
-                        let _ = server
-                            .inner
-                            .ipc
-                            .queue_tx
-                            .send(QueueEvent::Refresh(None))
-                            .await;
+                        let _ = server.inner.ipc.queue_tx.send(QueueEvent::Refresh).await;
                     });
                 }
 
@@ -314,12 +309,7 @@ impl QueueManagement for Server {
                         message
                             .save_changes(self, prev_event.into(), next_event.into())
                             .await;
-                        let _ = self
-                            .inner
-                            .ipc
-                            .queue_tx
-                            .send(QueueEvent::Refresh(None))
-                            .await;
+                        let _ = self.inner.ipc.queue_tx.send(QueueEvent::Refresh).await;
                     }
 
                     Ok(JsonResponse::new(json!({

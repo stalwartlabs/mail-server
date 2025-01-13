@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use common::{
-    ipc::{DmarcEvent, OnHold, QueueEvent, QueuedMessage, ReportingEvent, TlsEvent},
+    ipc::{DmarcEvent, QueueEvent, QueueEventStatus, QueuedMessage, ReportingEvent, TlsEvent},
     Server,
 };
 use store::{
@@ -302,34 +302,47 @@ pub trait TestQueueEvent {
     fn assert_refresh(self);
     fn assert_done(self);
     fn assert_refresh_or_done(self);
-    fn unwrap_on_hold(self) -> OnHold;
+    fn assert_on_hold(self);
 }
 
 impl TestQueueEvent for QueueEvent {
     fn assert_refresh(self) {
         match self {
-            QueueEvent::Refresh(_) => (),
+            QueueEvent::Refresh
+            | QueueEvent::WorkerDone {
+                status: QueueEventStatus::Deferred,
+                ..
+            } => (),
             e => panic!("Unexpected event: {e:?}"),
         }
     }
 
     fn assert_done(self) {
         match self {
-            QueueEvent::WorkerDone(_) => (),
+            QueueEvent::WorkerDone {
+                status: QueueEventStatus::Completed,
+                ..
+            } => (),
             e => panic!("Unexpected event: {e:?}"),
         }
     }
 
     fn assert_refresh_or_done(self) {
         match self {
-            QueueEvent::Refresh(_) | QueueEvent::WorkerDone(_) => (),
+            QueueEvent::WorkerDone {
+                status: QueueEventStatus::Completed | QueueEventStatus::Deferred,
+                ..
+            } => (),
             e => panic!("Unexpected event: {e:?}"),
         }
     }
 
-    fn unwrap_on_hold(self) -> OnHold {
+    fn assert_on_hold(self) {
         match self {
-            QueueEvent::OnHold { status, .. } => status,
+            QueueEvent::WorkerDone {
+                status: QueueEventStatus::Limited { .. },
+                ..
+            } => (),
             e => panic!("Unexpected event: {e:?}"),
         }
     }

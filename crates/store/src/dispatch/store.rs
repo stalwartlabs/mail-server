@@ -880,10 +880,12 @@ impl Store {
                         }
                         _ => {
                             println!(
-                                "Found key in {:?}: {:?} {:?}",
+                                "Found key in {:?}: {:?} ({:?}) = {:?} ({:?})",
                                 char::from(subspace),
                                 key,
-                                value
+                                String::from_utf8_lossy(key),
+                                value,
+                                String::from_utf8_lossy(value)
                             );
                         }
                     }

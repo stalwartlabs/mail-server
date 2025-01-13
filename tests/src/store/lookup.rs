@@ -126,6 +126,32 @@ pub async fn lookup_tests() {
             store.assert_is_empty(store.clone().into()).await;
         }
 
+        // Test locking
+        for iteration in [1, 2] {
+            let mut tasks = Vec::new();
+            for _ in 0..100 {
+                let store = store.clone();
+                tasks.push(tokio::spawn(async move {
+                    store.try_lock(0, "lock".as_bytes(), 1).await.unwrap()
+                }));
+            }
+            // Only one should return true
+            let mut count = 0;
+            for task in tasks {
+                if task.await.unwrap() {
+                    count += 1;
+                }
+            }
+            assert_eq!(1, count, "Iteration {}", iteration);
+
+            // Wait 2 seconds for the lock to expire
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+        store.purge_in_memory_store().await.unwrap();
+        if let InMemoryStore::Store(store) = &store {
+            store.assert_is_empty(store.clone().into()).await;
+        }
+
         // Test prefix delete
         store
             .key_set(KeyValue::with_prefix(

@@ -136,8 +136,8 @@ async fn smtp_delivery() {
     let mut domain_retries = vec![0; num_domains];
     loop {
         match local.queue_receiver.try_read_event().await {
-            Some(QueueEvent::Refresh(_) | QueueEvent::WorkerDone(_)) => {}
-            Some(QueueEvent::OnHold { .. }) | Some(QueueEvent::Paused(_)) => unreachable!(),
+            Some(QueueEvent::Refresh | QueueEvent::WorkerDone { .. }) => {}
+            Some(QueueEvent::Paused(_)) => unreachable!(),
             None | Some(QueueEvent::Stop) => break,
         }
 

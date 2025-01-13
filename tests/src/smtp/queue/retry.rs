@@ -12,7 +12,7 @@ use crate::smtp::{
     TestSMTP,
 };
 use ahash::AHashSet;
-use common::ipc::QueueEvent;
+use common::ipc::{QueueEvent, QueueEventStatus};
 use smtp::queue::{spool::SmtpSpool, DeliveryAttempt};
 use store::write::now;
 
@@ -90,13 +90,14 @@ async fn queue_retry() {
 
     loop {
         match qr.try_read_event().await {
-            Some(QueueEvent::Refresh(Some(queue_id)) | QueueEvent::WorkerDone(queue_id)) => {
+            Some(QueueEvent::WorkerDone { queue_id, status }) => {
                 in_fight.remove(&queue_id);
+                match &status {
+                    QueueEventStatus::Completed | QueueEventStatus::Deferred => (),
+                    _ => panic!("unexpected status {queue_id}: {status:?}"),
+                }
             }
-            Some(QueueEvent::OnHold { queue_id, status }) => {
-                panic!("unexpected on hold event {queue_id}: {status:?}");
-            }
-            Some(QueueEvent::Refresh(None)) => (),
+            Some(QueueEvent::Refresh) => (),
             None | Some(QueueEvent::Stop) | Some(QueueEvent::Paused(_)) => break,
         }
 

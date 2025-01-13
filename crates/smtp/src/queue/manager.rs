@@ -12,7 +12,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use common::{
     core::BuildServer,
-    ipc::{OnHold, QueueEvent},
+    ipc::{QueueEvent, QueueEventStatus},
+    listener::limiter::ConcurrencyLimiter,
     Inner,
 };
 use rand::seq::SliceRandom;
@@ -21,7 +22,6 @@ use tokio::sync::mpsc;
 
 use super::{
     spool::{SmtpSpool, QUEUE_REFRESH},
-    throttle::IsAllowed,
     DeliveryAttempt, Message, QueueId, Status,
 };
 
@@ -30,6 +30,17 @@ pub struct Queue {
     pub on_hold: AHashMap<QueueId, OnHold>,
     pub next_wake_up: Instant,
     pub rx: mpsc::Receiver<QueueEvent>,
+}
+
+pub enum OnHold {
+    InFlight,
+    ConcurrencyLimited {
+        limiters: Vec<ConcurrencyLimiter>,
+        next_due: Option<u64>,
+    },
+    Locked {
+        until: u64,
+    },
 }
 
 impl SpawnQueue for mpsc::Receiver<QueueEvent> {
@@ -55,6 +66,8 @@ impl Queue {
     pub async fn start(&mut self) {
         let mut is_paused = false;
         let mut next_cleanup = Instant::now() + CLEANUP_INTERVAL;
+        let mut in_flight_count = 0;
+        let mut has_back_pressure = false;
 
         loop {
             let refresh_queue = match tokio::time::timeout(
@@ -63,27 +76,37 @@ impl Queue {
             )
             .await
             {
-                Ok(Some(QueueEvent::Refresh(queue_id))) => {
-                    if let Some(queue_id) = queue_id {
-                        self.on_hold.remove(&queue_id);
-                    }
-                    true
-                }
-                Ok(Some(QueueEvent::WorkerDone(queue_id))) => {
-                    self.on_hold.remove(&queue_id);
-                    !self.on_hold.is_empty()
-                }
-                Ok(Some(QueueEvent::OnHold { queue_id, status })) => {
-                    if let OnHold::Locked { until } = &status {
-                        let due_in = Instant::now() + Duration::from_secs(*until - now());
-                        if due_in < self.next_wake_up {
-                            self.next_wake_up = due_in;
+                Ok(Some(QueueEvent::WorkerDone { queue_id, status })) => {
+                    in_flight_count -= 1;
+
+                    match status {
+                        QueueEventStatus::Completed => {
+                            self.on_hold.remove(&queue_id);
+                            !self.on_hold.is_empty() || has_back_pressure
+                        }
+                        QueueEventStatus::Locked { until } => {
+                            let due_in = Instant::now() + Duration::from_secs(until - now());
+                            if due_in < self.next_wake_up {
+                                self.next_wake_up = due_in;
+                            }
+
+                            self.on_hold.insert(queue_id, OnHold::Locked { until });
+                            self.on_hold.len() > 1 || has_back_pressure
+                        }
+                        QueueEventStatus::Limited { limiters, next_due } => {
+                            self.on_hold.insert(
+                                queue_id,
+                                OnHold::ConcurrencyLimited { limiters, next_due },
+                            );
+                            !self.on_hold.is_empty() || has_back_pressure
+                        }
+                        QueueEventStatus::Deferred => {
+                            self.on_hold.remove(&queue_id);
+                            true
                         }
                     }
-
-                    self.on_hold.insert(queue_id, status);
-                    self.on_hold.len() > 1
                 }
+                Ok(Some(QueueEvent::Refresh)) => true,
                 Ok(Some(QueueEvent::Paused(paused))) => {
                     self.core
                         .data
@@ -101,11 +124,17 @@ impl Queue {
             if !is_paused {
                 // Deliver scheduled messages
                 if refresh_queue || self.next_wake_up <= Instant::now() {
-                    let now = now();
-                    let mut next_wake_up = QUEUE_REFRESH;
+                    // If the number of in-flight messages is greater than the maximum allowed, skip the queue
                     let server = self.core.build_server();
+                    let max_in_flight = server.core.smtp.queue.throttle.outbound_concurrency;
+                    has_back_pressure = in_flight_count >= max_in_flight;
+                    if has_back_pressure {
+                        continue;
+                    }
 
                     // Process queue events
+                    let now = now();
+                    let mut next_wake_up = QUEUE_REFRESH;
                     let mut queue_events = server.next_event().await;
 
                     if queue_events.len() > 5 {
@@ -114,6 +143,17 @@ impl Queue {
 
                     for queue_event in &queue_events {
                         if queue_event.due <= now {
+                            // Enforce global concurrency limits
+                            if in_flight_count >= max_in_flight {
+                                has_back_pressure = true;
+                                trc::event!(
+                                    Queue(trc::QueueEvent::ConcurrencyLimitExceeded),
+                                    Details = "Outbound concurrency limit exceeded.",
+                                    Limit = max_in_flight,
+                                );
+                                break;
+                            }
+
                             // Check if the message is still on hold
                             if let Some(on_hold) = self.on_hold.get(&queue_event.queue_id) {
                                 match on_hold {
@@ -140,28 +180,10 @@ impl Queue {
                                 self.on_hold.remove(&queue_event.queue_id);
                             }
 
-                            // Enforce global concurrency limits
-                            let mut in_flight = Vec::new();
-                            match server.is_outbound_allowed(&mut in_flight) {
-                                Ok(_) => {
-                                    self.on_hold.insert(queue_event.queue_id, OnHold::InFlight);
-                                    DeliveryAttempt {
-                                        in_flight,
-                                        event: *queue_event,
-                                    }
-                                    .try_deliver(server.clone());
-                                }
-
-                                Err(limiter) => {
-                                    self.on_hold.insert(
-                                        queue_event.queue_id,
-                                        OnHold::ConcurrencyLimited {
-                                            limiters: vec![limiter],
-                                            next_due: None,
-                                        },
-                                    );
-                                }
-                            }
+                            // Deliver message
+                            in_flight_count += 1;
+                            self.on_hold.insert(queue_event.queue_id, OnHold::InFlight);
+                            DeliveryAttempt::new(*queue_event).try_deliver(server.clone());
                         } else {
                             let due_in = queue_event.due - now;
                             if due_in < next_wake_up {

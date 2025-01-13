@@ -75,12 +75,7 @@ impl Gossiper {
             trc::event!(Cluster(ClusterEvent::OneOrMorePeersOffline));
 
             server.notify_task_queue();
-            let _ = server
-                .inner
-                .ipc
-                .queue_tx
-                .send(QueueEvent::Refresh(None))
-                .await;
+            let _ = server.inner.ipc.queue_tx.send(QueueEvent::Refresh).await;
         });
     }
 

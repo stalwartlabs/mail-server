@@ -664,10 +664,14 @@ pub async fn test(params: &mut JMAPTest) {
     // Add John and Jane to the Sales group
     for name in ["jdoe@example.com", "jane.smith@example.com"] {
         server
-            .core
-            .storage
-            .data
-            .add_to_group(name, "sales@example.com")
+            .increment_principal_revision(
+                server
+                    .core
+                    .storage
+                    .data
+                    .add_to_group(name, "sales@example.com")
+                    .await,
+            )
             .await;
     }
     john_client.refresh_session().await.unwrap();
@@ -764,10 +768,14 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Remove John from the sales group
     server
-        .core
-        .storage
-        .data
-        .remove_from_group("jdoe@example.com", "sales@example.com")
+        .increment_principal_revision(
+            server
+                .core
+                .storage
+                .data
+                .remove_from_group("jdoe@example.com", "sales@example.com")
+                .await,
+        )
         .await;
     assert_forbidden(
         john_client

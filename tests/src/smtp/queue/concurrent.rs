@@ -107,12 +107,7 @@ async fn concurrent_queue() {
 
     // Wake up all queues
     for inner in &inners {
-        inner
-            .ipc
-            .queue_tx
-            .send(QueueEvent::Refresh(None))
-            .await
-            .unwrap();
+        inner.ipc.queue_tx.send(QueueEvent::Refresh).await.unwrap();
     }
 
     tokio::time::sleep(Duration::from_millis(1500)).await;
