@@ -4,9 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use ahash::AHashSet;
 use directory::{
-    backend::internal::{lookup::DirectoryStore, PrincipalField},
-    Permission, Principal, QueryBy,
+    backend::internal::{
+        lookup::DirectoryStore,
+        manage::{ChangedPrincipals, ManageDirectory},
+        PrincipalField,
+    },
+    Permission, Principal, QueryBy, Type,
 };
 use jmap_proto::{
     request::RequestMethod,
@@ -16,22 +21,28 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
     sync::Arc,
 };
-use store::query::acl::AclQuery;
+use store::{dispatch::lookup::KeyValue, query::acl::AclQuery};
 use trc::AddContext;
-use utils::{
-    cache::TtlEntry,
-    map::{
-        bitmap::{Bitmap, BitmapItem},
-        vec_map::VecMap,
-    },
+use utils::map::{
+    bitmap::{Bitmap, BitmapItem},
+    vec_map::VecMap,
 };
 
-use crate::Server;
+use crate::{Server, KV_PRINCIPAL_REVISION};
 
 use super::{roles::RolePermissions, AccessToken, ResourceToken, TenantInfo};
 
+pub enum PrincipalOrId {
+    Principal(Principal),
+    Id(u32),
+}
+
 impl Server {
-    pub async fn build_access_token(&self, mut principal: Principal) -> trc::Result<AccessToken> {
+    async fn build_access_token_from_principal(
+        &self,
+        mut principal: Principal,
+        revision: u64,
+    ) -> trc::Result<AccessToken> {
         let mut role_permissions = RolePermissions::default();
 
         // Apply role permissions
@@ -95,7 +106,8 @@ impl Server {
 
         // SPDX-SnippetEnd
 
-        Ok(AccessToken {
+        // Build access token
+        let mut access_token = AccessToken {
             primary_id: principal.id(),
             member_of: principal
                 .iter_int(PrincipalField::MemberOf)
@@ -111,39 +123,9 @@ impl Server {
             quota: principal.quota(),
             permissions,
             obj_size: 0,
-        })
-    }
-
-    pub async fn get_access_token(&self, account_id: u32) -> trc::Result<AccessToken> {
-        let err = match self.directory().query(QueryBy::Id(account_id), true).await {
-            Ok(Some(principal)) => {
-                return self
-                    .update_access_token(self.build_access_token(principal).await?)
-                    .await
-            }
-            Ok(None) => Err(trc::AuthEvent::Error
-                .into_err()
-                .details("Account not found.")
-                .caused_by(trc::location!())),
-            Err(err) => Err(err),
+            revision,
         };
 
-        match &self.core.jmap.fallback_admin {
-            Some((_, secret)) if account_id == u32::MAX => {
-                self.update_access_token(
-                    self.build_access_token(Principal::fallback_admin(secret))
-                        .await?,
-                )
-                .await
-            }
-            _ => err,
-        }
-    }
-
-    pub async fn update_access_token(
-        &self,
-        mut access_token: AccessToken,
-    ) -> trc::Result<AccessToken> {
         for grant_account_id in [access_token.primary_id]
             .into_iter()
             .chain(access_token.member_of.iter().copied())
@@ -188,49 +170,223 @@ impl Server {
         Ok(access_token.update_size())
     }
 
-    pub async fn get_or_build_access_token(
+    async fn build_access_token(&self, account_id: u32, revision: u64) -> trc::Result<AccessToken> {
+        let err = match self.directory().query(QueryBy::Id(account_id), true).await {
+            Ok(Some(principal)) => {
+                return self
+                    .build_access_token_from_principal(principal, revision)
+                    .await
+            }
+            Ok(None) => Err(trc::AuthEvent::Error
+                .into_err()
+                .details("Account not found.")
+                .caused_by(trc::location!())),
+            Err(err) => Err(err),
+        };
+
+        match &self.core.jmap.fallback_admin {
+            Some((_, secret)) if account_id == u32::MAX => {
+                self.build_access_token_from_principal(Principal::fallback_admin(secret), revision)
+                    .await
+            }
+            _ => err,
+        }
+    }
+
+    pub async fn get_access_token(
         &self,
-        principal: Principal,
+        principal: impl Into<PrincipalOrId>,
     ) -> trc::Result<Arc<AccessToken>> {
+        let principal = principal.into();
+
+        // Obtain current revision
+        let principal_id = principal.id();
+        let revision = self.fetch_principal_revision(principal_id).await;
+
         match self
             .inner
             .cache
             .access_tokens
-            .get_value_or_guard_async(&principal.id())
+            .get_value_or_guard_async(&principal_id)
             .await
         {
-            Ok(token) => Ok(token),
+            Ok(token) => {
+                if revision == Some(token.revision) {
+                    Ok(token)
+                } else {
+                    let revision = revision.unwrap_or(u64::MAX);
+                    let token: Arc<AccessToken> = match principal {
+                        PrincipalOrId::Principal(principal) => {
+                            self.build_access_token_from_principal(principal, revision)
+                                .await?
+                        }
+                        PrincipalOrId::Id(account_id) => {
+                            self.build_access_token(account_id, revision).await?
+                        }
+                    }
+                    .into();
+
+                    self.inner
+                        .cache
+                        .access_tokens
+                        .insert(token.primary_id(), token.clone());
+
+                    Ok(token)
+                }
+            }
             Err(guard) => {
-                let token = Arc::new(
-                    self.update_access_token(self.build_access_token(principal).await?)
-                        .await?,
-                );
-                let _ = guard.insert(TtlEntry::new(
-                    token.clone(),
-                    self.core.jmap.session_cache_ttl,
-                ));
+                let revision = revision.unwrap_or(u64::MAX);
+                let token: Arc<AccessToken> = match principal {
+                    PrincipalOrId::Principal(principal) => {
+                        self.build_access_token_from_principal(principal, revision)
+                            .await?
+                    }
+                    PrincipalOrId::Id(account_id) => {
+                        self.build_access_token(account_id, revision).await?
+                    }
+                }
+                .into();
+                let _ = guard.insert(token.clone());
                 Ok(token)
             }
         }
     }
 
-    pub async fn get_cached_access_token(&self, primary_id: u32) -> trc::Result<Arc<AccessToken>> {
-        match self
-            .inner
-            .cache
-            .access_tokens
-            .get_value_or_guard_async(&primary_id)
+    pub async fn increment_principal_revision(&self, changed_principals: ChangedPrincipals) {
+        let mut nested_principals = Vec::new();
+        let mut fetched_ids = AHashSet::new();
+
+        for (id, changed_principal) in changed_principals.iter() {
+            self.increment_revision(*id).await;
+            if changed_principal.member_change {
+                nested_principals.push(*id);
+
+                if changed_principal.typ == Type::Tenant {
+                    match self
+                        .store()
+                        .list_principals(
+                            None,
+                            (*id).into(),
+                            &[Type::Individual, Type::Group, Type::Role, Type::ApiKey],
+                            &[PrincipalField::Name],
+                            0,
+                            0,
+                        )
+                        .await
+                    {
+                        Ok(principals) => {
+                            for principal in principals.items {
+                                if !changed_principals.contains(principal.id()) {
+                                    if principal.typ() == Type::Role {
+                                        nested_principals.push(principal.id());
+                                    } else {
+                                        self.increment_revision(principal.id()).await;
+                                        fetched_ids.insert(principal.id());
+                                    }
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            trc::error!(err
+                                .details("Failed to list principals")
+                                .caused_by(trc::location!())
+                                .account_id(*id));
+                        }
+                    }
+                }
+            }
+        }
+
+        if !nested_principals.is_empty() {
+            let mut ids = nested_principals.into_iter();
+            let mut ids_stack = vec![];
+
+            loop {
+                if let Some(id) = ids.next() {
+                    // Skip if already fetched
+                    if !fetched_ids.insert(id) {
+                        continue;
+                    }
+
+                    // Increment revision
+                    if !changed_principals.contains(id) {
+                        self.increment_revision(id).await;
+                    }
+
+                    // Obtain principal
+                    match self.store().get_members(id).await {
+                        Ok(members) => {
+                            ids_stack.push(ids);
+                            ids = members.into_iter();
+                        }
+                        Err(err) => {
+                            trc::error!(err
+                                .details("Failed to obtain principal")
+                                .caused_by(trc::location!())
+                                .account_id(id));
+                        }
+                    }
+                } else if let Some(prev_ids) = ids_stack.pop() {
+                    ids = prev_ids;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    async fn increment_revision(&self, id: u32) {
+        if let Err(err) = self
+            .in_memory_store()
+            .counter_incr(
+                KeyValue::with_prefix(KV_PRINCIPAL_REVISION, id.to_be_bytes(), 1)
+                    .expires(30 * 86400),
+            )
             .await
         {
-            Ok(token) => Ok(token),
-            Err(guard) => {
-                let token = Arc::new(self.get_access_token(primary_id).await?);
-                let _ = guard.insert(TtlEntry::new(
-                    token.clone(),
-                    self.core.jmap.session_cache_ttl,
-                ));
-                Ok(token)
+            trc::error!(err
+                .details("Failed to increment principal revision")
+                .account_id(id));
+        }
+    }
+
+    pub async fn fetch_principal_revision(&self, id: u32) -> Option<u64> {
+        match self
+            .in_memory_store()
+            .counter_get(KeyValue::<()>::build_key(
+                KV_PRINCIPAL_REVISION,
+                id.to_be_bytes(),
+            ))
+            .await
+        {
+            Ok(revision) => (revision as u64).into(),
+            Err(err) => {
+                trc::error!(err
+                    .details("Failed to obtain principal revision")
+                    .account_id(id));
+                None
             }
+        }
+    }
+}
+
+impl From<u32> for PrincipalOrId {
+    fn from(id: u32) -> Self {
+        Self::Id(id)
+    }
+}
+
+impl From<Principal> for PrincipalOrId {
+    fn from(principal: Principal) -> Self {
+        Self::Principal(principal)
+    }
+}
+
+impl PrincipalOrId {
+    pub fn id(&self) -> u32 {
+        match self {
+            Self::Principal(principal) => principal.id(),
+            Self::Id(id) => *id,
         }
     }
 }

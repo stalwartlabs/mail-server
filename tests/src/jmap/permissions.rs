@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::sync::Arc;
+
 use ahash::AHashSet;
 use common::{
     auth::{AccessToken, TenantInfo},
@@ -825,7 +827,7 @@ trait ValidatePermissions {
     fn validate_tenant(self, tenant_id: u32, tenant_quota: u64) -> Self;
 }
 
-impl ValidatePermissions for AccessToken {
+impl ValidatePermissions for Arc<AccessToken> {
     fn validate_permissions(
         self,
         expected_permissions: impl IntoIterator<Item = Permission>,

@@ -540,11 +540,11 @@ pub async fn emails_purge_tombstoned(server: &Server) {
         let do_add = server.inner.cache.access_tokens.get(&account_id).is_none();
 
         if do_add {
-            server.inner.cache.access_tokens.insert(
-                account_id,
-                Arc::new(AccessToken::from_id(account_id)),
-                Duration::from_secs(3600),
-            );
+            server
+                .inner
+                .cache
+                .access_tokens
+                .insert(account_id, Arc::new(AccessToken::from_id(account_id)));
         }
         server.emails_purge_tombstoned(account_id).await.unwrap();
         if do_add {

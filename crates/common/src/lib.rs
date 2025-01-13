@@ -82,6 +82,7 @@ pub const KV_RATE_LIMIT_CONTACT: u8 = 7;
 pub const KV_RATE_LIMIT_HTTP_AUTHENTICATED: u8 = 8;
 pub const KV_RATE_LIMIT_HTTP_ANONYMOUS: u8 = 9;
 pub const KV_RATE_LIMIT_IMAP: u8 = 10;
+pub const KV_PRINCIPAL_REVISION: u8 = 11;
 pub const KV_REPUTATION_IP: u8 = 12;
 pub const KV_REPUTATION_FROM: u8 = 13;
 pub const KV_REPUTATION_DOMAIN: u8 = 14;
@@ -137,11 +138,9 @@ pub struct Data {
 }
 
 pub struct Caches {
-    pub access_tokens: CacheWithTtl<u32, Arc<AccessToken>>,
-    pub http_auth: CacheWithTtl<String, u32>,
-
+    pub access_tokens: Cache<u32, Arc<AccessToken>>,
+    pub http_auth: Cache<String, HttpAuthCache>,
     pub permissions: Cache<u32, Arc<RolePermissions>>,
-    pub permissions_version: AtomicU8,
 
     pub account: Cache<AccountId, Arc<Account>>,
     pub mailbox: Cache<MailboxId, Arc<MailboxState>>,
@@ -157,6 +156,12 @@ pub struct Caches {
     pub dns_tlsa: CacheWithTtl<String, Arc<Tlsa>>,
     pub dbs_mta_sts: CacheWithTtl<String, Arc<Policy>>,
     pub dns_rbl: CacheWithTtl<String, Option<Arc<IpResolver>>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct HttpAuthCache {
+    pub account_id: u32,
+    pub revision: u64,
 }
 
 pub struct Ipc {
@@ -291,6 +296,12 @@ impl CacheItemWeight for Account {
     }
 }
 
+impl CacheItemWeight for HttpAuthCache {
+    fn weight(&self) -> u64 {
+        std::mem::size_of::<HttpAuthCache>() as u64
+    }
+}
+
 impl MailboxState {
     pub fn calculate_weight(&self) -> u64 {
         std::mem::size_of::<MailboxState>() as u64
@@ -406,10 +417,9 @@ impl Default for Inner {
 impl Default for Caches {
     fn default() -> Self {
         Self {
-            access_tokens: CacheWithTtl::new(1024, 10 * 1024 * 1024),
-            http_auth: CacheWithTtl::new(1024, 10 * 1024 * 1024),
+            access_tokens: Cache::new(1024, 10 * 1024 * 1024),
+            http_auth: Cache::new(1024, 10 * 1024 * 1024),
             permissions: Cache::new(1024, 10 * 1024 * 1024),
-            permissions_version: Default::default(),
             account: Cache::new(1024, 10 * 1024 * 1024),
             mailbox: Cache::new(1024, 10 * 1024 * 1024),
             threads: Cache::new(1024, 10 * 1024 * 1024),

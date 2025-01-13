@@ -7,7 +7,10 @@
 use std::{sync::Arc, time::Instant};
 
 use common::{auth::AccessToken, listener::SessionStream, MailboxId};
-use directory::{backend::internal::PrincipalField, Permission, QueryBy};
+use directory::{
+    backend::internal::{manage::ChangedPrincipals, PrincipalField},
+    Permission, QueryBy, Type,
+};
 use imap_proto::{
     protocol::acl::{
         Arguments, GetAclResponse, ListRightsResponse, ModRightsOp, MyRightsResponse, Rights,
@@ -369,10 +372,12 @@ impl<T: SessionStream> Session<T> {
 
             // Invalidate ACLs
             data.server
-                .inner
-                .cache
-                .access_tokens
-                .remove(&acl_account_id);
+                .increment_principal_revision(ChangedPrincipals::from_change(
+                    acl_account_id,
+                    Type::Individual,
+                    PrincipalField::EnabledPermissions,
+                ))
+                .await;
 
             trc::event!(
                 Imap(trc::ImapEvent::SetAcl),

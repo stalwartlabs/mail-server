@@ -112,13 +112,13 @@ impl Caches {
         const MB_1: u64 = 1024 * 1024;
 
         Caches {
-            access_tokens: CacheWithTtl::from_config(
+            access_tokens: Cache::from_config(
                 config,
                 "access-token",
                 MB_10,
                 (std::mem::size_of::<AccessToken>() + 255) as u64,
             ),
-            http_auth: CacheWithTtl::from_config(
+            http_auth: Cache::from_config(
                 config,
                 "http-auth",
                 MB_1,
@@ -130,7 +130,6 @@ impl Caches {
                 MB_5,
                 std::mem::size_of::<RolePermissions>() as u64,
             ),
-            permissions_version: 0.into(),
             account: Cache::from_config(
                 config,
                 "account",

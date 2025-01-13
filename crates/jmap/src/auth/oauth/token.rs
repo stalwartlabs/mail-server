@@ -310,7 +310,7 @@ impl TokenHandler for Server {
             id_token: if with_id_token {
                 // Obtain access token
                 let access_token = self
-                    .get_cached_access_token(account_id)
+                    .get_access_token(account_id)
                     .await
                     .caused_by(trc::location!())?;
 

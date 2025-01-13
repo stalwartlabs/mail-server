@@ -56,7 +56,6 @@ impl Request {
                 epoch: EpochId::from_leb128_it(&mut it)?,
                 gen_config: it.next().copied()?,
                 gen_lists: it.next().copied()?,
-                gen_permissions: it.next().copied()?,
             });
         }
         match flags & !(1 << 7) {
@@ -108,7 +107,6 @@ impl Request {
             peer.epoch.to_leb128_bytes(&mut bytes);
             bytes.push(peer.gen_config);
             bytes.push(peer.gen_lists);
-            bytes.push(peer.gen_permissions);
         }
 
         bytes

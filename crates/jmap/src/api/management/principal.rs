@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 
 use common::{auth::AccessToken, Server, KV_BAYES_MODEL_USER};
 use directory::{
     backend::internal::{
         lookup::DirectoryStore,
-        manage::{self, not_found, ManageDirectory, UpdatePrincipal},
+        manage::{self, not_found, ChangedPrincipals, ManageDirectory, UpdatePrincipal},
         PrincipalAction, PrincipalField, PrincipalUpdate, PrincipalValue, SpecialSecrets,
     },
     DirectoryInner, Permission, Principal, QueryBy, Type,
@@ -182,8 +182,12 @@ impl PrincipalManager for Server {
                     }
                 }
 
+                // Increment revision
+                self.increment_principal_revision(result.changed_principals)
+                    .await;
+
                 Ok(JsonResponse::new(json!({
-                    "data": result,
+                    "data": result.id,
                 }))
                 .into_http_response())
             }
@@ -361,13 +365,21 @@ impl PrincipalManager for Server {
                             .is_some_and(|c| c.account_classify);
                         for principal in principals.items {
                             // Delete account
-                            if let Err(err) = server
+                            match server
                                 .store()
                                 .delete_principal(QueryBy::Id(principal.id()))
                                 .await
                             {
-                                trc::error!(err.details("Failed to delete principal"));
-                                continue;
+                                Ok(changed_principals) => {
+                                    // Increment revision
+                                    server
+                                        .increment_principal_revision(changed_principals)
+                                        .await;
+                                }
+                                Err(err) => {
+                                    trc::error!(err.details("Failed to delete principal"));
+                                    continue;
+                                }
                             }
 
                             if matches!(typ, Type::Individual | Type::Group) {
@@ -394,16 +406,6 @@ impl PrincipalManager for Server {
                                     }
                                 }
                             }
-                        }
-
-                        if matches!(typ, Type::Role | Type::Tenant) {
-                            // Update permissions cache
-                            server.inner.cache.permissions.clear();
-                            server
-                                .inner
-                                .cache
-                                .permissions_version
-                                .fetch_add(1, Ordering::Relaxed);
                         }
                     });
                 }
@@ -492,7 +494,8 @@ impl PrincipalManager for Server {
                         })?;
 
                         // Delete account
-                        self.store()
+                        let changed_principals = self
+                            .store()
                             .delete_principal(QueryBy::Id(account_id))
                             .await?;
 
@@ -520,14 +523,8 @@ impl PrincipalManager for Server {
                             }
                         }
 
-                        if matches!(typ, Type::Role | Type::Tenant) {
-                            // Update permissions cache
-                            self.inner.cache.permissions.clear();
-                            self.inner
-                                .cache
-                                .permissions_version
-                                .fetch_add(1, Ordering::Relaxed);
-                        }
+                        // Increment revision
+                        self.increment_principal_revision(changed_principals).await;
 
                         Ok(JsonResponse::new(json!({
                             "data": (),
@@ -560,14 +557,10 @@ impl PrincipalManager for Server {
                         })?;
 
                         // Validate changes
-                        let mut needs_assert = false;
-                        let mut expire_token = false;
-                        let mut is_role_change = false;
-
                         for change in &changes {
                             match change.field {
                                 PrincipalField::Secrets => {
-                                    needs_assert = true;
+                                    self.assert_supported_directory()?;
                                 }
                                 PrincipalField::Name
                                 | PrincipalField::Emails
@@ -596,12 +589,6 @@ impl PrincipalManager for Server {
                                 PrincipalField::Roles
                                 | PrincipalField::EnabledPermissions
                                 | PrincipalField::DisabledPermissions => {
-                                    if matches!(typ, Type::Role | Type::Tenant) {
-                                        is_role_change = true;
-                                    } else {
-                                        expire_token = true;
-                                    }
-
                                     if change.field == PrincipalField::Roles
                                         && matches!(
                                             change.action,
@@ -652,12 +639,9 @@ impl PrincipalManager for Server {
                             }
                         }
 
-                        if needs_assert {
-                            self.assert_supported_directory()?;
-                        }
-
                         // Update principal
-                        self.core
+                        let changed_principals = self
+                            .core
                             .storage
                             .data
                             .update_principal(
@@ -668,18 +652,8 @@ impl PrincipalManager for Server {
                             )
                             .await?;
 
-                        if is_role_change {
-                            // Update permissions cache
-                            self.inner.cache.permissions.clear();
-                            self.inner
-                                .cache
-                                .permissions_version
-                                .fetch_add(1, Ordering::Relaxed);
-                        }
-
-                        if expire_token {
-                            self.inner.cache.access_tokens.remove(&account_id);
-                        }
+                        // Increment revision
+                        self.increment_principal_revision(changed_principals).await;
 
                         Ok(JsonResponse::new(json!({
                             "data": (),
@@ -778,6 +752,14 @@ impl PrincipalManager for Server {
                         .set([("authentication.fallback-admin.secret", password)], true)
                         .await?;
 
+                    // Increment revision
+                    self.increment_principal_revision(ChangedPrincipals::from_change(
+                        access_token.primary_id(),
+                        Type::Individual,
+                        PrincipalField::Secrets,
+                    ))
+                    .await;
+
                     return Ok(JsonResponse::new(json!({
                         "data": (),
                     }))
@@ -830,7 +812,8 @@ impl PrincipalManager for Server {
         }
 
         // Update password
-        self.core
+        let changed_principals = self
+            .core
             .storage
             .data
             .update_principal(
@@ -839,6 +822,9 @@ impl PrincipalManager for Server {
                     .with_tenant(access_token.tenant.map(|t| t.id)),
             )
             .await?;
+
+        // Increment revision
+        self.increment_principal_revision(changed_principals).await;
 
         Ok(JsonResponse::new(json!({
             "data": (),

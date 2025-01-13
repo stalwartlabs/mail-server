@@ -106,7 +106,7 @@ impl MailDelivery for Server {
             }
 
             // Obtain access token
-            let result = match self.get_cached_access_token(uid).await.and_then(|token| {
+            let result = match self.get_access_token(uid).await.and_then(|token| {
                 token
                     .assert_has_permission(Permission::EmailReceive)
                     .map(|_| token)

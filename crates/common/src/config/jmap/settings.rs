@@ -43,7 +43,6 @@ pub struct JmapConfig {
     pub sieve_max_script_name: usize,
     pub sieve_max_scripts: usize,
 
-    pub session_cache_ttl: Duration,
     pub rate_authenticated: Option<Rate>,
     pub rate_anonymous: Option<Rate>,
 
@@ -298,9 +297,6 @@ impl JmapConfig {
                 .property("sieve.untrusted.limits.max-scripts")
                 .unwrap_or(256),
             capabilities: BaseCapabilities::default(),
-            session_cache_ttl: config
-                .property("cache.session.ttl")
-                .unwrap_or(Duration::from_secs(3600)),
             rate_authenticated: config
                 .property_or_default::<Option<Rate>>("jmap.rate-limit.account", "1000/1m")
                 .unwrap_or_default(),

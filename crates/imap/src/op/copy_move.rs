@@ -173,7 +173,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut copied_ids = Vec::with_capacity(ids.len());
         let access_token = self
             .server
-            .get_cached_access_token(dest_mailbox.account_id)
+            .get_access_token(dest_mailbox.account_id)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
 

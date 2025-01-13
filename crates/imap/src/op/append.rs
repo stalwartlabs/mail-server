@@ -96,7 +96,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain quota
         let access_token = self
             .server
-            .get_cached_access_token(mailbox.account_id)
+            .get_access_token(mailbox.account_id)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
         let resource_token = access_token.as_resource_token();

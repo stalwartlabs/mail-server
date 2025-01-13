@@ -35,6 +35,7 @@ pub struct AccessToken {
     pub quota: u64,
     pub permissions: Permissions,
     pub tenant: Option<TenantInfo>,
+    pub revision: u64,
     pub obj_size: u64,
 }
 
@@ -71,12 +72,12 @@ impl Server {
                     .validate_access_token(GrantType::AccessToken.into(), token)
                     .await
                 {
-                    Ok(token_into) => self.get_cached_access_token(token_into.account_id).await,
+                    Ok(token_into) => self.get_access_token(token_into.account_id).await,
                     Err(err) => Err(err),
                 }
             }
             _ => match self.authenticate_credentials(req, directory).await {
-                Ok(principal) => self.get_or_build_access_token(principal).await,
+                Ok(principal) => self.get_access_token(principal).await,
                 Err(err) => Err(err),
             },
         }

@@ -352,7 +352,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain access token
         let access_token = self
             .server
-            .get_cached_access_token(self.account_id)
+            .get_access_token(self.account_id)
             .await
             .caused_by(trc::location!())?;
         let state = access_token.state();

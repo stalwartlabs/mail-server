@@ -7,7 +7,10 @@
 use std::future::Future;
 
 use common::{auth::AccessToken, Server};
-use directory::{backend::internal::PrincipalField, QueryBy};
+use directory::{
+    backend::internal::{manage::ChangedPrincipals, PrincipalField},
+    QueryBy, Type,
+};
 use jmap_proto::{
     error::set::SetError,
     object::Object,
@@ -83,7 +86,11 @@ pub trait AclMethods: Sync + Send {
         account_id: u32,
     ) -> impl Future<Output = Value> + Send;
 
-    fn refresh_acls(&self, changes: &Object<Value>, current: &Option<HashedValue<Object<Value>>>);
+    fn refresh_acls(
+        &self,
+        changes: &Object<Value>,
+        current: &Option<HashedValue<Object<Value>>>,
+    ) -> impl Future<Output = ()> + Send;
 
     fn map_acl_set(
         &self,
@@ -356,9 +363,13 @@ impl AclMethods for Server {
         }
     }
 
-    fn refresh_acls(&self, changes: &Object<Value>, current: &Option<HashedValue<Object<Value>>>) {
+    async fn refresh_acls(
+        &self,
+        changes: &Object<Value>,
+        current: &Option<HashedValue<Object<Value>>>,
+    ) {
         if let Value::Acl(acl_changes) = changes.get(&Property::Acl) {
-            let access_tokens = &self.inner.cache.access_tokens;
+            let mut changed_principals = ChangedPrincipals::new();
             if let Some(Value::Acl(acl_current)) = current
                 .as_ref()
                 .and_then(|current| current.inner.properties.get(&Property::Acl))
@@ -372,7 +383,11 @@ impl AclMethods for Server {
                         }
                     }
                     if invalidate {
-                        access_tokens.remove(&current_item.account_id);
+                        changed_principals.add_change(
+                            current_item.account_id,
+                            Type::Individual,
+                            PrincipalField::EnabledPermissions,
+                        );
                     }
                 }
 
@@ -385,14 +400,24 @@ impl AclMethods for Server {
                         }
                     }
                     if invalidate {
-                        access_tokens.remove(&change_item.account_id);
+                        changed_principals.add_change(
+                            change_item.account_id,
+                            Type::Individual,
+                            PrincipalField::EnabledPermissions,
+                        );
                     }
                 }
             } else {
                 for value in acl_changes {
-                    access_tokens.remove(&value.account_id);
+                    changed_principals.add_change(
+                        value.account_id,
+                        Type::Individual,
+                        PrincipalField::EnabledPermissions,
+                    );
                 }
             }
+
+            self.increment_principal_revision(changed_principals).await;
         }
     }
 

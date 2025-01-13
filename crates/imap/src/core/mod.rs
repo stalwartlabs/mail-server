@@ -135,7 +135,7 @@ impl<T: SessionStream> State<T> {
 impl<T: SessionStream> SessionData<T> {
     pub async fn get_access_token(&self) -> trc::Result<Arc<AccessToken>> {
         self.server
-            .get_cached_access_token(self.account_id)
+            .get_access_token(self.account_id)
             .await
             .caused_by(trc::location!())
     }

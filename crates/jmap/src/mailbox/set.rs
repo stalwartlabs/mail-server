@@ -792,7 +792,7 @@ impl MailboxSet for Server {
         // Refresh ACLs
         let current = update.map(|(_, current)| current);
         if changes.properties.contains_key(&Property::Acl) {
-            self.refresh_acls(&changes, &current);
+            self.refresh_acls(&changes, &current).await;
         }
 
         // Validate

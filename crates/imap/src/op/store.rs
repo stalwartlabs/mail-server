@@ -195,7 +195,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut changed_mailboxes = AHashSet::new();
         let access_token = self
             .server
-            .get_cached_access_token(account_id)
+            .get_access_token(account_id)
             .await
             .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
         let can_spam_train = self.server.email_bayes_can_train(&access_token);

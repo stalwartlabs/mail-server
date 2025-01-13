@@ -417,7 +417,7 @@ impl EmailDeletion for Server {
 
         // Obtain tenant id
         let tenant_id = self
-            .get_cached_access_token(account_id)
+            .get_access_token(account_id)
             .await
             .caused_by(trc::location!())?
             .tenant

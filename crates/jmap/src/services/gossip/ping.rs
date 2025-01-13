@@ -107,7 +107,6 @@ impl Gossiper {
         let mut remove_seeds = false;
         let mut update_config = false;
         let mut update_lists = false;
-        let mut update_permissions = false;
 
         'outer: for (pos, peer) in peers.into_iter().enumerate() {
             if peer.addr == self.addr {
@@ -145,18 +144,6 @@ impl Gossiper {
                                     update_lists = true;
                                 }
                             }
-                            if local_peer.gen_permissions != peer.gen_permissions {
-                                local_peer.gen_permissions = peer.gen_permissions;
-                                if local_peer.hb_sum > 0 {
-                                    trc::event!(
-                                        Cluster(ClusterEvent::PeerHasChanges),
-                                        RemoteIp = peer.addr,
-                                        Details = "permissions"
-                                    );
-
-                                    update_permissions = true;
-                                }
-                            }
                         }
 
                         continue 'outer;
@@ -181,10 +168,6 @@ impl Gossiper {
         }
 
         // Reload settings
-        if update_permissions {
-            self.inner.cache.permissions.clear();
-        }
-
         if update_config || update_lists {
             let server = self.inner.build_server();
 

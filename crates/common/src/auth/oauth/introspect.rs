@@ -45,17 +45,6 @@ pub struct OAuthIntrospect {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
-    /*#[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aud: Option<String>,
-
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub iss: Option<String>,
-
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub jti: Option<String>,*/
 }
 
 impl Server {
@@ -71,7 +60,7 @@ impl Server {
                 username: if access_token.primary_id() == token_info.account_id {
                     access_token.name.clone()
                 } else {
-                    self.get_cached_access_token(token_info.account_id)
+                    self.get_access_token(token_info.account_id)
                         .await
                         .caused_by(trc::location!())?
                         .name

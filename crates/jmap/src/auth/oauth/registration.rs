@@ -142,7 +142,7 @@ impl ClientRegistrationHandler for Server {
 
         // Check if the account is allowed to override client registration
         if self
-            .get_cached_access_token(account_id)
+            .get_access_token(account_id)
             .await
             .caused_by(trc::location!())?
             .has_permission(Permission::OauthClientOverride)

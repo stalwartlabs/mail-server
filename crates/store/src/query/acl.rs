@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use ahash::AHashSet;
 use trc::AddContext;
 
 use crate::{
@@ -79,7 +80,7 @@ impl Store {
         .map(|_| results)
     }
 
-    pub async fn acl_revoke_all(&self, account_id: u32) -> trc::Result<()> {
+    pub async fn acl_revoke_all(&self, account_id: u32) -> trc::Result<AHashSet<u32>> {
         let from_key = ValueKey {
             account_id: 0,
             collection: 0,
@@ -94,12 +95,15 @@ impl Store {
         };
 
         let mut delete_keys = Vec::new();
+        let mut revoked_accounts = AHashSet::new();
         self.iterate(
             IterateParams::new(from_key, to_key).ascending().no_values(),
             |key, _| {
                 if account_id == key.deserialize_be_u32(U32_LEN)? {
+                    let owner_account_id = key.deserialize_be_u32(0)?;
+                    revoked_accounts.insert(owner_account_id);
                     delete_keys.push((
-                        ValueClass::Acl(key.deserialize_be_u32(0)?),
+                        ValueClass::Acl(owner_account_id),
                         AclItem::deserialize(key)?,
                     ));
                 }
@@ -139,7 +143,7 @@ impl Store {
                 .caused_by(trc::location!())?;
         }
 
-        Ok(())
+        Ok(revoked_accounts)
     }
 }
 

@@ -20,6 +20,7 @@ use crate::Server;
 pub struct RolePermissions {
     pub enabled: Permissions,
     pub disabled: Permissions,
+    pub revision: u64,
 }
 
 static USER_PERMISSIONS: LazyLock<Arc<RolePermissions>> = LazyLock::new(user_permissions);
@@ -34,6 +35,8 @@ impl Server {
             ROLE_ADMIN => Ok(ADMIN_PERMISSIONS.clone()),
             ROLE_TENANT_ADMIN => Ok(TENANT_ADMIN_PERMISSIONS.clone()),
             role_id => {
+                let revision = self.fetch_principal_revision(role_id).await;
+
                 match self
                     .inner
                     .cache
@@ -41,9 +44,26 @@ impl Server {
                     .get_value_or_guard_async(&role_id)
                     .await
                 {
-                    Ok(permissions) => Ok(permissions),
+                    Ok(permissions) => {
+                        if Some(permissions.revision) == revision {
+                            Ok(permissions)
+                        } else {
+                            let permissions = self
+                                .build_role_permissions(role_id, revision.unwrap_or(u64::MAX))
+                                .await?;
+
+                            self.inner
+                                .cache
+                                .permissions
+                                .insert(role_id, permissions.clone());
+
+                            Ok(permissions)
+                        }
+                    }
                     Err(guard) => {
-                        let permissions = self.build_role_permissions(role_id).await?;
+                        let permissions = self
+                            .build_role_permissions(role_id, revision.unwrap_or(u64::MAX))
+                            .await?;
                         let _ = guard.insert(permissions.clone());
                         Ok(permissions)
                     }
@@ -52,11 +72,18 @@ impl Server {
         }
     }
 
-    async fn build_role_permissions(&self, role_id: u32) -> trc::Result<Arc<RolePermissions>> {
+    async fn build_role_permissions(
+        &self,
+        role_id: u32,
+        revision: u64,
+    ) -> trc::Result<Arc<RolePermissions>> {
         let mut role_ids = vec![role_id as u64].into_iter();
         let mut role_ids_stack = vec![];
         let mut fetched_role_ids = AHashSet::new();
-        let mut return_permissions = RolePermissions::default();
+        let mut return_permissions = RolePermissions {
+            revision,
+            ..Default::default()
+        };
 
         'outer: loop {
             if let Some(role_id) = role_ids.next() {
@@ -91,10 +118,20 @@ impl Server {
                     }
                     role_id => {
                         // Try with the cache
-                        if let Some(role_permissions) = self.inner.cache.permissions.get(&role_id) {
+                        let revision = self.fetch_principal_revision(role_id).await;
+                        if let Some(role_permissions) = self
+                            .inner
+                            .cache
+                            .permissions
+                            .get(&role_id)
+                            .filter(|p| Some(p.revision) == revision)
+                        {
                             return_permissions.union(role_permissions.as_ref());
                         } else {
-                            let mut role_permissions = RolePermissions::default();
+                            let mut role_permissions = RolePermissions {
+                                revision: revision.unwrap_or(u64::MAX),
+                                ..Default::default()
+                            };
 
                             // Obtain principal
                             let mut principal = self
@@ -180,10 +217,7 @@ impl RolePermissions {
 }
 
 fn tenant_admin_permissions() -> Arc<RolePermissions> {
-    let mut permissions = RolePermissions {
-        enabled: Permissions::new(),
-        disabled: Permissions::new(),
-    };
+    let mut permissions = RolePermissions::default();
 
     for permission_id in 0..Permission::COUNT {
         let permission = Permission::from_id(permission_id).unwrap();
@@ -196,10 +230,7 @@ fn tenant_admin_permissions() -> Arc<RolePermissions> {
 }
 
 fn user_permissions() -> Arc<RolePermissions> {
-    let mut permissions = RolePermissions {
-        enabled: Permissions::new(),
-        disabled: Permissions::new(),
-    };
+    let mut permissions = RolePermissions::default();
 
     for permission_id in 0..Permission::COUNT {
         let permission = Permission::from_id(permission_id).unwrap();
@@ -215,6 +246,7 @@ fn admin_permissions() -> Arc<RolePermissions> {
     Arc::new(RolePermissions {
         enabled: Permissions::all(),
         disabled: Permissions::new(),
+        revision: 0,
     })
 }
 
