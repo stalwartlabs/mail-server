@@ -229,7 +229,8 @@ impl BootManager {
                 }
 
                 // Download Spam filter rules if missing
-                let is_pre_0_11 = match config.value("version.spam-filter").and_then(|v| {
+                // TODO remove this check in 1.0
+                let mut update_webadmin = match config.value("version.spam-filter").and_then(|v| {
                     if !v.is_empty() {
                         Some(Semver::try_from(v))
                     } else {
@@ -311,6 +312,18 @@ impl BootManager {
                     }
                 };
 
+                // TODO remove key migration in 1.0
+                for (old_key, new_key) in [
+                    ("lookup.default.hostname", "server.hostname"),
+                    ("lookup.default.domain", "report.domain"),
+                ] {
+                    if let (Some(old_value), None) = (config.value(old_key), config.value(new_key))
+                    {
+                        insert_keys.push(ConfigKey::from((new_key, old_value)));
+                        update_webadmin = true;
+                    }
+                }
+
                 // Download webadmin if missing
                 if let Some(blob_store) = config
                     .value("storage.blob")
@@ -381,7 +394,7 @@ impl BootManager {
                 );
 
                 // Webadmin auto-update
-                if is_pre_0_11
+                if update_webadmin
                     || config
                         .property_or_default::<bool>("webadmin.auto-update", "false")
                         .unwrap_or_default()

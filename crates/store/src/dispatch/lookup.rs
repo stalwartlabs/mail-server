@@ -278,12 +278,35 @@ impl InMemoryStore {
         match self {
             InMemoryStore::Store(store) => {
                 let key = KeyValue::<()>::build_key(prefix, key);
-                let lock_expiry = store
+                let lock_expiry = match store
                     .get_value::<u64>(ValueKey::from(ValueClass::InMemory(InMemoryClass::Key(
                         key.clone(),
                     ))))
                     .await
-                    .caused_by(trc::location!())?;
+                {
+                    Ok(lock_expiry) => lock_expiry,
+                    Err(err)
+                        if err.matches(trc::EventType::Store(trc::StoreEvent::DataCorruption)) =>
+                    {
+                        // TODO remove in 1.0
+                        let mut batch = BatchBuilder::new();
+                        batch.ops.push(Operation::Value {
+                            class: ValueClass::InMemory(InMemoryClass::Key(key.clone())),
+                            op: ValueOp::Clear,
+                        });
+                        store
+                            .write(batch.build())
+                            .await
+                            .caused_by(trc::location!())?;
+                        None
+                    }
+                    Err(err) => {
+                        return Err(err
+                            .details("Failed to read lock.")
+                            .caused_by(trc::location!()));
+                    }
+                };
+
                 let now = now();
                 if lock_expiry.is_some_and(|expiry| expiry > now) {
                     return Ok(false);
