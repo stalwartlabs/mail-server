@@ -50,7 +50,8 @@ pub async fn test(params: &JMAPTest) {
         .unwrap()
         .validate_permissions(
             Permission::all().filter(|p| p.is_user_permission() && *p != Permission::Pop3Dele),
-        );
+        )
+        .validate_revision(0);
 
     // Create multiple roles
     for (role, permissions, parent_role) in &[
@@ -139,7 +140,8 @@ pub async fn test(params: &JMAPTest) {
             Permission::ImapList,
             Permission::Pop3Authenticate,
             Permission::Pop3List,
-        ]);
+        ])
+        .validate_revision(1);
 
     // Query all principals
     api.get::<List<Principal>>("/api/principal")
@@ -833,6 +835,7 @@ trait ValidatePermissions {
         expected_permissions: impl IntoIterator<Item = Permission>,
     ) -> Self;
     fn validate_tenant(self, tenant_id: u32, tenant_quota: u64) -> Self;
+    fn validate_revision(self, revision: u64) -> Self;
 }
 
 impl ValidatePermissions for Arc<AccessToken> {
@@ -875,6 +878,11 @@ impl ValidatePermissions for Arc<AccessToken> {
                 quota: tenant_quota
             })
         );
+        self
+    }
+
+    fn validate_revision(self, revision: u64) -> Self {
+        assert_eq!(self.revision, revision);
         self
     }
 }

@@ -254,13 +254,11 @@ impl Server {
 
     pub async fn increment_principal_revision(&self, changed_principals: ChangedPrincipals) {
         let mut nested_principals = Vec::new();
-        let mut fetched_ids = AHashSet::new();
 
         for (id, changed_principal) in changed_principals.iter() {
             self.increment_revision(*id).await;
-            if changed_principal.member_change {
-                nested_principals.push(*id);
 
+            if changed_principal.member_change {
                 if changed_principal.typ == Type::Tenant {
                     match self
                         .store()
@@ -277,12 +275,7 @@ impl Server {
                         Ok(principals) => {
                             for principal in principals.items {
                                 if !changed_principals.contains(principal.id()) {
-                                    if principal.typ() == Type::Role {
-                                        nested_principals.push(principal.id());
-                                    } else {
-                                        self.increment_revision(principal.id()).await;
-                                        fetched_ids.insert(principal.id());
-                                    }
+                                    self.increment_revision(principal.id()).await;
                                 }
                             }
                         }
@@ -293,11 +286,14 @@ impl Server {
                                 .account_id(*id));
                         }
                     }
+                } else {
+                    nested_principals.push(*id);
                 }
             }
         }
 
         if !nested_principals.is_empty() {
+            let mut fetched_ids = AHashSet::new();
             let mut ids = nested_principals.into_iter();
             let mut ids_stack = vec![];
 
