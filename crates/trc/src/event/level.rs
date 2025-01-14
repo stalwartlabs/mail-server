@@ -459,6 +459,7 @@ impl EventType {
                 DeliveryEvent::RawInput | DeliveryEvent::RawOutput => Level::Trace,
             },
             EventType::Queue(event) => match event {
+                QueueEvent::BackPressure => Level::Warn,
                 QueueEvent::QueueMessage
                 | QueueEvent::QueueMessageAuthenticated
                 | QueueEvent::QueueReport

@@ -23,8 +23,12 @@ relay = true
 messages = 2000
 
 [queue.outbound]
-concurrency = 1
+concurrency = 4
 
+[queue.schedule]
+retry = "1s"
+notify = "1d"
+expire = "1d"
 "#;
 
 const REMOTE: &str = r#"
@@ -39,7 +43,10 @@ enable = false
 
 "#;
 
-#[tokio::test]
+const NUM_MESSAGES: usize = 1000;
+const NUM_QUEUES: usize = 10;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 18)]
 #[serial_test::serial]
 async fn concurrent_queue() {
     // Enable logging
@@ -49,7 +56,7 @@ async fn concurrent_queue() {
     let remote = TestSMTP::new("smtp_concurrent_queue_remote", REMOTE).await;
     let _rx = remote.start(&[ServerProtocol::Smtp]).await;
 
-    let local = TestSMTP::new("smtp_concurrent_queue_local", LOCAL).await;
+    let local = TestSMTP::with_database("smtp_concurrent_queue_local", LOCAL, "mysql").await;
 
     // Add mock DNS entries
     let core = local.build_smtp();
@@ -72,9 +79,9 @@ async fn concurrent_queue() {
     session.eval_session_params().await;
     session.ehlo("mx.test.org").await;
 
-    // Spawn 20 concurrent queues
+    // Spawn concurrent queues
     let mut inners = vec![];
-    for _ in 0..20 {
+    for _ in 0..NUM_QUEUES {
         let (inner, rxs) = local.inner_with_rxs();
         let server = inner.build_server();
         server.mx_add(
@@ -99,9 +106,9 @@ async fn concurrent_queue() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Send 1000 test messages
-    for _ in 0..100 {
+    for _ in 0..(NUM_MESSAGES / 2) {
         session
-            .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
+            .send_message("john@test.org", &["slow@foobar.org"], "test:no_dkim", "250")
             .await;
     }
 
@@ -109,12 +116,41 @@ async fn concurrent_queue() {
     for inner in &inners {
         inner.ipc.queue_tx.send(QueueEvent::Refresh).await.unwrap();
     }
+    for _ in 0..(NUM_MESSAGES / 2) {
+        session
+            .send_message(
+                "john@test.org",
+                &["delay-random@foobar.org"],
+                "test:no_dkim",
+                "250",
+            )
+            .await;
+    }
 
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    loop {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+
+        let m = local.queue_receiver.read_queued_messages().await.len();
+        let e = local.queue_receiver.read_queued_events().await.len();
+
+        if m + e != 0 {
+            println!("Queue still has {} messages and {} events", m, e);
+            for inner in &inners {
+                inner
+                    .ipc
+                    .queue_tx
+                    .send(QueueEvent::Paused(true))
+                    .await
+                    .unwrap();
+            }
+        } else {
+            break;
+        }
+    }
 
     local.queue_receiver.assert_queue_is_empty().await;
     let remote_messages = remote.queue_receiver.read_queued_messages().await;
-    assert_eq!(remote_messages.len(), 100);
+    assert_eq!(remote_messages.len(), NUM_MESSAGES);
 
     // Make sure local store is queue
     core.core

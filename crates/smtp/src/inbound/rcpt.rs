@@ -26,8 +26,15 @@ impl<T: SessionStream> Session<T> {
         if self.instance.id.ends_with("-debug") {
             if to.address.contains("fail@") {
                 return self.write(b"503 5.5.1 Invalid recipient.\r\n").await;
-            } else if to.address.contains("delay@") {
+            } else if (to.address.contains("delay-random@") && rand::random())
+                || to.address.contains("delay@")
+            {
                 return self.write(b"451 4.5.3 Try again later.\r\n").await;
+            } else if to.address.contains("slow@") {
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    rand::random::<u64>() % 5 + 5,
+                ))
+                .await;
             }
         }
 

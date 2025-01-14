@@ -32,6 +32,7 @@ pub struct Queue {
     pub rx: mpsc::Receiver<QueueEvent>,
 }
 
+#[derive(Debug)]
 pub enum OnHold {
     InFlight,
     ConcurrencyLimited {
@@ -52,6 +53,7 @@ impl SpawnQueue for mpsc::Receiver<QueueEvent> {
 }
 
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(10 * 60);
+const BACK_PRESSURE_WARN_INTERVAL: Duration = Duration::from_secs(60);
 
 impl Queue {
     pub fn new(core: Arc<Inner>, rx: mpsc::Receiver<QueueEvent>) -> Self {
@@ -66,6 +68,7 @@ impl Queue {
     pub async fn start(&mut self) {
         let mut is_paused = false;
         let mut next_cleanup = Instant::now() + CLEANUP_INTERVAL;
+        let mut last_backpressure_warning = Instant::now() - BACK_PRESSURE_WARN_INTERVAL;
         let mut in_flight_count = 0;
         let mut has_back_pressure = false;
 
@@ -129,6 +132,25 @@ impl Queue {
                     let max_in_flight = server.core.smtp.queue.throttle.outbound_concurrency;
                     has_back_pressure = in_flight_count >= max_in_flight;
                     if has_back_pressure {
+                        self.next_wake_up = Instant::now() + Duration::from_secs(QUEUE_REFRESH);
+
+                        if last_backpressure_warning.elapsed() >= BACK_PRESSURE_WARN_INTERVAL {
+                            let queue_events = server.next_event().await;
+                            last_backpressure_warning = Instant::now();
+                            trc::event!(
+                                Queue(trc::QueueEvent::BackPressure),
+                                Reason =
+                                    "Queue outbound processing capacity for this node exceeded.",
+                                Total = queue_events.len(),
+                                Details = self
+                                    .on_hold
+                                    .keys()
+                                    .copied()
+                                    .map(trc::Value::from)
+                                    .collect::<Vec<_>>(),
+                                Limit = max_in_flight,
+                            );
+                        }
                         continue;
                     }
 
@@ -146,11 +168,18 @@ impl Queue {
                             // Enforce global concurrency limits
                             if in_flight_count >= max_in_flight {
                                 has_back_pressure = true;
-                                trc::event!(
-                                    Queue(trc::QueueEvent::ConcurrencyLimitExceeded),
-                                    Details = "Outbound concurrency limit exceeded.",
-                                    Limit = max_in_flight,
-                                );
+                                if last_backpressure_warning.elapsed()
+                                    >= BACK_PRESSURE_WARN_INTERVAL
+                                {
+                                    last_backpressure_warning = Instant::now();
+                                    trc::event!(
+                                        Queue(trc::QueueEvent::BackPressure),
+                                        Reason = "Queue outbound processing capacity for this node exceeded.",
+                                        Total = queue_events.len(),
+                                        Details = self.on_hold.keys().copied().map(trc::Value::from).collect::<Vec<_>>(),
+                                        Limit = max_in_flight,
+                                    );
+                                }
                                 break;
                             }
 

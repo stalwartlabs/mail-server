@@ -864,6 +864,7 @@ impl EventType {
             EventType::Spam(SpamEvent::Dnsbl) => 562,
             EventType::Spam(SpamEvent::DnsblError) => 563,
             EventType::Spam(SpamEvent::Pyzor) => 564,
+            EventType::Queue(QueueEvent::BackPressure) => 48,
         }
     }
 
@@ -1465,12 +1466,13 @@ impl EventType {
             562 => Some(EventType::Spam(SpamEvent::Dnsbl)),
             563 => Some(EventType::Spam(SpamEvent::DnsblError)),
             564 => Some(EventType::Spam(SpamEvent::Pyzor)),
+            48 => Some(EventType::Queue(QueueEvent::BackPressure)),
             _ => None,
         }
     }
 }
 
-// 57 48 147 148 335 336 376 458 459
+// 57 147 148 335 336 376 458 459
 
 impl Key {
     fn code(&self) -> u64 {

@@ -488,6 +488,7 @@ pub enum QueueEvent {
     RateLimitExceeded,
     ConcurrencyLimitExceeded,
     QuotaExceeded,
+    BackPressure,
 }
 
 #[event_type]

@@ -137,14 +137,33 @@ cert = '%{file:{CERT}}%'
 private-key = '%{file:{PK}}%'
 
 [storage]
-data = "rocksdb"
-lookup = "rocksdb"
-blob = "rocksdb"
-fts = "rocksdb"
+data = "{STORE}"
+fts = "{STORE}"
+blob = "{STORE}"
+lookup = "{STORE}"
 
 [store."rocksdb"]
 type = "rocksdb"
 path = "{TMP}/queue.db"
+
+[store."foundationdb"]
+type = "foundationdb"
+
+[store."postgresql"]
+type = "postgresql"
+host = "localhost"
+port = 5432
+database = "stalwart"
+user = "postgres"
+password = "mysecretpassword"
+
+[store."mysql"]
+type = "mysql"
+host = "localhost"
+port = 3307
+database = "stalwart"
+user = "root"
+password = "password"
 
 "#;
 
@@ -198,9 +217,21 @@ impl TestSMTP {
     }
 
     pub async fn new(name: &str, config: impl AsRef<str>) -> TestSMTP {
+        Self::with_database(name, config, "rocksdb").await
+    }
+
+    pub async fn with_database(
+        name: &str,
+        config: impl AsRef<str>,
+        store_id: impl AsRef<str>,
+    ) -> TestSMTP {
         let temp_dir = TempDir::new(name, true);
-        let mut config =
-            Config::new(temp_dir.update_config(add_test_certs(CONFIG) + config.as_ref())).unwrap();
+        let mut config = Config::new(
+            temp_dir
+                .update_config(add_test_certs(CONFIG) + config.as_ref())
+                .replace("{STORE}", store_id.as_ref()),
+        )
+        .unwrap();
         config.resolve_all_macros().await;
         let stores = Stores::parse_all(&mut config, false).await;
         let core = Core::parse(&mut config, stores, Default::default()).await;
