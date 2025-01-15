@@ -15,7 +15,7 @@ rust-s3 = { version = "=0.35.0-alpha.2", default-features = false, features = ["
 azure_core = { version = "0.21.0", optional = true }
 azure_storage = { version = "0.21.0", default-features = false, features = ["enable_reqwest_rustls", "hmac_rust"], optional = true }
 azure_storage_blobs = { version = "0.21.0", default-features = false, features = ["enable_reqwest_rustls", "hmac_rust"], optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2", "stream"]}
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "stream"]}
 tokio = { version = "1.23", features = ["sync", "fs", "io-util"] }
 r2d2 = { version = "0.8.10", optional = true }
 futures = { version = "0.3", optional = true }

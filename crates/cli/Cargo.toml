@@ -13,7 +13,7 @@ resolver = "2"
 [dependencies]
 jmap-client = { version = "0.3", features = ["async"] } 
 mail-parser = { version = "0.9", features = ["full_encoding", "serde_support", "ludicrous_mode"] } 
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2"]}
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2"]}
 tokio = { version = "1.23", features = ["full"] }
 num_cpus = "1.13.1"
 clap = { version = "4.1.6", features = ["derive"] }

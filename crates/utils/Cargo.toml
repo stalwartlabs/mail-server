@@ -23,7 +23,7 @@ ring = { version = "0.17" }
 base64 = "0.22"
 serde_json = "1.0"
 rcgen = "0.13"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2", "stream"]}
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "http2", "stream"]}
 x509-parser = "0.16.0"
 pem = "3.0"
 parking_lot = "0.12"
