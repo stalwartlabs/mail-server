@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use mail_parser::decoders::html::add_html_token;
+use mail_parser::decoders::html::add_html_token;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum HtmlToken {
@@ -201,10 +201,14 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                                     match ch {
                                         b'>' if !in_quote => {
                                             if !value.is_empty() {
-                                                attributes.last_mut().unwrap().1 =
-                                                    String::from_utf8(value)
-                                                        .unwrap_or_default()
-                                                        .into();
+                                                let value =
+                                                    String::from_utf8(value).unwrap_or_default();
+                                                if let Some((_, v)) = attributes.last_mut() {
+                                                    *v = value.into();
+                                                } else {
+                                                    // Broken attribute
+                                                    attributes.push((0, Some(value)));
+                                                }
                                             }
                                             break 'outer;
                                         }
@@ -226,8 +230,13 @@ pub fn html_to_tokens(input: &str) -> Vec<HtmlToken> {
                                 }
 
                                 if !value.is_empty() {
-                                    attributes.last_mut().unwrap().1 =
-                                        String::from_utf8(value).unwrap_or_default().into();
+                                    let value = String::from_utf8(value).unwrap_or_default();
+                                    if let Some((_, v)) = attributes.last_mut() {
+                                        *v = value.into();
+                                    } else {
+                                        // Broken attribute
+                                        attributes.push((0, Some(value)));
+                                    }
                                 }
                             }
                             b' ' | b'\t' | b'\r' | b'\n' => {

@@ -144,8 +144,16 @@ impl Queue {
                                 Total = queue_events.len(),
                                 Details = self
                                     .on_hold
-                                    .keys()
-                                    .copied()
+                                    .values()
+                                    .fold([0, 0, 0], |mut acc, v| {
+                                        match v {
+                                            OnHold::InFlight => acc[0] += 1,
+                                            OnHold::ConcurrencyLimited { .. } => acc[1] += 1,
+                                            OnHold::Locked { .. } => acc[2] += 1,
+                                        }
+                                        acc
+                                    })
+                                    .into_iter()
                                     .map(trc::Value::from)
                                     .collect::<Vec<_>>(),
                                 Limit = max_in_flight,
@@ -176,7 +184,20 @@ impl Queue {
                                         Queue(trc::QueueEvent::BackPressure),
                                         Reason = "Queue outbound processing capacity for this node exceeded.",
                                         Total = queue_events.len(),
-                                        Details = self.on_hold.keys().copied().map(trc::Value::from).collect::<Vec<_>>(),
+                                        Details = self
+                                            .on_hold
+                                            .values()
+                                            .fold([0, 0, 0], |mut acc, v| {
+                                                match v {
+                                                    OnHold::InFlight => acc[0] += 1,
+                                                    OnHold::ConcurrencyLimited { .. } => acc[1] += 1,
+                                                    OnHold::Locked { .. } => acc[2] += 1,
+                                                }
+                                                acc
+                                            })
+                                            .into_iter()
+                                            .map(trc::Value::from)
+                                            .collect::<Vec<_>>(),
                                         Limit = max_in_flight,
                                     );
                                 }
