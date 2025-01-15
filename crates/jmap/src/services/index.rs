@@ -18,7 +18,7 @@ use store::{
     roaring::RoaringBitmap,
     write::{
         key::{DeserializeBigEndian, KeySerializer},
-        BatchBuilder, Bincode, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
+        now, BatchBuilder, Bincode, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
     },
     IterateParams, Serialize, ValueKey, U32_LEN, U64_LEN,
 };
@@ -284,7 +284,7 @@ impl Indexer for Server {
                         TaskQueue(TaskQueueEvent::Locked),
                         AccountId = event.account_id,
                         DocumentId = event.document_id,
-                        Expires = trc::Value::Timestamp(event.lock_expiry()),
+                        Expires = trc::Value::Timestamp(now() + event.lock_expiry()),
                     );
                 }
                 result
