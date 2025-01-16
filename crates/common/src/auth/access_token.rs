@@ -337,6 +337,7 @@ impl Server {
             .counter_incr(
                 KeyValue::with_prefix(KV_PRINCIPAL_REVISION, id.to_be_bytes(), 1)
                     .expires(30 * 86400),
+                false,
             )
             .await
         {

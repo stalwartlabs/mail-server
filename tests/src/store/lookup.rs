@@ -28,7 +28,6 @@ pub async fn lookup_tests() {
     };
 
     for (store_id, store) in stores.in_memory_stores {
-        let is_mysql = store_id == "mysql";
         println!("Testing in-memory store {}...", store_id);
         if let InMemoryStore::Store(store) = &store {
             store.destroy().await;
@@ -72,30 +71,25 @@ pub async fn lookup_tests() {
         // Test counter
         let key = "abc".as_bytes().to_vec();
         store
-            .counter_incr(KeyValue::new(key.clone(), 1))
+            .counter_incr(KeyValue::new(key.clone(), 1), true)
             .await
             .unwrap();
         assert_eq!(1, store.counter_get(key.clone()).await.unwrap());
         store
-            .counter_incr(KeyValue::new(key.clone(), 2))
+            .counter_incr(KeyValue::new(key.clone(), 2), true)
             .await
             .unwrap();
         assert_eq!(3, store.counter_get(key.clone()).await.unwrap());
-        if !is_mysql {
-            store
-                .counter_incr(KeyValue::new(key.clone(), -3))
-                .await
-                .unwrap();
-        } else {
-            // TODO: Detect mySQL version and use RETURNING
-            store.counter_delete(key.clone()).await.unwrap();
-        }
+        store
+            .counter_incr(KeyValue::new(key.clone(), -3), false)
+            .await
+            .unwrap();
         assert_eq!(0, store.counter_get(key.clone()).await.unwrap());
 
         // Test counter expiry
         let key = "fgh".as_bytes().to_vec();
         store
-            .counter_incr(KeyValue::new(key.clone(), 1).expires(1))
+            .counter_incr(KeyValue::new(key.clone(), 1).expires(1), false)
             .await
             .unwrap();
         assert_eq!(1, store.counter_get(key.clone()).await.unwrap());
@@ -171,7 +165,10 @@ pub async fn lookup_tests() {
                 .await
                 .unwrap();
             store
-                .counter_incr(KeyValue::with_prefix(0, pack_u32(1, v), 123).expires(3600))
+                .counter_incr(
+                    KeyValue::with_prefix(0, pack_u32(1, v), 123).expires(3600),
+                    false,
+                )
                 .await
                 .unwrap();
         }

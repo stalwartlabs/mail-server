@@ -80,7 +80,7 @@ impl Server {
                 let value = params.next_as_integer();
 
                 self.get_in_memory_store_or_default(store.as_ref(), session_id)
-                    .counter_incr(KeyValue::new(key.into_owned(), value))
+                    .counter_incr(KeyValue::new(key.into_owned(), value), true)
                     .await
                     .map(Variable::Integer)
                     .caused_by(trc::location!())

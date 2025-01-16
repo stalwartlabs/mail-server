@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.11.2] - 2025-01-17
+
+To upgrade update the webadmin and then replace the `stalwart-mail` binary.
+
+### Added
+- Automatic revoking of access tokens when secrets, permissions, ACLs or group memberships change (#649).
+- Cluster node roles.
+- `config_get` expression function.
+
+### Changed
+- `lookup.default.hostname` is now `server.hostname`.
+- `lookup.default.domain` is now `report.domain`.
+
+### Fixed
+- Distributed locking issues in non-Redis stores (#1066).
+- Panic parsing broken HTMLs.
+- Update CLI response serializer to v0.11.x (#1082).
+- Histogram bucket counts (#1079).
+- Do not rate limit trusted IPs (#1078).
+- Avoid double encrypting PGP parts encoded as plain text (#1083).
+- Return empty SASL challenge rather than "" (#1064).
+
 ## [0.11.0] - 2025-01-06
 
 This version includes breaking changes to the configuration file, please read [UPGRADING.md](UPGRADING.md) for details.

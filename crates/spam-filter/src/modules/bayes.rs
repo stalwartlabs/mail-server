@@ -137,10 +137,13 @@ impl BayesClassifier for Server {
             };
             for (hash, weights) in model.weights {
                 self.in_memory_store()
-                    .counter_incr(KeyValue::new(
-                        hash.serialize(prefix, ctx.input.account_id),
-                        i64::from(weights),
-                    ))
+                    .counter_incr(
+                        KeyValue::new(
+                            hash.serialize(prefix, ctx.input.account_id),
+                            i64::from(weights),
+                        ),
+                        false,
+                    )
                     .await
                     .caused_by(trc::location!())?;
                 if is_global {
@@ -158,10 +161,13 @@ impl BayesClassifier for Server {
                 Weights { spam: 0, ham: 1 }
             };
             self.in_memory_store()
-                .counter_incr(KeyValue::new(
-                    TokenHash::default().serialize(prefix, ctx.input.account_id),
-                    i64::from(weights),
-                ))
+                .counter_incr(
+                    KeyValue::new(
+                        TokenHash::default().serialize(prefix, ctx.input.account_id),
+                        i64::from(weights),
+                    ),
+                    false,
+                )
                 .await
                 .caused_by(trc::location!())
                 .map(|_| ())

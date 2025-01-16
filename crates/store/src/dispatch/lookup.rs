@@ -57,7 +57,7 @@ impl InMemoryStore {
         .caused_by(trc::location!())
     }
 
-    pub async fn counter_incr(&self, kv: KeyValue<i64>) -> trc::Result<i64> {
+    pub async fn counter_incr(&self, kv: KeyValue<i64>, return_value: bool) -> trc::Result<i64> {
         match self {
             InMemoryStore::Store(store) => {
                 let mut batch = BatchBuilder::new();
@@ -75,15 +75,24 @@ impl InMemoryStore {
                     });
                 }
 
-                batch.ops.push(Operation::Value {
-                    class: ValueClass::InMemory(InMemoryClass::Counter(kv.key)),
-                    op: ValueOp::AddAndGet(kv.value),
-                });
+                if return_value {
+                    batch.ops.push(Operation::Value {
+                        class: ValueClass::InMemory(InMemoryClass::Counter(kv.key)),
+                        op: ValueOp::AddAndGet(kv.value),
+                    });
 
-                store
-                    .write(batch.build())
-                    .await
-                    .and_then(|r| r.last_counter_id())
+                    store
+                        .write(batch.build())
+                        .await
+                        .and_then(|r| r.last_counter_id())
+                } else {
+                    batch.ops.push(Operation::Value {
+                        class: ValueClass::InMemory(InMemoryClass::Counter(kv.key)),
+                        op: ValueOp::AtomicAdd(kv.value),
+                    });
+
+                    store.write(batch.build()).await.map(|_| 0)
+                }
             }
             #[cfg(feature = "redis")]
             InMemoryStore::Redis(store) => store.key_incr(&kv.key, kv.value, kv.expires).await,
@@ -260,7 +269,7 @@ impl InMemoryStore {
         bucket.extend_from_slice(range_start.to_be_bytes().as_slice());
 
         let requests = if !soft_check {
-            self.counter_incr(KeyValue::new(bucket, 1).expires(expires_in))
+            self.counter_incr(KeyValue::new(bucket, 1).expires(expires_in), true)
                 .await
                 .caused_by(trc::location!())?
         } else {
