@@ -148,13 +148,13 @@ impl DnsManagement for Server {
             records.push(DnsRecord {
                 typ: "TXT".to_string(),
                 name: format!("{server_name}."),
-                content: "v=spf1 a ra=postmaster -all".to_string(),
+                content: "v=spf1 a -all".to_string(),
             });
         }
         records.push(DnsRecord {
             typ: "TXT".to_string(),
             name: format!("{domain_name}."),
-            content: "v=spf1 mx ra=postmaster -all".to_string(),
+            content: "v=spf1 mx -all".to_string(),
         });
 
         let mut has_https = false;
