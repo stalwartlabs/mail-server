@@ -59,7 +59,7 @@ impl Server {
             match self.order(provider).await {
                 Ok(pem) => return self.process_cert(provider, pem, false).await,
                 Err(err)
-                    if !err.matches(EventType::Acme(AcmeEvent::OrderInvalid)) && backoff < 16 =>
+                    if !err.matches(EventType::Acme(AcmeEvent::OrderInvalid)) && backoff < 9 =>
                 {
                     trc::event!(
                         Acme(AcmeEvent::RenewBackoff),

@@ -22,8 +22,8 @@ relay = true
 [session.data.limits]
 messages = 2000
 
-[queue.outbound]
-concurrency = 4
+[queue.threads]
+remote = 4
 
 [queue.schedule]
 retry = "1s"

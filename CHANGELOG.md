@@ -8,10 +8,12 @@ To upgrade update the webadmin and then replace the `stalwart-mail` binary.
 
 ### Added
 - Automatic revoking of access tokens when secrets, permissions, ACLs or group memberships change (#649).
+- Increased concurrency for local message delivery (configurable via `queue.threads.local`).
 - Cluster node roles.
 - `config_get` expression function.
 
 ### Changed
+- `queue.outbound.concurrency` is now `queue.threads.remote`.
 - `lookup.default.hostname` is now `server.hostname`.
 - `lookup.default.domain` is now `report.domain`.
 
