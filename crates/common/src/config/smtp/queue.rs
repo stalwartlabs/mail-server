@@ -390,10 +390,12 @@ fn parse_queue_throttle(config: &mut Config) -> QueueThrottle {
         host: Vec::new(),
         outbound_concurrency: config
             .property_or_default::<usize>("queue.threads.remote", "25")
-            .unwrap_or(25),
+            .unwrap_or(25)
+            .max(1),
         local_concurrency: config
             .property_or_default::<usize>("queue.threads.local", "10")
-            .unwrap_or(10),
+            .unwrap_or(10)
+            .max(1),
     };
 
     let all_throttles = parse_throttle(

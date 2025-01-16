@@ -100,7 +100,7 @@ impl S3Store {
                 500..=599 if retries_left > 0 => {
                     // wait backoff
                     tokio::time::sleep(Duration::from_secs(
-                        1 << (self.max_retries - retries_left).max(6),
+                        1 << (self.max_retries - retries_left).min(6),
                     ))
                     .await;
 
@@ -130,7 +130,7 @@ impl S3Store {
                 500..=599 if retries_left > 0 => {
                     // wait backoff
                     tokio::time::sleep(Duration::from_secs(
-                        1 << (self.max_retries - retries_left).max(6),
+                        1 << (self.max_retries - retries_left).min(6),
                     ))
                     .await;
 
@@ -161,7 +161,7 @@ impl S3Store {
                 500..=599 if retries_left > 0 => {
                     // wait backoff
                     tokio::time::sleep(Duration::from_secs(
-                        1 << (self.max_retries - retries_left).max(6),
+                        1 << (self.max_retries - retries_left).min(6),
                     ))
                     .await;
 
