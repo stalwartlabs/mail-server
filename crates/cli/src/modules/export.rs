@@ -20,7 +20,7 @@ use jmap_client::{
 use serde::Serialize;
 use tokio::io::AsyncWriteExt;
 
-use crate::modules::RETRY_ATTEMPTS;
+use crate::modules::{cli::ExportAccountFormat, RETRY_ATTEMPTS};
 
 use super::{
     cli::{Client, ExportCommands},
@@ -35,6 +35,7 @@ impl ExportCommands {
                 num_concurrent,
                 account,
                 path,
+                format,
             } => {
                 client.set_default_account_id(name_to_id(&client, &account).await);
                 let max_objects_in_get = client
@@ -60,7 +61,15 @@ impl ExportCommands {
                 // Export metadata
                 let mut blobs = Vec::new();
                 export_mailboxes(&client, max_objects_in_get, &path).await;
-                export_emails(&client, max_objects_in_get, &mut blobs, &path).await;
+                match format {
+                    ExportAccountFormat::Blobs => {
+                        export_emails(&client, max_objects_in_get, &mut blobs, &path).await
+                    }
+                    #[cfg(feature = "maildir")]
+                    ExportAccountFormat::Maildir => {
+                        export_emails_maildir(&client, max_objects_in_get, &path).await
+                    }
+                }
                 export_sieve_scripts(&client, max_objects_in_get, &mut blobs, &path).await;
                 export_identities(&client, &path).await;
                 export_vacation_responses(&client, &path).await;
@@ -260,6 +269,144 @@ pub async fn fetch_emails(
     }
 
     results
+}
+
+#[cfg(feature = "maildir")]
+fn update_mail_id(mut mail_entry: maildirpp::MailEntry, email: &jmap_client::email::Email) {
+    use std::os::unix::fs::MetadataExt;
+    use std::{
+        fs,
+        sync::atomic::{AtomicUsize, Ordering},
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
+
+    let storage_id = email.id().unwrap_or_default();
+    let received_at = email.received_at();
+
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let sequence_number = COUNTER.fetch_add(1, Ordering::SeqCst);
+
+    let meta: fs::Metadata = match mail_entry.path().metadata() {
+        Err(err) => {
+            eprintln!("Error: email {storage_id} could not fetch metadata for file: {err}");
+            return;
+        }
+        Ok(meta) => meta,
+    };
+
+    let timestamp = match received_at {
+        None => SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::from_secs(0)),
+        Some(ts) => Duration::from_secs(ts.try_into().unwrap()),
+    };
+
+    let secs = timestamp.as_secs();
+    let nanos = timestamp.subsec_nanos();
+
+    #[cfg(unix)]
+    let dev = meta.dev();
+    #[cfg(windows)]
+    let dev: u64 = 0;
+
+    #[cfg(unix)]
+    let ino = meta.ino();
+    #[cfg(windows)]
+    let ino: u64 = 0;
+
+    #[cfg(unix)]
+    let size = meta.size();
+    #[cfg(windows)]
+    let size = meta.file_size();
+
+    let hostname = "todo".to_string(); //TODO: hostname
+
+    let id = format!("{secs}.#{sequence_number:x}M{nanos}V{dev}I{ino}.{hostname},S={size}");
+
+    // Update the mail ID
+    if let Err(err) = mail_entry.set_id(&id) {
+        eprintln!("Error: email {storage_id} could not update email id to {id}: {err}");
+        return;
+    }
+}
+
+#[cfg(feature = "maildir")]
+async fn export_emails_maildir(
+    client: &jmap_client::client::Client,
+    max_objects_in_get: usize,
+    path: &Path,
+) {
+    use maildirpp::Maildir;
+
+    let emails = fetch_emails(client, max_objects_in_get).await;
+    let mailboxes: Vec<Mailbox> = fetch_mailboxes(client, max_objects_in_get).await;
+
+    let maildir = match Maildir::new(path.join("maildir")) {
+        Err(err) => {
+            eprintln!("Error: maildir could not be created: {err}");
+            return;
+        }
+        Ok(maildir) => maildir,
+    };
+
+    for email in &emails {
+        let mailbox_names: Vec<&str> = email
+            .mailbox_ids()
+            .iter()
+            .map(|id| {
+                mailboxes
+                    .iter()
+                    .filter(|mb| mb.name().is_some() && mb.id().is_some())
+                    .find(|mb| mb.id().unwrap() == *id)
+            })
+            .filter(|mb| mb.is_some())
+            .map(|mb| mb.unwrap().name().unwrap())
+            .collect();
+
+        if let Some(blob_id) = email.blob_id() {
+            match client.download(&blob_id).await {
+                Ok(bytes) => {
+                    for mailbox_name in mailbox_names {
+                        match maildir.create_folder(mailbox_name) {
+                            Ok(maildir_folder) => {
+                                match maildir_folder.store_cur(bytes.as_slice()) {
+                                    Err(err) => {
+                                        eprintln!(
+                                            "Error: email {:?} could not be stored: {err}",
+                                            email.id().unwrap_or_default()
+                                        );
+                                    }
+                                    Ok(mail_entry) => {
+                                        update_mail_id(mail_entry, &email);
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                eprintln!("Error: maildir could not be created: {err}");
+                                return;
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    eprintln!(
+                        "Error: email {:?} could not be downloaded: {err}",
+                        email.id().unwrap_or_default()
+                    );
+                }
+            };
+        } else {
+            eprintln!(
+                "Warning: email {:?} has no blobId",
+                email.id().unwrap_or_default()
+            );
+        }
+    }
+
+    eprintln!(
+        "Exported {} emails.",
+        write_file(path, "emails.json", emails,).await
+    );
 }
 
 async fn export_emails(
