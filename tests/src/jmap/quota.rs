@@ -227,6 +227,23 @@ pub async fn test(params: &mut JMAPTest) {
     let create_id = create_item.create_id().unwrap();
     assert_over_quota(request.send_set_email().await.unwrap().created(&create_id));
 
+    // Recalculate quota
+    let prev_quota = server
+        .get_used_quota(account_id.document_id())
+        .await
+        .unwrap();
+    server
+        .recalculate_quota(account_id.document_id())
+        .await
+        .unwrap();
+    assert_eq!(
+        server
+            .get_used_quota(account_id.document_id())
+            .await
+            .unwrap(),
+        prev_quota
+    );
+
     // Delete messages and check available quota
     for message_id in message_ids {
         client.email_destroy(&message_id).await.unwrap();
@@ -333,6 +350,7 @@ pub async fn test(params: &mut JMAPTest) {
             .len(),
         1,
     );
+
     DISABLE_UPLOAD_QUOTA.store(true, std::sync::atomic::Ordering::Relaxed);
 
     // Remove test data

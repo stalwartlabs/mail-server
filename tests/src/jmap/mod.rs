@@ -392,10 +392,10 @@ pub async fn jmap_tests() {
     sieve_script::test(&mut params).await;
     vacation_response::test(&mut params).await;
     email_submission::test(&mut params).await;
-    websocket::test(&mut params).await;
+    websocket::test(&mut params).await;*/
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;*/
+    blob::test(&mut params).await;
     permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;

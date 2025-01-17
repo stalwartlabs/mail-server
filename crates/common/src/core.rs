@@ -18,8 +18,8 @@ use store::{
         key::DeserializeBigEndian, log::ChangeLogBuilder, now, BatchBuilder, BitmapClass, BlobOp,
         DirectoryClass, QueueClass, TagValue, ValueClass,
     },
-    BitmapKey, BlobClass, BlobStore, Deserialize, FtsStore, InMemoryStore, IterateParams, LogKey,
-    Serialize, Store, ValueKey, U32_LEN,
+    BitmapKey, BlobClass, BlobStore, Deserialize, FtsStore, InMemoryStore, IndexKey, IterateParams,
+    LogKey, Serialize, Store, ValueKey, U32_LEN,
 };
 use trc::AddContext;
 use utils::BlobHash;
@@ -189,6 +189,54 @@ impl Server {
             .get_counter(DirectoryClass::UsedQuota(account_id))
             .await
             .add_context(|err| err.caused_by(trc::location!()).account_id(account_id))
+    }
+
+    pub async fn recalculate_quota(&self, account_id: u32) -> trc::Result<()> {
+        let mut quota = 0i64;
+
+        self.store()
+            .iterate(
+                IterateParams::new(
+                    IndexKey {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        document_id: 0,
+                        field: Property::Size.into(),
+                        key: 0u32.serialize(),
+                    },
+                    IndexKey {
+                        account_id,
+                        collection: Collection::Email.into(),
+                        document_id: u32::MAX,
+                        field: Property::Size.into(),
+                        key: u32::MAX.serialize(),
+                    },
+                )
+                .no_values()
+                .ascending(),
+                |key, _| {
+                    let value = key
+                        .get(key.len() - (U32_LEN * 2)..key.len() - U32_LEN)
+                        .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))
+                        .and_then(u32::deserialize)?;
+
+                    quota += value as i64;
+
+                    Ok(true)
+                },
+            )
+            .await
+            .caused_by(trc::location!())?;
+
+        let mut batch = BatchBuilder::new();
+        batch
+            .clear(DirectoryClass::UsedQuota(account_id))
+            .add(DirectoryClass::UsedQuota(account_id), quota);
+        self.store()
+            .write(batch)
+            .await
+            .caused_by(trc::location!())
+            .map(|_| ())
     }
 
     pub async fn has_available_quota(

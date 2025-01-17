@@ -287,6 +287,26 @@ impl ManageStore for Server {
                 }))
                 .into_http_response())
             }
+            (Some("quota"), Some(account_id), None, method @ (&Method::GET | &Method::DELETE)) => {
+                let account_id = self
+                    .core
+                    .storage
+                    .data
+                    .get_principal_id(decode_path_element(account_id).as_ref())
+                    .await?
+                    .ok_or_else(|| trc::ManageEvent::NotFound.into_err())?;
+
+                if method == Method::DELETE {
+                    self.recalculate_quota(account_id).await?;
+                }
+
+                let result = self.get_used_quota(account_id).await?;
+
+                Ok(JsonResponse::new(json!({
+                    "data": result,
+                }))
+                .into_http_response())
+            }
             _ => Err(trc::ResourceEvent::NotFound.into_err()),
         }
     }
