@@ -15,6 +15,10 @@ use directory::{
     backend::internal::manage::{self, ManageDirectory},
     Permission,
 };
+use email::{
+    ingest::EmailIngest,
+    mailbox::{UidMailbox, SCHEMA},
+};
 use hyper::Method;
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
@@ -30,10 +34,7 @@ use crate::{
         http::{HttpSessionData, ToHttpResponse},
         HttpRequest, HttpResponse, JsonResponse,
     },
-    email::ingest::EmailIngest,
-    mailbox::{set::SCHEMA, UidMailbox},
     services::index::Indexer,
-    JmapMethods,
 };
 
 use super::decode_path_element;
@@ -344,7 +345,8 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             )
             .clear(Property::EmailIds);
         server
-            .write_batch(batch)
+            .store()
+            .write(batch)
             .await
             .caused_by(trc::location!())?;
         mailbox_count += 1;
@@ -388,7 +390,8 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .assert_value(ValueClass::Property(Property::MailboxIds.into()), &uids)
             .value(Property::MailboxIds, uids.inner, F_VALUE);
         server
-            .write_batch(batch)
+            .store()
+            .write(batch)
             .await
             .caused_by(trc::location!())?;
         email_count += 1;

@@ -14,7 +14,7 @@ use std::future::Future;
 use store::query::{sort::Pagination, Comparator, ResultSet};
 use trc::AddContext;
 
-use crate::{changes::state::StateManager, JmapMethods};
+use crate::changes::state::StateManager;
 
 pub trait ThreadGet: Sync + Send {
     fn thread_get(

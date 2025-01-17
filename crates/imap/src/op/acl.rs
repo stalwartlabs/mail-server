@@ -11,6 +11,7 @@ use directory::{
     backend::internal::{manage::ChangedPrincipals, PrincipalField},
     Permission, QueryBy, Type,
 };
+use email::mailbox::SCHEMA;
 use imap_proto::{
     protocol::acl::{
         Arguments, GetAclResponse, ListRightsResponse, ModRightsOp, MyRightsResponse, Rights,
@@ -19,10 +20,7 @@ use imap_proto::{
     Command, ResponseCode, StatusResponse,
 };
 
-use jmap::{
-    auth::acl::EffectiveAcl, changes::write::ChangeLog, mailbox::set::SCHEMA,
-    services::state::StateManager, JmapMethods,
-};
+use jmap::auth::acl::EffectiveAcl;
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
@@ -352,7 +350,8 @@ impl<T: SessionStream> Session<T> {
                 );
             if !batch.is_empty() {
                 data.server
-                    .write_batch(batch)
+                    .store()
+                    .write(batch)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?;
                 let mut changes = ChangeLogBuilder::new();

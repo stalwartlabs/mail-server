@@ -36,13 +36,9 @@ use store::{
     },
     BlobClass,
 };
+use trc::AddContext;
 
-use crate::{
-    api::http::HttpSessionData,
-    blob::{download::BlobDownload, upload::BlobUpload},
-    changes::write::ChangeLog,
-    JmapMethods,
-};
+use crate::{api::http::HttpSessionData, blob::download::BlobDownload, JmapMethods};
 use std::future::Future;
 
 pub struct SetContext<'x> {
@@ -152,7 +148,11 @@ impl SieveScriptSet for Server {
                             }
                         }
 
-                        let document_id = self.write_batch_expect_id(batch).await?;
+                        let document_id = self
+                            .store()
+                            .write_expect_id(batch)
+                            .await
+                            .caused_by(trc::location!())?;
                         sieve_ids.insert(document_id);
                         changes.log_insert(Collection::SieveScript, document_id);
 
@@ -444,7 +444,10 @@ impl SieveScriptSet for Server {
             }
         }
 
-        self.write_batch(batch).await?;
+        self.store()
+            .write(batch)
+            .await
+            .caused_by(trc::location!())?;
         Ok(true)
     }
 

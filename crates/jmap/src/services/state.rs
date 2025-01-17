@@ -372,11 +372,6 @@ pub trait StateManager: Sync + Send {
         types: Bitmap<DataType>,
     ) -> impl Future<Output = trc::Result<mpsc::Receiver<StateChange>>> + Send;
 
-    fn broadcast_state_change(
-        &self,
-        state_change: StateChange,
-    ) -> impl Future<Output = bool> + Send;
-
     fn update_push_subscriptions(&self, account_id: u32) -> impl Future<Output = bool> + Send;
 }
 
@@ -405,28 +400,6 @@ impl StateManager for Server {
         }
 
         Ok(change_rx)
-    }
-
-    async fn broadcast_state_change(&self, state_change: StateChange) -> bool {
-        match self
-            .inner
-            .ipc
-            .state_tx
-            .clone()
-            .send(StateEvent::Publish { state_change })
-            .await
-        {
-            Ok(_) => true,
-            Err(_) => {
-                trc::event!(
-                    Server(ServerEvent::ThreadError),
-                    Details = "Error sending state change.",
-                    CausedBy = trc::location!()
-                );
-
-                false
-            }
-        }
     }
 
     async fn update_push_subscriptions(&self, account_id: u32) -> bool {

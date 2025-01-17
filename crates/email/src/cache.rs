@@ -11,8 +11,6 @@ use jmap_proto::types::{collection::Collection, property::Property};
 use std::future::Future;
 use trc::AddContext;
 
-use crate::JmapMethods;
-
 pub trait ThreadCache: Sync + Send {
     fn get_cached_thread_ids(
         &self,

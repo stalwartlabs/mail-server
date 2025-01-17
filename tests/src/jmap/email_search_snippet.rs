@@ -7,7 +7,8 @@
 use std::{fs, path::PathBuf};
 
 use crate::jmap::{assert_is_empty, mailbox::destroy_all_mailboxes, wait_for_index};
-use jmap::mailbox::INBOX_ID;
+
+use email::mailbox::INBOX_ID;
 use jmap_client::{core::query, email::query::Filter};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashMap;

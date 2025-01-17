@@ -2059,6 +2059,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "email"
+version = "0.11.2"
+dependencies = [
+ "aes",
+ "aes-gcm",
+ "aes-gcm-siv",
+ "bincode",
+ "cbc",
+ "common",
+ "directory",
+ "jmap_proto",
+ "mail-builder",
+ "mail-parser",
+ "nlp",
+ "rasn",
+ "rasn-cms",
+ "rasn-pkix",
+ "rsa",
+ "sequoia-openpgp",
+ "serde",
+ "serde_json",
+ "sieve-rs",
+ "smtp-proto",
+ "spam-filter",
+ "store",
+ "tokio",
+ "trc",
+ "utils",
+]
+
+[[package]]
 name = "ena"
 version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3225,6 +3256,7 @@ dependencies = [
  "common",
  "dashmap",
  "directory",
+ "email",
  "imap_proto",
  "jmap",
  "jmap_proto",
@@ -3471,18 +3503,16 @@ dependencies = [
 name = "jmap"
 version = "0.11.2"
 dependencies = [
- "aes",
  "aes-gcm",
  "aes-gcm-siv",
  "async-stream",
- "async-trait",
  "base64 0.22.1",
  "bincode",
- "cbc",
  "chrono",
  "common",
  "dashmap",
  "directory",
+ "email",
  "form-data",
  "form_urlencoded",
  "futures-util",
@@ -3501,15 +3531,11 @@ dependencies = [
  "nlp",
  "p256",
  "pkcs8",
- "quick-xml 0.36.2",
+ "quick-xml 0.37.1",
  "rand 0.8.5",
- "rasn",
- "rasn-cms",
- "rasn-pkix",
  "reqwest 0.12.9",
  "rev_lines",
  "rsa",
- "sequoia-openpgp",
  "serde",
  "serde_json",
  "sha1",
@@ -3520,9 +3546,9 @@ dependencies = [
  "spam-filter",
  "store",
  "tokio",
- "tokio-tungstenite 0.24.0",
+ "tokio-tungstenite 0.26.1",
  "trc",
- "tungstenite 0.24.0",
+ "tungstenite 0.26.1",
  "utils",
  "x509-parser 0.16.0",
 ]
@@ -4786,6 +4812,7 @@ version = "0.11.2"
 dependencies = [
  "common",
  "directory",
+ "email",
  "imap",
  "jmap",
  "jmap_proto",
@@ -5068,15 +5095,6 @@ checksum = "1d3a6e5838b60e0e8fa7a43f22ade549a37d61f8bdbe636d0d7816191de969c2"
 dependencies = [
  "memchr",
  "serde",
-]
-
-[[package]]
-name = "quick-xml"
-version = "0.36.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
-dependencies = [
- "memchr",
 ]
 
 [[package]]
@@ -6443,6 +6461,7 @@ dependencies = [
  "common",
  "dashmap",
  "directory",
+ "email",
  "form_urlencoded",
  "http-body-util",
  "hyper 1.5.2",
@@ -6830,6 +6849,7 @@ dependencies = [
  "dashmap",
  "directory",
  "ece",
+ "email",
  "flate2",
  "form_urlencoded",
  "futures",
@@ -7091,14 +7111,14 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.24.0"
+version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
+checksum = "be4bf6fecd69fcdede0ec680aaf474cdab988f9de6bc73d3758f0160e3b7025a"
 dependencies = [
  "futures-util",
  "log",
  "tokio",
- "tungstenite 0.24.0",
+ "tungstenite 0.26.1",
 ]
 
 [[package]]
@@ -7312,9 +7332,9 @@ dependencies = [
 
 [[package]]
 name = "tungstenite"
-version = "0.24.0"
+version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
+checksum = "413083a99c579593656008130e29255e54dcaae495be556cc26888f211648c24"
 dependencies = [
  "byteorder",
  "bytes",
@@ -7324,7 +7344,7 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "sha1",
- "thiserror 1.0.69",
+ "thiserror 2.0.9",
  "utf-8",
 ]
 

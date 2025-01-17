@@ -8,6 +8,12 @@ use common::{
     auth::{AccessToken, ResourceToken},
     Server,
 };
+use email::{
+    index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
+    ingest::{EmailIngest, IngestedEmail, LogEmailInsert},
+    mailbox::{MailboxFnc, UidMailbox},
+    metadata::MessageMetadata,
+};
 use jmap_proto::{
     error::set::SetError,
     method::{
@@ -45,21 +51,8 @@ use store::{
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
 
-use crate::{
-    api::http::HttpSessionData,
-    auth::acl::AclMethods,
-    changes::{state::StateManager, write::ChangeLog},
-    mailbox::{set::MailboxSet, UidMailbox},
-    services::index::Indexer,
-    JmapMethods,
-};
+use crate::{api::http::HttpSessionData, auth::acl::AclMethods, changes::state::StateManager};
 use std::future::Future;
-
-use super::{
-    index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
-    ingest::{EmailIngest, IngestedEmail, LogEmailInsert},
-    metadata::MessageMetadata,
-};
 
 pub trait EmailCopy: Sync + Send {
     fn email_copy(
@@ -413,7 +406,7 @@ impl EmailCopy for Server {
         }
 
         // Prepare batch
-        let change_id = self.assign_change_id(account_id).await?;
+        let change_id = self.assign_change_id(account_id)?;
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(account_id)

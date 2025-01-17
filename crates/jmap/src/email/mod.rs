@@ -6,16 +6,12 @@
 
 pub mod bayes;
 pub mod body;
-pub mod cache;
 pub mod copy;
 pub mod crypto;
 pub mod delete;
 pub mod get;
 pub mod headers;
 pub mod import;
-pub mod index;
-pub mod ingest;
-pub mod metadata;
 pub mod parse;
 pub mod query;
 pub mod set;

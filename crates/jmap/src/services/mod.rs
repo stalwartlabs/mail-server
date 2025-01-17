@@ -4,9 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod delivery;
 pub mod gossip;
 pub mod housekeeper;
 pub mod index;
-pub mod ingest;
 pub mod state;

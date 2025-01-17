@@ -76,7 +76,8 @@ impl WebSocketHandler for Server {
                 let _ = stream
                     .send(Message::Text(
                         WebSocketRequestError::from(RequestError::internal_server_error())
-                            .to_json(),
+                            .to_json()
+                            .into(),
                     ))
                     .await;
                 return;
@@ -128,7 +129,7 @@ impl WebSocketHandler for Server {
                                             response
                                         },
                                     };
-                                    if let Err(err) = stream.send(Message::Text(response)).await {
+                                    if let Err(err) = stream.send(Message::Text(response.into())).await {
                                         trc::event!(Jmap(JmapEvent::WebsocketError),
                                                     Details = "Failed to send text message",
                                                     SpanId = session.session_id,
@@ -208,7 +209,7 @@ impl WebSocketHandler for Server {
                 // Send any queued changes
                 let elapsed = last_changes_sent.elapsed();
                 if elapsed >= throttle {
-                    if let Err(err) = stream.send(Message::Text(changes.to_json())).await {
+                    if let Err(err) = stream.send(Message::Text(changes.to_json().into())).await {
                         trc::event!(
                             Jmap(JmapEvent::WebsocketError),
                             Details = "Failed to send state change message.",
@@ -224,7 +225,7 @@ impl WebSocketHandler for Server {
                     next_event = throttle - elapsed;
                 }
             } else if last_heartbeat.elapsed() > heartbeat {
-                if let Err(err) = stream.send(Message::Ping(vec![])).await {
+                if let Err(err) = stream.send(Message::Ping(Vec::<u8>::new().into())).await {
                     trc::event!(
                         Jmap(JmapEvent::WebsocketError),
                         Details = "Failed to send ping message.",

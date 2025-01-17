@@ -7,12 +7,9 @@
 use ahash::AHashSet;
 use common::Server;
 use directory::{backend::internal::manage::ManageDirectory, QueryBy};
+use email::mailbox::{INBOX_ID, JUNK_ID, TRASH_ID};
 use imap_proto::ResponseType;
-use jmap::{
-    email::delete::EmailDeletion,
-    mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
-    JmapMethods,
-};
+use jmap::email::delete::EmailDeletion;
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 use store::{
     write::{key::DeserializeBigEndian, TagValue},

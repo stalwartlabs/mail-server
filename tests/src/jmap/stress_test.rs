@@ -9,8 +9,8 @@ use std::{sync::Arc, time::Duration};
 use crate::jmap::{mailbox::destroy_all_mailboxes_no_wait, wait_for_index};
 use common::Server;
 use directory::backend::internal::manage::ManageDirectory;
+use email::mailbox::UidMailbox;
 use futures::future::join_all;
-use jmap::{mailbox::UidMailbox, JmapMethods};
 use jmap_client::{
     client::Client,
     core::set::{SetErrorType, SetObject},

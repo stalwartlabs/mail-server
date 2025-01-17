@@ -85,7 +85,6 @@ pub struct QueueOutboundTimeout {
 #[derive(Debug, Clone)]
 pub struct QueueThrottle {
     pub outbound_concurrency: usize,
-    pub local_concurrency: usize,
     pub sender: Vec<Throttle>,
     pub rcpt: Vec<Throttle>,
     pub host: Vec<Throttle>,
@@ -204,7 +203,6 @@ impl Default for QueueConfig {
             },
             throttle: QueueThrottle {
                 outbound_concurrency: 25,
-                local_concurrency: 10,
                 sender: Default::default(),
                 rcpt: Default::default(),
                 host: Default::default(),
@@ -391,10 +389,6 @@ fn parse_queue_throttle(config: &mut Config) -> QueueThrottle {
         outbound_concurrency: config
             .property_or_default::<usize>("queue.threads.remote", "25")
             .unwrap_or(25)
-            .max(1),
-        local_concurrency: config
-            .property_or_default::<usize>("queue.threads.local", "10")
-            .unwrap_or(10)
             .max(1),
     };
 

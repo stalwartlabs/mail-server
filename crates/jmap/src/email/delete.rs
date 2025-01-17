@@ -7,6 +7,11 @@
 use std::time::Duration;
 
 use common::{Server, KV_LOCK_PURGE_ACCOUNT};
+use email::{
+    index::EmailIndexBuilder,
+    mailbox::{UidMailbox, JUNK_ID, TOMBSTONE_ID, TRASH_ID},
+    metadata::MessageMetadata,
+};
 use jmap_proto::types::{
     collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
     type_state::DataType,
@@ -23,14 +28,6 @@ use store::{
 use trc::{AddContext, StoreEvent};
 use utils::codec::leb128::Leb128Reader;
 
-use crate::{
-    changes::write::ChangeLog,
-    mailbox::{UidMailbox, JUNK_ID, TOMBSTONE_ID, TRASH_ID},
-    services::state::StateManager,
-    JmapMethods,
-};
-
-use super::{index::EmailIndexBuilder, metadata::MessageMetadata};
 use rand::prelude::SliceRandom;
 use std::future::Future;
 

@@ -334,7 +334,7 @@ async fn init_imap_tests(store_id: &str, delete_if_exists: bool) -> IMAPTest {
     let cache = Caches::parse(&mut config);
 
     let store = core.storage.data.clone();
-    let (ipc, mut ipc_rxs) = build_ipc();
+    let (ipc, mut ipc_rxs) = build_ipc(&mut config);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,

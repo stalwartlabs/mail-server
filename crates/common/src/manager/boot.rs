@@ -16,7 +16,7 @@ use store::{
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     Stores,
 };
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{mpsc, Notify, Semaphore};
 use utils::{
     config::{Config, ConfigKey},
     failed, Semver, UnwrapFailure,
@@ -25,7 +25,7 @@ use utils::{
 use crate::{
     config::{network::AsnGeoLookupConfig, server::Listeners, telemetry::Telemetry},
     core::BuildServer,
-    ipc::{DeliveryEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
+    ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
     Caches, Core, Data, Inner, Ipc, IPC_CHANNEL_BUFFER,
 };
 
@@ -46,7 +46,6 @@ pub struct BootManager {
 pub struct IpcReceivers {
     pub state_rx: Option<mpsc::Receiver<StateEvent>>,
     pub housekeeper_rx: Option<mpsc::Receiver<HousekeeperEvent>>,
-    pub delivery_rx: Option<mpsc::Receiver<DeliveryEvent>>,
     pub queue_rx: Option<mpsc::Receiver<QueueEvent>>,
     pub report_rx: Option<mpsc::Receiver<ReportingEvent>>,
 }
@@ -427,7 +426,7 @@ impl BootManager {
                     core.network.asn_geo_lookup,
                     AsnGeoLookupConfig::Resource { .. }
                 );
-                let (ipc, ipc_rxs) = build_ipc();
+                let (ipc, ipc_rxs) = build_ipc(&mut config);
                 let inner = Arc::new(Inner {
                     shared_core: ArcSwap::from_pointee(core),
                     data,
@@ -484,9 +483,8 @@ impl BootManager {
     }
 }
 
-pub fn build_ipc() -> (Ipc, IpcReceivers) {
+pub fn build_ipc(config: &mut Config) -> (Ipc, IpcReceivers) {
     // Build ipc receivers
-    let (delivery_tx, delivery_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
     let (state_tx, state_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
     let (housekeeper_tx, housekeeper_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
     let (queue_tx, queue_rx) = mpsc::channel(IPC_CHANNEL_BUFFER);
@@ -495,15 +493,19 @@ pub fn build_ipc() -> (Ipc, IpcReceivers) {
         Ipc {
             state_tx,
             housekeeper_tx,
-            delivery_tx,
             queue_tx,
             report_tx,
             index_tx: Arc::new(Notify::new()),
+            local_delivery_sm: Arc::new(Semaphore::new(
+                config
+                    .property_or_default::<usize>("queue.threads.local", "10")
+                    .unwrap_or(10)
+                    .max(1),
+            )),
         },
         IpcReceivers {
             state_rx: Some(state_rx),
             housekeeper_rx: Some(housekeeper_rx),
-            delivery_rx: Some(delivery_rx),
             queue_rx: Some(queue_rx),
             report_rx: Some(report_rx),
         },

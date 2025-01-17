@@ -68,12 +68,6 @@ impl SessionManager for SmtpSessionManager {
                 .report_tx
                 .send(common::ipc::ReportingEvent::Stop)
                 .await;
-            let _ = self
-                .inner
-                .ipc
-                .delivery_tx
-                .send(common::ipc::DeliveryEvent::Stop)
-                .await;
         }
     }
 }

@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod get;
-pub mod query;
-pub mod state;
+pub mod cache;
+pub mod crypto;
+pub mod delivery;
+pub mod index;
+pub mod ingest;
+pub mod mailbox;
+pub mod metadata;
+pub mod sieve;

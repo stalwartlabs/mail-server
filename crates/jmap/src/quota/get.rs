@@ -12,8 +12,6 @@ use jmap_proto::{
 };
 use std::future::Future;
 
-use crate::JmapMethods;
-
 pub trait QuotaGet: Sync + Send {
     fn quota_get(
         &self,

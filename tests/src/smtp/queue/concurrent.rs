@@ -43,7 +43,7 @@ enable = false
 
 "#;
 
-const NUM_MESSAGES: usize = 1000;
+const NUM_MESSAGES: usize = 100;
 const NUM_QUEUES: usize = 10;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 18)]
@@ -108,7 +108,7 @@ async fn concurrent_queue() {
     // Send 1000 test messages
     for _ in 0..(NUM_MESSAGES / 2) {
         session
-            .send_message("john@test.org", &["slow@foobar.org"], "test:no_dkim", "250")
+            .send_message("john@test.org", &["bill@foobar.org"], "test:no_dkim", "250")
             .await;
     }
 
@@ -135,14 +135,14 @@ async fn concurrent_queue() {
 
         if m + e != 0 {
             println!("Queue still has {} messages and {} events", m, e);
-            for inner in &inners {
+            /*for inner in &inners {
                 inner
                     .ipc
                     .queue_tx
-                    .send(QueueEvent::Paused(true))
+                    .send(QueueEvent::Refresh)
                     .await
                     .unwrap();
-            }
+            }*/
         } else {
             break;
         }

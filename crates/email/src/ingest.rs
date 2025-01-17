@@ -10,7 +10,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::{auth::ResourceToken, Server};
+use common::{
+    auth::{AccessToken, ResourceToken},
+    Server,
+};
+use directory::Permission;
 use jmap_proto::{
     object::Object,
     types::{
@@ -23,11 +27,11 @@ use mail_parser::{
     PartType,
 };
 
-use rand::Rng;
 use spam_filter::{
     analysis::init::SpamFilterInit, modules::bayes::BayesClassifier, SpamFilterInput,
 };
 use std::future::Future;
+use store::rand::Rng;
 use store::{
     ahash::AHashSet,
     query::Filter,
@@ -42,12 +46,8 @@ use trc::{AddContext, MessageIngestEvent};
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    blob::upload::BlobUpload,
-    changes::write::ChangeLog,
-    email::index::{IndexMessage, VisitValues, MAX_ID_LENGTH},
+    index::{IndexMessage, VisitValues, MAX_ID_LENGTH},
     mailbox::{UidMailbox, INBOX_ID, JUNK_ID},
-    services::index::Indexer,
-    JmapMethods,
 };
 
 use super::{
@@ -104,6 +104,7 @@ pub trait EmailIngest: Sync + Send {
         account_id: u32,
         mailbox_id: u32,
     ) -> impl Future<Output = trc::Result<u32>> + Send;
+    fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool;
 }
 
 impl EmailIngest for Server {
@@ -437,7 +438,6 @@ impl EmailIngest for Server {
         // Obtain a documentId and changeId
         let change_id = self
             .assign_change_id(account_id)
-            .await
             .caused_by(trc::location!())?;
 
         // Store blob
@@ -646,7 +646,6 @@ impl EmailIngest for Server {
             let mut batch = BatchBuilder::new();
             let change_id = self
                 .assign_change_id(account_id)
-                .await
                 .caused_by(trc::location!())?;
             let mut changes = ChangeLogBuilder::with_change_id(change_id);
             batch
@@ -702,7 +701,7 @@ impl EmailIngest for Server {
             match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => return Ok(Some(thread_id)),
                 Err(err) if err.is_assertion_failure() && try_count < MAX_RETRIES => {
-                    let backoff = rand::thread_rng().gen_range(50..=300);
+                    let backoff = store::rand::thread_rng().gen_range(50..=300);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
                     try_count += 1;
                 }
@@ -727,6 +726,12 @@ impl EmailIngest for Server {
             .write(batch.build())
             .await
             .and_then(|v| v.last_counter_id().map(|id| id as u32))
+    }
+
+    fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool {
+        self.core.spam.bayes.as_ref().is_some_and(|bayes| {
+            bayes.account_classify && access_token.has_permission(Permission::SpamFilterTrain)
+        })
     }
 }
 

@@ -5,6 +5,7 @@
  */
 
 use common::{auth::AccessToken, Server};
+use email::cache::ThreadCache;
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,
@@ -22,8 +23,6 @@ use store::{
 };
 
 use crate::{auth::acl::AclMethods, JmapMethods};
-
-use super::cache::ThreadCache;
 
 pub trait EmailQuery: Sync + Send {
     fn email_query(

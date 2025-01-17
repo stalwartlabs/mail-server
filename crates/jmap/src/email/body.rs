@@ -4,16 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use email::metadata::{MessageMetadataContents, MetadataPartType};
 use jmap_proto::{
     object::Object,
     types::{blob::BlobId, property::Property, value::Value},
 };
 use mail_parser::{HeaderValue, MessagePart, MimeHeaders, PartType};
 
-use super::{
-    headers::HeaderToValue,
-    metadata::{MessageMetadataContents, MetadataPartType},
-};
+use super::headers::HeaderToValue;
 
 pub trait ToBodyPart {
     fn to_body_part(

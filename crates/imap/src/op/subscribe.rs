@@ -12,13 +12,9 @@ use crate::{
 };
 use common::listener::SessionStream;
 use directory::Permission;
+use email::mailbox::SCHEMA;
 use imap_proto::{receiver::Request, Command, ResponseCode, StatusResponse};
-use jmap::{
-    changes::write::ChangeLog,
-    mailbox::set::{MailboxSubscribe, SCHEMA},
-    services::state::StateManager,
-    JmapMethods,
-};
+use jmap::mailbox::set::MailboxSubscribe;
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
@@ -129,7 +125,6 @@ impl<T: SessionStream> SessionData<T> {
             let mut changes = self
                 .server
                 .begin_changes(account_id)
-                .await
                 .imap_ctx(&tag, trc::location!())?;
             let mut batch = BatchBuilder::new();
             batch
@@ -148,7 +143,8 @@ impl<T: SessionStream> SessionData<T> {
             let change_id = changes.change_id;
             batch.custom(changes);
             self.server
-                .write_batch(batch)
+                .store()
+                .write(batch)
                 .await
                 .imap_ctx(&tag, trc::location!())?;
 

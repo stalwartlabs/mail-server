@@ -8,6 +8,7 @@ use std::{sync::Arc, time::Instant};
 
 use ahash::AHashMap;
 use directory::Permission;
+use email::mailbox::UidMailbox;
 use imap_proto::{
     parser::parse_sequence_set,
     receiver::{Request, Token},
@@ -17,13 +18,7 @@ use trc::AddContext;
 
 use crate::core::{SavedSearch, SelectedMailbox, Session, SessionData};
 use common::{listener::SessionStream, ImapId};
-use jmap::{
-    changes::write::ChangeLog,
-    email::{delete::EmailDeletion, set::TagManager},
-    mailbox::UidMailbox,
-    services::state::StateManager,
-    JmapMethods,
-};
+use jmap::email::{delete::EmailDeletion, set::TagManager};
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
     state::StateChange, type_state::DataType,
@@ -251,10 +246,16 @@ impl<T: SessionStream> SessionData<T> {
                     mailboxes.update_batch(&mut batch, Property::MailboxIds);
                     keywords.update_batch(&mut batch, Property::Keywords);
                     if changelog.change_id == u64::MAX {
-                        changelog.change_id = self.server.assign_change_id(account_id).await?
+                        changelog.change_id = self.server.assign_change_id(account_id)?
                     }
                     batch.value(Property::Cid, changelog.change_id, F_VALUE);
-                    match self.server.write_batch(batch).await {
+                    match self
+                        .server
+                        .store()
+                        .write(batch)
+                        .await
+                        .caused_by(trc::location!())
+                    {
                         Ok(_) => {
                             changelog.log_update(Collection::Email, Id::from_parts(thread_id, id));
                             changelog.log_child_update(Collection::Mailbox, mailbox_id.mailbox_id);

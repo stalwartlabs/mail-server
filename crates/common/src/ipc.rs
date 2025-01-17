@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 use ahash::RandomState;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
@@ -14,8 +14,8 @@ use mail_auth::{
     report::{tlsrpt::FailureDetails, Record},
 };
 use store::{BlobStore, InMemoryStore, Store};
-use tokio::sync::{mpsc, oneshot};
-use utils::{map::bitmap::Bitmap, BlobHash};
+use tokio::sync::mpsc;
+use utils::map::bitmap::Bitmap;
 
 use crate::{
     config::smtp::{
@@ -24,36 +24,6 @@ use crate::{
     },
     listener::limiter::ConcurrencyLimiter,
 };
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DeliveryResult {
-    Success,
-    TemporaryFailure {
-        reason: Cow<'static, str>,
-    },
-    PermanentFailure {
-        code: [u8; 3],
-        reason: Cow<'static, str>,
-    },
-}
-
-#[derive(Debug)]
-pub enum DeliveryEvent {
-    Ingest {
-        message: IngestMessage,
-        result_tx: oneshot::Sender<Vec<DeliveryResult>>,
-    },
-    Stop,
-}
-
-#[derive(Debug)]
-pub struct IngestMessage {
-    pub sender_address: String,
-    pub recipients: Vec<String>,
-    pub message_blob: BlobHash,
-    pub message_size: usize,
-    pub session_id: u64,
-}
 
 pub enum HousekeeperEvent {
     AcmeReschedule {

@@ -4,6 +4,7 @@ members = [
     "crates/main",
     "crates/jmap",
     "crates/jmap-proto",
+    "crates/email",
     "crates/imap",
     "crates/imap-proto",
     "crates/smtp",

@@ -5,6 +5,7 @@
  */
 
 use common::{auth::AccessToken, Server};
+use email::metadata::{MessageMetadata, MetadataPartType};
 use jmap_proto::{
     method::{
         query::Filter,
@@ -16,9 +17,8 @@ use mail_parser::{decoders::html::html_to_text, GetHeader, HeaderName, PartType}
 use nlp::language::{search_snippet::generate_snippet, stemmer::Stemmer, Language};
 use store::{backend::MAX_TOKEN_LENGTH, write::Bincode};
 
-use crate::{auth::acl::AclMethods, blob::download::BlobDownload, JmapMethods};
+use crate::{auth::acl::AclMethods, blob::download::BlobDownload};
 
-use super::metadata::{MessageMetadata, MetadataPartType};
 use std::future::Future;
 
 pub trait EmailSearchSnippet: Sync + Send {

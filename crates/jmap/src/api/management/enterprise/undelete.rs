@@ -13,6 +13,10 @@ use std::str::FromStr;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use common::{auth::AccessToken, enterprise::undelete::DeletedBlob, Server};
 use directory::backend::internal::manage::ManageDirectory;
+use email::{
+    ingest::{EmailIngest, IngestEmail, IngestSource},
+    mailbox::INBOX_ID,
+};
 use hyper::Method;
 use jmap_proto::types::collection::Collection;
 use mail_parser::{DateTime, MessageParser};
@@ -29,9 +33,6 @@ use crate::{
         HttpRequest, HttpResponse, JsonResponse,
     },
     blob::download::BlobDownload,
-    email::ingest::{EmailIngest, IngestEmail, IngestSource},
-    mailbox::INBOX_ID,
-    JmapMethods,
 };
 
 #[derive(serde::Deserialize, serde::Serialize)]

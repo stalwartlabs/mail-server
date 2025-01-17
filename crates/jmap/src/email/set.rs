@@ -7,6 +7,10 @@
 use std::{borrow::Cow, collections::HashMap, slice::IterMut};
 
 use common::{auth::AccessToken, Server};
+use email::{
+    ingest::{EmailIngest, IngestEmail, IngestSource},
+    mailbox::{MailboxFnc, UidMailbox},
+};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -42,20 +46,14 @@ use store::{
 use trc::AddContext;
 
 use crate::{
-    api::http::HttpSessionData,
-    auth::acl::AclMethods,
-    blob::download::BlobDownload,
-    changes::{state::StateManager, write::ChangeLog},
-    mailbox::{set::MailboxSet, UidMailbox},
-    JmapMethods,
+    api::http::HttpSessionData, auth::acl::AclMethods, blob::download::BlobDownload,
+    changes::state::StateManager, JmapMethods,
 };
 use std::future::Future;
 
 use super::{
-    bayes::EmailBayesTrain,
     delete::EmailDeletion,
     headers::{BuildHeader, ValueToHeader},
-    ingest::{EmailIngest, IngestEmail, IngestSource},
 };
 
 pub trait EmailSet: Sync + Send {
@@ -892,7 +890,7 @@ impl EmailSet for Server {
 
                 // Update last change id
                 if changes.change_id == u64::MAX {
-                    changes.change_id = self.assign_change_id(account_id).await?;
+                    changes.change_id = self.assign_change_id(account_id)?;
                 }
                 batch.value(Property::Cid, changes.change_id, F_VALUE);
             }

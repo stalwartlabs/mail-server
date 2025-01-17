@@ -30,8 +30,6 @@ use store::{
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
-use crate::JmapMethods;
-
 pub trait AclMethods: Sync + Send {
     fn shared_documents(
         &self,

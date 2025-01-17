@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap::mailbox::{INBOX_ID, TRASH_ID};
+use ::email::mailbox::{INBOX_ID, TRASH_ID};
 use jmap_client::{
     core::{
         error::{MethodError, MethodErrorType},

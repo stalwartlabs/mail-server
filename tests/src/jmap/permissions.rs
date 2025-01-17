@@ -7,15 +7,12 @@
 use std::sync::Arc;
 
 use ahash::AHashSet;
-use common::{
-    auth::{AccessToken, TenantInfo},
-    ipc::{DeliveryResult, IngestMessage},
-};
+use common::auth::{AccessToken, TenantInfo};
 use directory::{
     backend::internal::{PrincipalField, PrincipalUpdate, PrincipalValue},
     Permission, Principal, Type,
 };
-use jmap::{services::ingest::MailDelivery, JmapMethods};
+use email::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
 use utils::BlobHash;
 
 use crate::jmap::assert_is_empty;
@@ -615,8 +612,9 @@ pub async fn test(params: &JMAPTest) {
                 message_size: TEST_MESSAGE.len(),
                 session_id: 0,
             })
-            .await,
-        vec![DeliveryResult::PermanentFailure {
+            .await
+            .status,
+        vec![LocalDeliveryStatus::PermanentFailure {
             code: [5, 5, 0],
             reason: "This account is not authorized to receive email.".into()
         }]
@@ -652,8 +650,9 @@ pub async fn test(params: &JMAPTest) {
                 message_size: TEST_MESSAGE.len(),
                 session_id: 0,
             })
-            .await,
-        vec![DeliveryResult::Success]
+            .await
+            .status,
+        vec![LocalDeliveryStatus::Success]
     );
 
     // Quota for the tenant and user should be updated
@@ -676,8 +675,9 @@ pub async fn test(params: &JMAPTest) {
                 message_size: TEST_MESSAGE.len(),
                 session_id: 0,
             })
-            .await,
-        vec![DeliveryResult::TemporaryFailure {
+            .await
+            .status,
+        vec![LocalDeliveryStatus::TemporaryFailure {
             reason: "Organization over quota.".into()
         }]
     );

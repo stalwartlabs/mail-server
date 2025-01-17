@@ -13,8 +13,6 @@ use jmap_proto::{
 };
 use std::future::Future;
 
-use crate::JmapMethods;
-
 pub trait PrincipalGet: Sync + Send {
     fn principal_get(
         &self,

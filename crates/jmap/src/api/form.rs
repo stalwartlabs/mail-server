@@ -9,10 +9,9 @@ use std::{borrow::Cow, fmt::Write, future::Future};
 use chrono::Utc;
 use common::{
     config::network::{ContactForm, FieldOrDefault},
-    ip_to_bytes,
-    ipc::{DeliveryResult, IngestMessage},
-    psl, Server, KV_RATE_LIMIT_CONTACT,
+    ip_to_bytes, psl, Server, KV_RATE_LIMIT_CONTACT,
 };
+use email::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
 use hyper::StatusCode;
 use mail_auth::common::cache::NoCache;
 use mail_builder::{
@@ -32,7 +31,7 @@ use trc::AddContext;
 use utils::BlobHash;
 use x509_parser::nom::AsBytes;
 
-use crate::{auth::oauth::FormData, services::ingest::MailDelivery};
+use crate::auth::oauth::FormData;
 
 use super::{
     http::{HttpSessionData, ToHttpResponse},
@@ -210,13 +209,16 @@ impl FormHandler for Server {
                     session_id: session.session_id,
                 })
                 .await
+                .status
             {
                 match result {
-                    DeliveryResult::Success => {
+                    LocalDeliveryStatus::Success => {
                         has_success = true;
                     }
-                    DeliveryResult::TemporaryFailure { reason }
-                    | DeliveryResult::PermanentFailure { reason, .. } => failure = Some(reason),
+                    LocalDeliveryStatus::TemporaryFailure { reason }
+                    | LocalDeliveryStatus::PermanentFailure { reason, .. } => {
+                        failure = Some(reason)
+                    }
                 }
             }
 

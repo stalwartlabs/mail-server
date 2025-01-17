@@ -8,9 +8,7 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use jmap::{
-    changes::write::ChangeLog, email::delete::EmailDeletion, services::state::StateManager,
-};
+use jmap::email::delete::EmailDeletion;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::roaring::RoaringBitmap;
 use trc::AddContext;

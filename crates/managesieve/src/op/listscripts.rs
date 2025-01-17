@@ -8,7 +8,6 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use jmap::JmapMethods;
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},

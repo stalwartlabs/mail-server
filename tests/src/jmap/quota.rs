@@ -11,7 +11,8 @@ use crate::{
         mailbox::destroy_all_mailboxes, test_account_login,
     },
 };
-use jmap::{blob::upload::DISABLE_UPLOAD_QUOTA, mailbox::INBOX_ID, JmapMethods};
+use email::mailbox::INBOX_ID;
+use jmap::blob::upload::DISABLE_UPLOAD_QUOTA;
 use jmap_client::{
     core::set::{SetErrorType, SetObject},
     email::EmailBodyPart,

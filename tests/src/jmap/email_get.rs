@@ -6,7 +6,7 @@
 
 use std::{fs, path::PathBuf};
 
-use jmap::mailbox::INBOX_ID;
+use ::email::mailbox::INBOX_ID;
 use jmap_client::email::{self, import::EmailImportResponse, Header, HeaderForm};
 use jmap_proto::types::id::Id;
 use mail_parser::HeaderName;

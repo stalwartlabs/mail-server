@@ -6,8 +6,8 @@
 
 use std::future::Future;
 
-use common::{auth::AccessToken, Server};
-use directory::Permission;
+use common::Server;
+use email::metadata::MessageMetadata;
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_parser::Message;
 use spam_filter::{
@@ -15,10 +15,6 @@ use spam_filter::{
 };
 use store::write::{Bincode, TaskQueueClass};
 use trc::StoreEvent;
-
-use crate::{changes::write::ChangeLog, JmapMethods};
-
-use super::metadata::MessageMetadata;
 
 pub trait EmailBayesTrain: Sync + Send {
     fn email_bayes_train(
@@ -35,8 +31,6 @@ pub trait EmailBayesTrain: Sync + Send {
         document_id: u32,
         learn_spam: bool,
     ) -> impl Future<Output = trc::Result<TaskQueueClass>> + Send;
-
-    fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool;
 }
 
 impl EmailBayesTrain for Server {
@@ -81,12 +75,6 @@ impl EmailBayesTrain for Server {
             seq: self.generate_snowflake_id()?,
             hash: metadata.inner.blob_hash,
             learn_spam,
-        })
-    }
-
-    fn email_bayes_can_train(&self, access_token: &AccessToken) -> bool {
-        self.core.spam.bayes.as_ref().is_some_and(|bayes| {
-            bayes.account_classify && access_token.has_permission(Permission::SpamFilterTrain)
         })
     }
 }

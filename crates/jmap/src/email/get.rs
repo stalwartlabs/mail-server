@@ -5,6 +5,11 @@
  */
 
 use common::{auth::AccessToken, Server};
+use email::{
+    cache::ThreadCache,
+    mailbox::UidMailbox,
+    metadata::{MessageMetadata, MetadataPartType},
+};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse},
     object::{email::GetArguments, Object},
@@ -25,15 +30,13 @@ use trc::{AddContext, StoreEvent};
 
 use crate::{
     auth::acl::AclMethods, blob::download::BlobDownload, changes::state::StateManager,
-    email::headers::HeaderToValue, mailbox::UidMailbox, JmapMethods,
+    email::headers::HeaderToValue,
 };
 use std::future::Future;
 
 use super::{
     body::{ToBodyPart, TruncateBody},
-    cache::ThreadCache,
     headers::IntoForm,
-    metadata::{MessageMetadata, MetadataPartType},
 };
 
 pub trait EmailGet: Sync + Send {

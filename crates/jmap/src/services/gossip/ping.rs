@@ -10,8 +10,6 @@ use common::{
 };
 use trc::ClusterEvent;
 
-use crate::services::index::Indexer;
-
 use super::{request::Request, Gossiper, PeerStatus};
 
 impl Gossiper {

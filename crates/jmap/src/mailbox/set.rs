@@ -4,16 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, config::jmap::settings::SpecialUse, Server};
+use common::{auth::AccessToken, Server};
 use directory::Permission;
+use email::mailbox::{MailboxFnc, SCHEMA};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
-    object::{
-        index::{IndexAs, IndexProperty, ObjectIndexBuilder},
-        mailbox::SetArguments,
-        Object,
-    },
+    object::{index::ObjectIndexBuilder, mailbox::SetArguments, Object},
     response::references::EvalObjectReferences,
     types::{
         acl::Acl,
@@ -34,18 +31,15 @@ use store::{
         BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE,
     },
 };
-use trc::AddContext;
 
 use crate::{
     auth::acl::{AclMethods, EffectiveAcl},
-    changes::write::ChangeLog,
     email::delete::EmailDeletion,
     JmapMethods,
 };
 
-use super::{get::MailboxGet, ARCHIVE_ID, DRAFTS_ID, SENT_ID};
 #[allow(unused_imports)]
-use super::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
+use email::mailbox::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
 use std::future::Future;
 
 pub struct SetContext<'x> {
@@ -56,24 +50,6 @@ pub struct SetContext<'x> {
     mailbox_ids: RoaringBitmap,
     will_destroy: Vec<Id>,
 }
-
-pub static SCHEMA: &[IndexProperty] = &[
-    IndexProperty::new(Property::Name)
-        .index_as(IndexAs::Text {
-            tokenize: true,
-            index: true,
-        })
-        .required(),
-    IndexProperty::new(Property::Role).index_as(IndexAs::Text {
-        tokenize: false,
-        index: true,
-    }),
-    IndexProperty::new(Property::Role).index_as(IndexAs::HasProperty),
-    IndexProperty::new(Property::ParentId).index_as(IndexAs::Integer),
-    IndexProperty::new(Property::SortOrder).index_as(IndexAs::Integer),
-    IndexProperty::new(Property::IsSubscribed).index_as(IndexAs::IntegerList),
-    IndexProperty::new(Property::Acl).index_as(IndexAs::Acl),
-];
 
 pub trait MailboxSet: Sync + Send {
     fn mailbox_set(
@@ -97,17 +73,6 @@ pub trait MailboxSet: Sync + Send {
         update: Option<(u32, HashedValue<Object<Value>>)>,
         ctx: &SetContext,
     ) -> impl Future<Output = trc::Result<Result<ObjectIndexBuilder, SetError>>> + Send;
-
-    fn mailbox_get_or_create(
-        &self,
-        account_id: u32,
-    ) -> impl Future<Output = trc::Result<RoaringBitmap>> + Send;
-
-    fn mailbox_create_path(
-        &self,
-        account_id: u32,
-        path: &str,
-    ) -> impl Future<Output = trc::Result<Option<(u32, Option<u64>)>>> + Send;
 }
 
 impl MailboxSet for Server {
@@ -800,148 +765,6 @@ impl MailboxSet for Server {
             .with_changes(changes)
             .with_current_opt(current)
             .validate())
-    }
-
-    async fn mailbox_get_or_create(&self, account_id: u32) -> trc::Result<RoaringBitmap> {
-        let mut mailbox_ids = self
-            .get_document_ids(account_id, Collection::Mailbox)
-            .await?
-            .unwrap_or_default();
-        if !mailbox_ids.is_empty() {
-            return Ok(mailbox_ids);
-        }
-
-        #[cfg(feature = "test_mode")]
-        if mailbox_ids.is_empty() && account_id == 0 {
-            return Ok(mailbox_ids);
-        }
-
-        let mut batch = BatchBuilder::new();
-        batch
-            .with_account_id(account_id)
-            .with_collection(Collection::Mailbox);
-
-        // Create mailboxes
-        let mut last_document_id = ARCHIVE_ID;
-        for folder in &self.core.jmap.default_folders {
-            let (role, document_id) = match folder.special_use {
-                SpecialUse::Inbox => ("inbox", INBOX_ID),
-                SpecialUse::Trash => ("trash", TRASH_ID),
-                SpecialUse::Junk => ("junk", JUNK_ID),
-                SpecialUse::Drafts => ("drafts", DRAFTS_ID),
-                SpecialUse::Sent => ("sent", SENT_ID),
-                SpecialUse::Archive => ("archive", ARCHIVE_ID),
-                SpecialUse::None => {
-                    last_document_id += 1;
-                    ("", last_document_id)
-                }
-                SpecialUse::Shared => unreachable!(),
-            };
-
-            let mut object = Object::with_capacity(4)
-                .with_property(Property::Name, folder.name.clone())
-                .with_property(Property::ParentId, Value::Id(0u64.into()))
-                .with_property(
-                    Property::Cid,
-                    Value::UnsignedInt(rand::random::<u32>() as u64),
-                );
-            if !role.is_empty() {
-                object.set(Property::Role, role);
-            }
-            if folder.subscribe {
-                object.set(
-                    Property::IsSubscribed,
-                    Value::List(vec![Value::Id(account_id.into())]),
-                );
-            }
-            batch
-                .create_document_with_id(document_id)
-                .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(object));
-            mailbox_ids.insert(document_id);
-        }
-
-        self.core
-            .storage
-            .data
-            .write(batch.build())
-            .await
-            .caused_by(trc::location!())
-            .map(|_| mailbox_ids)
-    }
-
-    async fn mailbox_create_path(
-        &self,
-        account_id: u32,
-        path: &str,
-    ) -> trc::Result<Option<(u32, Option<u64>)>> {
-        let expanded_path =
-            if let Some(expand_path) = self.mailbox_expand_path(account_id, path, false).await? {
-                expand_path
-            } else {
-                return Ok(None);
-            };
-
-        let mut next_parent_id = 0;
-        let mut path = expanded_path.path.into_iter().enumerate().peekable();
-        'outer: while let Some((pos, name)) = path.peek() {
-            let is_inbox = *pos == 0 && name.eq_ignore_ascii_case("inbox");
-
-            for (part, parent_id, document_id) in &expanded_path.found_names {
-                if (part.eq(name) || (is_inbox && part.eq_ignore_ascii_case("inbox")))
-                    && *parent_id == next_parent_id
-                {
-                    next_parent_id = *document_id;
-                    path.next();
-                    continue 'outer;
-                }
-            }
-            break;
-        }
-
-        // Create missing folders
-        if path.peek().is_some() {
-            let mut changes = self.begin_changes(account_id).await?;
-
-            for (_, name) in path {
-                if name.len() > self.core.jmap.mailbox_name_max_len {
-                    return Ok(None);
-                }
-                let mut batch = BatchBuilder::new();
-                batch
-                    .with_account_id(account_id)
-                    .with_collection(Collection::Mailbox)
-                    .create_document()
-                    .custom(
-                        ObjectIndexBuilder::new(SCHEMA).with_changes(
-                            Object::with_capacity(3)
-                                .with_property(Property::Name, name)
-                                .with_property(
-                                    Property::ParentId,
-                                    Value::Id(Id::from(next_parent_id)),
-                                )
-                                .with_property(
-                                    Property::Cid,
-                                    Value::UnsignedInt(rand::random::<u32>() as u64),
-                                ),
-                        ),
-                    );
-                let document_id = self.write_batch_expect_id(batch).await?;
-                changes.log_insert(Collection::Mailbox, document_id);
-                next_parent_id = document_id + 1;
-            }
-            let change_id = changes.change_id;
-            let mut batch = BatchBuilder::new();
-
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Mailbox)
-                .custom(changes);
-            self.write_batch(batch).await?;
-
-            Ok(Some((next_parent_id - 1, Some(change_id))))
-        } else {
-            Ok(Some((next_parent_id - 1, None)))
-        }
     }
 }
 

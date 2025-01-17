@@ -5,6 +5,7 @@
  */
 
 use common::{auth::AccessToken, Server};
+use email::mailbox::UidMailbox;
 use jmap_proto::{
     method::{
         get::{GetRequest, GetResponse},
@@ -26,7 +27,6 @@ use sha2::{Sha256, Sha512};
 use store::BlobClass;
 use utils::map::vec_map::VecMap;
 
-use crate::{mailbox::UidMailbox, JmapMethods};
 use std::future::Future;
 
 use super::download::BlobDownload;

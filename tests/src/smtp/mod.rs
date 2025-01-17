@@ -173,7 +173,7 @@ impl TestSMTP {
     }
 
     pub fn inner_with_rxs(&self) -> (Arc<Inner>, IpcReceivers) {
-        let (ipc, ipc_rxs) = build_ipc();
+        let (ipc, ipc_rxs) = build_ipc(&mut Config::default());
 
         (
             Inner {
@@ -191,7 +191,7 @@ impl TestSMTP {
         let store = core.storage.data.clone();
         let blob_store = core.storage.blob.clone();
         let shared_core = core.into_shared();
-        let (ipc, mut ipc_rxs) = build_ipc();
+        let (ipc, mut ipc_rxs) = build_ipc(&mut Config::default());
 
         TestSMTP {
             queue_receiver: QueueReceiver {

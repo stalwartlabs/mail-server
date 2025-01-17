@@ -11,6 +11,7 @@ use directory::{
     backend::internal::{manage::ManageDirectory, PrincipalField},
     Type,
 };
+use email::{index::IndexMessageText, metadata::MessageMetadata};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
     ahash::AHashMap,
@@ -27,12 +28,7 @@ use std::future::Future;
 use trc::{AddContext, TaskQueueEvent};
 use utils::{BlobHash, BLOB_HASH_LEN};
 
-use crate::{
-    blob::download::BlobDownload,
-    changes::write::ChangeLog,
-    email::{bayes::EmailBayesTrain, index::IndexMessageText, metadata::MessageMetadata},
-    JmapMethods,
-};
+use crate::{blob::download::BlobDownload, email::bayes::EmailBayesTrain};
 
 #[derive(Debug, Clone)]
 pub struct EmailTask {
@@ -81,7 +77,6 @@ pub trait Indexer: Sync + Send {
         account_id: Option<u32>,
         tenant_id: Option<u32>,
     ) -> impl Future<Output = trc::Result<()>> + Send;
-    fn notify_task_queue(&self);
 }
 
 impl Indexer for Server {
@@ -311,10 +306,6 @@ impl Indexer for Server {
                 .ctx(trc::Key::Key, event.seq)
                 .caused_by(trc::location!()));
         }
-    }
-
-    fn notify_task_queue(&self) {
-        self.inner.ipc.index_tx.notify_one();
     }
 
     async fn reindex(&self, account_id: Option<u32>, tenant_id: Option<u32>) -> trc::Result<()> {

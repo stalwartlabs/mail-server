@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap::{changes::write::ChangeLog, JmapMethods};
 use jmap_client::{
     core::query::{Comparator, Filter},
     email,
@@ -150,7 +149,7 @@ pub async fn test(params: &mut JMAPTest) {
                                 TagValue::Id(MaybeDynamicId::Dynamic(0)),
                                 0,
                             )
-                            .custom(server.begin_changes(1).await.unwrap().with_log_move(
+                            .custom(server.begin_changes(1).unwrap().with_log_move(
                                 Collection::Email,
                                 id,
                                 new_id,

@@ -271,7 +271,7 @@ impl DeliveryAttempt {
                     let delivery_result = message
                         .deliver_local(
                             recipients.iter_mut().filter(|r| r.domain_idx == domain_idx),
-                            &server.inner.ipc.delivery_tx,
+                            &server,
                         )
                         .await;
 

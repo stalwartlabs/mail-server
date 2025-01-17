@@ -5,6 +5,7 @@
  */
 
 use common::{auth::AccessToken, Server};
+use email::index::PREVIEW_LENGTH;
 use jmap_proto::{
     method::parse::{ParseEmailRequest, ParseEmailResponse},
     object::Object,
@@ -21,7 +22,6 @@ use crate::blob::download::BlobDownload;
 use super::{
     body::{ToBodyPart, TruncateBody},
     headers::HeaderToValue,
-    index::PREVIEW_LENGTH,
 };
 
 pub trait EmailParse: Sync + Send {

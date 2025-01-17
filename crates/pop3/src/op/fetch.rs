@@ -8,7 +8,8 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use jmap::{blob::download::BlobDownload, email::metadata::MessageMetadata, JmapMethods};
+use email::metadata::MessageMetadata;
+use jmap::blob::download::BlobDownload;
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::Bincode;
 use trc::AddContext;

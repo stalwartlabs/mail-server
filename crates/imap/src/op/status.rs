@@ -19,7 +19,6 @@ use imap_proto::{
     receiver::Request,
     Command, ResponseCode, StatusResponse,
 };
-use jmap::JmapMethods;
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, id::Id, keyword::Keyword, property::Property, value::Value},

@@ -10,7 +10,6 @@ use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
 use jmap::{
-    blob::upload::BlobUpload,
     sieve::set::{ObjectBlobId, SCHEMA},
     JmapMethods,
 };
@@ -188,7 +187,8 @@ impl<T: SessionStream> Session<T> {
                     ),
             );
             self.server
-                .write_batch(batch)
+                .store()
+                .write(batch)
                 .await
                 .caused_by(trc::location!())?;
 
@@ -248,7 +248,8 @@ impl<T: SessionStream> Session<T> {
 
             let assigned_ids = self
                 .server
-                .write_batch(batch)
+                .store()
+                .write(batch)
                 .await
                 .caused_by(trc::location!())?;
 

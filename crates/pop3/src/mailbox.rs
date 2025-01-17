@@ -7,10 +7,7 @@
 use std::collections::BTreeMap;
 
 use common::listener::SessionStream;
-use jmap::{
-    mailbox::{set::MailboxSet, UidMailbox, INBOX_ID},
-    JmapMethods,
-};
+use email::mailbox::{MailboxFnc, UidMailbox, INBOX_ID};
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},

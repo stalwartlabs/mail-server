@@ -13,6 +13,7 @@ use crate::{
 use ahash::AHashMap;
 use common::listener::SessionStream;
 use directory::Permission;
+use email::cache::ThreadCache;
 use imap_proto::{
     protocol::{
         thread::{Arguments, Response},
@@ -21,7 +22,6 @@ use imap_proto::{
     receiver::Request,
     Command, StatusResponse,
 };
-use jmap::email::cache::ThreadCache;
 use trc::AddContext;
 
 impl<T: SessionStream> Session<T> {

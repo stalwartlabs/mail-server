@@ -5,6 +5,10 @@
  */
 
 use common::{auth::AccessToken, Server};
+use email::{
+    ingest::{EmailIngest, IngestEmail, IngestSource},
+    mailbox::MailboxFnc,
+};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::import::{ImportEmailRequest, ImportEmailResponse},
@@ -22,13 +26,9 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     api::http::HttpSessionData, auth::acl::AclMethods, blob::download::BlobDownload,
-    changes::state::StateManager, mailbox::set::MailboxSet, JmapMethods,
+    changes::state::StateManager,
 };
 
-use super::{
-    bayes::EmailBayesTrain,
-    ingest::{EmailIngest, IngestEmail, IngestSource},
-};
 use std::future::Future;
 
 pub trait EmailImport: Sync + Send {

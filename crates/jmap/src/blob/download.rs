@@ -129,6 +129,7 @@ impl BlobDownload for Server {
             }))
     }
 
+    #[inline(always)]
     async fn get_blob(&self, hash: &BlobHash, range: Range<usize>) -> trc::Result<Option<Vec<u8>>> {
         self.core
             .storage

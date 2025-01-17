@@ -30,7 +30,6 @@ use crate::{
     principal::{get::PrincipalGet, query::PrincipalQuery},
     push::{get::PushSubscriptionFetch, set::PushSubscriptionSet},
     quota::{get::QuotaGet, query::QuotaQuery},
-    services::state::StateManager,
     sieve::{
         get::SieveScriptGet, query::SieveScriptQuery, set::SieveScriptSet,
         validate::SieveScriptValidate,

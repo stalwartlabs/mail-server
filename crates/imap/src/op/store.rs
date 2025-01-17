@@ -13,6 +13,7 @@ use crate::{
 use ahash::AHashSet;
 use common::listener::SessionStream;
 use directory::Permission;
+use email::{ingest::EmailIngest, mailbox::UidMailbox};
 use imap_proto::{
     protocol::{
         fetch::{DataItem, FetchItem},
@@ -23,11 +24,8 @@ use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse,
 };
 use jmap::{
-    changes::{get::ChangesLookup, write::ChangeLog},
+    changes::get::ChangesLookup,
     email::{bayes::EmailBayesTrain, set::TagManager},
-    mailbox::UidMailbox,
-    services::{index::Indexer, state::StateManager},
-    JmapMethods,
 };
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
@@ -37,6 +35,7 @@ use store::{
     query::log::{Change, Query},
     write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, ValueClass, F_VALUE},
 };
+use trc::AddContext;
 
 use super::{FromModSeq, ImapContext};
 
@@ -291,7 +290,6 @@ impl<T: SessionStream> SessionData<T> {
                         changelog.change_id = self
                             .server
                             .assign_change_id(account_id)
-                            .await
                             .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                     }
                     batch.value(Property::Cid, changelog.change_id, F_VALUE);
@@ -310,7 +308,13 @@ impl<T: SessionStream> SessionData<T> {
                         has_spam_train_tasks = true;
                     }
 
-                    match self.server.write_batch(batch).await {
+                    match self
+                        .server
+                        .store()
+                        .write(batch)
+                        .await
+                        .caused_by(trc::location!())
+                    {
                         Ok(_) => {
                             // Set all current mailboxes as changed if the Seen tag changed
                             if seen_changed {

@@ -33,7 +33,7 @@ use config::{
 use dashmap::DashMap;
 
 use imap_proto::protocol::list::Attribute;
-use ipc::{DeliveryEvent, HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
+use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
 use listener::{
     asn::AsnGeoLookupData, blocked::Security, limiter::ConcurrencyLimiter, tls::AcmeProviders,
 };
@@ -43,7 +43,7 @@ use manager::webadmin::{Resource, WebAdminManager};
 use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{mpsc, Notify, Semaphore};
 use tokio_rustls::TlsConnector;
 use utils::{
     cache::{Cache, CacheItemWeight, CacheWithTtl},
@@ -167,10 +167,10 @@ pub struct HttpAuthCache {
 pub struct Ipc {
     pub state_tx: mpsc::Sender<StateEvent>,
     pub housekeeper_tx: mpsc::Sender<HousekeeperEvent>,
-    pub delivery_tx: mpsc::Sender<DeliveryEvent>,
     pub index_tx: Arc<Notify>,
     pub queue_tx: mpsc::Sender<QueueEvent>,
     pub report_tx: mpsc::Sender<ReportingEvent>,
+    pub local_delivery_sm: Arc<Semaphore>,
 }
 
 pub struct TlsConnectors {
@@ -442,10 +442,10 @@ impl Default for Ipc {
         Self {
             state_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             housekeeper_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
-            delivery_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             index_tx: Default::default(),
             queue_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
             report_tx: mpsc::channel(IPC_CHANNEL_BUFFER).0,
+            local_delivery_sm: Arc::new(Semaphore::new(10)),
         }
     }
 }

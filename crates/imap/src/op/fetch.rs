@@ -13,6 +13,7 @@ use crate::{
 use ahash::AHashMap;
 use common::listener::SessionStream;
 use directory::Permission;
+use email::metadata::MessageMetadata;
 use imap_proto::{
     parser::PushUnique,
     protocol::{
@@ -26,13 +27,7 @@ use imap_proto::{
     receiver::Request,
     Command, ResponseCode, ResponseType, StatusResponse,
 };
-use jmap::{
-    blob::download::BlobDownload,
-    changes::{get::ChangesLookup, write::ChangeLog},
-    email::metadata::MessageMetadata,
-    services::state::StateManager,
-    JmapMethods,
-};
+use jmap::{blob::download::BlobDownload, changes::get::ChangesLookup};
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
     state::StateChange, type_state::DataType,
@@ -42,6 +37,7 @@ use store::{
     query::log::{Change, Query},
     write::{assert::HashedValue, BatchBuilder, Bincode, F_BITMAP, F_VALUE},
 };
+use trc::AddContext;
 
 use super::{FromModSeq, ImapContext};
 
@@ -532,7 +528,6 @@ impl<T: SessionStream> SessionData<T> {
             let mut changelog = self
                 .server
                 .begin_changes(account_id)
-                .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             for (id, mut keywords) in set_seen_ids {
                 keywords.inner.push(Keyword::Seen);
@@ -545,7 +540,13 @@ impl<T: SessionStream> SessionData<T> {
                     .value(Property::Keywords, keywords.inner, F_VALUE)
                     .value(Property::Keywords, Keyword::Seen, F_BITMAP)
                     .value(Property::Cid, changelog.change_id, F_VALUE);
-                match self.server.write_batch(batch).await {
+                match self
+                    .server
+                    .store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())
+                {
                     Ok(_) => {
                         changelog.log_update(Collection::Email, id);
                     }

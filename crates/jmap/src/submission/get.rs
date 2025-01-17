@@ -13,7 +13,7 @@ use jmap_proto::{
 use smtp::queue::{self, spool::SmtpSpool};
 use std::future::Future;
 
-use crate::{changes::state::StateManager, JmapMethods};
+use crate::changes::state::StateManager;
 
 pub trait EmailSubmissionGet: Sync + Send {
     fn email_submission_get(

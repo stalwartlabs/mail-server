@@ -18,7 +18,7 @@ use store::{
 use trc::AddContext;
 use utils::sanitize_email;
 
-use crate::{changes::state::StateManager, JmapMethods};
+use crate::changes::state::StateManager;
 
 use std::future::Future;
 

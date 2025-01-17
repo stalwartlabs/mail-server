@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap::mailbox::INBOX_ID;
+use email::mailbox::INBOX_ID;
 use jmap_proto::types::id::Id;
 use serde_json::Value;
 

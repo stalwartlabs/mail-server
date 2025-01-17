@@ -5,6 +5,7 @@
  */
 
 use common::{auth::AccessToken, Server};
+use email::mailbox::MailboxFnc;
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::{mailbox::QueryArguments, Object},
@@ -18,8 +19,6 @@ use store::{
 
 use crate::{auth::acl::AclMethods, JmapMethods, UpdateResults};
 use std::future::Future;
-
-use super::set::MailboxSet;
 
 pub trait MailboxQuery: Sync + Send {
     fn mailbox_query(

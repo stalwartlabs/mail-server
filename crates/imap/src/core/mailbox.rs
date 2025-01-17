@@ -11,12 +11,11 @@ use common::{
     AccountId, Mailbox,
 };
 use directory::{backend::internal::PrincipalField, QueryBy};
+use email::mailbox::{MailboxFnc, INBOX_ID};
 use imap_proto::protocol::list::Attribute;
 use jmap::{
     auth::acl::{AclMethods, EffectiveAcl},
     changes::get::ChangesLookup,
-    mailbox::{get::MailboxGet, set::MailboxSet, INBOX_ID},
-    JmapMethods,
 };
 use jmap_proto::{
     object::Object,

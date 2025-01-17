@@ -9,7 +9,7 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
-use jmap::{changes::write::ChangeLog, sieve::set::SCHEMA, JmapMethods};
+use jmap::sieve::set::SCHEMA;
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{collection::Collection, property::Property, value::Value},
@@ -93,7 +93,8 @@ impl<T: SessionStream> Session<T> {
             );
         if !batch.is_empty() {
             self.server
-                .write_batch(batch)
+                .store()
+                .write(batch)
                 .await
                 .caused_by(trc::location!())?;
             let mut changelog = ChangeLogBuilder::new();

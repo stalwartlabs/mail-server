@@ -8,8 +8,8 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
 use common::{listener::SessionStream, NextMailboxState};
+use email::mailbox::UidMailbox;
 use imap_proto::protocol::{expunge, select::Exists, Sequence};
-use jmap::{mailbox::UidMailbox, JmapMethods};
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},

@@ -7,18 +7,14 @@
 use std::{
     hash::Hash,
     net::IpAddr,
-    sync::{Arc, LazyLock},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use common::{
     auth::AccessToken,
     config::smtp::auth::VerifyStrategy,
-    listener::{
-        asn::AsnGeoLookupResult,
-        limiter::{ConcurrencyLimiter, InFlight},
-        ServerInstance,
-    },
+    listener::{asn::AsnGeoLookupResult, limiter::InFlight, ServerInstance},
     Inner, Server,
 };
 use directory::Directory;
@@ -27,7 +23,6 @@ use smtp_proto::request::receiver::{
     BdatReceiver, DataReceiver, DummyDataReceiver, DummyLineReceiver, LineReceiver, RequestReceiver,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
-use utils::snowflake::SnowflakeIdGenerator;
 
 use crate::{
     inbound::auth::SaslToken,
@@ -219,18 +214,6 @@ impl PartialOrd for SessionAddress {
     }
 }
 
-static SIEVE: LazyLock<Arc<ServerInstance>> = LazyLock::new(|| {
-    Arc::new(ServerInstance {
-        id: "sieve".to_string(),
-        protocol: common::config::server::ServerProtocol::Lmtp,
-        acceptor: common::listener::TcpAcceptor::Plain,
-        limiter: ConcurrencyLimiter::new(0),
-        shutdown_rx: tokio::sync::watch::channel(false).1,
-        proxy_networks: vec![],
-        span_id_gen: Arc::new(SnowflakeIdGenerator::new()),
-    })
-});
-
 impl Session<common::listener::stream::NullIo> {
     pub fn local(
         server: Server,
@@ -266,20 +249,6 @@ impl Session<common::listener::stream::NullIo> {
             },
             in_flight: vec![],
         }
-    }
-
-    pub fn sieve(
-        server: Server,
-        mail_from: SessionAddress,
-        rcpt_to: Vec<SessionAddress>,
-        message: Vec<u8>,
-        session_id: u64,
-    ) -> Self {
-        Self::local(
-            server,
-            SIEVE.clone(),
-            SessionData::local(mail_from.into(), rcpt_to, message, session_id),
-        )
     }
 
     pub fn has_failed(&mut self) -> Option<String> {

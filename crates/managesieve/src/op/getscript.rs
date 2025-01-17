@@ -9,7 +9,7 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
-use jmap::{blob::download::BlobDownload, sieve::set::ObjectBlobId, JmapMethods};
+use jmap::{blob::download::BlobDownload, sieve::set::ObjectBlobId};
 use jmap_proto::{
     object::Object,
     types::{collection::Collection, property::Property, value::Value},

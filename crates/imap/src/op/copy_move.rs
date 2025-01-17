@@ -7,6 +7,10 @@
 use std::{sync::Arc, time::Instant};
 
 use directory::Permission;
+use email::{
+    ingest::EmailIngest,
+    mailbox::{UidMailbox, JUNK_ID},
+};
 use imap_proto::{
     protocol::copy_move::Arguments, receiver::Request, Command, ResponseCode, ResponseType,
     StatusResponse,
@@ -17,13 +21,7 @@ use crate::{
     spawn_op,
 };
 use common::{listener::SessionStream, MailboxId};
-use jmap::{
-    changes::write::ChangeLog,
-    email::{bayes::EmailBayesTrain, copy::EmailCopy, ingest::EmailIngest, set::TagManager},
-    mailbox::{UidMailbox, JUNK_ID},
-    services::{index::Indexer, state::StateManager},
-    JmapMethods,
-};
+use jmap::email::{bayes::EmailBayesTrain, copy::EmailCopy, set::TagManager};
 use jmap_proto::{
     error::set::SetErrorType,
     types::{
@@ -236,7 +234,6 @@ impl<T: SessionStream> SessionData<T> {
                     changelog.change_id = self
                         .server
                         .assign_change_id(account_id)
-                        .await
                         .imap_ctx(&arguments.tag, trc::location!())?;
                 }
                 batch.value(Property::Cid, changelog.change_id, F_VALUE);
@@ -270,7 +267,8 @@ impl<T: SessionStream> SessionData<T> {
 
                 // Write changes
                 self.server
-                    .write_batch(batch)
+                    .store()
+                    .write(batch)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?;
 

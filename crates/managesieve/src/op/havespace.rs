@@ -9,7 +9,6 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::receiver::Request;
-use jmap::JmapMethods;
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};

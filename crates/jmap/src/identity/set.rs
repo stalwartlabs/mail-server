@@ -19,9 +19,8 @@ use jmap_proto::{
 };
 use std::future::Future;
 use store::write::{log::ChangeLogBuilder, BatchBuilder, F_CLEAR, F_VALUE};
+use trc::AddContext;
 use utils::sanitize_email;
-
-use crate::{changes::write::ChangeLog, JmapMethods};
 
 pub trait IdentitySet: Sync + Send {
     fn identity_set(
@@ -102,7 +101,11 @@ impl IdentitySet for Server {
                 .with_collection(Collection::Identity)
                 .create_document()
                 .value(Property::Value, identity, F_VALUE);
-            let document_id = self.write_batch_expect_id(batch).await?;
+            let document_id = self
+                .store()
+                .write_expect_id(batch)
+                .await
+                .caused_by(trc::location!())?;
             identity_ids.insert(document_id);
             changes.log_insert(Collection::Identity, document_id);
             response.created(id, document_id);
@@ -158,7 +161,10 @@ impl IdentitySet for Server {
                 .with_collection(Collection::Identity)
                 .update_document(document_id)
                 .value(Property::Value, identity, F_VALUE);
-            self.write_batch(batch).await?;
+            self.store()
+                .write(batch)
+                .await
+                .caused_by(trc::location!())?;
             changes.log_update(Collection::Identity, document_id);
             response.updated.append(id, None);
         }
@@ -174,7 +180,10 @@ impl IdentitySet for Server {
                     .with_collection(Collection::Identity)
                     .delete_document(document_id)
                     .value(Property::Value, (), F_VALUE | F_CLEAR);
-                self.write_batch(batch).await?;
+                self.store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 changes.log_delete(Collection::Identity, document_id);
                 response.destroyed.push(id);
             } else {

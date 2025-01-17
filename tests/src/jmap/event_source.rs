@@ -13,8 +13,9 @@ use crate::{
         test_account_login,
     },
 };
+use email::mailbox::INBOX_ID;
 use futures::StreamExt;
-use jmap::mailbox::INBOX_ID;
+
 use jmap_client::{event_source::Changes, mailbox::Role, TypeState};
 use jmap_proto::types::id::Id;
 use store::ahash::AHashSet;

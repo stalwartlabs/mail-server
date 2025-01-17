@@ -13,14 +13,13 @@ use crate::{
 };
 use common::{listener::SessionStream, Account, Mailbox};
 use directory::Permission;
+use email::mailbox::SCHEMA;
 use imap_proto::{
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
     Command, ResponseCode, StatusResponse,
 };
-use jmap::{
-    changes::write::ChangeLog, mailbox::set::SCHEMA, services::state::StateManager, JmapMethods,
-};
+use jmap::JmapMethods;
 use jmap_proto::{
     object::{index::ObjectIndexBuilder, Object},
     types::{
@@ -79,7 +78,6 @@ impl<T: SessionStream> SessionData<T> {
         let mut changes = self
             .server
             .begin_changes(params.account_id)
-            .await
             .imap_ctx(&arguments.tag, trc::location!())?;
 
         let mut parent_id = params.parent_mailbox_id.map(|id| id + 1).unwrap_or(0);
@@ -105,7 +103,8 @@ impl<T: SessionStream> SessionData<T> {
                 .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(mailbox));
             let mailbox_id = self
                 .server
-                .write_batch_expect_id(batch)
+                .store()
+                .write_expect_id(batch)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             changes.log_insert(Collection::Mailbox, mailbox_id);
@@ -121,7 +120,8 @@ impl<T: SessionStream> SessionData<T> {
             .with_collection(Collection::Mailbox)
             .custom(changes);
         self.server
-            .write_batch(batch)
+            .store()
+            .write(batch)
             .await
             .imap_ctx(&arguments.tag, trc::location!())?;
 

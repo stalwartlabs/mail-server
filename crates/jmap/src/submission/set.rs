@@ -10,6 +10,7 @@ use common::{
     listener::{stream::NullIo, ServerInstance},
     Server,
 };
+use email::metadata::MessageMetadata;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{self, SetRequest, SetResponse},
@@ -38,12 +39,10 @@ use smtp::{
 };
 use smtp_proto::{request::parser::Rfc5321Parser, MailFrom, RcptTo};
 use store::write::{assert::HashedValue, log::ChangeLogBuilder, now, BatchBuilder, Bincode};
+use trc::AddContext;
 use utils::{map::vec_map::VecMap, sanitize_email};
 
-use crate::{
-    blob::download::BlobDownload, changes::write::ChangeLog, email::metadata::MessageMetadata,
-    JmapMethods,
-};
+use crate::blob::download::BlobDownload;
 use std::future::Future;
 
 pub static SCHEMA: &[IndexProperty] = &[
@@ -107,7 +106,11 @@ impl EmailSubmissionSet for Server {
                         .with_collection(Collection::EmailSubmission)
                         .create_document()
                         .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(submission));
-                    let document_id = self.write_batch_expect_id(batch).await?;
+                    let document_id = self
+                        .store()
+                        .write_expect_id(batch)
+                        .await
+                        .caused_by(trc::location!())?;
                     changes.log_insert(Collection::EmailSubmission, document_id);
                     response.created(id, document_id);
                 }
@@ -193,7 +196,10 @@ impl EmailSubmissionSet for Server {
                                             .with_property(Property::UndoStatus, undo_status),
                                     ),
                             );
-                        self.write_batch(batch).await?;
+                        self.store()
+                            .write(batch)
+                            .await
+                            .caused_by(trc::location!())?;
                         changes.log_update(Collection::EmailSubmission, document_id);
                         response.updated.append(id, None);
                     } else {
@@ -242,7 +248,10 @@ impl EmailSubmissionSet for Server {
                     .with_collection(Collection::EmailSubmission)
                     .delete_document(document_id)
                     .custom(ObjectIndexBuilder::new(SCHEMA).with_current(submission));
-                self.write_batch(batch).await?;
+                self.store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 changes.log_delete(Collection::EmailSubmission, document_id);
                 response.destroyed.push(id);
             } else {

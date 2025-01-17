@@ -10,6 +10,7 @@ use jmap_proto::{
     method::copy::{CopyBlobRequest, CopyBlobResponse},
     types::blob::BlobId,
 };
+use trc::AddContext;
 
 use std::future::Future;
 use store::{
@@ -17,8 +18,6 @@ use store::{
     BlobClass, Serialize,
 };
 use utils::map::vec_map::VecMap;
-
-use crate::JmapMethods;
 
 use super::download::BlobDownload;
 
@@ -55,7 +54,10 @@ impl BlobCopy for Server {
                     },
                     0u32.serialize(),
                 );
-                self.write_batch(batch).await?;
+                self.store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 let dest_blob_id = BlobId {
                     hash: blob_id.hash.clone(),
                     class: BlobClass::Reserved {

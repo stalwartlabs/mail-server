@@ -7,6 +7,7 @@
 use std::{sync::Arc, time::Instant};
 
 use directory::Permission;
+use email::ingest::{EmailIngest, IngestEmail, IngestSource};
 use imap_proto::{
     protocol::{append::Arguments, select::HighestModSeq},
     receiver::Request,
@@ -18,13 +19,6 @@ use crate::{
     spawn_op,
 };
 use common::{listener::SessionStream, MailboxId};
-use jmap::{
-    email::{
-        bayes::EmailBayesTrain,
-        ingest::{EmailIngest, IngestEmail, IngestSource},
-    },
-    services::state::StateManager,
-};
 use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 

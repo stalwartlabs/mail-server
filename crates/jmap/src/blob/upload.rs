@@ -14,16 +14,12 @@ use jmap_proto::{
         BlobUploadRequest, BlobUploadResponse, BlobUploadResponseObject, DataSourceObject,
     },
     request::reference::MaybeReference,
-    types::{blob::BlobId, id::Id},
+    types::id::Id,
 };
-use store::{
-    write::{now, BatchBuilder, BlobOp},
-    BlobClass, Serialize,
-};
-use trc::AddContext;
-use utils::BlobHash;
 
-use crate::{auth::rate_limit::RateLimiter, JmapMethods};
+use trc::AddContext;
+
+use crate::auth::rate_limit::RateLimiter;
 
 use super::{download::BlobDownload, UploadResponse};
 use std::future::Future;
@@ -46,13 +42,6 @@ pub trait BlobUpload: Sync + Send {
         data: &[u8],
         access_token: Arc<AccessToken>,
     ) -> impl Future<Output = trc::Result<UploadResponse>> + Send;
-
-    fn put_blob(
-        &self,
-        account_id: u32,
-        data: &[u8],
-        set_quota: bool,
-    ) -> impl Future<Output = trc::Result<BlobId>> + Send;
 }
 
 impl BlobUpload for Server {
@@ -259,54 +248,6 @@ impl BlobUpload for Server {
                 .caused_by(trc::location!())?,
             c_type: content_type.to_string(),
             size: data.len(),
-        })
-    }
-
-    #[allow(clippy::blocks_in_conditions)]
-    async fn put_blob(&self, account_id: u32, data: &[u8], set_quota: bool) -> trc::Result<BlobId> {
-        // First reserve the hash
-        let hash = BlobHash::from(data);
-        let mut batch = BatchBuilder::new();
-        let until = now() + self.core.jmap.upload_tmp_ttl;
-
-        batch.with_account_id(account_id).set(
-            BlobOp::Reserve {
-                hash: hash.clone(),
-                until,
-            },
-            (if set_quota { data.len() as u32 } else { 0u32 }).serialize(),
-        );
-        self.write_batch(batch).await?;
-
-        if !self
-            .core
-            .storage
-            .data
-            .blob_exists(&hash)
-            .await
-            .caused_by(trc::location!())?
-        {
-            // Upload blob to store
-            self.core
-                .storage
-                .blob
-                .put_blob(hash.as_ref(), data)
-                .await
-                .caused_by(trc::location!())?;
-
-            // Commit blob
-            let mut batch = BatchBuilder::new();
-            batch.set(BlobOp::Commit { hash: hash.clone() }, Vec::new());
-            self.write_batch(batch).await?;
-        }
-
-        Ok(BlobId {
-            hash,
-            class: BlobClass::Reserved {
-                account_id,
-                expires: until,
-            },
-            section: None,
         })
     }
 }

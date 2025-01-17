@@ -21,8 +21,6 @@ use store::{
 };
 use utils::map::bitmap::Bitmap;
 
-use crate::JmapMethods;
-
 use super::{EncryptionKeys, PushSubscription};
 use std::future::Future;
 

@@ -182,7 +182,8 @@ impl Store {
         result.caused_by(trc::location!())
     }
 
-    pub async fn write(&self, batch: Batch) -> trc::Result<AssignedIds> {
+    pub async fn write(&self, batch: impl Into<Batch>) -> trc::Result<AssignedIds> {
+        let batch = batch.into();
         #[cfg(feature = "test_mode")]
         if std::env::var("PARANOID_WRITE").is_ok_and(|v| v == "1") {
             let mut account_id = u32::MAX;
@@ -299,6 +300,13 @@ impl Store {
         );
 
         result
+    }
+
+    #[inline]
+    pub async fn write_expect_id(&self, batch: impl Into<Batch>) -> trc::Result<u32> {
+        self.write(batch)
+            .await
+            .and_then(|ids| ids.last_document_id())
     }
 
     pub async fn purge_store(&self) -> trc::Result<()> {
@@ -923,5 +931,11 @@ impl Store {
         if failed {
             panic!("Store is not empty.");
         }
+    }
+}
+
+impl From<BatchBuilder> for Batch {
+    fn from(builder: BatchBuilder) -> Self {
+        builder.build()
     }
 }

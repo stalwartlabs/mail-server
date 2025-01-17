@@ -28,10 +28,9 @@ use store::write::{
     log::{Changes, LogInsert},
     BatchBuilder, BlobOp, DirectoryClass, F_CLEAR, F_VALUE,
 };
+use trc::AddContext;
 
 use crate::{
-    blob::upload::BlobUpload,
-    changes::write::ChangeLog,
     sieve::set::{ObjectBlobId, SieveScriptSet, SCHEMA},
     JmapMethods,
 };
@@ -119,7 +118,7 @@ impl VacationResponseSet for Server {
 
         // Prepare write batch
         let mut batch = BatchBuilder::new();
-        let change_id = self.assign_change_id(account_id).await?;
+        let change_id = self.assign_change_id(account_id)?;
         batch
             .with_change_id(change_id)
             .with_account_id(account_id)
@@ -307,7 +306,11 @@ impl VacationResponseSet for Server {
             // Write changes
             batch.custom(obj);
             let document_id = if !batch.is_empty() {
-                let ids = self.write_batch(batch).await?;
+                let ids = self
+                    .store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 response.new_state = Some(change_id.into());
                 match document_id {
                     Some(document_id) => document_id,
@@ -350,7 +353,10 @@ impl VacationResponseSet for Server {
 
             // Write changes
             if !batch.is_empty() {
-                self.write_batch(batch).await?;
+                self.store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 response.new_state = Some(change_id.into());
             }
         }

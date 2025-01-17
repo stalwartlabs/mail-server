@@ -381,7 +381,7 @@ pub async fn jmap_tests() {
     email_query_changes::test(&mut params).await;
     email_copy::test(&mut params).await;
     thread_get::test(&mut params).await;
-    thread_merge::test(&mut params).await;*/
+    thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
@@ -395,7 +395,7 @@ pub async fn jmap_tests() {
     websocket::test(&mut params).await;
     quota::test(&mut params).await;
     crypto::test(&mut params).await;
-    blob::test(&mut params).await;
+    blob::test(&mut params).await;*/
     permissions::test(&params).await;
     purge::test(&mut params).await;
     enterprise::test(&mut params).await;
@@ -595,7 +595,7 @@ async fn init_jmap_tests(store_id: &str, delete_if_exists: bool) -> JMAPTest {
     let data = Data::parse(&mut config);
     let cache = Caches::parse(&mut config);
     let store = core.storage.data.clone();
-    let (ipc, mut ipc_rxs) = build_ipc();
+    let (ipc, mut ipc_rxs) = build_ipc(&mut config);
     let inner = Arc::new(Inner {
         shared_core: core.into_shared(),
         data,

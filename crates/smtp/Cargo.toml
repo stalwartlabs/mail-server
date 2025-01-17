@@ -17,6 +17,7 @@ utils = { path =  "../utils" }
 nlp = { path =  "../nlp" }
 directory = { path =  "../directory" }
 common = { path =  "../common" }
+email = { path =  "../email" }
 spam-filter = { path =  "../spam-filter" }
 trc = { path = "../trc" }
 mail-auth = { version = "0.6" }

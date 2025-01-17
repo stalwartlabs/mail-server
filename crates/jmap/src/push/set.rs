@@ -24,8 +24,9 @@ use store::{
     rand::{distributions::Alphanumeric, thread_rng, Rng},
     write::{now, BatchBuilder, F_CLEAR, F_VALUE},
 };
+use trc::AddContext;
 
-use crate::{services::state::StateManager, JmapMethods};
+use crate::services::state::StateManager;
 
 const EXPIRES_MAX: i64 = 7 * 24 * 3600; // 7 days
 const VERIFICATION_CODE_LEN: usize = 32;
@@ -119,7 +120,11 @@ impl PushSubscriptionSet for Server {
                 .with_collection(Collection::PushSubscription)
                 .create_document()
                 .value(Property::Value, push, F_VALUE);
-            let document_id = self.write_batch_expect_id(batch).await?;
+            let document_id = self
+                .store()
+                .write_expect_id(batch)
+                .await
+                .caused_by(trc::location!())?;
             push_ids.insert(document_id);
             response.created.insert(
                 id,
@@ -180,7 +185,10 @@ impl PushSubscriptionSet for Server {
                 .with_collection(Collection::PushSubscription)
                 .update_document(document_id)
                 .value(Property::Value, push, F_VALUE);
-            self.write_batch(batch).await?;
+            self.store()
+                .write(batch)
+                .await
+                .caused_by(trc::location!())?;
             response.updated.append(id, None);
         }
 
@@ -195,7 +203,10 @@ impl PushSubscriptionSet for Server {
                     .with_collection(Collection::PushSubscription)
                     .delete_document(document_id)
                     .value(Property::Value, (), F_VALUE | F_CLEAR);
-                self.write_batch(batch).await?;
+                self.store()
+                    .write(batch)
+                    .await
+                    .caused_by(trc::location!())?;
                 response.destroyed.push(id);
             } else {
                 response.not_destroyed.append(id, SetError::not_found());

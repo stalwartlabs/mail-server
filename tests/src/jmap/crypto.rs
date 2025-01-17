@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use jmap::email::crypto::{
+use email::crypto::{
     try_parse_certs, Algorithm, EncryptMessage, EncryptionMethod, EncryptionParams, EncryptionType,
 };
 use jmap_proto::types::id::Id;
