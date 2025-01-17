@@ -664,7 +664,7 @@ pub async fn test(params: &mut JMAPTest) {
     // Add John and Jane to the Sales group
     for name in ["jdoe@example.com", "jane.smith@example.com"] {
         server
-            .increment_principal_revision(
+            .increment_token_revision(
                 server
                     .core
                     .storage
@@ -768,7 +768,7 @@ pub async fn test(params: &mut JMAPTest) {
 
     // Remove John from the sales group
     server
-        .increment_principal_revision(
+        .increment_token_revision(
             server
                 .core
                 .storage

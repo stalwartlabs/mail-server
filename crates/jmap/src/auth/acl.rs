@@ -415,7 +415,7 @@ impl AclMethods for Server {
                 }
             }
 
-            self.increment_principal_revision(changed_principals).await;
+            self.increment_token_revision(changed_principals).await;
         }
     }
 

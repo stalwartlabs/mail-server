@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file. This projec
 
 ## [0.11.2] - 2025-01-17
 
-To upgrade update the webadmin and then replace the `stalwart-mail` binary.
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
 
 ### Added
 - Automatic revoking of access tokens when secrets, permissions, ACLs or group memberships change (#649).
@@ -19,7 +19,7 @@ To upgrade update the webadmin and then replace the `stalwart-mail` binary.
 
 ### Fixed
 - Distributed locking issues in non-Redis stores (#1066).
-- S3 incorrect backoff wait time.
+- S3 incorrect backoff wait time after failures.
 - Panic parsing broken HTMLs.
 - Update CLI response serializer to v0.11.x (#1082).
 - Histogram bucket counts (#1079).

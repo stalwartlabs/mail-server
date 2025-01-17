@@ -371,7 +371,7 @@ impl<T: SessionStream> Session<T> {
 
             // Invalidate ACLs
             data.server
-                .increment_principal_revision(ChangedPrincipals::from_change(
+                .increment_token_revision(ChangedPrincipals::from_change(
                     acl_account_id,
                     Type::Individual,
                     PrincipalField::EnabledPermissions,

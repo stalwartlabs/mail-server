@@ -35,7 +35,7 @@ impl Server {
             ROLE_ADMIN => Ok(ADMIN_PERMISSIONS.clone()),
             ROLE_TENANT_ADMIN => Ok(TENANT_ADMIN_PERMISSIONS.clone()),
             role_id => {
-                let revision = self.fetch_principal_revision(role_id).await;
+                let revision = self.fetch_token_revision(role_id).await;
 
                 match self
                     .inner
@@ -118,7 +118,7 @@ impl Server {
                     }
                     role_id => {
                         // Try with the cache
-                        let revision = self.fetch_principal_revision(role_id).await;
+                        let revision = self.fetch_token_revision(role_id).await;
                         if let Some(role_permissions) = self
                             .inner
                             .cache

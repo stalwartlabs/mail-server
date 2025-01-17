@@ -28,7 +28,7 @@ use utils::map::{
     vec_map::VecMap,
 };
 
-use crate::{Server, KV_PRINCIPAL_REVISION};
+use crate::{Server, KV_TOKEN_REVISION};
 
 use super::{roles::RolePermissions, AccessToken, ResourceToken, TenantInfo};
 
@@ -201,7 +201,7 @@ impl Server {
 
         // Obtain current revision
         let principal_id = principal.id();
-        let revision = self.fetch_principal_revision(principal_id).await;
+        let revision = self.fetch_token_revision(principal_id).await;
 
         match self
             .inner
@@ -252,7 +252,7 @@ impl Server {
         }
     }
 
-    pub async fn increment_principal_revision(&self, changed_principals: ChangedPrincipals) {
+    pub async fn increment_token_revision(&self, changed_principals: ChangedPrincipals) {
         let mut nested_principals = Vec::new();
 
         for (id, changed_principal) in changed_principals.iter() {
@@ -335,8 +335,7 @@ impl Server {
         if let Err(err) = self
             .in_memory_store()
             .counter_incr(
-                KeyValue::with_prefix(KV_PRINCIPAL_REVISION, id.to_be_bytes(), 1)
-                    .expires(30 * 86400),
+                KeyValue::with_prefix(KV_TOKEN_REVISION, id.to_be_bytes(), 1).expires(30 * 86400),
                 false,
             )
             .await
@@ -347,11 +346,11 @@ impl Server {
         }
     }
 
-    pub async fn fetch_principal_revision(&self, id: u32) -> Option<u64> {
+    pub async fn fetch_token_revision(&self, id: u32) -> Option<u64> {
         match self
             .in_memory_store()
             .counter_get(KeyValue::<()>::build_key(
-                KV_PRINCIPAL_REVISION,
+                KV_TOKEN_REVISION,
                 id.to_be_bytes(),
             ))
             .await
