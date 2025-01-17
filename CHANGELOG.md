@@ -19,6 +19,7 @@ To upgrade update the webadmin and then replace the `stalwart-mail` binary.
 
 ### Fixed
 - Distributed locking issues in non-Redis stores (#1066).
+- S3 incorrect backoff wait time.
 - Panic parsing broken HTMLs.
 - Update CLI response serializer to v0.11.x (#1082).
 - Histogram bucket counts (#1079).
