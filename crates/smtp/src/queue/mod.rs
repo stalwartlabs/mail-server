@@ -10,11 +10,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use common::{
-    expr::{self, functions::ResolveVariable, *},
-    ipc::QueuedMessage,
-    listener::limiter::InFlight,
-};
+use common::expr::{self, functions::ResolveVariable, *};
 use serde::{Deserialize, Serialize};
 use smtp_proto::Response;
 use store::write::now;
@@ -32,6 +28,12 @@ pub type QueueId = u64;
 pub struct Schedule<T> {
     pub due: u64,
     pub inner: T,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct QueuedMessage {
+    pub due: u64,
+    pub queue_id: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -129,11 +131,6 @@ pub enum Error {
 pub struct ErrorDetails {
     pub entity: String,
     pub details: String,
-}
-
-pub struct DeliveryAttempt {
-    pub in_flight: Vec<InFlight>,
-    pub event: QueuedMessage,
 }
 
 impl<T> Ord for Schedule<T> {

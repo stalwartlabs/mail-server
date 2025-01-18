@@ -59,7 +59,7 @@ is-allowed = "sender_domain != 'blocked.com'"
 size = [{if = "remote_ip = '10.0.0.2'", then = 2048},
         {else = 1024}]
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 match = "remote_ip = '10.0.0.1'"
 key = 'sender'
 rate = '2/1s'

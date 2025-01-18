@@ -23,6 +23,7 @@ impl SessionManager for SmtpSessionManager {
     async fn handle<T: SessionStream>(self, session: listener::SessionData<T>) {
         // Build server and create session
         let server = self.inner.build_server();
+        let _in_flight = session.in_flight;
         let mut session = Session {
             data: SessionData::new(
                 session.local_ip,
@@ -37,7 +38,6 @@ impl SessionManager for SmtpSessionManager {
             instance: session.instance,
             state: State::default(),
             stream: session.stream,
-            in_flight: vec![session.in_flight],
             params: SessionParameters::default(),
         };
 
@@ -266,7 +266,6 @@ impl<T: SessionStream> Session<T> {
             data: self.data,
             instance: self.instance,
             server: self.server,
-            in_flight: self.in_flight,
             params: self.params,
         })
     }

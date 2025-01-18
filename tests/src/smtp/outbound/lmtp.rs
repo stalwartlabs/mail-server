@@ -12,7 +12,7 @@ use crate::smtp::{
     DnsCache, TestSMTP,
 };
 use common::{config::server::ServerProtocol, ipc::QueueEvent};
-use smtp::queue::{spool::SmtpSpool, DeliveryAttempt};
+use smtp::queue::spool::SmtpSpool;
 use store::write::now;
 
 const REMOTE: &str = "
@@ -127,7 +127,7 @@ async fn lmtp_delivery() {
                 message.clone().remove(&core, event.due).await;
                 dsn.push(message);
             } else {
-                DeliveryAttempt::new(event).try_deliver(core.clone());
+                event.try_deliver(core.clone());
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }

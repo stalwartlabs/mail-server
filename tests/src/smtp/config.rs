@@ -9,11 +9,12 @@ use std::{fs, net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 use common::{
     config::{
         server::{Listener, Listeners, ServerProtocol, TcpListener},
-        smtp::{throttle::parse_throttle, *},
+        smtp::*,
     },
     expr::{functions::ResolveVariable, if_block::*, tokenizer::TokenMap, *},
     Server,
 };
+use throttle::parse_queue_rate_limiter;
 use tokio::net::TcpSocket;
 
 use utils::config::{Config, Rate};
@@ -241,7 +242,7 @@ fn parse_throttles() {
     file.push("throttle.toml");
 
     let mut config = Config::new(fs::read_to_string(file).unwrap()).unwrap();
-    let throttle = parse_throttle(
+    let throttle = parse_queue_rate_limiter(
         &mut config,
         "throttle",
         &TokenMap::default().with_variables(&[
@@ -261,7 +262,7 @@ fn parse_throttles() {
     assert_eq!(
         throttle,
         vec![
-            Throttle {
+            QueueRateLimiter {
                 id: "0000".to_string(),
                 expr: Expression {
                     items: vec![
@@ -271,19 +272,19 @@ fn parse_throttles() {
                     ]
                 },
                 keys: THROTTLE_REMOTE_IP | THROTTLE_AUTH_AS,
-                concurrency: 100.into(),
                 rate: Rate {
                     requests: 50,
                     period: Duration::from_secs(30)
                 }
-                .into()
             },
-            Throttle {
+            QueueRateLimiter {
                 id: "0001".to_string(),
                 expr: Expression::default(),
                 keys: THROTTLE_SENDER_DOMAIN,
-                concurrency: 10000.into(),
-                rate: None
+                rate: Rate {
+                    requests: 50,
+                    period: Duration::from_secs(30)
+                }
             }
         ]
     );

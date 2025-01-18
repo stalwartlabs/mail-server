@@ -42,7 +42,6 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-
 tokio-tungstenite = "0.26"
 tungstenite = "0.26"
 chrono = "0.4"
-dashmap = "6.0"
 rand = "0.8.5"
 pkcs8 = { version = "0.10.2", features = ["alloc", "std"] }
 lz4_flex = { version = "0.11", default-features = false }

@@ -17,14 +17,14 @@ use utils::{
     map::{bitmap::Bitmap, vec_map::VecMap},
 };
 
-use crate::Server;
+use crate::{listener::limiter::ConcurrencyLimiter, Server};
 
 pub mod access_token;
 pub mod oauth;
 pub mod roles;
 pub mod sasl;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct AccessToken {
     pub primary_id: u32,
     pub member_of: Vec<u32>,
@@ -35,6 +35,9 @@ pub struct AccessToken {
     pub quota: u64,
     pub permissions: Permissions,
     pub tenant: Option<TenantInfo>,
+    pub concurrent_http_requests: Option<ConcurrencyLimiter>,
+    pub concurrent_imap_requests: Option<ConcurrencyLimiter>,
+    pub concurrent_uploads: Option<ConcurrencyLimiter>,
     pub revision: u64,
     pub obj_size: u64,
 }

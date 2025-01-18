@@ -116,7 +116,6 @@ impl TestSession for Session<DummyIo> {
                 0,
             ),
             params: SessionParameters::default(),
-            in_flight: vec![],
             hostname: "localhost".to_string(),
         }
     }

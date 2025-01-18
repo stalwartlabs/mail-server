@@ -33,12 +33,11 @@ pub struct SmtpConfig {
 
 #[derive(Debug, Default, Clone)]
 #[cfg_attr(feature = "test_mode", derive(PartialEq, Eq))]
-pub struct Throttle {
+pub struct QueueRateLimiter {
     pub id: String,
     pub expr: Expression,
     pub keys: u16,
-    pub concurrency: Option<u64>,
-    pub rate: Option<Rate>,
+    pub rate: Rate,
 }
 
 pub const THROTTLE_RCPT: u16 = 1 << 0;

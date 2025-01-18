@@ -24,7 +24,7 @@ use crate::{
     expr::{if_block::IfBlock, tokenizer::TokenMap, *},
 };
 
-use self::{resolver::Policy, throttle::parse_throttle};
+use self::resolver::Policy;
 
 use super::*;
 
@@ -33,7 +33,6 @@ pub struct SessionConfig {
     pub timeout: IfBlock,
     pub duration: IfBlock,
     pub transfer_limit: IfBlock,
-    pub throttle: SessionThrottle,
 
     pub connect: Connect,
     pub ehlo: Ehlo,
@@ -46,13 +45,6 @@ pub struct SessionConfig {
 
     pub milters: Vec<Milter>,
     pub hooks: Vec<MTAHook>,
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct SessionThrottle {
-    pub connect: Vec<Throttle>,
-    pub mail_from: Vec<Throttle>,
-    pub rcpt_to: Vec<Throttle>,
 }
 
 #[derive(Clone)]
@@ -222,7 +214,6 @@ impl SessionConfig {
             .into_iter()
             .filter_map(|id| parse_hooks(config, &id, &has_rcpt_vars))
             .collect();
-        session.throttle = SessionThrottle::parse(config);
         session.mta_sts_policy = Policy::try_parse(config);
 
         for (value, key, token_map) in [
@@ -460,58 +451,6 @@ impl SessionConfig {
     }
 }
 
-impl SessionThrottle {
-    pub fn parse(config: &mut Config) -> Self {
-        let mut throttle = SessionThrottle::default();
-        let all_throttles = parse_throttle(
-            config,
-            "session.throttle",
-            &TokenMap::default().with_variables(SMTP_RCPT_TO_VARS),
-            THROTTLE_LISTENER
-                | THROTTLE_REMOTE_IP
-                | THROTTLE_LOCAL_IP
-                | THROTTLE_AUTH_AS
-                | THROTTLE_HELO_DOMAIN
-                | THROTTLE_RCPT
-                | THROTTLE_RCPT_DOMAIN
-                | THROTTLE_SENDER
-                | THROTTLE_SENDER_DOMAIN,
-        );
-        for t in all_throttles {
-            if (t.keys & (THROTTLE_RCPT | THROTTLE_RCPT_DOMAIN)) != 0
-                || t.expr.items().iter().any(|c| {
-                    matches!(
-                        c,
-                        ExpressionItem::Variable(V_RECIPIENT | V_RECIPIENT_DOMAIN)
-                    )
-                })
-            {
-                throttle.rcpt_to.push(t);
-            } else if (t.keys
-                & (THROTTLE_SENDER
-                    | THROTTLE_SENDER_DOMAIN
-                    | THROTTLE_HELO_DOMAIN
-                    | THROTTLE_AUTH_AS))
-                != 0
-                || t.expr.items().iter().any(|c| {
-                    matches!(
-                        c,
-                        ExpressionItem::Variable(
-                            V_SENDER | V_SENDER_DOMAIN | V_HELO_DOMAIN | V_AUTHENTICATED_AS
-                        )
-                    )
-                })
-            {
-                throttle.mail_from.push(t);
-            } else {
-                throttle.connect.push(t);
-            }
-        }
-
-        throttle
-    }
-}
-
 fn parse_milter(config: &mut Config, id: &str, token_map: &TokenMap) -> Option<Milter> {
     let hostname = config
         .value_require(("session.milter", id, "hostname"))?
@@ -693,11 +632,6 @@ impl Default for SessionConfig {
             timeout: IfBlock::new::<()>("session.timeout", [], "5m"),
             duration: IfBlock::new::<()>("session.duration", [], "10m"),
             transfer_limit: IfBlock::new::<()>("session.transfer-limit", [], "262144000"),
-            throttle: SessionThrottle {
-                connect: Default::default(),
-                mail_from: Default::default(),
-                rcpt_to: Default::default(),
-            },
             connect: Connect {
                 hostname: IfBlock::new::<()>(
                     "server.connect.hostname",

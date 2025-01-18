@@ -21,13 +21,13 @@ pub struct JmapConfig {
 
     pub request_max_size: usize,
     pub request_max_calls: usize,
-    pub request_max_concurrent: u64,
+    pub request_max_concurrent: Option<u64>,
 
     pub get_max_objects: usize,
     pub set_max_objects: usize,
 
     pub upload_max_size: usize,
-    pub upload_max_concurrent: u64,
+    pub upload_max_concurrent: Option<u64>,
 
     pub upload_tmp_quota_size: usize,
     pub upload_tmp_quota_amount: usize,
@@ -72,7 +72,6 @@ pub struct JmapConfig {
     pub encrypt_append: bool,
 
     pub capabilities: BaseCapabilities,
-    pub session_purge_frequency: SimpleCron,
     pub account_purge_frequency: SimpleCron,
 }
 
@@ -254,8 +253,8 @@ impl JmapConfig {
                 .property("jmap.protocol.request.max-calls")
                 .unwrap_or(16),
             request_max_concurrent: config
-                .property("jmap.protocol.request.max-concurrent")
-                .unwrap_or(4),
+                .property_or_default::<Option<u64>>("jmap.protocol.request.max-concurrent", "4")
+                .unwrap_or(Some(4)),
             get_max_objects: config
                 .property("jmap.protocol.get.max-objects")
                 .unwrap_or(500),
@@ -266,8 +265,8 @@ impl JmapConfig {
                 .property("jmap.protocol.upload.max-size")
                 .unwrap_or(50000000),
             upload_max_concurrent: config
-                .property("jmap.protocol.upload.max-concurrent")
-                .unwrap_or(4),
+                .property_or_default::<Option<u64>>("jmap.protocol.upload.max-concurrent", "4")
+                .unwrap_or(Some(4)),
             upload_tmp_quota_size: config
                 .property("jmap.protocol.upload.quota.size")
                 .unwrap_or(50000000),
@@ -346,9 +345,6 @@ impl JmapConfig {
             push_throttle: config
                 .property_or_default("jmap.push.throttle", "1s")
                 .unwrap_or_else(|| Duration::from_secs(1)),
-            session_purge_frequency: config
-                .property_or_default::<SimpleCron>("jmap.session.purge.frequency", "15 * *")
-                .unwrap_or_else(|| SimpleCron::parse_value("15 * *").unwrap()),
             account_purge_frequency: config
                 .property_or_default::<SimpleCron>("jmap.account.purge.frequency", "0 0 *")
                 .unwrap_or_else(|| SimpleCron::parse_value("0 0 *").unwrap()),

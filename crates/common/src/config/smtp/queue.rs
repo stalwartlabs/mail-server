@@ -7,17 +7,15 @@
 use ahash::AHashMap;
 use mail_auth::IpLookupStrategy;
 use mail_send::Credentials;
-use utils::config::{
-    utils::{AsKey, ParseValue},
-    Config,
-};
+use throttle::parse_queue_rate_limiter_key;
+use utils::config::{utils::ParseValue, Config};
 
 use crate::{
     config::server::ServerProtocol,
     expr::{if_block::IfBlock, *},
 };
 
-use self::throttle::{parse_throttle, parse_throttle_key};
+use self::throttle::parse_queue_rate_limiter;
 
 use super::*;
 
@@ -41,9 +39,11 @@ pub struct QueueConfig {
     // Timeouts
     pub timeout: QueueOutboundTimeout,
 
-    // Throttle and Quotas
-    pub throttle: QueueThrottle,
+    // Rate limits
+    pub inbound_limiters: QueueRateLimiters,
+    pub outbound_limiters: QueueRateLimiters,
     pub quota: QueueQuotas,
+    pub max_threads: usize,
 
     // Relay hosts
     pub relay_hosts: AHashMap<String, RelayHost>,
@@ -82,15 +82,14 @@ pub struct QueueOutboundTimeout {
     pub mta_sts: IfBlock,
 }
 
-#[derive(Debug, Clone)]
-pub struct QueueThrottle {
-    pub outbound_concurrency: usize,
-    pub sender: Vec<Throttle>,
-    pub rcpt: Vec<Throttle>,
-    pub host: Vec<Throttle>,
+#[derive(Debug, Clone, Default)]
+pub struct QueueRateLimiters {
+    pub sender: Vec<QueueRateLimiter>,
+    pub rcpt: Vec<QueueRateLimiter>,
+    pub remote: Vec<QueueRateLimiter>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct QueueQuotas {
     pub sender: Vec<QueueQuota>,
     pub rcpt: Vec<QueueQuota>,
@@ -201,17 +200,10 @@ impl Default for QueueConfig {
                 data: IfBlock::new::<()>("queue.outbound.timeouts.data", [], "10m"),
                 mta_sts: IfBlock::new::<()>("queue.outbound.timeouts.mta-sts", [], "10m"),
             },
-            throttle: QueueThrottle {
-                outbound_concurrency: 25,
-                sender: Default::default(),
-                rcpt: Default::default(),
-                host: Default::default(),
-            },
-            quota: QueueQuotas {
-                sender: Default::default(),
-                rcpt: Default::default(),
-                rcpt_domain: Default::default(),
-            },
+            max_threads: 25,
+            inbound_limiters: QueueRateLimiters::default(),
+            outbound_limiters: QueueRateLimiters::default(),
+            quota: QueueQuotas::default(),
             relay_hosts: Default::default(),
         }
     }
@@ -324,8 +316,13 @@ impl QueueConfig {
             }
         }
 
-        // Parse queue quotas and throttles
-        queue.throttle = parse_queue_throttle(config);
+        // Parse rate limiters
+        queue.max_threads = config
+            .property_or_default::<usize>("queue.threads.remote", "25")
+            .unwrap_or(25)
+            .max(1);
+        queue.inbound_limiters = parse_inbound_rate_limters(config);
+        queue.outbound_limiters = parse_outbound_rate_limiters(config);
         queue.quota = parse_queue_quota(config);
 
         // Parse relay hosts
@@ -380,21 +377,60 @@ fn parse_relay_host(config: &mut Config, id: &str) -> Option<RelayHost> {
     })
 }
 
-fn parse_queue_throttle(config: &mut Config) -> QueueThrottle {
-    // Parse throttle
-    let mut throttle = QueueThrottle {
-        sender: Vec::new(),
-        rcpt: Vec::new(),
-        host: Vec::new(),
-        outbound_concurrency: config
-            .property_or_default::<usize>("queue.threads.remote", "25")
-            .unwrap_or(25)
-            .max(1),
-    };
-
-    let all_throttles = parse_throttle(
+fn parse_inbound_rate_limters(config: &mut Config) -> QueueRateLimiters {
+    let mut throttle = QueueRateLimiters::default();
+    let all_throttles = parse_queue_rate_limiter(
         config,
-        "queue.throttle",
+        "queue.limiter.inbound",
+        &TokenMap::default().with_variables(SMTP_RCPT_TO_VARS),
+        THROTTLE_LISTENER
+            | THROTTLE_REMOTE_IP
+            | THROTTLE_LOCAL_IP
+            | THROTTLE_AUTH_AS
+            | THROTTLE_HELO_DOMAIN
+            | THROTTLE_RCPT
+            | THROTTLE_RCPT_DOMAIN
+            | THROTTLE_SENDER
+            | THROTTLE_SENDER_DOMAIN,
+    );
+    for t in all_throttles {
+        if (t.keys & (THROTTLE_RCPT | THROTTLE_RCPT_DOMAIN)) != 0
+            || t.expr.items().iter().any(|c| {
+                matches!(
+                    c,
+                    ExpressionItem::Variable(V_RECIPIENT | V_RECIPIENT_DOMAIN)
+                )
+            })
+        {
+            throttle.rcpt.push(t);
+        } else if (t.keys
+            & (THROTTLE_SENDER | THROTTLE_SENDER_DOMAIN | THROTTLE_HELO_DOMAIN | THROTTLE_AUTH_AS))
+            != 0
+            || t.expr.items().iter().any(|c| {
+                matches!(
+                    c,
+                    ExpressionItem::Variable(
+                        V_SENDER | V_SENDER_DOMAIN | V_HELO_DOMAIN | V_AUTHENTICATED_AS
+                    )
+                )
+            })
+        {
+            throttle.sender.push(t);
+        } else {
+            throttle.remote.push(t);
+        }
+    }
+
+    throttle
+}
+
+fn parse_outbound_rate_limiters(config: &mut Config) -> QueueRateLimiters {
+    // Parse throttle
+    let mut throttle = QueueRateLimiters::default();
+
+    let all_throttles = parse_queue_rate_limiter(
+        config,
+        "queue.limiter.outbound",
         &TokenMap::default().with_variables(SMTP_QUEUE_HOST_VARS),
         THROTTLE_RCPT_DOMAIN
             | THROTTLE_SENDER
@@ -410,7 +446,7 @@ fn parse_queue_throttle(config: &mut Config) -> QueueThrottle {
                 .iter()
                 .any(|c| matches!(c, ExpressionItem::Variable(V_MX | V_REMOTE_IP | V_LOCAL_IP)))
         {
-            throttle.host.push(t);
+            throttle.remote.push(t);
         } else if (t.keys & (THROTTLE_RCPT_DOMAIN)) != 0
             || t.expr
                 .items()
@@ -481,7 +517,7 @@ fn parse_queue_quota_item(config: &mut Config, prefix: impl AsKey, id: &str) -> 
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect::<Vec<_>>()
     {
-        match parse_throttle_key(&value) {
+        match parse_queue_rate_limiter_key(&value) {
             Ok(key) => {
                 if (key
                     & (THROTTLE_RCPT_DOMAIN

@@ -24,8 +24,8 @@ use crate::{
 };
 
 use super::{
-    limiter::ConcurrencyLimiter, ServerInstance, SessionData, SessionManager, SessionStream,
-    TcpAcceptor,
+    limiter::{ConcurrencyLimiter, LimiterResult},
+    ServerInstance, SessionData, SessionManager, SessionStream, TcpAcceptor,
 };
 
 impl Listener {
@@ -234,7 +234,7 @@ impl BuildSession for Arc<ServerInstance> {
                 RemotePort = remote_port,
             );
             None
-        } else if let Some(in_flight) = self.limiter.is_allowed() {
+        } else if let LimiterResult::Allowed(in_flight) = self.limiter.is_allowed() {
             // Enforce concurrency
             SessionData {
                 stream,

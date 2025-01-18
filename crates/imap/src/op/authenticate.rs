@@ -9,7 +9,7 @@ use common::{
         sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
         AuthRequest,
     },
-    listener::SessionStream,
+    listener::{limiter::LimiterResult, SessionStream},
 };
 use directory::Permission;
 use imap_proto::{
@@ -105,17 +105,14 @@ impl<T: SessionStream> Session<T> {
             })?;
 
         // Enforce concurrency limits
-        let in_flight = match self
-            .get_concurrency_limiter(access_token.primary_id())
-            .map(|limiter| limiter.concurrent_requests.is_allowed())
-        {
-            Some(Some(limiter)) => Some(limiter),
-            None => None,
-            Some(None) => {
+        let in_flight = match access_token.is_imap_request_allowed() {
+            LimiterResult::Allowed(in_flight) => Some(in_flight),
+            LimiterResult::Forbidden => {
                 return Err(trc::LimitEvent::ConcurrentRequest
                     .into_err()
-                    .id(tag.clone()));
+                    .id(tag.clone()))
             }
+            LimiterResult::Disabled => None,
         };
 
         // Create session

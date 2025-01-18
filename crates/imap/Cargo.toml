@@ -24,7 +24,6 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 parking_lot = "0.12"
 ahash = { version = "0.8" }
 md5 = "0.7.0"
-dashmap = "6.0"
 rand = "0.8.5"
 
 

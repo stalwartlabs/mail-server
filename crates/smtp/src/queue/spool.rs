@@ -5,7 +5,7 @@
  */
 
 use crate::queue::DomainPart;
-use common::ipc::{QueueEvent, QueuedMessage};
+use common::ipc::QueueEvent;
 use common::{Server, KV_LOCK_QUEUE_MESSAGE};
 use std::borrow::Cow;
 use std::future::Future;
@@ -17,7 +17,8 @@ use trc::ServerEvent;
 use utils::BlobHash;
 
 use super::{
-    Domain, Message, MessageSource, QueueEnvelope, QueueId, QuotaKey, Recipient, Schedule, Status,
+    Domain, Message, MessageSource, QueueEnvelope, QueueId, QueuedMessage, QuotaKey, Recipient,
+    Schedule, Status,
 };
 
 pub const LOCK_EXPIRY: u64 = 300;
@@ -387,13 +388,11 @@ impl Message {
     ) -> bool {
         debug_assert!(prev_event.is_some() == next_event.is_some());
 
-        let mut batch = BatchBuilder::new();
-
         // Release quota for completed deliveries
+        let mut batch = BatchBuilder::new();
         self.release_quota(&mut batch);
 
         // Update message queue
-        let mut batch = BatchBuilder::new();
         if let (Some(prev_event), Some(next_event)) = (prev_event, next_event) {
             batch
                 .clear(ValueClass::Queue(QueueClass::MessageEvent(

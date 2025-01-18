@@ -49,7 +49,6 @@ pub async fn test(params: &mut JMAPTest) {
     .to_string();
 
     // Reset rate limiters
-    server.inner.data.jmap_limiter.clear();
     params.webhook.clear();
 
     // Incorrect passwords should be rejected with a 401 error

@@ -14,7 +14,7 @@ use std::{
 use common::{
     auth::AccessToken,
     config::smtp::auth::VerifyStrategy,
-    listener::{asn::AsnGeoLookupResult, limiter::InFlight, ServerInstance},
+    listener::{asn::AsnGeoLookupResult, ServerInstance},
     Inner, Server,
 };
 use directory::Directory;
@@ -62,7 +62,6 @@ pub struct Session<T: AsyncWrite + AsyncRead> {
     pub stream: T,
     pub data: SessionData,
     pub params: SessionParameters,
-    pub in_flight: Vec<InFlight>,
 }
 
 pub struct SessionData {
@@ -247,7 +246,6 @@ impl Session<common::listener::stream::NullIo> {
                 can_expn: false,
                 can_vrfy: false,
             },
-            in_flight: vec![],
         }
     }
 

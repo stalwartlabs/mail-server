@@ -26,37 +26,34 @@ retry = "1h"
 notify = "1h"
 expire = "1h"
 
-[[queue.throttle]]
+[[queue.limiter.outbound]]
 match = "sender_domain = 'foobar.org'"
 key = 'sender_domain'
-concurrency = 1
 enable = true
 
-[[queue.throttle]]
+[[queue.limiter.outbound]]
 match = "sender_domain = 'foobar.net'"
 key = 'sender_domain'
 rate = '1/30m'
 enable = true
 
-[[queue.throttle]]
+[[queue.limiter.outbound]]
 match = "rcpt_domain = 'example.org'"
 key = 'rcpt_domain'
-concurrency = 1
 enable = true
 
-[[queue.throttle]]
+[[queue.limiter.outbound]]
 match = "rcpt_domain = 'example.net'"
 key = 'rcpt_domain'
 rate = '1/40m'
 enable = true
 
-[[queue.throttle]]
+[[queue.limiter.outbound]]
 match = "mx = 'mx.test.org'"
 key = 'mx'
-concurrency = 1
 enable = true
 
-[[queue.throttle]]
+[[queue.limiter.outbound]]
 match = "mx = 'mx.test.net'"
 key = 'mx'
 rate = '1/50m'
@@ -88,43 +85,30 @@ async fn throttle_outbound() {
     );
 
     // Throttle sender
-    let mut in_flight = vec![];
-    let throttle = &core.core.smtp.queue.throttle;
+    let throttle = &core.core.smtp.queue.outbound_limiters;
     for t in &throttle.sender {
-        core.is_allowed(
-            t,
-            &QueueEnvelope::test(&test_message, 0, ""),
-            &mut in_flight,
-            0,
-        )
-        .await
-        .unwrap();
+        core.is_allowed(t, &QueueEnvelope::test(&test_message, 0, ""), 0)
+            .await
+            .unwrap();
     }
-    assert!(!in_flight.is_empty());
 
     // Expect concurrency throttle for sender domain 'foobar.org'
-    local
+    /*local
         .queue_receiver
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone());
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.queue_receiver.read_event().await.assert_on_hold();
-    in_flight.clear();
+    local.queue_receiver.read_event().await.assert_on_hold();*/
 
     // Expect rate limit throttle for sender domain 'foobar.net'
     test_message.return_path_domain = "foobar.net".to_string();
     for t in &throttle.sender {
-        core.is_allowed(
-            t,
-            &QueueEnvelope::test(&test_message, 0, ""),
-            &mut in_flight,
-            0,
-        )
-        .await
-        .unwrap();
+        core.is_allowed(t, &QueueEnvelope::test(&test_message, 0, ""), 0)
+            .await
+            .unwrap();
     }
-    assert!(in_flight.is_empty());
+
     session
         .send_message("john@foobar.net", &["bill@test.org"], "test:no_dkim", "250")
         .await;
@@ -148,17 +132,12 @@ async fn throttle_outbound() {
         status: Status::Scheduled,
     });
     for t in &throttle.rcpt {
-        core.is_allowed(
-            t,
-            &QueueEnvelope::test(&test_message, 0, ""),
-            &mut in_flight,
-            0,
-        )
-        .await
-        .unwrap();
+        core.is_allowed(t, &QueueEnvelope::test(&test_message, 0, ""), 0)
+            .await
+            .unwrap();
     }
-    assert!(!in_flight.is_empty());
-    session
+
+    /*session
         .send_message(
             "john@test.net",
             &["jane@example.org"],
@@ -172,8 +151,7 @@ async fn throttle_outbound() {
         .await
         .try_deliver(core.clone());
     tokio::time::sleep(Duration::from_millis(100)).await;
-    local.queue_receiver.read_event().await.assert_on_hold();
-    in_flight.clear();
+    local.queue_receiver.read_event().await.assert_on_hold();*/
 
     // Expect rate limit throttle for recipient domain 'example.net'
     test_message.domains.push(Domain {
@@ -184,16 +162,11 @@ async fn throttle_outbound() {
         status: Status::Scheduled,
     });
     for t in &throttle.rcpt {
-        core.is_allowed(
-            t,
-            &QueueEnvelope::test(&test_message, 1, ""),
-            &mut in_flight,
-            0,
-        )
-        .await
-        .unwrap();
+        core.is_allowed(t, &QueueEnvelope::test(&test_message, 1, ""), 0)
+            .await
+            .unwrap();
     }
-    assert!(in_flight.is_empty());
+
     session
         .send_message(
             "john@test.net",
@@ -233,18 +206,13 @@ async fn throttle_outbound() {
         expires: 0,
         status: Status::Scheduled,
     });
-    for t in &throttle.host {
-        core.is_allowed(
-            t,
-            &QueueEnvelope::test(&test_message, 2, "mx.test.org"),
-            &mut in_flight,
-            0,
-        )
-        .await
-        .unwrap();
+    for t in &throttle.remote {
+        core.is_allowed(t, &QueueEnvelope::test(&test_message, 2, "mx.test.org"), 0)
+            .await
+            .unwrap();
     }
-    assert!(!in_flight.is_empty());
-    session
+
+    /*session
         .send_message("john@test.net", &["jane@test.org"], "test:no_dkim", "250")
         .await;
     local
@@ -252,8 +220,7 @@ async fn throttle_outbound() {
         .expect_message_then_deliver()
         .await
         .try_deliver(core.clone());
-    local.queue_receiver.read_event().await.assert_on_hold();
-    in_flight.clear();
+    local.queue_receiver.read_event().await.assert_on_hold();*/
 
     // Expect rate limit throttle for mx 'mx.test.net'
     core.mx_add(
@@ -269,17 +236,12 @@ async fn throttle_outbound() {
         vec!["127.0.0.1".parse().unwrap()],
         Instant::now() + Duration::from_secs(10),
     );
-    for t in &throttle.host {
-        core.is_allowed(
-            t,
-            &QueueEnvelope::test(&test_message, 1, "mx.test.net"),
-            &mut in_flight,
-            0,
-        )
-        .await
-        .unwrap();
+    for t in &throttle.remote {
+        core.is_allowed(t, &QueueEnvelope::test(&test_message, 1, "mx.test.net"), 0)
+            .await
+            .unwrap();
     }
-    assert!(in_flight.is_empty());
+
     session
         .send_message("john@test.net", &["jane@test.net"], "test:no_dkim", "250")
         .await;

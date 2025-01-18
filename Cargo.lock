@@ -1212,7 +1212,6 @@ dependencies = [
  "bincode",
  "biscuit",
  "chrono",
- "dashmap",
  "decancer",
  "directory",
  "dns-update",
@@ -1628,20 +1627,6 @@ name = "dary_heap"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04d2cd9c18b9f454ed67da600630b021a8a80bf33f8c95896ab33aaf1c26b728"
-
-[[package]]
-name = "dashmap"
-version = "6.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
-dependencies = [
- "cfg-if",
- "crossbeam-utils",
- "hashbrown 0.14.5",
- "lock_api",
- "once_cell",
- "parking_lot_core",
-]
 
 [[package]]
 name = "data-encoding"
@@ -3254,7 +3239,6 @@ version = "0.11.2"
 dependencies = [
  "ahash 0.8.11",
  "common",
- "dashmap",
  "directory",
  "email",
  "imap_proto",
@@ -3510,7 +3494,6 @@ dependencies = [
  "bincode",
  "chrono",
  "common",
- "dashmap",
  "directory",
  "email",
  "form-data",
@@ -6459,7 +6442,6 @@ dependencies = [
  "blake3",
  "chrono",
  "common",
- "dashmap",
  "directory",
  "email",
  "form_urlencoded",
@@ -6846,7 +6828,6 @@ dependencies = [
  "chrono",
  "common",
  "csv",
- "dashmap",
  "directory",
  "ece",
  "email",

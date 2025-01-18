@@ -17,12 +17,9 @@ use store::{BlobStore, InMemoryStore, Store};
 use tokio::sync::mpsc;
 use utils::map::bitmap::Bitmap;
 
-use crate::{
-    config::smtp::{
-        report::AggregateFrequency,
-        resolver::{Policy, Tlsa},
-    },
-    listener::limiter::ConcurrencyLimiter,
+use crate::config::smtp::{
+    report::AggregateFrequency,
+    resolver::{Policy, Tlsa},
 };
 
 pub enum HousekeeperEvent {
@@ -108,20 +105,8 @@ pub enum QueueEvent {
 #[derive(Debug)]
 pub enum QueueEventStatus {
     Completed,
-    Locked {
-        until: u64,
-    },
-    Limited {
-        limiters: Vec<ConcurrencyLimiter>,
-        next_due: Option<u64>,
-    },
+    Locked { until: u64 },
     Deferred,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct QueuedMessage {
-    pub due: u64,
-    pub queue_id: u64,
 }
 
 #[derive(Debug)]

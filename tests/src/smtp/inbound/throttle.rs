@@ -23,19 +23,18 @@ fts = "rocksdb"
 type = "rocksdb"
 path = "{TMP}/data.db"
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 match = "remote_ip = '10.0.0.1'"
 key = 'remote_ip'
-concurrency = 2
-rate = '3/1s'
+rate = '2/1s'
 enable = true
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 key = 'sender'
 rate = '2/1s'
 enable = true
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 key = ['remote_ip', 'rcpt']
 rate = '2/1s'
 enable = true
@@ -52,24 +51,12 @@ async fn throttle_inbound() {
     let stores = Stores::parse_all(&mut config, false).await;
     let core = Core::parse(&mut config, stores, Default::default()).await;
 
-    // Test connection concurrency limit
+    // Test connection rate limit
     let mut session = Session::test(TestSMTP::from_core(core).server);
     session.data.remote_ip_str = "10.0.0.1".to_string();
-    assert!(
-        session.is_allowed().await,
-        "Concurrency limiter too strict."
-    );
-    assert!(
-        session.is_allowed().await,
-        "Concurrency limiter too strict."
-    );
-    assert!(!session.is_allowed().await, "Concurrency limiter failed.");
-
-    // Test connection rate limit
-    session.in_flight.clear(); // Manually reset concurrency limiter
+    assert!(session.is_allowed().await, "Rate limiter too strict.");
     assert!(session.is_allowed().await, "Rate limiter too strict.");
     assert!(!session.is_allowed().await, "Rate limiter failed.");
-    session.in_flight.clear();
     tokio::time::sleep(Duration::from_millis(1100)).await;
     assert!(
         session.is_allowed().await,

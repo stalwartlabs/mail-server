@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use common::{
-    ipc::{DmarcEvent, QueueEvent, QueueEventStatus, QueuedMessage, ReportingEvent, TlsEvent},
+    ipc::{DmarcEvent, QueueEvent, QueueEventStatus, ReportingEvent, TlsEvent},
     Server,
 };
 use store::{
@@ -16,7 +16,7 @@ use store::{
 };
 use tokio::sync::mpsc::error::TryRecvError;
 
-use smtp::queue::{DeliveryAttempt, Message, QueueId};
+use smtp::queue::{Message, QueueId, QueuedMessage};
 
 use super::{QueueReceiver, ReportReceiver};
 
@@ -131,17 +131,17 @@ impl QueueReceiver {
         message
     }
 
-    pub async fn expect_message_then_deliver(&mut self) -> DeliveryAttempt {
+    pub async fn expect_message_then_deliver(&mut self) -> QueuedMessage {
         let message = self.expect_message().await;
 
         self.delivery_attempt(message.queue_id).await
     }
 
-    pub async fn delivery_attempt(&mut self, queue_id: u64) -> DeliveryAttempt {
-        DeliveryAttempt::new(QueuedMessage {
+    pub async fn delivery_attempt(&mut self, queue_id: u64) -> QueuedMessage {
+        QueuedMessage {
             due: self.message_due(queue_id).await,
             queue_id,
-        })
+        }
     }
 
     pub async fn read_queued_events(&self) -> Vec<store::write::QueueEvent> {
@@ -302,7 +302,6 @@ pub trait TestQueueEvent {
     fn assert_refresh(self);
     fn assert_done(self);
     fn assert_refresh_or_done(self);
-    fn assert_on_hold(self);
 }
 
 impl TestQueueEvent for QueueEvent {
@@ -331,16 +330,6 @@ impl TestQueueEvent for QueueEvent {
         match self {
             QueueEvent::WorkerDone {
                 status: QueueEventStatus::Completed | QueueEventStatus::Deferred,
-                ..
-            } => (),
-            e => panic!("Unexpected event: {e:?}"),
-        }
-    }
-
-    fn assert_on_hold(self) {
-        match self {
-            QueueEvent::WorkerDone {
-                status: QueueEventStatus::Limited { .. },
                 ..
             } => (),
             e => panic!("Unexpected event: {e:?}"),

@@ -7,7 +7,7 @@
 use std::{
     collections::BinaryHeap,
     future::Future,
-    sync::{atomic::Ordering, Arc},
+    sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -39,7 +39,6 @@ struct Action {
 
 #[derive(PartialEq, Eq, Debug)]
 enum ActionClass {
-    Session,
     Account,
     Store(usize),
     Acme(String),
@@ -70,12 +69,6 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
         let mut queue = Queue::default();
         {
             let server = inner.build_server();
-
-            // Session purge
-            queue.schedule(
-                Instant::now() + server.core.jmap.session_purge_frequency.time_to_next(),
-                ActionClass::Session,
-            );
 
             // Account purge
             if server.core.network.roles.purge_accounts {
@@ -322,37 +315,6 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                 );
                                 tokio::spawn(async move {
                                     server.purge(PurgeType::Account(None), 0).await;
-                                });
-                            }
-                            ActionClass::Session => {
-                                trc::event!(
-                                    Housekeeper(trc::HousekeeperEvent::Run),
-                                    Type = "purge_session"
-                                );
-
-                                let server = server.clone();
-                                queue.schedule(
-                                    Instant::now()
-                                        + server.core.jmap.session_purge_frequency.time_to_next(),
-                                    ActionClass::Session,
-                                );
-
-                                tokio::spawn(async move {
-                                    trc::event!(Purge(PurgeEvent::Started), Type = "session");
-                                    server
-                                        .inner
-                                        .data
-                                        .jmap_limiter
-                                        .retain(|_, limiter| limiter.is_active());
-
-                                    for throttle in [
-                                        &server.inner.data.smtp_session_throttle,
-                                        &server.inner.data.smtp_queue_throttle,
-                                    ] {
-                                        throttle.retain(|_, v| {
-                                            v.concurrent.load(Ordering::Relaxed) > 0
-                                        });
-                                    }
                                 });
                             }
                             ActionClass::Store(idx) => {

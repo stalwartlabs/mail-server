@@ -28,7 +28,10 @@ use utils::map::{
     vec_map::VecMap,
 };
 
-use crate::{Server, KV_TOKEN_REVISION};
+use crate::{
+    listener::limiter::{ConcurrencyLimiter, LimiterResult},
+    Server, KV_TOKEN_REVISION,
+};
 
 use super::{roles::RolePermissions, AccessToken, ResourceToken, TenantInfo};
 
@@ -122,6 +125,17 @@ impl Server {
                 .unwrap_or_default(),
             quota: principal.quota(),
             permissions,
+            concurrent_imap_requests: self.core.imap.rate_concurrent.map(ConcurrencyLimiter::new),
+            concurrent_http_requests: self
+                .core
+                .jmap
+                .request_max_concurrent
+                .map(ConcurrencyLimiter::new),
+            concurrent_uploads: self
+                .core
+                .jmap
+                .upload_max_concurrent
+                .map(ConcurrencyLimiter::new),
             obj_size: 0,
             revision,
         };
@@ -645,6 +659,24 @@ impl AccessToken {
             quota: self.quota,
             tenant: self.tenant,
         }
+    }
+
+    pub fn is_http_request_allowed(&self) -> LimiterResult {
+        self.concurrent_http_requests
+            .as_ref()
+            .map_or(LimiterResult::Disabled, |limiter| limiter.is_allowed())
+    }
+
+    pub fn is_imap_request_allowed(&self) -> LimiterResult {
+        self.concurrent_imap_requests
+            .as_ref()
+            .map_or(LimiterResult::Disabled, |limiter| limiter.is_allowed())
+    }
+
+    pub fn is_upload_allowed(&self) -> LimiterResult {
+        self.concurrent_uploads
+            .as_ref()
+            .map_or(LimiterResult::Disabled, |limiter| limiter.is_allowed())
     }
 
     pub fn update_size(mut self) -> Self {

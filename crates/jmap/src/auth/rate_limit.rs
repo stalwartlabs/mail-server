@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{net::IpAddr, sync::Arc};
+use std::net::IpAddr;
 
 use common::{
     ip_to_bytes,
-    listener::limiter::{ConcurrencyLimiter, InFlight},
-    ConcurrencyLimiters, Server, KV_RATE_LIMIT_HTTP_ANONYMOUS, KV_RATE_LIMIT_HTTP_AUTHENTICATED,
+    listener::limiter::{InFlight, LimiterResult},
+    Server, KV_RATE_LIMIT_HTTP_ANONYMOUS, KV_RATE_LIMIT_HTTP_AUTHENTICATED,
 };
 use directory::Permission;
 use trc::AddContext;
@@ -18,47 +18,22 @@ use common::auth::AccessToken;
 use std::future::Future;
 
 pub trait RateLimiter: Sync + Send {
-    fn get_concurrency_limiter(&self, account_id: u32) -> Arc<ConcurrencyLimiters>;
     fn is_http_authenticated_request_allowed(
         &self,
         access_token: &AccessToken,
-    ) -> impl Future<Output = trc::Result<InFlight>> + Send;
+    ) -> impl Future<Output = trc::Result<Option<InFlight>>> + Send;
     fn is_http_anonymous_request_allowed(
         &self,
         addr: &IpAddr,
     ) -> impl Future<Output = trc::Result<()>> + Send;
-    fn is_upload_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight>;
+    fn is_upload_allowed(&self, access_token: &AccessToken) -> trc::Result<Option<InFlight>>;
 }
 
 impl RateLimiter for Server {
-    fn get_concurrency_limiter(&self, account_id: u32) -> Arc<ConcurrencyLimiters> {
-        self.inner
-            .data
-            .jmap_limiter
-            .get(&account_id)
-            .map(|limiter| limiter.clone())
-            .unwrap_or_else(|| {
-                let limiter = Arc::new(ConcurrencyLimiters {
-                    concurrent_requests: ConcurrencyLimiter::new(
-                        self.core.jmap.request_max_concurrent,
-                    ),
-                    concurrent_uploads: ConcurrencyLimiter::new(
-                        self.core.jmap.upload_max_concurrent,
-                    ),
-                });
-                self.inner
-                    .data
-                    .jmap_limiter
-                    .insert(account_id, limiter.clone());
-                limiter
-            })
-    }
-
     async fn is_http_authenticated_request_allowed(
         &self,
         access_token: &AccessToken,
-    ) -> trc::Result<InFlight> {
-        let limiter = self.get_concurrency_limiter(access_token.primary_id());
+    ) -> trc::Result<Option<InFlight>> {
         let is_rate_allowed = if let Some(rate) = &self.core.jmap.rate_authenticated {
             self.core
                 .storage
@@ -77,15 +52,19 @@ impl RateLimiter for Server {
         };
 
         if is_rate_allowed {
-            if let Some(in_flight_request) = limiter.concurrent_requests.is_allowed() {
-                Ok(in_flight_request)
-            } else if access_token.has_permission(Permission::UnlimitedRequests) {
-                Ok(InFlight::default())
-            } else {
-                Err(trc::LimitEvent::ConcurrentRequest.into_err())
+            match access_token.is_http_request_allowed() {
+                LimiterResult::Allowed(in_flight) => Ok(Some(in_flight)),
+                LimiterResult::Forbidden => {
+                    if access_token.has_permission(Permission::UnlimitedRequests) {
+                        Ok(None)
+                    } else {
+                        Err(trc::LimitEvent::ConcurrentRequest.into_err())
+                    }
+                }
+                LimiterResult::Disabled => Ok(None),
             }
         } else if access_token.has_permission(Permission::UnlimitedRequests) {
-            Ok(InFlight::default())
+            Ok(None)
         } else {
             Err(trc::LimitEvent::TooManyRequests.into_err())
         }
@@ -114,17 +93,17 @@ impl RateLimiter for Server {
         Ok(())
     }
 
-    fn is_upload_allowed(&self, access_token: &AccessToken) -> trc::Result<InFlight> {
-        if let Some(in_flight_request) = self
-            .get_concurrency_limiter(access_token.primary_id())
-            .concurrent_uploads
-            .is_allowed()
-        {
-            Ok(in_flight_request)
-        } else if access_token.has_permission(Permission::UnlimitedRequests) {
-            Ok(InFlight::default())
-        } else {
-            Err(trc::LimitEvent::ConcurrentUpload.into_err())
+    fn is_upload_allowed(&self, access_token: &AccessToken) -> trc::Result<Option<InFlight>> {
+        match access_token.is_upload_allowed() {
+            LimiterResult::Allowed(in_flight) => Ok(Some(in_flight)),
+            LimiterResult::Forbidden => {
+                if access_token.has_permission(Permission::UnlimitedRequests) {
+                    Ok(None)
+                } else {
+                    Err(trc::LimitEvent::ConcurrentUpload.into_err())
+                }
+            }
+            LimiterResult::Disabled => Ok(None),
         }
     }
 }

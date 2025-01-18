@@ -74,7 +74,7 @@ wait = [{if = "remote_ip = '10.0.0.1'", then = '5ms'},
 dsn = [{if = "remote_ip = '10.0.0.1'", then = false},
        {else = true}]
 
-[[session.throttle]]
+[[queue.limiter.inbound]]
 match = "remote_ip = '10.0.0.1' && !is_empty(rcpt)"
 key = 'sender'
 rate = '2/1s'

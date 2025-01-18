@@ -9,13 +9,11 @@ use common::{
         sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
         AuthRequest,
     },
-    listener::{limiter::ConcurrencyLimiter, SessionStream},
-    ConcurrencyLimiters,
+    listener::{limiter::LimiterResult, SessionStream},
 };
 use directory::Permission;
 use mail_parser::decoders::base64::base64_decode;
 use mail_send::Credentials;
-use std::sync::Arc;
 
 use crate::{
     protocol::{request, Command, Mechanism},
@@ -103,15 +101,12 @@ impl<T: SessionStream> Session<T> {
             })?;
 
         // Enforce concurrency limits
-        let in_flight = match self
-            .get_concurrency_limiter(access_token.primary_id())
-            .map(|limiter| limiter.concurrent_requests.is_allowed())
-        {
-            Some(Some(limiter)) => Some(limiter),
-            None => None,
-            Some(None) => {
+        let in_flight = match access_token.is_imap_request_allowed() {
+            LimiterResult::Allowed(in_flight) => Some(in_flight),
+            LimiterResult::Forbidden => {
                 return Err(trc::LimitEvent::ConcurrentRequest.into_err());
             }
+            LimiterResult::Disabled => None,
         };
 
         // Fetch mailbox
@@ -124,28 +119,5 @@ impl<T: SessionStream> Session<T> {
             access_token,
         };
         self.write_ok("Authentication successful").await
-    }
-
-    pub fn get_concurrency_limiter(&self, account_id: u32) -> Option<Arc<ConcurrencyLimiters>> {
-        let rate = self.server.core.imap.rate_concurrent?;
-        self.server
-            .inner
-            .data
-            .imap_limiter
-            .get(&account_id)
-            .map(|limiter| limiter.clone())
-            .unwrap_or_else(|| {
-                let limiter = Arc::new(ConcurrencyLimiters {
-                    concurrent_requests: ConcurrencyLimiter::new(rate),
-                    concurrent_uploads: ConcurrencyLimiter::new(rate),
-                });
-                self.server
-                    .inner
-                    .data
-                    .imap_limiter
-                    .insert(account_id, limiter.clone());
-                limiter
-            })
-            .into()
     }
 }

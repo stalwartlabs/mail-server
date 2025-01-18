@@ -9,9 +9,8 @@ use std::{
     sync::Arc,
 };
 
-use ahash::{AHashMap, AHashSet, RandomState};
+use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
 use mail_auth::{Parameters, Txt, MX};
 use mail_send::smtp::tls::build_tls_connector;
 use nlp::bayes::{TokenHash, Weights};
@@ -28,7 +27,7 @@ use crate::{
     listener::blocked::BlockedIps,
     manager::webadmin::WebAdminManager,
     Account, AccountId, Caches, Data, Mailbox, MailboxId, MailboxState, NextMailboxState, Threads,
-    ThrottleKeyHasherBuilder, TlsConnectors,
+    TlsConnectors,
 };
 
 use super::server::tls::{build_self_signed_cert, parse_certificates};
@@ -42,13 +41,6 @@ impl Data {
         if subject_names.is_empty() {
             subject_names.insert("localhost".to_string());
         }
-
-        // Parse capacities
-        let shard_amount = config
-            .property::<u64>("limiter.shard")
-            .unwrap_or_else(|| (num_cpus::get() * 2) as u64)
-            .next_power_of_two() as usize;
-        let capacity = config.property("limiter.capacity").unwrap_or(100);
 
         // Parse id generator
         let id_generator = config
@@ -78,27 +70,7 @@ impl Data {
                 .map(|path| WebAdminManager::new(path.into()))
                 .unwrap_or_default(),
             config_version: 0.into(),
-            jmap_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
-                capacity,
-                RandomState::default(),
-                shard_amount,
-            ),
-            imap_limiter: DashMap::with_capacity_and_hasher_and_shard_amount(
-                capacity,
-                RandomState::default(),
-                shard_amount,
-            ),
             logos: Default::default(),
-            smtp_session_throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
-                capacity,
-                ThrottleKeyHasherBuilder::default(),
-                shard_amount,
-            ),
-            smtp_queue_throttle: DashMap::with_capacity_and_hasher_and_shard_amount(
-                capacity,
-                ThrottleKeyHasherBuilder::default(),
-                shard_amount,
-            ),
             smtp_connectors: TlsConnectors::default(),
             asn_geo_data: Default::default(),
         }
@@ -248,11 +220,7 @@ impl Default for Data {
             queue_status: true.into(),
             webadmin: Default::default(),
             config_version: Default::default(),
-            jmap_limiter: Default::default(),
-            imap_limiter: Default::default(),
             logos: Default::default(),
-            smtp_session_throttle: Default::default(),
-            smtp_queue_throttle: Default::default(),
             smtp_connectors: Default::default(),
             asn_geo_data: Default::default(),
         }

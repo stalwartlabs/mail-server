@@ -22,7 +22,7 @@ use tokio::sync::mpsc;
 
 use super::{
     spool::{SmtpSpool, QUEUE_REFRESH},
-    DeliveryAttempt, Message, QueueId, Status,
+    Message, QueueId, Status,
 };
 
 pub struct Queue {
@@ -96,13 +96,6 @@ impl Queue {
                             self.on_hold.insert(queue_id, OnHold::Locked { until });
                             self.on_hold.len() > 1 || has_back_pressure
                         }
-                        QueueEventStatus::Limited { limiters, next_due } => {
-                            self.on_hold.insert(
-                                queue_id,
-                                OnHold::ConcurrencyLimited { limiters, next_due },
-                            );
-                            !self.on_hold.is_empty() || has_back_pressure
-                        }
                         QueueEventStatus::Deferred => {
                             self.on_hold.remove(&queue_id);
                             true
@@ -129,7 +122,7 @@ impl Queue {
                 if refresh_queue || self.next_wake_up <= Instant::now() {
                     // If the number of in-flight messages is greater than the maximum allowed, skip the queue
                     let server = self.core.build_server();
-                    let max_in_flight = server.core.smtp.queue.throttle.outbound_concurrency;
+                    let max_in_flight = server.core.smtp.queue.max_threads;
                     has_back_pressure = in_flight_count >= max_in_flight;
                     if has_back_pressure {
                         self.next_wake_up = Instant::now() + Duration::from_secs(QUEUE_REFRESH);
@@ -233,7 +226,7 @@ impl Queue {
                             // Deliver message
                             in_flight_count += 1;
                             self.on_hold.insert(queue_event.queue_id, OnHold::InFlight);
-                            DeliveryAttempt::new(*queue_event).try_deliver(server.clone());
+                            queue_event.try_deliver(server.clone());
                         } else {
                             let due_in = queue_event.due - now;
                             if due_in < next_wake_up {

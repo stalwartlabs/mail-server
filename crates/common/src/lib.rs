@@ -14,7 +14,7 @@ use std::{
     },
 };
 
-use ahash::{AHashMap, AHashSet, RandomState};
+use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use auth::{oauth::config::OAuthConfig, roles::RolePermissions, AccessToken};
 use config::{
@@ -30,13 +30,10 @@ use config::{
     storage::Storage,
     telemetry::Metrics,
 };
-use dashmap::DashMap;
 
 use imap_proto::protocol::list::Attribute;
 use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
-use listener::{
-    asn::AsnGeoLookupData, blocked::Security, limiter::ConcurrencyLimiter, tls::AcmeProviders,
-};
+use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 
 use mail_auth::{Txt, MX};
 use manager::webadmin::{Resource, WebAdminManager};
@@ -125,15 +122,9 @@ pub struct Data {
     pub queue_status: AtomicBool,
 
     pub webadmin: WebAdminManager,
+    pub logos: Mutex<AHashMap<String, Option<Resource<Vec<u8>>>>>,
     pub config_version: AtomicU8,
 
-    pub jmap_limiter: DashMap<u32, Arc<ConcurrencyLimiters>, RandomState>,
-    pub imap_limiter: DashMap<u32, Arc<ConcurrencyLimiters>, RandomState>,
-
-    pub logos: Mutex<AHashMap<String, Option<Resource<Vec<u8>>>>>,
-
-    pub smtp_session_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
-    pub smtp_queue_throttle: DashMap<ThrottleKey, ConcurrencyLimiter, ThrottleKeyHasherBuilder>,
     pub smtp_connectors: TlsConnectors,
 }
 
@@ -243,11 +234,6 @@ pub struct ImapId {
 pub struct Threads {
     pub threads: AHashMap<u32, u32>,
     pub modseq: Option<u64>,
-}
-
-pub struct ConcurrencyLimiters {
-    pub concurrent_requests: ConcurrencyLimiter,
-    pub concurrent_uploads: ConcurrencyLimiter,
 }
 
 #[derive(Clone, Default)]
@@ -379,12 +365,6 @@ impl BuildHasher for ThrottleKeyHasherBuilder {
 
     fn build_hasher(&self) -> Self::Hasher {
         ThrottleKeyHasher::default()
-    }
-}
-
-impl ConcurrencyLimiters {
-    pub fn is_active(&self) -> bool {
-        self.concurrent_requests.is_active() || self.concurrent_uploads.is_active()
     }
 }
 

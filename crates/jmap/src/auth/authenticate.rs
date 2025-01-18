@@ -24,7 +24,7 @@ pub trait Authenticator: Sync + Send {
         req: &HttpRequest,
         session: &HttpSessionData,
         allow_api_access: bool,
-    ) -> impl Future<Output = trc::Result<(InFlight, Arc<AccessToken>)>> + Send;
+    ) -> impl Future<Output = trc::Result<(Option<InFlight>, Arc<AccessToken>)>> + Send;
 }
 
 impl Authenticator for Server {
@@ -33,7 +33,7 @@ impl Authenticator for Server {
         req: &HttpRequest,
         session: &HttpSessionData,
         allow_api_access: bool,
-    ) -> trc::Result<(InFlight, Arc<AccessToken>)> {
+    ) -> trc::Result<(Option<InFlight>, Arc<AccessToken>)> {
         if let Some((mechanism, token)) = req.authorization() {
             // Check if the credentials are cached
             if let Some(http_cache) = self.inner.cache.http_auth.get(token) {

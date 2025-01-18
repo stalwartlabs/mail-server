@@ -39,13 +39,13 @@ use crate::{
 };
 
 use super::{lookup::ToNextHop, mta_sts, session::SessionParams, NextHop, TlsStrategy};
-use crate::queue::{throttle, DeliveryAttempt, Domain, Error, QueueEnvelope, Status};
+use crate::queue::{Domain, Error, QueueEnvelope, QueuedMessage, Status};
 
-impl DeliveryAttempt {
+impl QueuedMessage {
     pub fn try_deliver(self, server: Server) {
         tokio::spawn(async move {
             // Lock queue event
-            let queue_id = self.event.queue_id;
+            let queue_id = self.queue_id;
             let status = if server.try_lock_event(queue_id).await {
                 if let Some(mut message) = server.read_message(queue_id).await {
                     // Generate span id
@@ -98,8 +98,8 @@ impl DeliveryAttempt {
                     let mut batch = BatchBuilder::new();
                     batch.clear(ValueClass::Queue(QueueClass::MessageEvent(
                         store::write::QueueEvent {
-                            due: self.event.due,
-                            queue_id: self.event.queue_id,
+                            due: self.due,
+                            queue_id: self.queue_id,
                         },
                     )));
 
@@ -138,7 +138,7 @@ impl DeliveryAttempt {
         });
     }
 
-    async fn deliver_task(mut self, server: Server, mut message: Message) -> QueueEventStatus {
+    async fn deliver_task(self, server: Server, mut message: Message) -> QueueEventStatus {
         // Check that the message still has recipients to be delivered
         let has_pending_delivery = message.has_pending_delivery();
         let span_id = message.span_id;
@@ -152,7 +152,7 @@ impl DeliveryAttempt {
             if due > now() {
                 // Save changes
                 message
-                    .save_changes(&server, self.event.due.into(), due.into())
+                    .save_changes(&server, self.due.into(), due.into())
                     .await;
                 return QueueEventStatus::Deferred;
             }
@@ -164,62 +164,36 @@ impl DeliveryAttempt {
             );
 
             // All message recipients expired, do not re-queue. (DSN has been already sent)
-            message.remove(&server, self.event.due).await;
+            message.remove(&server, self.due).await;
 
             return QueueEventStatus::Completed;
         }
 
         // Throttle sender
-        for throttle in &server.core.smtp.queue.throttle.sender {
-            if let Err(err) = server
-                .is_allowed(throttle, &message, &mut self.in_flight, message.span_id)
-                .await
-            {
-                let event = match err {
-                    throttle::Error::Concurrency { limiter } => {
-                        // Save changes to disk
-                        let next_due = message.next_event_after(now());
-                        message.save_changes(&server, None, None).await;
+        for throttle in &server.core.smtp.queue.outbound_limiters.sender {
+            if let Err(retry_at) = server.is_allowed(throttle, &message, message.span_id).await {
+                // Save changes to disk
+                let next_event = std::cmp::min(
+                    retry_at,
+                    message.next_event_after(now()).unwrap_or(u64::MAX),
+                );
 
-                        trc::event!(
-                            Delivery(DeliveryEvent::ConcurrencyLimitExceeded),
-                            Id = throttle.id.clone(),
-                            SpanId = span_id,
-                        );
+                trc::event!(
+                    Delivery(DeliveryEvent::RateLimitExceeded),
+                    Id = throttle.id.clone(),
+                    SpanId = span_id,
+                    NextRetry = trc::Value::Timestamp(next_event)
+                );
 
-                        QueueEventStatus::Limited {
-                            limiters: vec![limiter],
-                            next_due,
-                        }
-                    }
-                    throttle::Error::Rate { retry_at } => {
-                        // Save changes to disk
-                        let next_event = std::cmp::min(
-                            retry_at,
-                            message.next_event_after(now()).unwrap_or(u64::MAX),
-                        );
+                message
+                    .save_changes(&server, self.due.into(), next_event.into())
+                    .await;
 
-                        trc::event!(
-                            Delivery(DeliveryEvent::RateLimitExceeded),
-                            Id = throttle.id.clone(),
-                            SpanId = span_id,
-                            NextRetry = trc::Value::Timestamp(next_event)
-                        );
-
-                        message
-                            .save_changes(&server, self.event.due.into(), next_event.into())
-                            .await;
-
-                        QueueEventStatus::Deferred
-                    }
-                };
-
-                return event;
+                return QueueEventStatus::Deferred;
             }
         }
 
         let queue_config = &server.core.smtp.queue;
-        let mut on_hold = Vec::new();
         let no_ip = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
         let mut recipients = std::mem::take(&mut message.recipients);
         'next_domain: for domain_idx in 0..message.domains.len() {
@@ -242,10 +216,9 @@ impl DeliveryAttempt {
             let mut envelope = QueueEnvelope::new(&message, domain_idx);
 
             // Throttle recipient domain
-            let mut in_flight = Vec::new();
-            for throttle in &queue_config.throttle.rcpt {
-                if let Err(err) = server
-                    .is_allowed(throttle, &envelope, &mut in_flight, message.span_id)
+            for throttle in &queue_config.outbound_limiters.rcpt {
+                if let Err(retry_at) = server
+                    .is_allowed(throttle, &envelope, message.span_id)
                     .await
                 {
                     trc::event!(
@@ -255,7 +228,7 @@ impl DeliveryAttempt {
                         Domain = domain.domain.clone(),
                     );
 
-                    message.domains[domain_idx].set_throttle_error(err, &mut on_hold);
+                    message.domains[domain_idx].set_rate_limiter_error(retry_at);
                     continue 'next_domain;
                 }
             }
@@ -868,11 +841,10 @@ impl DeliveryAttempt {
                     envelope.local_ip = source_ip.unwrap_or(no_ip);
 
                     // Throttle remote host
-                    let mut in_flight_host = Vec::new();
                     envelope.remote_ip = remote_ip;
-                    for throttle in &queue_config.throttle.host {
-                        if let Err(err) = server
-                            .is_allowed(throttle, &envelope, &mut in_flight_host, message.span_id)
+                    for throttle in &queue_config.outbound_limiters.remote {
+                        if let Err(retry_at) = server
+                            .is_allowed(throttle, &envelope, message.span_id)
                             .await
                         {
                             trc::event!(
@@ -881,7 +853,7 @@ impl DeliveryAttempt {
                                 Id = throttle.id.clone(),
                                 RemoteIp = remote_ip,
                             );
-                            message.domains[domain_idx].set_throttle_error(err, &mut on_hold);
+                            message.domains[domain_idx].set_rate_limiter_error(retry_at);
                             continue 'next_domain;
                         }
                     }
@@ -1322,21 +1294,7 @@ impl DeliveryAttempt {
         server.send_dsn(&mut message).await;
 
         // Notify queue manager
-        if !on_hold.is_empty() {
-            // Save changes to disk
-            let next_due = message.next_event_after(now());
-            message.save_changes(&server, None, None).await;
-
-            trc::event!(
-                Delivery(DeliveryEvent::ConcurrencyLimitExceeded),
-                SpanId = span_id,
-            );
-
-            QueueEventStatus::Limited {
-                limiters: on_hold,
-                next_due,
-            }
-        } else if let Some(due) = message.next_event() {
+        if let Some(due) = message.next_event() {
             trc::event!(
                 Queue(trc::QueueEvent::Rescheduled),
                 SpanId = span_id,
@@ -1347,7 +1305,7 @@ impl DeliveryAttempt {
 
             // Save changes to disk
             message
-                .save_changes(&server, self.event.due.into(), due.into())
+                .save_changes(&server, self.due.into(), due.into())
                 .await;
 
             QueueEventStatus::Deferred
@@ -1359,7 +1317,7 @@ impl DeliveryAttempt {
             );
 
             // Delete message from queue
-            message.remove(&server, self.event.due).await;
+            message.remove(&server, self.due).await;
 
             QueueEventStatus::Completed
         }

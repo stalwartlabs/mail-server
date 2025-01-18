@@ -6,17 +6,14 @@
 
 use std::borrow::Cow;
 
-use common::{
-    config::{
-        server::ServerProtocol,
-        smtp::queue::{RelayHost, RequireOptional},
-    },
-    ipc::QueuedMessage,
+use common::config::{
+    server::ServerProtocol,
+    smtp::queue::{RelayHost, RequireOptional},
 };
 use mail_send::Credentials;
 use smtp_proto::{Response, Severity};
 
-use crate::queue::{DeliveryAttempt, Error, ErrorDetails, HostResponse, Status};
+use crate::queue::{Error, ErrorDetails, HostResponse, Status};
 
 pub mod client;
 pub mod dane;
@@ -199,15 +196,6 @@ impl From<mta_sts::Error> for Status<(), Error> {
             mta_sts::Error::InvalidPolicy(err) => Status::PermanentFailure(Error::MtaStsError(
                 format!("Failed to parse policy: {err}"),
             )),
-        }
-    }
-}
-
-impl DeliveryAttempt {
-    pub fn new(event: QueuedMessage) -> Self {
-        DeliveryAttempt {
-            in_flight: Vec::new(),
-            event,
         }
     }
 }

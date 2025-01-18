@@ -228,7 +228,7 @@ pub fn spawn_mock_lmtp_server(max_concurrency: u64) -> watch::Sender<bool> {
                         Ok((stream, _)) => {
                             let acceptor = acceptor.clone();
                             let in_flight = limited.is_allowed();
-                            tokio::spawn(accept_smtp(stream, rx.clone(), acceptor, in_flight));
+                            tokio::spawn(accept_smtp(stream, rx.clone(), acceptor, in_flight.into()));
                         }
                         Err(err) => {
                             panic!("Something went wrong: {err}" );

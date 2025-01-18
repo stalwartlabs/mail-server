@@ -5,12 +5,12 @@
  */
 
 use common::{
-    config::smtp::{queue::QueueQuota, *},
+    config::smtp::*,
     expr::{functions::ResolveVariable, *},
-    listener::{limiter::ConcurrencyLimiter, SessionStream},
+    listener::SessionStream,
     ThrottleKey, KV_RATE_LIMIT_HASH,
 };
-use dashmap::mapref::entry::Entry;
+use queue::QueueQuota;
 use trc::SmtpEvent;
 use utils::config::Rate;
 
@@ -71,7 +71,7 @@ impl NewKey for QueueQuota {
     }
 }
 
-impl NewKey for Throttle {
+impl NewKey for QueueRateLimiter {
     fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey {
         let mut hasher = blake3::Hasher::new();
 
@@ -129,13 +129,8 @@ impl NewKey for Throttle {
         if (self.keys & THROTTLE_LOCAL_IP) != 0 {
             hasher.update(e.resolve_variable(V_LOCAL_IP).to_string().as_bytes());
         }
-        if let Some(rate_limit) = &self.rate {
-            hasher.update(&rate_limit.period.as_secs().to_ne_bytes()[..]);
-            hasher.update(&rate_limit.requests.to_ne_bytes()[..]);
-        }
-        if let Some(concurrency) = &self.concurrency {
-            hasher.update(&concurrency.to_ne_bytes()[..]);
-        }
+        hasher.update(&self.rate.period.as_secs().to_ne_bytes()[..]);
+        hasher.update(&self.rate.requests.to_ne_bytes()[..]);
 
         ThrottleKey {
             hash: hasher.finalize().into(),
@@ -146,11 +141,11 @@ impl NewKey for Throttle {
 impl<T: SessionStream> Session<T> {
     pub async fn is_allowed(&mut self) -> bool {
         let throttles = if !self.data.rcpt_to.is_empty() {
-            &self.server.core.smtp.session.throttle.rcpt_to
+            &self.server.core.smtp.queue.inbound_limiters.rcpt
         } else if self.data.mail_from.is_some() {
-            &self.server.core.smtp.session.throttle.mail_from
+            &self.server.core.smtp.queue.inbound_limiters.sender
         } else {
-            &self.server.core.smtp.session.throttle.connect
+            &self.server.core.smtp.queue.inbound_limiters.remote
         };
 
         for t in throttles {
@@ -177,69 +172,34 @@ impl<T: SessionStream> Session<T> {
                 // Build throttle key
                 let key = t.new_key(self);
 
-                // Check concurrency
-                if let Some(concurrency) = &t.concurrency {
-                    match self
-                        .server
-                        .inner
-                        .data
-                        .smtp_session_throttle
-                        .entry(key.clone())
-                    {
-                        Entry::Occupied(mut e) => {
-                            let limiter = e.get_mut();
-                            if let Some(inflight) = limiter.is_allowed() {
-                                self.in_flight.push(inflight);
-                            } else {
-                                trc::event!(
-                                    Smtp(SmtpEvent::ConcurrencyLimitExceeded),
-                                    SpanId = self.data.session_id,
-                                    Id = t.id.clone(),
-                                    Limit = limiter.max_concurrent
-                                );
-                                return false;
-                            }
-                        }
-                        Entry::Vacant(e) => {
-                            let limiter = ConcurrencyLimiter::new(*concurrency);
-                            if let Some(inflight) = limiter.is_allowed() {
-                                self.in_flight.push(inflight);
-                            }
-                            e.insert(limiter);
-                        }
-                    }
-                }
-
                 // Check rate
-                if let Some(rate) = &t.rate {
-                    match self
-                        .server
-                        .core
-                        .storage
-                        .lookup
-                        .is_rate_allowed(KV_RATE_LIMIT_HASH, key.hash.as_slice(), rate, false)
-                        .await
-                    {
-                        Ok(Some(_)) => {
-                            trc::event!(
-                                Smtp(SmtpEvent::RateLimitExceeded),
-                                SpanId = self.data.session_id,
-                                Id = t.id.clone(),
-                                Limit = vec![
-                                    trc::Value::from(rate.requests),
-                                    trc::Value::from(rate.period)
-                                ],
-                            );
+                match self
+                    .server
+                    .core
+                    .storage
+                    .lookup
+                    .is_rate_allowed(KV_RATE_LIMIT_HASH, key.hash.as_slice(), &t.rate, false)
+                    .await
+                {
+                    Ok(Some(_)) => {
+                        trc::event!(
+                            Smtp(SmtpEvent::RateLimitExceeded),
+                            SpanId = self.data.session_id,
+                            Id = t.id.clone(),
+                            Limit = vec![
+                                trc::Value::from(t.rate.requests),
+                                trc::Value::from(t.rate.period)
+                            ],
+                        );
 
-                            return false;
-                        }
-                        Err(err) => {
-                            trc::error!(err
-                                .span_id(self.data.session_id)
-                                .caused_by(trc::location!()));
-                        }
-                        _ => (),
+                        return false;
                     }
+                    Err(err) => {
+                        trc::error!(err
+                            .span_id(self.data.session_id)
+                            .caused_by(trc::location!()));
+                    }
+                    _ => (),
                 }
             }
         }

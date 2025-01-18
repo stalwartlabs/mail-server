@@ -15,7 +15,7 @@ use crate::smtp::{
     session::{TestSession, VerifyResponse},
     DnsCache, TestSMTP,
 };
-use smtp::queue::{spool::SmtpSpool, DeliveryAttempt};
+use smtp::queue::spool::SmtpSpool;
 
 const LOCAL: &str = r#"
 [session.rcpt]
@@ -159,7 +159,7 @@ async fn smtp_delivery() {
                 for (idx, domain) in message.domains.iter().enumerate() {
                     domain_retries[idx] = domain.retry.inner;
                 }
-                DeliveryAttempt::new(event).try_deliver(core.clone());
+                event.try_deliver(core.clone());
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }

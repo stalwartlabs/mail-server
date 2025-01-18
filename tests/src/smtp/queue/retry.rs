@@ -13,7 +13,7 @@ use crate::smtp::{
 };
 use ahash::AHashSet;
 use common::ipc::{QueueEvent, QueueEventStatus};
-use smtp::queue::{spool::SmtpSpool, DeliveryAttempt};
+use smtp::queue::spool::SmtpSpool;
 use store::write::now;
 
 const CONFIG: &str = r#"
@@ -85,7 +85,7 @@ async fn queue_retry() {
     let attempt = qr.expect_message_then_deliver().await;
     let mut dsn = Vec::new();
     let mut retries = Vec::new();
-    in_fight.insert(attempt.event.queue_id);
+    in_fight.insert(attempt.queue_id);
     attempt.try_deliver(core.clone());
 
     loop {
@@ -122,7 +122,7 @@ async fn queue_retry() {
             } else {
                 retries.push(event.due.saturating_sub(now));
                 in_fight.insert(event.queue_id);
-                DeliveryAttempt::new(event).try_deliver(core.clone());
+                event.try_deliver(core.clone());
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }

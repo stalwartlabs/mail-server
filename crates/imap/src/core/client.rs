@@ -7,8 +7,8 @@
 use std::{iter::Peekable, sync::Arc, vec::IntoIter};
 
 use common::{
-    listener::{limiter::ConcurrencyLimiter, SessionResult, SessionStream},
-    ConcurrencyLimiters, KV_RATE_LIMIT_IMAP,
+    listener::{SessionResult, SessionStream},
+    KV_RATE_LIMIT_IMAP,
 };
 use imap_proto::{
     receiver::{self, Request},
@@ -418,29 +418,6 @@ impl<T: SessionStream> Session<T> {
                     .id(request.tag)),
             },
         }
-    }
-
-    pub fn get_concurrency_limiter(&self, account_id: u32) -> Option<Arc<ConcurrencyLimiters>> {
-        let rate = self.server.core.imap.rate_concurrent?;
-        self.server
-            .inner
-            .data
-            .imap_limiter
-            .get(&account_id)
-            .map(|limiter| limiter.clone())
-            .unwrap_or_else(|| {
-                let limiter = Arc::new(ConcurrencyLimiters {
-                    concurrent_requests: ConcurrencyLimiter::new(rate),
-                    concurrent_uploads: ConcurrencyLimiter::new(rate),
-                });
-                self.server
-                    .inner
-                    .data
-                    .imap_limiter
-                    .insert(account_id, limiter.clone());
-                limiter
-            })
-            .into()
     }
 }
 
