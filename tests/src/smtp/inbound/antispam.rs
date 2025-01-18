@@ -263,6 +263,8 @@ async fn antispam() {
         .join("resources")
         .join("smtp")
         .join("antispam");
+    let filter_test = std::env::var("TEST_NAME").ok();
+
     for test_name in [
         "combined",
         "ip",
@@ -289,9 +291,12 @@ async fn antispam() {
         "pyzor",
         "llm",
     ] {
-        /*if test_name != "combined" {
+        if filter_test
+            .as_ref()
+            .is_some_and(|s| !s.eq_ignore_ascii_case(test_name))
+        {
             continue;
-        }*/
+        }
         println!("===== {test_name} =====");
         let contents = fs::read_to_string(base_path.join(format!("{test_name}.test"))).unwrap();
         let mut lines = contents.lines();

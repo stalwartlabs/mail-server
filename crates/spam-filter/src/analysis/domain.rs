@@ -168,7 +168,9 @@ impl SpamFilterAnalyzeDomain for Server {
                                     if value.contains('@') {
                                         return Some(ElementLocation::new(
                                             Recipient {
-                                                email: Email::new(value),
+                                                email: Email::new(
+                                                    value.split_once('?').map_or(value, |(e, _)| e),
+                                                ),
                                                 name: None,
                                             },
                                             if is_body {
