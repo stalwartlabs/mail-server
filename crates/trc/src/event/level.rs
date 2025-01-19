@@ -334,10 +334,10 @@ impl EventType {
                 | SieveEvent::ActionReject => Level::Debug,
             },
             EventType::Spam(event) => match event {
-                SpamEvent::PyzorError | SpamEvent::TrainError | SpamEvent::DnsblError => {
-                    Level::Warn
-                }
-                SpamEvent::Pyzor
+                SpamEvent::PyzorError
+                | SpamEvent::TrainError
+                | SpamEvent::DnsblError
+                | SpamEvent::Pyzor
                 | SpamEvent::Train
                 | SpamEvent::Classify
                 | SpamEvent::ClassifyError
