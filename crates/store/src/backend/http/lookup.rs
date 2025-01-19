@@ -41,9 +41,19 @@ impl HttpStoreGet for Arc<HttpStore> {
     fn contains(&self, key: &str) -> bool {
         #[cfg(feature = "test_mode")]
         {
-            if key.contains("open") || key.contains("tank") {
+            if self.config.url.contains("phishtank.com")
+                || self.config.url.contains("openphish.com")
+            {
                 return (self.config.url.contains("open") && key.contains("open"))
                     || (self.config.url.contains("tank") && key.contains("tank"));
+            } else if self.config.url.contains("disposable.github.io") {
+                return key.ends_with("guerrillamail.com") || key.ends_with("disposable.org");
+            } else if self.config.url.contains("free_email_provider_domains.txt") {
+                return key.ends_with("gmail.com")
+                    || key.ends_with("googlemail.com")
+                    || key.ends_with("yahoomail.com")
+                    || key.ends_with("outlook.com")
+                    || key.ends_with("freemail.org");
             }
         }
 

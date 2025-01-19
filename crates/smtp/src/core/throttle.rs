@@ -8,7 +8,7 @@ use common::{
     config::smtp::*,
     expr::{functions::ResolveVariable, *},
     listener::SessionStream,
-    ThrottleKey, KV_RATE_LIMIT_HASH,
+    ThrottleKey, KV_RATE_LIMIT_SMTP,
 };
 use queue::QueueQuota;
 use trc::SmtpEvent;
@@ -17,11 +17,11 @@ use utils::config::Rate;
 use super::Session;
 
 pub trait NewKey: Sized {
-    fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey;
+    fn new_key(&self, e: &impl ResolveVariable, context: &str) -> ThrottleKey;
 }
 
 impl NewKey for QueueQuota {
-    fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey {
+    fn new_key(&self, e: &impl ResolveVariable, _: &str) -> ThrottleKey {
         let mut hasher = blake3::Hasher::new();
 
         if (self.keys & THROTTLE_RCPT) != 0 {
@@ -72,7 +72,7 @@ impl NewKey for QueueQuota {
 }
 
 impl NewKey for QueueRateLimiter {
-    fn new_key(&self, e: &impl ResolveVariable) -> ThrottleKey {
+    fn new_key(&self, e: &impl ResolveVariable, context: &str) -> ThrottleKey {
         let mut hasher = blake3::Hasher::new();
 
         if (self.keys & THROTTLE_RCPT) != 0 {
@@ -129,8 +129,9 @@ impl NewKey for QueueRateLimiter {
         if (self.keys & THROTTLE_LOCAL_IP) != 0 {
             hasher.update(e.resolve_variable(V_LOCAL_IP).to_string().as_bytes());
         }
-        hasher.update(&self.rate.period.as_secs().to_ne_bytes()[..]);
-        hasher.update(&self.rate.requests.to_ne_bytes()[..]);
+        hasher.update(&self.rate.period.as_secs().to_be_bytes()[..]);
+        hasher.update(&self.rate.requests.to_be_bytes()[..]);
+        hasher.update(context.as_bytes());
 
         ThrottleKey {
             hash: hasher.finalize().into(),
@@ -170,7 +171,7 @@ impl<T: SessionStream> Session<T> {
                 }
 
                 // Build throttle key
-                let key = t.new_key(self);
+                let key = t.new_key(self, "inbound");
 
                 // Check rate
                 match self
@@ -178,7 +179,7 @@ impl<T: SessionStream> Session<T> {
                     .core
                     .storage
                     .lookup
-                    .is_rate_allowed(KV_RATE_LIMIT_HASH, key.hash.as_slice(), &t.rate, false)
+                    .is_rate_allowed(KV_RATE_LIMIT_SMTP, key.hash.as_slice(), &t.rate, false)
                     .await
                 {
                     Ok(Some(_)) => {
@@ -220,7 +221,7 @@ impl<T: SessionStream> Session<T> {
             .storage
             .lookup
             .is_rate_allowed(
-                KV_RATE_LIMIT_HASH,
+                KV_RATE_LIMIT_SMTP,
                 hasher.finalize().as_bytes(),
                 rate,
                 false,

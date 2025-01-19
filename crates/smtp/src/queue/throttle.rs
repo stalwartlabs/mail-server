@@ -7,7 +7,7 @@
 use std::future::Future;
 
 use common::{
-    config::smtp::QueueRateLimiter, expr::functions::ResolveVariable, Server, KV_RATE_LIMIT_HASH,
+    config::smtp::QueueRateLimiter, expr::functions::ResolveVariable, Server, KV_RATE_LIMIT_SMTP,
 };
 use store::write::now;
 
@@ -37,13 +37,13 @@ impl IsAllowed for Server {
                 .await
                 .unwrap_or(false)
         {
-            let key = throttle.new_key(envelope);
+            let key = throttle.new_key(envelope, "outbound");
 
             match self
                 .core
                 .storage
                 .lookup
-                .is_rate_allowed(KV_RATE_LIMIT_HASH, key.as_ref(), &throttle.rate, false)
+                .is_rate_allowed(KV_RATE_LIMIT_SMTP, key.as_ref(), &throttle.rate, false)
                 .await
             {
                 Ok(Some(next_refill)) => {

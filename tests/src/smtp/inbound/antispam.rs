@@ -119,8 +119,6 @@ allow-invalid-certs = true
 "url-redirectors" = {"bit.ly", "redirect.io", "redirect.me", "redirect.org", "redirect.com", "redirect.net", "t.ly", "tinyurl.com"}
 "spam-traps" = {"spamtrap@*"}
 "trusted-domains" = {"stalw.art"}
-"freemail-providers" = {"gmail.com", "googlemail.com", "yahoomail.com", "outlook.com", "*freemail.org"}
-"disposable-providers" = {"guerrillamail.com", "*disposable.org"}
 "surbl-hashbl" = {"bit.ly", "drive.google.com", "lnkiy.in"}
 "#;
 

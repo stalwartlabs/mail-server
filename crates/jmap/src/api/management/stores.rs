@@ -152,7 +152,7 @@ impl ManageStore for Server {
                     Some("rate-scan") => vec![KV_RATE_LIMIT_SCAN].into(),
                     Some("rate-loiter") => vec![KV_RATE_LIMIT_LOITER].into(),
                     Some("rate-auth") => vec![KV_RATE_LIMIT_AUTH].into(),
-                    Some("rate-hash") => vec![KV_RATE_LIMIT_HASH].into(),
+                    Some("rate-smtp") => vec![KV_RATE_LIMIT_SMTP].into(),
                     Some("rate-contact") => vec![KV_RATE_LIMIT_CONTACT].into(),
                     Some("rate-http-authenticated") => {
                         vec![KV_RATE_LIMIT_HTTP_AUTHENTICATED].into()

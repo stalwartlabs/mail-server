@@ -129,7 +129,7 @@ impl HasQueueQuota for Server {
                 .await
                 .unwrap_or(false)
         {
-            let key = quota.new_key(envelope);
+            let key = quota.new_key(envelope, "");
             if let Some(max_size) = quota.size {
                 let used_size = self
                     .core
