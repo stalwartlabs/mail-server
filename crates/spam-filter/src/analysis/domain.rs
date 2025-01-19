@@ -165,14 +165,12 @@ impl SpamFilterAnalyzeDomain for Server {
                             attributes.iter().find_map(|(attr, value)| {
                                 if *attr == HREF {
                                     let value = value.as_deref()?.strip_prefix("mailto:")?;
-                                    if value.contains('@') {
+                                    let email =
+                                        Email::new(value.split_once('?').map_or(value, |(e, _)| e));
+
+                                    if email.is_valid() {
                                         return Some(ElementLocation::new(
-                                            Recipient {
-                                                email: Email::new(
-                                                    value.split_once('?').map_or(value, |(e, _)| e),
-                                                ),
-                                                name: None,
-                                            },
+                                            Recipient { email, name: None },
                                             if is_body {
                                                 Location::BodyHtml
                                             } else {
@@ -203,17 +201,19 @@ impl SpamFilterAnalyzeDomain for Server {
                         }
                     }
 
-                    emails.insert(ElementLocation::new(
-                        Recipient {
-                            email: email.clone(),
-                            name: None,
-                        },
-                        if is_body {
-                            Location::BodyText
-                        } else {
-                            Location::Attachment
-                        },
-                    ));
+                    if email.is_valid() {
+                        emails.insert(ElementLocation::new(
+                            Recipient {
+                                email: email.clone(),
+                                name: None,
+                            },
+                            if is_body {
+                                Location::BodyText
+                            } else {
+                                Location::Attachment
+                            },
+                        ));
+                    }
                 }
             }
         }

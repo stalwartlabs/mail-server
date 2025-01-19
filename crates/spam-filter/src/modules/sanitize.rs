@@ -10,7 +10,7 @@ use crate::{Email, Hostname};
 
 impl Hostname {
     pub fn new(host: &str) -> Self {
-        let mut fqdn = host.to_lowercase();
+        let mut fqdn = host.trim_end_matches('.').to_lowercase();
 
         // Decode punycode
         if fqdn.contains("xn--") {
@@ -42,12 +42,20 @@ impl Hostname {
             .ok();
 
         Hostname {
-            ip,
             sld: if ip.is_none() {
-                psl::domain_str(&fqdn).map(str::to_string)
+                psl::domain(fqdn.as_bytes()).and_then(|domain| {
+                    if domain.suffix().typ().is_some() {
+                        std::str::from_utf8(domain.as_bytes())
+                            .ok()
+                            .map(str::to_string)
+                    } else {
+                        None
+                    }
+                })
             } else {
                 None
             },
+            ip,
             fqdn,
         }
     }

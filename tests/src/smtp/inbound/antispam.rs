@@ -102,6 +102,54 @@ path = "{PATH}/test_antispam.db"
 #type = "redis"
 #url = "redis://127.0.0.1"
 
+[http-lookup.STWT_OPENPHISH]
+enable = true
+url = "https://openphish.com/feed.txt"
+format = "list"
+retry = "1h"
+refresh = "12h"
+timeout = "30s"
+limits.size = 104857600
+limits.entries = 900000
+limits.entry-size = 512
+
+[http-lookup.STWT_PHISHTANK]
+enable = true
+url = "http://data.phishtank.com/data/online-valid.csv.gz"
+format = "csv"
+separator = ","
+index.key = 1
+skip-first = true
+gzipped = true
+retry = "1h"
+refresh = "6h"
+timeout = "30s"
+limits.size = 104857600
+limits.entries = 900000
+limits.entry-size = 512
+
+[http-lookup.STWT_DISPOSABLE_DOMAINS]
+enable = true
+url = "https://disposable.github.io/disposable-email-domains/domains_mx.txt"
+format = "list"
+retry = "1h"
+refresh = "24h"
+timeout = "30s"
+limits.size = 104857600
+limits.entries = 900000
+limits.entry-size = 512
+
+[http-lookup.STWT_FREE_DOMAINS]
+enable = true
+url = "https://gist.githubusercontent.com/okutbay/5b4974b70673dfdcc21c517632c1f984/raw/993a35930a8d24a1faab1b988d19d38d92afbba4/free_email_provider_domains.txt"
+format = "list"
+retry = "1h"
+refresh = "720h"
+timeout = "30s"
+limits.size = 104857600
+limits.entries = 900000
+limits.entry-size = 512
+
 [enterprise.ai.dummy]
 url = "https://127.0.0.1:9090/v1/chat/completions"
 type = "chat"

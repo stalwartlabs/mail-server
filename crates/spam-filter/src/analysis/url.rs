@@ -250,14 +250,16 @@ impl SpamFilterAnalyzeUrl for Server {
                 }
 
                 // Check Domain DNSBL
-                check_dnsbl(
-                    self,
-                    ctx,
-                    &StringResolver(host.sld_or_default()),
-                    Element::Domain,
-                    el.location,
-                )
-                .await;
+                if let Some(sld) = &host.sld {
+                    check_dnsbl(
+                        self,
+                        ctx,
+                        &StringResolver(sld),
+                        Element::Domain,
+                        el.location,
+                    )
+                    .await;
+                }
             } else {
                 // URL is an ip address
                 ctx.result.add_tag("SUSPICIOUS_URL");

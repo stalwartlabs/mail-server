@@ -55,6 +55,7 @@ pub(crate) async fn check_dnsbl(
                 server,
                 dnsbl,
                 SpamFilterResolver::new(ctx, resolver, location),
+                scope,
                 &mut checks,
             )
             .await
@@ -77,6 +78,7 @@ async fn is_dnsbl(
     server: &Server,
     config: &DnsBlServer,
     resolver: SpamFilterResolver<'_, impl ResolveVariable>,
+    element: Element,
     checks: &mut usize,
 ) -> Option<String> {
     let time = Instant::now();
@@ -133,6 +135,7 @@ async fn is_dnsbl(
                             .iter()
                             .map(|ip| trc::Value::from(ip.to_string()))
                             .collect::<Vec<_>>(),
+                        Details = element.as_str(),
                         Elapsed = time.elapsed()
                     );
 
@@ -159,6 +162,7 @@ async fn is_dnsbl(
                         Spam(SpamEvent::Dnsbl),
                         Hostname = zone.clone(),
                         Result = trc::Value::None,
+                        Details = element.as_str(),
                         Elapsed = time.elapsed()
                     );
 
@@ -175,6 +179,7 @@ async fn is_dnsbl(
                         Spam(SpamEvent::DnsblError),
                         Hostname = zone,
                         Elapsed = time.elapsed(),
+                        Details = element.as_str(),
                         CausedBy = err.to_string()
                     );
 

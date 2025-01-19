@@ -380,7 +380,10 @@ pub fn sanitize_email(email: &str) -> Option<String> {
         }
     }
 
-    if found_domain && last_ch != '.' && psl::domain(result.as_bytes()).is_some() {
+    if found_domain
+        && last_ch != '.'
+        && psl::domain(result.as_bytes()).is_some_and(|d| d.suffix().typ().is_some())
+    {
         Some(result)
     } else {
         None

@@ -821,6 +821,18 @@ impl Element {
             Element::Any => map,
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Element::Url => "url",
+            Element::Domain => "domain",
+            Element::Email => "email",
+            Element::Ip => "ip",
+            Element::Header => "header",
+            Element::Body => "body",
+            Element::Any => "any",
+        }
+    }
 }
 
 pub struct IpResolver {
