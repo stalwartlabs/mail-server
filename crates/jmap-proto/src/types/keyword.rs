@@ -112,13 +112,17 @@ impl JsonObjectParser for Keyword {
 
 impl From<String> for Keyword {
     fn from(value: String) -> Self {
-        if value.starts_with('$') {
+        if value
+            .as_bytes()
+            .first()
+            .is_some_and(|&ch| [b'$', b'\\'].contains(&ch))
+        {
             let mut hash = 0;
             let mut shift = 0;
 
-            for &ch in value.as_bytes() {
+            for &ch in value.as_bytes().iter().skip(1) {
                 if shift < 128 {
-                    hash |= (ch as u128) << shift;
+                    hash |= (ch.to_ascii_lowercase() as u128) << shift;
                     shift += 8;
                 } else {
                     break;

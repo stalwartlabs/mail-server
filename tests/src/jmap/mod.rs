@@ -381,14 +381,14 @@ pub async fn jmap_tests() {
     email_query_changes::test(&mut params).await;
     email_copy::test(&mut params).await;
     thread_get::test(&mut params).await;
-    thread_merge::test(&mut params).await;*/
+    thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
     auth_acl::test(&mut params).await;
     auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
-    push_subscription::test(&mut params).await;
+    push_subscription::test(&mut params).await;*/
     sieve_script::test(&mut params).await;
     vacation_response::test(&mut params).await;
     email_submission::test(&mut params).await;
