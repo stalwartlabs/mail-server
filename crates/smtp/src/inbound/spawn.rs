@@ -169,7 +169,7 @@ impl<T: SessionStream> Session<T> {
                                         }
                                     } else if bytes_read > self.data.bytes_left {
                                         self
-                                            .write(format!("451 4.7.28 {} Session exceeded transfer quota.\r\n", self.hostname).as_bytes())
+                                            .write(format!("452 4.7.28 {} Session exceeded transfer quota.\r\n", self.hostname).as_bytes())
                                             .await
                                             .ok();
 
@@ -181,7 +181,7 @@ impl<T: SessionStream> Session<T> {
                                         break;
                                     } else {
                                         self
-                                            .write(format!("453 4.3.2 {} Session open for too long.\r\n", self.hostname).as_bytes())
+                                            .write(format!("421 4.3.2 {} Session open for too long.\r\n", self.hostname).as_bytes())
                                             .await
                                             .ok();
 
@@ -246,7 +246,7 @@ impl<T: SessionStream> Session<T> {
                         Reason = "Server shutting down",
                         CausedBy = trc::location!()
                     );
-                    self.write(b"421 4.3.0 Server shutting down.\r\n").await.ok();
+                    self.write(format!("421 4.3.0 {} Server shutting down.\r\n", self.hostname).as_bytes()).await.ok();
                     break;
                 }
             };

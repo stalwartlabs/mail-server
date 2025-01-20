@@ -513,7 +513,7 @@ impl<T: SessionStream> Session<T> {
             );
 
             self.data.mail_from = None;
-            self.write(b"451 4.4.5 Rate limit exceeded, try again later.\r\n")
+            self.write(b"452 4.4.5 Rate limit exceeded, try again later.\r\n")
                 .await
         }
     }

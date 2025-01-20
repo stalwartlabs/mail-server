@@ -850,7 +850,7 @@ impl<T: SessionStream> Session<T> {
                     Limit = self.data.messages_sent
                 );
 
-                self.write(b"451 4.4.5 Maximum number of messages per session exceeded.\r\n")
+                self.write(b"452 4.4.5 Maximum number of messages per session exceeded.\r\n")
                     .await?;
                 Ok(false)
             }

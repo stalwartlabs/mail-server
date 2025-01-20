@@ -50,7 +50,7 @@ impl<T: SessionStream> Session<T> {
                 SpanId = self.data.session_id,
                 Limit = self.params.rcpt_max,
             );
-            return self.write(b"451 4.5.3 Too many recipients.\r\n").await;
+            return self.write(b"455 4.5.3 Too many recipients.\r\n").await;
         }
 
         // Verify parameters
@@ -347,7 +347,7 @@ impl<T: SessionStream> Session<T> {
                                 return self
                                     .write(
                                         concat!(
-                                            "422 4.2.2 Greylisted, please try ",
+                                            "452 4.2.2 Greylisted, please try ",
                                             "again in a few moments.\r\n"
                                         )
                                         .as_bytes(),
@@ -385,7 +385,7 @@ impl<T: SessionStream> Session<T> {
 
             self.data.rcpt_to.pop();
             return self
-                .write(b"451 4.4.5 Rate limit exceeded, try again later.\r\n")
+                .write(b"452 4.4.5 Rate limit exceeded, try again later.\r\n")
                 .await;
         }
 
@@ -448,7 +448,7 @@ impl<T: SessionStream> Session<T> {
         if !has_too_many_errors {
             self.write(response).await
         } else {
-            self.write(b"421 4.3.0 Too many errors, disconnecting.\r\n")
+            self.write(b"451 4.3.0 Too many errors, disconnecting.\r\n")
                 .await?;
             Err(())
         }

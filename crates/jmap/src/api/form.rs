@@ -101,7 +101,7 @@ impl FormHandler for Server {
             if let Some(domain) = from_email.rsplit_once('@').and_then(|(local, domain)| {
                 if !local.is_empty()
                     && domain.contains('.')
-                    && psl::suffix(domain.as_bytes()).is_some()
+                    && psl::domain(domain.as_bytes()).is_some_and(|d| d.suffix().typ().is_some())
                 {
                     Some(domain)
                 } else {

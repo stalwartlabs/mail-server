@@ -204,7 +204,7 @@ impl<T: SessionStream> Session<T> {
                 SpanId = self.data.session_id,
             );
 
-            self.write(b"421 4.3.0 Too many authentication errors, disconnecting.\r\n")
+            self.write(b"455 4.3.0 Too many authentication errors, disconnecting.\r\n")
                 .await?;
             Err(())
         }
