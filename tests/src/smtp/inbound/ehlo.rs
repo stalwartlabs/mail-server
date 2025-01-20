@@ -13,7 +13,8 @@ use smtp::core::Session;
 use utils::config::Config;
 
 use crate::smtp::{
-    session::{TestSession, VerifyResponse}, DnsCache, TestSMTP
+    session::{TestSession, VerifyResponse},
+    DnsCache, TestSMTP,
 };
 
 const CONFIG: &str = r#"
@@ -28,7 +29,7 @@ mt-priority = [{if = "remote_ip = '10.0.0.1'", then = 'nsep'},
                {else = false}]
 
 [session.ehlo]
-reject-non-fqdn = true
+reject-non-fqdn = "starts_with(remote_ip, '10.0.0.')"
 
 [auth.spf.verify]
 ehlo = [{if = "remote_ip = '10.0.0.2'", then = 'strict'},

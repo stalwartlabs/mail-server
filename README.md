@@ -57,9 +57,8 @@ Key features:
   - Sender **reputation** monitoring by IP address, ASN, domain and email address.
   - **Greylisting** to temporarily defer unknown senders.
   - **Spam traps** to set up decoy email addresses that catch and analyze spam.
-- **Flexible and scalable**:
+- **Flexible**:
   - Pluggable storage backends with **RocksDB**, **FoundationDB**, **PostgreSQL**, **mySQL**, **SQLite**, **S3-Compatible**, **Azure**, **Redis** and **ElasticSearch** support.
-  - **Clustering** support with node autodiscovery and partition-tolerant failure detection.
   - Full-text search available in 17 languages.
   - Sieve scripting language with support for all [registered extensions](https://www.iana.org/assignments/sieve-extensions/sieve-extensions.xhtml).
   - Email aliases, mailing lists, subaddressing and catch-all addresses support.
@@ -73,6 +72,13 @@ Key features:
   - Rate limiting.
   - Security audited (read the [report](https://stalw.art/blog/security-audit)).
   - Memory safe (thanks to Rust).
+- **Scalable and fault-tolerant**:
+  - Designed to handle growth seamlessly, from small setups to large-scale deployments.
+  - Built with **fault tolerance** and **high availability** in mind, recovers from hardware or software failures with minimal operational impact. 
+  - Partition-tolerant **failure detection**, ensuring continuous operation even during network partitions or node failures. 
+  - **Coordinator-free** architecture with automatic node discovery eliminates central bottlenecks and single points of failure. 
+  - **Kubernetes** support for automated scaling and efficient container orchestration.
+  - Read replicas, sharded blob storage and in-memory data stores for high performance and low latency.
 - **Authentication and Authorization**:
   - **OpenID Connect** authentication.
   - OAuth 2.0 authorization with [authorization code](https://www.rfc-editor.org/rfc/rfc8628) and [device authorization](https://www.rfc-editor.org/rfc/rfc8628) flows.
