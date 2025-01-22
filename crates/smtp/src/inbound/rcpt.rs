@@ -310,21 +310,18 @@ impl<T: SessionStream> Session<T> {
                 .grey_list
                 .filter(|_| self.data.authenticated_as.is_none())
             {
-                let mut key = Vec::with_capacity(64);
+                let from_addr = self
+                    .data
+                    .mail_from
+                    .as_ref()
+                    .unwrap()
+                    .address_lcase
+                    .as_bytes();
+                let to_addr = self.data.rcpt_to.last().unwrap().address_lcase.as_bytes();
+                let mut key = Vec::with_capacity(from_addr.len() + to_addr.len() + 1);
                 key.push(KV_GREYLIST);
-                match self.data.remote_ip {
-                    std::net::IpAddr::V4(ipv4_addr) => key.extend_from_slice(&ipv4_addr.octets()),
-                    std::net::IpAddr::V6(ipv6_addr) => key.extend_from_slice(&ipv6_addr.octets()),
-                };
-                key.extend_from_slice(
-                    self.data
-                        .mail_from
-                        .as_ref()
-                        .unwrap()
-                        .address_lcase
-                        .as_bytes(),
-                );
-                key.extend_from_slice(self.data.rcpt_to.last().unwrap().address_lcase.as_bytes());
+                key.extend_from_slice(from_addr);
+                key.extend_from_slice(to_addr);
 
                 match self.server.in_memory_store().key_exists(key.clone()).await {
                     Ok(true) => (),
