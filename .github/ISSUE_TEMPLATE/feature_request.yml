@@ -1,6 +1,6 @@
 name: I have a feature request
 description: File a feature request issue
-title: "[enhancement]: "
+title: "🚀: "
 labels: ["enhancement"]
 body:
   - type: markdown

@@ -1,6 +1,6 @@
 name: I think I found a bug
 description: File a bug report issue. If you have a question or are experiencing a problem, please start a [new discussion](https://github.com/stalwartlabs/mail-server/discussions/new?category=q-a) instead.
-title: "[bug]: "
+title: "🐛: "
 labels: ["bug"]
 body:
   - type: markdown
