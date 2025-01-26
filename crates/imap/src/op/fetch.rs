@@ -765,7 +765,7 @@ impl<'x> AsImapDataItem<'x> for Message<'x> {
                 .header_value(&HeaderName::ContentLanguage)
                 .and_then(|hv| {
                     hv.as_text_list()
-                        .map(|list| list.into_iter().map(|item| item.into()).collect())
+                        .map(|list| list.iter().map(|item| item.as_ref().into()).collect())
                 });
 
             extension.body_location = part

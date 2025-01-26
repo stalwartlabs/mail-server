@@ -110,7 +110,7 @@ async fn auth() {
         .ingest(b"AUTH PLAIN AGpvaG4AY2hpbWljaGFuZ2Fz\r\n")
         .await
         .unwrap_err();
-    session.response().assert_code("421 4.3.0");
+    session.response().assert_code("455 4.3.0");
 
     // Should not be able to send without authenticating
     session.state = State::default();

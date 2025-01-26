@@ -12,11 +12,11 @@ trc = { path = "../trc" }
 directory = { path = "../directory" }
 jmap_proto = { path = "../jmap-proto" }
 imap_proto = { path = "../imap-proto" }
-sieve-rs = { version = "0.5" }
-mail-parser = { version = "0.9", features = ["full_encoding", "ludicrous_mode"] } 
-mail-builder = { version = "0.3", features = ["ludicrous_mode"] }
+sieve-rs = { version = "0.6" }
+mail-parser = { version = "0.10", features = ["full_encoding"] } 
+mail-builder = { version = "0.4" }
 mail-auth = { version = "0.6" }
-mail-send = { version = "0.4", default-features = false, features = ["cram-md5", "ring", "tls12"] }
+mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }
 smtp-proto = { version = "0.1", features = ["serde_support"] }
 dns-update = { version = "0.1" }
 ahash = { version = "0.8.2", features = ["serde"] }

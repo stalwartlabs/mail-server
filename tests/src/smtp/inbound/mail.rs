@@ -159,7 +159,7 @@ async fn mail() {
             .unwrap();
         session
             .response()
-            .assert_code(if n == 0 { "250" } else { "451 4.4.5" });
+            .assert_code(if n == 0 { "250" } else { "452 4.4.5" });
     }
 
     // Test disabled extensions

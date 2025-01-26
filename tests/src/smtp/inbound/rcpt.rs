@@ -118,19 +118,19 @@ async fn rcpt() {
         .ingest(b"RCPT TO:<sam@foobar.org>\r\n")
         .await
         .unwrap_err();
-    session.response().assert_code("421 4.3.0");
+    session.response().assert_code("451 4.3.0");
 
     // Rate limit
     session.data.rcpt_errors = 0;
     session.state = State::default();
     session.rcpt_to("Jane@FooBar.org", "250").await;
     session.rcpt_to("Bill@FooBar.org", "250").await;
-    session.rcpt_to("Mike@FooBar.org", "451 4.4.5").await;
+    session.rcpt_to("Mike@FooBar.org", "452 4.4.5").await;
 
     // Restore rate limit
     tokio::time::sleep(Duration::from_millis(1100)).await;
     session.rcpt_to("Mike@FooBar.org", "250").await;
-    session.rcpt_to("john@foobar.org", "451 4.5.3").await;
+    session.rcpt_to("john@foobar.org", "455 4.5.3").await;
 
     // Check recipients
     assert_eq!(session.data.rcpt_to.len(), 3);

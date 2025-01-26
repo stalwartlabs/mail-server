@@ -154,7 +154,7 @@ async fn data() {
     session.mail_from("john@doe.org", "250").await;
     session.rcpt_to("bill@foobar.org", "250").await;
     session.ingest(b"DATA\r\n").await.unwrap();
-    session.response().assert_code("451 4.4.5");
+    session.response().assert_code("452 4.4.5");
     session.rset().await;
 
     // Headers should be added to messages from 10.0.0.3

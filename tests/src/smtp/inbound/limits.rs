@@ -54,7 +54,7 @@ async fn limits() {
     session.eval_session_params().await;
     session.write_rx("MAIL FROM:<this_is_a_long@command_over_10_chars.com>\r\n");
     session.handle_conn().await;
-    session.response().assert_code("451 4.7.28");
+    session.response().assert_code("452 4.7.28");
 
     // Loitering
     session.data.remote_ip_str = "10.0.0.3".to_string();
@@ -63,7 +63,7 @@ async fn limits() {
     tokio::time::sleep(Duration::from_millis(600)).await;
     session.write_rx("MAIL FROM:<this_is_a_long@command_over_10_chars.com>\r\n");
     session.handle_conn().await;
-    session.response().assert_code("453 4.3.2");
+    session.response().assert_code("421 4.3.2");
 
     // Timeout
     session.data.remote_ip_str = "10.0.0.2".to_string();

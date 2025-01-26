@@ -10,7 +10,7 @@ use common::{ip_to_bytes, Server, KV_BAYES_MODEL_GLOBAL, KV_BAYES_MODEL_USER};
 use mail_auth::DmarcResult;
 use nlp::{
     bayes::{
-        tokenize::{BayesInputToken, BayesTokenizer, SYMBOLS},
+        tokenize::{symbols, BayesInputToken, BayesTokenizer},
         BayesModel, TokenHash, Weights,
     },
     tokenizers::{
@@ -486,8 +486,9 @@ fn to_bayes_token(
         ))
         .into(),
         TokenType::Other(ch) => {
-            if SYMBOLS.contains(ch) {
-                Some(BayesInputToken::Raw(ch.to_string().into_bytes()))
+            let ch = ch.to_string();
+            if symbols(&ch) {
+                Some(BayesInputToken::Raw(ch.into_bytes()))
             } else {
                 None
             }
