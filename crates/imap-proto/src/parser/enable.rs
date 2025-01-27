@@ -33,25 +33,21 @@ impl Request<Command> {
 
 impl Capability {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"IMAP4rev2") {
-            Ok(Self::IMAP4rev2)
-        } else if value.eq_ignore_ascii_case(b"STARTTLS") {
-            Ok(Self::StartTLS)
-        } else if value.eq_ignore_ascii_case(b"LOGINDISABLED") {
-            Ok(Self::LoginDisabled)
-        } else if value.eq_ignore_ascii_case(b"CONDSTORE") {
-            Ok(Self::CondStore)
-        } else if value.eq_ignore_ascii_case(b"QRESYNC") {
-            Ok(Self::QResync)
-        } else if value.eq_ignore_ascii_case(b"UTF8=ACCEPT") {
-            Ok(Self::Utf8Accept)
-        } else {
-            Err(format!(
+        hashify::tiny_map_ignore_case!(value,
+            "IMAP4rev2" => Self::IMAP4rev2,
+            "STARTTLS" => Self::StartTLS,
+            "LOGINDISABLED" => Self::LoginDisabled,
+            "CONDSTORE" => Self::CondStore,
+            "QRESYNC" => Self::QResync,
+            "UTF8=ACCEPT" => Self::Utf8Accept,
+        )
+        .ok_or_else(|| {
+            format!(
                 "Unsupported capability '{}'.",
                 String::from_utf8_lossy(value)
             )
-            .into())
-        }
+            .into()
+        })
     }
 }
 

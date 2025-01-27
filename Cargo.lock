@@ -2699,9 +2699,9 @@ dependencies = [
 
 [[package]]
 name = "hashify"
-version = "0.2.1"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5772d10fb6ad55ec11f3ec9ae4e39c626a340cf996750689d8fd54938493acf1"
+checksum = "0a194e6d22f060dada750b0c33c9c3d01dce0ba5212ea81e0a46834e065e932c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3298,6 +3298,7 @@ version = "0.11.2"
 dependencies = [
  "ahash 0.8.11",
  "chrono",
+ "hashify",
  "jmap_proto",
  "mail-parser",
  "store",
@@ -5032,9 +5033,9 @@ dependencies = [
 
 [[package]]
 name = "psl"
-version = "2.1.80"
+version = "2.1.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05ff66fe75e86ef6bb57a5e7c1af22cc3ff5368ec610559609ea08e304d7c772"
+checksum = "5871e872678223987b84739333bf13e42f0c1fb102e30bba8dcdf1340d0bbcc9"
 dependencies = [
  "psl-types",
 ]
@@ -5972,9 +5973,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.10.1"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2bf47e6ff922db3825eb750c4e2ff784c6ff8fb9e13046ef6a1d1c5401b0b37"
+checksum = "917ce264624a4b4db1c364dcc35bfca9ded014d0a958cd47ad3e960e988ea51c"
 dependencies = [
  "web-time",
 ]

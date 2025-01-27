@@ -92,27 +92,18 @@ impl Request<Command> {
 
 impl Sort {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"ARRIVAL") {
-            Ok(Self::Arrival)
-        } else if value.eq_ignore_ascii_case(b"CC") {
-            Ok(Self::Cc)
-        } else if value.eq_ignore_ascii_case(b"DATE") {
-            Ok(Self::Date)
-        } else if value.eq_ignore_ascii_case(b"FROM") {
-            Ok(Self::From)
-        } else if value.eq_ignore_ascii_case(b"SIZE") {
-            Ok(Self::Size)
-        } else if value.eq_ignore_ascii_case(b"SUBJECT") {
-            Ok(Self::Subject)
-        } else if value.eq_ignore_ascii_case(b"TO") {
-            Ok(Self::To)
-        } else if value.eq_ignore_ascii_case(b"DISPLAYFROM") {
-            Ok(Self::DisplayFrom)
-        } else if value.eq_ignore_ascii_case(b"DISPLAYTO") {
-            Ok(Self::DisplayTo)
-        } else {
-            Err(format!("Invalid sort criteria {:?}", String::from_utf8_lossy(value)).into())
-        }
+        hashify::tiny_map_ignore_case!(value,
+            "ARRIVAL" => Self::Arrival,
+            "CC" => Self::Cc,
+            "DATE" => Self::Date,
+            "FROM" => Self::From,
+            "SIZE" => Self::Size,
+            "SUBJECT" => Self::Subject,
+            "TO" => Self::To,
+            "DISPLAYFROM" => Self::DisplayFrom,
+            "DISPLAYTO" => Self::DisplayTo,
+        )
+        .ok_or_else(|| format!("Invalid sort criteria {:?}", String::from_utf8_lossy(value)).into())
     }
 }
 

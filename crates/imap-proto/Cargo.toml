@@ -11,6 +11,7 @@ mail-parser = { version = "0.10", features = ["full_encoding", "serde_support"] 
 ahash = { version = "0.8" }
 chrono = { version = "0.4"}
 trc = { path = "../trc" }
+hashify = { version = "0.2" }
 
 [dev-dependencies]
 tokio = { version = "1.23", features = ["full"] }

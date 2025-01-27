@@ -64,27 +64,23 @@ impl Request<Command> {
             .next()
             .ok_or_else(|| bad(self.tag.to_string(), "Missing message data item name."))?
             .unwrap_bytes();
-        let (is_silent, operation) = if operation.eq_ignore_ascii_case(b"FLAGS") {
-            (false, Operation::Set)
-        } else if operation.eq_ignore_ascii_case(b"FLAGS.SILENT") {
-            (true, Operation::Set)
-        } else if operation.eq_ignore_ascii_case(b"+FLAGS") {
-            (false, Operation::Add)
-        } else if operation.eq_ignore_ascii_case(b"+FLAGS.SILENT") {
-            (true, Operation::Add)
-        } else if operation.eq_ignore_ascii_case(b"-FLAGS") {
-            (false, Operation::Clear)
-        } else if operation.eq_ignore_ascii_case(b"-FLAGS.SILENT") {
-            (true, Operation::Clear)
-        } else {
-            return Err(bad(
-                self.tag,
+        let (is_silent, operation) = hashify::tiny_map!(operation.as_slice(),
+            "FLAGS" => (false, Operation::Set),
+            "FLAGS.SILENT" => (true, Operation::Set),
+            "+FLAGS" => (false, Operation::Add),
+            "+FLAGS.SILENT" => (true, Operation::Add),
+            "-FLAGS" => (false, Operation::Clear),
+            "-FLAGS.SILENT" => (true, Operation::Clear),
+        )
+        .ok_or_else(|| {
+            bad(
+                self.tag.to_string(),
                 format!(
                     "Unsupported message data item name: {:?}",
                     String::from_utf8_lossy(&operation)
                 ),
-            ));
-        };
+            )
+        })?;
 
         // Flags
         let mut keywords = Vec::new();

@@ -38,32 +38,34 @@ impl Request<Command> {
                 }
                 match tokens.next() {
                     Some(Token::Argument(value)) => {
-                        Some(if value.eq_ignore_ascii_case(b"\\Archive") {
-                            "archive"
-                        } else if value.eq_ignore_ascii_case(b"\\Drafts") {
-                            "drafts"
-                        } else if value.eq_ignore_ascii_case(b"\\Junk") {
-                            "junk"
-                        } else if value.eq_ignore_ascii_case(b"\\Sent") {
-                            "sent"
-                        } else if value.eq_ignore_ascii_case(b"\\Trash") {
-                            "trash"
-                        } else if value.eq_ignore_ascii_case(b"\\Important") {
-                            "important"
-                        } else if value.eq_ignore_ascii_case(b"\\All") {
-                            return Err(bad(
-                                self.tag,
-                                "A mailbox with the \"\\All\" attribute already exists.",
-                            ));
-                        } else {
-                            return Err(bad(
-                                self.tag,
-                                format!(
-                                    "Special use attribute {:?} is not supported.",
-                                    String::from_utf8_lossy(&value)
-                                ),
-                            ));
-                        })
+                        let r = hashify::tiny_map_ignore_case!(value.as_slice(),
+                            "\\Archive" => Some("archive"),
+                            "\\Drafts" => Some("drafts"),
+                            "\\Junk" => Some("junk"),
+                            "\\Sent" => Some("sent"),
+                            "\\Trash" => Some("trash"),
+                            "\\Important" => Some("important"),
+                            "\\All" => None,
+                        );
+
+                        match r {
+                            Some(Some(tag)) => Some(tag),
+                            Some(None) => {
+                                return Err(bad(
+                                    self.tag,
+                                    "A mailbox with the \"\\All\" attribute already exists.",
+                                ))
+                            }
+                            None => {
+                                return Err(bad(
+                                    self.tag,
+                                    format!(
+                                        "Special use attribute {:?} is not supported.",
+                                        String::from_utf8_lossy(&value)
+                                    ),
+                                ));
+                            }
+                        }
                     }
                     _ => {
                         return Err(bad(self.tag, "Invalid SPECIAL-USE attribute."));

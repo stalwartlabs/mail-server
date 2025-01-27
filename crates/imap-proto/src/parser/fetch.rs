@@ -38,282 +38,306 @@ impl Request<Command> {
         while let Some(token) = tokens.next() {
             match token {
                 Token::Argument(value) => {
-                    if value.eq_ignore_ascii_case(b"ALL") {
-                        attributes = vec![
-                            Attribute::Flags,
-                            Attribute::InternalDate,
-                            Attribute::Rfc822Size,
-                            Attribute::Envelope,
-                        ];
-                        break;
-                    } else if value.eq_ignore_ascii_case(b"FULL") {
-                        attributes = vec![
-                            Attribute::Flags,
-                            Attribute::InternalDate,
-                            Attribute::Rfc822Size,
-                            Attribute::Envelope,
-                            Attribute::Body,
-                        ];
-                        break;
-                    } else if value.eq_ignore_ascii_case(b"FAST") {
-                        attributes = vec![
-                            Attribute::Flags,
-                            Attribute::InternalDate,
-                            Attribute::Rfc822Size,
-                        ];
-                        break;
-                    } else if value.eq_ignore_ascii_case(b"ENVELOPE") {
-                        attributes.push_unique(Attribute::Envelope);
-                    } else if value.eq_ignore_ascii_case(b"FLAGS") {
-                        attributes.push_unique(Attribute::Flags);
-                    } else if value.eq_ignore_ascii_case(b"INTERNALDATE") {
-                        attributes.push_unique(Attribute::InternalDate);
-                    } else if value.eq_ignore_ascii_case(b"BODYSTRUCTURE") {
-                        attributes.push_unique(Attribute::BodyStructure);
-                    } else if value.eq_ignore_ascii_case(b"UID") {
-                        attributes.push_unique(Attribute::Uid);
-                    } else if value.eq_ignore_ascii_case(b"RFC822") {
-                        attributes.push_unique(
-                            if tokens.peek().is_some_and(|token| token.is_dot()) {
-                                tokens.next();
-                                let rfc822 = tokens
-                                    .next()
-                                    .ok_or_else(|| {
-                                        bad(self.tag.to_string(), "Missing RFC822 parameter.")
-                                    })?
-                                    .unwrap_bytes();
-                                if rfc822.eq_ignore_ascii_case(b"HEADER") {
-                                    Attribute::Rfc822Header
-                                } else if rfc822.eq_ignore_ascii_case(b"SIZE") {
-                                    Attribute::Rfc822Size
-                                } else if rfc822.eq_ignore_ascii_case(b"TEXT") {
-                                    Attribute::Rfc822Text
+                    let attr_len = attributes.len();
+                    hashify::fnc_map_ignore_case!(value.as_slice(),
+                        "ALL" => {
+                            attributes = vec![
+                                Attribute::Flags,
+                                Attribute::InternalDate,
+                                Attribute::Rfc822Size,
+                                Attribute::Envelope,
+                            ];
+                            break;
+                        },
+                        "FULL" => {
+                            attributes = vec![
+                                Attribute::Flags,
+                                Attribute::InternalDate,
+                                Attribute::Rfc822Size,
+                                Attribute::Envelope,
+                                Attribute::Body,
+                            ];
+                            break;
+                        },
+                        "FAST" => {
+                            attributes = vec![
+                                Attribute::Flags,
+                                Attribute::InternalDate,
+                                Attribute::Rfc822Size,
+                            ];
+                            break;
+                        },
+                        "ENVELOPE" => {
+                            attributes.push_unique(Attribute::Envelope);
+                        },
+                        "FLAGS" => {
+                            attributes.push_unique(Attribute::Flags);
+                        },
+                        "INTERNALDATE" => {
+                            attributes.push_unique(Attribute::InternalDate);
+                        },
+                        "BODYSTRUCTURE" => {
+                            attributes.push_unique(Attribute::BodyStructure);
+                        },
+                        "UID" => {
+                            attributes.push_unique(Attribute::Uid);
+                        },
+                        "RFC822" => {
+                            attributes.push_unique(
+                                if tokens.peek().is_some_and(|token| token.is_dot()) {
+                                    tokens.next();
+                                    let rfc822 = tokens
+                                        .next()
+                                        .ok_or_else(|| {
+                                            bad(self.tag.to_string(), "Missing RFC822 parameter.")
+                                        })?
+                                        .unwrap_bytes();
+                                    if rfc822.eq_ignore_ascii_case(b"HEADER") {
+                                        Attribute::Rfc822Header
+                                    } else if rfc822.eq_ignore_ascii_case(b"SIZE") {
+                                        Attribute::Rfc822Size
+                                    } else if rfc822.eq_ignore_ascii_case(b"TEXT") {
+                                        Attribute::Rfc822Text
+                                    } else {
+                                        return Err(bad(
+                                            self.tag,
+                                            format!(
+                                                "Invalid RFC822 parameter {:?}.",
+                                                String::from_utf8_lossy(&rfc822)
+                                            ),
+                                        ));
+                                    }
                                 } else {
-                                    return Err(bad(
-                                        self.tag,
-                                        format!(
-                                            "Invalid RFC822 parameter {:?}.",
-                                            String::from_utf8_lossy(&rfc822)
-                                        ),
-                                    ));
+                                    Attribute::Rfc822
+                                },
+                            );
+                        },
+                        "BODY" => {
+                            let is_peek = match tokens.peek() {
+                                Some(Token::BracketOpen) => {
+                                    tokens.next();
+                                    false
                                 }
-                            } else {
-                                Attribute::Rfc822
-                            },
-                        );
-                    } else if value.eq_ignore_ascii_case(b"BODY") {
-                        let is_peek = match tokens.peek() {
-                            Some(Token::BracketOpen) => {
-                                tokens.next();
-                                false
-                            }
-                            Some(Token::Dot) => {
-                                tokens.next();
-                                if tokens
-                                    .next()
-                                    .map_or(true, |token| !token.eq_ignore_ascii_case(b"PEEK"))
-                                {
-                                    return Err(bad(
-                                        self.tag.clone(),
-                                        "Expected 'PEEK' after '.'.",
-                                    ));
+                                Some(Token::Dot) => {
+                                    tokens.next();
+                                    if tokens
+                                        .next()
+                                        .map_or(true, |token| !token.eq_ignore_ascii_case(b"PEEK"))
+                                    {
+                                        return Err(bad(
+                                            self.tag.clone(),
+                                            "Expected 'PEEK' after '.'.",
+                                        ));
+                                    }
+                                    if tokens.next().map_or(true, |token| !token.is_bracket_open()) {
+                                        return Err(bad(
+                                            self.tag.clone(),
+                                            "Expected '[' after 'BODY.PEEK'",
+                                        ));
+                                    }
+                                    true
                                 }
-                                if tokens.next().map_or(true, |token| !token.is_bracket_open()) {
-                                    return Err(bad(
-                                        self.tag.clone(),
-                                        "Expected '[' after 'BODY.PEEK'",
-                                    ));
-                                }
-                                true
-                            }
-                            _ => {
-                                attributes.push_unique(Attribute::Body);
-                                continue;
-                            }
-                        };
+                                _ => {
+                                    attributes.push_unique(Attribute::Body);
 
-                        // Parse section-spect
-                        let mut sections = Vec::new();
-                        while let Some(token) = tokens.next() {
-                            match token {
-                                Token::BracketClose => break,
-                                Token::Argument(value) => {
-                                    let section = if value.eq_ignore_ascii_case(b"HEADER") {
-                                        if let Some(Token::Dot) = tokens.peek() {
-                                            tokens.next();
-                                            if tokens.next().map_or(true, |token| {
-                                                !token.eq_ignore_ascii_case(b"FIELDS")
-                                            }) {
-                                                return Err(bad(
-                                                    self.tag,
-                                                    "Expected 'FIELDS' after 'HEADER.'.",
-                                                ));
-                                            }
-                                            let is_not = if let Some(Token::Dot) = tokens.peek() {
+                                    if !in_parentheses {
+                                        break;
+                                    } else {
+                                        continue;
+                                    }
+                                }
+                            };
+
+                            // Parse section-spect
+                            let mut sections = Vec::new();
+                            while let Some(token) = tokens.next() {
+                                match token {
+                                    Token::BracketClose => break,
+                                    Token::Argument(value) => {
+                                        let section = if value.eq_ignore_ascii_case(b"HEADER") {
+                                            if let Some(Token::Dot) = tokens.peek() {
                                                 tokens.next();
                                                 if tokens.next().map_or(true, |token| {
-                                                    !token.eq_ignore_ascii_case(b"NOT")
+                                                    !token.eq_ignore_ascii_case(b"FIELDS")
                                                 }) {
                                                     return Err(bad(
                                                         self.tag,
-                                                        "Expected 'NOT' after 'HEADER.FIELDS.'.",
+                                                        "Expected 'FIELDS' after 'HEADER.'.",
                                                     ));
                                                 }
-                                                true
-                                            } else {
-                                                false
-                                            };
-                                            if tokens
-                                                .next()
-                                                .map_or(true, |token| !token.is_parenthesis_open())
-                                            {
-                                                return Err(bad(
-                                                    self.tag,
-                                                    "Expected '(' after 'HEADER.FIELDS'.",
-                                                ));
-                                            }
-                                            let mut fields = Vec::new();
-                                            while let Some(token) = tokens.next() {
-                                                match token {
-                                                    Token::ParenthesisClose => break,
-                                                    Token::Argument(value) => {
-                                                        fields.push(String::from_utf8(value).map_err(
-                                                        |_| bad(self.tag.clone(), "Invalid UTF-8 in header field name."),
-                                                    )?);
-                                                    }
-                                                    _ => {
+                                                let is_not = if let Some(Token::Dot) = tokens.peek() {
+                                                    tokens.next();
+                                                    if tokens.next().map_or(true, |token| {
+                                                        !token.eq_ignore_ascii_case(b"NOT")
+                                                    }) {
                                                         return Err(bad(
                                                             self.tag,
-                                                            "Expected field name.",
-                                                        ))
+                                                            "Expected 'NOT' after 'HEADER.FIELDS.'.",
+                                                        ));
+                                                    }
+                                                    true
+                                                } else {
+                                                    false
+                                                };
+                                                if tokens
+                                                    .next()
+                                                    .map_or(true, |token| !token.is_parenthesis_open())
+                                                {
+                                                    return Err(bad(
+                                                        self.tag,
+                                                        "Expected '(' after 'HEADER.FIELDS'.",
+                                                    ));
+                                                }
+                                                let mut fields = Vec::new();
+                                                while let Some(token) = tokens.next() {
+                                                    match token {
+                                                        Token::ParenthesisClose => break,
+                                                        Token::Argument(value) => {
+                                                            fields.push(String::from_utf8(value).map_err(
+                                                            |_| bad(self.tag.clone(), "Invalid UTF-8 in header field name."),
+                                                        )?);
+                                                        }
+                                                        _ => {
+                                                            return Err(bad(
+                                                                self.tag,
+                                                                "Expected field name.",
+                                                            ))
+                                                        }
                                                     }
                                                 }
+                                                Section::HeaderFields {
+                                                    not: is_not,
+                                                    fields,
+                                                }
+                                            } else {
+                                                Section::Header
                                             }
-                                            Section::HeaderFields {
-                                                not: is_not,
-                                                fields,
-                                            }
+                                        } else if value.eq_ignore_ascii_case(b"TEXT") {
+                                            Section::Text
+                                        } else if value.eq_ignore_ascii_case(b"MIME") {
+                                            Section::Mime
                                         } else {
-                                            Section::Header
-                                        }
-                                    } else if value.eq_ignore_ascii_case(b"TEXT") {
-                                        Section::Text
-                                    } else if value.eq_ignore_ascii_case(b"MIME") {
-                                        Section::Mime
-                                    } else {
-                                        Section::Part {
-                                            num: parse_number::<u32>(&value)
-                                                .map_err(|v| bad(self.tag.to_string(), v))?,
-                                        }
-                                    };
-                                    sections.push(section);
-                                }
-                                Token::Dot => (),
-                                _ => {
-                                    return Err(bad(
-                                        self.tag,
-                                        format!(
-                                            "Invalid token {:?} found in section-spect.",
-                                            token
-                                        ),
-                                    ))
+                                            Section::Part {
+                                                num: parse_number::<u32>(&value)
+                                                    .map_err(|v| bad(self.tag.to_string(), v))?,
+                                            }
+                                        };
+                                        sections.push(section);
+                                    }
+                                    Token::Dot => (),
+                                    _ => {
+                                        return Err(bad(
+                                            self.tag,
+                                            format!(
+                                                "Invalid token {:?} found in section-spect.",
+                                                token
+                                            ),
+                                        ))
+                                    }
                                 }
                             }
-                        }
 
-                        attributes.push_unique(Attribute::BodySection {
-                            peek: is_peek,
-                            sections,
-                            partial: parse_partial(&mut tokens)
-                                .map_err(|v| bad(self.tag.to_string(), v))?,
-                        });
-                    } else if value.eq_ignore_ascii_case(b"BINARY") {
-                        let (is_peek, is_size) = if let Some(Token::Dot) = tokens.peek() {
-                            tokens.next();
-                            let param = tokens
-                                .next()
-                                .ok_or({
-                                    bad(self.tag.clone(), "Missing parameter after 'BINARY.'.")
-                                })?
-                                .unwrap_bytes();
-                            if param.eq_ignore_ascii_case(b"PEEK") {
-                                (true, false)
-                            } else if param.eq_ignore_ascii_case(b"SIZE") {
-                                (false, true)
-                            } else {
-                                return Err(bad(
-                                    self.tag,
-                                    "Expected 'PEEK' or 'SIZE' after 'BINARY.'.",
-                                ));
-                            }
-                        } else {
-                            (false, false)
-                        };
-
-                        // Parse section-part
-                        if tokens.next().map_or(true, |token| !token.is_bracket_open()) {
-                            return Err(bad(self.tag.to_string(), "Expected '[' after 'BINARY'."));
-                        }
-                        let mut sections = Vec::new();
-                        while let Some(token) = tokens.next() {
-                            match token {
-                                Token::Argument(value) => {
-                                    sections.push(
-                                        parse_number::<u32>(&value)
-                                            .map_err(|v| bad(self.tag.to_string(), v))?,
-                                    );
-                                }
-                                Token::Dot => (),
-                                Token::BracketClose => break,
-                                _ => {
-                                    return Err(bad(
-                                        self.tag,
-                                        format!(
-                                            "Expected part section integer, got {:?}.",
-                                            token.to_string()
-                                        ),
-                                    ))
-                                }
-                            }
-                        }
-                        attributes.push_unique(if !is_size {
-                            Attribute::Binary {
+                            attributes.push_unique(Attribute::BodySection {
                                 peek: is_peek,
                                 sections,
                                 partial: parse_partial(&mut tokens)
                                     .map_err(|v| bad(self.tag.to_string(), v))?,
-                            }
-                        } else {
-                            Attribute::BinarySize { sections }
-                        });
-                    } else if value.eq_ignore_ascii_case(b"PREVIEW") {
-                        attributes.push_unique(Attribute::Preview {
-                            lazy: if let Some(Token::ParenthesisOpen) = tokens.peek() {
+                            });
+                        },
+                        "BINARY" => {
+                            let (is_peek, is_size) = if let Some(Token::Dot) = tokens.peek() {
                                 tokens.next();
-                                let mut is_lazy = false;
-                                while let Some(token) = tokens.next() {
-                                    match token {
-                                        Token::ParenthesisClose => break,
-                                        Token::Argument(value) => {
-                                            if value.eq_ignore_ascii_case(b"LAZY") {
-                                                is_lazy = true;
-                                            }
-                                        }
-                                        _ => (),
+                                let param = tokens
+                                    .next()
+                                    .ok_or({
+                                        bad(self.tag.clone(), "Missing parameter after 'BINARY.'.")
+                                    })?
+                                    .unwrap_bytes();
+                                if param.eq_ignore_ascii_case(b"PEEK") {
+                                    (true, false)
+                                } else if param.eq_ignore_ascii_case(b"SIZE") {
+                                    (false, true)
+                                } else {
+                                    return Err(bad(
+                                        self.tag,
+                                        "Expected 'PEEK' or 'SIZE' after 'BINARY.'.",
+                                    ));
+                                }
+                            } else {
+                                (false, false)
+                            };
+
+                            // Parse section-part
+                            if tokens.next().map_or(true, |token| !token.is_bracket_open()) {
+                                return Err(bad(self.tag.to_string(), "Expected '[' after 'BINARY'."));
+                            }
+                            let mut sections = Vec::new();
+                            while let Some(token) = tokens.next() {
+                                match token {
+                                    Token::Argument(value) => {
+                                        sections.push(
+                                            parse_number::<u32>(&value)
+                                                .map_err(|v| bad(self.tag.to_string(), v))?,
+                                        );
+                                    }
+                                    Token::Dot => (),
+                                    Token::BracketClose => break,
+                                    _ => {
+                                        return Err(bad(
+                                            self.tag,
+                                            format!(
+                                                "Expected part section integer, got {:?}.",
+                                                token.to_string()
+                                            ),
+                                        ))
                                     }
                                 }
-                                is_lazy
+                            }
+                            attributes.push_unique(if !is_size {
+                                Attribute::Binary {
+                                    peek: is_peek,
+                                    sections,
+                                    partial: parse_partial(&mut tokens)
+                                        .map_err(|v| bad(self.tag.to_string(), v))?,
+                                }
                             } else {
-                                false
-                            },
-                        });
-                    } else if value.eq_ignore_ascii_case(b"MODSEQ") {
-                        attributes.push_unique(Attribute::ModSeq);
-                    } else if value.eq_ignore_ascii_case(b"EMAILID") {
-                        attributes.push_unique(Attribute::EmailId);
-                    } else if value.eq_ignore_ascii_case(b"THREADID") {
-                        attributes.push_unique(Attribute::ThreadId);
-                    } else {
+                                Attribute::BinarySize { sections }
+                            });
+                        },
+                        "PREVIEW" => {
+                            attributes.push_unique(Attribute::Preview {
+                                lazy: if let Some(Token::ParenthesisOpen) = tokens.peek() {
+                                    tokens.next();
+                                    let mut is_lazy = false;
+                                    while let Some(token) = tokens.next() {
+                                        match token {
+                                            Token::ParenthesisClose => break,
+                                            Token::Argument(value) => {
+                                                if value.eq_ignore_ascii_case(b"LAZY") {
+                                                    is_lazy = true;
+                                                }
+                                            }
+                                            _ => (),
+                                        }
+                                    }
+                                    is_lazy
+                                } else {
+                                    false
+                                },
+                            });
+                        },
+                        "MODSEQ" => {
+                            attributes.push_unique(Attribute::ModSeq);
+                        },
+                        "EMAILID" => {
+                            attributes.push_unique(Attribute::EmailId);
+                        },
+                        "THREADID" => {
+                            attributes.push_unique(Attribute::ThreadId);
+                        },
+                    );
+
+                    if attr_len == attributes.len() {
                         return Err(bad(
                             self.tag,
                             format!("Invalid attribute {:?}", String::from_utf8_lossy(&value)),

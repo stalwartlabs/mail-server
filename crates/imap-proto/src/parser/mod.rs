@@ -38,47 +38,46 @@ pub type Result<T> = std::result::Result<T, Cow<'static, str>>;
 
 impl CommandParser for Command {
     fn parse(value: &[u8], uid: bool) -> Option<Self> {
-        match value {
-            b"CAPABILITY" => Some(Command::Capability),
-            b"NOOP" => Some(Command::Noop),
-            b"LOGOUT" => Some(Command::Logout),
-            b"STARTTLS" => Some(Command::StartTls),
-            b"AUTHENTICATE" => Some(Command::Authenticate),
-            b"LOGIN" => Some(Command::Login),
-            b"ENABLE" => Some(Command::Enable),
-            b"SELECT" => Some(Command::Select),
-            b"EXAMINE" => Some(Command::Examine),
-            b"CREATE" => Some(Command::Create),
-            b"DELETE" => Some(Command::Delete),
-            b"RENAME" => Some(Command::Rename),
-            b"SUBSCRIBE" => Some(Command::Subscribe),
-            b"UNSUBSCRIBE" => Some(Command::Unsubscribe),
-            b"LIST" => Some(Command::List),
-            b"NAMESPACE" => Some(Command::Namespace),
-            b"STATUS" => Some(Command::Status),
-            b"APPEND" => Some(Command::Append),
-            b"IDLE" => Some(Command::Idle),
-            b"CLOSE" => Some(Command::Close),
-            b"UNSELECT" => Some(Command::Unselect),
-            b"EXPUNGE" => Some(Command::Expunge(uid)),
-            b"SEARCH" => Some(Command::Search(uid)),
-            b"FETCH" => Some(Command::Fetch(uid)),
-            b"STORE" => Some(Command::Store(uid)),
-            b"COPY" => Some(Command::Copy(uid)),
-            b"MOVE" => Some(Command::Move(uid)),
-            b"SORT" => Some(Command::Sort(uid)),
-            b"THREAD" => Some(Command::Thread(uid)),
-            b"LSUB" => Some(Command::Lsub),
-            b"CHECK" => Some(Command::Check),
-            b"SETACL" => Some(Command::SetAcl),
-            b"DELETEACL" => Some(Command::DeleteAcl),
-            b"GETACL" => Some(Command::GetAcl),
-            b"LISTRIGHTS" => Some(Command::ListRights),
-            b"MYRIGHTS" => Some(Command::MyRights),
-            b"UNAUTHENTICATE" => Some(Command::Unauthenticate),
-            b"ID" => Some(Command::Id),
-            _ => None,
-        }
+        hashify::tiny_map!(value,
+            "CAPABILITY" => Command::Capability,
+            "NOOP" => Command::Noop,
+            "LOGOUT" => Command::Logout,
+            "STARTTLS" => Command::StartTls,
+            "AUTHENTICATE" => Command::Authenticate,
+            "LOGIN" => Command::Login,
+            "ENABLE" => Command::Enable,
+            "SELECT" => Command::Select,
+            "EXAMINE" => Command::Examine,
+            "CREATE" => Command::Create,
+            "DELETE" => Command::Delete,
+            "RENAME" => Command::Rename,
+            "SUBSCRIBE" => Command::Subscribe,
+            "UNSUBSCRIBE" => Command::Unsubscribe,
+            "LIST" => Command::List,
+            "NAMESPACE" => Command::Namespace,
+            "STATUS" => Command::Status,
+            "APPEND" => Command::Append,
+            "IDLE" => Command::Idle,
+            "CLOSE" => Command::Close,
+            "UNSELECT" => Command::Unselect,
+            "EXPUNGE" => Command::Expunge(uid),
+            "SEARCH" => Command::Search(uid),
+            "FETCH" => Command::Fetch(uid),
+            "STORE" => Command::Store(uid),
+            "COPY" => Command::Copy(uid),
+            "MOVE" => Command::Move(uid),
+            "SORT" => Command::Sort(uid),
+            "THREAD" => Command::Thread(uid),
+            "LSUB" => Command::Lsub,
+            "CHECK" => Command::Check,
+            "SETACL" => Command::SetAcl,
+            "DELETEACL" => Command::DeleteAcl,
+            "GETACL" => Command::GetAcl,
+            "LISTRIGHTS" => Command::ListRights,
+            "MYRIGHTS" => Command::MyRights,
+            "UNAUTHENTICATE" => Command::Unauthenticate,
+            "ID" => Command::Id,
+        )
     }
 
     #[inline(always)]
@@ -89,61 +88,38 @@ impl CommandParser for Command {
 
 impl Flag {
     pub fn parse_imap(value: Vec<u8>) -> Result<Self> {
-        Ok(
-            match value
-                .first()
-                .ok_or_else(|| Cow::from("Null flags are not allowed."))?
-            {
-                b'\\' => {
-                    if value.eq_ignore_ascii_case(b"\\Seen") {
-                        Flag::Seen
-                    } else if value.eq_ignore_ascii_case(b"\\Answered") {
-                        Flag::Answered
-                    } else if value.eq_ignore_ascii_case(b"\\Flagged") {
-                        Flag::Flagged
-                    } else if value.eq_ignore_ascii_case(b"\\Deleted") {
-                        Flag::Deleted
-                    } else if value.eq_ignore_ascii_case(b"\\Draft") {
-                        Flag::Draft
-                    } else if value.eq_ignore_ascii_case(b"\\Recent") {
-                        Flag::Recent
-                    } else if value.eq_ignore_ascii_case(b"\\Important") {
-                        Flag::Important
-                    } else {
-                        Flag::Keyword(
-                            String::from_utf8(value).map_err(|_| Cow::from("Invalid UTF-8."))?,
-                        )
-                    }
-                }
-                b'$' => {
-                    if value.eq_ignore_ascii_case(b"$Forwarded") {
-                        Flag::Forwarded
-                    } else if value.eq_ignore_ascii_case(b"$MDNSent") {
-                        Flag::MDNSent
-                    } else if value.eq_ignore_ascii_case(b"$Junk") {
-                        Flag::Junk
-                    } else if value.eq_ignore_ascii_case(b"$NotJunk") {
-                        Flag::NotJunk
-                    } else if value.eq_ignore_ascii_case(b"$Phishing") {
-                        Flag::Phishing
-                    } else if value.eq_ignore_ascii_case(b"$Important") {
-                        Flag::Important
-                    } else {
-                        Flag::Keyword(
-                            String::from_utf8(value).map_err(|_| Cow::from("Invalid UTF-8."))?,
-                        )
-                    }
-                }
-                _ => Flag::Keyword(
-                    String::from_utf8(value).map_err(|_| Cow::from("Invalid UTF-8."))?,
-                ),
-            },
-        )
+        if !value.is_empty() {
+            let flag = hashify::tiny_map_ignore_case!(value.as_slice(),
+                "\\Seen" => Flag::Seen,
+                "\\Answered" => Flag::Answered,
+                "\\Flagged" => Flag::Flagged,
+                "\\Deleted" => Flag::Deleted,
+                "\\Draft" => Flag::Draft,
+                "\\Recent" => Flag::Recent,
+                "\\Important" => Flag::Important,
+                "$Forwarded" => Flag::Forwarded,
+                "$MDNSent" => Flag::MDNSent,
+                "$Junk" => Flag::Junk,
+                "$NotJunk" => Flag::NotJunk,
+                "$Phishing" => Flag::Phishing,
+                "$Important" => Flag::Important,
+            );
+
+            if let Some(flag) = flag {
+                Ok(flag)
+            } else {
+                String::from_utf8(value)
+                    .map_err(|_| Cow::from("Invalid UTF-8."))
+                    .map(Flag::Keyword)
+            }
+        } else {
+            Err(Cow::from("Null flags are not allowed."))
+        }
     }
 
     pub fn parse_jmap(value: String) -> Self {
         if value.starts_with('$') {
-            match value.to_ascii_lowercase().as_str() {
+            hashify::tiny_map_ignore_case!(value.as_bytes(),
                 "$seen" => Flag::Seen,
                 "$draft" => Flag::Draft,
                 "$flagged" => Flag::Flagged,
@@ -156,8 +132,8 @@ impl Flag {
                 "$deleted" => Flag::Deleted,
                 "$forwarded" => Flag::Forwarded,
                 "$mdnsent" => Flag::MDNSent,
-                _ => Flag::Keyword(value),
-            }
+            )
+            .unwrap_or_else(|| Flag::Keyword(value))
         } else {
             let mut keyword = String::with_capacity(value.len());
             for c in value.chars() {

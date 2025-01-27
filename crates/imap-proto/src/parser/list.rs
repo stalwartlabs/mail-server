@@ -179,37 +179,31 @@ impl Request<Command> {
 
 impl SelectionOption {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"subscribed") {
-            Ok(Self::Subscribed)
-        } else if value.eq_ignore_ascii_case(b"remote") {
-            Ok(Self::Remote)
-        } else if value.eq_ignore_ascii_case(b"recursivematch") {
-            Ok(Self::RecursiveMatch)
-        } else if value.eq_ignore_ascii_case(b"special-use") {
-            Ok(Self::SpecialUse)
-        } else {
-            Err(format!(
-                "Invalid selection option {:?}.",
+        hashify::tiny_map_ignore_case!(value,
+            "SUBSCRIBED" => Self::Subscribed,
+            "REMOTE" => Self::Remote,
+            "RECURSIVEMATCH" => Self::RecursiveMatch,
+            "SPECIAL-USE" => Self::SpecialUse,
+        )
+        .ok_or_else(|| {
+            format!(
+                "Unsupported selection option '{}'.",
                 String::from_utf8_lossy(value)
             )
-            .into())
-        }
+            .into()
+        })
     }
 }
 
 impl ReturnOption {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"subscribed") {
-            Ok(Self::Subscribed)
-        } else if value.eq_ignore_ascii_case(b"children") {
-            Ok(Self::Children)
-        } else if value.eq_ignore_ascii_case(b"status") {
-            Ok(Self::Status(Vec::with_capacity(2)))
-        } else if value.eq_ignore_ascii_case(b"special-use") {
-            Ok(Self::SpecialUse)
-        } else {
-            Err(format!("Invalid return option {:?}", String::from_utf8_lossy(value)).into())
-        }
+        hashify::tiny_map_ignore_case!(value,
+            "SUBSCRIBED" => Self::Subscribed,
+            "CHILDREN" => Self::Children,
+            "STATUS" => Self::Status(Vec::with_capacity(2)),
+            "SPECIAL-USE" => Self::SpecialUse,
+        )
+        .ok_or_else(|| format!("Invalid return option {:?}", String::from_utf8_lossy(value)).into())
     }
 }
 

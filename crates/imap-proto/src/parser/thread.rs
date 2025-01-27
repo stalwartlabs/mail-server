@@ -52,17 +52,17 @@ impl Request<Command> {
 
 impl Algorithm {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        if value.eq_ignore_ascii_case(b"ORDEREDSUBJECT") {
-            Ok(Self::OrderedSubject)
-        } else if value.eq_ignore_ascii_case(b"REFERENCES") {
-            Ok(Self::References)
-        } else {
-            Err(format!(
+        hashify::tiny_map_ignore_case!(value,
+            "ORDEREDSUBJECT" => Self::OrderedSubject,
+            "REFERENCES" => Self::References,
+        )
+        .ok_or_else(|| {
+            format!(
                 "Invalid threading algorithm {:?}",
                 String::from_utf8_lossy(value)
             )
-            .into())
-        }
+            .into()
+        })
     }
 }
 
