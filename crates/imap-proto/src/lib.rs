@@ -72,6 +72,10 @@ pub enum Command {
 
     // RFC 2971
     Id,
+
+    // RFC 9208
+    GetQuota,
+    GetQuotaRoot,
 }
 
 impl Command {

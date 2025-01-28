@@ -106,7 +106,8 @@ impl<T: SessionStream> SessionData<T> {
                                     | Status::Unseen
                                     | Status::Recent
                                     | Status::Deleted
-                                    | Status::HighestModSeq => StatusItemType::Number(0),
+                                    | Status::HighestModSeq
+                                    | Status::DeletedStorage => StatusItemType::Number(0),
                                     Status::UidNext | Status::UidValidity => {
                                         StatusItemType::Number(1)
                                     }
@@ -139,42 +140,49 @@ impl<T: SessionStream> SessionData<T> {
                     match item {
                         Status::Messages => {
                             if let Some(value) = mailbox_state.total_messages {
-                                items_response.push((*item, StatusItemType::Number(value as u64)));
+                                items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.push_unique(*item);
                             }
                         }
                         Status::UidNext => {
                             if let Some(value) = mailbox_state.uid_next {
-                                items_response.push((*item, StatusItemType::Number(value as u64)));
+                                items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.push_unique(*item);
                             }
                         }
                         Status::UidValidity => {
                             if let Some(value) = mailbox_state.uid_validity {
-                                items_response.push((*item, StatusItemType::Number(value as u64)));
+                                items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.push_unique(*item);
                             }
                         }
                         Status::Unseen => {
                             if let Some(value) = mailbox_state.total_unseen {
-                                items_response.push((*item, StatusItemType::Number(value as u64)));
+                                items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.push_unique(*item);
                             }
                         }
                         Status::Deleted => {
                             if let Some(value) = mailbox_state.total_deleted {
-                                items_response.push((*item, StatusItemType::Number(value as u64)));
+                                items_response.push((*item, StatusItemType::Number(value)));
+                            } else {
+                                items_update.push_unique(*item);
+                            }
+                        }
+                        Status::DeletedStorage => {
+                            if let Some(value) = mailbox_state.total_deleted_storage {
+                                items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.push_unique(*item);
                             }
                         }
                         Status::Size => {
                             if let Some(value) = mailbox_state.size {
-                                items_response.push((*item, StatusItemType::Number(value as u64)));
+                                items_response.push((*item, StatusItemType::Number(value)));
                             } else {
                                 items_update.push_unique(*item);
                             }
@@ -309,11 +317,32 @@ impl<T: SessionStream> SessionData<T> {
                             0
                         }
                     }
+                    Status::DeletedStorage => {
+                        if let (Some(mailbox_message_ids), Some(mut deleted)) = (
+                            &mailbox_message_ids,
+                            self.server
+                                .get_tag(
+                                    mailbox.account_id,
+                                    Collection::Email,
+                                    Property::Keywords,
+                                    Keyword::Deleted,
+                                )
+                                .await
+                                .caused_by(trc::location!())?,
+                        ) {
+                            deleted &= mailbox_message_ids.as_ref();
+                            self.calculate_mailbox_size(mailbox.account_id, &deleted)
+                                .await
+                                .caused_by(trc::location!())?
+                        } else {
+                            0
+                        }
+                    }
                     Status::Size => {
                         if let Some(mailbox_message_ids) = &mailbox_message_ids {
                             self.calculate_mailbox_size(mailbox.account_id, mailbox_message_ids)
                                 .await
-                                .caused_by(trc::location!())? as u64
+                                .caused_by(trc::location!())?
                         } else {
                             0
                         }
@@ -328,7 +357,7 @@ impl<T: SessionStream> SessionData<T> {
                 };
 
                 items_response.push((item, StatusItemType::Number(result)));
-                values_update.push((item, result as u32));
+                values_update.push((item, result));
             }
 
             // Update cache
@@ -346,6 +375,9 @@ impl<T: SessionStream> SessionData<T> {
                             Status::UidValidity => mailbox_state.uid_validity = value.into(),
                             Status::Unseen => mailbox_state.total_unseen = value.into(),
                             Status::Deleted => mailbox_state.total_deleted = value.into(),
+                            Status::DeletedStorage => {
+                                mailbox_state.total_deleted_storage = value.into()
+                            }
                             Status::Size => mailbox_state.size = value.into(),
                             Status::Recent => {
                                 items_response
@@ -375,9 +407,9 @@ impl<T: SessionStream> SessionData<T> {
     async fn calculate_mailbox_size(
         &self,
         account_id: u32,
-        message_ids: &Arc<RoaringBitmap>,
-    ) -> trc::Result<u32> {
-        let mut total_size = 0u32;
+        message_ids: &RoaringBitmap,
+    ) -> trc::Result<u64> {
+        let mut total_size = 0u64;
         self.server
             .core
             .storage
@@ -406,7 +438,7 @@ impl<T: SessionStream> SessionData<T> {
                             .ok_or_else(|| trc::Error::corrupted_key(key, None, trc::location!()))
                             .and_then(u32::deserialize)
                             .map(|size| {
-                                total_size += size;
+                                total_size += size as u64;
                             })?;
                     }
                     Ok(true)

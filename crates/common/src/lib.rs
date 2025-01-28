@@ -197,12 +197,13 @@ pub struct Mailbox {
     pub has_children: bool,
     pub is_subscribed: bool,
     pub special_use: Option<Attribute>,
-    pub total_messages: Option<u32>,
-    pub total_unseen: Option<u32>,
-    pub total_deleted: Option<u32>,
-    pub uid_validity: Option<u32>,
-    pub uid_next: Option<u32>,
-    pub size: Option<u32>,
+    pub total_messages: Option<u64>,
+    pub total_unseen: Option<u64>,
+    pub total_deleted: Option<u64>,
+    pub total_deleted_storage: Option<u64>,
+    pub uid_validity: Option<u64>,
+    pub uid_next: Option<u64>,
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -49,6 +49,26 @@ pub enum Capability {
     Preview,
     Utf8Accept,
     Auth(Mechanism),
+    Quota,
+    QuotaResource(QuotaResourceName),
+    QuotaSet,
+}
+
+/*
+
+STORAGE 	The physical space estimate, in units of 1024 octets, of the mailboxes governed by the quota root. 	DELETED-STORAGE STATUS request data item and response data item 	N/A 	[Alexey_Melnikov] 	[IESG] 	[RFC9208, Section 5.1]
+MESSAGE 	The number of messages stored within the mailboxes governed by the quota root. 	DELETED STATUS request data item and response data item 	N/A 	[Alexey_Melnikov] 	[IESG] 	[RFC9208, Section 5.2]
+MAILBOX 	The number of mailboxes governed by the quota root. 	N/A 	N/A 	[Alexey_Melnikov] 	[IESG] 	[RFC9208, Section 5.3]
+ANNOTATION-STORAGE
+
+*/
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum QuotaResourceName {
+    Storage,
+    Message,
+    Mailbox,
+    AnnotationStorage,
 }
 
 impl Capability {
@@ -94,6 +114,18 @@ impl Capability {
             Capability::CreateSpecialUse => b"CREATE-SPECIAL-USE",
             Capability::Move => b"MOVE",
             Capability::Utf8Accept => b"UTF8=ACCEPT",
+            Capability::Quota => b"QUOTA",
+            Capability::QuotaResource(quota_resource) => {
+                buf.extend_from_slice(b"QUOTA=RES-");
+                buf.extend_from_slice(match quota_resource {
+                    QuotaResourceName::Storage => b"STORAGE",
+                    QuotaResourceName::Message => b"MESSAGE",
+                    QuotaResourceName::Mailbox => b"MAILBOX",
+                    QuotaResourceName::AnnotationStorage => b"ANNOTATION-STORAGE",
+                });
+                return;
+            }
+            Capability::QuotaSet => b"QUOTA=SET",
         });
     }
 
@@ -136,6 +168,8 @@ impl Capability {
                 Capability::StatusSize,
                 Capability::ObjectId,
                 Capability::Preview,
+                Capability::Quota,
+                Capability::QuotaResource(QuotaResourceName::Storage),
             ]);
         } else {
             capabilities.extend([

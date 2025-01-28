@@ -281,6 +281,7 @@ pub enum ImapEvent {
     Subscribe,
     Unsubscribe,
     Thread,
+    GetQuota,
 
     // Errors
     Error,

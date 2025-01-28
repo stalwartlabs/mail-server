@@ -249,6 +249,7 @@ impl ImapEvent {
             ImapEvent::RawOutput => "Raw IMAP output sent",
             ImapEvent::ConnectionStart => "IMAP connection started",
             ImapEvent::ConnectionEnd => "IMAP connection ended",
+            ImapEvent::GetQuota => "IMAP GETQUOTA command",
         }
     }
 
@@ -290,6 +291,7 @@ impl ImapEvent {
             ImapEvent::RawOutput => "Raw IMAP output sent",
             ImapEvent::ConnectionStart => "IMAP connection started",
             ImapEvent::ConnectionEnd => "IMAP connection ended",
+            ImapEvent::GetQuota => "Client requested mailbox quota",
         }
     }
 }

@@ -25,6 +25,7 @@ pub mod fetch;
 pub mod list;
 pub mod login;
 pub mod namespace;
+pub mod quota;
 pub mod rename;
 pub mod search;
 pub mod select;
@@ -611,6 +612,8 @@ impl Display for Command {
             Command::MyRights => write!(f, "MYRIGHTS"),
             Command::Unauthenticate => write!(f, "UNAUTHENTICATE"),
             Command::Id => write!(f, "ID"),
+            Command::GetQuota => write!(f, "GETQUOTA"),
+            Command::GetQuotaRoot => write!(f, "GETQUOTAROOT"),
         }
     }
 }

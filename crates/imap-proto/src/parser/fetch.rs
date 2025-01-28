@@ -38,7 +38,6 @@ impl Request<Command> {
         while let Some(token) = tokens.next() {
             match token {
                 Token::Argument(value) => {
-                    let attr_len = attributes.len();
                     hashify::fnc_map_ignore_case!(value.as_slice(),
                         "ALL" => {
                             attributes = vec![
@@ -335,14 +334,13 @@ impl Request<Command> {
                         "THREADID" => {
                             attributes.push_unique(Attribute::ThreadId);
                         },
+                        _ => {
+                            return Err(bad(
+                                self.tag,
+                                format!("Invalid attribute {:?}", String::from_utf8_lossy(&value)),
+                            ));
+                        }
                     );
-
-                    if attr_len == attributes.len() {
-                        return Err(bad(
-                            self.tag,
-                            format!("Invalid attribute {:?}", String::from_utf8_lossy(&value)),
-                        ));
-                    }
 
                     if !in_parentheses {
                         break;

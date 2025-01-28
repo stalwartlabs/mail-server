@@ -24,6 +24,7 @@ pub mod login;
 pub mod logout;
 pub mod namespace;
 pub mod noop;
+pub mod quota;
 pub mod rename;
 pub mod search;
 pub mod select;

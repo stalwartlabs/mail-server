@@ -230,6 +230,14 @@ impl<T: SessionStream> Session<T> {
                     .handle_my_rights(request)
                     .await
                     .map(|_| SessionResult::Continue),
+                Command::GetQuota => self
+                    .handle_get_quota(request)
+                    .await
+                    .map(|_| SessionResult::Continue),
+                Command::GetQuotaRoot => self
+                    .handle_get_quota_root(request)
+                    .await
+                    .map(|_| SessionResult::Continue),
                 Command::Unauthenticate => self
                     .handle_unauthenticate(request)
                     .await
@@ -371,7 +379,9 @@ impl<T: SessionStream> Session<T> {
             | Command::GetAcl
             | Command::ListRights
             | Command::MyRights
-            | Command::Unauthenticate => {
+            | Command::Unauthenticate
+            | Command::GetQuota
+            | Command::GetQuotaRoot => {
                 if let State::Authenticated { .. } | State::Selected { .. } = state {
                     Ok(request)
                 } else {

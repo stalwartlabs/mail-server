@@ -70,7 +70,7 @@ impl Request<Command> {
 
 impl Status {
     pub fn parse(value: &[u8]) -> super::Result<Self> {
-        hashify::tiny_map!(value,
+        hashify::tiny_map_ignore_case!(value,
             "MESSAGES" => Self::Messages,
             "UIDNEXT" => Self::UidNext,
             "UIDVALIDITY" => Self::UidValidity,
@@ -80,6 +80,7 @@ impl Status {
             "HIGHESTMODSEQ" => Self::HighestModSeq,
             "MAILBOXID" => Self::MailboxId,
             "RECENT" => Self::Recent,
+            "DELETED-STORAGE" => Self::DeletedStorage
         )
         .ok_or_else(|| {
             format!(

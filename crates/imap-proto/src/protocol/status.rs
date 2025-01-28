@@ -26,6 +26,7 @@ pub enum Status {
     Recent,
     HighestModSeq,
     MailboxId,
+    DeletedStorage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +65,7 @@ impl StatusItem {
                 Status::HighestModSeq => b"HIGHESTMODSEQ ",
                 Status::MailboxId => b"MAILBOXID ",
                 Status::Recent => b"RECENT ",
+                Status::DeletedStorage => b"DELETED-STORAGE ",
             });
 
             match value {

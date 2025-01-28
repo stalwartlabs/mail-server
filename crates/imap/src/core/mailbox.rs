@@ -271,7 +271,7 @@ impl<T: SessionStream> SessionData<T> {
                                 )
                                 .await
                                 .caused_by(trc::location!())?
-                                .map(|v| v.len() as u32)
+                                .map(|v| v.len())
                                 .unwrap_or(0)
                                 .into(),
                             total_unseen: self
@@ -279,7 +279,7 @@ impl<T: SessionStream> SessionData<T> {
                                 .mailbox_unread_tags(account_id, *mailbox_id, &message_ids)
                                 .await
                                 .caused_by(trc::location!())?
-                                .map(|v| v.len() as u32)
+                                .map(|v| v.len())
                                 .unwrap_or(0)
                                 .into(),
                             ..Default::default()

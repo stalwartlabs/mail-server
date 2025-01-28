@@ -77,7 +77,8 @@ impl EventType {
                 | ImapEvent::Thread
                 | ImapEvent::Error
                 | ImapEvent::IdleStart
-                | ImapEvent::IdleStop => Level::Debug,
+                | ImapEvent::IdleStop
+                | ImapEvent::GetQuota => Level::Debug,
                 ImapEvent::RawInput | ImapEvent::RawOutput => Level::Trace,
             },
             EventType::ManageSieve(event) => match event {

@@ -229,6 +229,7 @@ impl<T: SessionStream> SessionData<T> {
                     total_messages: 0.into(),
                     total_unseen: 0.into(),
                     total_deleted: 0.into(),
+                    total_deleted_storage: 0.into(),
                     uid_validity: None,
                     uid_next: None,
                     size: 0.into(),

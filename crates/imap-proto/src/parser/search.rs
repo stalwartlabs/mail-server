@@ -105,20 +105,18 @@ pub fn parse_filters(
         let mut found_parenthesis = false;
         match token {
             Token::Argument(value) => {
-                let mut found_operator = false;
-
                 hashify::fnc_map_ignore_case!(value.as_slice(),
                     "ALL" => {
                         filters.push(Filter::All);
-                        found_operator = true;
+
                     },
                     "ANSWERED" => {
                         filters.push(Filter::Answered);
-                        found_operator = true;
+
                     },
                     "BCC" => {
                         filters.push(Filter::Bcc(decode_argument(tokens, decoder)?));
-                        found_operator = true;
+
                     },
                     "BEFORE" => {
                         filters.push(Filter::Before(parse_date(
@@ -127,36 +125,36 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected date"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
                     },
                     "BODY" => {
                         filters.push(Filter::Body(decode_argument(tokens, decoder)?));
-                        found_operator = true;
+
 
                     },
                     "CC" => {
                         filters.push(Filter::Cc(decode_argument(tokens, decoder)?));
-                        found_operator = true;
+
 
                     },
                     "DELETED" => {
                         filters.push(Filter::Deleted);
-                        found_operator = true;
+
 
                     },
                     "DRAFT" => {
                         filters.push(Filter::Draft);
-                        found_operator = true;
+
 
                     },
                     "FLAGGED" => {
                         filters.push(Filter::Flagged);
-                        found_operator = true;
+
 
                     },
                     "FROM" => {
                         filters.push(Filter::From(decode_argument(tokens, decoder)?));
-                        found_operator = true;
+
 
                     },
                     "HEADER" => {
@@ -164,7 +162,7 @@ pub fn parse_filters(
                             decode_argument(tokens, decoder)?,
                             decode_argument(tokens, decoder)?,
                         ));
-                        found_operator = true;
+
 
                     },
                     "KEYWORD" => {
@@ -174,7 +172,7 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected keyword"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "LARGER" => {
@@ -184,7 +182,7 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected integer"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "ON" => {
@@ -194,12 +192,12 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected date"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "SEEN" => {
                         filters.push(Filter::Seen);
-                        found_operator = true;
+
 
                     },
                     "SENTBEFORE" => {
@@ -209,7 +207,7 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected date"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "SENTON" => {
@@ -219,7 +217,7 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected date"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "SENTSINCE" => {
@@ -229,7 +227,7 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected date"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "SINCE" => {
@@ -239,7 +237,7 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected date"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "SMALLER" => {
@@ -249,22 +247,22 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected integer"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "SUBJECT" => {
                         filters.push(Filter::Subject(decode_argument(tokens, decoder)?));
-                        found_operator = true;
+
 
                     },
                     "TEXT" => {
                         filters.push(Filter::Text(decode_argument(tokens, decoder)?));
-                        found_operator = true;
+
 
                     },
                     "TO" => {
                         filters.push(Filter::To(decode_argument(tokens, decoder)?));
-                        found_operator = true;
+
 
                     },
                     "UID" => {
@@ -277,27 +275,27 @@ pub fn parse_filters(
                             )?,
                             true,
                         ));
-                        found_operator = true;
+
 
                     },
                     "UNANSWERED" => {
                         filters.push(Filter::Unanswered);
-                        found_operator = true;
+
 
                     },
                     "UNDELETED" => {
                         filters.push(Filter::Undeleted);
-                        found_operator = true;
+
 
                     },
                     "UNDRAFT" => {
                         filters.push(Filter::Undraft);
-                        found_operator = true;
+
 
                     },
                     "UNFLAGGED" => {
                         filters.push(Filter::Unflagged);
-                        found_operator = true;
+
 
                     },
                     "UNKEYWORD" => {
@@ -307,12 +305,12 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected keyword"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "UNSEEN" => {
                         filters.push(Filter::Unseen);
-                        found_operator = true;
+
 
                     },
                     "OLDER" => {
@@ -322,7 +320,7 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected integer"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "YOUNGER" => {
@@ -332,20 +330,20 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected integer"))?
                                 .unwrap_bytes(),
                         )?));
-                        found_operator = true;
+
 
                     },
                     "OLD" => {
                         filters.push(Filter::Old);
-                        found_operator = true;
+
                     },
                     "NEW" => {
                         filters.push(Filter::New);
-                        found_operator = true;
+
                     },
                     "RECENT" => {
                         filters.push(Filter::Recent);
-                        found_operator = true;
+
                     },
                     "MODSEQ" => {
                         let param = tokens
@@ -399,7 +397,7 @@ pub fn parse_filters(
                                 ModSeqEntry::None,
                             )));
                         }
-                        found_operator = true;
+
                     },
                     "EMAILID" => {
                         filters.push(Filter::EmailId(
@@ -408,7 +406,7 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected an EMAILID value."))?
                                 .unwrap_string()?,
                         ));
-                        found_operator = true;
+
                     },
                     "THREADID" => {
                         filters.push(Filter::ThreadId(
@@ -417,7 +415,7 @@ pub fn parse_filters(
                                 .ok_or_else(|| Cow::from("Expected an THREADID value."))?
                                 .unwrap_string()?,
                         ));
-                        found_operator = true;
+
                     },
                     "OR" => {
                         if filters_stack.len() > 10 {
@@ -441,13 +439,12 @@ pub fn parse_filters(
                         operator = Filter::Not;
                         continue;
                     },
+                    _ => {
+                        filters.push(Filter::Sequence(parse_sequence_set(&value)?, false));
+                    }
                 );
 
                 filters_len += 1;
-
-                if !found_operator {
-                    filters.push(Filter::Sequence(parse_sequence_set(&value)?, false));
-                }
             }
             Token::ParenthesisOpen => {
                 if filters_stack.len() > 10 {

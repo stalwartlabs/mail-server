@@ -15,6 +15,7 @@ pub mod fetch;
 pub mod list;
 pub mod login;
 pub mod lsub;
+pub mod quota;
 pub mod rename;
 pub mod search;
 pub mod select;
@@ -77,6 +78,8 @@ impl CommandParser for Command {
             "MYRIGHTS" => Command::MyRights,
             "UNAUTHENTICATE" => Command::Unauthenticate,
             "ID" => Command::Id,
+            "GETQUOTA" => Command::GetQuota,
+            "GETQUOTAROOT" => Command::GetQuotaRoot,
         )
     }
 
