@@ -297,8 +297,7 @@ impl<T: SessionStream> SessionData<T> {
         let mut parent_mailbox_name = None;
         let (account_id, path) = {
             let mailboxes = self.mailboxes.lock();
-            let first_path_item = path.first().unwrap();
-            let account = if first_path_item == &self.server.core.jmap.shared_folder {
+            let account = if path.first() == Some(&self.server.core.jmap.shared_folder.as_str()) {
                 // Shared Folders/<username>/<folder>
                 if path.len() < 3 {
                     return Err(trc::ImapEvent::Error
@@ -306,7 +305,7 @@ impl<T: SessionStream> SessionData<T> {
                         .details("Mailboxes under root shared folders are not allowed.")
                         .code(ResponseCode::Cannot));
                 }
-                let prefix = Some(format!("{}/{}", first_path_item, path[1]));
+                let prefix = Some(format!("{}/{}", path.remove(0), path.remove(0)));
 
                 // Locate account
                 if let Some(account) = mailboxes
