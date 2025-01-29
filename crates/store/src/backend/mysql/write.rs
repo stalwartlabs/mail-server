@@ -16,7 +16,9 @@ use crate::{
     write::{
         key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
         ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
-    }, BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U32_LEN
+    },
+    BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
+    U32_LEN,
 };
 
 use super::{into_error, MysqlStore};
@@ -264,11 +266,11 @@ impl MysqlStore {
                     };
 
                     if let Err(err) = trx.exec_drop(&s, (key,)).await {
+                        trx.rollback().await?;
                         return Err(
                             if is_document_id
                                 && matches!(&err, Error::Server(err) if [1062, 1213].contains(&err.code))
                             {
-                                trx.rollback().await?;
                                 CommitError::Retry
                             } else {
                                 CommitError::Mysql(err)
