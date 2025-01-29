@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.11.4] - 2025-01-29
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+### Added
+- RFC 9208 - IMAP QUOTA Extension (#484).
+
+### Changed
+- `session.throttle.*` is now `queue.limiter.inbound.*`.
+- `queue.throttle.*` is now `queue.limiter.outbound.*`.
+- Changed DNSBL error level to debug (#1107).
+
+### Fixed
+- Creating a mailbox in a shared folder results in wrong hierarchy (#1128).
+- IMAP LIST-STATUS (RFC 5819) returns items in wrong order (#1129).
+- Avoid non-RFC SMTP status codes (#1109).
+- Do not DNSBL check invalid domains (#1107).
+- Sieve message flag parser (#1059).
+- Sieve script import case insensitivity (#962).
+- `mailto:` parsing in HTMLs.
+
 ## [0.11.2] - 2025-01-17
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
