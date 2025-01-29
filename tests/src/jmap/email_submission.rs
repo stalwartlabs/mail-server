@@ -194,8 +194,13 @@ pub async fn test(params: &mut JMAPTest) {
     ));
 
     // Submit a valid message submission
-    let email_body =
-        "From: jdoe@example.com\r\nTo: jane_smith@remote.org\r\nSubject: hey\r\n\r\ntest";
+    let email_body = concat!(
+        "From: jdoe@example.com\r\n",
+        "To: jane_smith@remote.org\r\n",
+        "Bcc: bill@remote.org\r\n",
+        "Subject: hey\r\n\r\n",
+        "test"
+    );
     let email_id = client
         .email_import(
             email_body.as_bytes().to_vec(),
@@ -212,12 +217,13 @@ pub async fn test(params: &mut JMAPTest) {
         .unwrap();
 
     // Confirm that the message has been delivered
+    let email_body = email_body.replace("Bcc: bill@remote.org\r\n", "");
     assert_message_delivery(
         &mut smtp_rx,
         MockMessage::new(
             "<jdoe@example.com>",
-            ["<jane_smith@remote.org>"],
-            email_body,
+            ["<bill@remote.org>", "<jane_smith@remote.org>"],
+            &email_body,
         ),
     )
     .await;
@@ -253,7 +259,7 @@ pub async fn test(params: &mut JMAPTest) {
         .contains(&rcpt_to.as_str()));
 
         assert!(
-            message.message.contains(email_body),
+            message.message.contains(&email_body),
             "Got [{}], Expected[{}]",
             message.message,
             email_body
@@ -304,7 +310,7 @@ pub async fn test(params: &mut JMAPTest) {
         .take_id();
     assert_message_delivery(
         &mut smtp_rx,
-        MockMessage::new("<jdoe@example.com>", ["<tim@foobar.com>"], email_body),
+        MockMessage::new("<jdoe@example.com>", ["<tim@foobar.com>"], &email_body),
     )
     .await;
     expect_nothing(&mut smtp_rx).await;

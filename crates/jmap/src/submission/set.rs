@@ -516,6 +516,7 @@ impl EmailSubmissionSet for Server {
         };
 
         // Add recipients to envelope if missing
+        let mut bcc_header = None;
         if rcpt_to.is_empty() {
             let mut envelope_values = Vec::new();
             for header in &metadata.contents.parts[0].headers {
@@ -523,6 +524,9 @@ impl EmailSubmissionSet for Server {
                     header.name,
                     HeaderName::To | HeaderName::Cc | HeaderName::Bcc
                 ) {
+                    if matches!(header.name, HeaderName::Bcc) {
+                        bcc_header = Some(header);
+                    }
                     if let HeaderValue::Address(addr) = &header.value {
                         for address in addr.iter() {
                             if let Some(address) = address.address().and_then(sanitize_email) {
@@ -555,6 +559,11 @@ impl EmailSubmissionSet for Server {
                 return Ok(Err(SetError::new(SetErrorType::NoRecipients)
                     .with_description("No recipients found in email.")));
             }
+        } else {
+            bcc_header = metadata.contents.parts[0]
+                .headers
+                .iter()
+                .find(|header| matches!(header.name, HeaderName::Bcc));
         }
 
         // Update sendAt
@@ -570,7 +579,7 @@ impl EmailSubmissionSet for Server {
         );
 
         // Obtain raw message
-        let message =
+        let mut message =
             if let Some(message) = self.get_blob(&metadata.blob_hash, 0..usize::MAX).await? {
                 if message.len() > self.core.jmap.mail_max_size {
                     return Ok(Err(SetError::new(SetErrorType::InvalidEmail)
@@ -586,6 +595,14 @@ impl EmailSubmissionSet for Server {
                     .with_property(Property::EmailId)
                     .with_description("Blob for email not found.")));
             };
+
+        // Remove BCC header if present
+        if let Some(bcc_header) = bcc_header {
+            let mut new_message = Vec::with_capacity(message.len());
+            new_message.extend_from_slice(&message[..bcc_header.offset_field]);
+            new_message.extend_from_slice(&message[bcc_header.offset_end..]);
+            message = new_message;
+        }
 
         // Begin local SMTP session
         let mut session =
