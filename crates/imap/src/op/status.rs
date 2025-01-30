@@ -34,47 +34,60 @@ use trc::AddContext;
 use super::ToModSeq;
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_status(&mut self, request: Request<Command>) -> trc::Result<()> {
+    pub async fn handle_status(&mut self, requests: Vec<Request<Command>>) -> trc::Result<()> {
         // Validate access
         self.assert_has_permission(Permission::ImapStatus)?;
 
-        let op_start = Instant::now();
-        let arguments = request.parse_status(self.version)?;
         let version = self.version;
         let data = self.state.session_data();
 
         spawn_op!(data, {
-            // Refresh mailboxes
-            data.synchronize_mailboxes(false)
-                .await
-                .imap_ctx(&arguments.tag, trc::location!())?;
+            let mut did_sync = false;
 
-            // Fetch status
-            let status = data
-                .status(arguments.mailbox_name, &arguments.items)
-                .await
-                .imap_ctx(&arguments.tag, trc::location!())?;
+            for request in requests.into_iter() {
+                match request.parse_status(version) {
+                    Ok(arguments) => {
+                        let op_start = Instant::now();
+                        if !did_sync {
+                            // Refresh mailboxes
+                            data.synchronize_mailboxes(false)
+                                .await
+                                .imap_ctx(&arguments.tag, trc::location!())?;
+                            did_sync = true;
+                        }
 
-            trc::event!(
-                Imap(trc::ImapEvent::Status),
-                SpanId = data.session_id,
-                MailboxName = status.mailbox_name.clone(),
-                Details = arguments
-                    .items
-                    .iter()
-                    .map(|c| trc::Value::from(format!("{c:?}")))
-                    .collect::<Vec<_>>(),
-                Elapsed = op_start.elapsed()
-            );
+                        // Fetch status
+                        let status = data
+                            .status(arguments.mailbox_name, &arguments.items)
+                            .await
+                            .imap_ctx(&arguments.tag, trc::location!())?;
 
-            let mut buf = Vec::with_capacity(32);
-            status.serialize(&mut buf, version.is_rev2());
-            data.write_bytes(
-                StatusResponse::completed(Command::Status)
-                    .with_tag(arguments.tag)
-                    .serialize(buf),
-            )
-            .await
+                        trc::event!(
+                            Imap(trc::ImapEvent::Status),
+                            SpanId = data.session_id,
+                            MailboxName = status.mailbox_name.clone(),
+                            Details = arguments
+                                .items
+                                .iter()
+                                .map(|c| trc::Value::from(format!("{c:?}")))
+                                .collect::<Vec<_>>(),
+                            Elapsed = op_start.elapsed()
+                        );
+
+                        let mut buf = Vec::with_capacity(32);
+                        status.serialize(&mut buf, version.is_rev2());
+                        data.write_bytes(
+                            StatusResponse::completed(Command::Status)
+                                .with_tag(arguments.tag)
+                                .serialize(buf),
+                        )
+                        .await?;
+                    }
+                    Err(err) => data.write_error(err).await?,
+                }
+            }
+
+            Ok(())
         })
     }
 }

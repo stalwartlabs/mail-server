@@ -42,43 +42,61 @@ use trc::AddContext;
 use super::{FromModSeq, ImapContext};
 
 impl<T: SessionStream> Session<T> {
-    pub async fn handle_fetch(
-        &mut self,
-        request: Request<Command>,
-        is_uid: bool,
-    ) -> trc::Result<()> {
+    pub async fn handle_fetch(&mut self, requests: Vec<Request<Command>>) -> trc::Result<()> {
         // Validate access
         self.assert_has_permission(Permission::ImapFetch)?;
-
-        let op_start = Instant::now();
-        let arguments = request.parse_fetch()?;
 
         let (data, mailbox) = self.state.select_data();
         let is_qresync = self.is_qresync;
         let is_rev2 = self.version.is_rev2();
 
-        let enabled_condstore = if !self.is_condstore && arguments.changed_since.is_some()
-            || arguments.attributes.contains(&Attribute::ModSeq)
-        {
-            self.is_condstore = true;
-            true
-        } else {
-            false
-        };
+        let mut ops = Vec::with_capacity(requests.len());
+
+        for request in requests {
+            let is_uid = matches!(request.command, Command::Fetch(true));
+            match request.parse_fetch() {
+                Ok(arguments) => {
+                    let enabled_condstore = if !self.is_condstore
+                        && arguments.changed_since.is_some()
+                        || arguments.attributes.contains(&Attribute::ModSeq)
+                    {
+                        self.is_condstore = true;
+                        true
+                    } else {
+                        false
+                    };
+
+                    ops.push(Ok((is_uid, enabled_condstore, arguments)));
+                }
+                Err(err) => {
+                    ops.push(Err(err));
+                }
+            }
+        }
 
         spawn_op!(data, {
-            let response = data
-                .fetch(
-                    arguments,
-                    mailbox,
-                    is_uid,
-                    is_qresync,
-                    is_rev2,
-                    enabled_condstore,
-                    op_start,
-                )
-                .await?;
-            data.write_bytes(response.into_bytes()).await
+            for op in ops {
+                match op {
+                    Ok((is_uid, enabled_condstore, arguments)) => {
+                        let response = data
+                            .fetch(
+                                arguments,
+                                mailbox.clone(),
+                                is_uid,
+                                is_qresync,
+                                is_rev2,
+                                enabled_condstore,
+                                Instant::now(),
+                            )
+                            .await?;
+
+                        data.write_bytes(response.into_bytes()).await?;
+                    }
+                    Err(err) => data.write_error(err).await?,
+                }
+            }
+
+            Ok(())
         })
     }
 }

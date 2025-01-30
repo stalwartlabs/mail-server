@@ -111,7 +111,7 @@ impl<T: SessionStream> Session<T> {
                     .await
                     .map(|_| SessionResult::Continue),
                 Command::Status => self
-                    .handle_status(request)
+                    .handle_status(group_requests(&mut requests, vec![request]))
                     .await
                     .map(|_| SessionResult::Continue),
                 Command::Append => self
@@ -134,8 +134,8 @@ impl<T: SessionStream> Session<T> {
                     .handle_search(request, false, is_uid)
                     .await
                     .map(|_| SessionResult::Continue),
-                Command::Fetch(is_uid) => self
-                    .handle_fetch(request, is_uid)
+                Command::Fetch(_) => self
+                    .handle_fetch(group_requests(&mut requests, vec![request]))
                     .await
                     .map(|_| SessionResult::Continue),
                 Command::Store(is_uid) => self
