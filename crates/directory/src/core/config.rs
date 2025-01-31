@@ -16,8 +16,8 @@ use ahash::AHashMap;
 
 use crate::{
     backend::{
-        imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, smtp::SmtpDirectory,
-        sql::SqlDirectory,
+        imap::ImapDirectory, ldap::LdapDirectory, memory::MemoryDirectory, oidc::OpenIdDirectory,
+        smtp::SmtpDirectory, sql::SqlDirectory,
     },
     Directories, Directory, DirectoryInner,
 };
@@ -84,13 +84,8 @@ impl Directories {
                 "memory" => MemoryDirectory::from_config(config, prefix, data_store.clone())
                     .await
                     .map(DirectoryInner::Memory),
-                #[cfg(feature = "enterprise")]
-                "oidc" => crate::backend::oidc::OpenIdDirectory::from_config(
-                    config,
-                    prefix,
-                    data_store.clone(),
-                )
-                .map(DirectoryInner::OpenId),
+                "oidc" => OpenIdDirectory::from_config(config, prefix, data_store.clone())
+                    .map(DirectoryInner::OpenId),
                 unknown => {
                     let err = format!("Unknown directory type: {unknown:?}");
                     config.new_parse_error(("directory", id, "type"), err);

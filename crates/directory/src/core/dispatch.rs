@@ -24,7 +24,6 @@ impl Directory {
             DirectoryInner::Imap(store) => store.query(by).await,
             DirectoryInner::Smtp(store) => store.query(by).await,
             DirectoryInner::Memory(store) => store.query(by).await,
-            #[cfg(feature = "enterprise")]
             DirectoryInner::OpenId(store) => store.query(by, return_member_of).await,
         }
         .caused_by(trc::location!())
@@ -38,7 +37,6 @@ impl Directory {
             DirectoryInner::Imap(store) => store.email_to_id(address).await,
             DirectoryInner::Smtp(store) => store.email_to_id(address).await,
             DirectoryInner::Memory(store) => store.email_to_id(address).await,
-            #[cfg(feature = "enterprise")]
             DirectoryInner::OpenId(store) => store.email_to_id(address).await,
         }
         .caused_by(trc::location!())
@@ -59,7 +57,6 @@ impl Directory {
             DirectoryInner::Imap(store) => store.is_local_domain(domain).await,
             DirectoryInner::Smtp(store) => store.is_local_domain(domain).await,
             DirectoryInner::Memory(store) => store.is_local_domain(domain).await,
-            #[cfg(feature = "enterprise")]
             DirectoryInner::OpenId(store) => store.is_local_domain(domain).await,
         }
         .caused_by(trc::location!())?;
@@ -87,7 +84,6 @@ impl Directory {
             DirectoryInner::Imap(store) => store.rcpt(email).await,
             DirectoryInner::Smtp(store) => store.rcpt(email).await,
             DirectoryInner::Memory(store) => store.rcpt(email).await,
-            #[cfg(feature = "enterprise")]
             DirectoryInner::OpenId(store) => store.rcpt(email).await,
         }
         .caused_by(trc::location!())?;
@@ -108,7 +104,6 @@ impl Directory {
             DirectoryInner::Imap(store) => store.vrfy(address).await,
             DirectoryInner::Smtp(store) => store.vrfy(address).await,
             DirectoryInner::Memory(store) => store.vrfy(address).await,
-            #[cfg(feature = "enterprise")]
             DirectoryInner::OpenId(store) => store.vrfy(address).await,
         }
         .caused_by(trc::location!())
@@ -122,7 +117,6 @@ impl Directory {
             DirectoryInner::Imap(store) => store.expn(address).await,
             DirectoryInner::Smtp(store) => store.expn(address).await,
             DirectoryInner::Memory(store) => store.expn(address).await,
-            #[cfg(feature = "enterprise")]
             DirectoryInner::OpenId(store) => store.expn(address).await,
         }
         .caused_by(trc::location!())
@@ -136,7 +130,6 @@ impl Directory {
             | DirectoryInner::Imap(_)
             | DirectoryInner::Smtp(_)
             | DirectoryInner::Memory(_) => false,
-            #[cfg(feature = "enterprise")]
             DirectoryInner::OpenId(_) => true,
         }
     }
@@ -144,15 +137,6 @@ impl Directory {
 
 impl DirectoryInner {
     pub fn is_enterprise_directory(&self) -> bool {
-        match self {
-            DirectoryInner::Internal(_)
-            | DirectoryInner::Ldap(_)
-            | DirectoryInner::Sql(_)
-            | DirectoryInner::Imap(_)
-            | DirectoryInner::Smtp(_)
-            | DirectoryInner::Memory(_) => false,
-            #[cfg(feature = "enterprise")]
-            DirectoryInner::OpenId(_) => true,
-        }
+        false
     }
 }
