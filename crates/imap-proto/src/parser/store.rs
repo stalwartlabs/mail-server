@@ -64,7 +64,7 @@ impl Request<Command> {
             .next()
             .ok_or_else(|| bad(self.tag.to_string(), "Missing message data item name."))?
             .unwrap_bytes();
-        let (is_silent, operation) = hashify::tiny_map!(operation.as_slice(),
+        let (is_silent, operation) = hashify::tiny_map_ignore_case!(operation.as_slice(),
             "FLAGS" => (false, Operation::Set),
             "FLAGS.SILENT" => (true, Operation::Set),
             "+FLAGS" => (false, Operation::Add),

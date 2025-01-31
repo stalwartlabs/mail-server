@@ -152,34 +152,38 @@ impl Flag {
 }
 
 pub fn parse_datetime(value: &[u8]) -> Result<i64> {
-    let datetime = std::str::from_utf8(value)
-        .map_err(|_| Cow::from("Expected date/time, found an invalid UTF-8 string."))?
-        .trim();
-    DateTime::parse_from_str(datetime, "%d-%b-%Y %H:%M:%S %z")
-        .map_err(|_| Cow::from(format!("Failed to parse date/time '{}'.", datetime)))
-        .map(|dt| dt.timestamp())
+    std::str::from_utf8(value)
+        .map_err(|_| Cow::from("Expected date/time, found an invalid UTF-8 string."))
+        .and_then(|datetime| {
+            DateTime::parse_from_str(datetime.trim(), "%d-%b-%Y %H:%M:%S %z")
+                .map_err(|_| Cow::from(format!("Failed to parse date/time '{}'.", datetime)))
+                .map(|dt| dt.timestamp())
+        })
 }
 
 pub fn parse_date(value: &[u8]) -> Result<i64> {
-    let date = std::str::from_utf8(value)
-        .map_err(|_| Cow::from("Expected date, found an invalid UTF-8 string."))?
-        .trim();
-    NaiveDate::parse_from_str(date, "%d-%b-%Y")
-        .map_err(|_| Cow::from(format!("Failed to parse date '{}'.", date)))
-        .map(|dt| {
-            dt.and_hms_opt(0, 0, 0)
-                .unwrap_or_default()
-                .and_utc()
-                .timestamp()
+    std::str::from_utf8(value)
+        .map_err(|_| Cow::from("Expected date, found an invalid UTF-8 string."))
+        .and_then(|date| {
+            NaiveDate::parse_from_str(date.trim(), "%d-%b-%Y")
+                .map_err(|_| Cow::from(format!("Failed to parse date '{}'.", date)))
+                .map(|dt| {
+                    dt.and_hms_opt(0, 0, 0)
+                        .unwrap_or_default()
+                        .and_utc()
+                        .timestamp()
+                })
         })
 }
 
 pub fn parse_number<T: FromStr>(value: &[u8]) -> Result<T> {
-    let string = std::str::from_utf8(value)
-        .map_err(|_| Cow::from("Expected a number, found an invalid UTF-8 string."))?;
-    string
-        .parse::<T>()
-        .map_err(|_| Cow::from(format!("Expected a number, found {:?}.", string)))
+    std::str::from_utf8(value)
+        .map_err(|_| Cow::from("Expected a number, found an invalid UTF-8 string."))
+        .and_then(|string| {
+            string
+                .parse::<T>()
+                .map_err(|_| Cow::from(format!("Expected a number, found {:?}.", string)))
+        })
 }
 
 pub fn parse_sequence_set(value: &[u8]) -> Result<Sequence> {
