@@ -1,0 +1,423 @@
+name: "CI"
+
+on:
+  workflow_dispatch:
+    inputs:
+      Docker:
+        required: false
+        default: false
+        type: boolean
+      Release:
+        required: false
+        default: false
+        type: boolean
+
+# TODO Comment out the next 2 lines so that it won't interfere with the old CI when tagging a version
+#      Should fix after deprecate the old CI(build.yml)
+#   push:
+#     tags: ["v*.*.*"]
+
+env:
+  SCCACHE_GHA_ENABLED: true
+  RUSTC_WRAPPER: sccache
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  multiarch:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: gnu
+          - variant: musl
+    name: Merge image / ${{matrix.variant}}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+      packages: write
+    needs: [linux]
+    if: github.event_name == 'push' || inputs.Docker
+    steps:
+      - name: Log In to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{github.repository_owner}}
+          password: ${{github.token}}
+
+      - name: Log In to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{github.repository_owner}}
+          password: ${{secrets.DOCKERHUB_TOKEN}}
+
+      - name: Download ${{matrix.variant}} meta bake definition
+        uses: actions/download-artifact@v4
+        with:
+          name: bake-meta-${{matrix.variant}}
+          path: ${{ runner.temp }}/${{matrix.variant}}
+
+      - name: Download ${{matrix.variant}} digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/${{matrix.variant}}/digests
+          pattern: digests-${{matrix.variant}}-*
+          merge-multiple: true
+
+      - name: Create ${{matrix.variant}} manifest list and push
+        working-directory: ${{ runner.temp }}/${{matrix.variant}}/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.target."docker-metadata-action".tags | map(select(startswith("ghcr.io/${{github.repository}}")) | "-t " + .) | join(" ")' ${{ runner.temp }}/${{matrix.variant}}/bake-meta.json) \
+            $(printf 'ghcr.io/${{github.repository}}@sha256:%s ' *)
+          docker buildx imagetools create $(jq -cr '.target."docker-metadata-action".tags | map(select(startswith("index.docker.io/${{github.repository}}")) | "-t " + .) | join(" ")' ${{ runner.temp }}/${{matrix.variant}}/bake-meta.json) \
+            $(printf 'index.docker.io/${{github.repository}}@sha256:%s ' *)
+
+      - name: Inspect ${{matrix.variant}} image
+        id: manifest-digest
+        run: |
+          docker buildx imagetools inspect --format '{{json .Manifest}}' ghcr.io/${{github.repository}}:$(jq -r '.target."docker-metadata-action".args.DOCKER_META_VERSION' ${{ runner.temp }}/${{matrix.variant}}/bake-meta.json) | jq -r '.digest' > GHCR_DIGEST_SHA
+          echo "GHCR_DIGEST_SHA=$(cat GHCR_DIGEST_SHA)" | tee -a "${GITHUB_ENV}"
+          docker buildx imagetools inspect --format '{{json .Manifest}}' index.docker.io/${{github.repository}}:$(jq -r '.target."docker-metadata-action".args.DOCKER_META_VERSION' ${{ runner.temp }}/${{matrix.variant}}/bake-meta.json) | jq -r '.digest' > DOCKERHUB_DIGEST_SHA
+          echo "DOCKERHUB_DIGEST_SHA=$(cat DOCKERHUB_DIGEST_SHA)" | tee -a "${GITHUB_ENV}"
+
+      - name: Attest GHCR
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{github.repository}}
+          subject-digest: ${{ env.GHCR_DIGEST_SHA }}
+          push-to-registry: true
+
+      - name: Attest Dockerhub
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: index.docker.io/${{github.repository}}
+          subject-digest: ${{ env.DOCKERHUB_DIGEST_SHA }}
+          push-to-registry: true
+
+  linux:
+    permissions:
+      id-token: write
+      contents: write
+      attestations: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            platform: linux/amd64
+            suffix: ''
+          - target: x86_64-unknown-linux-musl
+            platform: linux/amd64
+            suffix: '-alpine'
+          - target: aarch64-unknown-linux-gnu
+            platform: linux/arm64
+            suffix: ''
+            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16"
+          - target: aarch64-unknown-linux-musl
+            platform: linux/arm64
+            suffix: '-alpine'
+            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16"
+          - target: armv7-unknown-linux-gnueabihf
+            platform: linux/arm/v7
+            suffix: ''
+            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16"
+          - target: armv7-unknown-linux-musleabihf
+            platform: linux/arm/v7
+            suffix: '-alpine'
+            build_env: "JEMALLOC_SYS_WITH_LG_PAGE=16"
+          - target: arm-unknown-linux-gnueabihf
+            platform: linux/arm/v6
+            suffix: ''
+          - target: arm-unknown-linux-musleabihf
+            platform: linux/arm/v6
+            suffix: '-alpine'
+    name: Build / ${{matrix.target}}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: "arm64,arm"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+
+      - name: Log In to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{github.repository_owner}}
+          password: ${{github.token}}
+
+      - name: Log In to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{github.repository_owner}}
+          password: ${{secrets.DOCKERHUB_TOKEN}}
+
+      - name: Calculate shasum of external deps
+        id: cal-dep-shasum
+        run: |
+          echo "checksum=$(yq -p toml -oy '.package[] | select((.source | contains("")) or (.checksum | contains("")))' Cargo.lock | sha256sum | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache apt
+        uses: actions/cache@v4
+        id: apt-cache
+        with:
+          path: |
+            var-cache-apt
+            var-lib-apt
+          key: apt-cache-${{ hashFiles('Dockerfile.build') }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        id: cargo-cache
+        with:
+          path: |
+            usr-local-cargo-registry
+            usr-local-cargo-git
+          key: cargo-cache-${{ steps.cal-dep-shasum.outputs.checksum }}
+
+      - name: Inject cache into docker
+        uses: reproducible-containers/buildkit-cache-dance@v3.1.2
+        with:
+          cache-map: |
+            {
+              "var-cache-apt": "/var/cache/apt",
+              "var-lib-apt": "/var/lib/apt",
+              "usr-local-cargo-registry": "/usr/local/cargo/registry",
+              "usr-local-cargo-git": "/usr/local/cargo/git"
+            }
+          skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }} && ${{ steps.apt-cache.outputs.cache-hit }}
+
+      - name: Extract Metadata for Docker
+        uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: |
+            index.docker.io/${{github.repository}}
+            ghcr.io/${{github.repository}}
+          flavor: |
+            suffix=${{matrix.suffix}},onlatest=true
+          tags: |
+            type=ref,event=tag
+            type=ref,event=branch,prefix=branch-
+            type=edge,branch=main
+            type=semver,pattern=v{{major}}.{{minor}}
+
+      - name: Build Artifact
+        id: bake
+        uses: docker/bake-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          TARGET: ${{matrix.target}}
+          GHCR_REPO: ghcr.io/${{github.repository}}
+          BUILD_ENV: ${{matrix.build_env}}
+          DOCKER_PLATFORM: ${{matrix.platform}}
+          SUFFIX: ${{matrix.suffix}}
+        with:
+          source: .
+          set: |
+            *.tags=
+            image.output=type=image,"name=ghcr.io/${{github.repository}},index.docker.io/${{github.repository}}",push-by-digest=true,name-canonical=true,push=true,compression=zstd,compression-level=9,force-compression=true,oci-mediatypes=true
+          files: |
+            docker-bake.hcl
+            ${{ steps.meta.outputs.bake-file }}
+          targets: ${{(github.event_name == 'push' || inputs.Docker) && 'build,image' || 'build'}}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-${{matrix.target}}
+          path: |
+            artifact
+            !artifact/*.json
+
+      - name: Export digest & Rename meta bake definition file
+        if: github.event_name == 'push' || inputs.Docker
+        run: |
+          mv "${{ steps.meta.outputs.bake-file }}" "${{ runner.temp }}/bake-meta.json"
+          mkdir -p ${{ runner.temp }}/digests
+          digest="${{ fromJSON(steps.bake.outputs.metadata).image['containerimage.digest'] }}"
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name == 'push' || inputs.Docker
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{matrix.suffix == '' && 'gnu' || 'musl'}}-${{ matrix.target }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload GNU meta bake definition
+        uses: actions/upload-artifact@v4
+        if: (github.event_name == 'push' || inputs.Docker) && endsWith(matrix.target,'gnu') && startsWith(matrix.target,'x86')
+        with:
+          name: bake-meta-gnu
+          path: ${{ runner.temp }}/bake-meta.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload musl meta bake definition
+        uses: actions/upload-artifact@v4
+        if: (github.event_name == 'push' || inputs.Docker) && endsWith(matrix.target,'musl') && startsWith(matrix.target,'x86')
+        with:
+          name: bake-meta-musl
+          path: ${{ runner.temp }}/bake-meta.json
+          if-no-files-found: error
+          retention-days: 1
+
+  windows:
+    name: Build / ${{matrix.target}}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        #   - target: aarch64-pc-windows-msvc
+          - target: x86_64-pc-windows-msvc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.7
+        with:
+          disable_annotations: true
+
+      - name: Build
+        run: |
+          rustup target add ${{matrix.target}}
+          cargo build --release --target ${{matrix.target}} -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure enterprise"
+          cargo build --release --target ${{matrix.target}} -p stalwart-cli
+          mkdir -p artifacts
+          mv ./target/${{matrix.target}}/release/stalwart-mail.exe ./artifacts/stalwart-mail.exe
+          mv ./target/${{matrix.target}}/release/stalwart-cli.exe ./artifacts/stalwart-cli.exe
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-${{matrix.target}}
+          path: artifacts
+
+  macos:
+    name: Build / ${{matrix.target}}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+          - target: x86_64-apple-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.7
+        with:
+          disable_annotations: true
+
+      - name: Build FoundationDB Edition
+        run: |
+          rustup target add ${{matrix.target}}
+          # Get latest FoundationDB installer
+          curl -Lo foundationdb.pkg "https://glare.now.sh/apple/foundationdb/${{startsWith(matrix.target, 'x86') && 'x86_64' || 'arm64'}}.pkg"
+          sudo installer -allowUntrusted -dumplog -pkg foundationdb.pkg -target /
+          cargo build --release --target ${{matrix.target}} -p mail-server --no-default-features --features "foundationdb elastic s3 redis enterprise"
+          mkdir -p artifacts
+          mv ./target/${{matrix.target}}/release/stalwart-mail ./artifacts/stalwart-mail-foundationdb
+
+      - name: Build
+        run: |
+          rustup target add ${{matrix.target}}
+          cargo build --release --target ${{matrix.target}} -p mail-server --no-default-features --features "sqlite postgres mysql rocks elastic s3 redis azure enterprise"
+          cargo build --release --target ${{matrix.target}} -p stalwart-cli
+          mkdir -p artifacts
+          mv ./target/${{matrix.target}}/release/stalwart-mail ./artifacts/stalwart-mail
+          mv ./target/${{matrix.target}}/release/stalwart-cli ./artifacts/stalwart-cli
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-${{matrix.target}}
+          path: artifacts
+
+  release:
+    name: Release
+    permissions:
+      id-token: write
+      contents: write
+      attestations: write
+    if: github.event_name == 'push' || inputs.Release
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: archive
+          pattern: artifact-*
+
+      - name: Compress
+        run: |
+          set -eux
+          BASE_DIR="$(pwd)/archive"
+          compress_files() {
+              local dir="$1"
+              local archive_dir_name="${dir#artifact-}"
+              cd "$dir"
+              # Process each file in the directory
+              for file in `ls`; do
+                  filename="${file%.*}"
+                  extension="${file##*.}"
+                  if [ "$extension" = "exe" ]; then
+                      7z a -tzip "${filename}-${archive_dir_name}.zip" "$file" > /dev/null
+                  else
+                      tar -czf "${filename}-${archive_dir_name}.tar.gz" "$file"
+                  fi
+              done
+              cd $BASE_DIR
+          }
+          cd $BASE_DIR
+          for arch_dir in `ls`; do
+              dir_name=$(basename "$arch_dir")
+              compress_files "$dir_name"
+          done
+
+      - name: Attest binary
+        id: attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            archive/**/*.tar.gz
+            archive/**/*.zip
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            archive/**/*.tar.gz
+            archive/**/*.zip
+          prerelease: ${{!startsWith(github.ref, 'refs/tags/') || null}}
+          tag_name: ${{!startsWith(github.ref, 'refs/tags/') && 'nightly' || null}}
+          append_body: true
+          body: |
+            <hr />
+
+            ## Check binary attestation at [here](${{ steps.attest.outputs.attestation-url }})
