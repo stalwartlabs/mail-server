@@ -1,6 +1,6 @@
 [package]
 name = "imap_proto"
-version = "0.11.4"
+version = "0.11.5"
 edition = "2021"
 resolver = "2"
 

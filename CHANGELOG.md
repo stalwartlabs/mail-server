@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. This project adheres to [Semantic Versioning](http://semver.org/).
 
+## [0.11.5] - 2025-02-01
+
+To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
+
+### Added
+
+### Changed
+- Open source third party OIDC support.
+
+### Fixed
+- Case insensitive flag parsing (#1138).
+- BCC not removed from JMAP EmailSubmissions (#618).
+- Group pipelined IMAP FETCH and STATUS operations (#1096).
+
 ## [0.11.4] - 2025-01-29
 
 To upgrade replace the `stalwart-mail` binary and then upgrade to the latest web-admin.
