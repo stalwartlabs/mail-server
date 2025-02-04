@@ -106,6 +106,10 @@ Key features:
 
 <img src="./img/screencast-setup.gif">
 
+## Presentation
+
+**Want a deeper dive?** Need to explain to your boss why Stalwart is the perfect fit? Whether you're evaluating options, making a case to your team, or simply curious about how it all works under the hood, these slides walk you through the key features, architecture, and benefits of Stalwart Mail Server. Browse the [slides](https://stalw.art/slides) to see what makes it stand out.
+
 ## Get Started
 
 Install Stalwart Mail Server on your server by following the instructions for your platform:
