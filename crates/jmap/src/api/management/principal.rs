@@ -838,7 +838,6 @@ impl PrincipalManager for Server {
             DirectoryInner::Imap(_) => "IMAP",
             DirectoryInner::Smtp(_) => "SMTP",
             DirectoryInner::Memory(_) => "In-Memory",
-            #[cfg(feature = "enterprise")]
             DirectoryInner::OpenId(_) => "OpenID",
         };
 

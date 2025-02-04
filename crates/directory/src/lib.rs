@@ -280,7 +280,6 @@ pub enum DirectoryInner {
     Internal(Store),
     Ldap(LdapDirectory),
     Sql(SqlDirectory),
-    #[cfg(feature = "enterprise")]
     OpenId(backend::oidc::OpenIdDirectory),
     Imap(ImapDirectory),
     Smtp(SmtpDirectory),
