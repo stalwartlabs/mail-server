@@ -75,6 +75,9 @@ main() {
     ensure mkdir -p "$_dir"
     ensure downloader "$_url" "$_file" "$_arch"
     ensure tar zxvf "$_file" -C "$_dir/bin"
+    if [ "$_component" = "stalwart-mail-foundationdb" ]; then
+        ignore mv "$_dir/bin/stalwart-mail-foundationdb" "$_dir/bin/stalwart-mail"
+    fi
     ignore chmod +x "$_dir/bin/stalwart-mail"
     ignore rm "$_file"
 
