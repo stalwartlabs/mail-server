@@ -264,7 +264,9 @@ pub async fn verify_secret_hash(hashed_secret: &str, secret: &str) -> trc::Resul
                 .into_err()
                 .details(hashed_secret.to_string()))
         }
-    } else {
+    } else if !hashed_secret.is_empty() {
         Ok(hashed_secret == secret)
+    } else {
+        Ok(false)
     }
 }

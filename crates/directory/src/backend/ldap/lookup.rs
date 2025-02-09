@@ -6,6 +6,7 @@
 
 use ldap3::{Ldap, LdapConnAsync, ResultEntry, Scope, SearchEntry};
 use mail_send::Credentials;
+use store::xxhash_rust;
 use trc::AddContext;
 
 use crate::{
@@ -372,6 +373,15 @@ impl LdapMappings {
             } else if self.attr_secret.contains(&attr) {
                 for item in value {
                     principal.append_str(PrincipalField::Secrets, item);
+                }
+            } else if self.attr_secret_changed.contains(&attr) {
+                // Create a disabled AppPassword, used to indicate that the password has been changed
+                // but cannot be used for authentication.
+                for item in value {
+                    principal.append_str(
+                        PrincipalField::Secrets,
+                        format!("$app${}$", xxhash_rust::xxh3::xxh3_64(item.as_bytes())),
+                    );
                 }
             } else if self.attr_email_address.contains(&attr) {
                 for item in value {

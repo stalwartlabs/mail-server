@@ -72,6 +72,10 @@ impl LdapDirectory {
                 .values((&prefix, "attributes.secret"))
                 .map(|(_, v)| v.to_string())
                 .collect(),
+            attr_secret_changed: config
+                .values((&prefix, "attributes.secret-changed"))
+                .map(|(_, v)| v.to_string())
+                .collect(),
             attr_email_address: config
                 .values((&prefix, "attributes.email"))
                 .map(|(_, v)| v.to_string())

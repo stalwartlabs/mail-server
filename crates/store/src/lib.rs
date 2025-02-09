@@ -22,6 +22,7 @@ pub use rand;
 pub use roaring;
 use utils::config::cron::SimpleCron;
 use write::{BitmapClass, ValueClass};
+pub use xxhash_rust;
 
 #[cfg(feature = "s3")]
 use backend::s3::S3Store;

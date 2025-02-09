@@ -29,6 +29,7 @@ pub struct LdapMappings {
     attr_groups: Vec<String>,
     attr_description: Vec<String>,
     attr_secret: Vec<String>,
+    attr_secret_changed: Vec<String>,
     attr_email_address: Vec<String>,
     attr_email_alias: Vec<String>,
     attr_quota: Vec<String>,
