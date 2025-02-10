@@ -54,7 +54,7 @@ pub fn sasl_decode_challenge_xoauth(challenge: &[u8]) -> Option<Credentials<Stri
     }
     match (String::from_utf8(b_username), String::from_utf8(b_secret)) {
         (Ok(s_username), Ok(s_secret)) if !s_username.is_empty() => {
-            Some((s_username, s_secret).into())
+            Some(Credentials::XOauth2{ username: s_username, secret: extract_xoauth_bearer(s_secret.as_bytes()).expect("cannot extract bearer token").into()})
         }
         _ => None,
     }
@@ -86,6 +86,30 @@ fn extract_oauth_bearer(bytes: &[u8]) -> Option<&str> {
 
     None
 }
+
+pub fn extract_xoauth_bearer(bytes: &[u8]) -> Option<&str> {
+    let mut start_pos = 0;
+    let eof = bytes.len().saturating_sub(1);
+
+    for (pos, ch) in bytes.iter().enumerate() {
+        let is_separator = *ch == 1;
+        if is_separator || pos == eof {
+            if bytes
+                .get(start_pos..start_pos + 7)
+                .is_some_and(|s| s.eq_ignore_ascii_case(b"Bearer "))
+            {
+                return bytes
+                    .get(start_pos + 7..if is_separator { pos } else { bytes.len() })
+                    .and_then(|s| std::str::from_utf8(s).ok());
+            }
+
+            start_pos = pos + 1;
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

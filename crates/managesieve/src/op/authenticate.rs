@@ -36,7 +36,7 @@ impl<T: SessionStream> Session<T> {
             .collect();
 
         let credentials = match mechanism {
-            Mechanism::Plain | Mechanism::OAuthBearer => {
+            Mechanism::Plain | Mechanism::OAuthBearer | Mechanism::XOauth2 => {
                 if !params.is_empty() {
                     base64_decode(params.pop().unwrap().as_bytes())
                         .and_then(|challenge| {

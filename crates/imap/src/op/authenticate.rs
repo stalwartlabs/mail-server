@@ -6,7 +6,7 @@
 
 use common::{
     auth::{
-        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain},
+        sasl::{sasl_decode_challenge_oauth, sasl_decode_challenge_plain, sasl_decode_challenge_xoauth},
         AuthRequest,
     },
     listener::{limiter::LimiterResult, SessionStream},
@@ -28,7 +28,7 @@ impl<T: SessionStream> Session<T> {
         let mut args = request.parse_authenticate()?;
 
         match args.mechanism {
-            Mechanism::Plain | Mechanism::OAuthBearer => {
+            Mechanism::Plain | Mechanism::OAuthBearer | Mechanism::XOauth2 => {
                 if !args.params.is_empty() {
                     let challenge = base64_decode(args.params.pop().unwrap().as_bytes())
                         .ok_or_else(|| {
@@ -41,6 +41,8 @@ impl<T: SessionStream> Session<T> {
 
                     let credentials = if args.mechanism == Mechanism::Plain {
                         sasl_decode_challenge_plain(&challenge)
+                    } else if args.mechanism == Mechanism::XOauth2 {
+                        sasl_decode_challenge_xoauth(&challenge)
                     } else {
                         sasl_decode_challenge_oauth(&challenge)
                     }
