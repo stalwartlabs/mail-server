@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
-# check=skip=FromPlatformFlagConstDisallowed,RedundantTargetPlatform
+# check=skip=FromPlatformFlagConstDisallowed,RedundantTargetPlatform,InvalidDefaultArgInFrom
 
+ARG BASE_IMG=scratch
 # *****************
 # Base image for planner & builder
 # *****************
@@ -150,3 +151,11 @@ CMD ["/usr/local/bin/stalwart-mail"]
 VOLUME [ "/opt/stalwart-mail" ]
 EXPOSE	443 25 110 587 465 143 993 995 4190 8080
 ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
+
+# *****************
+# Runtime image for fdb targets
+# *****************
+FROM ${BASE_IMG} AS fdb
+COPY --from=builder /app/artifact/stalwart-mail-foundationdb /usr/local/bin/stalwart-mail
+COPY --from=builder /usr/lib/libfdb_c.so /usr/lib/libfdb_c.so
+ENTRYPOINT ["/usr/local/bin/stalwart-mail", "--config", "/opt/stalwart-mail/etc/config.toml"]

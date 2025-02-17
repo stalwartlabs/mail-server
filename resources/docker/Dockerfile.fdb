@@ -1,10 +1,10 @@
-FROM debian:buster-slim AS chef 
+FROM debian:buster-slim AS chef
 RUN apt-get update && \
     export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -yq \
     build-essential \
     cmake \
-    clang \ 
+    clang \
     curl \
     protobuf-compiler
 ENV RUSTUP_HOME=/opt/rust/rustup \
@@ -28,7 +28,7 @@ COPY resources/ resources/
 COPY tests/ tests/
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM chef AS builder 
+FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY Cargo.toml .
