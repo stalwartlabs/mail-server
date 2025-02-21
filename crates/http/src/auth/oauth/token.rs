@@ -329,6 +329,7 @@ impl TokenHandler for Server {
                         nonce,
                         preferred_username: access_token.name.clone().into(),
                         email: access_token.emails.first().cloned(),
+                        description: access_token.description.clone().into(),
                     },
                 ) {
                     Ok(id_token) => Some(id_token),
