@@ -7,10 +7,11 @@
 use std::{fmt::Debug, path::PathBuf, sync::Arc, time::Duration};
 
 use base64::{
-    engine::general_purpose::{self, STANDARD},
     Engine,
+    engine::general_purpose::{self, STANDARD},
 };
 use common::{
+    Caches, Core, Data, Inner, KV_BAYES_MODEL_GLOBAL, Server,
     auth::AccessToken,
     config::{
         server::{Listeners, ServerProtocol},
@@ -21,31 +22,30 @@ use common::{
         boot::build_ipc,
         config::{ConfigManager, Patterns},
     },
-    Caches, Core, Data, Inner, Server, KV_BAYES_MODEL_GLOBAL,
 };
-use enterprise::{insert_test_metrics, EnterpriseCore};
-use hyper::{header::AUTHORIZATION, Method};
+use enterprise::{EnterpriseCore, insert_test_metrics};
+use hyper::{Method, header::AUTHORIZATION};
 use imap::core::ImapSessionManager;
-use jmap::{api::JmapSessionManager, email::delete::EmailDeletion, SpawnServices};
+use jmap::{SpawnServices, api::JmapSessionManager, email::delete::EmailDeletion};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::{error::request::RequestError, types::id::Id};
 use managesieve::core::ManageSieveSessionManager;
 use pop3::Pop3SessionManager;
 use reqwest::header;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use smtp::{core::SmtpSessionManager, SpawnQueueManager};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use smtp::{SpawnQueueManager, core::SmtpSessionManager};
 
 use store::{
+    IterateParams, SUBSPACE_PROPERTY, Stores, ValueKey,
     roaring::RoaringBitmap,
-    write::{key::DeserializeBigEndian, AnyKey, TaskQueueClass, ValueClass},
-    IterateParams, Stores, ValueKey, SUBSPACE_PROPERTY,
+    write::{AnyKey, TaskQueueClass, ValueClass, key::DeserializeBigEndian},
 };
 use tokio::sync::watch;
-use utils::{config::Config, BlobHash};
-use webhooks::{spawn_mock_webhook_endpoint, MockWebhookEndpoint};
+use utils::{BlobHash, config::Config};
+use webhooks::{MockWebhookEndpoint, spawn_mock_webhook_endpoint};
 
 use crate::{
-    add_test_certs, directory::internal::TestInternalDirectory, store::TempDir, AssertConfig,
+    AssertConfig, add_test_certs, directory::internal::TestInternalDirectory, store::TempDir,
 };
 
 pub mod auth_acl;
@@ -384,13 +384,13 @@ pub async fn jmap_tests() {
     thread_merge::test(&mut params).await;
     mailbox::test(&mut params).await;
     delivery::test(&mut params).await;
-    auth_acl::test(&mut params).await;
+    auth_acl::test(&mut params).await;*/
     auth_limits::test(&mut params).await;
     auth_oauth::test(&mut params).await;
     event_source::test(&mut params).await;
     push_subscription::test(&mut params).await;
     sieve_script::test(&mut params).await;
-    vacation_response::test(&mut params).await;*/
+    vacation_response::test(&mut params).await;
     email_submission::test(&mut params).await;
     websocket::test(&mut params).await;
     quota::test(&mut params).await;

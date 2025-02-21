@@ -10,14 +10,14 @@ use biscuit::{
     jwa::{Algorithm, SignatureAlgorithm},
     jwk::{
         AlgorithmParameters, CommonParameters, EllipticCurve, EllipticCurveKeyParameters,
-        EllipticCurveKeyType, JWKSet, OctetKeyParameters, OctetKeyType, PublicKeyUse,
-        RSAKeyParameters, RSAKeyType, JWK,
+        EllipticCurveKeyType, JWK, JWKSet, OctetKeyParameters, OctetKeyType, PublicKeyUse,
+        RSAKeyParameters, RSAKeyType,
     },
     jws::Secret,
 };
 use ring::signature::{self, KeyPair};
-use rsa::{pkcs1::DecodeRsaPublicKey, traits::PublicKeyParts, RsaPublicKey};
-use store::rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rsa::{RsaPublicKey, pkcs1::DecodeRsaPublicKey, traits::PublicKeyParts};
+use store::rand::{Rng, distr::Alphanumeric, rng};
 use utils::config::Config;
 use x509_parser::num_bigint::BigUint;
 
@@ -74,7 +74,7 @@ impl OAuthConfig {
             None => SignatureAlgorithm::HS256,
         };
 
-        let rand_key = thread_rng()
+        let rand_key = rng()
             .sample_iter(Alphanumeric)
             .take(64)
             .map(char::from)
@@ -149,7 +149,7 @@ impl OAuthConfig {
                 .value("oauth.key")
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| {
-                    thread_rng()
+                    rng()
                         .sample_iter(Alphanumeric)
                         .take(64)
                         .map(char::from)

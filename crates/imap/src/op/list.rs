@@ -13,14 +13,14 @@ use crate::{
 use common::listener::SessionStream;
 use directory::Permission;
 use imap_proto::{
+    Command, StatusResponse,
     protocol::{
+        ImapResponse, ProtocolVersion,
         list::{
             self, Arguments, Attribute, ChildInfo, ListItem, ReturnOption, SelectionOption, Tag,
         },
-        ImapResponse, ProtocolVersion,
     },
     receiver::Request,
-    Command, StatusResponse,
 };
 
 use super::ImapContext;
@@ -316,7 +316,7 @@ pub fn matches_pattern(patterns: &[String], mailbox_name: &str) -> bool {
         'inner: while let Some((pos, &ch)) = pattern_bytes.next() {
             if ch == b'%' || ch == b'*' {
                 let mut end_pos = pos;
-                while let Some((_, &next_ch)) = pattern_bytes.peek() {
+                while let Some(&(_, &next_ch)) = pattern_bytes.peek() {
                     if next_ch == b'%' || next_ch == b'*' {
                         break;
                     } else {

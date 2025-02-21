@@ -138,7 +138,7 @@ impl SmtpReporting for Server {
             {
                 use rand::Rng;
 
-                let delivery_time = rand::thread_rng().gen_range(0u64..10800u64);
+                let delivery_time = rand::rng().random_range(0u64..10800u64);
                 for domain in &mut message.domains {
                     domain.retry.due += delivery_time;
                     domain.expires += delivery_time;

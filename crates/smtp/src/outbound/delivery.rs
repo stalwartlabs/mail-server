@@ -116,7 +116,7 @@ impl QueuedMessage {
                 }
             } else {
                 QueueEventStatus::Locked {
-                    until: now() + LOCK_EXPIRY + rand::thread_rng().gen_range(5..10),
+                    until: now() + LOCK_EXPIRY + rand::rng().random_range(5..10),
                 }
             };
 

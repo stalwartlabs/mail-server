@@ -5,10 +5,10 @@
  */
 
 use crate::{
-    protocol::{create, ProtocolVersion},
-    receiver::{bad, Request, Token},
-    utf7::utf7_maybe_decode,
     Command,
+    protocol::{ProtocolVersion, create},
+    receiver::{Request, Token, bad},
+    utf7::utf7_maybe_decode,
 };
 
 impl Request<Command> {
@@ -32,7 +32,7 @@ impl Request<Command> {
                 }
                 if tokens
                     .next()
-                    .map_or(true, |token| !token.is_parenthesis_open())
+                    .is_none_or(|token| !token.is_parenthesis_open())
                 {
                     return Err(bad(self.tag, "Expected '(' after 'USE'."));
                 }
@@ -54,7 +54,7 @@ impl Request<Command> {
                                 return Err(bad(
                                     self.tag,
                                     "A mailbox with the \"\\All\" attribute already exists.",
-                                ))
+                                ));
                             }
                             None => {
                                 return Err(bad(
@@ -90,7 +90,7 @@ impl Request<Command> {
 mod tests {
 
     use crate::{
-        protocol::{create, ProtocolVersion},
+        protocol::{ProtocolVersion, create},
         receiver::Receiver,
     };
 

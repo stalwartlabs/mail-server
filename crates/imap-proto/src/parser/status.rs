@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use crate::protocol::status::Status;
-use crate::protocol::{status, ProtocolVersion};
-use crate::receiver::{bad, Request, Token};
-use crate::utf7::utf7_maybe_decode;
 use crate::Command;
+use crate::protocol::status::Status;
+use crate::protocol::{ProtocolVersion, status};
+use crate::receiver::{Request, Token, bad};
+use crate::utf7::utf7_maybe_decode;
 
 impl Request<Command> {
     pub fn parse_status(self, version: ProtocolVersion) -> trc::Result<status::Arguments> {
@@ -28,7 +28,7 @@ impl Request<Command> {
 
                 if tokens
                     .next()
-                    .map_or(true, |token| !token.is_parenthesis_open())
+                    .is_none_or(|token| !token.is_parenthesis_open())
                 {
                     return Err(bad(
                         self.tag.to_string(),
@@ -49,7 +49,7 @@ impl Request<Command> {
                             return Err(bad(
                                 self.tag.to_string(),
                                 "Invalid status return option argument.",
-                            ))
+                            ));
                         }
                     }
                 }
@@ -95,7 +95,7 @@ impl Status {
 #[cfg(test)]
 mod tests {
     use crate::{
-        protocol::{status, ProtocolVersion},
+        protocol::{ProtocolVersion, status},
         receiver::Receiver,
     };
 

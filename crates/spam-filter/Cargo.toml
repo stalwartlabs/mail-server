@@ -1,7 +1,7 @@
 [package]
 name = "spam-filter"
 version = "0.11.5"
-edition = "2021"
+edition = "2024"
 resolver = "2"
 
 [dependencies]

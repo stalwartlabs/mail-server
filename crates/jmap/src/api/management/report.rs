@@ -129,7 +129,7 @@ impl ManageReports for Server {
                             Some(report)
                                 if tenant_domains
                                     .as_ref()
-                                    .map_or(true, |domains| report.inner.has_domain(domains)) =>
+                                    .is_none_or( |domains| report.inner.has_domain(domains)) =>
                             {
                                 Ok(JsonResponse::new(json!({
                                         "data": report.inner,
@@ -150,7 +150,7 @@ impl ManageReports for Server {
                             Some(report)
                                 if tenant_domains
                                     .as_ref()
-                                    .map_or(true, |domains| report.inner.has_domain(domains)) =>
+                                    .is_none_or( |domains| report.inner.has_domain(domains)) =>
                             {
                                 Ok(JsonResponse::new(json!({
                                         "data": report.inner,
@@ -171,7 +171,7 @@ impl ManageReports for Server {
                             Some(report)
                                 if tenant_domains
                                     .as_ref()
-                                    .map_or(true, |domains| report.inner.has_domain(domains)) =>
+                                    .is_none_or( |domains| report.inner.has_domain(domains)) =>
                             {
                                 Ok(JsonResponse::new(json!({
                                         "data": report.inner,
@@ -253,7 +253,7 @@ impl ManageReports for Server {
                                     ValueClass::Report(report_id.clone()),
                                 ))
                                 .await?
-                                .map_or(true, |report| report.inner.has_domain(domains)),
+                                .is_none_or( |report| report.inner.has_domain(domains)),
                             ReportClass::Dmarc { .. } => self
                                 .core
                                 .storage
@@ -262,7 +262,7 @@ impl ManageReports for Server {
                                     ValueKey::from(ValueClass::Report(report_id.clone())),
                                 )
                                 .await?
-                                .map_or(true, |report| report.inner.has_domain(domains)),
+                                .is_none_or( |report| report.inner.has_domain(domains)),
 
                             ReportClass::Arf { .. } => self
                                 .core
@@ -272,7 +272,7 @@ impl ManageReports for Server {
                                     ValueClass::Report(report_id.clone()),
                                 ))
                                 .await?
-                                .map_or(true, |report| report.inner.has_domain(domains)),
+                                .is_none_or( |report| report.inner.has_domain(domains)),
                         };
 
                         if !is_tenant_report {
@@ -388,30 +388,30 @@ async fn fetch_incoming_reports(
                                 .caused_by(trc::location!())?
                                 .inner;
 
-                            filter.map_or(true, |f| report.contains(f))
+                            filter.is_none_or( |f| report.contains(f))
                                 && tenant_domains
                                     .as_ref()
-                                    .map_or(true, |domains| report.has_domain(domains))
+                                    .is_none_or( |domains| report.has_domain(domains))
                         }
                         ReportType::Tls => {
                             let report = Bincode::<IncomingReport<TlsReport>>::deserialize(value)
                                 .caused_by(trc::location!())?
                                 .inner;
 
-                            filter.map_or(true, |f| report.contains(f))
+                            filter.is_none_or( |f| report.contains(f))
                                 && tenant_domains
                                     .as_ref()
-                                    .map_or(true, |domains| report.has_domain(domains))
+                                    .is_none_or( |domains| report.has_domain(domains))
                         }
                         ReportType::Arf => {
                             let report = Bincode::<IncomingReport<Feedback>>::deserialize(value)
                                 .caused_by(trc::location!())?
                                 .inner;
 
-                            filter.map_or(true, |f| report.contains(f))
+                            filter.is_none_or( |f| report.contains(f))
                                 && tenant_domains
                                     .as_ref()
-                                    .map_or(true, |domains| report.has_domain(domains))
+                                    .is_none_or( |domains| report.has_domain(domains))
                         }
                     }
                 } else {

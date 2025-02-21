@@ -2,25 +2,25 @@
 
 use std::time::Duration;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use hyper::header::USER_AGENT;
 use rcgen::{Certificate, CustomExtension, PKCS_ECDSA_P256_SHA256};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Method, Response};
 use ring::rand::SystemRandom;
-use ring::signature::{EcdsaKeyPair, EcdsaSigningAlgorithm, ECDSA_P256_SHA256_FIXED_SIGNING};
+use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, EcdsaSigningAlgorithm};
 use serde::Deserialize;
-use store::write::Bincode;
 use store::Serialize;
-use trc::event::conv::AssertSuccess;
+use store::write::Bincode;
 use trc::AddContext;
+use trc::event::conv::AssertSuccess;
 
-use super::jose::{
-    eab_sign, key_authorization, key_authorization_sha256, key_authorization_sha256_base64, sign,
-    Body,
-};
 use super::AcmeProvider;
+use super::jose::{
+    Body, eab_sign, key_authorization, key_authorization_sha256, key_authorization_sha256_base64,
+    sign,
+};
 
 pub const LETS_ENCRYPT_STAGING_DIRECTORY: &str =
     "https://acme-staging-v02.api.letsencrypt.org/directory";
@@ -172,13 +172,11 @@ impl Account {
     }
 
     pub fn http_proof(&self, challenge: &Challenge) -> trc::Result<Vec<u8>> {
-        key_authorization(&self.key_pair, &challenge.token)
-            .map(|key| key.into_bytes())
-            .map_err(Into::into)
+        key_authorization(&self.key_pair, &challenge.token).map(|key| key.into_bytes())
     }
 
     pub fn dns_proof(&self, challenge: &Challenge) -> trc::Result<String> {
-        key_authorization_sha256_base64(&self.key_pair, &challenge.token).map_err(Into::into)
+        key_authorization_sha256_base64(&self.key_pair, &challenge.token)
     }
 
     pub fn tls_alpn_key(&self, challenge: &Challenge, domain: String) -> trc::Result<Vec<u8>> {

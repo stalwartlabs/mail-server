@@ -364,7 +364,7 @@ impl ImportCommands {
                                             }
                                             Err(_) if retry_count < RETRY_ATTEMPTS => {
                                                 let backoff =
-                                                    rand::thread_rng().gen_range(50..=300);
+                                                    rand::rng().random_range(50..=300);
                                                 tokio::time::sleep(Duration::from_millis(backoff))
                                                     .await;
                                                 retry_count += 1;

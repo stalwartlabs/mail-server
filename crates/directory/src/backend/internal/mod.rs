@@ -13,15 +13,15 @@ use ahash::AHashMap;
 use jmap_proto::types::collection::Collection;
 use manage::DynamicPrincipalInfo;
 use store::{
+    Deserialize, IterateParams, SUBSPACE_DIRECTORY, Serialize, Store, U32_LEN, ValueKey,
     write::{
-        key::KeySerializer, AnyClass, BatchBuilder, DirectoryClass, MaybeDynamicId, ValueClass,
+        AnyClass, BatchBuilder, DirectoryClass, MaybeDynamicId, ValueClass, key::KeySerializer,
     },
-    Deserialize, IterateParams, Serialize, Store, ValueKey, SUBSPACE_DIRECTORY, U32_LEN,
 };
 use trc::AddContext;
 use utils::codec::leb128::{Leb128Iterator, Leb128Reader};
 
-use crate::{Principal, Type, ROLE_ADMIN, ROLE_USER};
+use crate::{Principal, ROLE_ADMIN, ROLE_USER, Type};
 
 const INT_MARKER: u8 = 1 << 7;
 
@@ -105,7 +105,7 @@ impl PrincipalInfo {
     // SPDX-License-Identifier: LicenseRef-SEL
 
     pub fn has_tenant_access(&self, tenant_id: Option<u32>) -> bool {
-        tenant_id.map_or(true, |tenant_id| {
+        tenant_id.is_none_or(|tenant_id| {
             self.tenant.is_some_and(|t| tenant_id == t)
                 || (self.typ == Type::Tenant && self.id == tenant_id)
         })
@@ -371,10 +371,11 @@ impl MigrateDirectory for Store {
                 }));
 
             if let Err(err) = self.write(batch.build()).await {
-                trc::error!(err
-                    .caused_by(trc::location!())
-                    .details("Failed to migrate domain, probably a principal already exists")
-                    .ctx(trc::Key::Domain, domain));
+                trc::error!(
+                    err.caused_by(trc::location!())
+                        .details("Failed to migrate domain, probably a principal already exists")
+                        .ctx(trc::Key::Domain, domain)
+                );
             }
         }
 

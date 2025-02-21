@@ -8,7 +8,7 @@ use std::ops::Deref;
 
 use utils::codec::base32_custom::{BASE32_ALPHABET, BASE32_INVERSE};
 
-use crate::parser::{json::Parser, JsonObjectParser};
+use crate::parser::{JsonObjectParser, json::Parser};
 
 use super::DocumentId;
 
@@ -122,7 +122,7 @@ impl Id {
 
     pub fn from_parts(prefix_id: DocumentId, doc_id: DocumentId) -> Id {
         Id {
-            id: (prefix_id as u64) << 32 | doc_id as u64,
+            id: ((prefix_id as u64) << 32) | doc_id as u64,
         }
     }
 

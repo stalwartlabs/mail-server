@@ -8,14 +8,14 @@ use std::borrow::Cow;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use mail_parser::decoders::charsets::map::charset_decoder;
 use mail_parser::decoders::charsets::DecoderFnc;
+use mail_parser::decoders::charsets::map::charset_decoder;
 
+use crate::Command;
 use crate::protocol::search::{self, Filter};
 use crate::protocol::search::{ModSeqEntry, ResultOption};
 use crate::protocol::{Flag, ProtocolVersion};
-use crate::receiver::{bad, Request, Token};
-use crate::Command;
+use crate::receiver::{Request, Token, bad};
 
 use super::{parse_date, parse_number, parse_sequence_set};
 
@@ -74,7 +74,7 @@ pub fn parse_result_options(
     let mut result_options = Vec::new();
     if tokens
         .next()
-        .map_or(true, |token| !token.is_parenthesis_open())
+        .is_none_or(|token| !token.is_parenthesis_open())
     {
         return Err(Cow::from("Invalid result option, expected parenthesis."));
     }
@@ -538,8 +538,8 @@ impl ResultOption {
 mod tests {
     use crate::{
         protocol::{
-            search::{self, Filter, ModSeqEntry, ResultOption},
             Flag, ProtocolVersion, Sequence,
+            search::{self, Filter, ModSeqEntry, ResultOption},
         },
         receiver::Receiver,
     };

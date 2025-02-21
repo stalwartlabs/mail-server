@@ -5,13 +5,13 @@
  */
 
 use crate::{
-    protocol::{
-        select::{self, QResync},
-        ProtocolVersion,
-    },
-    receiver::{bad, Request, Token},
-    utf7::utf7_maybe_decode,
     Command,
+    protocol::{
+        ProtocolVersion,
+        select::{self, QResync},
+    },
+    receiver::{Request, Token, bad},
+    utf7::utf7_maybe_decode,
 };
 
 use super::{parse_number, parse_sequence_set};
@@ -44,7 +44,7 @@ impl Request<Command> {
                             Token::Argument(param) if param.eq_ignore_ascii_case(b"QRESYNC") => {
                                 if tokens
                                     .next()
-                                    .map_or(true, |token| !token.is_parenthesis_open())
+                                    .is_none_or(|token| !token.is_parenthesis_open())
                                 {
                                     return Err(bad(self.tag, "Expected '(' after 'QRESYNC'."));
                                 }
@@ -125,7 +125,7 @@ impl Request<Command> {
                                     ));
                                     if tokens
                                         .next()
-                                        .map_or(true, |token| !token.is_parenthesis_close())
+                                        .is_none_or(|token| !token.is_parenthesis_close())
                                     {
                                         return Err(bad(self.tag, "Missing ')' for 'QRESYNC'."));
                                     }
@@ -133,7 +133,7 @@ impl Request<Command> {
 
                                 if tokens
                                     .next()
-                                    .map_or(true, |token| !token.is_parenthesis_close())
+                                    .is_none_or(|token| !token.is_parenthesis_close())
                                 {
                                     return Err(bad(self.tag, "Missing ')' for 'QRESYNC'."));
                                 }
@@ -180,8 +180,8 @@ impl Request<Command> {
 mod tests {
     use crate::{
         protocol::{
-            select::{self, QResync},
             ProtocolVersion, Sequence,
+            select::{self, QResync},
         },
         receiver::Receiver,
     };

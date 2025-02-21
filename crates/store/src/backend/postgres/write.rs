@@ -63,7 +63,7 @@ impl PostgresStore {
                         }
                     }
 
-                    let backoff = rand::thread_rng().gen_range(50..=300);
+                    let backoff = rand::rng().random_range(50..=300);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
                     retry_count += 1;
                 }

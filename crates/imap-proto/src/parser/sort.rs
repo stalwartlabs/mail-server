@@ -7,9 +7,9 @@
 use mail_parser::decoders::charsets::map::charset_decoder;
 
 use crate::{
-    protocol::search::{Arguments, Comparator, Sort},
-    receiver::{bad, Request, Token},
     Command,
+    protocol::search::{Arguments, Comparator, Sort},
+    receiver::{Request, Token, bad},
 };
 
 use super::search::{parse_filters, parse_result_options};
@@ -37,7 +37,7 @@ impl Request<Command> {
 
         if tokens
             .next()
-            .map_or(true, |token| !token.is_parenthesis_open())
+            .is_none_or(|token| !token.is_parenthesis_open())
         {
             return Err(bad(
                 self.tag.to_string(),
@@ -112,8 +112,8 @@ mod tests {
 
     use crate::{
         protocol::{
-            search::{Arguments, Comparator, Filter, ResultOption, Sort},
             Flag,
+            search::{Arguments, Comparator, Filter, ResultOption, Sort},
         },
         receiver::Receiver,
     };

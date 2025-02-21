@@ -7,11 +7,11 @@
 use std::{collections::HashSet, future::Future, vec};
 
 use common::{
-    scripts::{
-        functions::{array::cosine_similarity, unicode::CharUtils},
-        IsMixedCharset,
-    },
     Server,
+    scripts::{
+        IsMixedCharset,
+        functions::{array::cosine_similarity, unicode::CharUtils},
+    },
 };
 use mail_parser::{HeaderName, MimeHeaders, PartType};
 use nlp::tokenizers::types::TokenType;
@@ -291,7 +291,7 @@ impl SpamFilterAnalyzeMime for Server {
                         && ct_subtype == "plain"
                         && ct
                             .and_then(|ct| ct.attribute("charset"))
-                            .map_or(true, |c| c.is_empty())
+                            .is_none_or(|c| c.is_empty())
                     {
                         // Charset header is missing
                         ctx.result.add_tag("MISSING_CHARSET");
@@ -339,7 +339,7 @@ impl SpamFilterAnalyzeMime for Server {
                     "octet-stream" => {
                         if !is_encrypted
                             && !has_content_id
-                            && cd.map_or(true, |cd| {
+                            && cd.is_none_or(|cd| {
                                 !cd.c_type.eq_ignore_ascii_case("attachment")
                                     && !cd.has_attribute("filename")
                             })

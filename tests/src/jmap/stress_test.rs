@@ -65,13 +65,13 @@ async fn email_tests(server: Server, client: Arc<Client>) {
         let mut futures = Vec::new();
 
         for num in 0..1000 {
-            match rand::thread_rng().gen_range(0..3) {
+            match rand::rng().random_range(0..3) {
                 0 => {
                     let client = client.clone();
                     let mailboxes = mailboxes.clone();
                     futures.push(tokio::spawn(async move {
                         let mailbox_num =
-                            rand::thread_rng().gen_range::<usize, _>(0..mailboxes.len());
+                            rand::rng().random_range::<usize, _>(0..mailboxes.len());
                         let _message_id = client
                             .email_import(
                                 format!(
@@ -107,7 +107,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                             req.query_email();
                             let ids = req.send_query_email().await.unwrap().take_ids();
                             if !ids.is_empty() {
-                                let message_id = &ids[rand::thread_rng().gen_range(0..ids.len())];
+                                let message_id = &ids[rand::rng().random_range(0..ids.len())];
                                 /*println!(
                                     "Deleting message {}.",
                                     Id::from_bytes(message_id.as_bytes()).unwrap().document_id()
@@ -159,14 +159,14 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                             .take_list();
 
                         if !emails.is_empty() {
-                            let message = &emails[rand::thread_rng().gen_range(0..emails.len())];
+                            let message = &emails[rand::rng().random_range(0..emails.len())];
                             let message_id = message.id().unwrap();
                             let mailbox_ids = message.mailbox_ids();
                             assert_eq!(mailbox_ids.len(), 1, "{:#?}", message);
                             let mailbox_id = mailbox_ids.last().unwrap();
                             loop {
                                 let new_mailbox_id =
-                                    &mailboxes[rand::thread_rng().gen_range(0..mailboxes.len())];
+                                    &mailboxes[rand::rng().random_range(0..mailboxes.len())];
                                 if new_mailbox_id != mailbox_id {
                                     /*println!(
                                         "Moving message {} from {} to {}.",
@@ -193,7 +193,7 @@ async fn email_tests(server: Server, client: Arc<Client>) {
                     }));
                 }
             }
-            tokio::time::sleep(Duration::from_millis(rand::thread_rng().gen_range(5..10))).await;
+            tokio::time::sleep(Duration::from_millis(rand::rng().random_range(5..10))).await;
         }
 
         join_all(futures).await;
@@ -285,7 +285,7 @@ async fn mailbox_tests(server: Server, client: Arc<Client>) {
     println!("----------------- MAILBOX STRESS TEST -----------------");
 
     for _ in 0..1000 {
-        match rand::thread_rng().gen_range(0..=3) {
+        match rand::rng().random_range(0..=3) {
             0 => {
                 for pos in 0..mailboxes.len() {
                     let client = client.clone();
@@ -332,15 +332,15 @@ async fn mailbox_tests(server: Server, client: Arc<Client>) {
                         .unwrap()
                         .take_ids();
                     if !ids.is_empty() {
-                        let id = ids.swap_remove(rand::thread_rng().gen_range(0..ids.len()));
-                        let sort_order = rand::thread_rng().gen_range(0..100);
+                        let id = ids.swap_remove(rand::rng().random_range(0..ids.len()));
+                        let sort_order = rand::rng().random_range(0..100);
                         //println!("Updating mailbox {}.", id);
                         client.mailbox_update_sort_order(&id, sort_order).await.ok();
                     }
                 }));
             }
         }
-        tokio::time::sleep(Duration::from_millis(rand::thread_rng().gen_range(5..10))).await;
+        tokio::time::sleep(Duration::from_millis(rand::rng().random_range(5..10))).await;
     }
 
     join_all(futures).await;
@@ -421,7 +421,7 @@ async fn delete_mailbox(client: &Client, mailbox_id: &str) {
             Err(err) => match err {
                 jmap_client::Error::Set(_) => break,
                 jmap_client::Error::Transport(_) => {
-                    let backoff = rand::thread_rng().gen_range(50..=300);
+                    let backoff = rand::rng().random_range(50..=300);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
                 }
                 _ => panic!("Failed: {:?}", err),

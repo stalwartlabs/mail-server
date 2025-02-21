@@ -5,14 +5,14 @@
  */
 
 use crate::{
+    Command,
     protocol::{
+        ProtocolVersion,
         list::{self, ReturnOption, SelectionOption},
         status::Status,
-        ProtocolVersion,
     },
-    receiver::{bad, Request, Token},
+    receiver::{Request, Token, bad},
     utf7::utf7_maybe_decode,
-    Command,
 };
 
 impl Request<Command> {
@@ -60,7 +60,7 @@ impl Request<Command> {
                                     return Err(bad(
                                         self.tag.to_string(),
                                         "Invalid selection option argument.",
-                                    ))
+                                    ));
                                 }
                             }
                         }
@@ -109,7 +109,7 @@ impl Request<Command> {
                 {
                     if tokens
                         .next()
-                        .map_or(true, |token| !token.is_parenthesis_open())
+                        .is_none_or(|token| !token.is_parenthesis_open())
                     {
                         return Err(bad(
                             self.tag.to_string(),
@@ -126,13 +126,12 @@ impl Request<Command> {
                                 if let ReturnOption::Status(status) = &mut return_option {
                                     if tokens
                                         .next()
-                                        .map_or(true, |token| !token.is_parenthesis_open())
+                                        .is_none_or(|token| !token.is_parenthesis_open())
                                     {
                                         return Err(bad(
-                                        self.tag,
-                                        "Invalid return option, expected parenthesis after STATUS.",
-                                    )
-                                        );
+                                            self.tag,
+                                            "Invalid return option, expected parenthesis after STATUS.",
+                                        ));
                                     }
                                     while let Some(token) = tokens.next() {
                                         match token {
@@ -148,7 +147,7 @@ impl Request<Command> {
                                                 return Err(bad(
                                                     self.tag,
                                                     "Invalid status return option argument.",
-                                                ))
+                                                ));
                                             }
                                         }
                                     }
@@ -159,7 +158,7 @@ impl Request<Command> {
                                 return Err(bad(
                                     self.tag.to_string(),
                                     "Invalid return option argument.",
-                                ))
+                                ));
                             }
                         }
                     }
@@ -211,9 +210,9 @@ impl ReturnOption {
 mod tests {
     use crate::{
         protocol::{
+            ProtocolVersion,
             list::{self, ReturnOption, SelectionOption},
             status::Status,
-            ProtocolVersion,
         },
         receiver::Receiver,
     };

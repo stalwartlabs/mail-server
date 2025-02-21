@@ -17,11 +17,11 @@ use nlp::tokenizers::word::WordTokenizer;
 use rand::Rng;
 use roaring::RoaringBitmap;
 use utils::{
-    codec::leb128::{Leb128Iterator, Leb128Vec},
     BlobHash,
+    codec::leb128::{Leb128Iterator, Leb128Vec},
 };
 
-use crate::{backend::MAX_TOKEN_LENGTH, BlobClass, Deserialize, Serialize, Value};
+use crate::{BlobClass, Deserialize, Serialize, Value, backend::MAX_TOKEN_LENGTH};
 
 use self::assert::AssertValue;
 
@@ -896,7 +896,7 @@ impl RandomAvailableId for RoaringBitmap {
             last_id += 1;
         }
 
-        available_ids[rand::thread_rng().gen_range(0..available_ids.len())]
+        available_ids[rand::rng().random_range(0..available_ids.len())]
     }
 }
 

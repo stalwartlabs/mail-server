@@ -606,7 +606,7 @@ impl<T: SessionStream> SessionData<T> {
             if account
                 .prefix
                 .as_ref()
-                .map_or(true, |p| mailbox_name.starts_with(p))
+                .is_none_or( |p| mailbox_name.starts_with(p))
             {
                 for (mailbox_name_, mailbox_id_) in account.mailbox_names.iter() {
                     if (!is_inbox && mailbox_name_ == mailbox_name)

@@ -1,13 +1,13 @@
 [package]
 name = "tests"
 version = "0.11.5"
-edition = "2021"
+edition = "2024"
 resolver = "2"
 
 [features]
 #default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
-#default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis", "foundationdb"]
-default = ["rocks", "redis", "s3"]
+default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis"]
+#default = ["rocks", "redis", "s3"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
 postgres = ["store/postgres"]

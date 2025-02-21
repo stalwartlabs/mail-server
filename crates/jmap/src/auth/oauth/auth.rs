@@ -7,32 +7,31 @@
 use std::sync::Arc;
 
 use common::{
+    KV_OAUTH, Server,
     auth::{
-        oauth::{CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN, USER_CODE_ALPHABET, USER_CODE_LEN},
         AccessToken,
+        oauth::{CLIENT_ID_MAX_LEN, DEVICE_CODE_LEN, USER_CODE_ALPHABET, USER_CODE_LEN},
     },
-    Server, KV_OAUTH,
 };
-use rand::distributions::Standard;
+use rand::{
+    Rng,
+    distr::{Alphanumeric, StandardUniform},
+    rng,
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::future::Future;
-use store::{
-    dispatch::lookup::KeyValue,
-    rand::{distributions::Alphanumeric, thread_rng, Rng},
-    write::Bincode,
-    Serialize,
-};
+use store::{Serialize, dispatch::lookup::KeyValue, write::Bincode};
 
 use crate::{
     api::{
-        http::{HttpContext, HttpSessionData, ToHttpResponse},
         HttpRequest, HttpResponse, JsonResponse,
+        http::{HttpContext, HttpSessionData, ToHttpResponse},
     },
     auth::oauth::OAuthStatus,
 };
 
-use super::{DeviceAuthResponse, FormData, OAuthCode, OAuthCodeRequest, MAX_POST_LEN};
+use super::{DeviceAuthResponse, FormData, MAX_POST_LEN, OAuthCode, OAuthCodeRequest};
 
 #[derive(Debug, serde::Serialize, Deserialize)]
 pub struct OAuthMetadata {
@@ -100,7 +99,7 @@ impl OAuthApiHandler for Server {
                 }
 
                 // Generate client code
-                let client_code = thread_rng()
+                let client_code = rng()
                     .sample_iter(Alphanumeric)
                     .take(DEVICE_CODE_LEN)
                     .map(char::from)
@@ -210,7 +209,7 @@ impl OAuthApiHandler for Server {
         let nonce = form_data.remove("nonce");
 
         // Generate device code
-        let device_code = thread_rng()
+        let device_code = rng()
             .sample_iter(Alphanumeric)
             .take(DEVICE_CODE_LEN)
             .map(char::from)
@@ -218,10 +217,10 @@ impl OAuthApiHandler for Server {
 
         // Generate user code
         let mut user_code = String::with_capacity(USER_CODE_LEN + 1);
-        for (pos, ch) in thread_rng()
-            .sample_iter::<usize, _>(Standard)
+        for (pos, ch) in rng()
+            .sample_iter(StandardUniform)
             .take(USER_CODE_LEN)
-            .map(|v| char::from(USER_CODE_ALPHABET[v % USER_CODE_ALPHABET.len()]))
+            .map(|v: u64| char::from(USER_CODE_ALPHABET[v as usize % USER_CODE_ALPHABET.len()]))
             .enumerate()
         {
             if pos == USER_CODE_LEN / 2 {

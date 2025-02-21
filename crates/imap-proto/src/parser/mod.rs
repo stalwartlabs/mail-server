@@ -30,9 +30,9 @@ use std::{borrow::Cow, str::FromStr};
 use chrono::{DateTime, NaiveDate};
 
 use crate::{
+    Command,
     protocol::{Flag, Sequence},
     receiver::CommandParser,
-    Command,
 };
 
 pub type Result<T> = std::result::Result<T, Cow<'static, str>>;
@@ -253,7 +253,7 @@ pub fn parse_sequence_set(value: &[u8]) -> Result<Sequence> {
                 }
             }
             b'$' => {
-                if value.get(pos + 1).map_or(true, |&ch| ch == b',') {
+                if value.get(pos + 1).is_none_or(|&ch| ch == b',') {
                     is_saved_search = true;
                 } else {
                     return Err(Cow::from(format!(

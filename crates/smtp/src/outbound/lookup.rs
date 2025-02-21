@@ -11,11 +11,11 @@ use std::{
 };
 
 use common::{
-    expr::{functions::ResolveVariable, V_MX},
     Server,
+    expr::{V_MX, functions::ResolveVariable},
 };
 use mail_auth::{IpLookupStrategy, MX};
-use rand::{seq::SliceRandom, Rng};
+use rand::{Rng, seq::SliceRandom};
 
 use crate::queue::{Error, ErrorDetails, Status};
 
@@ -166,7 +166,7 @@ impl DnsLookup for Server {
                 }
                 std::cmp::Ordering::Greater => {
                     result.source_ipv4 =
-                        IpAddr::from(source_ips[rand::thread_rng().gen_range(0..source_ips.len())])
+                        IpAddr::from(source_ips[rand::rng().random_range(0..source_ips.len())])
                             .into();
                 }
                 std::cmp::Ordering::Less => (),
@@ -187,7 +187,7 @@ impl DnsLookup for Server {
                 }
                 std::cmp::Ordering::Greater => {
                     result.source_ipv6 =
-                        IpAddr::from(source_ips[rand::thread_rng().gen_range(0..source_ips.len())])
+                        IpAddr::from(source_ips[rand::rng().random_range(0..source_ips.len())])
                             .into();
                 }
                 std::cmp::Ordering::Less => (),
@@ -224,7 +224,7 @@ impl ToNextHop for Vec<MX> {
             'outer: for mx in self.iter() {
                 if mx.exchanges.len() > 1 {
                     let mut slice = mx.exchanges.iter().collect::<Vec<_>>();
-                    slice.shuffle(&mut rand::thread_rng());
+                    slice.shuffle(&mut rand::rng());
                     for remote_host in slice {
                         remote_hosts.push(NextHop::MX(remote_host.as_str()));
                         if remote_hosts.len() == max_mx {

@@ -13,14 +13,15 @@ use roaring::RoaringBitmap;
 use trc::{AddContext, StoreEvent};
 
 use crate::{
+    BitmapKey, Deserialize, IterateParams, Key, QueryResult, SUBSPACE_BITMAP_ID,
+    SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES, SUBSPACE_LOGS, Store, U32_LEN,
+    Value, ValueKey,
     write::{
+        AnyClass, AnyKey, AssignedIds, Batch, BatchBuilder, BitmapClass, BitmapHash, Operation,
+        ReportClass, ValueClass, ValueOp,
         key::{DeserializeBigEndian, KeySerializer},
-        now, AnyClass, AnyKey, AssignedIds, Batch, BatchBuilder, BitmapClass, BitmapHash,
-        Operation, ReportClass, ValueClass, ValueOp,
+        now,
     },
-    BitmapKey, Deserialize, IterateParams, Key, QueryResult, Store, Value, ValueKey,
-    SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SUBSPACE_INDEXES, SUBSPACE_LOGS,
-    U32_LEN,
 };
 
 use super::DocumentSet;
@@ -417,7 +418,7 @@ impl Store {
             )
             .no_values(),
             |key, _| {
-                if collection_offset.map_or(true, |offset| {
+                if collection_offset.is_none_or(|offset| {
                     key.get(key.len() - U32_LEN - offset).copied() == Some(collection)
                 }) {
                     let document_id = key.deserialize_be_u32(key.len() - U32_LEN)?;
@@ -645,9 +646,9 @@ impl Store {
 
     #[cfg(feature = "test_mode")]
     pub async fn blob_expire_all(&self) {
-        use utils::{BlobHash, BLOB_HASH_LEN};
+        use utils::{BLOB_HASH_LEN, BlobHash};
 
-        use crate::{write::BlobOp, U64_LEN};
+        use crate::{U64_LEN, write::BlobOp};
 
         // Delete all temporary hashes
         let from_key = ValueKey {

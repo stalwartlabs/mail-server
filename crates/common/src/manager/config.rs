@@ -5,7 +5,7 @@
  */
 
 use std::{
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{BTreeMap, btree_map::Entry},
     path::PathBuf,
     sync::Arc,
 };
@@ -13,14 +13,14 @@ use std::{
 use ahash::AHashMap;
 use arc_swap::ArcSwap;
 use store::{
-    write::{BatchBuilder, ValueClass},
     Deserialize, IterateParams, Store, ValueKey,
+    write::{BatchBuilder, ValueClass},
 };
 use trc::AddContext;
 use utils::{
+    Semver,
     config::{Config, ConfigKey},
     glob::GlobPattern,
-    Semver,
 };
 
 #[derive(Default)]
@@ -347,7 +347,7 @@ impl ConfigManager {
                 .ctx(trc::Key::Reason, reason)
         })?;
 
-        if current_version.map_or(true, |v| external.version > v || force_update) {
+        if current_version.is_none_or(|v| external.version > v || force_update) {
             if is_update {
                 // Delete previous STWT_* rules
                 let mut rule_settings = AHashMap::new();

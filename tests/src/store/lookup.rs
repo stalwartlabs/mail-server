@@ -6,12 +6,12 @@
 
 use std::time::Duration;
 
-use store::{dispatch::lookup::KeyValue, InMemoryStore, Stores};
+use store::{InMemoryStore, Stores, dispatch::lookup::KeyValue};
 use utils::config::{Config, Rate};
 
 use crate::{
-    store::{TempDir, CONFIG},
     AssertConfig,
+    store::{CONFIG, TempDir},
 };
 
 #[tokio::test]
@@ -98,22 +98,28 @@ pub async fn lookup_tests() {
         assert_eq!(0, store.counter_get(key.clone()).await.unwrap());
 
         // Test rate limiter
-        assert!(store
-            .is_rate_allowed(0, "rate".as_bytes(), &rate, false)
-            .await
-            .unwrap()
-            .is_none());
-        assert!(store
-            .is_rate_allowed(0, "rate".as_bytes(), &rate, false)
-            .await
-            .unwrap()
-            .is_some());
+        assert!(
+            store
+                .is_rate_allowed(0, "rate".as_bytes(), &rate, false)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .is_rate_allowed(0, "rate".as_bytes(), &rate, false)
+                .await
+                .unwrap()
+                .is_some()
+        );
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        assert!(store
-            .is_rate_allowed(0, "rate".as_bytes(), &rate, false)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            store
+                .is_rate_allowed(0, "rate".as_bytes(), &rate, false)
+                .await
+                .unwrap()
+                .is_none()
+        );
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         store.purge_in_memory_store().await.unwrap();
         if let InMemoryStore::Store(store) = &store {
@@ -281,5 +287,5 @@ pub async fn lookup_tests() {
 }
 
 fn pack_u32(a: u32, b: u32) -> Vec<u8> {
-    ((a as u64) << 32 | b as u64).to_be_bytes().to_vec()
+    (((a as u64) << 32) | b as u64).to_be_bytes().to_vec()
 }

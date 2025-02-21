@@ -7,23 +7,23 @@
 use ahash::{AHashMap, AHashSet};
 use jmap_proto::types::collection::Collection;
 use store::{
+    Deserialize, IterateParams, Serialize, Store, U32_LEN, ValueKey,
     write::{
-        assert::HashedValue, key::DeserializeBigEndian, AssignedIds, BatchBuilder, DirectoryClass,
-        MaybeDynamicId, MaybeDynamicValue, SerializeWithId, ValueClass,
+        AssignedIds, BatchBuilder, DirectoryClass, MaybeDynamicId, MaybeDynamicValue,
+        SerializeWithId, ValueClass, assert::HashedValue, key::DeserializeBigEndian,
     },
-    Deserialize, IterateParams, Serialize, Store, ValueKey, U32_LEN,
 };
 use trc::AddContext;
 use utils::sanitize_email;
 
 use crate::{
-    backend::RcptType, Permission, Permissions, Principal, QueryBy, Type, MAX_TYPE_ID, ROLE_ADMIN,
-    ROLE_TENANT_ADMIN, ROLE_USER,
+    MAX_TYPE_ID, Permission, Permissions, Principal, QueryBy, ROLE_ADMIN, ROLE_TENANT_ADMIN,
+    ROLE_USER, Type, backend::RcptType,
 };
 
 use super::{
-    lookup::DirectoryStore, PrincipalAction, PrincipalField, PrincipalInfo, PrincipalUpdate,
-    PrincipalValue, SpecialSecrets,
+    PrincipalAction, PrincipalField, PrincipalInfo, PrincipalUpdate, PrincipalValue,
+    SpecialSecrets, lookup::DirectoryStore,
 };
 
 pub struct MemberOf {
@@ -76,7 +76,7 @@ pub trait ManageDirectory: Sized {
         allowed_permissions: Option<&Permissions>,
     ) -> trc::Result<CreatedPrincipal>;
     async fn update_principal(&self, params: UpdatePrincipal<'_>)
-        -> trc::Result<ChangedPrincipals>;
+    -> trc::Result<ChangedPrincipals>;
     async fn delete_principal(&self, by: QueryBy<'_>) -> trc::Result<ChangedPrincipals>;
     async fn list_principals(
         &self,
@@ -254,12 +254,14 @@ impl ManageDirectory for Store {
                     .caused_by(trc::location!())?;
 
                 if total >= limit {
-                    trc::bail!(trc::LimitEvent::TenantQuota
-                        .into_err()
-                        .details("Tenant principal quota exceeded")
-                        .ctx(trc::Key::Details, principal.typ().as_str())
-                        .ctx(trc::Key::Limit, limit)
-                        .ctx(trc::Key::Total, total));
+                    trc::bail!(
+                        trc::LimitEvent::TenantQuota
+                            .into_err()
+                            .details("Tenant principal quota exceeded")
+                            .ctx(trc::Key::Details, principal.typ().as_str())
+                            .ctx(trc::Key::Limit, limit)
+                            .ctx(trc::Key::Total, total)
+                    );
                 }
             }
         }
@@ -353,7 +355,7 @@ impl ManageDirectory for Store {
                             .await
                             .caused_by(trc::location!())?
                             .filter(|v| {
-                                expected_type.map_or(true, |t| v.typ == t)
+                                expected_type.is_none_or(|t| v.typ == t)
                                     && v.has_tenant_access(tenant_id)
                             }),
                         field.map_internal_roles(&name),
@@ -400,7 +402,7 @@ impl ManageDirectory for Store {
                     if !permissions.contains(&permission) {
                         if allowed_permissions
                             .as_ref()
-                            .map_or(true, |p| p.get(permission as usize))
+                            .is_none_or(|p| p.get(permission as usize))
                             || field == PrincipalField::DisabledPermissions
                         {
                             permissions.push(permission);
@@ -1572,7 +1574,7 @@ impl ManageDirectory for Store {
                             if params
                                 .allowed_permissions
                                 .as_ref()
-                                .map_or(true, |p| p.get(permission as usize))
+                                .is_none_or(|p| p.get(permission as usize))
                                 || change.field == PrincipalField::DisabledPermissions
                             {
                                 permissions.push(permission);
@@ -1612,7 +1614,7 @@ impl ManageDirectory for Store {
                     if params
                         .allowed_permissions
                         .as_ref()
-                        .map_or(true, |p| p.get(permission as usize))
+                        .is_none_or(|p| p.get(permission as usize))
                         || change.field == PrincipalField::DisabledPermissions
                     {
                         principal.inner.append_int(change.field, permission);
@@ -1819,9 +1821,10 @@ impl ManageDirectory for Store {
                     .ok_or_else(|| not_found(principal.name().to_string()))?;
             }
 
-            if filters.as_ref().map_or(true, |filters| {
-                filters.iter().all(|f| principal.find_str(f))
-            }) {
+            if filters
+                .as_ref()
+                .is_none_or(|filters| filters.iter().all(|f| principal.find_str(f)))
+            {
                 result.total += 1;
 
                 if offset == 0 {
@@ -1867,9 +1870,9 @@ impl ManageDirectory for Store {
                 let name =
                     std::str::from_utf8(key.get(1..).unwrap_or_default()).unwrap_or_default();
 
-                if typ.map_or(true, |t| pt.typ == t)
+                if typ.is_none_or(|t| pt.typ == t)
                     && pt.has_tenant_access(tenant_id)
-                    && filter.map_or(true, |f| name.contains(f))
+                    && filter.is_none_or(|f| name.contains(f))
                 {
                     count += 1;
                 }

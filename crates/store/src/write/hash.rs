@@ -18,7 +18,7 @@ impl<T> BitmapClass<T> {
 
     pub fn stemmed(token: impl AsRef<[u8]>, field: impl Into<u8>) -> Self {
         BitmapClass::Text {
-            field: field.into() | 1 << 7,
+            field: field.into() | (1 << 7),
             token: BitmapHash::new(token),
         }
     }
@@ -60,6 +60,6 @@ impl TokenType {
     }
 
     pub fn stemmed(field: u8) -> u8 {
-        1 << 7 | field
+        (1 << 7) | field
     }
 }

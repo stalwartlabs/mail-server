@@ -119,7 +119,7 @@ impl ManageSettings for Server {
                         record.insert("_id".to_string(), id.to_string());
                         for (k, v) in &settings {
                             if let Some(k) = k.strip_prefix(&prefix) {
-                                if field.map_or(true, |field| field == k) {
+                                if field.is_none_or( |field| field == k) {
                                     record.insert(k.to_string(), v.to_string());
                                 }
                             } else if record.len() > 1 {

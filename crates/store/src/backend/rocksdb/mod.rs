@@ -26,7 +26,8 @@ pub(crate) trait CfHandle {
 impl CfHandle for OptimisticTransactionDB<MultiThreaded> {
     #[inline(always)]
     fn subspace_handle(&self, subspace: u8) -> Arc<BoundColumnFamily<'_>> {
-        self.cf_handle(unsafe { std::str::from_utf8_unchecked(&[subspace]) })
+        let subspace = &[subspace];
+        self.cf_handle(unsafe { std::str::from_utf8_unchecked(subspace) })
             .unwrap()
     }
 }

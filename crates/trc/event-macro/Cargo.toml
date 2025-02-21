@@ -1,7 +1,7 @@
 [package]
 name = "event_macro"
 version = "0.11.5"
-edition = "2021"
+edition = "2024"
 
 [lib]
 proc-macro = true

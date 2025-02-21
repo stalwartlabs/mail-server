@@ -6,10 +6,10 @@
 
 use std::time::Duration;
 
-use common::{Server, KV_LOCK_PURGE_ACCOUNT};
+use common::{KV_LOCK_PURGE_ACCOUNT, Server};
 use email::{
     index::EmailIndexBuilder,
-    mailbox::{UidMailbox, JUNK_ID, TOMBSTONE_ID, TRASH_ID},
+    mailbox::{JUNK_ID, TOMBSTONE_ID, TRASH_ID, UidMailbox},
     metadata::MessageMetadata,
 };
 use jmap_proto::types::{
@@ -17,13 +17,13 @@ use jmap_proto::types::{
     type_state::DataType,
 };
 use store::{
+    BitmapKey, IterateParams, U32_LEN, ValueKey,
     ahash::AHashMap,
     roaring::RoaringBitmap,
     write::{
-        log::ChangeLogBuilder, BatchBuilder, Bincode, BitmapClass, MaybeDynamicId, TagValue,
-        ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
+        BatchBuilder, Bincode, BitmapClass, F_BITMAP, F_CLEAR, F_VALUE, MaybeDynamicId, TagValue,
+        ValueClass, log::ChangeLogBuilder,
     },
-    BitmapKey, IterateParams, ValueKey, U32_LEN,
 };
 use trc::{AddContext, StoreEvent};
 use utils::codec::leb128::Leb128Reader;
@@ -238,7 +238,7 @@ impl EmailDeletion for Server {
             let mut account_ids: Vec<u32> = account_ids.into_iter().collect();
 
             // Shuffle account ids
-            account_ids.shuffle(&mut rand::thread_rng());
+            account_ids.shuffle(&mut rand::rng());
 
             for account_id in account_ids {
                 self.purge_account(account_id).await;
@@ -261,9 +261,10 @@ impl EmailDeletion for Server {
                 return;
             }
             Err(err) => {
-                trc::error!(err
-                    .details("Failed to lock account.")
-                    .account_id(account_id));
+                trc::error!(
+                    err.details("Failed to lock account.")
+                        .account_id(account_id)
+                );
                 return;
             }
         }
@@ -271,25 +272,28 @@ impl EmailDeletion for Server {
         // Auto-expunge deleted and junk messages
         if let Some(period) = self.core.jmap.mail_autoexpunge_after {
             if let Err(err) = self.emails_auto_expunge(account_id, period).await {
-                trc::error!(err
-                    .details("Failed to auto-expunge messages.")
-                    .account_id(account_id));
+                trc::error!(
+                    err.details("Failed to auto-expunge messages.")
+                        .account_id(account_id)
+                );
             }
         }
 
         // Purge tombstoned messages
         if let Err(err) = self.emails_purge_tombstoned(account_id).await {
-            trc::error!(err
-                .details("Failed to purge tombstoned messages.")
-                .account_id(account_id));
+            trc::error!(
+                err.details("Failed to purge tombstoned messages.")
+                    .account_id(account_id)
+            );
         }
 
         // Purge changelogs
         if let Some(history) = self.core.jmap.changes_max_history {
             if let Err(err) = self.delete_changes(account_id, history).await {
-                trc::error!(err
-                    .details("Failed to purge changes.")
-                    .account_id(account_id));
+                trc::error!(
+                    err.details("Failed to purge changes.")
+                        .account_id(account_id)
+                );
             }
         }
 

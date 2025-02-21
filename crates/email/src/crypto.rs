@@ -6,29 +6,29 @@
 
 use std::{borrow::Cow, collections::BTreeSet, fmt::Display, io::Cursor};
 
-use aes::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
+use aes::cipher::{BlockEncryptMut, KeyIvInit, block_padding::Pkcs7};
 
 use mail_builder::{encoders::base64::base64_encode_mime, mime::make_boundary};
-use mail_parser::{decoders::base64::base64_decode, Message, MimeHeaders, PartType};
+use mail_parser::{Message, MimeHeaders, PartType, decoders::base64::base64_decode};
 use openpgp::{
     parse::Parse,
     serialize::stream,
     types::{KeyFlags, SymmetricAlgorithm},
 };
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 use rasn::types::{ObjectIdentifier, OctetString};
 use rasn_cms::{
+    AlgorithmIdentifier, CONTENT_DATA, CONTENT_ENVELOPED_DATA, EncryptedContent,
+    EncryptedContentInfo, EncryptedKey, EnvelopedData, IssuerAndSerialNumber,
+    KeyTransRecipientInfo, RecipientIdentifier, RecipientInfo,
     algorithms::{AES128_CBC, AES256_CBC, RSA},
     pkcs7_compat::EncapsulatedContentInfo,
-    AlgorithmIdentifier, EncryptedContent, EncryptedContentInfo, EncryptedKey, EnvelopedData,
-    IssuerAndSerialNumber, KeyTransRecipientInfo, RecipientIdentifier, RecipientInfo, CONTENT_DATA,
-    CONTENT_ENVELOPED_DATA,
 };
-use rsa::{pkcs1::DecodeRsaPublicKey, Pkcs1v15Encrypt, RsaPublicKey};
+use rsa::{Pkcs1v15Encrypt, RsaPublicKey, pkcs1::DecodeRsaPublicKey};
 use sequoia_openpgp as openpgp;
-use store::rand::{rngs::StdRng, RngCore, SeedableRng};
 use store::{
-    write::{Bincode, ToBitmaps},
     Deserialize, Serialize,
+    write::{Bincode, ToBitmaps},
 };
 
 const P: openpgp::policy::StandardPolicy<'static> = openpgp::policy::StandardPolicy::new();
@@ -599,7 +599,7 @@ fn try_parse_pem(
                     );
                 }
                 Err(err) => {
-                    return Err(format!("Failed to decode OpenPGP public key: {err}").into())
+                    return Err(format!("Failed to decode OpenPGP public key: {err}").into());
                 }
             },
             EncryptionMethod::SMIME => {

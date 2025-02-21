@@ -5,24 +5,24 @@
  */
 
 use std::{
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 
 use ahash::{AHashMap, AHashSet};
 use common::{
+    Inner,
     core::BuildServer,
     ipc::{QueueEvent, QueueEventStatus},
     listener::limiter::ConcurrencyLimiter,
-    Inner,
 };
 use rand::seq::SliceRandom;
 use store::write::now;
 use tokio::sync::mpsc;
 
 use super::{
-    spool::{SmtpSpool, QUEUE_REFRESH},
     Message, QueueId, Status,
+    spool::{QUEUE_REFRESH, SmtpSpool},
 };
 
 pub struct Queue {
@@ -161,7 +161,7 @@ impl Queue {
                     let mut queue_events = server.next_event().await;
 
                     if queue_events.len() > 5 {
-                        queue_events.shuffle(&mut rand::thread_rng());
+                        queue_events.shuffle(&mut rand::rng());
                     }
 
                     for queue_event in &queue_events {
@@ -183,7 +183,9 @@ impl Queue {
                                             .fold([0, 0, 0], |mut acc, v| {
                                                 match v {
                                                     OnHold::InFlight => acc[0] += 1,
-                                                    OnHold::ConcurrencyLimited { .. } => acc[1] += 1,
+                                                    OnHold::ConcurrencyLimited { .. } => {
+                                                        acc[1] += 1
+                                                    }
                                                     OnHold::Locked { .. } => acc[2] += 1,
                                                 }
                                                 acc
@@ -289,11 +291,7 @@ impl Message {
             }
         }
 
-        if has_events {
-            next_event.into()
-        } else {
-            None
-        }
+        if has_events { next_event.into() } else { None }
     }
 
     pub fn next_delivery_event(&self) -> u64 {
@@ -356,21 +354,19 @@ impl Message {
                 Status::Scheduled | Status::TemporaryFailure(_)
             ) {
                 if domain.retry.due > instant
-                    && next_event
-                        .as_ref()
-                        .map_or(true, |ne| domain.retry.due.lt(ne))
+                    && next_event.as_ref().is_none_or(|ne| domain.retry.due.lt(ne))
                 {
                     next_event = domain.retry.due.into();
                 }
                 if domain.notify.due > instant
                     && next_event
                         .as_ref()
-                        .map_or(true, |ne| domain.notify.due.lt(ne))
+                        .is_none_or(|ne| domain.notify.due.lt(ne))
                 {
                     next_event = domain.notify.due.into();
                 }
                 if domain.expires > instant
-                    && next_event.as_ref().map_or(true, |ne| domain.expires.lt(ne))
+                    && next_event.as_ref().is_none_or(|ne| domain.expires.lt(ne))
                 {
                     next_event = domain.expires.into();
                 }

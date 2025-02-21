@@ -250,7 +250,7 @@ impl Session<common::listener::stream::NullIo> {
     }
 
     pub fn has_failed(&mut self) -> Option<String> {
-        if self.stream.tx_buf.first().map_or(true, |&c| c == b'2') {
+        if self.stream.tx_buf.first().is_none_or( |&c| c == b'2') {
             self.stream.tx_buf.clear();
             None
         } else {

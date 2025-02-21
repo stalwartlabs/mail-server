@@ -732,7 +732,7 @@ impl PrincipalManager for Server {
             .headers()
             .get(header::AUTHORIZATION)
             .and_then(|h| h.to_str().ok())
-            .map_or(true, |header| !header.to_lowercase().starts_with("basic "))
+            .is_none_or( |header| !header.to_lowercase().starts_with("basic "))
         {
             return Err(manage::error(
                 "Password changes only allowed using Basic auth",

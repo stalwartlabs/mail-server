@@ -6,12 +6,12 @@
 
 use std::{borrow::Cow, collections::HashSet, future::Future, time::Duration};
 
-use common::{ip_to_bytes, Server, KV_BAYES_MODEL_GLOBAL, KV_BAYES_MODEL_USER};
+use common::{KV_BAYES_MODEL_GLOBAL, KV_BAYES_MODEL_USER, Server, ip_to_bytes};
 use mail_auth::DmarcResult;
 use nlp::{
     bayes::{
-        tokenize::{symbols, BayesInputToken, BayesTokenizer},
         BayesModel, TokenHash, Weights,
+        tokenize::{BayesInputToken, BayesTokenizer, symbols},
     },
     tokenizers::{
         osb::{Gram, OsbToken, OsbTokenizer},
@@ -22,7 +22,7 @@ use store::dispatch::lookup::KeyValue;
 use trc::AddContext;
 use utils::cache::TtlEntry;
 
-use crate::{analysis::url::UrlParts, Email, IpParts, SpamFilterContext, TextPart};
+use crate::{Email, IpParts, SpamFilterContext, TextPart, analysis::url::UrlParts};
 
 pub trait BayesClassifier {
     fn bayes_train(
@@ -116,9 +116,11 @@ impl BayesClassifier for Server {
         }
 
         if model.weights.is_empty() {
-            trc::bail!(trc::SpamEvent::TrainError
-                .into_err()
-                .reason("No weights found"));
+            trc::bail!(
+                trc::SpamEvent::TrainError
+                    .into_err()
+                    .reason("No weights found")
+            );
         }
 
         trc::event!(
@@ -216,8 +218,7 @@ impl BayesClassifier for Server {
                     ctx.input.account_id,
                     TokenHash::from(Gram::Uni { t1: &token }),
                 )
-                .await
-                .map(Weights::from)?;
+                .await?;
             osb_tokens.push(OsbToken {
                 inner: weights,
                 idx: 1,
@@ -234,8 +235,7 @@ impl BayesClassifier for Server {
         ) {
             let weights = self
                 .bayes_weights_for_token(ctx.input.account_id, token.inner)
-                .await
-                .map(Weights::from)?;
+                .await?;
             osb_tokens.push(OsbToken {
                 inner: weights,
                 idx: token.idx,
@@ -260,8 +260,7 @@ impl BayesClassifier for Server {
                 ) {
                     let weights = self
                         .bayes_weights_for_token(ctx.input.account_id, token.inner)
-                        .await
-                        .map(Weights::from)?;
+                        .await?;
                     osb_tokens.push(OsbToken {
                         inner: weights,
                         idx: token.idx,
@@ -275,8 +274,7 @@ impl BayesClassifier for Server {
                 ) {
                     let weights = self
                         .bayes_weights_for_token(ctx.input.account_id, token.inner)
-                        .await
-                        .map(Weights::from)?;
+                        .await?;
                     osb_tokens.push(OsbToken {
                         inner: weights,
                         idx: token.idx,
@@ -365,10 +363,11 @@ impl BayesClassifier for Server {
         };
 
         if let Some(account_id) = ctx.input.account_id {
-            trc::error!(err
-                .span_id(ctx.input.span_id)
-                .account_id(account_id)
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.span_id(ctx.input.span_id)
+                    .account_id(account_id)
+                    .caused_by(trc::location!())
+            );
         } else {
             trc::error!(err.span_id(ctx.input.span_id).caused_by(trc::location!()));
         }

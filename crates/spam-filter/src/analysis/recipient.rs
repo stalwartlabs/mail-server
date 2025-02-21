@@ -6,7 +6,7 @@
 
 use std::future::Future;
 
-use common::{scripts::functions::text::levenshtein_distance, Server};
+use common::{Server, scripts::functions::text::levenshtein_distance};
 use mail_parser::HeaderName;
 use smtp_proto::{MAIL_BODY_8BITMIME, MAIL_BODY_BINARYMIME, MAIL_SMTPUTF8};
 use store::ahash::HashSet;
@@ -85,7 +85,7 @@ impl SpamFilterAnalyzeRecipient for Server {
                 // Validate unnecessary encoding in recipient headers
                 let raw_utf8 = raw_utf8.unwrap_or_default();
                 if recipients.iter().all(|rcpt| {
-                    rcpt.name.as_ref().map_or(true, |name| name.is_ascii())
+                    rcpt.name.as_ref().is_none_or(|name| name.is_ascii())
                         && rcpt.email.address.is_ascii()
                 }) && raw_utf8.contains("=?")
                     && raw_utf8.contains("?=")

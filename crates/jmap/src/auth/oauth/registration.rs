@@ -7,20 +7,20 @@
 use std::future::Future;
 
 use common::{
-    auth::oauth::registration::{ClientRegistrationRequest, ClientRegistrationResponse},
     Server,
+    auth::oauth::registration::{ClientRegistrationRequest, ClientRegistrationResponse},
 };
 use directory::{
-    backend::internal::{lookup::DirectoryStore, manage::ManageDirectory, PrincipalField},
     Permission, Principal, QueryBy, Type,
+    backend::internal::{PrincipalField, lookup::DirectoryStore, manage::ManageDirectory},
 };
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use rand::{Rng, distr::Alphanumeric, rng};
 use trc::{AddContext, AuthEvent};
 
 use crate::{
     api::{
-        http::{fetch_body, HttpSessionData, ToHttpResponse},
         HttpRequest, HttpResponse, JsonResponse,
+        http::{HttpSessionData, ToHttpResponse, fetch_body},
     },
     auth::{authenticate::Authenticator, rate_limit::RateLimiter},
 };
@@ -68,7 +68,7 @@ impl ClientRegistrationHandler for Server {
         })?;
 
         // Generate client ID
-        let client_id = thread_rng()
+        let client_id = rng()
             .sample_iter(Alphanumeric)
             .take(20)
             .map(|ch| char::from(ch.to_ascii_lowercase()))

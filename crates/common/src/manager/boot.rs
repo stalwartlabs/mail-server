@@ -13,27 +13,28 @@ use std::{
 use arc_swap::ArcSwap;
 use pwhash::sha512_crypt;
 use store::{
-    rand::{distributions::Alphanumeric, thread_rng, Rng},
     Stores,
+    rand::{Rng, distr::Alphanumeric, rng},
 };
-use tokio::sync::{mpsc, Notify, Semaphore};
+use tokio::sync::{Notify, Semaphore, mpsc};
 use utils::{
+    Semver, UnwrapFailure,
     config::{Config, ConfigKey},
-    failed, Semver, UnwrapFailure,
+    failed,
 };
 
 use crate::{
+    Caches, Core, Data, IPC_CHANNEL_BUFFER, Inner, Ipc,
     config::{network::AsnGeoLookupConfig, server::Listeners, telemetry::Telemetry},
     core::BuildServer,
     ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent},
-    Caches, Core, Data, Inner, Ipc, IPC_CHANNEL_BUFFER,
 };
 
 use super::{
+    WEBADMIN_KEY,
     backup::BackupParams,
     config::{ConfigManager, Patterns},
     console::store_console,
-    WEBADMIN_KEY,
 };
 
 pub struct BootManager {
@@ -203,7 +204,7 @@ impl BootManager {
                 {
                     insert_keys.push(ConfigKey::from((
                         "oauth.key",
-                        thread_rng()
+                        rng()
                             .sample_iter(Alphanumeric)
                             .take(64)
                             .map(char::from)
@@ -219,7 +220,7 @@ impl BootManager {
                 {
                     insert_keys.push(ConfigKey::from((
                         "cluster.key",
-                        thread_rng()
+                        rng()
                             .sample_iter(Alphanumeric)
                             .take(64)
                             .map(char::from)
@@ -524,7 +525,7 @@ fn quickstart(path: impl Into<PathBuf>) {
     }
 
     let admin_pass = std::env::var("STALWART_ADMIN_PASSWORD").unwrap_or_else(|_| {
-        thread_rng()
+        rng()
             .sample_iter(Alphanumeric)
             .take(10)
             .map(char::from)

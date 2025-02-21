@@ -9,12 +9,12 @@ use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::{
-    protocol::fetch::{self, Attribute, Section},
-    receiver::{bad, Request, Token},
     Command,
+    protocol::fetch::{self, Attribute, Section},
+    receiver::{Request, Token, bad},
 };
 
-use super::{parse_number, parse_sequence_set, PushUnique};
+use super::{PushUnique, parse_number, parse_sequence_set};
 
 impl Request<Command> {
     #[allow(clippy::while_let_on_iterator)]
@@ -121,14 +121,14 @@ impl Request<Command> {
                                     tokens.next();
                                     if tokens
                                         .next()
-                                        .map_or(true, |token| !token.eq_ignore_ascii_case(b"PEEK"))
+                                        .is_none_or( |token| !token.eq_ignore_ascii_case(b"PEEK"))
                                     {
                                         return Err(bad(
                                             self.tag.clone(),
                                             "Expected 'PEEK' after '.'.",
                                         ));
                                     }
-                                    if tokens.next().map_or(true, |token| !token.is_bracket_open()) {
+                                    if tokens.next().is_none_or( |token| !token.is_bracket_open()) {
                                         return Err(bad(
                                             self.tag.clone(),
                                             "Expected '[' after 'BODY.PEEK'",
@@ -156,7 +156,7 @@ impl Request<Command> {
                                         let section = if value.eq_ignore_ascii_case(b"HEADER") {
                                             if let Some(Token::Dot) = tokens.peek() {
                                                 tokens.next();
-                                                if tokens.next().map_or(true, |token| {
+                                                if tokens.next().is_none_or( |token| {
                                                     !token.eq_ignore_ascii_case(b"FIELDS")
                                                 }) {
                                                     return Err(bad(
@@ -166,7 +166,7 @@ impl Request<Command> {
                                                 }
                                                 let is_not = if let Some(Token::Dot) = tokens.peek() {
                                                     tokens.next();
-                                                    if tokens.next().map_or(true, |token| {
+                                                    if tokens.next().is_none_or( |token| {
                                                         !token.eq_ignore_ascii_case(b"NOT")
                                                     }) {
                                                         return Err(bad(
@@ -180,7 +180,7 @@ impl Request<Command> {
                                                 };
                                                 if tokens
                                                     .next()
-                                                    .map_or(true, |token| !token.is_parenthesis_open())
+                                                    .is_none_or( |token| !token.is_parenthesis_open())
                                                 {
                                                     return Err(bad(
                                                         self.tag,
@@ -267,7 +267,7 @@ impl Request<Command> {
                             };
 
                             // Parse section-part
-                            if tokens.next().map_or(true, |token| !token.is_bracket_open()) {
+                            if tokens.next().is_none_or( |token| !token.is_bracket_open()) {
                                 return Err(bad(self.tag.to_string(), "Expected '[' after 'BINARY'."));
                             }
                             let mut sections = Vec::new();
@@ -364,7 +364,7 @@ impl Request<Command> {
                     return Err(bad(
                         self.tag,
                         format!("Invalid fetch argument {:?}.", token.to_string()),
-                    ))
+                    ));
                 }
             }
         }
@@ -419,7 +419,7 @@ impl Request<Command> {
 }
 
 pub fn parse_partial(tokens: &mut Peekable<IntoIter<Token>>) -> super::Result<Option<(u32, u32)>> {
-    if tokens.peek().map_or(true, |token| !token.is_lt()) {
+    if tokens.peek().is_none_or(|token| !token.is_lt()) {
         return Ok(None);
     }
     tokens.next();
@@ -431,7 +431,7 @@ pub fn parse_partial(tokens: &mut Peekable<IntoIter<Token>>) -> super::Result<Op
             .unwrap_bytes(),
     )?;
 
-    if tokens.next().map_or(true, |token| !token.is_dot()) {
+    if tokens.next().is_none_or(|token| !token.is_dot()) {
         return Err("Expected '.' after partial start.".into());
     }
 
@@ -446,7 +446,7 @@ pub fn parse_partial(tokens: &mut Peekable<IntoIter<Token>>) -> super::Result<Op
         return Err("Invalid partial range.".into());
     }
 
-    if tokens.next().map_or(true, |token| !token.is_gt()) {
+    if tokens.next().is_none_or(|token| !token.is_gt()) {
         return Err("Expected '>' after range.".into());
     }
 
@@ -499,8 +499,8 @@ pub fn parse_partial(tokens: &mut Peekable<IntoIter<Token>>) -> super::Result<Op
 mod tests {
     use crate::{
         protocol::{
-            fetch::{self, Attribute, Section},
             Sequence,
+            fetch::{self, Attribute, Section},
         },
         receiver::Receiver,
     };

@@ -113,7 +113,7 @@ impl Indexer for Server {
                     let entry = EmailTask::deserialize(key)?;
                     if locked_seq_ids
                         .get(&entry.seq)
-                        .map_or(true, |expires| now >= *expires)
+                        .is_none_or( |expires| now >= *expires)
                     {
                         entries.push(entry);
                     }

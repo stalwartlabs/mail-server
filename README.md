@@ -11,7 +11,7 @@
 <br>
 
 <p align="center">
-  <a href="https://github.com/stalwartlabs/mail-server/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/stalwartlabs/mail-server/build.yml?style=flat-square" alt="continuous integration"></a>
+  <a href="https://github.com/stalwartlabs/mail-server/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/stalwartlabs/mail-server/ci.yml?style=flat-square" alt="continuous integration"></a>
   &nbsp;
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg?label=license&style=flat-square" alt="License: AGPL v3"></a>
   &nbsp;

@@ -701,7 +701,7 @@ impl EmailIngest for Server {
             match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => return Ok(Some(thread_id)),
                 Err(err) if err.is_assertion_failure() && try_count < MAX_RETRIES => {
-                    let backoff = store::rand::thread_rng().gen_range(50..=300);
+                    let backoff = store::rand::rng().random_range(50..=300);
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
                     try_count += 1;
                 }

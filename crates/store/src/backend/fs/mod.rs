@@ -12,7 +12,7 @@ use tokio::{
 };
 use utils::{
     codec::base32_custom::Base32Writer,
-    config::{utils::AsKey, Config},
+    config::{Config, utils::AsKey},
 };
 
 pub struct FsStore {

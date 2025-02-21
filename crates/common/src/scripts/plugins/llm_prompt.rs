@@ -7,7 +7,7 @@
 use std::time::Instant;
 
 use directory::Permission;
-use sieve::{compiler::Number, runtime::Variable, FunctionMap};
+use sieve::{FunctionMap, compiler::Number, runtime::Variable};
 use trc::{AiEvent, SecurityEvent};
 
 use super::PluginContext;
@@ -35,7 +35,7 @@ pub async fn exec(ctx: PluginContext<'_>) -> trc::Result<Variable> {
         });
 
         if let Some(ai_api) = ctx.server.core.enterprise.as_ref().and_then(|e| {
-            if ctx.access_token.map_or(true, |token| {
+            if ctx.access_token.is_none_or(|token| {
                 if token.has_permission(Permission::AiModelInteract) {
                     true
                 } else {

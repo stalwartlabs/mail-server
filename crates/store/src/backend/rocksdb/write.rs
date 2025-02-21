@@ -17,12 +17,15 @@ use rocksdb::{
     OptimisticTransactionOptions, WriteOptions,
 };
 
-use super::{into_error, CfHandle, RocksDbStore, CF_INDEXES, CF_LOGS};
+use super::{CF_INDEXES, CF_LOGS, CfHandle, RocksDbStore, into_error};
 use crate::{
-    backend::deserialize_i64_le, write::{
-        key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
-        ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
-    }, BitmapKey, Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA, U32_LEN
+    BitmapKey, Deserialize, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER,
+    SUBSPACE_QUOTA, U32_LEN,
+    backend::deserialize_i64_le,
+    write::{
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
+        RandomAvailableId, ValueOp, key::DeserializeBigEndian,
+    },
 };
 
 impl RocksDbStore {
@@ -53,7 +56,7 @@ impl RocksDbStore {
                             if retry_count < MAX_COMMIT_ATTEMPTS
                                 && start.elapsed() < MAX_COMMIT_TIME =>
                         {
-                            let backoff = rand::thread_rng().gen_range(50..=300);
+                            let backoff = rand::rng().random_range(50..=300);
                             sleep(Duration::from_millis(backoff));
                             retry_count += 1;
                         }

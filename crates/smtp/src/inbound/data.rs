@@ -727,7 +727,7 @@ impl<T: SessionStream> Session<T> {
             if message
                 .domains
                 .last()
-                .map_or(true, |d| d.domain != rcpt.domain)
+                .is_none_or( |d| d.domain != rcpt.domain)
             {
                 let rcpt_idx = message.domains.len();
                 message.domains.push(queue::Domain {

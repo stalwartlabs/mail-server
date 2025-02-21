@@ -6,19 +6,19 @@
 
 use std::time::SystemTime;
 
-use directory::{backend::internal::PrincipalField, QueryBy};
+use directory::{QueryBy, backend::internal::PrincipalField};
 use mail_builder::encoders::base64::base64_encode;
 use mail_parser::decoders::base64::base64_decode;
 use store::{
     blake3,
-    rand::{thread_rng, Rng},
+    rand::{Rng, rng},
 };
 use trc::AddContext;
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
 use crate::Server;
 
-use super::{crypto::SymmetricEncrypt, GrantType, CLIENT_ID_MAX_LEN, RANDOM_CODE_LEN};
+use super::{CLIENT_ID_MAX_LEN, GrantType, RANDOM_CODE_LEN, crypto::SymmetricEncrypt};
 
 pub struct TokenInfo {
     pub grant_type: GrantType,
@@ -89,7 +89,7 @@ impl Server {
 
         // Encrypt random bytes
         let mut token = SymmetricEncrypt::new(key.as_bytes(), &context)
-            .encrypt(&thread_rng().gen::<[u8; RANDOM_CODE_LEN]>(), &nonce)
+            .encrypt(&rng().random::<[u8; RANDOM_CODE_LEN]>(), &nonce)
             .map_err(|_| {
                 trc::AuthEvent::Error
                     .into_err()

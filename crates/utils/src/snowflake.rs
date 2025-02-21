@@ -75,8 +75,8 @@ impl SnowflakeIdGenerator {
         let elapsed = self.epoch.elapsed().ok()?.as_millis() as u64;
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
 
-        (elapsed << (SEQUENCE_LEN + NODE_ID_LEN)
-            | (self.node_id & NODE_ID_MASK) << SEQUENCE_LEN
+        ((elapsed << (SEQUENCE_LEN + NODE_ID_LEN))
+            | ((self.node_id & NODE_ID_MASK) << SEQUENCE_LEN)
             | (sequence & SEQUENCE_MASK))
             .into()
     }

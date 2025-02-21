@@ -10,28 +10,27 @@ use std::{
 };
 
 use foundationdb::{
-    options::{self, MutationType, StreamingMode},
     FdbError, KeySelector, RangeOption, Transaction,
+    options::{self, MutationType, StreamingMode},
 };
 use futures::TryStreamExt;
 use rand::Rng;
 use roaring::RoaringBitmap;
 
 use crate::{
-    backend::deserialize_i64_le,
-    write::{
-        key::{DeserializeBigEndian, KeySerializer},
-        AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId, ValueOp,
-        MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
-    },
     BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
     U32_LEN, WITH_SUBSPACE,
+    backend::deserialize_i64_le,
+    write::{
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
+        RandomAvailableId, ValueOp,
+        key::{DeserializeBigEndian, KeySerializer},
+    },
 };
 
 use super::{
-    into_error,
-    read::{read_chunked_value, ChunkedValue},
-    FdbStore, ReadVersion, MAX_VALUE_SIZE,
+    FdbStore, MAX_VALUE_SIZE, ReadVersion, into_error,
+    read::{ChunkedValue, read_chunked_value},
 };
 
 impl FdbStore {
@@ -274,7 +273,7 @@ impl FdbStore {
             {
                 return Ok(result);
             } else {
-                let backoff = rand::thread_rng().gen_range(50..=300);
+                let backoff = rand::rng().random_range(50..=300);
                 tokio::time::sleep(Duration::from_millis(backoff)).await;
                 retry_count += 1;
             }

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use base64::{engine::general_purpose, Engine};
-use common::{auth::AccessToken, Server};
+use base64::{Engine, engine::general_purpose};
+use common::{Server, auth::AccessToken};
 use jmap_proto::{
     error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -19,10 +19,11 @@ use jmap_proto::{
         value::{MaybePatchValue, Value},
     },
 };
+use rand::distr::Alphanumeric;
 use std::future::Future;
 use store::{
-    rand::{distributions::Alphanumeric, thread_rng, Rng},
-    write::{now, BatchBuilder, F_CLEAR, F_VALUE},
+    rand::{Rng, rng},
+    write::{BatchBuilder, F_CLEAR, F_VALUE, now},
 };
 use trc::AddContext;
 
@@ -105,7 +106,7 @@ impl PushSubscriptionSet for Server {
             push.append(
                 Property::Value,
                 Value::Text(
-                    thread_rng()
+                    rng()
                         .sample_iter(Alphanumeric)
                         .take(VERIFICATION_CODE_LEN)
                         .map(char::from)

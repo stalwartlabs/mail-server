@@ -348,7 +348,7 @@ impl TlsReporting for Server {
                             Entry::Vacant(e) => {
                                 if serialized_size
                                     .as_deref_mut()
-                                    .map_or(true, |serialized_size| {
+                                    .is_none_or( |serialized_size| {
                                         serde::Serialize::serialize(e.key(), serialized_size)
                                             .is_ok()
                                     })

@@ -472,16 +472,16 @@ pub async fn insert_test_metrics(core: Arc<Core>) {
             EventType::IncomingReport(IncomingReportEvent::TlsReportWithWarnings),
         ] {
             // Generate a random value between 0 and 100
-            Collector::update_event_counter(event_type, rand::thread_rng().gen_range(0..=100))
+            Collector::update_event_counter(event_type, rand::rng().random_range(0..=100))
         }
 
         Collector::update_gauge(
             MetricType::QueueCount,
-            rand::thread_rng().gen_range(0..=1000),
+            rand::rng().random_range(0..=1000),
         );
         Collector::update_gauge(
             MetricType::ServerMemory,
-            rand::thread_rng().gen_range(100 * 1024 * 1024..=300 * 1024 * 1024),
+            rand::rng().random_range(100 * 1024 * 1024..=300 * 1024 * 1024),
         );
 
         for metric_type in [
@@ -490,11 +490,11 @@ pub async fn insert_test_metrics(core: Arc<Core>) {
             MetricType::DeliveryTime,
             MetricType::DnsLookupTime,
         ] {
-            Collector::update_histogram(metric_type, rand::thread_rng().gen_range(2..=1000))
+            Collector::update_histogram(metric_type, rand::rng().random_range(2..=1000))
         }
         Collector::update_histogram(
             MetricType::DeliveryTotalTime,
-            rand::thread_rng().gen_range(1000..=5000),
+            rand::rng().random_range(1000..=5000),
         );
 
         store

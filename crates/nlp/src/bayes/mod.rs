@@ -139,7 +139,7 @@ impl From<i64> for Weights {
 
 impl From<Weights> for i64 {
     fn from(value: Weights) -> Self {
-        (value.ham as i64) << 32 | value.spam as i64
+        ((value.ham as i64) << 32) | value.spam as i64
     }
 }
 

@@ -485,7 +485,7 @@ impl ParseHttp for Server {
                         if let Some(auth) = &prometheus.auth {
                             if req
                                 .authorization_basic()
-                                .map_or(true, |secret| secret != auth)
+                                .is_none_or( |secret| secret != auth)
                             {
                                 return Err(trc::AuthEvent::Failed
                                     .into_err()

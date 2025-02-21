@@ -261,7 +261,7 @@ async fn test_multi_thread(params: &mut JMAPTest) {
                     Err(err) => {
                         if err.is_assertion_failure() && retry_count < 10 {
                             //println!("Retrying ingest for {}...", message.from());
-                            let backoff = rand::thread_rng().gen_range(50..=300);
+                            let backoff = rand::rng().random_range(50..=300);
                             tokio::time::sleep(Duration::from_millis(backoff)).await;
                             retry_count += 1;
                             continue;

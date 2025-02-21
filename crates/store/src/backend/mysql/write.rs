@@ -8,20 +8,20 @@ use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
 use futures::TryStreamExt;
-use mysql_async::{params, prelude::Queryable, Conn, Error, IsolationLevel, TxOpts};
+use mysql_async::{Conn, Error, IsolationLevel, TxOpts, params, prelude::Queryable};
 use rand::Rng;
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{
-        key::DeserializeBigEndian, AssignedIds, Batch, BitmapClass, Operation, RandomAvailableId,
-        ValueOp, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME,
-    },
     BitmapKey, IndexKey, Key, LogKey, SUBSPACE_COUNTER, SUBSPACE_IN_MEMORY_COUNTER, SUBSPACE_QUOTA,
     U32_LEN,
+    write::{
+        AssignedIds, Batch, BitmapClass, MAX_COMMIT_ATTEMPTS, MAX_COMMIT_TIME, Operation,
+        RandomAvailableId, ValueOp, key::DeserializeBigEndian,
+    },
 };
 
-use super::{into_error, MysqlStore};
+use super::{MysqlStore, into_error};
 
 #[derive(Debug)]
 enum CommitError {
@@ -58,7 +58,7 @@ impl MysqlStore {
                 }
             }
 
-            let backoff = rand::thread_rng().gen_range(50..=300);
+            let backoff = rand::rng().random_range(50..=300);
             tokio::time::sleep(Duration::from_millis(backoff)).await;
             retry_count += 1;
         }

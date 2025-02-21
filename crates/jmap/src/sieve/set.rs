@@ -5,16 +5,16 @@
  */
 
 use common::{
-    auth::{AccessToken, ResourceToken},
     Server,
+    auth::{AccessToken, ResourceToken},
 };
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
     object::{
+        Object,
         index::{IndexAs, IndexProperty, ObjectIndexBuilder},
         sieve::SetArguments,
-        Object,
     },
     request::reference::MaybeReference,
     response::references::EvalObjectReferences,
@@ -26,19 +26,20 @@ use jmap_proto::{
         value::{MaybePatchValue, SetValue, Value},
     },
 };
+use rand::distr::Alphanumeric;
 use sieve::compiler::ErrorType;
 use store::{
-    query::Filter,
-    rand::{distributions::Alphanumeric, thread_rng, Rng},
-    write::{
-        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, BlobOp, DirectoryClass, F_CLEAR,
-        F_VALUE,
-    },
     BlobClass,
+    query::Filter,
+    rand::{Rng, rng},
+    write::{
+        BatchBuilder, BlobOp, DirectoryClass, F_CLEAR, F_VALUE, assert::HashedValue,
+        log::ChangeLogBuilder,
+    },
 };
 use trc::AddContext;
 
-use crate::{api::http::HttpSessionData, blob::download::BlobDownload, JmapMethods};
+use crate::{JmapMethods, api::http::HttpSessionData, blob::download::BlobDownload};
 use std::future::Future;
 
 pub struct SetContext<'x> {
@@ -493,8 +494,7 @@ impl SieveScriptSet for Server {
                     } else if update
                         .as_ref()
                         .and_then(|(_, obj)| obj.inner.properties.get(&Property::Name))
-                        .map_or(
-                            true,
+                        .is_none_or(
                             |p| matches!(p, Value::Text (prev_value ) if prev_value != &value),
                         )
                     {
@@ -529,7 +529,7 @@ impl SieveScriptSet for Server {
                 _ => {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(property)
-                        .with_description("Invalid property or value.".to_string())))
+                        .with_description("Invalid property or value.".to_string())));
                 }
             };
             changes.append(property, value);
@@ -542,7 +542,7 @@ impl SieveScriptSet for Server {
                 changes.set(
                     Property::Name,
                     Value::Text(
-                        thread_rng()
+                        rng()
                             .sample_iter(Alphanumeric)
                             .take(15)
                             .map(char::from)
@@ -556,7 +556,7 @@ impl SieveScriptSet for Server {
         }
 
         let blob_update = if let Some(blob_id) = blob_id {
-            if update.as_ref().map_or(true, |(document_id, _)| {
+            if update.as_ref().is_none_or( |(document_id, _)| {
                 !matches!(blob_id.class, BlobClass::Linked { account_id, collection, document_id: d } if account_id == ctx.resource_token.account_id && collection == u8::from(Collection::SieveScript) && *document_id == d)
             }) {
                 // Check access

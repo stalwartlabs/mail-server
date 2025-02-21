@@ -6,15 +6,15 @@
 
 use std::{
     io::{BufRead, BufReader},
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::Instant,
 };
 
 use ahash::AHashMap;
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use utils::HttpLimitResponse;
 
-use crate::{backend::http::HttpStoreFormat, write::now, Value};
+use crate::{Value, backend::http::HttpStoreFormat, write::now};
 
 use super::HttpStore;
 
@@ -89,7 +89,7 @@ impl HttpStoreGet for Arc<HttpStore> {
 impl HttpStore {
     async fn try_refresh(&self) -> trc::Result<AHashMap<String, Value<'static>>> {
         let time = Instant::now();
-        let agent = BROWSER_USER_AGENTS.choose(&mut rand::thread_rng()).unwrap();
+        let agent = BROWSER_USER_AGENTS.choose(&mut rand::rng()).unwrap();
         let response = reqwest::Client::builder()
             .timeout(self.config.timeout)
             .user_agent(*agent)
@@ -107,12 +107,14 @@ impl HttpStore {
             })?;
 
         if !response.status().is_success() {
-            trc::bail!(trc::StoreEvent::HttpStoreError
-                .into_err()
-                .ctx(trc::Key::Code, response.status().as_u16())
-                .ctx(trc::Key::Url, self.config.url.to_string())
-                .ctx(trc::Key::Elapsed, time.elapsed())
-                .details("Failed to fetch HTTP list"));
+            trc::bail!(
+                trc::StoreEvent::HttpStoreError
+                    .into_err()
+                    .ctx(trc::Key::Code, response.status().as_u16())
+                    .ctx(trc::Key::Url, self.config.url.to_string())
+                    .ctx(trc::Key::Elapsed, time.elapsed())
+                    .details("Failed to fetch HTTP list")
+            );
         }
 
         let bytes = response
