@@ -30,6 +30,9 @@ use std::future::Future;
 pub struct DnsRecord {
     #[serde(rename = "type")]
     typ: String,
+    class: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ttl: Option<u32>,
     name: String,
     content: String,
 }
@@ -77,7 +80,18 @@ impl DnsManagement for Server {
 
     async fn build_dns_records(&self, domain_name: &str) -> trc::Result<Vec<DnsRecord>> {
         // Obtain server name
-        let server_name = &self.core.network.server_name;
+        let server_name = if domain_name == self.core.network.server_name {
+            "@".to_string()
+        } else {
+            self.core
+                .network
+                .server_name
+                .strip_suffix(&format!(".{domain_name}"))
+                .map_or_else(
+                    || format!("{}.", &self.core.network.server_name),
+                    |s| s.to_string(),
+                )
+        };
         let mut records = Vec::new();
 
         // Obtain DKIM keys
@@ -100,14 +114,18 @@ impl DnsManagement for Server {
         // Add MX and CNAME records
         records.push(DnsRecord {
             typ: "MX".to_string(),
-            name: format!("{domain_name}."),
-            content: format!("10 {server_name}."),
+            class: "IN".to_string(),
+            ttl: None,
+            name: "@".to_string(),
+            content: format!("10 {server_name}"),
         });
-        if server_name.strip_prefix("mail.") != Some(domain_name) {
+        if server_name != "mail" {
             records.push(DnsRecord {
                 typ: "CNAME".to_string(),
-                name: format!("mail.{domain_name}."),
-                content: format!("{server_name}."),
+                class: "IN".to_string(),
+                ttl: None,
+                name: "mail".to_string(),
+                content: server_name.clone(),
             });
         }
 
@@ -127,7 +145,9 @@ impl DnsManagement for Server {
                     Ok(public) => {
                         records.push(DnsRecord {
                             typ: "TXT".to_string(),
-                            name: format!("{selector}._domainkey.{domain_name}.",),
+                            class: "IN".to_string(),
+                            ttl: None,
+                            name: format!("{selector}._domainkey",),
                             content: match algo {
                                 Algorithm::Rsa => format!("v=DKIM1; k=rsa; h=sha256; p={public}"),
                                 Algorithm::Ed25519 => {
@@ -144,16 +164,20 @@ impl DnsManagement for Server {
         }
 
         // Add SPF records
-        if server_name.ends_with(&format!(".{domain_name}")) || server_name == domain_name {
+        if !server_name.ends_with(".") {
             records.push(DnsRecord {
                 typ: "TXT".to_string(),
-                name: format!("{server_name}."),
+                class: "IN".to_string(),
+                ttl: None,
+                name: server_name.clone(),
                 content: "v=spf1 a ra=postmaster -all".to_string(),
             });
         }
         records.push(DnsRecord {
             typ: "TXT".to_string(),
-            name: format!("{domain_name}."),
+            class: "IN".to_string(),
+            ttl: None,
+            name: "@".to_string(),
             content: "v=spf1 mx ra=postmaster -all".to_string(),
         });
 
@@ -170,29 +194,29 @@ impl DnsManagement for Server {
                 ("smtp", port @ 26..=u16::MAX) => {
                     records.push(DnsRecord {
                         typ: "SRV".to_string(),
-                        name: format!(
-                            "_submission{}._tcp.{domain_name}.",
-                            if is_tls { "s" } else { "" }
-                        ),
-                        content: format!("0 1 {port} {server_name}."),
+                        class: "IN".to_string(),
+                        ttl: None,
+                        name: format!("_submission{}._tcp", if is_tls { "s" } else { "" }),
+                        content: format!("0 1 {port} {server_name}"),
                     });
                 }
                 ("imap" | "pop3", port @ 1..=u16::MAX) => {
                     records.push(DnsRecord {
                         typ: "SRV".to_string(),
-                        name: format!(
-                            "_{protocol}{}._tcp.{domain_name}.",
-                            if is_tls { "s" } else { "" }
-                        ),
-                        content: format!("0 1 {port} {server_name}."),
+                        class: "IN".to_string(),
+                        ttl: None,
+                        name: format!("_{protocol}{}._tcp", if is_tls { "s" } else { "" }),
+                        content: format!("0 1 {port} {server_name}"),
                     });
                 }
                 ("http", _) if is_tls => {
                     has_https = true;
                     records.push(DnsRecord {
                         typ: "SRV".to_string(),
-                        name: format!("_jmap._tcp.{domain_name}.",),
-                        content: format!("0 1 {port} {server_name}."),
+                        class: "IN".to_string(),
+                        ttl: None,
+                        name: "_jmap._tcp".to_string(),
+                        content: format!("0 1 {port} {server_name}"),
                     });
                 }
                 _ => (),
@@ -201,27 +225,41 @@ impl DnsManagement for Server {
 
         if has_https {
             // Add autoconfig and autodiscover records
-            records.push(DnsRecord {
-                typ: "CNAME".to_string(),
-                name: format!("autoconfig.{domain_name}."),
-                content: format!("{server_name}."),
-            });
-            records.push(DnsRecord {
-                typ: "CNAME".to_string(),
-                name: format!("autodiscover.{domain_name}."),
-                content: format!("{server_name}."),
-            });
+            if server_name != "autoconfig" {
+                records.push(DnsRecord {
+                    typ: "CNAME".to_string(),
+                    class: "IN".to_string(),
+                    ttl: None,
+                    name: "autoconfig".to_string(),
+                    content: server_name.clone(),
+                });
+            }
+            if server_name != "autodiscover" {
+                records.push(DnsRecord {
+                    typ: "CNAME".to_string(),
+                    class: "IN".to_string(),
+                    ttl: None,
+                    name: "autodiscover".to_string(),
+                    content: server_name.clone(),
+                });
+            }
 
             // Add MTA-STS records
             if let Some(policy) = self.build_mta_sts_policy() {
-                records.push(DnsRecord {
-                    typ: "CNAME".to_string(),
-                    name: format!("mta-sts.{domain_name}."),
-                    content: format!("{server_name}."),
-                });
+                if server_name != "mta-sts" {
+                    records.push(DnsRecord {
+                        typ: "CNAME".to_string(),
+                        class: "IN".to_string(),
+                        ttl: None,
+                        name: "mta-sts".to_string(),
+                        content: server_name.clone(),
+                    });
+                }
                 records.push(DnsRecord {
                     typ: "TXT".to_string(),
-                    name: format!("_mta-sts.{domain_name}."),
+                    class: "IN".to_string(),
+                    ttl: None,
+                    name: "_mta-sts".to_string(),
                     content: format!("v=STSv1; id={}", policy.id),
                 });
             }
@@ -230,24 +268,31 @@ impl DnsManagement for Server {
         // Add DMARC record
         records.push(DnsRecord {
             typ: "TXT".to_string(),
-            name: format!("_dmarc.{domain_name}."),
+            class: "IN".to_string(),
+            ttl: None,
+            name: "_dmarc".to_string(),
             content: format!("v=DMARC1; p=reject; rua=mailto:postmaster@{domain_name}; ruf=mailto:postmaster@{domain_name}",),
         });
 
         // Add TLS reporting record
         records.push(DnsRecord {
             typ: "TXT".to_string(),
-            name: format!("_smtp._tls.{domain_name}."),
+            class: "IN".to_string(),
+            ttl: None,
+            name: "_smtp._tls".to_string(),
             content: format!("v=TLSRPTv1; rua=mailto:postmaster@{domain_name}",),
         });
 
         // Add TLSA records
         for (name, key) in self.inner.data.tls_certificates.load().iter() {
-            if !name.ends_with(domain_name)
-                || name.starts_with("mta-sts.")
-                || name.starts_with("autoconfig.")
-                || name.starts_with("autodiscover.")
-            {
+            let tlsa_name = if name == domain_name {
+                "@"
+            } else if let Some(sub) = name.strip_suffix(&format!(".{domain_name}")) {
+                sub
+            } else {
+                continue;
+            };
+            if tlsa_name == "mta-sts" || tlsa_name == "autoconfig" || tlsa_name == "autodiscover" {
                 continue;
             }
 
@@ -263,10 +308,10 @@ impl DnsManagement for Server {
                     }
                 };
 
-                let name = if !name.starts_with('.') {
-                    format!("_25._tcp.{name}.")
+                let name = if tlsa_name == "@" {
+                    "_25._tcp".to_string()
                 } else {
-                    format!("_25._tcp.mail.{name}.")
+                    format!("_25._tcp.{tlsa_name}")
                 };
                 let cu = if cert_num == 0 { 3 } else { 2 };
 
@@ -280,6 +325,8 @@ impl DnsManagement for Server {
                     {
                         records.push(DnsRecord {
                             typ: "TLSA".to_string(),
+                            class: "IN".to_string(),
+                            ttl: None,
                             name: name.clone(),
                             content: format!("{} {} {} {}", cu, s, m + 1, hash),
                         });
