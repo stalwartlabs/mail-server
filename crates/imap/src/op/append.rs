@@ -7,18 +7,18 @@
 use std::{sync::Arc, time::Instant};
 
 use directory::Permission;
-use email::ingest::{EmailIngest, IngestEmail, IngestSource};
+use email::message::ingest::{EmailIngest, IngestEmail, IngestSource};
 use imap_proto::{
+    Command, ResponseCode, StatusResponse,
     protocol::{append::Arguments, select::HighestModSeq},
     receiver::Request,
-    Command, ResponseCode, StatusResponse,
 };
 
 use crate::{
     core::{ImapUidToId, SelectedMailbox, Session, SessionData},
     spawn_op,
 };
-use common::{listener::SessionStream, MailboxId};
+use common::{MailboxId, listener::SessionStream};
 use jmap_proto::types::{acl::Acl, keyword::Keyword, state::StateChange, type_state::DataType};
 use mail_parser::MessageParser;
 

@@ -34,6 +34,9 @@ http-body-util = "0.1.0"
 form_urlencoded = "1.1.0"
 psl = "2"
 quick_cache = "0.6.9"
+downcast-rs = "2.0.1"
+fast-float = "0.2.0"
+erased-serde = "0.4.5"
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

@@ -8,24 +8,24 @@ use std::{sync::Arc, time::Instant};
 
 use ahash::AHashMap;
 use directory::Permission;
-use email::mailbox::UidMailbox;
+use email::{mailbox::UidMailbox, message::delete::EmailDeletion};
 use imap_proto::{
+    Command, ResponseCode, ResponseType, StatusResponse,
     parser::parse_sequence_set,
     receiver::{Request, Token},
-    Command, ResponseCode, ResponseType, StatusResponse,
 };
 use trc::AddContext;
 
 use crate::core::{SavedSearch, SelectedMailbox, Session, SessionData};
-use common::{listener::SessionStream, ImapId};
-use jmap::email::{delete::EmailDeletion, set::TagManager};
+use common::{ImapId, listener::SessionStream};
+use jmap::email::set::TagManager;
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
     state::StateChange, type_state::DataType,
 };
 use store::{
     roaring::RoaringBitmap,
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, F_VALUE},
+    write::{BatchBuilder, F_VALUE, assert::HashedValue, log::ChangeLogBuilder},
 };
 
 use super::{ImapContext, ToModSeq};

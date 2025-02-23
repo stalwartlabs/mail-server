@@ -4,13 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken, config::jmap::settings::SpecialUse};
 use directory::Permission;
-use email::mailbox::{MailboxFnc, SCHEMA};
+use email::{
+    mailbox::{Mailbox, manage::MailboxFnc},
+    message::delete::EmailDeletion,
+};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
-    object::{index::ObjectIndexBuilder, mailbox::SetArguments, Object},
+    object::{index::ObjectIndexBuilder, mailbox::SetArguments},
     response::references::EvalObjectReferences,
     types::{
         acl::Acl,
@@ -19,27 +22,27 @@ use jmap_proto::{
         property::Property,
         state::StateChange,
         type_state::DataType,
-        value::{MaybePatchValue, SetValue, Value},
+        value::{MaybePatchValue, Object, SetValue, Value},
     },
 };
 use store::{
     query::Filter,
     roaring::RoaringBitmap,
     write::{
+        BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE,
         assert::{AssertValue, HashedValue},
         log::ChangeLogBuilder,
-        BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE,
     },
 };
+use utils::config::utils::ParseValue;
 
 use crate::{
-    auth::acl::{AclMethods, EffectiveAcl},
-    email::delete::EmailDeletion,
     JmapMethods,
+    auth::acl::{AclMethods, EffectiveAcl},
 };
 
 #[allow(unused_imports)]
-use email::mailbox::{UidMailbox, INBOX_ID, JUNK_ID, TRASH_ID};
+use email::mailbox::{INBOX_ID, JUNK_ID, TRASH_ID, UidMailbox};
 use std::future::Future;
 
 pub struct SetContext<'x> {
@@ -70,9 +73,9 @@ pub trait MailboxSet: Sync + Send {
     fn mailbox_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, HashedValue<Object<Value>>)>,
+        update: Option<(u32, HashedValue<Mailbox>)>,
         ctx: &SetContext,
-    ) -> impl Future<Output = trc::Result<Result<ObjectIndexBuilder, SetError>>> + Send;
+    ) -> impl Future<Output = trc::Result<Result<ObjectIndexBuilder<Mailbox>, SetError>>> + Send;
 }
 
 impl MailboxSet for Server {
@@ -106,15 +109,11 @@ impl MailboxSet for Server {
                         .with_account_id(account_id)
                         .with_collection(Collection::Mailbox);
 
-                    if let Value::Id(parent_id) =
-                        builder.changes().unwrap().get(&Property::ParentId)
-                    {
-                        let parent_id = parent_id.document_id();
-                        if parent_id > 0 {
-                            batch
-                                .update_document(parent_id - 1)
-                                .assert_value(Property::Value, AssertValue::Some);
-                        }
+                    let parent_id = builder.changes().unwrap().parent_id;
+                    if parent_id > 0 {
+                        batch
+                            .update_document(parent_id - 1)
+                            .assert_value(Property::Value, AssertValue::Some);
                     }
 
                     batch.create_document().custom(builder);
@@ -166,7 +165,7 @@ impl MailboxSet for Server {
             // Obtain mailbox
             let document_id = id.document_id();
             if let Some(mailbox) = self
-                .get_property::<HashedValue<Object<Value>>>(
+                .get_property::<HashedValue<Mailbox>>(
                     account_id,
                     Collection::Mailbox,
                     document_id,
@@ -176,7 +175,7 @@ impl MailboxSet for Server {
             {
                 // Validate ACL
                 if ctx.is_shared {
-                    let acl = mailbox.inner.effective_acl(access_token);
+                    let acl = mailbox.inner.acls.effective_acl(access_token);
                     if !acl.contains(Acl::Modify) {
                         ctx.response.not_updated.append(
                             id,
@@ -184,7 +183,7 @@ impl MailboxSet for Server {
                                 .with_description("You are not allowed to modify this mailbox."),
                         );
                         continue 'update;
-                    } else if object.properties.contains_key(&Property::Acl)
+                    } else if object.0.contains_key(&Property::Acl)
                         && !acl.contains(Acl::Administer)
                     {
                         ctx.response.not_updated.append(
@@ -207,15 +206,11 @@ impl MailboxSet for Server {
                             .with_account_id(account_id)
                             .with_collection(Collection::Mailbox);
 
-                        if let Value::Id(parent_id) =
-                            builder.changes().unwrap().get(&Property::ParentId)
-                        {
-                            let parent_id = parent_id.document_id();
-                            if parent_id > 0 {
-                                batch
-                                    .update_document(parent_id - 1)
-                                    .assert_value(Property::Value, AssertValue::Some);
-                            }
+                        let parent_id = builder.changes().unwrap().parent_id;
+                        if parent_id > 0 {
+                            batch
+                                .update_document(parent_id - 1)
+                                .assert_value(Property::Value, AssertValue::Some);
                         }
 
                         batch.update_document(document_id).custom(builder);
@@ -432,7 +427,7 @@ impl MailboxSet for Server {
 
         // Obtain mailbox
         if let Some(mailbox) = self
-            .get_property::<HashedValue<Object<Value>>>(
+            .get_property::<HashedValue<Mailbox>>(
                 account_id,
                 Collection::Mailbox,
                 document_id,
@@ -442,7 +437,7 @@ impl MailboxSet for Server {
         {
             // Validate ACLs
             if access_token.is_shared(account_id) {
-                let acl = mailbox.inner.effective_acl(access_token);
+                let acl = mailbox.inner.acls.effective_acl(access_token);
                 if !acl.contains(Acl::Administer) {
                     if !acl.contains(Acl::Delete) {
                         return Ok(Err(SetError::forbidden()
@@ -461,7 +456,7 @@ impl MailboxSet for Server {
                 .with_collection(Collection::Mailbox)
                 .delete_document(document_id)
                 .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
-                .custom(ObjectIndexBuilder::new(SCHEMA).with_current(mailbox));
+                .custom(ObjectIndexBuilder::new().with_current(mailbox));
 
             match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => {
@@ -484,23 +479,27 @@ impl MailboxSet for Server {
     async fn mailbox_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, HashedValue<Object<Value>>)>,
+        update: Option<(u32, HashedValue<Mailbox>)>,
         ctx: &SetContext<'_>,
-    ) -> trc::Result<Result<ObjectIndexBuilder, SetError>> {
+    ) -> trc::Result<Result<ObjectIndexBuilder<Mailbox>, SetError>> {
         // Parse properties
-        let mut changes = Object::with_capacity(changes_.properties.len());
-        for (property, value) in changes_.properties {
+        let mut changes = update
+            .as_ref()
+            .map(|(_, obj)| obj.inner.clone())
+            .unwrap_or_else(|| Mailbox::new(String::new()));
+        let mut has_acl_changes = false;
+        for (property, value) in changes_.0 {
             let value = match ctx.response.eval_object_references(value) {
                 Ok(value) => value,
                 Err(err) => {
                     return Ok(Err(err));
                 }
             };
-            let value = match (&property, value) {
+            match (&property, value) {
                 (Property::Name, MaybePatchValue::Value(Value::Text(value))) => {
                     let value = value.trim();
                     if !value.is_empty() && value.len() < self.core.jmap.mailbox_name_max_len {
-                        Value::Text(value.to_string())
+                        changes.name = value.to_string();
                     } else {
                         return Ok(Err(SetError::invalid_properties()
                             .with_property(Property::Name)
@@ -523,47 +522,45 @@ impl MailboxSet for Server {
                         return Ok(Err(SetError::invalid_properties()
                             .with_description("Parent ID does not exist.")));
                     }
-
-                    Value::Id((parent_id + 1).into())
+                    changes.parent_id = parent_id + 1;
                 }
-                (Property::ParentId, MaybePatchValue::Value(Value::Null)) => Value::Id(0u64.into()),
+                (Property::ParentId, MaybePatchValue::Value(Value::Null)) => {
+                    changes.parent_id = 0;
+                }
                 (Property::IsSubscribed, MaybePatchValue::Value(Value::Bool(subscribe))) => {
-                    if let Some((_, current_fields)) = update.as_ref() {
-                        if let Some(value) = current_fields
-                            .inner
-                            .mailbox_subscribe(ctx.access_token.primary_id(), subscribe)
-                        {
-                            value
-                        } else {
-                            continue;
+                    let account_id = ctx.access_token.primary_id();
+                    if subscribe {
+                        if !changes.subscribers.contains(&account_id) {
+                            changes.subscribers.push(account_id);
                         }
-                    } else if subscribe {
-                        Value::List(vec![Value::Id(ctx.access_token.primary_id().into())])
                     } else {
-                        continue;
+                        changes.subscribers.retain(|id| *id != account_id);
                     }
                 }
                 (Property::Role, MaybePatchValue::Value(Value::Text(value))) => {
-                    let role = value.trim().to_lowercase();
-                    if [
-                        "inbox", "trash", "spam", "junk", "drafts", "archive", "sent",
-                    ]
-                    .contains(&role.as_str())
-                    {
-                        Value::Text(role)
+                    let role = value.trim();
+                    if let Ok(role) = SpecialUse::parse_value(role) {
+                        changes.role = role;
                     } else {
                         return Ok(Err(SetError::invalid_properties()
                             .with_property(Property::Role)
                             .with_description(format!("Invalid role {role:?}."))));
                     }
                 }
-                (Property::Role, MaybePatchValue::Value(Value::Null)) => Value::Null,
+                (Property::Role, MaybePatchValue::Value(Value::Null)) => {
+                    changes.role = SpecialUse::None;
+                }
                 (Property::SortOrder, MaybePatchValue::Value(Value::UnsignedInt(value))) => {
-                    Value::UnsignedInt(value)
+                    changes.sort_order = Some(value as u32);
                 }
                 (Property::Acl, value) => {
+                    has_acl_changes = true;
                     match self
-                        .acl_set(&mut changes, update.as_ref().map(|(_, obj)| obj), value)
+                        .acl_set(
+                            &mut changes.acls,
+                            update.as_ref().map(|(_, obj)| obj.inner.acls.as_slice()),
+                            value,
+                        )
                         .await
                     {
                         Ok(_) => continue,
@@ -576,234 +573,157 @@ impl MailboxSet for Server {
                 _ => {
                     return Ok(Err(SetError::invalid_properties()
                         .with_property(property)
-                        .with_description("Invalid property or value.".to_string())))
+                        .with_description("Invalid property or value.".to_string())));
                 }
-            };
-
-            changes.append(property, value);
+            }
         }
 
         // Validate depth and circular parent-child relationship
-        if let Value::Id(mailbox_parent_id) = changes.get(&Property::ParentId) {
-            let current_mailbox_id = update
-                .as_ref()
-                .map_or(u32::MAX, |(mailbox_id, _)| *mailbox_id + 1);
-            let mut mailbox_parent_id = mailbox_parent_id.document_id();
-            let mut success = false;
-            for depth in 0..self.core.jmap.mailbox_max_depth {
-                if mailbox_parent_id == current_mailbox_id {
-                    return Ok(Err(SetError::invalid_properties()
-                        .with_property(Property::ParentId)
-                        .with_description("Mailbox cannot be a parent of itself.")));
-                } else if mailbox_parent_id == 0 {
-                    if depth == 0 && ctx.is_shared {
-                        return Ok(Err(SetError::forbidden()
-                            .with_description("You are not allowed to create root folders.")));
-                    }
-                    success = true;
-                    break;
-                }
-                let parent_document_id = mailbox_parent_id - 1;
-
-                if let Some(mut fields) = self
-                    .get_property::<Object<Value>>(
-                        ctx.account_id,
-                        Collection::Mailbox,
-                        parent_document_id,
-                        Property::Value,
-                    )
-                    .await?
-                {
-                    if depth == 0
-                        && ctx.is_shared
-                        && !fields
-                            .effective_acl(ctx.access_token)
-                            .contains_any([Acl::CreateChild, Acl::Administer].into_iter())
-                    {
-                        return Ok(Err(SetError::forbidden().with_description(
-                            "You are not allowed to create sub mailboxes under this mailbox.",
-                        )));
-                    }
-
-                    mailbox_parent_id = fields
-                        .properties
-                        .remove(&Property::ParentId)
-                        .and_then(|v| v.try_unwrap_id().map(|id| id.document_id()))
-                        .unwrap_or(0);
-                } else if ctx.mailbox_ids.contains(parent_document_id) {
-                    // Parent mailbox is probably created within the same request
-                    success = true;
-                    break;
-                } else {
-                    return Ok(Err(SetError::invalid_properties()
-                        .with_property(Property::ParentId)
-                        .with_description("Mailbox parent does not exist.")));
-                }
-            }
-
-            if !success {
+        let mut mailbox_parent_id = changes.parent_id;
+        let current_mailbox_id = update
+            .as_ref()
+            .map_or(u32::MAX, |(mailbox_id, _)| *mailbox_id + 1);
+        let mut success = false;
+        for depth in 0..self.core.jmap.mailbox_max_depth {
+            if mailbox_parent_id == current_mailbox_id {
                 return Ok(Err(SetError::invalid_properties()
                     .with_property(Property::ParentId)
-                    .with_description(
-                        "Mailbox parent-child relationship is too deep.",
-                    )));
+                    .with_description("Mailbox cannot be a parent of itself.")));
+            } else if mailbox_parent_id == 0 {
+                if depth == 0 && ctx.is_shared {
+                    return Ok(Err(SetError::forbidden()
+                        .with_description("You are not allowed to create root folders.")));
+                }
+                success = true;
+                break;
             }
-        } else if update.is_none() {
-            // Set parentId if the field is missing
-            changes.append(Property::ParentId, Value::Id(0u64.into()));
+            let parent_document_id = mailbox_parent_id - 1;
+
+            if let Some(fields) = self
+                .get_property::<Mailbox>(
+                    ctx.account_id,
+                    Collection::Mailbox,
+                    parent_document_id,
+                    Property::Value,
+                )
+                .await?
+            {
+                if depth == 0
+                    && ctx.is_shared
+                    && !fields
+                        .acls
+                        .effective_acl(ctx.access_token)
+                        .contains_any([Acl::CreateChild, Acl::Administer].into_iter())
+                {
+                    return Ok(Err(SetError::forbidden().with_description(
+                        "You are not allowed to create sub mailboxes under this mailbox.",
+                    )));
+                }
+
+                mailbox_parent_id = fields.parent_id;
+            } else if ctx.mailbox_ids.contains(parent_document_id) {
+                // Parent mailbox is probably created within the same request
+                success = true;
+                break;
+            } else {
+                return Ok(Err(SetError::invalid_properties()
+                    .with_property(Property::ParentId)
+                    .with_description("Mailbox parent does not exist.")));
+            }
         }
 
-        // Generate IMAP UID validity
-        if update.is_none() {
-            changes.append(
-                Property::Cid,
-                Value::UnsignedInt(rand::random::<u32>() as u64),
-            );
+        if !success {
+            return Ok(Err(SetError::invalid_properties()
+                .with_property(Property::ParentId)
+                .with_description(
+                    "Mailbox parent-child relationship is too deep.",
+                )));
         }
 
         // Verify that the mailbox role is unique.
-        if let Value::Text(mailbox_role) = changes.get(&Property::Role) {
-            if update
+        if !matches!(changes.role, SpecialUse::None)
+            && update
                 .as_ref()
-                .map(|(_, update)| update.inner.get(&Property::Role))
-                .and_then(|v| v.as_string())
-                .unwrap_or_default()
-                != mailbox_role
+                .is_none_or(|(_, m)| m.inner.role != changes.role)
+        {
+            if !self
+                .filter(
+                    ctx.account_id,
+                    Collection::Mailbox,
+                    vec![Filter::eq(
+                        Property::Role,
+                        changes.role.as_str().unwrap_or_default(),
+                    )],
+                )
+                .await?
+                .results
+                .is_empty()
             {
-                if !self
-                    .filter(
-                        ctx.account_id,
-                        Collection::Mailbox,
-                        vec![Filter::eq(Property::Role, mailbox_role.as_str())],
-                    )
-                    .await?
-                    .results
-                    .is_empty()
-                {
-                    return Ok(Err(SetError::invalid_properties()
-                        .with_property(Property::Role)
-                        .with_description(format!(
-                            "A mailbox with role '{}' already exists.",
-                            mailbox_role
-                        ))));
-                }
+                return Ok(Err(SetError::invalid_properties()
+                    .with_property(Property::Role)
+                    .with_description(format!(
+                        "A mailbox with role '{}' already exists.",
+                        changes.role.as_str().unwrap_or_default()
+                    ))));
+            }
 
-                // Role of internal folders cannot be modified
-                if update.as_ref().is_some_and(|(document_id, _)| {
-                    *document_id == INBOX_ID || *document_id == TRASH_ID
-                }) {
-                    return Ok(Err(SetError::invalid_properties()
-                        .with_property(Property::Role)
-                        .with_description(
-                            "You are not allowed to change the role of Inbox or Trash folders.",
-                        )));
-                }
+            // Role of internal folders cannot be modified
+            if update.as_ref().is_some_and(|(document_id, _)| {
+                *document_id == INBOX_ID || *document_id == TRASH_ID
+            }) {
+                return Ok(Err(SetError::invalid_properties()
+                    .with_property(Property::Role)
+                    .with_description(
+                        "You are not allowed to change the role of Inbox or Trash folders.",
+                    )));
             }
         }
 
         // Verify that the mailbox name is unique.
-        if let Value::Text(mailbox_name) = changes.get(&Property::Name) {
+        if !changes.name.is_empty() {
             // Obtain parent mailbox id
-            if let Some(parent_mailbox_id) = if let Some(mailbox_parent_id) = &changes
-                .properties
-                .get(&Property::ParentId)
-                .and_then(|id| id.as_id().map(|id| id.document_id()))
-            {
-                (*mailbox_parent_id).into()
-            } else if let Some((_, current_fields)) = &update {
-                if current_fields
-                    .inner
-                    .properties
-                    .get(&Property::Name)
-                    .and_then(|n| n.as_string())
-                    != Some(mailbox_name)
-                {
-                    current_fields
-                        .inner
-                        .properties
-                        .get(&Property::ParentId)
-                        .and_then(|id| id.as_id().map(|id| id.document_id()))
-                        .unwrap_or_default()
-                        .into()
-                } else {
-                    None
-                }
-            } else {
-                0.into()
-            } {
-                if !self
+            if update
+                .as_ref()
+                .is_none_or(|(_, m)| m.inner.name != changes.name)
+                && !self
                     .filter(
                         ctx.account_id,
                         Collection::Mailbox,
                         vec![
-                            Filter::eq(Property::Name, mailbox_name.as_str()),
-                            Filter::eq(Property::ParentId, parent_mailbox_id),
+                            Filter::eq(Property::Name, changes.name.as_str()),
+                            Filter::eq(Property::ParentId, changes.parent_id),
                         ],
                     )
                     .await?
                     .results
                     .is_empty()
-                {
-                    return Ok(Err(SetError::invalid_properties()
-                        .with_property(Property::Name)
-                        .with_description(format!(
-                            "A mailbox with name '{}' already exists.",
-                            mailbox_name
-                        ))));
-                }
+            {
+                return Ok(Err(SetError::invalid_properties()
+                    .with_property(Property::Name)
+                    .with_description(format!(
+                        "A mailbox with name '{}' already exists.",
+                        changes.name
+                    ))));
             }
+        } else {
+            return Ok(Err(SetError::invalid_properties()
+                .with_property(Property::Name)
+                .with_description("Mailbox name cannot be empty.")));
         }
 
         // Refresh ACLs
         let current = update.map(|(_, current)| current);
-        if changes.properties.contains_key(&Property::Acl) {
-            self.refresh_acls(&changes, &current).await;
+        if has_acl_changes {
+            self.refresh_acls(
+                &changes.acls,
+                current.as_ref().map(|m| m.inner.acls.as_slice()),
+            )
+            .await;
         }
 
         // Validate
-        Ok(ObjectIndexBuilder::new(SCHEMA)
+        Ok(Ok(ObjectIndexBuilder::new()
             .with_changes(changes)
-            .with_current_opt(current)
-            .validate())
-    }
-}
-
-pub trait MailboxSubscribe {
-    fn mailbox_subscribe(&self, account_id: u32, subscribed: bool) -> Option<Value>;
-}
-
-impl MailboxSubscribe for Object<Value> {
-    fn mailbox_subscribe(&self, account_id: u32, subscribe: bool) -> Option<Value> {
-        let account_id = Value::Id(account_id.into());
-        if let Value::List(subscriptions) = self.get(&Property::IsSubscribed) {
-            if subscribe {
-                if !subscriptions.contains(&account_id) {
-                    let mut current_subscriptions = subscriptions.clone();
-                    current_subscriptions.push(account_id);
-                    Value::List(current_subscriptions).into()
-                } else {
-                    None
-                }
-            } else if subscriptions.contains(&account_id) {
-                if subscriptions.len() > 1 {
-                    Value::List(
-                        subscriptions
-                            .iter()
-                            .filter(|id| *id != &account_id)
-                            .cloned()
-                            .collect(),
-                    )
-                    .into()
-                } else {
-                    Value::Null.into()
-                }
-            } else {
-                None
-            }
-        } else if subscribe {
-            Value::List(vec![account_id]).into()
-        } else {
-            None
-        }
+            .with_current_opt(current)))
     }
 }

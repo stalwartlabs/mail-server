@@ -8,10 +8,8 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use jmap_proto::{
-    object::Object,
-    types::{collection::Collection, property::Property, value::Value},
-};
+use email::sieve::SieveScript;
+use jmap_proto::types::{collection::Collection, property::Property};
 use trc::AddContext;
 
 use crate::core::{Session, StatusResponse};
@@ -40,7 +38,7 @@ impl<T: SessionStream> Session<T> {
         for document_id in document_ids {
             if let Some(script) = self
                 .server
-                .get_property::<Object<Value>>(
+                .get_property::<SieveScript>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -50,16 +48,13 @@ impl<T: SessionStream> Session<T> {
                 .caused_by(trc::location!())?
             {
                 response.push(b'\"');
-                if let Some(name) = script.get(&Property::Name).as_string() {
-                    for ch in name.as_bytes() {
-                        if [b'\\', b'\"'].contains(ch) {
-                            response.push(b'\\');
-                        }
-                        response.push(*ch);
+                for ch in script.name.as_bytes() {
+                    if [b'\\', b'\"'].contains(ch) {
+                        response.push(b'\\');
                     }
+                    response.push(*ch);
                 }
-
-                if script.get(&Property::IsActive).as_bool() == Some(true) {
+                if script.is_active {
                     response.extend_from_slice(b"\" ACTIVE\r\n");
                 } else {
                     response.extend_from_slice(b"\"\r\n");

@@ -11,49 +11,51 @@ use std::{
 };
 
 use common::{
-    auth::{AccessToken, ResourceToken},
     Server,
+    auth::{AccessToken, ResourceToken},
 };
 use directory::Permission;
-use jmap_proto::{
-    object::Object,
-    types::{
-        blob::BlobId, collection::Collection, id::Id, keyword::Keyword, property::Property,
-        value::Value,
-    },
+use jmap_proto::types::{
+    blob::BlobId,
+    collection::Collection,
+    id::Id,
+    keyword::Keyword,
+    property::Property,
+    value::{Object, Value},
 };
 use mail_parser::{
-    parsers::fields::thread::thread_name, Header, HeaderName, HeaderValue, Message, MessageParser,
-    PartType,
+    Header, HeaderName, HeaderValue, Message, MessageParser, PartType,
+    parsers::fields::thread::thread_name,
 };
 
 use spam_filter::{
-    analysis::init::SpamFilterInit, modules::bayes::BayesClassifier, SpamFilterInput,
+    SpamFilterInput, analysis::init::SpamFilterInit, modules::bayes::BayesClassifier,
 };
 use std::future::Future;
 use store::rand::Rng;
 use store::{
+    BitmapKey, BlobClass, Serialize,
     ahash::AHashSet,
     query::Filter,
     write::{
+        AssignedIds, BatchBuilder, BitmapClass, F_BITMAP, F_CLEAR, F_VALUE, MaybeDynamicId,
+        MaybeDynamicValue, SerializeWithId, TagValue, TaskQueueClass, ValueClass,
         log::{ChangeLogBuilder, Changes, LogInsert},
-        now, AssignedIds, BatchBuilder, BitmapClass, MaybeDynamicId, MaybeDynamicValue,
-        SerializeWithId, TagValue, TaskQueueClass, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
+        now,
     },
-    BitmapKey, BlobClass, Serialize,
 };
 use trc::{AddContext, MessageIngestEvent};
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    index::{IndexMessage, VisitValues, MAX_ID_LENGTH},
-    mailbox::{UidMailbox, INBOX_ID, JUNK_ID},
+    mailbox::{INBOX_ID, JUNK_ID, UidMailbox},
+    message::index::{IndexMessage, MAX_ID_LENGTH, VisitValues},
+    thread::cache::ThreadCache,
 };
 
 use super::{
-    cache::ThreadCache,
     crypto::{EncryptMessage, EncryptMessageError, EncryptionParams},
-    index::{TrimTextValue, MAX_SORT_FIELD_LENGTH},
+    index::{MAX_SORT_FIELD_LENGTH, TrimTextValue},
 };
 
 #[derive(Default)]
@@ -425,10 +427,12 @@ impl EmailIngest for Server {
                         }
                     }
                     Err(EncryptMessageError::Error(err)) => {
-                        trc::bail!(trc::StoreEvent::CryptoError
-                            .into_err()
-                            .caused_by(trc::location!())
-                            .reason(err));
+                        trc::bail!(
+                            trc::StoreEvent::CryptoError
+                                .into_err()
+                                .caused_by(trc::location!())
+                                .reason(err)
+                        );
                     }
                     _ => unreachable!(),
                 }

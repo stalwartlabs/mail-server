@@ -7,12 +7,13 @@
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    parser::{json::Parser, JsonObjectParser},
-    request::{reference::MaybeReference, RequestProperty, RequestPropertyParser},
-    types::{id::Id, value::SetValue},
+    parser::{JsonObjectParser, json::Parser},
+    request::{RequestProperty, RequestPropertyParser, reference::MaybeReference},
+    types::{
+        id::Id,
+        value::{Object, SetValue},
+    },
 };
-
-use super::Object;
 
 #[derive(Debug, Clone, Default)]
 pub struct SetArguments {

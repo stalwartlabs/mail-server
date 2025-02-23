@@ -4,12 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
-use email::mailbox::MailboxFnc;
+use common::{Server, auth::AccessToken};
+use email::mailbox::{Mailbox, manage::MailboxFnc};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
-    object::Object,
-    types::{acl::Acl, collection::Collection, property::Property, value::Value},
+    types::{
+        acl::Acl,
+        collection::Collection,
+        property::Property,
+        value::{Object, Value},
+    },
 };
 
 use crate::{
@@ -95,7 +99,7 @@ impl MailboxGet for Server {
 
             let mut values = if fetch_properties {
                 match self
-                    .get_property::<Object<Value>>(
+                    .get_property::<Mailbox>(
                         account_id,
                         Collection::Mailbox,
                         document_id,
@@ -109,8 +113,9 @@ impl MailboxGet for Server {
                         continue;
                     }
                 }
+                .into()
             } else {
-                Object::with_capacity(0)
+                None
             };
 
             let mut mailbox = Object::with_capacity(properties.len());
@@ -118,21 +123,32 @@ impl MailboxGet for Server {
             for property in &properties {
                 let value = match property {
                     Property::Id => Value::Id(id),
-                    Property::Name | Property::Role => values.remove(property),
-                    Property::SortOrder => values
-                        .properties
-                        .remove(property)
-                        .unwrap_or(Value::UnsignedInt(0)),
-                    Property::ParentId => values
-                        .properties
-                        .remove(property)
-                        .map(|parent_id| match parent_id {
-                            Value::Id(value) if value.document_id() > 0 => {
-                                Value::Id((value.document_id() - 1).into())
-                            }
-                            _ => Value::Null,
-                        })
-                        .unwrap_or_default(),
+                    Property::Name => {
+                        Value::Text(std::mem::take(&mut values.as_mut().unwrap().name))
+                    }
+                    Property::Role => {
+                        if let Some(role) = values.as_ref().unwrap().role.as_str() {
+                            Value::Text(role.to_string())
+                        } else {
+                            Value::Null
+                        }
+                    }
+                    Property::SortOrder => Value::UnsignedInt(
+                        values
+                            .as_ref()
+                            .unwrap()
+                            .sort_order
+                            .unwrap_or_default()
+                            .into(),
+                    ),
+                    Property::ParentId => {
+                        let parent_id = values.as_ref().unwrap().parent_id;
+                        if parent_id > 0 {
+                            Value::Id((parent_id - 1).into())
+                        } else {
+                            Value::Null
+                        }
+                    }
                     Property::TotalEmails => Value::UnsignedInt(
                         self.get_tag(
                             account_id,
@@ -173,7 +189,7 @@ impl MailboxGet for Server {
                     ),
                     Property::MyRights => {
                         if access_token.is_shared(account_id) {
-                            let acl = values.effective_acl(access_token);
+                            let acl = values.as_ref().unwrap().acls.effective_acl(access_token);
                             Object::with_capacity(9)
                                 .with_property(Property::MayReadItems, acl.contains(Acl::ReadItems))
                                 .with_property(Property::MayAddItems, acl.contains(Acl::AddItems))
@@ -208,31 +224,21 @@ impl MailboxGet for Server {
                                 .into()
                         }
                     }
-                    Property::IsSubscribed => values
-                        .properties
-                        .remove(property)
-                        .map(|parent_id| match parent_id {
-                            Value::List(values)
-                                if values
-                                    .contains(&Value::Id(access_token.primary_id().into())) =>
-                            {
-                                Value::Bool(true)
-                            }
-                            _ => Value::Bool(false),
-                        })
-                        .unwrap_or(Value::Bool(false)),
+                    Property::IsSubscribed => {
+                        if values
+                            .as_ref()
+                            .unwrap()
+                            .subscribers
+                            .contains(&access_token.primary_id())
+                        {
+                            Value::Bool(true)
+                        } else {
+                            Value::Bool(false)
+                        }
+                    }
                     Property::Acl => {
-                        self.acl_get(
-                            values
-                                .properties
-                                .get(&Property::Acl)
-                                .and_then(|v| v.as_acl())
-                                .map(|v| &v[..])
-                                .unwrap_or_else(|| &[]),
-                            access_token,
-                            account_id,
-                        )
-                        .await
+                        self.acl_get(&values.as_ref().unwrap().acls, access_token, account_id)
+                            .await
                     }
 
                     _ => Value::Null,

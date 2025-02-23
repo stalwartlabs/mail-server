@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use email::metadata::{MessageMetadataContents, MetadataPartType};
-use jmap_proto::{
-    object::Object,
-    types::{blob::BlobId, property::Property, value::Value},
+use email::message::metadata::{MessageMetadataContents, MetadataPartType};
+use jmap_proto::types::{
+    blob::BlobId,
+    property::Property,
+    value::{Object, Value},
 };
 use mail_parser::{HeaderValue, MessagePart, MimeHeaders, PartType};
 

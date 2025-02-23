@@ -5,14 +5,19 @@
  */
 
 use common::{
-    auth::{AccessToken, ResourceToken},
     Server,
+    auth::{AccessToken, ResourceToken},
 };
+
 use email::{
-    index::{EmailIndexBuilder, TrimTextValue, VisitValues, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH},
-    ingest::{EmailIngest, IngestedEmail, LogEmailInsert},
-    mailbox::{MailboxFnc, UidMailbox},
-    metadata::MessageMetadata,
+    mailbox::{UidMailbox, manage::MailboxFnc},
+    message::{
+        index::{
+            EmailIndexBuilder, MAX_ID_LENGTH, MAX_SORT_FIELD_LENGTH, TrimTextValue, VisitValues,
+        },
+        ingest::{EmailIngest, IngestedEmail, LogEmailInsert},
+        metadata::MessageMetadata,
+    },
 };
 use jmap_proto::{
     error::set::SetError,
@@ -21,9 +26,9 @@ use jmap_proto::{
         set::{self, SetRequest},
     },
     request::{
+        Call, RequestMethod,
         method::{MethodFunction, MethodName, MethodObject},
         reference::MaybeReference,
-        Call, RequestMethod,
     },
     response::references::EvalObjectReferences,
     types::{
@@ -39,14 +44,14 @@ use jmap_proto::{
         value::{MaybePatchValue, Value},
     },
 };
-use mail_parser::{parsers::fields::thread::thread_name, HeaderName, HeaderValue};
+use mail_parser::{HeaderName, HeaderValue, parsers::fields::thread::thread_name};
 use store::{
-    write::{
-        log::{Changes, LogInsert},
-        BatchBuilder, Bincode, MaybeDynamicId, TagValue, TaskQueueClass, ValueClass, F_BITMAP,
-        F_VALUE,
-    },
     BlobClass,
+    write::{
+        BatchBuilder, Bincode, F_BITMAP, F_VALUE, MaybeDynamicId, TagValue, TaskQueueClass,
+        ValueClass,
+        log::{Changes, LogInsert},
+    },
 };
 use trc::AddContext;
 use utils::map::vec_map::VecMap;
@@ -140,7 +145,7 @@ impl EmailCopy for Server {
             let mut keywords = Vec::new();
             let mut received_at = None;
 
-            for (property, value) in create.properties {
+            for (property, value) in create.0 {
                 let value = match response.eval_object_references(value) {
                     Ok(value) => value,
                     Err(err) => {

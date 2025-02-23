@@ -4,11 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
-    object::Object,
-    types::{id::Id, property::Property, state::State, type_state::DataType, value::Value},
+    types::{
+        id::Id,
+        property::Property,
+        state::State,
+        type_state::DataType,
+        value::{Object, Value},
+    },
 };
 use std::future::Future;
 

@@ -7,11 +7,10 @@
 use common::Server;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
-    object::Object,
-    types::{collection::Collection, id::Id, property::Property},
+    types::{collection::Collection, id::Id, property::Property, value::Object},
 };
 use std::future::Future;
-use store::query::{sort::Pagination, Comparator, ResultSet};
+use store::query::{Comparator, ResultSet, sort::Pagination};
 use trc::AddContext;
 
 use crate::changes::state::StateManager;
@@ -42,7 +41,7 @@ impl ThreadGet for Server {
         };
         let add_email_ids = request
             .properties
-            .is_none_or( |p| p.unwrap().contains(&Property::EmailIds));
+            .is_none_or(|p| p.unwrap().contains(&Property::EmailIds));
         let mut response = GetResponse {
             account_id: request.account_id.into(),
             state: self.get_state(account_id, Collection::Thread).await?.into(),

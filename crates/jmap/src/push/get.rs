@@ -4,22 +4,24 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use base64::{engine::general_purpose, Engine};
 use common::{
+    Server,
     auth::AccessToken,
     ipc::{StateEvent, UpdateSubscription},
-    Server,
 };
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
-    object::Object,
-    types::{collection::Collection, property::Property, type_state::DataType, value::Value},
+    types::{
+        collection::Collection,
+        date::UTCDate,
+        property::Property,
+        value::{Object, Value},
+    },
 };
 use store::{
-    write::{now, ValueClass},
     BitmapKey, ValueKey,
+    write::{ValueClass, now},
 };
-use utils::map::bitmap::Bitmap;
 
 use super::{EncryptionKeys, PushSubscription};
 use std::future::Future;
@@ -80,7 +82,7 @@ impl PushSubscriptionFetch for Server {
                 continue;
             }
             let mut push = if let Some(push) = self
-                .get_property::<Object<Value>>(
+                .get_property::<email::push::PushSubscription>(
                     account_id,
                     Collection::PushSubscription,
                     document_id,
@@ -104,8 +106,31 @@ impl PushSubscriptionFetch for Server {
                             "The 'url' and 'keys' properties are not readable".to_string(),
                         ));
                     }
+                    Property::DeviceClientId => {
+                        result.append(
+                            Property::DeviceClientId,
+                            std::mem::take(&mut push.device_client_id),
+                        );
+                    }
+                    Property::Types => {
+                        let mut types = Vec::new();
+                        for typ in push.types.into_iter() {
+                            types.push(Value::Text(typ.to_string()));
+                        }
+                        result.append(Property::Types, Value::List(types));
+                    }
+                    Property::Expires => {
+                        if push.expires > 0 {
+                            result.append(
+                                Property::Expires,
+                                Value::Date(UTCDate::from_timestamp(push.expires as i64)),
+                            );
+                        } else {
+                            result.append(Property::Expires, Value::Null);
+                        }
+                    }
                     property => {
-                        result.append(property.clone(), push.remove(property));
+                        result.append(property.clone(), Value::Null);
                     }
                 }
             }
@@ -131,11 +156,11 @@ impl PushSubscriptionFetch for Server {
         let current_time = now();
 
         for document_id in document_ids {
-            let mut subscription = self
+            let subscription = self
                 .core
                 .storage
                 .data
-                .get_value::<Object<Value>>(ValueKey {
+                .get_value::<email::push::PushSubscription>(ValueKey {
                     account_id,
                     collection: Collection::PushSubscription.into(),
                     document_id,
@@ -149,103 +174,29 @@ impl PushSubscriptionFetch for Server {
                         .document_id(document_id)
                 })?;
 
-            let expires = subscription
-                .properties
-                .get(&Property::Expires)
-                .and_then(|p| p.as_date())
-                .ok_or_else(|| {
-                    trc::StoreEvent::UnexpectedError
-                        .caused_by(trc::location!())
-                        .document_id(document_id)
-                })?
-                .timestamp() as u64;
-            if expires > current_time {
-                let keys = if let Some((auth, p256dh)) = subscription
-                    .properties
-                    .remove(&Property::Keys)
-                    .and_then(|value| value.try_unwrap_object())
-                    .and_then(|mut obj| {
-                        (
-                            obj.properties
-                                .remove(&Property::Auth)
-                                .and_then(|value| value.try_unwrap_string())?,
-                            obj.properties
-                                .remove(&Property::P256dh)
-                                .and_then(|value| value.try_unwrap_string())?,
-                        )
-                            .into()
-                    }) {
-                    EncryptionKeys {
-                        p256dh: general_purpose::URL_SAFE
-                            .decode(&p256dh)
-                            .unwrap_or_default(),
-                        auth: general_purpose::URL_SAFE.decode(&auth).unwrap_or_default(),
-                    }
-                    .into()
-                } else {
-                    None
-                };
-                let verification_code = subscription
-                    .properties
-                    .remove(&Property::Value)
-                    .and_then(|p| p.try_unwrap_string())
-                    .ok_or_else(|| {
-                        trc::StoreEvent::UnexpectedError
-                            .caused_by(trc::location!())
-                            .document_id(document_id)
-                    })?;
-                let url = subscription
-                    .properties
-                    .remove(&Property::Url)
-                    .and_then(|p| p.try_unwrap_string())
-                    .ok_or_else(|| {
-                        trc::StoreEvent::UnexpectedError
-                            .caused_by(trc::location!())
-                            .document_id(document_id)
-                    })?;
-
-                if subscription
-                    .properties
-                    .get(&Property::VerificationCode)
-                    .and_then(|p| p.as_string())
-                    .is_some_and(|v| v == verification_code)
-                {
-                    let types = if let Some(Value::List(value)) =
-                        subscription.properties.remove(&Property::Types)
-                    {
-                        if !value.is_empty() {
-                            let mut type_states = Bitmap::new();
-                            for type_state in value {
-                                if let Some(type_state) = type_state
-                                    .as_string()
-                                    .and_then(|type_state| DataType::try_from(type_state).ok())
-                                {
-                                    type_states.insert(type_state);
-                                }
-                            }
-                            type_states
-                        } else {
-                            Bitmap::all()
-                        }
-                    } else {
-                        Bitmap::all()
-                    };
-
+            if subscription.expires > current_time {
+                if subscription.verified {
                     // Add verified subscription
                     subscriptions.push(UpdateSubscription::Verified(PushSubscription {
                         id: document_id,
-                        url,
-                        expires,
-                        types,
-                        keys,
+                        url: subscription.url,
+                        expires: subscription.expires,
+                        types: subscription.types,
+                        keys: subscription.keys.map(|keys| EncryptionKeys {
+                            p256dh: keys.p256dh,
+                            auth: keys.auth,
+                        }),
                     }));
                 } else {
                     // Add unverified subscription
                     subscriptions.push(UpdateSubscription::Unverified {
                         id: document_id,
-                        url,
-                        code: verification_code,
-                        keys,
+                        url: subscription.url,
+                        code: subscription.verification_code,
+                        keys: subscription.keys.map(|keys| EncryptionKeys {
+                            p256dh: keys.p256dh,
+                            auth: keys.auth,
+                        }),
                     });
                 }
             }

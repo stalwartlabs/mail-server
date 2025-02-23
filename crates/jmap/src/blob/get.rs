@@ -4,21 +4,21 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use email::mailbox::UidMailbox;
 use jmap_proto::{
     method::{
         get::{GetRequest, GetResponse},
         lookup::{BlobInfo, BlobLookupRequest, BlobLookupResponse},
     },
-    object::{blob::GetArguments, Object},
+    object::blob::GetArguments,
     types::{
+        MaybeUnparsable,
         collection::Collection,
         id::Id,
         property::{DataProperty, DigestProperty, Property},
         type_state::DataType,
-        value::Value,
-        MaybeUnparsable,
+        value::{Object, Value},
     },
 };
 use mail_builder::encoders::base64::base64_encode;

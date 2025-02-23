@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use common::{
     auth::AccessToken,
     ipc::{HousekeeperEvent, PurgeType},
@@ -12,27 +12,24 @@ use common::{
     *,
 };
 use directory::{
-    backend::internal::manage::{self, ManageDirectory},
     Permission,
+    backend::internal::manage::{self, ManageDirectory},
 };
-use email::{
-    ingest::EmailIngest,
-    mailbox::{UidMailbox, SCHEMA},
-};
+use email::{mailbox::UidMailbox, message::ingest::EmailIngest};
 use hyper::Method;
 use jmap_proto::{
-    object::{index::ObjectIndexBuilder, Object},
-    types::{collection::Collection, property::Property, value::Value},
+    object::index::ObjectIndexBuilder,
+    types::{collection::Collection, property::Property},
 };
 use serde_json::json;
-use store::write::{assert::HashedValue, BatchBuilder, ValueClass, F_VALUE};
+use store::write::{BatchBuilder, F_VALUE, ValueClass, assert::HashedValue};
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
 use crate::{
     api::{
-        http::{HttpSessionData, ToHttpResponse},
         HttpRequest, HttpResponse, JsonResponse,
+        http::{HttpSessionData, ToHttpResponse},
     },
     services::index::Indexer,
 };
@@ -340,7 +337,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         .unwrap_or_default()
     {
         let mailbox = server
-            .get_property::<HashedValue<Object<Value>>>(
+            .get_property::<HashedValue<email::mailbox::Mailbox>>(
                 account_id,
                 Collection::Mailbox,
                 mailbox_id,
@@ -349,19 +346,17 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| trc::ImapEvent::Error.into_err().caused_by(trc::location!()))?;
-
+        let mut new_mailbox = mailbox.inner.clone();
+        new_mailbox.uid_validity = rand::random::<u32>();
         let mut batch = BatchBuilder::new();
         batch
             .with_account_id(account_id)
             .with_collection(Collection::Mailbox)
             .update_document(mailbox_id)
             .custom(
-                ObjectIndexBuilder::new(SCHEMA)
+                ObjectIndexBuilder::new()
                     .with_current(mailbox)
-                    .with_changes(Object::with_capacity(1).with_property(
-                        Property::Cid,
-                        Value::UnsignedInt(rand::random::<u32>() as u64),
-                    )),
+                    .with_changes(new_mailbox),
             )
             .clear(Property::EmailIds);
         server

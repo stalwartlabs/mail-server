@@ -8,20 +8,20 @@ use std::{sync::Arc, time::Instant};
 
 use directory::Permission;
 use email::{
-    ingest::EmailIngest,
-    mailbox::{UidMailbox, JUNK_ID},
+    mailbox::{JUNK_ID, UidMailbox},
+    message::{bayes::EmailBayesTrain, ingest::EmailIngest},
 };
 use imap_proto::{
-    protocol::copy_move::Arguments, receiver::Request, Command, ResponseCode, ResponseType,
-    StatusResponse,
+    Command, ResponseCode, ResponseType, StatusResponse, protocol::copy_move::Arguments,
+    receiver::Request,
 };
 
 use crate::{
     core::{SelectedMailbox, Session, SessionData},
     spawn_op,
 };
-use common::{listener::SessionStream, MailboxId};
-use jmap::email::{bayes::EmailBayesTrain, copy::EmailCopy, set::TagManager};
+use common::{MailboxId, listener::SessionStream};
+use jmap::email::{copy::EmailCopy, set::TagManager};
 use jmap_proto::{
     error::set::SetErrorType,
     types::{
@@ -31,7 +31,7 @@ use jmap_proto::{
 };
 use store::{
     roaring::RoaringBitmap,
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, ValueClass, F_VALUE},
+    write::{BatchBuilder, F_VALUE, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
 };
 
 use super::ImapContext;

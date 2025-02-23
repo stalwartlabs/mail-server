@@ -6,10 +6,13 @@
 
 use std::{borrow::Cow, collections::HashMap, slice::IterMut};
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use email::{
-    ingest::{EmailIngest, IngestEmail, IngestSource},
-    mailbox::{MailboxFnc, UidMailbox},
+    mailbox::{UidMailbox, manage::MailboxFnc},
+    message::{
+        delete::EmailDeletion,
+        ingest::{EmailIngest, IngestEmail, IngestSource},
+    },
 };
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
@@ -26,35 +29,32 @@ use jmap_proto::{
     },
 };
 use mail_builder::{
+    MessageBuilder,
     headers::{
-        address::Address, content_type::ContentType, date::Date, message_id::MessageId, raw::Raw,
-        text::Text, HeaderType,
+        HeaderType, address::Address, content_type::ContentType, date::Date, message_id::MessageId,
+        raw::Raw, text::Text,
     },
     mime::{BodyPart, MimePart},
-    MessageBuilder,
 };
 use mail_parser::MessageParser;
 use store::{
+    Serialize,
     ahash::AHashSet,
     roaring::RoaringBitmap,
     write::{
-        assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, DeserializeFrom, SerializeInto,
-        ToBitmaps, ValueClass, F_BITMAP, F_CLEAR, F_VALUE,
+        BatchBuilder, DeserializeFrom, F_BITMAP, F_CLEAR, F_VALUE, SerializeInto, ToBitmaps,
+        ValueClass, assert::HashedValue, log::ChangeLogBuilder,
     },
-    Serialize,
 };
 use trc::AddContext;
 
 use crate::{
-    api::http::HttpSessionData, auth::acl::AclMethods, blob::download::BlobDownload,
-    changes::state::StateManager, JmapMethods,
+    JmapMethods, api::http::HttpSessionData, auth::acl::AclMethods, blob::download::BlobDownload,
+    changes::state::StateManager,
 };
 use std::future::Future;
 
-use super::{
-    delete::EmailDeletion,
-    headers::{BuildHeader, ValueToHeader},
-};
+use super::headers::{BuildHeader, ValueToHeader};
 
 pub trait EmailSet: Sync + Send {
     fn email_set(
@@ -112,7 +112,7 @@ impl EmailSet for Server {
         // Process creates
         'create: for (id, mut object) in request.unwrap_create() {
             let has_body_structure = object
-                .properties
+                .0
                 .keys()
                 .any(|key| matches!(key, Property::BodyStructure));
             let mut builder = MessageBuilder::new();
@@ -121,33 +121,25 @@ impl EmailSet for Server {
             let mut received_at = None;
 
             // Parse body values
-            let body_values = object
-                .properties
-                .remove(&Property::BodyValues)
-                .and_then(|obj| {
-                    if let SetValue::Value(Value::Object(obj)) = obj {
-                        let mut values = HashMap::with_capacity(obj.properties.len());
-                        for (key, value) in obj.properties {
-                            if let (Property::_T(id), Value::Object(mut bv)) = (key, value) {
-                                values.insert(
-                                    id,
-                                    bv.properties
-                                        .remove(&Property::Value)?
-                                        .try_unwrap_string()?,
-                                );
-                            } else {
-                                return None;
-                            }
+            let body_values = object.0.remove(&Property::BodyValues).and_then(|obj| {
+                if let SetValue::Value(Value::Object(obj)) = obj {
+                    let mut values = HashMap::with_capacity(obj.0.len());
+                    for (key, value) in obj.0 {
+                        if let (Property::_T(id), Value::Object(mut bv)) = (key, value) {
+                            values.insert(id, bv.0.remove(&Property::Value)?.try_unwrap_string()?);
+                        } else {
+                            return None;
                         }
-                        Some(values)
-                    } else {
-                        None
                     }
-                });
+                    Some(values)
+                } else {
+                    None
+                }
+            });
             let mut size_attachments = 0;
 
             // Parse properties
-            for (property, value) in object.properties {
+            for (property, value) in object.0 {
                 let value = match response.eval_object_references(value) {
                     Ok(value) => value,
                     Err(err) => {
@@ -306,7 +298,7 @@ impl EmailSet for Server {
                                 let mut headers: Vec<(Cow<str>, HeaderType)> = Vec::new();
 
                                 if let Some(obj) = value.try_unwrap_object() {
-                                    for (body_property, value) in obj.properties {
+                                    for (body_property, value) in obj.0 {
                                         match (body_property, value) {
                                             (Property::Type, Value::Text(value)) => {
                                                 content_type = value.into();
@@ -797,7 +789,7 @@ impl EmailSet for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::Email);
 
-            for (property, value) in object.properties {
+            for (property, value) in object.0 {
                 let value = match response.eval_object_references(value) {
                     Ok(value) => value,
                     Err(err) => {
@@ -1097,9 +1089,8 @@ enum LastTag {
     None,
 }
 
-impl<
-        T: PartialEq + Clone + ToBitmaps + SerializeInto + Serialize + DeserializeFrom + Sync + Send,
-    > TagManager<T>
+impl<T: PartialEq + Clone + ToBitmaps + SerializeInto + Serialize + DeserializeFrom + Sync + Send>
+    TagManager<T>
 {
     pub fn new(current: HashedValue<Vec<T>>) -> Self {
         Self {

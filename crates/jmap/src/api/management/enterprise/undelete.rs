@@ -10,12 +10,12 @@
 
 use std::str::FromStr;
 
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use common::{auth::AccessToken, enterprise::undelete::DeletedBlob, Server};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use common::{Server, auth::AccessToken, enterprise::undelete::DeletedBlob};
 use directory::backend::internal::manage::ManageDirectory;
 use email::{
-    ingest::{EmailIngest, IngestEmail, IngestSource},
     mailbox::INBOX_ID,
+    message::ingest::{EmailIngest, IngestEmail, IngestSource},
 };
 use hyper::Method;
 use jmap_proto::types::collection::Collection;
@@ -24,13 +24,13 @@ use serde_json::json;
 use std::future::Future;
 use store::write::{BatchBuilder, BlobOp, ValueClass};
 use trc::AddContext;
-use utils::{url_params::UrlParams, BlobHash};
+use utils::{BlobHash, url_params::UrlParams};
 
 use crate::{
     api::{
+        HttpRequest, HttpResponse, JsonResponse,
         http::{HttpSessionData, ToHttpResponse},
         management::decode_path_element,
-        HttpRequest, HttpResponse, JsonResponse,
     },
     blob::download::BlobDownload,
 };

@@ -6,7 +6,7 @@
 
 use crate::{
     Command,
-    protocol::{ProtocolVersion, create},
+    protocol::{ProtocolVersion, create, list::Attribute},
     receiver::{Request, Token, bad},
     utf7::utf7_maybe_decode,
 };
@@ -39,12 +39,12 @@ impl Request<Command> {
                 match tokens.next() {
                     Some(Token::Argument(value)) => {
                         let r = hashify::tiny_map_ignore_case!(value.as_slice(),
-                            "\\Archive" => Some("archive"),
-                            "\\Drafts" => Some("drafts"),
-                            "\\Junk" => Some("junk"),
-                            "\\Sent" => Some("sent"),
-                            "\\Trash" => Some("trash"),
-                            "\\Important" => Some("important"),
+                            "\\Archive" => Some(Attribute::Archive),
+                            "\\Drafts" => Some(Attribute::Drafts),
+                            "\\Junk" => Some(Attribute::Junk),
+                            "\\Sent" => Some(Attribute::Sent),
+                            "\\Trash" => Some(Attribute::Trash),
+                            "\\Important" => Some(Attribute::Important),
                             "\\All" => None,
                         );
 
@@ -90,7 +90,7 @@ impl Request<Command> {
 mod tests {
 
     use crate::{
-        protocol::{ProtocolVersion, create},
+        protocol::{ProtocolVersion, create, list::Attribute},
         receiver::Receiver,
     };
 
@@ -120,7 +120,7 @@ mod tests {
                 create::Arguments {
                     tag: "t1".to_string(),
                     mailbox_name: "Important Messages".to_string(),
-                    mailbox_role: Some("important"),
+                    mailbox_role: Some(Attribute::Important),
                 },
             ),
             (

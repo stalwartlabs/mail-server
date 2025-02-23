@@ -8,11 +8,10 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     error::set::SetError,
-    object::Object,
-    parser::{json::Parser, JsonObjectParser, Token},
+    parser::{JsonObjectParser, Token, json::Parser},
     request::{
-        reference::{MaybeReference, ResultReference},
         RequestProperty,
+        reference::{MaybeReference, ResultReference},
     },
     response::Response,
     types::{
@@ -22,7 +21,7 @@ use crate::{
         keyword::Keyword,
         property::Property,
         state::{State, StateChange},
-        value::{SetValueMap, Value},
+        value::{Object, SetValueMap, Value},
     },
 };
 

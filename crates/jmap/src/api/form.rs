@@ -8,24 +8,25 @@ use std::{borrow::Cow, fmt::Write, future::Future};
 
 use chrono::Utc;
 use common::{
+    KV_RATE_LIMIT_CONTACT, Server,
     config::network::{ContactForm, FieldOrDefault},
-    ip_to_bytes, psl, Server, KV_RATE_LIMIT_CONTACT,
+    ip_to_bytes, psl,
 };
-use email::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
+use email::message::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
 use hyper::StatusCode;
 use mail_auth::common::cache::NoCache;
 use mail_builder::{
+    MessageBuilder,
     headers::{
-        address::{Address, EmailAddress},
         HeaderType,
+        address::{Address, EmailAddress},
     },
     mime::make_boundary,
-    MessageBuilder,
 };
 use serde_json::json;
 use store::{
-    write::{now, BatchBuilder, BlobOp},
     Serialize,
+    write::{BatchBuilder, BlobOp, now},
 };
 use trc::AddContext;
 use utils::BlobHash;
@@ -34,8 +35,8 @@ use x509_parser::nom::AsBytes;
 use crate::auth::oauth::FormData;
 
 use super::{
-    http::{HttpSessionData, ToHttpResponse},
     HttpResponse, JsonResponse,
+    http::{HttpSessionData, ToHttpResponse},
 };
 
 pub trait FormHandler: Sync + Send {

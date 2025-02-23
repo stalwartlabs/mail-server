@@ -8,7 +8,7 @@ use std::{str::FromStr, time::Duration};
 
 use jmap_proto::request::capability::BaseCapabilities;
 use nlp::language::Language;
-use utils::config::{cron::SimpleCron, utils::ParseValue, Config, Rate};
+use utils::config::{Config, Rate, cron::SimpleCron, utils::ParseValue};
 
 #[derive(Default, Clone)]
 pub struct JmapConfig {
@@ -93,6 +93,7 @@ pub enum SpecialUse {
     Archive,
     Sent,
     Shared,
+    Important,
     None,
 }
 
@@ -372,16 +373,33 @@ impl JmapConfig {
 
 impl ParseValue for SpecialUse {
     fn parse_value(value: &str) -> Result<Self, String> {
-        match value {
-            "inbox" => Ok(SpecialUse::Inbox),
-            "trash" => Ok(SpecialUse::Trash),
-            "junk" => Ok(SpecialUse::Junk),
-            "drafts" => Ok(SpecialUse::Drafts),
-            "archive" => Ok(SpecialUse::Archive),
-            "sent" => Ok(SpecialUse::Sent),
-            "shared" => Ok(SpecialUse::Shared),
-            //"none" => Ok(SpecialUse::None),
-            other => Err(format!("Unknown folder role {other:?}")),
+        hashify::tiny_map_ignore_case!(value.as_bytes(),
+            b"inbox" => SpecialUse::Inbox,
+            b"trash" => SpecialUse::Trash,
+            b"junk" => SpecialUse::Junk,
+            b"drafts" => SpecialUse::Drafts,
+            b"archive" => SpecialUse::Archive,
+            b"sent" => SpecialUse::Sent,
+            b"shared" => SpecialUse::Shared,
+            b"important" => SpecialUse::Important,
+
+        )
+        .ok_or_else(|| format!("Unknown folder role {:?}", value))
+    }
+}
+
+impl SpecialUse {
+    pub fn as_str(&self) -> Option<&'static str> {
+        match self {
+            SpecialUse::Inbox => Some("inbox"),
+            SpecialUse::Trash => Some("trash"),
+            SpecialUse::Junk => Some("junk"),
+            SpecialUse::Drafts => Some("drafts"),
+            SpecialUse::Archive => Some("archive"),
+            SpecialUse::Sent => Some("sent"),
+            SpecialUse::Shared => Some("shared"),
+            SpecialUse::Important => Some("important"),
+            SpecialUse::None => None,
         }
     }
 }

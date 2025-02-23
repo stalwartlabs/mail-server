@@ -5,14 +5,14 @@
  */
 
 use common::Server;
-use email::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
+use email::message::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
 use smtp_proto::Response;
 use trc::SieveEvent;
 
 use crate::{
     queue::{
-        quota::HasQueueQuota, spool::SmtpSpool, DomainPart, Error, ErrorDetails, HostResponse,
-        Message, MessageSource, Recipient, Status, RCPT_STATUS_CHANGED,
+        DomainPart, Error, ErrorDetails, HostResponse, Message, MessageSource, RCPT_STATUS_CHANGED,
+        Recipient, Status, quota::HasQueueQuota, spool::SmtpSpool,
     },
     reporting::SmtpReporting,
 };

@@ -8,14 +8,11 @@ use common::{
     Server,
     auth::{AccessToken, ResourceToken},
 };
+use email::sieve::SieveScript;
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{SetRequest, SetResponse},
-    object::{
-        Object,
-        index::{IndexAs, IndexProperty, ObjectIndexBuilder},
-        sieve::SetArguments,
-    },
+    object::{index::ObjectIndexBuilder, sieve::SetArguments},
     request::reference::MaybeReference,
     response::references::EvalObjectReferences,
     types::{
@@ -23,7 +20,7 @@ use jmap_proto::{
         collection::Collection,
         id::Id,
         property::Property,
-        value::{MaybePatchValue, SetValue, Value},
+        value::{MaybePatchValue, Object, SetValue, Value},
     },
 };
 use rand::distr::Alphanumeric;
@@ -32,10 +29,7 @@ use store::{
     BlobClass,
     query::Filter,
     rand::{Rng, rng},
-    write::{
-        BatchBuilder, BlobOp, DirectoryClass, F_CLEAR, F_VALUE, assert::HashedValue,
-        log::ChangeLogBuilder,
-    },
+    write::{BatchBuilder, BlobOp, F_CLEAR, F_VALUE, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -47,17 +41,6 @@ pub struct SetContext<'x> {
     access_token: &'x AccessToken,
     response: SetResponse,
 }
-
-pub static SCHEMA: &[IndexProperty] = &[
-    IndexProperty::new(Property::Name)
-        .index_as(IndexAs::Text {
-            tokenize: true,
-            index: true,
-        })
-        .max_size(255)
-        .required(),
-    IndexProperty::new(Property::IsActive).index_as(IndexAs::Integer),
-];
 
 pub trait SieveScriptSet: Sync + Send {
     fn sieve_script_set(
@@ -78,10 +61,12 @@ pub trait SieveScriptSet: Sync + Send {
     fn sieve_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, HashedValue<Object<Value>>)>,
+        update: Option<(u32, HashedValue<SieveScript>)>,
         ctx: &SetContext,
         session_id: u64,
-    ) -> impl Future<Output = trc::Result<Result<(ObjectIndexBuilder, Option<Vec<u8>>), SetError>>> + Send;
+    ) -> impl Future<
+        Output = trc::Result<Result<(ObjectIndexBuilder<SieveScript>, Option<Vec<u8>>), SetError>>,
+    > + Send;
 
     fn sieve_activate_script(
         &self,
@@ -121,10 +106,17 @@ impl SieveScriptSet for Server {
                 {
                     Ok((mut builder, Some(blob))) => {
                         // Store blob
-                        let blob_id = builder.changes_mut().unwrap().blob_id_mut().unwrap();
+                        let blob_id = &mut builder.changes_mut().unwrap().blob_id;
                         blob_id.hash = self.put_blob(account_id, &blob, false).await?.hash;
-                        let script_size = blob_id.section.as_ref().unwrap().size;
                         let mut blob_id = blob_id.clone();
+
+                        // Increment tenant quota
+                        #[cfg(feature = "enterprise")]
+                        if self.core.is_enterprise_edition() {
+                            if let Some(tenant) = ctx.resource_token.tenant {
+                                builder.set_tenant_id(tenant.id);
+                            }
+                        }
 
                         // Write record
                         let mut batch = BatchBuilder::new();
@@ -132,7 +124,6 @@ impl SieveScriptSet for Server {
                             .with_account_id(account_id)
                             .with_collection(Collection::SieveScript)
                             .create_document()
-                            .add(DirectoryClass::UsedQuota(account_id), script_size as i64)
                             .set(
                                 BlobOp::Link {
                                     hash: blob_id.hash.clone(),
@@ -140,14 +131,6 @@ impl SieveScriptSet for Server {
                                 Vec::new(),
                             )
                             .custom(builder);
-
-                        // Increment tenant quota
-                        #[cfg(feature = "enterprise")]
-                        if self.core.is_enterprise_edition() {
-                            if let Some(tenant) = ctx.resource_token.tenant {
-                                batch.add(DirectoryClass::UsedQuota(tenant.id), script_size as i64);
-                            }
-                        }
 
                         let document_id = self
                             .store()
@@ -199,7 +182,7 @@ impl SieveScriptSet for Server {
             // Obtain sieve script
             let document_id = id.document_id();
             if let Some(sieve) = self
-                .get_property::<HashedValue<Object<Value>>>(
+                .get_property::<HashedValue<SieveScript>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -207,16 +190,7 @@ impl SieveScriptSet for Server {
                 )
                 .await?
             {
-                let prev_blob_id = sieve
-                    .inner
-                    .blob_id()
-                    .ok_or_else(|| {
-                        trc::StoreEvent::NotFound
-                            .into_err()
-                            .caused_by(trc::location!())
-                            .document_id(document_id)
-                    })?
-                    .clone();
+                let prev_blob_id = sieve.inner.blob_id.clone();
 
                 match self
                     .sieve_set_item(
@@ -237,31 +211,15 @@ impl SieveScriptSet for Server {
 
                         let blob_id = if let Some(blob) = blob {
                             // Store blob
-                            let blob_id = builder.changes_mut().unwrap().blob_id_mut().unwrap();
+                            let blob_id = &mut builder.changes_mut().unwrap().blob_id;
                             blob_id.hash = self.put_blob(account_id, &blob, false).await?.hash;
-                            let script_size = blob_id.section.as_ref().unwrap().size as i64;
-                            let prev_script_size =
-                                prev_blob_id.section.as_ref().unwrap().size as i64;
                             let blob_id = blob_id.clone();
 
-                            // Update quota
-                            let update_quota = match script_size.cmp(&prev_script_size) {
-                                std::cmp::Ordering::Greater => script_size - prev_script_size,
-                                std::cmp::Ordering::Less => -prev_script_size + script_size,
-                                std::cmp::Ordering::Equal => 0,
-                            };
-                            if update_quota != 0 {
-                                batch.add(DirectoryClass::UsedQuota(account_id), update_quota);
-
-                                // Update tenant quota
-                                #[cfg(feature = "enterprise")]
-                                if self.core.is_enterprise_edition() {
-                                    if let Some(tenant) = ctx.resource_token.tenant {
-                                        batch.add(
-                                            DirectoryClass::UsedQuota(tenant.id),
-                                            update_quota,
-                                        );
-                                    }
+                            // Update tenant quota
+                            #[cfg(feature = "enterprise")]
+                            if self.core.is_enterprise_edition() {
+                                if let Some(tenant) = ctx.resource_token.tenant {
+                                    builder.set_tenant_id(tenant.id);
                                 }
                             }
 
@@ -393,7 +351,7 @@ impl SieveScriptSet for Server {
         // Fetch record
         let account_id = resource_token.account_id;
         let obj = self
-            .get_property::<HashedValue<Object<Value>>>(
+            .get_property::<HashedValue<SieveScript>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -408,42 +366,29 @@ impl SieveScriptSet for Server {
             })?;
 
         // Make sure the script is not active
-        if fail_if_active
-            && matches!(
-                obj.inner.properties.get(&Property::IsActive),
-                Some(Value::Bool(true))
-            )
-        {
+        if fail_if_active && obj.inner.is_active {
             return Ok(false);
+        }
+
+        let blob_hash = obj.inner.blob_id.hash.clone();
+        let mut builder = ObjectIndexBuilder::new().with_current(obj);
+        // Update tenant quota
+        #[cfg(feature = "enterprise")]
+        if self.core.is_enterprise_edition() {
+            if let Some(tenant) = resource_token.tenant {
+                builder.set_tenant_id(tenant.id);
+            }
         }
 
         // Delete record
         let mut batch = BatchBuilder::new();
-        let blob_id = obj.inner.blob_id().ok_or_else(|| {
-            trc::StoreEvent::NotFound
-                .into_err()
-                .caused_by(trc::location!())
-                .document_id(document_id)
-        })?;
-        let updated_quota = -(blob_id.section.as_ref().unwrap().size as i64);
         batch
             .with_account_id(account_id)
             .with_collection(Collection::SieveScript)
             .delete_document(document_id)
             .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
-            .clear(BlobOp::Link {
-                hash: blob_id.hash.clone(),
-            })
-            .add(DirectoryClass::UsedQuota(account_id), updated_quota)
-            .custom(ObjectIndexBuilder::new(SCHEMA).with_current(obj));
-
-        // Update tenant quota
-        #[cfg(feature = "enterprise")]
-        if self.core.is_enterprise_edition() {
-            if let Some(tenant) = resource_token.tenant {
-                batch.add(DirectoryClass::UsedQuota(tenant.id), updated_quota);
-            }
-        }
+            .clear(BlobOp::Link { hash: blob_hash })
+            .custom(builder);
 
         self.store()
             .write(batch)
@@ -456,12 +401,14 @@ impl SieveScriptSet for Server {
     async fn sieve_set_item(
         &self,
         changes_: Object<SetValue>,
-        update: Option<(u32, HashedValue<Object<Value>>)>,
+        update: Option<(u32, HashedValue<SieveScript>)>,
         ctx: &SetContext<'_>,
         session_id: u64,
-    ) -> trc::Result<Result<(ObjectIndexBuilder, Option<Vec<u8>>), SetError>> {
+    ) -> trc::Result<Result<(ObjectIndexBuilder<SieveScript>, Option<Vec<u8>>), SetError>> {
         // Vacation script cannot be modified
-        if matches!(update.as_ref().and_then(|(_, obj)| obj.inner.properties.get(&Property::Name)), Some(Value::Text ( value )) if value.eq_ignore_ascii_case("vacation"))
+        if update
+            .as_ref()
+            .is_some_and(|(_, obj)| obj.inner.name.eq_ignore_ascii_case("vacation"))
         {
             return Ok(Err(SetError::forbidden().with_description(concat!(
                 "The 'vacation' script cannot be modified, ",
@@ -470,16 +417,19 @@ impl SieveScriptSet for Server {
         }
 
         // Parse properties
-        let mut changes = Object::with_capacity(changes_.properties.len());
+        let mut changes = update
+            .as_ref()
+            .map(|(_, obj)| obj.inner.clone())
+            .unwrap_or_default();
         let mut blob_id = None;
-        for (property, value) in changes_.properties {
+        for (property, value) in changes_.0 {
             let value = match ctx.response.eval_object_references(value) {
                 Ok(value) => value,
                 Err(err) => {
                     return Ok(Err(err));
                 }
             };
-            let value = match (&property, value) {
+            match (&property, value) {
                 (Property::Name, MaybePatchValue::Value(Value::Text(value))) => {
                     if value.len() > self.core.jmap.sieve_max_script_name {
                         return Ok(Err(SetError::invalid_properties()
@@ -493,10 +443,7 @@ impl SieveScriptSet for Server {
                             )));
                     } else if update
                         .as_ref()
-                        .and_then(|(_, obj)| obj.inner.properties.get(&Property::Name))
-                        .is_none_or(
-                            |p| matches!(p, Value::Text (prev_value ) if prev_value != &value),
-                        )
+                        .is_none_or(|(_, obj)| obj.inner.name != value)
                     {
                         if let Some(id) = self
                             .filter(
@@ -517,7 +464,7 @@ impl SieveScriptSet for Server {
                         }
                     }
 
-                    Value::Text(value)
+                    changes.name = value;
                 }
                 (Property::BlobId, MaybePatchValue::Value(Value::BlobId(value))) => {
                     blob_id = value.into();
@@ -531,28 +478,21 @@ impl SieveScriptSet for Server {
                         .with_property(property)
                         .with_description("Invalid property or value.".to_string())));
                 }
-            };
-            changes.append(property, value);
+            }
         }
 
         if update.is_none() {
             // Add name if missing
-            if !matches!(changes.properties.get(&Property::Name), Some(Value::Text ( value )) if !value.is_empty())
-            {
-                changes.set(
-                    Property::Name,
-                    Value::Text(
-                        rng()
-                            .sample_iter(Alphanumeric)
-                            .take(15)
-                            .map(char::from)
-                            .collect::<String>(),
-                    ),
-                );
+            if changes.name.is_empty() {
+                changes.name = rng()
+                    .sample_iter(Alphanumeric)
+                    .take(15)
+                    .map(char::from)
+                    .collect::<String>();
             }
 
             // Set script as inactive
-            changes.set(Property::IsActive, Value::Bool(false));
+            changes.is_active = false;
         }
 
         let blob_update = if let Some(blob_id) = blob_id {
@@ -582,10 +522,7 @@ impl SieveScriptSet for Server {
                     // Compile script
                     match self.core.sieve.untrusted_compiler.compile(&bytes) {
                         Ok(script) => {
-                            changes.set(
-                                Property::BlobId,
-                                BlobId::default().with_section_size(bytes.len()),
-                            );
+                            changes.blob_id = BlobId::default().with_section_size(bytes.len());
                             bytes.extend(bincode::serialize(&script).unwrap_or_default());
                             bytes.into()
                         }
@@ -617,11 +554,12 @@ impl SieveScriptSet for Server {
         };
 
         // Validate
-        Ok(ObjectIndexBuilder::new(SCHEMA)
-            .with_changes(changes)
-            .with_current_opt(update.map(|(_, current)| current))
-            .validate()
-            .map(|obj| (obj, blob_update)))
+        Ok(Ok((
+            ObjectIndexBuilder::new()
+                .with_changes(changes)
+                .with_current_opt(update.map(|(_, current)| current)),
+            blob_update,
+        )))
     }
 
     async fn sieve_activate_script(
@@ -658,7 +596,7 @@ impl SieveScriptSet for Server {
         // Deactivate scripts
         for document_id in active_ids {
             if let Some(sieve) = self
-                .get_property::<HashedValue<Object<Value>>>(
+                .get_property::<HashedValue<SieveScript>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -666,14 +604,14 @@ impl SieveScriptSet for Server {
                 )
                 .await?
             {
+                let mut new_sieve = sieve.inner.clone();
+                new_sieve.is_active = false;
                 batch
                     .update_document(document_id)
                     .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
                     .custom(
-                        ObjectIndexBuilder::new(SCHEMA)
-                            .with_changes(
-                                Object::with_capacity(1).with_property(Property::IsActive, false),
-                            )
+                        ObjectIndexBuilder::new()
+                            .with_changes(new_sieve)
                             .with_current(sieve),
                     );
                 changed_ids.push((document_id, false));
@@ -683,7 +621,7 @@ impl SieveScriptSet for Server {
         // Activate script
         if let Some(document_id) = activate_id {
             if let Some(sieve) = self
-                .get_property::<HashedValue<Object<Value>>>(
+                .get_property::<HashedValue<SieveScript>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -691,11 +629,11 @@ impl SieveScriptSet for Server {
                 )
                 .await?
             {
+                let mut new_sieve = sieve.inner.clone();
+                new_sieve.is_active = true;
                 batch.update_document(document_id).custom(
-                    ObjectIndexBuilder::new(SCHEMA)
-                        .with_changes(
-                            Object::with_capacity(1).with_property(Property::IsActive, true),
-                        )
+                    ObjectIndexBuilder::new()
+                        .with_changes(new_sieve)
                         .with_current(sieve),
                 );
                 changed_ids.push((document_id, true));
@@ -716,27 +654,5 @@ impl SieveScriptSet for Server {
         }
 
         Ok(changed_ids)
-    }
-}
-
-pub trait ObjectBlobId {
-    fn blob_id(&self) -> Option<&BlobId>;
-    fn blob_id_mut(&mut self) -> Option<&mut BlobId>;
-}
-
-impl ObjectBlobId for Object<Value> {
-    fn blob_id(&self) -> Option<&BlobId> {
-        self.properties
-            .get(&Property::BlobId)
-            .and_then(|v| v.as_blob_id())
-    }
-
-    fn blob_id_mut(&mut self) -> Option<&mut BlobId> {
-        self.properties
-            .get_mut(&Property::BlobId)
-            .and_then(|v| match v {
-                Value::BlobId(blob_id) => Some(blob_id),
-                _ => None,
-            })
     }
 }

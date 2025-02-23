@@ -8,13 +8,13 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use email::metadata::MessageMetadata;
+use email::message::metadata::MessageMetadata;
 use jmap::blob::download::BlobDownload;
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::Bincode;
 use trc::AddContext;
 
-use crate::{protocol::response::Response, Session};
+use crate::{Session, protocol::response::Response};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_fetch(&mut self, msg: u32, lines: Option<u32>) -> trc::Result<()> {

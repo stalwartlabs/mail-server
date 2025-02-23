@@ -12,11 +12,9 @@ use std::{borrow::Cow, future::Future};
 use store::ahash::AHashMap;
 use utils::BlobHash;
 
-use crate::{
-    ingest::{EmailIngest, IngestEmail, IngestSource},
-    mailbox::INBOX_ID,
-    sieve::SieveScriptIngest,
-};
+use crate::{mailbox::INBOX_ID, sieve::ingest::SieveScriptIngest};
+
+use super::ingest::{EmailIngest, IngestEmail, IngestSource};
 
 #[derive(Debug)]
 pub struct IngestMessage {
@@ -153,10 +151,11 @@ impl MailDelivery for Server {
                 };
             }
             Err(err) => {
-                trc::error!(err
-                    .details("Failed to fetch message blob.")
-                    .span_id(message.session_id)
-                    .caused_by(trc::location!()));
+                trc::error!(
+                    err.details("Failed to fetch message blob.")
+                        .span_id(message.session_id)
+                        .caused_by(trc::location!())
+                );
 
                 return LocalDeliveryResult {
                     status: (0..message.recipients.len())
@@ -191,11 +190,12 @@ impl MailDelivery for Server {
                     continue;
                 }
                 Err(err) => {
-                    trc::error!(err
-                        .details("Failed to lookup recipient.")
-                        .ctx(trc::Key::To, rcpt)
-                        .span_id(message.session_id)
-                        .caused_by(trc::location!()));
+                    trc::error!(
+                        err.details("Failed to lookup recipient.")
+                            .ctx(trc::Key::To, rcpt)
+                            .span_id(message.session_id)
+                            .caused_by(trc::location!())
+                    );
                     result.status.push(LocalDeliveryStatus::TemporaryFailure {
                         reason: "Address lookup failed.".into(),
                     });
@@ -307,9 +307,10 @@ impl MailDelivery for Server {
                         },
                     };
 
-                    trc::error!(err
-                        .ctx(trc::Key::To, rcpt.to_string())
-                        .span_id(message.session_id));
+                    trc::error!(
+                        err.ctx(trc::Key::To, rcpt.to_string())
+                            .span_id(message.session_id)
+                    );
 
                     status
                 }

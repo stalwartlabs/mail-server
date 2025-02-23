@@ -11,7 +11,7 @@ use jmap_proto::types::{state::StateChange, type_state::DataType};
 use mail_auth::{
     dmarc::Dmarc,
     mta_sts::TlsRpt,
-    report::{tlsrpt::FailureDetails, Record},
+    report::{Record, tlsrpt::FailureDetails},
 };
 use store::{BlobStore, InMemoryStore, Store};
 use tokio::sync::mpsc;

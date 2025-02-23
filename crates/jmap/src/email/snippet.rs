@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
-use email::metadata::{MessageMetadata, MetadataPartType};
+use common::{Server, auth::AccessToken};
+use email::message::metadata::{MessageMetadata, MetadataPartType};
 use jmap_proto::{
     method::{
         query::Filter,
@@ -13,8 +13,8 @@ use jmap_proto::{
     },
     types::{acl::Acl, collection::Collection, property::Property},
 };
-use mail_parser::{decoders::html::html_to_text, GetHeader, HeaderName, PartType};
-use nlp::language::{search_snippet::generate_snippet, stemmer::Stemmer, Language};
+use mail_parser::{GetHeader, HeaderName, PartType, decoders::html::html_to_text};
+use nlp::language::{Language, search_snippet::generate_snippet, stemmer::Stemmer};
 use store::{backend::MAX_TOKEN_LENGTH, write::Bincode};
 
 use crate::{auth::acl::AclMethods, blob::download::BlobDownload};

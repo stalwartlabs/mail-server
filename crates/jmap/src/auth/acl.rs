@@ -6,14 +6,13 @@
 
 use std::future::Future;
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use directory::{
-    backend::internal::{manage::ChangedPrincipals, PrincipalField},
     QueryBy, Type,
+    backend::internal::{PrincipalField, manage::ChangedPrincipals},
 };
 use jmap_proto::{
     error::set::SetError,
-    object::Object,
     types::{
         acl::Acl,
         collection::Collection,
@@ -21,12 +20,7 @@ use jmap_proto::{
         value::{AclGrant, MaybePatchValue, Value},
     },
 };
-use store::{
-    query::acl::AclQuery,
-    roaring::RoaringBitmap,
-    write::{assert::HashedValue, ValueClass},
-    ValueKey,
-};
+use store::{ValueKey, query::acl::AclQuery, roaring::RoaringBitmap, write::ValueClass};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -72,8 +66,8 @@ pub trait AclMethods: Sync + Send {
 
     fn acl_set(
         &self,
-        changes: &mut Object<Value>,
-        current: Option<&HashedValue<Object<Value>>>,
+        changes: &mut Vec<AclGrant>,
+        current: Option<&[AclGrant]>,
         acl_changes: MaybePatchValue,
     ) -> impl Future<Output = Result<(), SetError>> + Send;
 
@@ -86,8 +80,8 @@ pub trait AclMethods: Sync + Send {
 
     fn refresh_acls(
         &self,
-        changes: &Object<Value>,
-        current: &Option<HashedValue<Object<Value>>>,
+        changes: &[AclGrant],
+        current: Option<&[AclGrant]>,
     ) -> impl Future<Output = ()> + Send;
 
     fn map_acl_set(
@@ -255,38 +249,23 @@ impl AclMethods for Server {
 
     async fn acl_set(
         &self,
-        changes: &mut Object<Value>,
-        current: Option<&HashedValue<Object<Value>>>,
+        changes: &mut Vec<AclGrant>,
+        current: Option<&[AclGrant]>,
         acl_changes: MaybePatchValue,
     ) -> Result<(), SetError> {
         match acl_changes {
             MaybePatchValue::Value(Value::List(values)) => {
-                changes
-                    .properties
-                    .set(Property::Acl, Value::Acl(self.map_acl_set(values).await?));
+                *changes = self.map_acl_set(values).await?;
             }
             MaybePatchValue::Patch(patch) => {
                 let (mut patch, is_update) = self.map_acl_patch(patch).await?;
-                let acl = if let Value::Acl(acl) =
-                    changes
-                        .properties
-                        .get_mut_or_insert_with(Property::Acl, || {
-                            current
-                                .and_then(|current| {
-                                    current.inner.properties.get(&Property::Acl).cloned()
-                                })
-                                .unwrap_or_else(|| Value::Acl(Vec::new()))
-                        }) {
-                    acl
-                } else {
-                    return Err(SetError::invalid_properties()
-                        .with_property(Property::Acl)
-                        .with_description("Invalid ACL value found."));
-                };
+                if let Some(changes_) = current {
+                    *changes = changes_.to_vec();
+                }
 
                 if let Some(is_set) = is_update {
                     if !patch.grants.is_empty() {
-                        if let Some(acl_item) = acl
+                        if let Some(acl_item) = changes
                             .iter_mut()
                             .find(|item| item.account_id == patch.account_id)
                         {
@@ -296,30 +275,30 @@ impl AclMethods for Server {
                             } else {
                                 acl_item.grants.remove(item);
                                 if acl_item.grants.is_empty() {
-                                    acl.retain(|item| item.account_id != patch.account_id);
+                                    changes.retain(|item| item.account_id != patch.account_id);
                                 }
                             }
                         } else if is_set {
-                            acl.push(patch);
+                            changes.push(patch);
                         }
                     }
                 } else if !patch.grants.is_empty() {
-                    if let Some(acl_item) = acl
+                    if let Some(acl_item) = changes
                         .iter_mut()
                         .find(|item| item.account_id == patch.account_id)
                     {
                         acl_item.grants = patch.grants;
                     } else {
-                        acl.push(patch);
+                        changes.push(patch);
                     }
                 } else {
-                    acl.retain(|item| item.account_id != patch.account_id);
+                    changes.retain(|item| item.account_id != patch.account_id);
                 }
             }
             _ => {
                 return Err(SetError::invalid_properties()
                     .with_property(Property::Acl)
-                    .with_description("Invalid ACL property."))
+                    .with_description("Invalid ACL property."));
             }
         }
         Ok(())
@@ -336,7 +315,7 @@ impl AclMethods for Server {
                 access_token.is_member(item.account_id) && item.grants.contains(Acl::Administer)
             })
         {
-            let mut acl_obj = Object::with_capacity(value.len() / 2);
+            let mut acl_obj = jmap_proto::types::value::Object::with_capacity(value.len() / 2);
             for item in value {
                 if let Some(mut principal) = self
                     .core
@@ -361,62 +340,53 @@ impl AclMethods for Server {
         }
     }
 
-    async fn refresh_acls(
-        &self,
-        changes: &Object<Value>,
-        current: &Option<HashedValue<Object<Value>>>,
-    ) {
-        if let Value::Acl(acl_changes) = changes.get(&Property::Acl) {
-            let mut changed_principals = ChangedPrincipals::new();
-            if let Some(Value::Acl(acl_current)) = current
-                .as_ref()
-                .and_then(|current| current.inner.properties.get(&Property::Acl))
-            {
-                for current_item in acl_current {
-                    let mut invalidate = true;
-                    for change_item in acl_changes {
-                        if change_item.account_id == current_item.account_id {
-                            invalidate = change_item.grants != current_item.grants;
-                            break;
-                        }
-                    }
-                    if invalidate {
-                        changed_principals.add_change(
-                            current_item.account_id,
-                            Type::Individual,
-                            PrincipalField::EnabledPermissions,
-                        );
-                    }
-                }
-
+    async fn refresh_acls(&self, acl_changes: &[AclGrant], current: Option<&[AclGrant]>) {
+        let mut changed_principals = ChangedPrincipals::new();
+        if let Some(acl_current) = current {
+            for current_item in acl_current {
+                let mut invalidate = true;
                 for change_item in acl_changes {
-                    let mut invalidate = true;
-                    for current_item in acl_current {
-                        if change_item.account_id == current_item.account_id {
-                            invalidate = change_item.grants != current_item.grants;
-                            break;
-                        }
-                    }
-                    if invalidate {
-                        changed_principals.add_change(
-                            change_item.account_id,
-                            Type::Individual,
-                            PrincipalField::EnabledPermissions,
-                        );
+                    if change_item.account_id == current_item.account_id {
+                        invalidate = change_item.grants != current_item.grants;
+                        break;
                     }
                 }
-            } else {
-                for value in acl_changes {
+                if invalidate {
                     changed_principals.add_change(
-                        value.account_id,
+                        current_item.account_id,
                         Type::Individual,
                         PrincipalField::EnabledPermissions,
                     );
                 }
             }
 
-            self.increment_token_revision(changed_principals).await;
+            for change_item in acl_changes {
+                let mut invalidate = true;
+                for current_item in acl_current {
+                    if change_item.account_id == current_item.account_id {
+                        invalidate = change_item.grants != current_item.grants;
+                        break;
+                    }
+                }
+                if invalidate {
+                    changed_principals.add_change(
+                        change_item.account_id,
+                        Type::Individual,
+                        PrincipalField::EnabledPermissions,
+                    );
+                }
+            }
+        } else {
+            for value in acl_changes {
+                changed_principals.add_change(
+                    value.account_id,
+                    Type::Individual,
+                    PrincipalField::EnabledPermissions,
+                );
+            }
         }
+
+        self.increment_token_revision(changed_principals).await;
     }
 
     async fn map_acl_set(&self, acl_set: Vec<Value>) -> Result<Vec<AclGrant>, SetError> {
@@ -497,14 +467,12 @@ pub trait EffectiveAcl {
     fn effective_acl(&self, access_token: &AccessToken) -> Bitmap<Acl>;
 }
 
-impl EffectiveAcl for Object<Value> {
+impl EffectiveAcl for Vec<AclGrant> {
     fn effective_acl(&self, access_token: &AccessToken) -> Bitmap<Acl> {
         let mut acl = Bitmap::<Acl>::new();
-        if let Some(Value::Acl(permissions)) = self.properties.get(&Property::Acl) {
-            for item in permissions {
-                if access_token.is_member(item.account_id) {
-                    acl.union(&item.grants);
-                }
+        for item in self {
+            if access_token.is_member(item.account_id) {
+                acl.union(&item.grants);
             }
         }
 
