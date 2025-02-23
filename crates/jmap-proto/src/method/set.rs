@@ -9,12 +9,12 @@ use utils::map::{bitmap::Bitmap, vec_map::VecMap};
 
 use crate::{
     error::set::{InvalidProperty, SetError},
-    object::{email_submission, mailbox, sieve, Object},
-    parser::{json::Parser, JsonObjectParser, Token},
+    object::{email_submission, mailbox, sieve},
+    parser::{JsonObjectParser, Token, json::Parser},
     request::{
+        RequestProperty, RequestPropertyParser,
         method::MethodObject,
         reference::{MaybeReference, ResultReference},
-        RequestProperty, RequestPropertyParser,
     },
     response::Response,
     types::{
@@ -26,7 +26,7 @@ use crate::{
         keyword::Keyword,
         property::{HeaderForm, ObjectProperty, Property, SetProperty},
         state::{State, StateChange},
-        value::{SetValue, SetValueMap, Value},
+        value::{Object, SetValue, SetValueMap, Value},
     },
 };
 
@@ -114,7 +114,7 @@ impl JsonObjectParser for SetRequest<RequestArguments> {
                 _ => {
                     return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
-                        .details(format!("{}/set", parser.ctx)))
+                        .details(format!("{}/set", parser.ctx)));
                 }
             },
             account_id: Id::default(),
@@ -168,9 +168,7 @@ impl JsonObjectParser for Object<SetValue> {
     where
         Self: Sized,
     {
-        let mut obj = Object {
-            properties: VecMap::with_capacity(8),
-        };
+        let mut obj = Object(VecMap::with_capacity(8));
 
         parser
             .next_token::<String>()?
@@ -348,7 +346,7 @@ impl JsonObjectParser for Object<SetValue> {
                 SetValue::ResultReference(ResultReference::parse(parser)?)
             };
 
-            obj.properties.append(key.property, value);
+            obj.0.append(key.property, value);
         }
 
         Ok(obj)
@@ -536,7 +534,7 @@ impl SetResponse {
         (&mut self.created)
             .into_iter()
             .map(|(_, obj)| obj)
-            .find(|obj| obj.properties.get(&Property::Id) == Some(&Value::Id(id)))
+            .find(|obj| obj.0.get(&Property::Id) == Some(&Value::Id(id)))
     }
 
     pub fn has_changes(&self) -> bool {

@@ -7,9 +7,8 @@
 use crate::utf7::utf7_encode;
 
 use super::{
-    quoted_string,
+    ImapResponse, quoted_string,
     status::{Status, StatusItem},
-    ImapResponse,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -277,8 +276,8 @@ impl ImapResponse for Response {
 #[cfg(test)]
 mod tests {
     use crate::protocol::{
-        status::{Status, StatusItem, StatusItemType},
         ImapResponse,
+        status::{Status, StatusItem, StatusItemType},
     };
 
     use super::{Attribute, ChildInfo, ListItem, Tag};

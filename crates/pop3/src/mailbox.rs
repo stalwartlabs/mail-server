@@ -7,13 +7,10 @@
 use std::collections::BTreeMap;
 
 use common::listener::SessionStream;
-use email::mailbox::{MailboxFnc, UidMailbox, INBOX_ID};
-use jmap_proto::{
-    object::Object,
-    types::{collection::Collection, property::Property, value::Value},
-};
+use email::mailbox::{INBOX_ID, UidMailbox, manage::MailboxFnc};
+use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
-    ahash::AHashMap, write::key::DeserializeBigEndian, IndexKey, IterateParams, Serialize, U32_LEN,
+    IndexKey, IterateParams, Serialize, U32_LEN, ahash::AHashMap, write::key::DeserializeBigEndian,
 };
 use trc::AddContext;
 
@@ -64,7 +61,7 @@ impl<T: SessionStream> Session<T> {
             .caused_by(trc::location!())?;
         let uid_validity = self
             .server
-            .get_property::<Object<Value>>(
+            .get_property::<email::mailbox::Mailbox>(
                 account_id,
                 Collection::Mailbox,
                 INBOX_ID,
@@ -72,15 +69,14 @@ impl<T: SessionStream> Session<T> {
             )
             .await
             .caused_by(trc::location!())?
-            .and_then(|obj| obj.get(&Property::Cid).as_uint())
             .ok_or_else(|| {
                 trc::StoreEvent::UnexpectedError
                     .caused_by(trc::location!())
                     .details("Failed to obtain UID validity")
                     .account_id(account_id)
                     .document_id(INBOX_ID)
-            })
-            .map(|v| v as u32)?;
+            })?
+            .uid_validity;
 
         // Obtain message sizes
         self.server

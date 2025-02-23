@@ -7,11 +7,6 @@
 use std::time::Duration;
 
 use common::{KV_LOCK_PURGE_ACCOUNT, Server};
-use email::{
-    index::EmailIndexBuilder,
-    mailbox::{JUNK_ID, TOMBSTONE_ID, TRASH_ID, UidMailbox},
-    metadata::MessageMetadata,
-};
 use jmap_proto::types::{
     collection::Collection, id::Id, keyword::Keyword, property::Property, state::StateChange,
     type_state::DataType,
@@ -28,8 +23,13 @@ use store::{
 use trc::{AddContext, StoreEvent};
 use utils::codec::leb128::Leb128Reader;
 
-use rand::prelude::SliceRandom;
 use std::future::Future;
+use store::rand::prelude::SliceRandom;
+
+use crate::{
+    mailbox::*,
+    message::{index::EmailIndexBuilder, metadata::MessageMetadata},
+};
 
 pub trait EmailDeletion: Sync + Send {
     fn emails_tombstone(
@@ -238,7 +238,7 @@ impl EmailDeletion for Server {
             let mut account_ids: Vec<u32> = account_ids.into_iter().collect();
 
             // Shuffle account ids
-            account_ids.shuffle(&mut rand::rng());
+            account_ids.shuffle(&mut store::rand::rng());
 
             for account_id in account_ids {
                 self.purge_account(account_id).await;

@@ -8,13 +8,13 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
+use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
-use jmap::sieve::set::SCHEMA;
 use jmap_proto::{
-    object::{index::ObjectIndexBuilder, Object},
-    types::{collection::Collection, property::Property, value::Value},
+    object::index::ObjectIndexBuilder,
+    types::{collection::Collection, property::Property},
 };
-use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder};
+use store::write::{BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -63,7 +63,7 @@ impl<T: SessionStream> Session<T> {
         // Obtain script values
         let script = self
             .server
-            .get_property::<HashedValue<Object<Value>>>(
+            .get_property::<HashedValue<SieveScript>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -85,11 +85,9 @@ impl<T: SessionStream> Session<T> {
             .with_collection(Collection::SieveScript)
             .update_document(document_id)
             .custom(
-                ObjectIndexBuilder::new(SCHEMA)
-                    .with_current(script)
-                    .with_changes(
-                        Object::with_capacity(1).with_property(Property::Name, new_name.clone()),
-                    ),
+                ObjectIndexBuilder::new()
+                    .with_changes(script.inner.clone().with_name(new_name.clone()))
+                    .with_current(script),
             );
         if !batch.is_empty() {
             self.server

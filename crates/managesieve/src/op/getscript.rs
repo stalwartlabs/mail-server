@@ -8,12 +8,10 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
+use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
-use jmap::{blob::download::BlobDownload, sieve::set::ObjectBlobId};
-use jmap_proto::{
-    object::Object,
-    types::{collection::Collection, property::Property, value::Value},
-};
+use jmap::blob::download::BlobDownload;
+use jmap_proto::types::{collection::Collection, property::Property};
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -38,7 +36,7 @@ impl<T: SessionStream> Session<T> {
         let document_id = self.get_script_id(account_id, &name).await?;
         let (blob_section, blob_hash) = self
             .server
-            .get_property::<Object<Value>>(
+            .get_property::<SieveScript>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -46,19 +44,12 @@ impl<T: SessionStream> Session<T> {
             )
             .await
             .caused_by(trc::location!())?
+            .and_then(|id| (id.blob_id.section?, id.blob_id.hash).into())
             .ok_or_else(|| {
                 trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Script not found")
                     .code(ResponseCode::NonExistent)
-            })?
-            .blob_id()
-            .and_then(|id| (id.section.as_ref()?.clone(), id.hash.clone()).into())
-            .ok_or_else(|| {
-                trc::ManageSieveEvent::Error
-                    .into_err()
-                    .details("Failed to retrieve blobId")
-                    .code(ResponseCode::TryLater)
             })?;
         let script = self
             .server

@@ -12,19 +12,18 @@ use crate::{
 };
 use common::listener::SessionStream;
 use directory::Permission;
-use email::mailbox::SCHEMA;
 use imap_proto::{
-    protocol::rename::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
+    Command, ResponseCode, StatusResponse, protocol::rename::Arguments, receiver::Request,
 };
 use jmap::auth::acl::EffectiveAcl;
 use jmap_proto::{
-    object::{index::ObjectIndexBuilder, Object},
+    object::index::ObjectIndexBuilder,
     types::{
-        acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
-        type_state::DataType, value::Value,
+        acl::Acl, collection::Collection, property::Property, state::StateChange,
+        type_state::DataType,
     },
 };
-use store::write::{assert::HashedValue, BatchBuilder};
+use store::write::{BatchBuilder, assert::HashedValue};
 use trc::AddContext;
 
 use super::ImapContext;
@@ -94,7 +93,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox = self
             .server
-            .get_property::<HashedValue<Object<Value>>>(
+            .get_property::<HashedValue<email::mailbox::Mailbox>>(
                 params.account_id,
                 Collection::Mailbox,
                 mailbox_id,
@@ -119,6 +118,7 @@ impl<T: SessionStream> SessionData<T> {
         if access_token.is_shared(params.account_id)
             && !mailbox
                 .inner
+                .acls
                 .effective_acl(&access_token)
                 .contains(Acl::Modify)
         {
@@ -146,17 +146,9 @@ impl<T: SessionStream> SessionData<T> {
                 .with_account_id(params.account_id)
                 .with_collection(Collection::Mailbox)
                 .create_document()
-                .custom(
-                    ObjectIndexBuilder::new(SCHEMA).with_changes(
-                        Object::with_capacity(3)
-                            .with_property(Property::Name, path_item)
-                            .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
-                            .with_property(
-                                Property::Cid,
-                                Value::UnsignedInt(rand::random::<u32>() as u64),
-                            ),
-                    ),
-                );
+                .custom(ObjectIndexBuilder::new().with_changes(
+                    email::mailbox::Mailbox::new(path_item).with_parent_id(parent_id),
+                ));
 
             let mailbox_id = self
                 .server
@@ -171,22 +163,18 @@ impl<T: SessionStream> SessionData<T> {
         }
 
         let mut batch = BatchBuilder::new();
+        let mut new_mailbox = mailbox.inner.clone();
+        new_mailbox.name = new_mailbox_name.to_string();
+        new_mailbox.parent_id = parent_id;
+        new_mailbox.uid_validity = rand::random::<u32>();
         batch
             .with_account_id(params.account_id)
             .with_collection(Collection::Mailbox)
             .update_document(mailbox_id)
             .custom(
-                ObjectIndexBuilder::new(SCHEMA)
+                ObjectIndexBuilder::new()
                     .with_current(mailbox)
-                    .with_changes(
-                        Object::with_capacity(3)
-                            .with_property(Property::Name, new_mailbox_name)
-                            .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
-                            .with_property(
-                                Property::Cid,
-                                Value::UnsignedInt(rand::random::<u32>() as u64),
-                            ),
-                    ),
+                    .with_changes(new_mailbox),
             );
         changes.log_update(Collection::Mailbox, mailbox_id);
 

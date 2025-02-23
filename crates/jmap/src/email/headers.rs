@@ -6,14 +6,12 @@
 
 use std::borrow::Cow;
 
-use jmap_proto::{
-    object::Object,
-    types::{
-        property::{HeaderForm, HeaderProperty, Property},
-        value::Value,
-    },
+use jmap_proto::types::{
+    property::{HeaderForm, HeaderProperty, Property},
+    value::{Object, Value},
 };
 use mail_builder::{
+    MessageBuilder,
     headers::{
         address::{Address, EmailAddress, GroupedAddresses},
         date::Date,
@@ -22,9 +20,8 @@ use mail_builder::{
         text::Text,
         url::URL,
     },
-    MessageBuilder,
 };
-use mail_parser::{parsers::MessageStream, Addr, Header, HeaderName, HeaderValue};
+use mail_parser::{Addr, Header, HeaderName, HeaderValue, parsers::MessageStream};
 
 pub trait IntoForm {
     fn into_form(self, form: &HeaderForm) -> Value;
@@ -169,10 +166,12 @@ impl IntoForm for HeaderValue<'_> {
             (
                 HeaderValue::Address(mail_parser::Address::List(addrlist)),
                 HeaderForm::GroupedAddresses,
-            ) => Value::List(vec![Object::with_capacity(2)
-                .with_property(Property::Name, Value::Null)
-                .with_property(Property::Addresses, addrlist)
-                .into()]),
+            ) => Value::List(vec![
+                Object::with_capacity(2)
+                    .with_property(Property::Name, Value::Null)
+                    .with_property(Property::Addresses, addrlist)
+                    .into(),
+            ]),
             (
                 HeaderValue::Address(mail_parser::Address::Group(grouplist)),
                 HeaderForm::GroupedAddresses,
@@ -188,12 +187,12 @@ impl<'x> ValueToHeader<'x> for Value {
         let mut obj = self.try_unwrap_object()?;
         Some(GroupedAddresses {
             name: obj
-                .properties
+                .0
                 .remove(&Property::Name)
                 .and_then(|n| n.try_unwrap_string())
                 .map(|n| n.into()),
             addresses: obj
-                .properties
+                .0
                 .remove(&Property::Addresses)?
                 .try_into_address_list()?,
         })
@@ -212,15 +211,11 @@ impl<'x> ValueToHeader<'x> for Value {
         let mut obj = self.try_unwrap_object()?;
         Some(EmailAddress {
             name: obj
-                .properties
+                .0
                 .remove(&Property::Name)
                 .and_then(|n| n.try_unwrap_string())
                 .map(|n| n.into()),
-            email: obj
-                .properties
-                .remove(&Property::Email)?
-                .try_unwrap_string()?
-                .into(),
+            email: obj.0.remove(&Property::Email)?.try_unwrap_string()?.into(),
         })
     }
 }

@@ -12,10 +12,10 @@ use std::{
 };
 
 use common::{
+    Inner, KV_LOCK_HOUSEKEEPER, Server,
     config::telemetry::OtelMetrics,
     core::BuildServer,
     ipc::{HousekeeperEvent, PurgeType},
-    Inner, Server, KV_LOCK_HOUSEKEEPER,
 };
 
 #[cfg(feature = "enterprise")]
@@ -24,12 +24,13 @@ use common::telemetry::{
     tracers::store::TracingStore,
 };
 
+use email::message::delete::EmailDeletion;
 use smtp::reporting::SmtpReporting;
-use store::{write::now, PurgeStore};
+use store::{PurgeStore, write::now};
 use tokio::sync::mpsc;
 use trc::{Collector, MetricType, PurgeEvent};
 
-use crate::{email::delete::EmailDeletion, JmapMethods, LONG_SLUMBER};
+use crate::{JmapMethods, LONG_SLUMBER};
 
 #[derive(PartialEq, Eq)]
 struct Action {
@@ -154,96 +155,99 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
 
         loop {
             match tokio::time::timeout(queue.wake_up_time(), rx.recv()).await {
-                Ok(Some(event)) => match event {
-                    HousekeeperEvent::ReloadSettings => {
-                        let server = inner.build_server();
+                Ok(Some(event)) => {
+                    match event {
+                        HousekeeperEvent::ReloadSettings => {
+                            let server = inner.build_server();
 
-                        // Reload OTEL push metrics
-                        match &server.core.metrics.otel {
-                            Some(otel) if !queue.has_action(&ActionClass::OtelMetrics) => {
-                                OtelMetrics::enable_errors();
+                            // Reload OTEL push metrics
+                            match &server.core.metrics.otel {
+                                Some(otel) if !queue.has_action(&ActionClass::OtelMetrics) => {
+                                    OtelMetrics::enable_errors();
 
-                                queue.schedule(
-                                    Instant::now() + otel.interval,
-                                    ActionClass::OtelMetrics,
-                                );
-                            }
-                            _ => {}
-                        }
-
-                        // SPDX-SnippetBegin
-                        // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
-                        // SPDX-License-Identifier: LicenseRef-SEL
-                        #[cfg(feature = "enterprise")]
-                        if let Some(enterprise) = &server.core.enterprise {
-                            if !queue.has_action(&ActionClass::RenewLicense) {
-                                queue.schedule(
-                                    Instant::now() + enterprise.license.renew_in(),
-                                    ActionClass::RenewLicense,
-                                );
-                            }
-
-                            if let Some(metrics_store) = enterprise.metrics_store.as_ref() {
-                                if !queue.has_action(&ActionClass::InternalMetrics) {
                                     queue.schedule(
-                                        Instant::now() + metrics_store.interval.time_to_next(),
-                                        ActionClass::InternalMetrics,
+                                        Instant::now() + otel.interval,
+                                        ActionClass::OtelMetrics,
                                     );
                                 }
+                                _ => {}
                             }
 
-                            if !enterprise.metrics_alerts.is_empty()
-                                && !queue.has_action(&ActionClass::AlertMetrics)
-                            {
-                                queue.schedule(Instant::now(), ActionClass::AlertMetrics);
+                            // SPDX-SnippetBegin
+                            // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
+                            // SPDX-License-Identifier: LicenseRef-SEL
+                            #[cfg(feature = "enterprise")]
+                            if let Some(enterprise) = &server.core.enterprise {
+                                if !queue.has_action(&ActionClass::RenewLicense) {
+                                    queue.schedule(
+                                        Instant::now() + enterprise.license.renew_in(),
+                                        ActionClass::RenewLicense,
+                                    );
+                                }
+
+                                if let Some(metrics_store) = enterprise.metrics_store.as_ref() {
+                                    if !queue.has_action(&ActionClass::InternalMetrics) {
+                                        queue.schedule(
+                                            Instant::now() + metrics_store.interval.time_to_next(),
+                                            ActionClass::InternalMetrics,
+                                        );
+                                    }
+                                }
+
+                                if !enterprise.metrics_alerts.is_empty()
+                                    && !queue.has_action(&ActionClass::AlertMetrics)
+                                {
+                                    queue.schedule(Instant::now(), ActionClass::AlertMetrics);
+                                }
                             }
+                            // SPDX-SnippetEnd
+
+                            // Reload ACME certificates
+                            tokio::spawn(async move {
+                                for provider in server.core.acme.providers.values() {
+                                    match server.init_acme(provider).await {
+                                        Ok(renew_at) => {
+                                            server
+                                                .inner
+                                                .ipc
+                                                .housekeeper_tx
+                                                .send(HousekeeperEvent::AcmeReschedule {
+                                                    provider_id: provider.id.clone(),
+                                                    renew_at: Instant::now() + renew_at,
+                                                })
+                                                .await
+                                                .ok();
+                                        }
+                                        Err(err) => {
+                                            trc::error!(err.details(
+                                                "Failed to reload ACME certificate manager."
+                                            ));
+                                        }
+                                    };
+                                }
+                            });
                         }
-                        // SPDX-SnippetEnd
+                        HousekeeperEvent::AcmeReschedule {
+                            provider_id,
+                            renew_at,
+                        } => {
+                            let action = ActionClass::Acme(provider_id);
+                            queue.remove_action(&action);
+                            queue.schedule(renew_at, action);
+                        }
+                        HousekeeperEvent::Purge(purge) => {
+                            let server = inner.build_server();
+                            tokio::spawn(async move {
+                                server.purge(purge, 0).await;
+                            });
+                        }
+                        HousekeeperEvent::Exit => {
+                            trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
 
-                        // Reload ACME certificates
-                        tokio::spawn(async move {
-                            for provider in server.core.acme.providers.values() {
-                                match server.init_acme(provider).await {
-                                    Ok(renew_at) => {
-                                        server
-                                            .inner
-                                            .ipc
-                                            .housekeeper_tx
-                                            .send(HousekeeperEvent::AcmeReschedule {
-                                                provider_id: provider.id.clone(),
-                                                renew_at: Instant::now() + renew_at,
-                                            })
-                                            .await
-                                            .ok();
-                                    }
-                                    Err(err) => {
-                                        trc::error!(err
-                                            .details("Failed to reload ACME certificate manager."));
-                                    }
-                                };
-                            }
-                        });
+                            return;
+                        }
                     }
-                    HousekeeperEvent::AcmeReschedule {
-                        provider_id,
-                        renew_at,
-                    } => {
-                        let action = ActionClass::Acme(provider_id);
-                        queue.remove_action(&action);
-                        queue.schedule(renew_at, action);
-                    }
-                    HousekeeperEvent::Purge(purge) => {
-                        let server = inner.build_server();
-                        tokio::spawn(async move {
-                            server.purge(purge, 0).await;
-                        });
-                    }
-                    HousekeeperEvent::Exit => {
-                        trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
-
-                        return;
-                    }
-                },
+                }
                 Ok(None) => {
                     trc::event!(Housekeeper(trc::HousekeeperEvent::Stop));
                     return;
@@ -431,8 +435,11 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                                     );
                                                 }
                                                 Err(err) => {
-                                                    trc::error!(err
-                                                        .details("Failed to obtain account count"));
+                                                    trc::error!(
+                                                        err.details(
+                                                            "Failed to obtain account count"
+                                                        )
+                                                    );
                                                 }
                                             }
 
@@ -444,8 +451,11 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                                     );
                                                 }
                                                 Err(err) => {
-                                                    trc::error!(err
-                                                        .details("Failed to obtain domain count"));
+                                                    trc::error!(
+                                                        err.details(
+                                                            "Failed to obtain domain count"
+                                                        )
+                                                    );
                                                 }
                                             }
                                         }
@@ -462,12 +472,14 @@ pub fn spawn_housekeeper(inner: Arc<Inner>, mut rx: mpsc::Receiver<HousekeeperEv
                                         }
                                         Ok(None) => {}
                                         Err(err) => {
-                                            trc::error!(trc::EventType::Server(
-                                                trc::ServerEvent::ThreadError,
-                                            )
-                                            .reason(err)
-                                            .caused_by(trc::location!())
-                                            .details("Join Error"));
+                                            trc::error!(
+                                                trc::EventType::Server(
+                                                    trc::ServerEvent::ThreadError,
+                                                )
+                                                .reason(err)
+                                                .caused_by(trc::location!())
+                                                .details("Join Error")
+                                            );
                                         }
                                     }
                                 });
@@ -695,9 +707,10 @@ impl Purge for Server {
             PurgeType::Lookup { store, prefix } => {
                 if let Some(prefix) = prefix {
                     if let Err(err) = store.key_delete_prefix(&prefix).await {
-                        trc::error!(err
-                            .details("Failed to delete key prefix")
-                            .ctx(trc::Key::Key, prefix));
+                        trc::error!(
+                            err.details("Failed to delete key prefix")
+                                .ctx(trc::Key::Key, prefix)
+                        );
                     }
                 } else if let Err(err) = store.purge_in_memory_store().await {
                     trc::error!(err.details("Failed to purge in-memory store"));
@@ -726,9 +739,10 @@ impl Purge for Server {
                 .remove_lock(KV_LOCK_HOUSEKEEPER, lock_name)
                 .await
             {
-                trc::error!(err
-                    .details("Failed to delete task lock.")
-                    .details(lock_type));
+                trc::error!(
+                    err.details("Failed to delete task lock.")
+                        .details(lock_type)
+                );
             }
         }
     }

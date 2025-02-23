@@ -13,14 +13,14 @@ use crate::{
 use ahash::AHashMap;
 use common::listener::SessionStream;
 use directory::Permission;
-use email::cache::ThreadCache;
+use email::thread::cache::ThreadCache;
 use imap_proto::{
+    Command, StatusResponse,
     protocol::{
-        thread::{Arguments, Response},
         ImapResponse,
+        thread::{Arguments, Response},
     },
     receiver::Request,
-    Command, StatusResponse,
 };
 use trc::AddContext;
 

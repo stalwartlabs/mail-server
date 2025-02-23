@@ -13,6 +13,7 @@ directory = { path = "../directory" }
 common = { path = "../common" }
 store = { path = "../store" }
 utils = { path = "../utils" }
+email = { path = "../email" }
 trc = { path = "../trc" }
 mail-parser = { version = "0.10", features = ["full_encoding"] } 
 mail-send = { version = "0.5", default-features = false, features = ["cram-md5", "ring", "tls12"] }

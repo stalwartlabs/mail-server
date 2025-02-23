@@ -12,17 +12,12 @@ use crate::{
 };
 use common::listener::SessionStream;
 use directory::Permission;
-use email::mailbox::SCHEMA;
-use imap_proto::{receiver::Request, Command, ResponseCode, StatusResponse};
-use jmap::mailbox::set::MailboxSubscribe;
+use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
 use jmap_proto::{
-    object::{index::ObjectIndexBuilder, Object},
-    types::{
-        collection::Collection, property::Property, state::StateChange, type_state::DataType,
-        value::Value,
-    },
+    object::index::ObjectIndexBuilder,
+    types::{collection::Collection, property::Property, state::StateChange, type_state::DataType},
 };
-use store::write::{assert::HashedValue, BatchBuilder};
+use store::write::{BatchBuilder, assert::HashedValue};
 
 use super::ImapContext;
 
@@ -102,7 +97,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox = self
             .server
-            .get_property::<HashedValue<Object<Value>>>(
+            .get_property::<HashedValue<email::mailbox::Mailbox>>(
                 account_id,
                 Collection::Mailbox,
                 mailbox_id,
@@ -120,23 +115,29 @@ impl<T: SessionStream> SessionData<T> {
             })?;
 
         // Subscribe/unsubscribe to mailbox
-        if let Some(value) = mailbox.inner.mailbox_subscribe(self.account_id, subscribe) {
+        if (subscribe && !mailbox.inner.is_subscribed(self.account_id))
+            || (!subscribe && mailbox.inner.is_subscribed(self.account_id))
+        {
             // Build batch
             let mut changes = self
                 .server
                 .begin_changes(account_id)
                 .imap_ctx(&tag, trc::location!())?;
+            let mut new_mailbox = mailbox.inner.clone();
+            if subscribe {
+                new_mailbox.subscribers.push(self.account_id);
+            } else {
+                new_mailbox.remove_subscriber(self.account_id);
+            }
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Mailbox)
                 .update_document(mailbox_id)
                 .custom(
-                    ObjectIndexBuilder::new(SCHEMA)
+                    ObjectIndexBuilder::new()
                         .with_current(mailbox)
-                        .with_changes(
-                            Object::with_capacity(1).with_property(Property::IsSubscribed, value),
-                        ),
+                        .with_changes(new_mailbox),
                 );
             changes.log_update(Collection::Mailbox, mailbox_id);
 

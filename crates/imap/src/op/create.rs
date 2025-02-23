@@ -11,20 +11,19 @@ use crate::{
     op::ImapContext,
     spawn_op,
 };
-use common::{listener::SessionStream, Account, Mailbox};
+use common::{Account, Mailbox, config::jmap::settings::SpecialUse, listener::SessionStream};
 use directory::Permission;
-use email::mailbox::SCHEMA;
 use imap_proto::{
+    Command, ResponseCode, StatusResponse,
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
-    Command, ResponseCode, StatusResponse,
 };
 use jmap::JmapMethods;
 use jmap_proto::{
-    object::{index::ObjectIndexBuilder, Object},
+    object::index::ObjectIndexBuilder,
     types::{
         acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
-        type_state::DataType, value::Value,
+        type_state::DataType,
     },
 };
 use store::{query::Filter, write::BatchBuilder};
@@ -83,16 +82,11 @@ impl<T: SessionStream> SessionData<T> {
         let mut parent_id = params.parent_mailbox_id.map(|id| id + 1).unwrap_or(0);
         let mut create_ids = Vec::with_capacity(params.path.len());
         for (pos, &path_item) in params.path.iter().enumerate() {
-            let mut mailbox = Object::with_capacity(4)
-                .with_property(Property::Name, path_item)
-                .with_property(Property::ParentId, Value::Id(Id::from(parent_id)))
-                .with_property(
-                    Property::Cid,
-                    Value::UnsignedInt(rand::random::<u32>() as u64),
-                );
+            let mut mailbox = email::mailbox::Mailbox::new(path_item).with_parent_id(parent_id);
+
             if pos == params.path.len() - 1 {
-                if let Some(mailbox_role) = arguments.mailbox_role {
-                    mailbox.set(Property::Role, mailbox_role);
+                if let Some(mailbox_role) = arguments.mailbox_role.map(attr_to_role) {
+                    mailbox.role = mailbox_role;
                 }
             }
             let mut batch = BatchBuilder::new();
@@ -100,7 +94,7 @@ impl<T: SessionStream> SessionData<T> {
                 .with_account_id(params.account_id)
                 .with_collection(Collection::Mailbox)
                 .create_document()
-                .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(mailbox));
+                .custom(ObjectIndexBuilder::new().with_changes(mailbox));
             let mailbox_id = self
                 .server
                 .store()
@@ -248,7 +242,7 @@ impl<T: SessionStream> SessionData<T> {
     pub async fn validate_mailbox_create<'x>(
         &self,
         mailbox_name: &'x str,
-        mailbox_role: Option<&'x str>,
+        mailbox_role: Option<Attribute>,
     ) -> trc::Result<CreateParams<'x>> {
         // Remove leading and trailing separators
         let mut name = mailbox_name.trim();
@@ -392,12 +386,13 @@ impl<T: SessionStream> SessionData<T> {
             parent_mailbox_name,
             special_use: if let Some(mailbox_role) = mailbox_role {
                 // Make sure role is unique
+                let role_name = attr_to_role(mailbox_role).as_str().unwrap_or_default();
                 if !self
                     .server
                     .filter(
                         account_id,
                         Collection::Mailbox,
-                        vec![Filter::eq(Property::Role, mailbox_role)],
+                        vec![Filter::eq(Property::Role, role_name)],
                     )
                     .await
                     .caused_by(trc::location!())?
@@ -406,12 +401,10 @@ impl<T: SessionStream> SessionData<T> {
                 {
                     return Err(trc::ImapEvent::Error
                         .into_err()
-                        .details(format!(
-                            "A mailbox with role '{mailbox_role}' already exists.",
-                        ))
+                        .details(format!("A mailbox with role '{role_name}' already exists.",))
                         .code(ResponseCode::UseAttr));
                 }
-                Attribute::try_from(mailbox_role).ok()
+                Some(mailbox_role)
             } else {
                 None
             },
@@ -429,4 +422,17 @@ pub struct CreateParams<'x> {
     pub parent_mailbox_name: Option<String>,
     pub special_use: Option<Attribute>,
     pub is_rename: bool,
+}
+
+#[inline]
+fn attr_to_role(attr: Attribute) -> SpecialUse {
+    match attr {
+        Attribute::Archive => SpecialUse::Archive,
+        Attribute::Drafts => SpecialUse::Drafts,
+        Attribute::Junk => SpecialUse::Junk,
+        Attribute::Sent => SpecialUse::Sent,
+        Attribute::Trash => SpecialUse::Trash,
+        Attribute::Important => SpecialUse::Important,
+        _ => SpecialUse::None,
+    }
 }

@@ -6,18 +6,21 @@
 
 use std::{future::Future, sync::Arc};
 
-use crate::api::{http::ToHttpResponse, HttpResponse, JsonResponse};
-use common::{auth::AccessToken, Server};
+use crate::api::{HttpResponse, JsonResponse, http::ToHttpResponse};
+use common::{Server, auth::AccessToken};
 use directory::backend::internal::manage;
-use email::crypto::{
-    try_parse_certs, EncryptMessage, EncryptMessageError, EncryptionMethod, EncryptionParams,
-    EncryptionType,
+use email::message::crypto::{
+    EncryptMessage, EncryptMessageError, EncryptionMethod, EncryptionParams, EncryptionType,
+    try_parse_certs,
 };
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_builder::encoders::base64::base64_encode_mime;
 use mail_parser::MessageParser;
 use serde_json::json;
-use store::{write::{BatchBuilder, Bincode, F_CLEAR, F_VALUE}, Serialize};
+use store::{
+    Serialize,
+    write::{BatchBuilder, Bincode, F_CLEAR, F_VALUE},
+};
 
 pub trait CryptoHandler: Sync + Send {
     fn handle_crypto_get(

@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
-use email::mailbox::MailboxFnc;
+use common::{Server, auth::AccessToken};
+use email::mailbox::{Mailbox, manage::MailboxFnc};
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
-    object::{mailbox::QueryArguments, Object},
-    types::{acl::Acl, collection::Collection, property::Property, value::Value},
+    object::mailbox::QueryArguments,
+    types::{acl::Acl, collection::Collection, property::Property},
 };
 use store::{
     ahash::{AHashMap, AHashSet},
@@ -17,7 +17,7 @@ use store::{
     roaring::RoaringBitmap,
 };
 
-use crate::{auth::acl::AclMethods, JmapMethods, UpdateResults};
+use crate::{JmapMethods, UpdateResults, auth::acl::AclMethods};
 use std::future::Future;
 
 pub trait MailboxQuery: Sync + Send {
@@ -93,7 +93,7 @@ impl MailboxQuery for Server {
                 other => {
                     return Err(trc::JmapEvent::UnsupportedFilter
                         .into_err()
-                        .details(other.to_string()))
+                        .details(other.to_string()));
                 }
             }
         }
@@ -117,7 +117,7 @@ impl MailboxQuery for Server {
                 || (response.total.is_some_and(|total| total > 0) && filter_as_tree))
         {
             for (document_id, value) in self
-                .get_properties::<Object<Value>, _, _>(
+                .get_properties::<Mailbox, _, _>(
                     account_id,
                     Collection::Mailbox,
                     &mailbox_ids,
@@ -125,13 +125,8 @@ impl MailboxQuery for Server {
                 )
                 .await?
             {
-                let parent_id = value
-                    .properties
-                    .get(&Property::ParentId)
-                    .and_then(|id| id.as_id().map(|id| id.document_id()))
-                    .unwrap_or(0);
-                hierarchy.insert(document_id + 1, parent_id);
-                tree.entry(parent_id)
+                hierarchy.insert(document_id + 1, value.parent_id);
+                tree.entry(value.parent_id)
                     .or_insert_with(AHashSet::default)
                     .insert(document_id + 1);
             }
@@ -199,7 +194,7 @@ impl MailboxQuery for Server {
                     other => {
                         return Err(trc::JmapEvent::UnsupportedSort
                             .into_err()
-                            .details(other.to_string()))
+                            .details(other.to_string()));
                     }
                 });
             }

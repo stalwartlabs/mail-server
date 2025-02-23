@@ -4,69 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{future::Future, slice::Iter};
+use std::future::Future;
 
-use common::{config::jmap::settings::SpecialUse, Server};
+use common::{Server, config::jmap::settings::SpecialUse};
 use jmap_proto::{
-    object::{
-        index::{IndexAs, IndexProperty, ObjectIndexBuilder},
-        Object,
-    },
-    types::{collection::Collection, id::Id, keyword::Keyword, property::Property, value::Value},
+    object::index::ObjectIndexBuilder,
+    types::{collection::Collection, keyword::Keyword, property::Property},
 };
-use store::{
-    ahash::AHashSet,
-    query::Filter,
-    rand,
-    roaring::RoaringBitmap,
-    write::{
-        BatchBuilder, BitmapClass, DeserializeFrom, MaybeDynamicId, Operation, SerializeInto,
-        TagValue, ToBitmaps,
-    },
-    Serialize, U32_LEN,
-};
+use store::{ahash::AHashSet, query::Filter, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
-use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
-use crate::cache::ThreadCache;
+use crate::thread::cache::ThreadCache;
 
-pub const INBOX_ID: u32 = 0;
-pub const TRASH_ID: u32 = 1;
-pub const JUNK_ID: u32 = 2;
-pub const DRAFTS_ID: u32 = 3;
-pub const SENT_ID: u32 = 4;
-pub const ARCHIVE_ID: u32 = 5;
-pub const TOMBSTONE_ID: u32 = u32::MAX - 1;
-
-#[derive(Debug)]
-pub struct ExpandPath<'x> {
-    pub path: Vec<&'x str>,
-    pub found_names: Vec<(String, u32, u32)>,
-}
-
-pub static SCHEMA: &[IndexProperty] = &[
-    IndexProperty::new(Property::Name)
-        .index_as(IndexAs::Text {
-            tokenize: true,
-            index: true,
-        })
-        .required(),
-    IndexProperty::new(Property::Role).index_as(IndexAs::Text {
-        tokenize: false,
-        index: true,
-    }),
-    IndexProperty::new(Property::Role).index_as(IndexAs::HasProperty),
-    IndexProperty::new(Property::ParentId).index_as(IndexAs::Integer),
-    IndexProperty::new(Property::SortOrder).index_as(IndexAs::Integer),
-    IndexProperty::new(Property::IsSubscribed).index_as(IndexAs::IntegerList),
-    IndexProperty::new(Property::Acl).index_as(IndexAs::Acl),
-];
-
-#[derive(Debug, Clone, Copy)]
-pub struct UidMailbox {
-    pub mailbox_id: u32,
-    pub uid: u32,
-}
+use super::*;
 
 pub trait MailboxFnc: Sync + Send {
     fn mailbox_get_or_create(
@@ -109,7 +59,7 @@ pub trait MailboxFnc: Sync + Send {
     fn mailbox_get_by_role(
         &self,
         account_id: u32,
-        role: &str,
+        role: SpecialUse,
     ) -> impl Future<Output = trc::Result<Option<u32>>> + Send;
 }
 
@@ -136,39 +86,27 @@ impl MailboxFnc for Server {
         // Create mailboxes
         let mut last_document_id = ARCHIVE_ID;
         for folder in &self.core.jmap.default_folders {
-            let (role, document_id) = match folder.special_use {
-                SpecialUse::Inbox => ("inbox", INBOX_ID),
-                SpecialUse::Trash => ("trash", TRASH_ID),
-                SpecialUse::Junk => ("junk", JUNK_ID),
-                SpecialUse::Drafts => ("drafts", DRAFTS_ID),
-                SpecialUse::Sent => ("sent", SENT_ID),
-                SpecialUse::Archive => ("archive", ARCHIVE_ID),
-                SpecialUse::None => {
+            let document_id = match folder.special_use {
+                SpecialUse::Inbox => INBOX_ID,
+                SpecialUse::Trash => TRASH_ID,
+                SpecialUse::Junk => JUNK_ID,
+                SpecialUse::Drafts => DRAFTS_ID,
+                SpecialUse::Sent => SENT_ID,
+                SpecialUse::Archive => ARCHIVE_ID,
+                SpecialUse::None | SpecialUse::Important => {
                     last_document_id += 1;
-                    ("", last_document_id)
+                    last_document_id
                 }
                 SpecialUse::Shared => unreachable!(),
             };
 
-            let mut object = Object::with_capacity(4)
-                .with_property(Property::Name, folder.name.clone())
-                .with_property(Property::ParentId, Value::Id(0u64.into()))
-                .with_property(
-                    Property::Cid,
-                    Value::UnsignedInt(rand::random::<u32>() as u64),
-                );
-            if !role.is_empty() {
-                object.set(Property::Role, role);
-            }
+            let mut object = Mailbox::new(folder.name.clone()).with_role(folder.special_use);
             if folder.subscribe {
-                object.set(
-                    Property::IsSubscribed,
-                    Value::List(vec![Value::Id(account_id.into())]),
-                );
+                object.add_subscriber(account_id);
             }
             batch
                 .create_document_with_id(document_id)
-                .custom(ObjectIndexBuilder::new(SCHEMA).with_changes(object));
+                .custom(ObjectIndexBuilder::new().with_changes(object));
             mailbox_ids.insert(document_id);
         }
 
@@ -224,18 +162,8 @@ impl MailboxFnc for Server {
                     .with_collection(Collection::Mailbox)
                     .create_document()
                     .custom(
-                        ObjectIndexBuilder::new(SCHEMA).with_changes(
-                            Object::with_capacity(3)
-                                .with_property(Property::Name, name)
-                                .with_property(
-                                    Property::ParentId,
-                                    Value::Id(Id::from(next_parent_id)),
-                                )
-                                .with_property(
-                                    Property::Cid,
-                                    Value::UnsignedInt(rand::random::<u32>() as u64),
-                                ),
-                        ),
+                        ObjectIndexBuilder::new()
+                            .with_changes(Mailbox::new(name).with_parent_id(next_parent_id)),
                     );
                 let document_id = self
                     .store()
@@ -333,11 +261,7 @@ impl MailboxFnc for Server {
             .split('/')
             .filter_map(|p| {
                 let p = p.trim();
-                if !p.is_empty() {
-                    p.into()
-                } else {
-                    None
-                }
+                if !p.is_empty() { p.into() } else { None }
             })
             .collect::<Vec<_>>();
         if path.is_empty() || path.len() > self.core.jmap.mailbox_max_depth {
@@ -374,8 +298,8 @@ impl MailboxFnc for Server {
 
         let mut found_names = Vec::new();
         for document_id in document_ids {
-            if let Some(mut obj) = self
-                .get_property::<Object<Value>>(
+            if let Some(obj) = self
+                .get_property::<Mailbox>(
                     account_id,
                     Collection::Mailbox,
                     document_id,
@@ -383,19 +307,7 @@ impl MailboxFnc for Server {
                 )
                 .await?
             {
-                if let Some(Value::Text(value)) = obj.properties.remove(&Property::Name) {
-                    found_names.push((
-                        value,
-                        if let Some(Value::Id(value)) = obj.properties.remove(&Property::ParentId) {
-                            value.document_id()
-                        } else {
-                            0
-                        },
-                        document_id + 1,
-                    ));
-                } else {
-                    return Ok(None);
-                }
+                found_names.push((obj.name, obj.parent_id, document_id + 1));
             } else {
                 return Ok(None);
             }
@@ -427,69 +339,23 @@ impl MailboxFnc for Server {
             }))
     }
 
-    async fn mailbox_get_by_role(&self, account_id: u32, role: &str) -> trc::Result<Option<u32>> {
-        self.store()
-            .filter(
-                account_id,
-                Collection::Mailbox,
-                vec![Filter::eq(Property::Role, role)],
-            )
-            .await
-            .caused_by(trc::location!())
-            .map(|r| r.results.min())
-    }
-}
-
-impl PartialEq for UidMailbox {
-    fn eq(&self, other: &Self) -> bool {
-        self.mailbox_id == other.mailbox_id
-    }
-}
-
-impl Eq for UidMailbox {}
-
-impl ToBitmaps for UidMailbox {
-    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
-        ops.push(Operation::Bitmap {
-            class: BitmapClass::Tag {
-                field,
-                value: TagValue::Id(MaybeDynamicId::Static(self.mailbox_id)),
-            },
-            set,
-        });
-    }
-}
-
-impl SerializeInto for UidMailbox {
-    fn serialize_into(&self, buf: &mut Vec<u8>) {
-        buf.push_leb128(self.mailbox_id);
-        buf.push_leb128(self.uid);
-    }
-}
-
-impl DeserializeFrom for UidMailbox {
-    fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self> {
-        Some(UidMailbox {
-            mailbox_id: bytes.next_leb128()?,
-            uid: bytes.next_leb128()?,
-        })
-    }
-}
-
-impl Serialize for UidMailbox {
-    fn serialize(self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(U32_LEN * 2);
-        self.serialize_into(&mut buf);
-        buf
-    }
-}
-
-impl UidMailbox {
-    pub fn new(mailbox_id: u32, uid: u32) -> Self {
-        UidMailbox { mailbox_id, uid }
-    }
-
-    pub fn new_unassigned(mailbox_id: u32) -> Self {
-        UidMailbox { mailbox_id, uid: 0 }
+    async fn mailbox_get_by_role(
+        &self,
+        account_id: u32,
+        role: SpecialUse,
+    ) -> trc::Result<Option<u32>> {
+        if let Some(role) = role.as_str() {
+            self.store()
+                .filter(
+                    account_id,
+                    Collection::Mailbox,
+                    vec![Filter::eq(Property::Role, role.to_string())],
+                )
+                .await
+                .caused_by(trc::location!())
+                .map(|r| r.results.min())
+        } else {
+            Ok(None)
+        }
     }
 }

@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use email::{
-    ingest::{EmailIngest, IngestEmail, IngestSource},
-    mailbox::MailboxFnc,
+    mailbox::manage::MailboxFnc,
+    message::ingest::{EmailIngest, IngestEmail, IngestSource},
 };
 use jmap_proto::{
     error::set::{SetError, SetErrorType},

@@ -6,29 +6,30 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{core::BuildServer, Inner, Server, KV_LOCK_EMAIL_TASK};
+use common::{Inner, KV_LOCK_EMAIL_TASK, Server, core::BuildServer};
 use directory::{
-    backend::internal::{manage::ManageDirectory, PrincipalField},
     Type,
+    backend::internal::{PrincipalField, manage::ManageDirectory},
 };
-use email::{index::IndexMessageText, metadata::MessageMetadata};
+use email::message::{bayes::EmailBayesTrain, index::IndexMessageText, metadata::MessageMetadata};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
+    IterateParams, Serialize, U32_LEN, U64_LEN, ValueKey,
     ahash::AHashMap,
     fts::index::FtsDocument,
     roaring::RoaringBitmap,
     write::{
+        BatchBuilder, Bincode, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
         key::{DeserializeBigEndian, KeySerializer},
-        now, BatchBuilder, Bincode, BlobOp, MaybeDynamicId, TaskQueueClass, ValueClass,
+        now,
     },
-    IterateParams, Serialize, ValueKey, U32_LEN, U64_LEN,
 };
 
 use std::future::Future;
 use trc::{AddContext, TaskQueueEvent};
-use utils::{BlobHash, BLOB_HASH_LEN};
+use utils::{BLOB_HASH_LEN, BlobHash};
 
-use crate::{blob::download::BlobDownload, email::bayes::EmailBayesTrain};
+use crate::blob::download::BlobDownload;
 
 #[derive(Debug, Clone)]
 pub struct EmailTask {
@@ -113,7 +114,7 @@ impl Indexer for Server {
                     let entry = EmailTask::deserialize(key)?;
                     if locked_seq_ids
                         .get(&entry.seq)
-                        .is_none_or( |expires| now >= *expires)
+                        .is_none_or(|expires| now >= *expires)
                     {
                         entries.push(entry);
                     }
@@ -123,9 +124,10 @@ impl Indexer for Server {
             )
             .await
             .map_err(|err| {
-                trc::error!(err
-                    .caused_by(trc::location!())
-                    .details("Failed to iterate over index emails"));
+                trc::error!(
+                    err.caused_by(trc::location!())
+                        .details("Failed to iterate over index emails")
+                );
             });
 
         // Add entries to the index
@@ -184,10 +186,11 @@ impl Indexer for Server {
                                     .with_document_id(event.document_id)
                                     .index_message(&message);
                             if let Err(err) = self.core.storage.fts.index(document).await {
-                                trc::error!(err
-                                    .account_id(event.account_id)
-                                    .document_id(event.document_id)
-                                    .details("Failed to index email in FTS index"));
+                                trc::error!(
+                                    err.account_id(event.account_id)
+                                        .document_id(event.document_id)
+                                        .details("Failed to index email in FTS index")
+                                );
 
                                 continue;
                             }
@@ -217,11 +220,12 @@ impl Indexer for Server {
                 }
 
                 Err(err) => {
-                    trc::error!(err
-                        .account_id(event.account_id)
-                        .document_id(event.document_id)
-                        .caused_by(trc::location!())
-                        .details("Failed to retrieve email metadata"));
+                    trc::error!(
+                        err.account_id(event.account_id)
+                            .document_id(event.document_id)
+                            .caused_by(trc::location!())
+                            .details("Failed to retrieve email metadata")
+                    );
 
                     continue;
                 }
@@ -250,10 +254,11 @@ impl Indexer for Server {
                 )
                 .await
             {
-                trc::error!(err
-                    .account_id(event.account_id)
-                    .document_id(event.document_id)
-                    .details("Failed to remove index email from queue."));
+                trc::error!(
+                    err.account_id(event.account_id)
+                        .document_id(event.document_id)
+                        .details("Failed to remove index email from queue.")
+                );
             }
         }
 
@@ -285,10 +290,11 @@ impl Indexer for Server {
                 result
             }
             Err(err) => {
-                trc::error!(err
-                    .account_id(event.account_id)
-                    .document_id(event.document_id)
-                    .details("Failed to lock email task"));
+                trc::error!(
+                    err.account_id(event.account_id)
+                        .document_id(event.document_id)
+                        .details("Failed to lock email task")
+                );
 
                 false
             }
@@ -301,10 +307,11 @@ impl Indexer for Server {
             .remove_lock(KV_LOCK_EMAIL_TASK, &event.lock_key())
             .await
         {
-            trc::error!(err
-                .details("Failed to unlock email task")
-                .ctx(trc::Key::Key, event.seq)
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.details("Failed to unlock email task")
+                    .ctx(trc::Key::Key, event.seq)
+                    .caused_by(trc::location!())
+            );
         }
     }
 

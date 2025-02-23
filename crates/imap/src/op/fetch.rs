@@ -13,19 +13,19 @@ use crate::{
 use ahash::AHashMap;
 use common::listener::SessionStream;
 use directory::Permission;
-use email::metadata::MessageMetadata;
+use email::message::metadata::MessageMetadata;
 use imap_proto::{
+    Command, ResponseCode, ResponseType, StatusResponse,
     parser::PushUnique,
     protocol::{
+        Flag,
         expunge::Vanished,
         fetch::{
             self, Arguments, Attribute, BodyContents, BodyPart, BodyPartExtension, BodyPartFields,
             DataItem, Envelope, FetchItem, Section,
         },
-        Flag,
     },
     receiver::Request,
-    Command, ResponseCode, ResponseType, StatusResponse,
 };
 use jmap::{blob::download::BlobDownload, changes::get::ChangesLookup};
 use jmap_proto::types::{
@@ -35,7 +35,7 @@ use jmap_proto::types::{
 use mail_parser::{Address, GetHeader, HeaderName, Message, PartType};
 use store::{
     query::log::{Change, Query},
-    write::{assert::HashedValue, BatchBuilder, Bincode, F_BITMAP, F_VALUE},
+    write::{BatchBuilder, Bincode, F_BITMAP, F_VALUE, assert::HashedValue},
 };
 use trc::AddContext;
 

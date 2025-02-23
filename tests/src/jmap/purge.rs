@@ -6,14 +6,16 @@
 
 use ahash::AHashSet;
 use common::Server;
-use directory::{backend::internal::manage::ManageDirectory, QueryBy};
-use email::mailbox::{INBOX_ID, JUNK_ID, TRASH_ID};
+use directory::{QueryBy, backend::internal::manage::ManageDirectory};
+use email::{
+    mailbox::{INBOX_ID, JUNK_ID, TRASH_ID},
+    message::delete::EmailDeletion,
+};
 use imap_proto::ResponseType;
-use jmap::email::delete::EmailDeletion;
 use jmap_proto::types::{collection::Collection, id::Id, property::Property};
 use store::{
-    write::{key::DeserializeBigEndian, TagValue},
     IterateParams, LogKey, U32_LEN, U64_LEN,
+    write::{TagValue, key::DeserializeBigEndian},
 };
 
 use crate::{

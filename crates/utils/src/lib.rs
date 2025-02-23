@@ -10,6 +10,7 @@ pub mod cache;
 pub mod codec;
 pub mod config;
 pub mod glob;
+pub mod json;
 pub mod map;
 pub mod snowflake;
 pub mod url_params;
@@ -17,10 +18,13 @@ pub mod url_params;
 use futures::StreamExt;
 use reqwest::Response;
 use rustls::{
-    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
     ClientConfig, RootCertStore, SignatureScheme,
+    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
 };
 use rustls_pki_types::TrustAnchor;
+
+pub use downcast_rs;
+pub use erased_serde;
 
 pub const BLOB_HASH_LEN: usize = 32;
 
@@ -247,7 +251,7 @@ pub fn failed(message: &str) -> ! {
 pub async fn wait_for_shutdown() {
     #[cfg(not(target_env = "msvc"))]
     let signal = {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
 
         let mut h_term = signal(SignalKind::terminate()).failed("start signal handler");
         let mut h_int = signal(SignalKind::interrupt()).failed("start signal handler");

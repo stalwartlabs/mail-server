@@ -6,7 +6,7 @@
 
 use std::{borrow::Borrow, cmp::Ordering, fmt, hash::Hash};
 
-use serde::{de::DeserializeOwned, ser::SerializeMap, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned, ser::SerializeMap};
 
 // A map implemented using vectors
 // used for small datasets of less than 20 items
@@ -54,6 +54,12 @@ impl<K: Eq + PartialEq, V> VecMap<K, V> {
     #[inline(always)]
     pub fn append(&mut self, key: K, value: V) {
         self.inner.push(KeyValue { key, value });
+    }
+
+    #[inline(always)]
+    pub fn with_append(mut self, key: K, value: V) -> Self {
+        self.append(key, value);
+        self
     }
 
     #[inline(always)]

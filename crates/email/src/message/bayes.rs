@@ -7,14 +7,15 @@
 use std::future::Future;
 
 use common::Server;
-use email::metadata::MessageMetadata;
 use jmap_proto::types::{collection::Collection, property::Property};
 use mail_parser::Message;
 use spam_filter::{
-    analysis::init::SpamFilterInit, modules::bayes::BayesClassifier, SpamFilterInput,
+    SpamFilterInput, analysis::init::SpamFilterInit, modules::bayes::BayesClassifier,
 };
 use store::write::{Bincode, TaskQueueClass};
 use trc::StoreEvent;
+
+use super::metadata::MessageMetadata;
 
 pub trait EmailBayesTrain: Sync + Send {
     fn email_bayes_train(

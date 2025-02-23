@@ -5,11 +5,15 @@
  */
 
 use common::Server;
-use directory::{backend::internal::PrincipalField, QueryBy};
+use directory::{QueryBy, backend::internal::PrincipalField};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
-    object::Object,
-    types::{collection::Collection, property::Property, state::State, value::Value},
+    types::{
+        collection::Collection,
+        property::Property,
+        state::State,
+        value::{Object, Value},
+    },
 };
 use std::future::Future;
 

@@ -8,8 +8,8 @@ use std::{sync::Arc, time::Instant};
 
 use directory::Permission;
 use email::{
-    ingest::EmailIngest,
     mailbox::{JUNK_ID, UidMailbox},
+    message::{bayes::EmailBayesTrain, ingest::EmailIngest},
 };
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse, protocol::copy_move::Arguments,
@@ -21,7 +21,7 @@ use crate::{
     spawn_op,
 };
 use common::{MailboxId, listener::SessionStream};
-use jmap::email::{bayes::EmailBayesTrain, copy::EmailCopy, set::TagManager};
+use jmap::email::{copy::EmailCopy, set::TagManager};
 use jmap_proto::{
     error::set::SetErrorType,
     types::{

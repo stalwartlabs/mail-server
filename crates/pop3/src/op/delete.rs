@@ -8,12 +8,12 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use jmap::email::delete::EmailDeletion;
+use email::message::delete::EmailDeletion;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::roaring::RoaringBitmap;
 use trc::AddContext;
 
-use crate::{protocol::response::Response, Session, State};
+use crate::{Session, State, protocol::response::Response};
 
 impl<T: SessionStream> Session<T> {
     pub async fn handle_dele(&mut self, msgs: Vec<u32>) -> trc::Result<()> {

@@ -6,26 +6,28 @@
 
 use base64::{Engine, engine::general_purpose};
 use common::{Server, auth::AccessToken};
+use email::push::{Keys, PushSubscription};
 use jmap_proto::{
     error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
-    object::Object,
     response::references::EvalObjectReferences,
     types::{
         collection::Collection,
         date::UTCDate,
         property::Property,
         type_state::DataType,
-        value::{MaybePatchValue, Value},
+        value::{MaybePatchValue, Object, Value},
     },
 };
 use rand::distr::Alphanumeric;
 use std::future::Future;
 use store::{
+    Serialize,
     rand::{Rng, rng},
     write::{BatchBuilder, F_CLEAR, F_VALUE, now},
 };
 use trc::AddContext;
+use utils::map::bitmap::Bitmap;
 
 use crate::services::state::StateManager;
 
@@ -56,7 +58,7 @@ impl PushSubscriptionSet for Server {
 
         // Process creates
         'create: for (id, object) in request.unwrap_create() {
-            let mut push = Object::with_capacity(object.properties.len());
+            let mut push = PushSubscription::default();
 
             if push_ids.len() as usize >= self.core.jmap.push_max_total {
                 response.not_created.append(id, SetError::forbidden().with_description(
@@ -65,25 +67,17 @@ impl PushSubscriptionSet for Server {
                 continue 'create;
             }
 
-            for (property, value) in object.properties {
-                match response
+            for (property, value) in object.0 {
+                if let Err(err) = response
                     .eval_object_references(value)
-                    .and_then(|value| validate_push_value(&property, value, None))
+                    .and_then(|value| validate_push_value(&property, value, &mut push, true))
                 {
-                    Ok(Value::Null) => (),
-                    Ok(value) => {
-                        push.set(property, value);
-                    }
-                    Err(err) => {
-                        response.not_created.append(id, err);
-                        continue 'create;
-                    }
+                    response.not_created.append(id, err);
+                    continue 'create;
                 }
             }
 
-            if !push.properties.contains_key(&Property::DeviceClientId)
-                || !push.properties.contains_key(&Property::Url)
-            {
+            if push.device_client_id.is_empty() || push.url.is_empty() {
                 response.not_created.append(
                     id,
                     SetError::invalid_properties()
@@ -94,25 +88,17 @@ impl PushSubscriptionSet for Server {
             }
 
             // Add expiry time if missing
-            let expires = if let Some(expires) = push.properties.get(&Property::Expires) {
-                expires.clone()
-            } else {
-                let expires = Value::Date(UTCDate::from_timestamp(now() as i64 + EXPIRES_MAX));
-                push.append(Property::Expires, expires.clone());
-                expires
-            };
+            if push.expires == 0 {
+                push.expires = now() + EXPIRES_MAX as u64;
+            }
+            let expires = UTCDate::from_timestamp(push.expires as i64);
 
             // Generate random verification code
-            push.append(
-                Property::Value,
-                Value::Text(
-                    rng()
-                        .sample_iter(Alphanumeric)
-                        .take(VERIFICATION_CODE_LEN)
-                        .map(char::from)
-                        .collect::<String>(),
-                ),
-            );
+            push.verification_code = rng()
+                .sample_iter(Alphanumeric)
+                .take(VERIFICATION_CODE_LEN)
+                .map(char::from)
+                .collect::<String>();
 
             // Insert record
             let mut batch = BatchBuilder::new();
@@ -120,7 +106,7 @@ impl PushSubscriptionSet for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::PushSubscription)
                 .create_document()
-                .value(Property::Value, push, F_VALUE);
+                .set(Property::Value, push.serialize());
             let document_id = self
                 .store()
                 .write_expect_id(batch)
@@ -147,7 +133,7 @@ impl PushSubscriptionSet for Server {
             // Obtain push subscription
             let document_id = id.document_id();
             let mut push = if let Some(push) = self
-                .get_property::<Object<Value>>(
+                .get_property::<PushSubscription>(
                     account_id,
                     Collection::PushSubscription,
                     document_id,
@@ -161,22 +147,14 @@ impl PushSubscriptionSet for Server {
                 continue 'update;
             };
 
-            for (property, value) in object.properties {
-                match response
+            for (property, value) in object.0 {
+                if let Err(err) = response
                     .eval_object_references(value)
-                    .and_then(|value| validate_push_value(&property, value, Some(&push)))
+                    .and_then(|value| validate_push_value(&property, value, &mut push, true))
                 {
-                    Ok(Value::Null) => {
-                        push.remove(&property);
-                    }
-                    Ok(value) => {
-                        push.set(property, value);
-                    }
-                    Err(err) => {
-                        response.not_updated.append(id, err);
-                        continue 'update;
-                    }
-                };
+                    response.not_updated.append(id, err);
+                    continue 'update;
+                }
             }
 
             // Update record
@@ -185,7 +163,7 @@ impl PushSubscriptionSet for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::PushSubscription)
                 .update_document(document_id)
-                .value(Property::Value, push, F_VALUE);
+                .set(Property::Value, push.serialize());
             self.store()
                 .write(batch)
                 .await
@@ -226,78 +204,90 @@ impl PushSubscriptionSet for Server {
 fn validate_push_value(
     property: &Property,
     value: MaybePatchValue,
-    current: Option<&Object<Value>>,
-) -> Result<Value, SetError> {
-    Ok(match (property, value) {
+    push: &mut PushSubscription,
+    is_create: bool,
+) -> Result<(), SetError> {
+    match (property, value) {
         (Property::DeviceClientId, MaybePatchValue::Value(Value::Text(value)))
-            if current.is_none() && value.len() < 255 =>
+            if is_create && value.len() < 255 =>
         {
-            Value::Text(value)
+            push.device_client_id = value;
         }
         (Property::Url, MaybePatchValue::Value(Value::Text(value)))
-            if current.is_none() && value.len() < 512 && value.starts_with("https://") =>
+            if is_create && value.len() < 512 && value.starts_with("https://") =>
         {
-            Value::Text(value)
+            push.url = value;
         }
         (Property::Keys, MaybePatchValue::Value(Value::Object(value)))
-            if current.is_none()
-                && value.properties.len() == 2
-                && matches!(value.get(&Property::Auth), Value::Text(auth) if auth.len() < 1024 &&
-                general_purpose::URL_SAFE.decode(auth).is_ok())
-                && matches!(value.get(&Property::P256dh), Value::Text(p256dh) if p256dh.len() < 1024 &&
-                general_purpose::URL_SAFE.decode(p256dh).is_ok()) =>
+            if is_create && value.0.len() == 2 =>
         {
-            Value::Object(value)
+            if let (Some(auth), Some(p256dh)) = (
+                value
+                    .get(&Property::Auth)
+                    .as_string()
+                    .and_then(|v| general_purpose::URL_SAFE.decode(v).ok()),
+                value
+                    .get(&Property::P256dh)
+                    .as_string()
+                    .and_then(|v| general_purpose::URL_SAFE.decode(v).ok()),
+            ) {
+                push.keys = Some(Keys { auth, p256dh });
+            } else {
+                return Err(SetError::invalid_properties()
+                    .with_property(property.clone())
+                    .with_description("Failed to decode keys."));
+            }
         }
         (Property::Expires, MaybePatchValue::Value(Value::Date(value))) => {
             let current_time = now() as i64;
             let expires = value.timestamp();
-            Value::Date(UTCDate::from_timestamp(
-                if expires > current_time && (expires - current_time) > EXPIRES_MAX {
-                    current_time + EXPIRES_MAX
-                } else {
-                    expires
-                },
-            ))
+            push.expires = if expires > current_time && (expires - current_time) > EXPIRES_MAX {
+                current_time + EXPIRES_MAX
+            } else {
+                expires
+            } as u64;
         }
         (Property::Expires, MaybePatchValue::Value(Value::Null)) => {
-            Value::Date(UTCDate::from_timestamp(now() as i64 + EXPIRES_MAX))
+            push.expires = now() + EXPIRES_MAX as u64;
         }
-        (Property::Types, MaybePatchValue::Value(Value::List(value)))
-            if value.iter().all(|value| {
-                value
+        (Property::Types, MaybePatchValue::Value(Value::List(value))) => {
+            push.types.clear();
+
+            for item in value {
+                if let Some(dt) = item
                     .as_string()
                     .and_then(|value| DataType::try_from(value).ok())
-                    .is_some()
-            }) =>
-        {
-            Value::List(value)
+                {
+                    push.types.insert(dt);
+                } else {
+                    return Err(SetError::invalid_properties()
+                        .with_property(property.clone())
+                        .with_description("Invalid data type."));
+                }
+            }
         }
-        (Property::VerificationCode, MaybePatchValue::Value(Value::Text(value)))
-            if current.is_some() =>
-        {
-            if current
-                .as_ref()
-                .unwrap()
-                .properties
-                .get(&Property::Value)
-                .is_some_and(|v| matches!(v, Value::Text(v) if v == &value))
-            {
-                Value::Text(value)
+        (Property::VerificationCode, MaybePatchValue::Value(Value::Text(value))) if !is_create => {
+            if push.verification_code == value {
+                push.verified = true;
             } else {
                 return Err(SetError::invalid_properties()
                     .with_property(property.clone())
                     .with_description("Verification code does not match.".to_string()));
             }
         }
-        (
-            Property::Keys | Property::Types | Property::VerificationCode,
-            MaybePatchValue::Value(Value::Null),
-        ) => Value::Null,
+        (Property::Keys, MaybePatchValue::Value(Value::Null)) => {
+            push.keys = None;
+        }
+        (Property::Types, MaybePatchValue::Value(Value::Null)) => {
+            push.types = Bitmap::all();
+        }
+        (Property::VerificationCode, MaybePatchValue::Value(Value::Null)) => {}
         (property, _) => {
             return Err(SetError::invalid_properties()
                 .with_property(property.clone())
                 .with_description("Field could not be set."));
         }
-    })
+    }
+
+    Ok(())
 }

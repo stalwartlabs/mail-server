@@ -7,33 +7,33 @@
 use std::{sync::Arc, time::Instant};
 
 use crate::{
-    core::{message::MAX_RETRIES, SelectedMailbox, Session, SessionData},
+    core::{SelectedMailbox, Session, SessionData, message::MAX_RETRIES},
     spawn_op,
 };
 use ahash::AHashSet;
 use common::listener::SessionStream;
 use directory::Permission;
-use email::{ingest::EmailIngest, mailbox::UidMailbox};
+use email::{
+    mailbox::UidMailbox,
+    message::{bayes::EmailBayesTrain, ingest::EmailIngest},
+};
 use imap_proto::{
+    Command, ResponseCode, ResponseType, StatusResponse,
     protocol::{
+        Flag, ImapResponse,
         fetch::{DataItem, FetchItem},
         store::{Arguments, Operation, Response},
-        Flag, ImapResponse,
     },
     receiver::Request,
-    Command, ResponseCode, ResponseType, StatusResponse,
 };
-use jmap::{
-    changes::get::ChangesLookup,
-    email::{bayes::EmailBayesTrain, set::TagManager},
-};
+use jmap::{changes::get::ChangesLookup, email::set::TagManager};
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
     state::StateChange, type_state::DataType,
 };
 use store::{
     query::log::{Change, Query},
-    write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder, ValueClass, F_VALUE},
+    write::{BatchBuilder, F_VALUE, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 

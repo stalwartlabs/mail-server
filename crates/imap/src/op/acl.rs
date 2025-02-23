@@ -6,33 +6,28 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{auth::AccessToken, listener::SessionStream, MailboxId};
+use common::{MailboxId, auth::AccessToken, listener::SessionStream};
 use directory::{
-    backend::internal::{manage::ChangedPrincipals, PrincipalField},
     Permission, QueryBy, Type,
+    backend::internal::{PrincipalField, manage::ChangedPrincipals},
 };
-use email::mailbox::SCHEMA;
 use imap_proto::{
+    Command, ResponseCode, StatusResponse,
     protocol::acl::{
         Arguments, GetAclResponse, ListRightsResponse, ModRightsOp, MyRightsResponse, Rights,
     },
     receiver::Request,
-    Command, ResponseCode, StatusResponse,
 };
 
 use jmap::auth::acl::EffectiveAcl;
 use jmap_proto::{
-    object::{index::ObjectIndexBuilder, Object},
+    object::index::ObjectIndexBuilder,
     types::{
-        acl::Acl,
-        collection::Collection,
-        property::Property,
-        state::StateChange,
-        type_state::DataType,
-        value::{AclGrant, Value},
+        acl::Acl, collection::Collection, property::Property, state::StateChange,
+        type_state::DataType, value::AclGrant,
     },
 };
-use store::write::{assert::HashedValue, log::ChangeLogBuilder, BatchBuilder};
+use store::write::{BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -53,70 +48,64 @@ impl<T: SessionStream> Session<T> {
         let data = self.state.session_data();
 
         spawn_op!(data, {
-            let (mailbox, values, _) = data
+            let (mailbox_id, mailbox, _) = data
                 .get_acl_mailbox(&arguments, true)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let mut permissions = Vec::new();
-            if let Some(acls) = values
-                .inner
-                .properties
-                .get(&Property::Acl)
-                .and_then(|v| v.as_acl())
-            {
-                for item in acls {
-                    if let Some(account_name) = data
-                        .server
-                        .core
-                        .storage
-                        .directory
-                        .query(QueryBy::Id(item.account_id), false)
-                        .await
-                        .imap_ctx(&arguments.tag, trc::location!())?
-                        .and_then(|mut p| p.take_str(PrincipalField::Name))
-                    {
-                        let mut rights = Vec::new();
 
-                        for acl in item.grants {
-                            match acl {
-                                Acl::Read => {
-                                    rights.push(Rights::Lookup);
-                                }
-                                Acl::Modify => {
-                                    rights.push(Rights::CreateMailbox);
-                                }
-                                Acl::Delete => {
-                                    rights.push(Rights::DeleteMailbox);
-                                }
-                                Acl::ReadItems => {
-                                    rights.push(Rights::Read);
-                                }
-                                Acl::AddItems => {
-                                    rights.push(Rights::Insert);
-                                }
-                                Acl::ModifyItems => {
-                                    rights.push(Rights::Write);
-                                    rights.push(Rights::Seen);
-                                }
-                                Acl::RemoveItems => {
-                                    rights.push(Rights::DeleteMessages);
-                                    rights.push(Rights::Expunge);
-                                }
-                                Acl::CreateChild => {
-                                    rights.push(Rights::CreateMailbox);
-                                }
-                                Acl::Administer => {
-                                    rights.push(Rights::Administer);
-                                }
-                                Acl::Submit => {
-                                    rights.push(Rights::Post);
-                                }
-                                Acl::None => (),
+            for item in mailbox.inner.acls {
+                if let Some(account_name) = data
+                    .server
+                    .core
+                    .storage
+                    .directory
+                    .query(QueryBy::Id(item.account_id), false)
+                    .await
+                    .imap_ctx(&arguments.tag, trc::location!())?
+                    .and_then(|mut p| p.take_str(PrincipalField::Name))
+                {
+                    let mut rights = Vec::new();
+
+                    for acl in item.grants {
+                        match acl {
+                            Acl::Read => {
+                                rights.push(Rights::Lookup);
                             }
+                            Acl::Modify => {
+                                rights.push(Rights::CreateMailbox);
+                            }
+                            Acl::Delete => {
+                                rights.push(Rights::DeleteMailbox);
+                            }
+                            Acl::ReadItems => {
+                                rights.push(Rights::Read);
+                            }
+                            Acl::AddItems => {
+                                rights.push(Rights::Insert);
+                            }
+                            Acl::ModifyItems => {
+                                rights.push(Rights::Write);
+                                rights.push(Rights::Seen);
+                            }
+                            Acl::RemoveItems => {
+                                rights.push(Rights::DeleteMessages);
+                                rights.push(Rights::Expunge);
+                            }
+                            Acl::CreateChild => {
+                                rights.push(Rights::CreateMailbox);
+                            }
+                            Acl::Administer => {
+                                rights.push(Rights::Administer);
+                            }
+                            Acl::Submit => {
+                                rights.push(Rights::Post);
+                            }
+                            Acl::None => (),
                         }
-
-                        permissions.push((account_name, rights));
                     }
+
+                    permissions.push((account_name, rights));
                 }
             }
 
@@ -124,8 +113,8 @@ impl<T: SessionStream> Session<T> {
                 Imap(trc::ImapEvent::GetAcl),
                 SpanId = data.session_id,
                 MailboxName = arguments.mailbox_name.clone(),
-                AccountId = mailbox.account_id,
-                MailboxId = mailbox.mailbox_id,
+                AccountId = mailbox_id.account_id,
+                MailboxId = mailbox_id.mailbox_id,
                 Total = permissions.len(),
                 Elapsed = op_start.elapsed()
             );
@@ -160,7 +149,7 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let rights = if access_token.is_shared(mailbox.account_id) {
-                let acl = values.inner.effective_acl(&access_token);
+                let acl = values.inner.acls.effective_acl(&access_token);
                 let mut rights = Vec::with_capacity(5);
                 if acl.contains(Acl::ReadItems) {
                     rights.push(Rights::Read);
@@ -241,7 +230,7 @@ impl<T: SessionStream> Session<T> {
 
         spawn_op!(data, {
             // Validate mailbox
-            let (mailbox, values, _) = data
+            let (mailbox_id, current_mailbox, _) = data
                 .get_acl_mailbox(&arguments, false)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
@@ -265,7 +254,7 @@ impl<T: SessionStream> Session<T> {
                 .id();
 
             // Prepare changes
-            let mut changes = Object::with_capacity(1);
+            let mut mailbox = current_mailbox.inner.clone();
             let (op, rights) = arguments
                 .mod_rights
                 .map(|mr| {
@@ -275,27 +264,9 @@ impl<T: SessionStream> Session<T> {
                     )
                 })
                 .unwrap_or_else(|| (ModRightsOp::Replace, Bitmap::new()));
-            let acl = if let Value::Acl(acl) =
-                changes
-                    .properties
-                    .get_mut_or_insert_with(Property::Acl, || {
-                        values
-                            .inner
-                            .properties
-                            .get(&Property::Acl)
-                            .cloned()
-                            .unwrap_or_else(|| Value::Acl(Vec::new()))
-                    }) {
-                acl
-            } else {
-                return Err(trc::StoreEvent::DataCorruption
-                    .into_err()
-                    .id(arguments.tag)
-                    .ctx(trc::Key::Reason, "Invalid mailbox ACL")
-                    .caused_by(trc::location!()));
-            };
 
-            if let Some(item) = acl
+            if let Some(item) = mailbox
+                .acls
                 .iter_mut()
                 .find(|item| item.account_id == acl_account_id)
             {
@@ -304,7 +275,9 @@ impl<T: SessionStream> Session<T> {
                         if !rights.is_empty() {
                             item.grants = rights;
                         } else {
-                            acl.retain(|item| item.account_id != acl_account_id);
+                            mailbox
+                                .acls
+                                .retain(|item| item.account_id != acl_account_id);
                         }
                     }
                     ModRightsOp::Add => {
@@ -315,14 +288,16 @@ impl<T: SessionStream> Session<T> {
                             item.grants.remove(right);
                         }
                         if item.grants.is_empty() {
-                            acl.retain(|item| item.account_id != acl_account_id);
+                            mailbox
+                                .acls
+                                .retain(|item| item.account_id != acl_account_id);
                         }
                     }
                 }
             } else if !rights.is_empty() {
                 match op {
                     ModRightsOp::Add | ModRightsOp::Replace => {
-                        acl.push(AclGrant {
+                        mailbox.acls.push(AclGrant {
                             account_id: acl_account_id,
                             grants: rights,
                         });
@@ -331,22 +306,22 @@ impl<T: SessionStream> Session<T> {
                 }
             }
 
-            let grants = acl
+            let grants = mailbox
+                .acls
                 .iter()
                 .map(|r| trc::Value::from(r.account_id))
                 .collect::<Vec<_>>();
 
             // Write changes
-            let mailbox_id = mailbox.mailbox_id;
             let mut batch = BatchBuilder::new();
             batch
-                .with_account_id(mailbox.account_id)
+                .with_account_id(mailbox_id.account_id)
                 .with_collection(Collection::Mailbox)
-                .update_document(mailbox_id)
+                .update_document(mailbox_id.mailbox_id)
                 .custom(
-                    ObjectIndexBuilder::new(SCHEMA)
-                        .with_changes(changes)
-                        .with_current(values),
+                    ObjectIndexBuilder::new()
+                        .with_changes(mailbox)
+                        .with_current(current_mailbox),
                 );
             if !batch.is_empty() {
                 data.server
@@ -355,15 +330,15 @@ impl<T: SessionStream> Session<T> {
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?;
                 let mut changes = ChangeLogBuilder::new();
-                changes.log_update(Collection::Mailbox, mailbox_id);
+                changes.log_update(Collection::Mailbox, mailbox_id.mailbox_id);
                 let change_id = data
                     .server
-                    .commit_changes(mailbox.account_id, changes)
+                    .commit_changes(mailbox_id.account_id, changes)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?;
                 data.server
                     .broadcast_state_change(
-                        StateChange::new(mailbox.account_id)
+                        StateChange::new(mailbox_id.account_id)
                             .with_change(DataType::Mailbox, change_id),
                     )
                     .await;
@@ -382,8 +357,8 @@ impl<T: SessionStream> Session<T> {
                 Imap(trc::ImapEvent::SetAcl),
                 SpanId = data.session_id,
                 MailboxName = arguments.mailbox_name.clone(),
-                AccountId = mailbox.account_id,
-                MailboxId = mailbox.mailbox_id,
+                AccountId = mailbox_id.account_id,
+                MailboxId = mailbox_id.mailbox_id,
                 Details = grants,
                 Elapsed = op_start.elapsed()
             );
@@ -451,11 +426,15 @@ impl<T: SessionStream> SessionData<T> {
         &self,
         arguments: &Arguments,
         validate: bool,
-    ) -> trc::Result<(MailboxId, HashedValue<Object<Value>>, Arc<AccessToken>)> {
+    ) -> trc::Result<(
+        MailboxId,
+        HashedValue<email::mailbox::Mailbox>,
+        Arc<AccessToken>,
+    )> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
             if let Some(values) = self
                 .server
-                .get_property::<HashedValue<Object<Value>>>(
+                .get_property::<HashedValue<email::mailbox::Mailbox>>(
                     mailbox.account_id,
                     Collection::Mailbox,
                     mailbox.mailbox_id,
@@ -469,6 +448,7 @@ impl<T: SessionStream> SessionData<T> {
                     || access_token.is_member(mailbox.account_id)
                     || values
                         .inner
+                        .acls
                         .effective_acl(&access_token)
                         .contains(Acl::Administer)
                 {

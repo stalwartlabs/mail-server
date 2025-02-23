@@ -9,14 +9,13 @@ use utils::map::vec_map::VecMap;
 
 use crate::{
     error::set::SetError,
-    object::Object,
-    parser::{json::Parser, JsonObjectParser, Token},
-    request::{method::MethodObject, reference::MaybeReference, RequestProperty},
+    parser::{JsonObjectParser, Token, json::Parser},
+    request::{RequestProperty, method::MethodObject, reference::MaybeReference},
     types::{
         blob::BlobId,
         id::Id,
         state::{State, StateChange},
-        value::{SetValue, Value},
+        value::{Object, SetValue, Value},
     },
 };
 
@@ -98,7 +97,7 @@ impl JsonObjectParser for CopyRequest<RequestArguments> {
                 _ => {
                     return Err(trc::JmapEvent::UnknownMethod
                         .into_err()
-                        .details(format!("{}/copy", parser.ctx)))
+                        .details(format!("{}/copy", parser.ctx)));
                 }
             },
             account_id: Id::default(),

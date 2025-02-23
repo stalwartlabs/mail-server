@@ -23,10 +23,11 @@ use common::{
         config::{ConfigManager, Patterns},
     },
 };
+use email::message::delete::EmailDeletion;
 use enterprise::{EnterpriseCore, insert_test_metrics};
 use hyper::{Method, header::AUTHORIZATION};
 use imap::core::ImapSessionManager;
-use jmap::{SpawnServices, api::JmapSessionManager, email::delete::EmailDeletion};
+use jmap::{SpawnServices, api::JmapSessionManager};
 use jmap_client::client::{Client, Credentials};
 use jmap_proto::{error::request::RequestError, types::id::Id};
 use managesieve::core::ManageSieveSessionManager;

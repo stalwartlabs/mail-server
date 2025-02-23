@@ -4,15 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
+
 use email::{
-    cache::ThreadCache,
     mailbox::UidMailbox,
-    metadata::{MessageMetadata, MetadataPartType},
+    message::metadata::{MessageMetadata, MetadataPartType},
+    thread::cache::ThreadCache,
 };
 use jmap_proto::{
     method::get::{GetRequest, GetResponse},
-    object::{email::GetArguments, Object},
+    object::email::GetArguments,
     types::{
         acl::Acl,
         blob::BlobId,
@@ -21,11 +22,11 @@ use jmap_proto::{
         id::Id,
         keyword::Keyword,
         property::{HeaderForm, Property},
-        value::Value,
+        value::{Object, Value},
     },
 };
 use mail_parser::HeaderName;
-use store::{write::Bincode, BlobClass};
+use store::{BlobClass, write::Bincode};
 use trc::{AddContext, StoreEvent};
 
 use crate::{

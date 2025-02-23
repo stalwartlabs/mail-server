@@ -19,13 +19,12 @@ use imap_proto::{
     protocol::status::{Status, StatusItem, StatusItemType},
     receiver::Request,
 };
-use jmap_proto::{
-    object::Object,
-    types::{collection::Collection, id::Id, keyword::Keyword, property::Property, value::Value},
-};
+use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use store::{Deserialize, U32_LEN};
 use store::{
-    IndexKeyPrefix, IterateParams, roaring::RoaringBitmap, write::key::DeserializeBigEndian,
+    IndexKeyPrefix, IterateParams, ValueKey,
+    roaring::RoaringBitmap,
+    write::{ValueClass, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 
@@ -249,6 +248,7 @@ impl<T: SessionStream> SessionData<T> {
             for item in items_update {
                 let result = match item {
                     Status::Messages => mailbox_message_ids.as_ref().map(|v| v.len()).unwrap_or(0),
+<<<<<<< HEAD
                     Status::UidNext => self
                         .get_uid_next(&mailbox)
                         .await
@@ -272,6 +272,44 @@ impl<T: SessionStream> SessionData<T> {
                                 .account_id(mailbox.account_id)
                                 .document_id(mailbox.mailbox_id)
                         })?,
+=======
+                    Status::UidNext => {
+                        (self
+                            .server
+                            .core
+                            .storage
+                            .data
+                            .get_counter(ValueKey {
+                                account_id: mailbox.account_id,
+                                collection: Collection::Mailbox.into(),
+                                document_id: mailbox.mailbox_id,
+                                class: ValueClass::Property(Property::EmailIds.into()),
+                            })
+                            .await
+                            .caused_by(trc::location!())?
+                            + 1) as u64
+                    }
+                    Status::UidValidity => {
+                        self.server
+                            .get_property::<email::mailbox::Mailbox>(
+                                mailbox.account_id,
+                                Collection::Mailbox,
+                                mailbox.mailbox_id,
+                                &Property::Value,
+                            )
+                            .await?
+                            .ok_or_else(|| {
+                                trc::StoreEvent::UnexpectedError
+                                    .into_err()
+                                    .details("Mailbox unavailable")
+                                    .ctx(trc::Key::Reason, "Failed to obtain uid validity")
+                                    .caused_by(trc::location!())
+                                    .account_id(mailbox.account_id)
+                                    .document_id(mailbox.mailbox_id)
+                            })?
+                            .uid_validity as u64
+                    }
+>>>>>>> b34a8804 (Improved object serialization)
                     Status::Unseen => {
                         if let (Some(message_ids), Some(mailbox_message_ids)) =
                             (&message_ids, &mailbox_message_ids)

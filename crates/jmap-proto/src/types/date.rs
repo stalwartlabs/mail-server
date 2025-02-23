@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 use store::Serialize;
 
-use crate::parser::{json::Parser, JsonObjectParser};
+use crate::parser::{JsonObjectParser, json::Parser};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub struct UTCDate {
@@ -229,6 +229,12 @@ impl Serialize for UTCDate {
 impl From<UTCDate> for u64 {
     fn from(value: UTCDate) -> Self {
         value.timestamp() as u64
+    }
+}
+
+impl From<u64> for UTCDate {
+    fn from(value: u64) -> Self {
+        UTCDate::from_timestamp(value as i64)
     }
 }
 

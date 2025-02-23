@@ -8,20 +8,18 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
+use email::sieve::SieveScript;
 use imap_proto::receiver::Request;
-use jmap::{
-    sieve::set::{ObjectBlobId, SCHEMA},
-    JmapMethods,
-};
+use jmap::JmapMethods;
 use jmap_proto::{
-    object::{index::ObjectIndexBuilder, Object},
-    types::{blob::BlobId, collection::Collection, property::Property, value::Value},
+    object::index::ObjectIndexBuilder,
+    types::{blob::BlobId, collection::Collection, property::Property},
 };
 use sieve::compiler::ErrorType;
 use store::{
-    query::Filter,
-    write::{assert::HashedValue, log::LogInsert, BatchBuilder, BlobOp, DirectoryClass},
     BlobClass,
+    query::Filter,
+    write::{BatchBuilder, BlobOp, DirectoryClass, assert::HashedValue, log::LogInsert},
 };
 use trc::AddContext;
 
@@ -107,7 +105,7 @@ impl<T: SessionStream> Session<T> {
             // Obtain script values
             let script = self
                 .server
-                .get_property::<HashedValue<Object<Value>>>(
+                .get_property::<HashedValue<SieveScript>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -121,12 +119,6 @@ impl<T: SessionStream> Session<T> {
                         .details("Script not found")
                         .code(ResponseCode::NonExistent)
                 })?;
-            let prev_blob_id = script.inner.blob_id().ok_or_else(|| {
-                trc::ManageSieveEvent::Error
-                    .into_err()
-                    .details("Internal error while obtaining blobId")
-                    .code(ResponseCode::TryLater)
-            })?;
 
             // Write script blob
             let blob_id = BlobId::new(
@@ -142,50 +134,33 @@ impl<T: SessionStream> Session<T> {
                 },
             )
             .with_section_size(script_size as usize);
+            let prev_blob_id_hash = script.inner.blob_id.hash.clone();
+            let blob_id_hash = blob_id.hash.clone();
 
             // Write record
+            let mut obj = ObjectIndexBuilder::new()
+                .with_changes(script.inner.clone().with_blob_id(blob_id))
+                .with_current(script);
+
+            // Update tenant quota
+            #[cfg(feature = "enterprise")]
+            if self.server.core.is_enterprise_edition() {
+                if let Some(tenant) = resource_token.tenant {
+                    obj.set_tenant_id(tenant.id);
+                }
+            }
+
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
                 .update_document(document_id)
                 .clear(BlobOp::Link {
-                    hash: prev_blob_id.hash.clone(),
+                    hash: prev_blob_id_hash,
                 })
-                .set(
-                    BlobOp::Link {
-                        hash: blob_id.hash.clone(),
-                    },
-                    Vec::new(),
-                );
+                .set(BlobOp::Link { hash: blob_id_hash }, Vec::new())
+                .custom(obj);
 
-            // Update quota
-            let prev_script_size = prev_blob_id.section.as_ref().unwrap().size as i64;
-            let update_quota = match script_size.cmp(&prev_script_size) {
-                std::cmp::Ordering::Greater => script_size - prev_script_size,
-                std::cmp::Ordering::Less => -prev_script_size + script_size,
-                std::cmp::Ordering::Equal => 0,
-            };
-            if update_quota != 0 {
-                batch.add(DirectoryClass::UsedQuota(account_id), update_quota);
-
-                // Update tenant quota
-                #[cfg(feature = "enterprise")]
-                if self.server.core.is_enterprise_edition() {
-                    if let Some(tenant) = resource_token.tenant {
-                        batch.add(DirectoryClass::UsedQuota(tenant.id), update_quota);
-                    }
-                }
-            }
-
-            batch.custom(
-                ObjectIndexBuilder::new(SCHEMA)
-                    .with_current(script)
-                    .with_changes(
-                        Object::with_capacity(1)
-                            .with_property(Property::BlobId, Value::BlobId(blob_id)),
-                    ),
-            );
             self.server
                 .store()
                 .write(batch)
@@ -214,8 +189,20 @@ impl<T: SessionStream> Session<T> {
                 },
             )
             .with_section_size(script_size as usize);
+            let blob_id_hash = blob_id.hash.clone();
 
             // Write record
+            let mut obj = ObjectIndexBuilder::new()
+                .with_changes(SieveScript::new(name.clone(), blob_id).with_is_active(false));
+
+            // Update tenant quota
+            #[cfg(feature = "enterprise")]
+            if self.server.core.is_enterprise_edition() {
+                if let Some(tenant) = resource_token.tenant {
+                    obj.set_tenant_id(tenant.id);
+                }
+            }
+
             let mut batch = BatchBuilder::new();
             batch
                 .with_account_id(account_id)
@@ -223,28 +210,8 @@ impl<T: SessionStream> Session<T> {
                 .create_document()
                 .log(LogInsert())
                 .add(DirectoryClass::UsedQuota(account_id), script_size)
-                .set(
-                    BlobOp::Link {
-                        hash: blob_id.hash.clone(),
-                    },
-                    Vec::new(),
-                )
-                .custom(
-                    ObjectIndexBuilder::new(SCHEMA).with_changes(
-                        Object::with_capacity(3)
-                            .with_property(Property::Name, name.clone())
-                            .with_property(Property::IsActive, Value::Bool(false))
-                            .with_property(Property::BlobId, Value::BlobId(blob_id)),
-                    ),
-                );
-
-            // Update tenant quota
-            #[cfg(feature = "enterprise")]
-            if self.server.core.is_enterprise_edition() {
-                if let Some(tenant) = resource_token.tenant {
-                    batch.add(DirectoryClass::UsedQuota(tenant.id), script_size);
-                }
-            }
+                .set(BlobOp::Link { hash: blob_id_hash }, Vec::new())
+                .custom(obj);
 
             let assigned_ids = self
                 .server

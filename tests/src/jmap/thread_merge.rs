@@ -12,10 +12,10 @@ use crate::{
 };
 use common::auth::AccessToken;
 
-use ::email::ingest::{EmailIngest, IngestEmail, IngestSource};
+use ::email::message::ingest::{EmailIngest, IngestEmail, IngestSource};
 use jmap_client::{email, mailbox::Role};
 use jmap_proto::types::{collection::Collection, id::Id};
-use mail_parser::{mailbox::mbox::MessageIterator, MessageParser};
+use mail_parser::{MessageParser, mailbox::mbox::MessageIterator};
 use store::{
     ahash::{AHashMap, AHashSet},
     rand::{self, Rng},

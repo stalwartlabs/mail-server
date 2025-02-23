@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
-use email::cache::ThreadCache;
+use common::{Server, auth::AccessToken};
+use email::thread::cache::ThreadCache;
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::email::QueryArguments,
@@ -15,14 +15,14 @@ use mail_parser::HeaderName;
 use nlp::language::Language;
 use std::future::Future;
 use store::{
+    ValueKey,
     fts::{Field, FilterGroup, FtsFilter, IntoFilterGroup},
     query::{self},
     roaring::RoaringBitmap,
     write::ValueClass,
-    ValueKey,
 };
 
-use crate::{auth::acl::AclMethods, JmapMethods};
+use crate::{JmapMethods, auth::acl::AclMethods};
 
 pub trait EmailQuery: Sync + Send {
     fn email_query(
@@ -175,7 +175,7 @@ impl EmailQuery for Server {
                             other => {
                                 return Err(trc::JmapEvent::UnsupportedFilter
                                     .into_err()
-                                    .details(other.to_string()))
+                                    .details(other.to_string()));
                             }
                         }
                     }
@@ -274,7 +274,7 @@ impl EmailQuery for Server {
                         other => {
                             return Err(trc::JmapEvent::UnsupportedFilter
                                 .into_err()
-                                .details(other.to_string()))
+                                .details(other.to_string()));
                         }
                     }
                 }
@@ -354,7 +354,7 @@ impl EmailQuery for Server {
                     other => {
                         return Err(trc::JmapEvent::UnsupportedSort
                             .into_err()
-                            .details(other.to_string()))
+                            .details(other.to_string()));
                     }
                 });
             }

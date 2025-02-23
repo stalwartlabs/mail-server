@@ -5,6 +5,7 @@
  */
 
 use common::Server;
+use email::submission::UndoStatus;
 use jmap_proto::{
     method::query::{
         Comparator, Filter, QueryRequest, QueryResponse, RequestArguments, SortProperty,
@@ -54,9 +55,12 @@ impl EmailSubmissionQuery for Server {
                     }
                     filters.push(query::Filter::End);
                 }
-                Filter::UndoStatus(undo_status) => {
-                    filters.push(query::Filter::eq(Property::UndoStatus, undo_status))
-                }
+                Filter::UndoStatus(undo_status) => filters.push(query::Filter::eq(
+                    Property::UndoStatus,
+                    UndoStatus::parse(&undo_status)
+                        .unwrap_or(UndoStatus::Pending)
+                        .as_index(),
+                )),
                 Filter::Before(before) => filters.push(query::Filter::lt(
                     Property::SendAt,
                     before.timestamp() as u64,
@@ -71,7 +75,7 @@ impl EmailSubmissionQuery for Server {
                 other => {
                     return Err(trc::JmapEvent::UnsupportedFilter
                         .into_err()
-                        .details(other.to_string()))
+                        .details(other.to_string()));
                 }
             }
         }
@@ -103,7 +107,7 @@ impl EmailSubmissionQuery for Server {
                     other => {
                         return Err(trc::JmapEvent::UnsupportedSort
                             .into_err()
-                            .details(other.to_string()))
+                            .details(other.to_string()));
                     }
                 });
             }

@@ -5,16 +5,17 @@
  */
 
 use common::Server;
-use directory::{backend::internal::PrincipalField, QueryBy};
+use directory::{QueryBy, backend::internal::PrincipalField};
+use email::identity::{EmailAddress, Identity};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
-    object::Object,
-    types::{collection::Collection, property::Property, value::Value},
+    types::{
+        collection::Collection,
+        property::Property,
+        value::{Object, Value},
+    },
 };
-use store::{
-    roaring::RoaringBitmap,
-    write::{BatchBuilder, F_VALUE},
-};
+use store::{Serialize, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 use utils::sanitize_email;
 
@@ -79,7 +80,7 @@ impl IdentityGet for Server {
                 continue;
             }
             let mut identity = if let Some(identity) = self
-                .get_property::<Object<Value>>(
+                .get_property::<Identity>(
                     account_id,
                     Collection::Identity,
                     document_id,
@@ -101,17 +102,32 @@ impl IdentityGet for Server {
                     Property::MayDelete => {
                         result.append(Property::MayDelete, Value::Bool(true));
                     }
-                    Property::TextSignature | Property::HtmlSignature => {
+                    Property::Name => {
+                        result.append(Property::Name, std::mem::take(&mut identity.name));
+                    }
+                    Property::Email => {
+                        result.append(Property::Email, std::mem::take(&mut identity.email));
+                    }
+                    Property::TextSignature => {
                         result.append(
-                            property.clone(),
-                            identity
-                                .properties
-                                .remove(property)
-                                .unwrap_or(Value::Text(String::new())),
+                            Property::TextSignature,
+                            std::mem::take(&mut identity.text_signature),
                         );
                     }
+                    Property::HtmlSignature => {
+                        result.append(
+                            Property::HtmlSignature,
+                            std::mem::take(&mut identity.html_signature),
+                        );
+                    }
+                    Property::Bcc => {
+                        result.append(Property::Bcc, email_to_value(identity.bcc.take()));
+                    }
+                    Property::ReplyTo => {
+                        result.append(Property::ReplyTo, email_to_value(identity.reply_to.take()));
+                    }
                     property => {
-                        result.append(property.clone(), identity.remove(property));
+                        result.append(property.clone(), Value::Null);
                     }
                 }
             }
@@ -169,12 +185,14 @@ impl IdentityGet for Server {
             } else {
                 name.clone()
             };
-            batch.create_document_with_id(document_id).value(
+            batch.create_document_with_id(document_id).set(
                 Property::Value,
-                Object::with_capacity(4)
-                    .with_property(Property::Name, name)
-                    .with_property(Property::Email, email),
-                F_VALUE,
+                Identity {
+                    name,
+                    email,
+                    ..Default::default()
+                }
+                .serialize(),
             );
             identity_ids.insert(document_id);
         }
@@ -186,5 +204,24 @@ impl IdentityGet for Server {
             .caused_by(trc::location!())?;
 
         Ok(identity_ids)
+    }
+}
+
+fn email_to_value(email: Option<Vec<EmailAddress>>) -> Value {
+    if let Some(email) = email {
+        Value::List(
+            email
+                .into_iter()
+                .map(|email| {
+                    Value::Object(
+                        Object::with_capacity(2)
+                            .with_property(Property::Name, email.name)
+                            .with_property(Property::Email, email.email),
+                    )
+                })
+                .collect(),
+        )
+    } else {
+        Value::Null
     }
 }

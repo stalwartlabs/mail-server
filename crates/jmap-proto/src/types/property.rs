@@ -10,7 +10,7 @@ use mail_parser::HeaderName;
 use serde::Serialize;
 use store::write::{DeserializeFrom, SerializeInto};
 
-use crate::parser::{json::Parser, JsonObjectParser};
+use crate::parser::{JsonObjectParser, json::Parser};
 
 use super::{acl::Acl, id::Id, keyword::Keyword, value::Value};
 
@@ -888,6 +888,127 @@ impl Display for Property {
     }
 }
 
+impl Property {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Property::Acl => "acl",
+            Property::Aliases => "aliases",
+            Property::Attachments => "attachments",
+            Property::Bcc => "bcc",
+            Property::BlobId => "blobId",
+            Property::BodyStructure => "bodyStructure",
+            Property::BodyValues => "bodyValues",
+            Property::Capabilities => "capabilities",
+            Property::Cc => "cc",
+            Property::Charset => "charset",
+            Property::Cid => "cid",
+            Property::DeliveryStatus => "deliveryStatus",
+            Property::Description => "description",
+            Property::DeviceClientId => "deviceClientId",
+            Property::Disposition => "disposition",
+            Property::DsnBlobIds => "dsnBlobIds",
+            Property::Email => "email",
+            Property::EmailId => "emailId",
+            Property::EmailIds => "emailIds",
+            Property::Envelope => "envelope",
+            Property::Expires => "expires",
+            Property::From => "from",
+            Property::FromDate => "fromDate",
+            Property::HasAttachment => "hasAttachment",
+            Property::Header(_) => "header",
+            Property::Headers => "headers",
+            Property::HtmlBody => "htmlBody",
+            Property::HtmlSignature => "htmlSignature",
+            Property::Id => "id",
+            Property::IdentityId => "identityId",
+            Property::InReplyTo => "inReplyTo",
+            Property::IsActive => "isActive",
+            Property::IsEnabled => "isEnabled",
+            Property::IsSubscribed => "isSubscribed",
+            Property::Keys => "keys",
+            Property::Keywords => "keywords",
+            Property::Language => "language",
+            Property::Location => "location",
+            Property::MailboxIds => "mailboxIds",
+            Property::MayDelete => "mayDelete",
+            Property::MdnBlobIds => "mdnBlobIds",
+            Property::Members => "members",
+            Property::MessageId => "messageId",
+            Property::MyRights => "myRights",
+            Property::Name => "name",
+            Property::ParentId => "parentId",
+            Property::PartId => "partId",
+            Property::Picture => "picture",
+            Property::Preview => "preview",
+            Property::Quota => "quota",
+            Property::ReceivedAt => "receivedAt",
+            Property::References => "references",
+            Property::ReplyTo => "replyTo",
+            Property::Role => "role",
+            Property::Secret => "secret",
+            Property::SendAt => "sendAt",
+            Property::Sender => "sender",
+            Property::SentAt => "sentAt",
+            Property::Size => "size",
+            Property::SortOrder => "sortOrder",
+            Property::Subject => "subject",
+            Property::SubParts => "subParts",
+            Property::TextBody => "textBody",
+            Property::TextSignature => "textSignature",
+            Property::ThreadId => "threadId",
+            Property::Timezone => "timezone",
+            Property::To => "to",
+            Property::ToDate => "toDate",
+            Property::TotalEmails => "totalEmails",
+            Property::TotalThreads => "totalThreads",
+            Property::Type => "type",
+            Property::Types => "types",
+            Property::UndoStatus => "undoStatus",
+            Property::UnreadEmails => "unreadEmails",
+            Property::UnreadThreads => "unreadThreads",
+            Property::Url => "url",
+            Property::VerificationCode => "verificationCode",
+            Property::Parameters => "parameters",
+            Property::Addresses => "addresses",
+            Property::P256dh => "p256dh",
+            Property::Auth => "auth",
+            Property::Value => "value",
+            Property::SmtpReply => "smtpReply",
+            Property::Delivered => "delivered",
+            Property::Displayed => "displayed",
+            Property::MailFrom => "mailFrom",
+            Property::RcptTo => "rcptTo",
+            Property::IsEncodingProblem => "isEncodingProblem",
+            Property::IsTruncated => "isTruncated",
+            Property::MayReadItems => "mayReadItems",
+            Property::MayAddItems => "mayAddItems",
+            Property::MayRemoveItems => "mayRemoveItems",
+            Property::MaySetSeen => "maySetSeen",
+            Property::MaySetKeywords => "maySetKeywords",
+            Property::MayCreateChild => "mayCreateChild",
+            Property::MayRename => "mayRename",
+            Property::MaySubmit => "maySubmit",
+            Property::ResourceType => "resourceType",
+            Property::Used => "used",
+            Property::HardLimit => "hardLimit",
+            Property::WarnLimit => "warnLimit",
+            Property::SoftLimit => "softLimit",
+            Property::Scope => "scope",
+            Property::Data(data) => match data {
+                DataProperty::AsText => "data:asText",
+                DataProperty::AsBase64 => "data:asBase64",
+                DataProperty::Default => "data",
+            },
+            Property::Digest(digest) => match digest {
+                DigestProperty::Sha => "digest:sha",
+                DigestProperty::Sha256 => "digest:sha-256",
+                DigestProperty::Sha512 => "digest:sha-512",
+            },
+            Property::_T(s) => s,
+        }
+    }
+}
+
 impl Display for SetProperty {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.property.fmt(f)
@@ -934,11 +1055,7 @@ impl Display for HeaderProperty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "header:{}", self.header)?;
         self.form.fmt(f)?;
-        if self.all {
-            write!(f, ":all")
-        } else {
-            Ok(())
-        }
+        if self.all { write!(f, ":all") } else { Ok(()) }
     }
 }
 

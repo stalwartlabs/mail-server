@@ -8,11 +8,13 @@ use std::{borrow::Cow, fmt::Display};
 
 use mail_parser::{Addr, DateTime, Group};
 use serde::Serialize;
-use utils::map::bitmap::Bitmap;
+use utils::{
+    json::{JsonPointerItem, JsonQueryable},
+    map::{bitmap::Bitmap, vec_map::VecMap},
+};
 
 use crate::{
-    object::Object,
-    parser::{json::Parser, Ignore, JsonObjectParser, Token},
+    parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::reference::{MaybeReference, ResultReference},
 };
 
@@ -43,6 +45,9 @@ pub enum Value {
     #[default]
     Null,
 }
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+pub struct Object<T>(pub VecMap<Property, T>);
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct AclGrant {
@@ -82,13 +87,13 @@ impl Value {
         Ok(match token {
             Token::String(v) => v.into_value(),
             Token::DictStart => {
-                let mut properties = Object::with_capacity(4);
+                let mut properties = VecMap::with_capacity(4);
                 while let Some(key) = parser.next_dict_key::<K>()? {
                     let property = key.into_property();
                     let value = Value::from_property(parser, &property)?;
                     properties.append(property, value);
                 }
-                Value::Object(properties)
+                Value::Object(Object(properties))
             }
             Token::ArrayStart => {
                 let mut values = Vec::with_capacity(4);
@@ -467,20 +472,23 @@ impl<T: Into<Value>> From<Option<T>> for Value {
 
 impl From<Addr<'_>> for Value {
     fn from(value: Addr<'_>) -> Self {
-        Value::Object(
-            Object::with_capacity(2)
-                .with_property(Property::Name, value.name)
-                .with_property(Property::Email, value.address.unwrap_or_default()),
-        )
+        Value::Object(Object(
+            VecMap::with_capacity(2)
+                .with_append(Property::Name, Value::from(value.name))
+                .with_append(
+                    Property::Email,
+                    Value::from(value.address.unwrap_or_default()),
+                ),
+        ))
     }
 }
 
 impl From<Group<'_>> for Value {
     fn from(group: Group<'_>) -> Self {
-        Value::Object(
-            Object::with_capacity(2)
-                .with_property(Property::Name, group.name)
-                .with_property(
+        Value::Object(Object(
+            VecMap::with_capacity(2)
+                .with_append(Property::Name, Value::from(group.name))
+                .with_append(
                     Property::Addresses,
                     Value::List(
                         group
@@ -490,6 +498,78 @@ impl From<Group<'_>> for Value {
                             .collect::<Vec<Value>>(),
                     ),
                 ),
-        )
+        ))
+    }
+}
+
+impl Object<Value> {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(VecMap::with_capacity(capacity))
+    }
+
+    pub fn set(&mut self, property: Property, value: impl Into<Value>) -> bool {
+        self.0.set(property, value.into())
+    }
+
+    pub fn append(&mut self, property: Property, value: impl Into<Value>) {
+        self.0.append(property, value.into());
+    }
+
+    pub fn with_property(mut self, property: Property, value: impl Into<Value>) -> Self {
+        self.0.append(property, value.into());
+        self
+    }
+
+    pub fn remove(&mut self, property: &Property) -> Value {
+        self.0.remove(property).unwrap_or(Value::Null)
+    }
+
+    pub fn get(&self, property: &Property) -> &Value {
+        self.0.get(property).unwrap_or(&Value::Null)
+    }
+}
+
+impl JsonQueryable for Value {
+    fn eval_pointer<'x>(
+        &'x self,
+        mut pointer: std::slice::Iter<utils::json::JsonPointerItem>,
+        results: &mut Vec<&'x dyn JsonQueryable>,
+    ) {
+        match pointer.next() {
+            Some(JsonPointerItem::String(n)) => {
+                if let Value::Object(map) = self {
+                    if let Some(v) = map
+                        .0
+                        .iter()
+                        .find_map(|(k, v)| if k.as_str() == n { Some(v) } else { None })
+                    {
+                        v.eval_pointer(pointer, results);
+                    }
+                }
+            }
+            Some(JsonPointerItem::Number(n)) => {
+                if let Value::List(values) = self {
+                    if let Some(v) = values.get(*n as usize) {
+                        v.eval_pointer(pointer, results);
+                    }
+                }
+            }
+            Some(JsonPointerItem::Wildcard) => match self {
+                Value::List(values) => {
+                    for v in values {
+                        v.eval_pointer(pointer.clone(), results);
+                    }
+                }
+                Value::Object(map) => {
+                    for v in map.0.values() {
+                        v.eval_pointer(pointer.clone(), results);
+                    }
+                }
+                _ => {}
+            },
+            Some(JsonPointerItem::Root) | None => {
+                results.push(self);
+            }
+        }
     }
 }

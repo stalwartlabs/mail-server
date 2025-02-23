@@ -9,15 +9,15 @@ use std::sync::Arc;
 use ahash::AHashSet;
 use common::auth::{AccessToken, TenantInfo};
 use directory::{
-    backend::internal::{PrincipalField, PrincipalUpdate, PrincipalValue},
     Permission, Principal, Type,
+    backend::internal::{PrincipalField, PrincipalUpdate, PrincipalValue},
 };
-use email::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
+use email::message::delivery::{IngestMessage, LocalDeliveryStatus, MailDelivery};
 use utils::BlobHash;
 
 use crate::jmap::assert_is_empty;
 
-use super::{enterprise::List, JMAPTest, ManagementApi};
+use super::{JMAPTest, ManagementApi, enterprise::List};
 
 pub async fn test(params: &JMAPTest) {
     println!("Running permissions tests...");

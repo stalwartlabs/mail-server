@@ -7,10 +7,14 @@
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    object::Object,
-    parser::{json::Parser, Ignore, JsonObjectParser, Token},
+    parser::{Ignore, JsonObjectParser, Token, json::Parser},
     request::RequestProperty,
-    types::{blob::BlobId, id::Id, property::Property, value::Value},
+    types::{
+        blob::BlobId,
+        id::Id,
+        property::Property,
+        value::{Object, Value},
+    },
 };
 
 #[derive(Debug, Clone)]

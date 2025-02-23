@@ -4,15 +4,17 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
-use email::index::PREVIEW_LENGTH;
+use common::{Server, auth::AccessToken};
+use email::message::index::PREVIEW_LENGTH;
 use jmap_proto::{
     method::parse::{ParseEmailRequest, ParseEmailResponse},
-    object::Object,
-    types::{property::Property, value::Value},
+    types::{
+        property::Property,
+        value::{Object, Value},
+    },
 };
 use mail_parser::{
-    decoders::html::html_to_text, parsers::preview::preview_text, MessageParser, PartType,
+    MessageParser, PartType, decoders::html::html_to_text, parsers::preview::preview_text,
 };
 use std::future::Future;
 use utils::map::vec_map::VecMap;
