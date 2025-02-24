@@ -370,7 +370,7 @@ impl Principal {
     pub fn update_external(&mut self, mut external: Principal) -> Vec<PrincipalUpdate> {
         let mut updates = Vec::new();
         if let Some(name) = external.take_str(PrincipalField::Description) {
-            if self.get_str(PrincipalField::Description) != Some(name.as_str()) {
+            if self.get_str(PrincipalField::Description) != Some(name.as_str()).filter(|s| !s.is_empty()) {
                 updates.push(PrincipalUpdate::set(
                     PrincipalField::Description,
                     PrincipalValue::String(name.clone()),
