@@ -254,11 +254,11 @@ impl PrincipalManager for Server {
                     })?;
                 }
 
+                let mut tenant = access_token.tenant.map(|t| t.id);
+                
                 // SPDX-SnippetBegin
                 // SPDX-FileCopyrightText: 2020 Stalwart Labs Ltd <hello@stalw.art>
                 // SPDX-License-Identifier: LicenseRef-SEL
-
-                let mut tenant = access_token.tenant.map(|t| t.id);
 
                 #[cfg(feature = "enterprise")]
                 if self.core.is_enterprise_edition() {
