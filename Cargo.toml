@@ -10,6 +10,7 @@ members = [
     "crates/smtp",
     "crates/managesieve",
     "crates/pop3",
+    "crates/groupware",
     "crates/spam-filter",
     "crates/nlp",
     "crates/store",

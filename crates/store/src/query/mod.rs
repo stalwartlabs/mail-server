@@ -12,8 +12,8 @@ pub mod sort;
 use roaring::RoaringBitmap;
 
 use crate::{
+    BitmapKey, IterateParams, Key,
     write::{BitmapClass, BitmapHash, TagValue},
-    BitmapKey, IterateParams, Key, Serialize,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +23,7 @@ pub enum Operator {
     GreaterThan,
     GreaterEqualThan,
     Equal,
+    Contains,
 }
 
 #[derive(Debug)]
@@ -79,51 +80,59 @@ impl ResultSet {
 }
 
 impl Filter {
-    pub fn cond(field: impl Into<u8>, op: Operator, value: impl Serialize) -> Self {
+    pub fn cond(field: impl Into<u8>, op: Operator, value: Vec<u8>) -> Self {
         Filter::MatchValue {
             field: field.into(),
             op,
-            value: value.serialize(),
+            value,
         }
     }
 
-    pub fn eq(field: impl Into<u8>, value: impl Serialize) -> Self {
+    pub fn eq(field: impl Into<u8>, value: Vec<u8>) -> Self {
         Filter::MatchValue {
             field: field.into(),
             op: Operator::Equal,
-            value: value.serialize(),
+            value,
         }
     }
 
-    pub fn lt(field: impl Into<u8>, value: impl Serialize) -> Self {
+    pub fn lt(field: impl Into<u8>, value: Vec<u8>) -> Self {
         Filter::MatchValue {
             field: field.into(),
             op: Operator::LowerThan,
-            value: value.serialize(),
+            value,
         }
     }
 
-    pub fn le(field: impl Into<u8>, value: impl Serialize) -> Self {
+    pub fn le(field: impl Into<u8>, value: Vec<u8>) -> Self {
         Filter::MatchValue {
             field: field.into(),
             op: Operator::LowerEqualThan,
-            value: value.serialize(),
+            value,
         }
     }
 
-    pub fn gt(field: impl Into<u8>, value: impl Serialize) -> Self {
+    pub fn gt(field: impl Into<u8>, value: Vec<u8>) -> Self {
         Filter::MatchValue {
             field: field.into(),
             op: Operator::GreaterThan,
-            value: value.serialize(),
+            value,
         }
     }
 
-    pub fn ge(field: impl Into<u8>, value: impl Serialize) -> Self {
+    pub fn ge(field: impl Into<u8>, value: Vec<u8>) -> Self {
         Filter::MatchValue {
             field: field.into(),
             op: Operator::GreaterEqualThan,
-            value: value.serialize(),
+            value,
+        }
+    }
+
+    pub fn contains(field: impl Into<u8>, value: Vec<u8>) -> Self {
+        Filter::MatchValue {
+            field: field.into(),
+            op: Operator::Contains,
+            value,
         }
     }
 

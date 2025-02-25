@@ -4,10 +4,20 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use std::collections::HashSet;
+
 use serde::ser::SerializeSeq;
-use store::{Deserialize, Serialize, ahash::AHashSet, write::now};
+use store::{Serialize, ahash::RandomState, write::now};
 
 use super::{SeenIdHash, SeenIds, SieveScript};
+
+impl Serialize for SieveScript {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map(|r| r.into_vec())
+            .map_err(Into::into)
+    }
+}
 
 // SeenIds serializer
 impl serde::Serialize for SeenIds {
@@ -49,7 +59,7 @@ impl<'de> serde::de::Visitor<'de> for SeenIdsVisitor {
     {
         let num_entries = seq.size_hint().unwrap_or(0) / 2;
         let mut seen_ids = SeenIds {
-            ids: AHashSet::with_capacity(num_entries),
+            ids: HashSet::with_capacity_and_hasher(num_entries, RandomState::new()),
             has_changes: false,
         };
         let now = now();
@@ -73,23 +83,5 @@ impl<'de> serde::de::Visitor<'de> for SeenIdsVisitor {
         }
 
         Ok(seen_ids)
-    }
-}
-
-impl Serialize for SieveScript {
-    fn serialize(self) -> Vec<u8> {
-        todo!()
-    }
-}
-
-impl Serialize for &SieveScript {
-    fn serialize(self) -> Vec<u8> {
-        todo!()
-    }
-}
-
-impl Deserialize for SieveScript {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        todo!()
     }
 }

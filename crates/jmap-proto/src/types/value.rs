@@ -7,6 +7,7 @@
 use std::{borrow::Cow, fmt::Display};
 
 use mail_parser::{Addr, DateTime, Group};
+use rkyv::{option::ArchivedOption, string::ArchivedString};
 use serde::Serialize;
 use utils::{
     json::{JsonPointerItem, JsonQueryable},
@@ -49,7 +50,10 @@ pub enum Value {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
 pub struct Object<T>(pub VecMap<Property, T>);
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq, Serialize,
+)]
+#[rkyv(compare(PartialEq), derive(Debug))]
 pub struct AclGrant {
     pub account_id: u32,
     pub grants: Bitmap<Acl>,
@@ -455,6 +459,12 @@ impl From<Cow<'_, str>> for Value {
     }
 }
 
+impl From<&ArchivedString> for Value {
+    fn from(value: &ArchivedString) -> Self {
+        Value::Text(value.to_string())
+    }
+}
+
 impl<T: Into<Value>> From<Vec<T>> for Value {
     fn from(value: Vec<T>) -> Self {
         Value::List(value.into_iter().map(|v| v.into()).collect())
@@ -467,6 +477,30 @@ impl<T: Into<Value>> From<Option<T>> for Value {
             Some(value) => value.into(),
             None => Value::Null,
         }
+    }
+}
+
+impl From<&ArchivedOption<ArchivedString>> for Value {
+    fn from(value: &ArchivedOption<ArchivedString>) -> Self {
+        match value {
+            ArchivedOption::Some(value) => Value::Text(value.to_string()),
+            ArchivedOption::None => Value::Null,
+        }
+    }
+}
+
+impl From<&ArchivedOption<rkyv::rend::u32_le>> for Value {
+    fn from(value: &ArchivedOption<rkyv::rend::u32_le>) -> Self {
+        match value {
+            ArchivedOption::Some(value) => Value::UnsignedInt(u32::from(value) as u64),
+            ArchivedOption::None => Value::Null,
+        }
+    }
+}
+
+impl From<&rkyv::rend::u32_le> for Value {
+    fn from(value: &rkyv::rend::u32_le) -> Self {
+        Value::UnsignedInt(u32::from(value) as u64)
     }
 }
 

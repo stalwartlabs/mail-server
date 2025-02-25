@@ -8,8 +8,8 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
+use email::sieve::activate::SieveScriptActivate;
 use imap_proto::receiver::Request;
-use jmap::sieve::set::SieveScriptSet;
 use jmap_proto::types::collection::Collection;
 use store::write::log::ChangeLogBuilder;
 use trc::AddContext;

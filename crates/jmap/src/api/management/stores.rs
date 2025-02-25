@@ -9,20 +9,24 @@ use common::{
     auth::AccessToken,
     ipc::{HousekeeperEvent, PurgeType},
     manager::webadmin::Resource,
+    storage::index::ObjectIndexBuilder,
     *,
 };
 use directory::{
     Permission,
     backend::internal::manage::{self, ManageDirectory},
 };
-use email::{mailbox::UidMailbox, message::ingest::EmailIngest};
-use hyper::Method;
-use jmap_proto::{
-    object::index::ObjectIndexBuilder,
-    types::{collection::Collection, property::Property},
+use email::{
+    mailbox::{ArchivedMailbox, UidMailbox},
+    message::ingest::EmailIngest,
 };
+use hyper::Method;
+use jmap_proto::types::{collection::Collection, property::Property};
 use serde_json::json;
-use store::write::{BatchBuilder, F_VALUE, ValueClass, assert::HashedValue};
+use store::{
+    Serialize,
+    write::{ArchivedValue, BatchBuilder, ValueClass, assert::HashedValue},
+};
 use trc::AddContext;
 use utils::url_params::UrlParams;
 
@@ -337,7 +341,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
         .unwrap_or_default()
     {
         let mailbox = server
-            .get_property::<HashedValue<email::mailbox::Mailbox>>(
+            .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
                 account_id,
                 Collection::Mailbox,
                 mailbox_id,
@@ -345,7 +349,9 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             )
             .await
             .caused_by(trc::location!())?
-            .ok_or_else(|| trc::ImapEvent::Error.into_err().caused_by(trc::location!()))?;
+            .ok_or_else(|| trc::ImapEvent::Error.into_err().caused_by(trc::location!()))?
+            .into_deserialized::<email::mailbox::Mailbox>()
+            .caused_by(trc::location!())?;
         let mut new_mailbox = mailbox.inner.clone();
         new_mailbox.uid_validity = rand::random::<u32>();
         let mut batch = BatchBuilder::new();
@@ -358,6 +364,7 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
                     .with_current(mailbox)
                     .with_changes(new_mailbox),
             )
+            .caused_by(trc::location!())?
             .clear(Property::EmailIds);
         server
             .store()
@@ -403,7 +410,10 @@ pub async fn reset_imap_uids(server: &Server, account_id: u32) -> trc::Result<(u
             .with_collection(Collection::Email)
             .update_document(message_id)
             .assert_value(ValueClass::Property(Property::MailboxIds.into()), &uids)
-            .value(Property::MailboxIds, uids.inner, F_VALUE);
+            .set(
+                Property::MailboxIds,
+                uids.inner.serialize().caused_by(trc::location!())?,
+            );
         server
             .store()
             .write(batch)

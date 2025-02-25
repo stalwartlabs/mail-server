@@ -9,18 +9,16 @@ use std::{sync::Arc, time::Instant};
 use ahash::AHashSet;
 use directory::Permission;
 use imap_proto::{
+    Command, StatusResponse,
     protocol::{
-        fetch,
+        Sequence, fetch,
         list::{Attribute, ListItem},
         status::Status,
-        Sequence,
     },
     receiver::Request,
-    Command, StatusResponse,
 };
 
 use common::listener::SessionStream;
-use jmap::{changes::get::ChangesLookup, services::state::StateManager};
 use jmap_proto::types::{collection::Collection, type_state::DataType};
 use store::query::log::Query;
 use tokio::io::AsyncReadExt;
@@ -204,7 +202,8 @@ impl<T: SessionStream> SessionData<T> {
                 // Obtain changed messages
                 let changelog = self
                     .server
-                    .changes_(
+                    .store()
+                    .changes(
                         mailbox.id.account_id,
                         Collection::Email,
                         modseq.map(Query::Since).unwrap_or(Query::All),

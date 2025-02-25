@@ -8,17 +8,19 @@ use std::borrow::Cow;
 
 use jmap_proto::types::{keyword::Keyword, property::Property};
 use mail_parser::{
-    decoders::html::html_to_text,
-    parsers::{fields::thread::thread_name, preview::preview_text},
     Addr, Address, GetHeader, Group, Header, HeaderName, HeaderValue, Message, MessagePart,
     PartType,
+    decoders::html::html_to_text,
+    parsers::{fields::thread::thread_name, preview::preview_text},
 };
 use nlp::language::Language;
 use store::{
+    Serialize, SerializeInfallible,
     backend::MAX_TOKEN_LENGTH,
-    fts::{index::FtsDocument, Field},
-    write::{BatchBuilder, Bincode, BlobOp, DirectoryClass, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE},
+    fts::{Field, index::FtsDocument},
+    write::{BatchBuilder, Bincode, BlobOp, DirectoryClass},
 };
+use trc::AddContext;
 use utils::BlobHash;
 
 use crate::mailbox::UidMailbox;
@@ -48,9 +50,9 @@ pub(super) trait IndexMessage {
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<UidMailbox>,
         received_at: u64,
-    ) -> &mut Self;
+    ) -> trc::Result<&mut Self>;
 
-    fn index_headers(&mut self, headers: &[Header<'_>], options: u32);
+    fn index_headers(&mut self, headers: &[Header<'_>], set: bool);
 }
 
 pub trait IndexMessageText<'x>: Sized {
@@ -67,19 +69,30 @@ impl IndexMessage for BatchBuilder {
         keywords: Vec<Keyword>,
         mailbox_ids: Vec<UidMailbox>,
         received_at: u64,
-    ) -> &mut Self {
+    ) -> trc::Result<&mut Self> {
         // Index keywords
-        self.value(Property::Keywords, keywords, F_VALUE | F_BITMAP);
+        self.set(
+            Property::Keywords,
+            keywords.serialize().caused_by(trc::location!())?,
+        )
+        .tag_many(Property::Keywords, keywords.into_iter());
 
         // Index mailboxIds
-        self.value(Property::MailboxIds, mailbox_ids, F_VALUE | F_BITMAP);
+        self.set(
+            Property::MailboxIds,
+            mailbox_ids.serialize().caused_by(trc::location!())?,
+        )
+        .tag_many(Property::MailboxIds, mailbox_ids.iter());
 
         // Index size
-        self.value(Property::Size, message.raw_message.len() as u32, F_INDEX)
-            .add(
-                DirectoryClass::UsedQuota(account_id),
-                message.raw_message.len() as i64,
-            );
+        self.index(
+            Property::Size,
+            (message.raw_message.len() as u32).serialize(),
+        )
+        .add(
+            DirectoryClass::UsedQuota(account_id),
+            message.raw_message.len() as i64,
+        );
         if let Some(tenant_id) = tenant_id {
             self.add(
                 DirectoryClass::UsedQuota(tenant_id),
@@ -88,7 +101,7 @@ impl IndexMessage for BatchBuilder {
         }
 
         // Index receivedAt
-        self.value(Property::ReceivedAt, received_at, F_INDEX);
+        self.index(Property::ReceivedAt, received_at.serialize());
 
         let mut has_attachments = false;
         let mut preview = None;
@@ -101,7 +114,7 @@ impl IndexMessage for BatchBuilder {
 
         for (part_id, part) in message.parts.iter().take(MAX_MESSAGE_PARTS).enumerate() {
             if part_id == 0 {
-                self.index_headers(&part.headers, 0);
+                self.index_headers(&part.headers, true);
             }
 
             match &part.body {
@@ -139,7 +152,7 @@ impl IndexMessage for BatchBuilder {
 
         // Store and index hasAttachment property
         if has_attachments {
-            self.tag(Property::HasAttachment, (), 0);
+            self.tag(Property::HasAttachment, ());
         }
 
         // Link blob
@@ -152,7 +165,7 @@ impl IndexMessage for BatchBuilder {
 
         // Store message metadata
         let root_part = message.root_part();
-        self.value(
+        self.set(
             Property::BodyStructure,
             Bincode::new(MessageMetadata {
                 preview: preview.unwrap_or_default().into_owned(),
@@ -167,14 +180,15 @@ impl IndexMessage for BatchBuilder {
                 received_at,
                 has_attachments,
                 blob_hash,
-            }),
-            F_VALUE,
+            })
+            .serialize()
+            .caused_by(trc::location!())?,
         );
 
-        self
+        Ok(self)
     }
 
-    fn index_headers(&mut self, headers: &[Header<'_>], options: u32) {
+    fn index_headers(&mut self, headers: &[Header<'_>], set: bool) {
         let mut seen_headers = [false; 40];
         for header in headers.iter().rev() {
             if matches!(header.name, HeaderName::Other(_)) {
@@ -186,8 +200,13 @@ impl IndexMessage for BatchBuilder {
                     header.value.visit_text(|id| {
                         // Add ids to inverted index
                         if id.len() < MAX_ID_LENGTH {
-                            self.value(Property::MessageId, id, F_INDEX | options);
-                            self.value(Property::References, id, F_INDEX | options);
+                            if set {
+                                self.index(Property::MessageId, id.serialize())
+                                    .index(Property::References, id.serialize());
+                            } else {
+                                self.unindex(Property::MessageId, id.serialize())
+                                    .unindex(Property::References, id.serialize());
+                            }
                         }
                     });
                 }
@@ -195,7 +214,11 @@ impl IndexMessage for BatchBuilder {
                     header.value.visit_text(|id| {
                         // Add ids to inverted index
                         if id.len() < MAX_ID_LENGTH {
-                            self.value(Property::References, id, F_INDEX | options);
+                            if set {
+                                self.index(Property::References, id.serialize());
+                            } else {
+                                self.unindex(Property::References, id.serialize());
+                            }
                         }
                     });
                 }
@@ -221,18 +244,23 @@ impl IndexMessage for BatchBuilder {
                         });
 
                         // Add address to inverted index
-                        self.value(u8::from(&property), sort_text.build(), F_INDEX | options);
+                        if set {
+                            self.index(u8::from(&property), sort_text.build());
+                        } else {
+                            self.unindex(u8::from(&property), sort_text.build());
+                        }
                         seen_headers[header.name.id() as usize] = true;
                     }
                 }
                 HeaderName::Date => {
                     if !seen_headers[header.name.id() as usize] {
                         if let HeaderValue::DateTime(datetime) = &header.value {
-                            self.value(
-                                Property::SentAt,
-                                datetime.to_timestamp() as u64,
-                                F_INDEX | options,
-                            );
+                            let value = (datetime.to_timestamp() as u64).serialize();
+                            if set {
+                                self.index(Property::SentAt, value);
+                            } else {
+                                self.unindex(Property::SentAt, value);
+                            }
                         }
                         seen_headers[header.name.id() as usize] = true;
                     }
@@ -250,15 +278,18 @@ impl IndexMessage for BatchBuilder {
 
                         // Index thread name
                         let thread_name = thread_name(&subject);
-                        self.value(
-                            Property::Subject,
-                            if !thread_name.is_empty() {
-                                thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
-                            } else {
-                                "!"
-                            },
-                            F_INDEX | options,
-                        );
+                        let thread_name = if !thread_name.is_empty() {
+                            thread_name.trim_text(MAX_SORT_FIELD_LENGTH)
+                        } else {
+                            "!"
+                        }
+                        .serialize();
+
+                        if set {
+                            self.index(Property::Subject, thread_name);
+                        } else {
+                            self.unindex(Property::Subject, thread_name);
+                        }
 
                         seen_headers[header.name.id() as usize] = true;
                     }
@@ -270,7 +301,11 @@ impl IndexMessage for BatchBuilder {
 
         // Add subject to index if missing
         if !seen_headers[HeaderName::Subject.id() as usize] {
-            self.value(Property::Subject, "!", F_INDEX | options);
+            if set {
+                self.index(Property::Subject, "!".serialize());
+            } else {
+                self.unindex(Property::Subject, "!".serialize());
+            }
         }
     }
 }
@@ -407,17 +442,26 @@ impl<'x> EmailIndexBuilder<'x> {
 }
 
 impl EmailIndexBuilder<'_> {
-    pub fn build(self, batch: &mut BatchBuilder, account_id: u32, tenant_id: Option<u32>) {
-        let options = if self.set {
+    pub fn build(
+        self,
+        batch: &mut BatchBuilder,
+        account_id: u32,
+        tenant_id: Option<u32>,
+    ) -> trc::Result<()> {
+        let metadata = &self.inner.inner;
+        if self.set {
             // Serialize metadata
-            batch.value(Property::BodyStructure, &self.inner, F_VALUE);
-            0
+            batch
+                .set(Property::BodyStructure, (self.inner).serialize()?)
+                .index(Property::Size, (metadata.size as u32).serialize())
+                .index(Property::ReceivedAt, (metadata.received_at).serialize());
         } else {
             // Delete metadata
-            batch.value(Property::BodyStructure, (), F_VALUE | F_CLEAR);
-            F_CLEAR
-        };
-        let metadata = &self.inner.inner;
+            batch
+                .clear(Property::BodyStructure)
+                .unindex(Property::Size, (metadata.size as u32).serialize())
+                .unindex(Property::ReceivedAt, (metadata.received_at).serialize());
+        }
 
         // Index properties
         let quota = if self.set {
@@ -425,24 +469,21 @@ impl EmailIndexBuilder<'_> {
         } else {
             -(metadata.size as i64)
         };
-        batch
-            .value(Property::Size, metadata.size as u32, F_INDEX | options)
-            .add(DirectoryClass::UsedQuota(account_id), quota);
+        batch.add(DirectoryClass::UsedQuota(account_id), quota);
         if let Some(tenant_id) = tenant_id {
             batch.add(DirectoryClass::UsedQuota(tenant_id), quota);
         }
 
-        batch.value(
-            Property::ReceivedAt,
-            metadata.received_at,
-            F_INDEX | options,
-        );
         if metadata.has_attachments {
-            batch.tag(Property::HasAttachment, (), options);
+            if self.set {
+                batch.tag(Property::HasAttachment, ());
+            } else {
+                batch.untag(Property::HasAttachment, ());
+            }
         }
 
         // Index headers
-        batch.index_headers(&metadata.contents.parts[0].headers, options);
+        batch.index_headers(&metadata.contents.parts[0].headers, self.set);
 
         // Link blob
         if self.set {
@@ -457,6 +498,7 @@ impl EmailIndexBuilder<'_> {
                 hash: metadata.blob_hash.clone(),
             });
         }
+        Ok(())
     }
 }
 

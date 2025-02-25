@@ -15,14 +15,14 @@ use mail_parser::HeaderName;
 use nlp::language::Language;
 use std::future::Future;
 use store::{
-    ValueKey,
+    SerializeInfallible, ValueKey,
     fts::{Field, FilterGroup, FtsFilter, IntoFilterGroup},
     query::{self},
     roaring::RoaringBitmap,
     write::ValueClass,
 };
 
-use crate::{JmapMethods, auth::acl::AclMethods};
+use crate::JmapMethods;
 
 pub trait EmailQuery: Sync + Send {
     fn email_query(
@@ -203,16 +203,16 @@ impl EmailQuery for Server {
                             filters.push(query::Filter::End);
                         }
                         Filter::Before(date) => {
-                            filters.push(query::Filter::lt(Property::ReceivedAt, date))
+                            filters.push(query::Filter::lt(Property::ReceivedAt, date.serialize()))
                         }
                         Filter::After(date) => {
-                            filters.push(query::Filter::gt(Property::ReceivedAt, date))
+                            filters.push(query::Filter::gt(Property::ReceivedAt, date.serialize()))
                         }
                         Filter::MinSize(size) => {
-                            filters.push(query::Filter::ge(Property::Size, size))
+                            filters.push(query::Filter::ge(Property::Size, size.serialize()))
                         }
                         Filter::MaxSize(size) => {
-                            filters.push(query::Filter::lt(Property::Size, size))
+                            filters.push(query::Filter::lt(Property::Size, size.serialize()))
                         }
                         Filter::AllInThreadHaveKeyword(keyword) => {
                             filters.push(query::Filter::is_in_set(
@@ -258,10 +258,10 @@ impl EmailQuery for Server {
                             filters.push(query::Filter::is_in_set(set));
                         }
                         Filter::SentBefore(date) => {
-                            filters.push(query::Filter::lt(Property::SentAt, date))
+                            filters.push(query::Filter::lt(Property::SentAt, date.serialize()))
                         }
                         Filter::SentAfter(date) => {
-                            filters.push(query::Filter::gt(Property::SentAt, date))
+                            filters.push(query::Filter::gt(Property::SentAt, date.serialize()))
                         }
                         Filter::InThread(id) => filters.push(query::Filter::is_in_bitmap(
                             Property::ThreadId,
@@ -284,8 +284,13 @@ impl EmailQuery for Server {
         let mut result_set = self.filter(account_id, Collection::Email, filters).await?;
         if access_token.is_shared(account_id) {
             result_set.apply_mask(
-                self.shared_messages(access_token, account_id, Acl::ReadItems)
-                    .await?,
+                self.shared_document_children(
+                    access_token,
+                    account_id,
+                    Collection::Mailbox,
+                    Acl::ReadItems,
+                )
+                .await?,
             );
         }
         let (response, paginate) = self.build_query_response(&result_set, &request).await?;

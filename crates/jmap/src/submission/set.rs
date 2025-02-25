@@ -9,16 +9,19 @@ use std::{collections::HashMap, sync::Arc};
 use common::{
     Server,
     listener::{ServerInstance, stream::NullIo},
+    storage::index::ObjectIndexBuilder,
 };
 use email::{
-    identity::Identity,
+    identity::ArchivedIdentity,
     message::metadata::MessageMetadata,
-    submission::{Address, Delivered, DeliveryStatus, EmailSubmission, UndoStatus},
+    submission::{
+        Address, ArchivedEmailSubmission, Delivered, DeliveryStatus, EmailSubmission, UndoStatus,
+    },
 };
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{self, SetRequest, SetResponse},
-    object::{email_submission::SetArguments, index::ObjectIndexBuilder},
+    object::email_submission::SetArguments,
     request::{
         Call, RequestMethod,
         method::{MethodFunction, MethodName, MethodObject},
@@ -38,7 +41,9 @@ use smtp::{
     queue::spool::SmtpSpool,
 };
 use smtp_proto::{MailFrom, RcptTo, request::parser::Rfc5321Parser};
-use store::write::{BatchBuilder, Bincode, assert::HashedValue, log::ChangeLogBuilder, now};
+use store::write::{
+    ArchivedValue, BatchBuilder, Bincode, assert::HashedValue, log::ChangeLogBuilder, now,
+};
 use trc::AddContext;
 use utils::{map::vec_map::VecMap, sanitize_email};
 
@@ -94,7 +99,8 @@ impl EmailSubmissionSet for Server {
                         .with_account_id(account_id)
                         .with_collection(Collection::EmailSubmission)
                         .create_document()
-                        .custom(ObjectIndexBuilder::new().with_changes(submission));
+                        .custom(ObjectIndexBuilder::new().with_changes(submission))
+                        .caused_by(trc::location!())?;
                     let document_id = self
                         .store()
                         .write_expect_id(batch)
@@ -120,7 +126,7 @@ impl EmailSubmissionSet for Server {
             // Obtain submission
             let document_id = id.document_id();
             let submission = if let Some(submission) = self
-                .get_property::<HashedValue<EmailSubmission>>(
+                .get_property::<HashedValue<ArchivedValue<ArchivedEmailSubmission>>>(
                     account_id,
                     Collection::EmailSubmission,
                     document_id,
@@ -128,7 +134,7 @@ impl EmailSubmissionSet for Server {
                 )
                 .await?
             {
-                submission
+                submission.into_deserialized().caused_by(trc::location!())?
             } else {
                 response.not_updated.append(id, SetError::not_found());
                 continue 'update;
@@ -183,7 +189,8 @@ impl EmailSubmissionSet for Server {
                                 ObjectIndexBuilder::new()
                                     .with_current(submission)
                                     .with_changes(new_submission),
-                            );
+                            )
+                            .caused_by(trc::location!())?;
                         self.store()
                             .write(batch)
                             .await
@@ -221,7 +228,7 @@ impl EmailSubmissionSet for Server {
         for id in will_destroy {
             let document_id = id.document_id();
             if let Some(submission) = self
-                .get_property::<HashedValue<EmailSubmission>>(
+                .get_property::<HashedValue<ArchivedValue<ArchivedEmailSubmission>>>(
                     account_id,
                     Collection::EmailSubmission,
                     document_id,
@@ -235,7 +242,12 @@ impl EmailSubmissionSet for Server {
                     .with_account_id(account_id)
                     .with_collection(Collection::EmailSubmission)
                     .delete_document(document_id)
-                    .custom(ObjectIndexBuilder::new().with_current(submission));
+                    .custom(
+                        ObjectIndexBuilder::new().with_current(
+                            submission.into_deserialized().caused_by(trc::location!())?,
+                        ),
+                    )
+                    .caused_by(trc::location!())?;
                 self.store()
                     .write(batch)
                     .await
@@ -317,9 +329,12 @@ impl EmailSubmissionSet for Server {
         instance: &Arc<ServerInstance>,
         object: Object<SetValue>,
     ) -> trc::Result<Result<EmailSubmission, SetError>> {
-        let mut submission = EmailSubmission::default();
-        submission.email_id = u32::MAX;
-        submission.identity_id = u32::MAX;
+        let mut submission = EmailSubmission {
+            email_id: u32::MAX,
+            identity_id: u32::MAX,
+            thread_id: u32::MAX,
+            ..Default::default()
+        };
         let mut mail_from = None;
         let mut rcpt_to: Vec<RcptTo<String>> = Vec::new();
 
@@ -444,7 +459,7 @@ impl EmailSubmissionSet for Server {
 
         // Fetch identity's mailFrom
         let identity_mail_from = if let Some(identity) = self
-            .get_property::<Identity>(
+            .get_property::<ArchivedValue<ArchivedIdentity>>(
                 account_id,
                 Collection::Identity,
                 submission.identity_id,
@@ -452,7 +467,11 @@ impl EmailSubmissionSet for Server {
             )
             .await?
         {
-            identity.email
+            identity
+                .unarchive()
+                .caused_by(trc::location!())?
+                .email
+                .to_string()
         } else {
             return Ok(Err(SetError::invalid_properties()
                 .with_property(Property::IdentityId)

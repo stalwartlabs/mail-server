@@ -17,15 +17,15 @@ use imap_proto::{
 use trc::AddContext;
 
 use crate::core::{SavedSearch, SelectedMailbox, Session, SessionData};
-use common::{ImapId, listener::SessionStream};
-use jmap::email::set::TagManager;
+use common::{ImapId, listener::SessionStream, storage::tag::TagManager};
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
     state::StateChange, type_state::DataType,
 };
 use store::{
+    SerializeInfallible,
     roaring::RoaringBitmap,
-    write::{BatchBuilder, F_VALUE, assert::HashedValue, log::ChangeLogBuilder},
+    write::{BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
 };
 
 use super::{ImapContext, ToModSeq};
@@ -243,12 +243,16 @@ impl<T: SessionStream> SessionData<T> {
                         .with_account_id(account_id)
                         .with_collection(Collection::Email)
                         .update_document(id);
-                    mailboxes.update_batch(&mut batch, Property::MailboxIds);
-                    keywords.update_batch(&mut batch, Property::Keywords);
+                    mailboxes
+                        .update_batch(&mut batch, Property::MailboxIds)
+                        .caused_by(trc::location!())?;
+                    keywords
+                        .update_batch(&mut batch, Property::Keywords)
+                        .caused_by(trc::location!())?;
                     if changelog.change_id == u64::MAX {
                         changelog.change_id = self.server.assign_change_id(account_id)?
                     }
-                    batch.value(Property::Cid, changelog.change_id, F_VALUE);
+                    batch.set(Property::Cid, changelog.change_id.serialize());
                     match self
                         .server
                         .store()

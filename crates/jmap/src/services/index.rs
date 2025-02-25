@@ -14,7 +14,7 @@ use directory::{
 use email::message::{bayes::EmailBayesTrain, index::IndexMessageText, metadata::MessageMetadata};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
-    IterateParams, Serialize, U32_LEN, U64_LEN, ValueKey,
+    IterateParams, SerializeInfallible, U32_LEN, U64_LEN, ValueKey,
     ahash::AHashMap,
     fts::index::FtsDocument,
     roaring::RoaringBitmap,

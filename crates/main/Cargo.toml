@@ -25,6 +25,7 @@ pop3 = { path = "../pop3" }
 spam-filter = { path = "../spam-filter" }
 managesieve = { path = "../managesieve" }
 common = { path = "../common" }
+email = { path = "../email" }
 directory = { path = "../directory" }
 trc = { path = "../trc" }
 utils = { path = "../utils" }
@@ -51,4 +52,5 @@ enterprise = [ "jmap/enterprise",
                "store/enterprise", 
                "managesieve/enterprise", 
                "directory/enterprise", 
+               "email/enterprise",
                "spam-filter/enterprise" ]

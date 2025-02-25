@@ -30,8 +30,7 @@ use store::{BlobClass, write::Bincode};
 use trc::{AddContext, StoreEvent};
 
 use crate::{
-    auth::acl::AclMethods, blob::download::BlobDownload, changes::state::StateManager,
-    email::headers::HeaderToValue,
+    blob::download::BlobDownload, changes::state::StateManager, email::headers::HeaderToValue,
 };
 use std::future::Future;
 
@@ -102,7 +101,12 @@ impl EmailGet for Server {
 
         let account_id = request.account_id.document_id();
         let message_ids = self
-            .owned_or_shared_messages(access_token, account_id, Acl::ReadItems)
+            .owned_or_shared_document_children(
+                access_token,
+                account_id,
+                Collection::Mailbox,
+                Acl::ReadItems,
+            )
             .await?;
         let ids = if let Some(ids) = ids {
             ids

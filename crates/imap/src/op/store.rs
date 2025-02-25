@@ -11,7 +11,7 @@ use crate::{
     spawn_op,
 };
 use ahash::AHashSet;
-use common::listener::SessionStream;
+use common::{listener::SessionStream, storage::tag::TagManager};
 use directory::Permission;
 use email::{
     mailbox::UidMailbox,
@@ -26,14 +26,14 @@ use imap_proto::{
     },
     receiver::Request,
 };
-use jmap::{changes::get::ChangesLookup, email::set::TagManager};
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
     state::StateChange, type_state::DataType,
 };
 use store::{
+    SerializeInfallible,
     query::log::{Change, Query},
-    write::{BatchBuilder, F_VALUE, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
+    write::{BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
@@ -116,7 +116,8 @@ impl<T: SessionStream> SessionData<T> {
             // Obtain changes since the modseq.
             let changelog = self
                 .server
-                .changes_(
+                .store()
+                .changes(
                     account_id,
                     Collection::Email,
                     Query::from_modseq(unchanged_since),
@@ -285,14 +286,16 @@ impl<T: SessionStream> SessionData<T> {
                         .with_account_id(account_id)
                         .with_collection(Collection::Email)
                         .update_document(*id);
-                    keywords.update_batch(&mut batch, Property::Keywords);
+                    keywords
+                        .update_batch(&mut batch, Property::Keywords)
+                        .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?;
                     if changelog.change_id == u64::MAX {
                         changelog.change_id = self
                             .server
                             .assign_change_id(account_id)
                             .imap_ctx(response.tag.as_ref().unwrap(), trc::location!())?
                     }
-                    batch.value(Property::Cid, changelog.change_id, F_VALUE);
+                    batch.set(Property::Cid, changelog.change_id.serialize());
 
                     // Add spam train task
                     if let Some(learn_spam) = train_spam {

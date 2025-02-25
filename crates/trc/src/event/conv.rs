@@ -371,6 +371,14 @@ impl From<&mail_auth::SpfOutput> for Error {
     }
 }
 
+impl From<rkyv::rancor::Error> for Error {
+    fn from(value: rkyv::rancor::Error) -> Self {
+        Error::new(EventType::Store(StoreEvent::DeserializeError))
+            .reason(value)
+            .details("Rkyv de/serialization failed")
+    }
+}
+
 pub trait AssertSuccess
 where
     Self: Sized,

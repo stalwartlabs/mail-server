@@ -7,7 +7,7 @@
 use crate::{Deserialize, U32_LEN, U64_LEN};
 
 #[derive(Debug, Clone)]
-pub struct HashedValue<T: Deserialize> {
+pub struct HashedValue<T> {
     pub hash: u64,
     pub inner: T,
 }
@@ -55,13 +55,13 @@ impl ToAssertValue for u32 {
     }
 }
 
-impl<T: Deserialize> ToAssertValue for HashedValue<T> {
+impl<T> ToAssertValue for HashedValue<T> {
     fn to_assert_value(&self) -> AssertValue {
         AssertValue::Hash(self.hash)
     }
 }
 
-impl<T: Deserialize> ToAssertValue for &HashedValue<T> {
+impl<T> ToAssertValue for &HashedValue<T> {
     fn to_assert_value(&self) -> AssertValue {
         AssertValue::Hash(self.hash)
     }
@@ -88,6 +88,13 @@ impl<T: Deserialize> Deserialize for HashedValue<T> {
         Ok(HashedValue {
             hash: xxhash_rust::xxh3::xxh3_64(bytes),
             inner: T::deserialize(bytes)?,
+        })
+    }
+
+    fn deserialize_owned(bytes: Vec<u8>) -> trc::Result<Self> {
+        Ok(HashedValue {
+            hash: xxhash_rust::xxh3::xxh3_64(&bytes),
+            inner: T::deserialize_owned(bytes)?,
         })
     }
 }

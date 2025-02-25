@@ -6,15 +6,16 @@
 
 use std::borrow::Cow;
 
-use common::{Server, auth::AccessToken};
-use email::sieve::{SieveScript, VacationResponse};
+use common::{Server, auth::AccessToken, storage::index::ObjectIndexBuilder};
+use email::sieve::{
+    ArchivedSieveScript, SieveScript, VacationResponse, activate::SieveScriptActivate,
+    delete::SieveScriptDelete,
+};
 use jmap_proto::{
     error::set::{SetError, SetErrorType},
     method::set::{RequestArguments, SetRequest, SetResponse},
-    object::index::ObjectIndexBuilder,
     response::references::EvalObjectReferences,
     types::{
-        blob::BlobId,
         collection::Collection,
         date::UTCDate,
         id::Id,
@@ -26,13 +27,13 @@ use mail_builder::MessageBuilder;
 use mail_parser::decoders::html::html_to_text;
 use std::future::Future;
 use store::write::{
-    BatchBuilder, BlobOp, F_CLEAR, F_VALUE,
+    ArchivedValue, BatchBuilder, BlobOp,
     assert::HashedValue,
     log::{Changes, LogInsert},
 };
 use trc::AddContext;
 
-use crate::{JmapMethods, sieve::set::SieveScriptSet};
+use crate::JmapMethods;
 
 use super::get::VacationResponseGet;
 
@@ -218,7 +219,7 @@ impl VacationResponseSet for Server {
 
             let mut obj = if let Some(document_id) = document_id {
                 let prev_sieve = self
-                    .get_property::<HashedValue<SieveScript>>(
+                    .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
                         account_id,
                         Collection::SieveScript,
                         document_id,
@@ -230,6 +231,7 @@ impl VacationResponseSet for Server {
                             .into_err()
                             .caused_by(trc::location!())
                     })?;
+                let prev_sieve = prev_sieve.into_deserialized().caused_by(trc::location!())?;
                 was_active = prev_sieve.inner.is_active;
                 let mut sieve = prev_sieve.inner.clone();
                 sieve.vacation_response = vacation.into();
@@ -242,7 +244,8 @@ impl VacationResponseSet for Server {
                 ObjectIndexBuilder::new().with_changes(SieveScript {
                     name: "vacation".into(),
                     is_active,
-                    blob_id: Default::default(),
+                    blob_hash: Default::default(),
+                    size: 0,
                     vacation_response: vacation.into(),
                 })
             };
@@ -251,7 +254,7 @@ impl VacationResponseSet for Server {
             if let Some(document_id) = document_id {
                 batch
                     .update_document(document_id)
-                    .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
+                    .clear(Property::EmailIds)
                     .log(Changes::update([document_id]));
             } else {
                 batch.create_document().log(LogInsert());
@@ -268,13 +271,13 @@ impl VacationResponseSet for Server {
                     )
                     .await?
                     .hash;
-                let blob_id = &mut obj.changes_mut().unwrap().blob_id;
-                blob_id.hash = hash;
+                let sieve = &mut obj.changes_mut().unwrap();
+                sieve.blob_hash = hash;
 
                 // Link blob
                 batch.set(
                     BlobOp::Link {
-                        hash: blob_id.hash.clone(),
+                        hash: sieve.blob_hash.clone(),
                     },
                     Vec::new(),
                 );
@@ -282,7 +285,7 @@ impl VacationResponseSet for Server {
                 // Unlink previous blob
                 if let Some(current) = obj.current() {
                     batch.clear(BlobOp::Link {
-                        hash: current.inner.blob_id.hash.clone(),
+                        hash: current.inner.blob_hash.clone(),
                     });
                 }
 
@@ -296,7 +299,7 @@ impl VacationResponseSet for Server {
             };
 
             // Write changes
-            batch.custom(obj);
+            batch.custom(obj).caused_by(trc::location!())?;
             let document_id = if !batch.is_empty() {
                 let ids = self
                     .store()
@@ -458,7 +461,7 @@ impl VacationResponseSet for Server {
         match self.core.sieve.untrusted_compiler.compile(&script) {
             Ok(compiled_script) => {
                 // Update blob length
-                obj.blob_id = BlobId::default().with_section_size(script.len());
+                obj.size = script.len() as u32;
 
                 // Serialize script
                 script.extend(bincode::serialize(&compiled_script).unwrap_or_default());

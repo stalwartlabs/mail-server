@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use jmap_proto::{
-    object::index::{IndexValue, IndexableObject},
-    types::property::Property,
-};
+use common::storage::index::{IndexValue, IndexableObject};
+use jmap_proto::types::property::Property;
 
 use super::SieveScript;
 
@@ -16,17 +14,13 @@ impl IndexableObject for SieveScript {
         [
             IndexValue::Text {
                 field: Property::Name.into(),
-                value: self.name.as_str(),
-                tokenize: true,
-                index: true,
+                value: self.name.to_lowercase().into(),
             },
             IndexValue::U32 {
                 field: Property::IsActive.into(),
                 value: Some(self.is_active as u32),
             },
-            IndexValue::Quota {
-                used: self.blob_id.section.as_ref().map_or(0, |b| b.size as u32),
-            },
+            IndexValue::Quota { used: self.size },
         ]
         .into_iter()
     }

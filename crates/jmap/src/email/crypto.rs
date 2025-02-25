@@ -19,8 +19,9 @@ use mail_parser::MessageParser;
 use serde_json::json;
 use store::{
     Serialize,
-    write::{BatchBuilder, Bincode, F_CLEAR, F_VALUE},
+    write::{BatchBuilder, Bincode},
 };
+use trc::AddContext;
 
 pub trait CryptoHandler: Sync + Send {
     fn handle_crypto_get(
@@ -51,7 +52,11 @@ impl CryptoHandler for Server {
                 let algo = params.algo;
                 let mut certs = Vec::new();
                 certs.extend_from_slice(b"-----STALWART CERTIFICATE-----\r\n");
-                let _ = base64_encode_mime(&Bincode::new(params).serialize(), &mut certs, false);
+                let _ = base64_encode_mime(
+                    &Bincode::new(params).serialize().unwrap_or_default(),
+                    &mut certs,
+                    false,
+                );
                 certs.extend_from_slice(b"\r\n");
                 let certs = String::from_utf8(certs).unwrap_or_default();
 
@@ -86,7 +91,7 @@ impl CryptoHandler for Server {
                     .with_account_id(access_token.primary_id())
                     .with_collection(Collection::Principal)
                     .update_document(0)
-                    .value(Property::Parameters, (), F_VALUE | F_CLEAR);
+                    .clear(Property::Parameters);
                 self.core.storage.data.write(batch.build()).await?;
                 return Ok(JsonResponse::new(json!({
                     "data": (),
@@ -130,7 +135,10 @@ impl CryptoHandler for Server {
             .with_account_id(access_token.primary_id())
             .with_collection(Collection::Principal)
             .update_document(0)
-            .value(Property::Parameters, &params, F_VALUE);
+            .set(
+                Property::Parameters,
+                params.serialize().caused_by(trc::location!())?,
+            );
         self.core.storage.data.write(batch.build()).await?;
 
         Ok(JsonResponse::new(json!({

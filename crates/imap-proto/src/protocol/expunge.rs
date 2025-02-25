@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{serialize_sequence, ImapResponse};
+use super::{ImapResponse, serialize_sequence};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Response {

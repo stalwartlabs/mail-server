@@ -4,43 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use std::slice::Iter;
+use std::slice::Iter;
 
 use store::{
-    Deserialize, Serialize, U32_LEN,
-    write::{
-        BitmapClass, DeserializeFrom, MaybeDynamicId, Operation, SerializeInto, TagValue, ToBitmaps,
-    },
+    Serialize, U32_LEN,
+    write::{DeserializeFrom, SerializeInto},
 };
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
 use super::{Mailbox, UidMailbox};
-
-impl Serialize for Mailbox {
-    fn serialize(self) -> Vec<u8> {
-        let todo = 1;
-        todo!()
-    }
-}
-
-impl Deserialize for Mailbox {
-    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
-        let todo = 1;
-        todo!()
-    }
-}
-
-impl ToBitmaps for UidMailbox {
-    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
-        ops.push(Operation::Bitmap {
-            class: BitmapClass::Tag {
-                field,
-                value: TagValue::Id(MaybeDynamicId::Static(self.mailbox_id)),
-            },
-            set,
-        });
-    }
-}
 
 impl SerializeInto for UidMailbox {
     fn serialize_into(&self, buf: &mut Vec<u8>) {
@@ -59,9 +31,17 @@ impl DeserializeFrom for UidMailbox {
 }
 
 impl Serialize for UidMailbox {
-    fn serialize(self) -> Vec<u8> {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
         let mut buf = Vec::with_capacity(U32_LEN * 2);
         self.serialize_into(&mut buf);
-        buf
+        Ok(buf)
+    }
+}
+
+impl Serialize for Mailbox {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map(|r| r.into_vec())
+            .map_err(Into::into)
     }
 }

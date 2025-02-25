@@ -6,23 +6,23 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{listener::SessionStream, ImapId};
+use common::{ImapId, listener::SessionStream};
 use directory::Permission;
 use imap_proto::{
+    Command, StatusResponse,
     protocol::{
-        search::{self, Arguments, Filter, Response, ResultOption},
         Sequence,
+        search::{self, Arguments, Filter, Response, ResultOption},
     },
     receiver::Request,
-    Command, StatusResponse,
 };
-use jmap::{changes::get::ChangesLookup, JmapMethods};
 use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, property::Property};
 use mail_parser::HeaderName;
 use nlp::language::Language;
 use store::{
+    SerializeInfallible,
     fts::{Field, FilterGroup, FtsFilter, IntoFilterGroup},
-    query::{self, log::Query, sort::Pagination, ResultSet},
+    query::{self, ResultSet, log::Query, sort::Pagination},
     roaring::RoaringBitmap,
     write::now,
 };
@@ -418,7 +418,8 @@ impl<T: SessionStream> SessionData<T> {
 
                     filters.push(query::Filter::is_in_set(
                         self.server
-                            .fts_filter(mailbox.id.account_id, Collection::Email, fts_filters)
+                            .fts_store()
+                            .query(mailbox.id.account_id, Collection::Email, fts_filters)
                             .await?,
                     ));
                 }
@@ -457,7 +458,10 @@ impl<T: SessionStream> SessionData<T> {
                         ));
                     }
                     search::Filter::Before(date) => {
-                        filters.push(query::Filter::lt(Property::ReceivedAt, date as u64));
+                        filters.push(query::Filter::lt(
+                            Property::ReceivedAt,
+                            (date as u64).serialize(),
+                        ));
                     }
                     search::Filter::Deleted => {
                         filters.push(query::Filter::is_in_bitmap(
@@ -484,14 +488,17 @@ impl<T: SessionStream> SessionData<T> {
                         ));
                     }
                     search::Filter::Larger(size) => {
-                        filters.push(query::Filter::gt(Property::Size, size));
+                        filters.push(query::Filter::gt(Property::Size, size.serialize()));
                     }
                     search::Filter::On(date) => {
                         filters.push(query::Filter::And);
-                        filters.push(query::Filter::ge(Property::ReceivedAt, date as u64));
+                        filters.push(query::Filter::ge(
+                            Property::ReceivedAt,
+                            (date as u64).serialize(),
+                        ));
                         filters.push(query::Filter::lt(
                             Property::ReceivedAt,
-                            (date + 86400) as u64,
+                            ((date + 86400) as u64).serialize(),
                         ));
                         filters.push(query::Filter::End);
                     }
@@ -502,22 +509,37 @@ impl<T: SessionStream> SessionData<T> {
                         ));
                     }
                     search::Filter::SentBefore(date) => {
-                        filters.push(query::Filter::lt(Property::SentAt, date as u64));
+                        filters.push(query::Filter::lt(
+                            Property::SentAt,
+                            (date as u64).serialize(),
+                        ));
                     }
                     search::Filter::SentOn(date) => {
                         filters.push(query::Filter::And);
-                        filters.push(query::Filter::ge(Property::SentAt, date as u64));
-                        filters.push(query::Filter::lt(Property::SentAt, (date + 86400) as u64));
+                        filters.push(query::Filter::ge(
+                            Property::SentAt,
+                            (date as u64).serialize(),
+                        ));
+                        filters.push(query::Filter::lt(
+                            Property::SentAt,
+                            ((date + 86400) as u64).serialize(),
+                        ));
                         filters.push(query::Filter::End);
                     }
                     search::Filter::SentSince(date) => {
-                        filters.push(query::Filter::ge(Property::SentAt, date as u64));
+                        filters.push(query::Filter::ge(
+                            Property::SentAt,
+                            (date as u64).serialize(),
+                        ));
                     }
                     search::Filter::Since(date) => {
-                        filters.push(query::Filter::ge(Property::ReceivedAt, date as u64));
+                        filters.push(query::Filter::ge(
+                            Property::ReceivedAt,
+                            (date as u64).serialize(),
+                        ));
                     }
                     search::Filter::Smaller(size) => {
-                        filters.push(query::Filter::lt(Property::Size, size));
+                        filters.push(query::Filter::lt(Property::Size, size.serialize()));
                     }
                     search::Filter::Unanswered => {
                         filters.push(query::Filter::Not);
@@ -601,20 +623,21 @@ impl<T: SessionStream> SessionData<T> {
                     search::Filter::Older(secs) => {
                         filters.push(query::Filter::le(
                             Property::ReceivedAt,
-                            now().saturating_sub(secs as u64),
+                            now().saturating_sub(secs as u64).serialize(),
                         ));
                     }
                     search::Filter::Younger(secs) => {
                         filters.push(query::Filter::ge(
                             Property::ReceivedAt,
-                            now().saturating_sub(secs as u64),
+                            now().saturating_sub(secs as u64).serialize(),
                         ));
                     }
                     search::Filter::ModSeq((modseq, _)) => {
                         let mut set = RoaringBitmap::new();
                         for change in self
                             .server
-                            .changes_(
+                            .store()
+                            .changes(
                                 mailbox.id.account_id,
                                 Collection::Email,
                                 Query::from_modseq(modseq),
@@ -660,6 +683,7 @@ impl<T: SessionStream> SessionData<T> {
 
         // Run query
         self.server
+            .store()
             .filter(mailbox.id.account_id, Collection::Email, filters)
             .await
             .map(|res| (res, include_highest_modseq))

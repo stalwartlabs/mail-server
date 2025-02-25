@@ -8,10 +8,10 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use ahash::AHashMap;
 use common::{NextMailboxState, listener::SessionStream};
-use email::mailbox::UidMailbox;
+use email::mailbox::{ArchivedMailbox, UidMailbox};
 use imap_proto::protocol::{Sequence, expunge, select::Exists};
 use jmap_proto::types::{collection::Collection, property::Property};
-use store::write::assert::HashedValue;
+use store::write::{ArchivedValue, assert::HashedValue};
 use trc::AddContext;
 
 use crate::core::ImapId;
@@ -225,7 +225,7 @@ impl<T: SessionStream> SessionData<T> {
 
     pub async fn get_uid_validity(&self, mailbox: &MailboxId) -> trc::Result<u32> {
         self.server
-            .get_property::<email::mailbox::Mailbox>(
+            .get_property::<ArchivedValue<ArchivedMailbox>>(
                 mailbox.account_id,
                 Collection::Mailbox,
                 mailbox.mailbox_id,
@@ -240,7 +240,7 @@ impl<T: SessionStream> SessionData<T> {
                     .collection(Collection::Mailbox)
                     .document_id(mailbox.mailbox_id)
             })
-            .map(|m| m.uid_validity)
+            .and_then(|m| m.unarchive().map(|m| u32::from(m.uid_validity)))
     }
 
     pub async fn get_uid_next(&self, mailbox: &MailboxId) -> trc::Result<u32> {

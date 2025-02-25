@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken, config::jmap::settings::SpecialUse};
-use directory::Permission;
-use email::{
-    mailbox::{Mailbox, manage::MailboxFnc},
-    message::delete::EmailDeletion,
+use common::{
+    Server, auth::AccessToken, config::jmap::settings::SpecialUse, sharing::EffectiveAcl,
+    storage::index::ObjectIndexBuilder,
 };
+
+use email::mailbox::{ArchivedMailbox, Mailbox, destroy::MailboxDestroy, manage::MailboxFnc};
 use jmap_proto::{
-    error::set::{SetError, SetErrorType},
+    error::set::SetError,
     method::set::{SetRequest, SetResponse},
-    object::{index::ObjectIndexBuilder, mailbox::SetArguments},
+    object::mailbox::SetArguments,
     response::references::EvalObjectReferences,
     types::{
         acl::Acl,
@@ -26,20 +26,19 @@ use jmap_proto::{
     },
 };
 use store::{
+    SerializeInfallible,
     query::Filter,
     roaring::RoaringBitmap,
     write::{
-        BatchBuilder, F_BITMAP, F_CLEAR, F_VALUE,
+        ArchivedValue, BatchBuilder,
         assert::{AssertValue, HashedValue},
         log::ChangeLogBuilder,
     },
 };
+use trc::AddContext;
 use utils::config::utils::ParseValue;
 
-use crate::{
-    JmapMethods,
-    auth::acl::{AclMethods, EffectiveAcl},
-};
+use crate::JmapMethods;
 
 #[allow(unused_imports)]
 use email::mailbox::{INBOX_ID, JUNK_ID, TRASH_ID, UidMailbox};
@@ -60,15 +59,6 @@ pub trait MailboxSet: Sync + Send {
         request: SetRequest<SetArguments>,
         access_token: &AccessToken,
     ) -> impl Future<Output = trc::Result<SetResponse>> + Send;
-
-    fn mailbox_destroy(
-        &self,
-        account_id: u32,
-        document_id: u32,
-        changes: &mut ChangeLogBuilder,
-        access_token: &AccessToken,
-        remove_emails: bool,
-    ) -> impl Future<Output = trc::Result<Result<bool, SetError>>> + Send;
 
     fn mailbox_set_item(
         &self,
@@ -116,7 +106,10 @@ impl MailboxSet for Server {
                             .assert_value(Property::Value, AssertValue::Some);
                     }
 
-                    batch.create_document().custom(builder);
+                    batch
+                        .create_document()
+                        .custom(builder)
+                        .caused_by(trc::location!())?;
 
                     match self
                         .core
@@ -165,7 +158,7 @@ impl MailboxSet for Server {
             // Obtain mailbox
             let document_id = id.document_id();
             if let Some(mailbox) = self
-                .get_property::<HashedValue<Mailbox>>(
+                .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
                     account_id,
                     Collection::Mailbox,
                     document_id,
@@ -174,6 +167,7 @@ impl MailboxSet for Server {
                 .await?
             {
                 // Validate ACL
+                let mailbox = mailbox.into_deserialized().caused_by(trc::location!())?;
                 if ctx.is_shared {
                     let acl = mailbox.inner.acls.effective_acl(access_token);
                     if !acl.contains(Acl::Modify) {
@@ -213,7 +207,10 @@ impl MailboxSet for Server {
                                 .assert_value(Property::Value, AssertValue::Some);
                         }
 
-                        batch.update_document(document_id).custom(builder);
+                        batch
+                            .update_document(document_id)
+                            .custom(builder)
+                            .caused_by(trc::location!())?;
 
                         if !batch.is_empty() {
                             match self.core.storage.data.write(batch.build()).await {
@@ -282,197 +279,6 @@ impl MailboxSet for Server {
         }
 
         Ok(ctx.response)
-    }
-
-    async fn mailbox_destroy(
-        &self,
-        account_id: u32,
-        document_id: u32,
-        changes: &mut ChangeLogBuilder,
-        access_token: &AccessToken,
-        remove_emails: bool,
-    ) -> trc::Result<Result<bool, SetError>> {
-        // Internal folders cannot be deleted
-        #[cfg(feature = "test_mode")]
-        if [INBOX_ID, TRASH_ID].contains(&document_id)
-            && !access_token.has_permission(Permission::DeleteSystemFolders)
-        {
-            return Ok(Err(SetError::forbidden().with_description(
-                "You are not allowed to delete Inbox, Junk or Trash folders.",
-            )));
-        }
-
-        #[cfg(not(feature = "test_mode"))]
-        if [INBOX_ID, TRASH_ID, JUNK_ID].contains(&document_id)
-            && !access_token.has_permission(Permission::DeleteSystemFolders)
-        {
-            return Ok(Err(SetError::forbidden().with_description(
-                "You are not allowed to delete Inbox, Junk or Trash folders.",
-            )));
-        }
-
-        // Verify that this mailbox does not have sub-mailboxes
-        if !self
-            .filter(
-                account_id,
-                Collection::Mailbox,
-                vec![Filter::eq(Property::ParentId, document_id + 1)],
-            )
-            .await?
-            .results
-            .is_empty()
-        {
-            return Ok(Err(SetError::new(SetErrorType::MailboxHasChild)
-                .with_description("Mailbox has at least one children.")));
-        }
-
-        // Verify that the mailbox is empty
-        let mut did_remove_emails = false;
-        if let Some(message_ids) = self
-            .get_tag(
-                account_id,
-                Collection::Email,
-                Property::MailboxIds,
-                document_id,
-            )
-            .await?
-        {
-            if remove_emails {
-                // Flag removal for state change notification
-                did_remove_emails = true;
-
-                // If the message is in multiple mailboxes, untag it from the current mailbox,
-                // otherwise delete it.
-                let mut destroy_ids = RoaringBitmap::new();
-                for (message_id, mut mailbox_ids) in self
-                    .get_properties::<HashedValue<Vec<UidMailbox>>, _, _>(
-                        account_id,
-                        Collection::Email,
-                        &message_ids,
-                        Property::MailboxIds,
-                    )
-                    .await?
-                {
-                    // Remove mailbox from list
-                    let orig_len = mailbox_ids.inner.len();
-                    mailbox_ids.inner.retain(|id| id.mailbox_id != document_id);
-                    if mailbox_ids.inner.len() == orig_len {
-                        continue;
-                    }
-
-                    if !mailbox_ids.inner.is_empty() {
-                        // Obtain threadId
-                        if let Some(thread_id) = self
-                            .get_property::<u32>(
-                                account_id,
-                                Collection::Email,
-                                message_id,
-                                Property::ThreadId,
-                            )
-                            .await?
-                        {
-                            // Untag message from mailbox
-                            let mut batch = BatchBuilder::new();
-                            batch
-                                .with_account_id(account_id)
-                                .with_collection(Collection::Email)
-                                .update_document(message_id)
-                                .assert_value(Property::MailboxIds, &mailbox_ids)
-                                .value(Property::MailboxIds, mailbox_ids.inner, F_VALUE)
-                                .value(Property::MailboxIds, document_id, F_BITMAP | F_CLEAR);
-                            match self.core.storage.data.write(batch.build()).await {
-                                Ok(_) => changes.log_update(
-                                    Collection::Email,
-                                    Id::from_parts(thread_id, message_id),
-                                ),
-                                Err(err) if err.is_assertion_failure() => {
-                                    return Ok(Err(SetError::forbidden().with_description(
-                                        concat!(
-                                            "Another process modified a message in this mailbox ",
-                                            "while deleting it, please try again."
-                                        ),
-                                    )));
-                                }
-                                Err(err) => {
-                                    return Err(err.caused_by(trc::location!()));
-                                }
-                            }
-                        } else {
-                            trc::event!(
-                                Store(trc::StoreEvent::NotFound),
-                                AccountId = account_id,
-                                MessageId = message_id,
-                                MailboxId = document_id,
-                                Details = "Message does not have a threadId.",
-                                CausedBy = trc::location!(),
-                            );
-                        }
-                    } else {
-                        // Delete message
-                        destroy_ids.insert(message_id);
-                    }
-                }
-
-                // Bulk delete messages
-                if !destroy_ids.is_empty() {
-                    let (mut change, _) = self.emails_tombstone(account_id, destroy_ids).await?;
-                    change.changes.remove(&(Collection::Mailbox as u8));
-                    changes.merge(change);
-                }
-            } else {
-                return Ok(Err(SetError::new(SetErrorType::MailboxHasEmail)
-                    .with_description("Mailbox is not empty.")));
-            }
-        }
-
-        // Obtain mailbox
-        if let Some(mailbox) = self
-            .get_property::<HashedValue<Mailbox>>(
-                account_id,
-                Collection::Mailbox,
-                document_id,
-                Property::Value,
-            )
-            .await?
-        {
-            // Validate ACLs
-            if access_token.is_shared(account_id) {
-                let acl = mailbox.inner.acls.effective_acl(access_token);
-                if !acl.contains(Acl::Administer) {
-                    if !acl.contains(Acl::Delete) {
-                        return Ok(Err(SetError::forbidden()
-                            .with_description("You are not allowed to delete this mailbox.")));
-                    } else if remove_emails && !acl.contains(Acl::RemoveItems) {
-                        return Ok(Err(SetError::forbidden().with_description(
-                            "You are not allowed to delete emails from this mailbox.",
-                        )));
-                    }
-                }
-            }
-
-            let mut batch = BatchBuilder::new();
-            batch
-                .with_account_id(account_id)
-                .with_collection(Collection::Mailbox)
-                .delete_document(document_id)
-                .value(Property::EmailIds, (), F_VALUE | F_CLEAR)
-                .custom(ObjectIndexBuilder::new().with_current(mailbox));
-
-            match self.core.storage.data.write(batch.build()).await {
-                Ok(_) => {
-                    changes.log_delete(Collection::Mailbox, document_id);
-                    Ok(Ok(did_remove_emails))
-                }
-                Err(err) if err.is_assertion_failure() => Ok(Err(SetError::forbidden()
-                    .with_description(concat!(
-                        "Another process modified this mailbox ",
-                        "while deleting it, please try again."
-                    )))),
-                Err(err) => Err(err.caused_by(trc::location!())),
-            }
-        } else {
-            Ok(Err(SetError::not_found()))
-        }
     }
 
     #[allow(clippy::blocks_in_conditions)]
@@ -599,8 +405,8 @@ impl MailboxSet for Server {
             }
             let parent_document_id = mailbox_parent_id - 1;
 
-            if let Some(fields) = self
-                .get_property::<Mailbox>(
+            if let Some(mailbox_) = self
+                .get_property::<ArchivedValue<ArchivedMailbox>>(
                     ctx.account_id,
                     Collection::Mailbox,
                     parent_document_id,
@@ -608,9 +414,10 @@ impl MailboxSet for Server {
                 )
                 .await?
             {
+                let mailbox = mailbox_.unarchive().caused_by(trc::location!())?;
                 if depth == 0
                     && ctx.is_shared
-                    && !fields
+                    && !mailbox
                         .acls
                         .effective_acl(ctx.access_token)
                         .contains_any([Acl::CreateChild, Acl::Administer].into_iter())
@@ -620,7 +427,7 @@ impl MailboxSet for Server {
                     )));
                 }
 
-                mailbox_parent_id = fields.parent_id;
+                mailbox_parent_id = mailbox.parent_id.into();
             } else if ctx.mailbox_ids.contains(parent_document_id) {
                 // Parent mailbox is probably created within the same request
                 success = true;
@@ -652,7 +459,12 @@ impl MailboxSet for Server {
                     Collection::Mailbox,
                     vec![Filter::eq(
                         Property::Role,
-                        changes.role.as_str().unwrap_or_default(),
+                        changes
+                            .role
+                            .as_str()
+                            .unwrap_or_default()
+                            .as_bytes()
+                            .to_vec(),
                     )],
                 )
                 .await?
@@ -690,8 +502,8 @@ impl MailboxSet for Server {
                         ctx.account_id,
                         Collection::Mailbox,
                         vec![
-                            Filter::eq(Property::Name, changes.name.as_str()),
-                            Filter::eq(Property::ParentId, changes.parent_id),
+                            Filter::eq(Property::Name, changes.name.as_bytes().to_vec()),
+                            Filter::eq(Property::ParentId, changes.parent_id.serialize()),
                         ],
                     )
                     .await?

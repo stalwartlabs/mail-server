@@ -17,7 +17,7 @@ use mail_parser::{GetHeader, HeaderName, PartType, decoders::html::html_to_text}
 use nlp::language::{Language, search_snippet::generate_snippet, stemmer::Stemmer};
 use store::{backend::MAX_TOKEN_LENGTH, write::Bincode};
 
-use crate::{auth::acl::AclMethods, blob::download::BlobDownload};
+use crate::blob::download::BlobDownload;
 
 use std::future::Future;
 
@@ -82,7 +82,12 @@ impl EmailSearchSnippet for Server {
         }
         let account_id = request.account_id.document_id();
         let document_ids = self
-            .owned_or_shared_messages(access_token, account_id, Acl::ReadItems)
+            .owned_or_shared_document_children(
+                access_token,
+                account_id,
+                Collection::Mailbox,
+                Acl::ReadItems,
+            )
             .await?;
         let email_ids = request.email_ids.unwrap();
         let mut response = GetSearchSnippetResponse {

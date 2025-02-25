@@ -9,25 +9,25 @@ use std::{borrow::Cow, fmt::Display};
 use ahash::AHashMap;
 use nlp::{
     language::{
+        Language,
         detect::{LanguageDetector, MIN_LANGUAGE_SCORE},
         stemmer::Stemmer,
-        Language,
     },
     tokenizers::word::WordTokenizer,
 };
 use trc::AddContext;
 
 use crate::{
+    IterateParams, SerializeInfallible, Store, U32_LEN, ValueKey,
     backend::MAX_TOKEN_LENGTH,
     dispatch::DocumentSet,
     write::{
-        hash::TokenType, key::DeserializeBigEndian, BatchBuilder, BitmapHash, MaybeDynamicId,
-        Operation, ValueClass, ValueOp,
+        BatchBuilder, BitmapHash, MaybeDynamicId, Operation, ValueClass, ValueOp, hash::TokenType,
+        key::DeserializeBigEndian,
     },
-    IterateParams, Serialize, Store, ValueKey, U32_LEN,
 };
 
-use super::{postings::Postings, Field};
+use super::{Field, postings::Postings};
 pub const TERM_INDEX_VERSION: u8 = 1;
 
 #[derive(Debug)]

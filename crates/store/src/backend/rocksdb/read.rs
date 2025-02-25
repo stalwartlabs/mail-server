@@ -7,12 +7,12 @@
 use roaring::RoaringBitmap;
 use rocksdb::{Direction, IteratorMode};
 
-use super::{into_error, RocksDbStore};
+use super::{RocksDbStore, into_error};
 
 use crate::{
+    BitmapKey, Deserialize, IterateParams, Key, U32_LEN, ValueKey,
     backend::rocksdb::CfHandle,
-    write::{key::DeserializeBigEndian, BitmapClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
+    write::{BitmapClass, ValueClass, key::DeserializeBigEndian},
 };
 
 impl RocksDbStore {

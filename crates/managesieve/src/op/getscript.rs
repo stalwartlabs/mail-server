@@ -8,11 +8,12 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use email::sieve::SieveScript;
+use email::sieve::ArchivedSieveScript;
 use imap_proto::receiver::Request;
-use jmap::blob::download::BlobDownload;
-use jmap_proto::types::{collection::Collection, property::Property};
+use jmap_proto::types::{blob::BlobSection, collection::Collection, property::Property};
+use store::write::ArchivedValue;
 use trc::AddContext;
+use utils::BlobHash;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
 
@@ -34,9 +35,9 @@ impl<T: SessionStream> Session<T> {
             })?;
         let account_id = self.state.access_token().primary_id();
         let document_id = self.get_script_id(account_id, &name).await?;
-        let (blob_section, blob_hash) = self
+        let sieve_ = self
             .server
-            .get_property::<SieveScript>(
+            .get_property::<ArchivedValue<ArchivedSieveScript>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -44,16 +45,23 @@ impl<T: SessionStream> Session<T> {
             )
             .await
             .caused_by(trc::location!())?
-            .and_then(|id| (id.blob_id.section?, id.blob_id.hash).into())
             .ok_or_else(|| {
                 trc::ManageSieveEvent::Error
                     .into_err()
                     .details("Script not found")
                     .code(ResponseCode::NonExistent)
             })?;
+        let sieve = sieve_.unarchive().caused_by(trc::location!())?;
+        let blob_size = u32::from(sieve.size) as usize;
         let script = self
             .server
-            .get_blob_section(&blob_hash, &blob_section)
+            .get_blob_section(
+                &BlobHash::from(&sieve.blob_hash),
+                &BlobSection {
+                    size: blob_size,
+                    ..Default::default()
+                },
+            )
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| {
@@ -62,11 +70,11 @@ impl<T: SessionStream> Session<T> {
                     .details("Script blob not found")
                     .code(ResponseCode::NonExistent)
             })?;
-        debug_assert_eq!(script.len(), blob_section.size);
+        debug_assert_eq!(script.len(), blob_size);
 
         let mut response = Vec::with_capacity(script.len() + 32);
         response.push(b'{');
-        response.extend_from_slice(blob_section.size.to_string().as_bytes());
+        response.extend_from_slice(blob_size.to_string().as_bytes());
         response.extend_from_slice(b"}\r\n");
         response.extend(script);
         response.extend_from_slice(b"\r\n");

@@ -7,14 +7,12 @@
 use std::fmt::Display;
 
 use store::{
-    write::{
-        BitmapClass, DeserializeFrom, MaybeDynamicId, Operation, SerializeInto, TagValue, ToBitmaps,
-    },
     Serialize,
+    write::{DeserializeFrom, MaybeDynamicId, SerializeInto, TagValue},
 };
 use utils::codec::leb128::{Leb128Iterator, Leb128Vec};
 
-use crate::parser::{json::Parser, JsonObjectParser};
+use crate::parser::{JsonObjectParser, json::Parser};
 
 pub const SEEN: usize = 0;
 pub const DRAFT: usize = 1;
@@ -170,41 +168,9 @@ impl Display for Keyword {
     }
 }
 
-impl ToBitmaps for Keyword {
-    fn to_bitmaps(&self, ops: &mut Vec<store::write::Operation>, field: u8, set: bool) {
-        ops.push(Operation::Bitmap {
-            class: BitmapClass::Tag {
-                field,
-                value: self.into(),
-            },
-            set,
-        });
-    }
-}
-
 impl Serialize for Keyword {
-    fn serialize(self) -> Vec<u8> {
-        match self {
-            Keyword::Seen => vec![SEEN as u8],
-            Keyword::Draft => vec![DRAFT as u8],
-            Keyword::Flagged => vec![FLAGGED as u8],
-            Keyword::Answered => vec![ANSWERED as u8],
-            Keyword::Recent => vec![RECENT as u8],
-            Keyword::Important => vec![IMPORTANT as u8],
-            Keyword::Phishing => vec![PHISHING as u8],
-            Keyword::Junk => vec![JUNK as u8],
-            Keyword::NotJunk => vec![NOTJUNK as u8],
-            Keyword::Deleted => vec![DELETED as u8],
-            Keyword::Forwarded => vec![FORWARDED as u8],
-            Keyword::MdnSent => vec![MDN_SENT as u8],
-            Keyword::Other(string) => string.into_bytes(),
-        }
-    }
-}
-
-impl Serialize for &Keyword {
-    fn serialize(self) -> Vec<u8> {
-        match self {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        Ok(match self {
             Keyword::Seen => vec![SEEN as u8],
             Keyword::Draft => vec![DRAFT as u8],
             Keyword::Flagged => vec![FLAGGED as u8],
@@ -218,7 +184,7 @@ impl Serialize for &Keyword {
             Keyword::Forwarded => vec![FORWARDED as u8],
             Keyword::MdnSent => vec![MDN_SENT as u8],
             Keyword::Other(string) => string.as_bytes().to_vec(),
-        }
+        })
     }
 }
 

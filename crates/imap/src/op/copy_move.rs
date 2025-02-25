@@ -9,7 +9,7 @@ use std::{sync::Arc, time::Instant};
 use directory::Permission;
 use email::{
     mailbox::{JUNK_ID, UidMailbox},
-    message::{bayes::EmailBayesTrain, ingest::EmailIngest},
+    message::{bayes::EmailBayesTrain, copy::EmailCopy, ingest::EmailIngest},
 };
 use imap_proto::{
     Command, ResponseCode, ResponseType, StatusResponse, protocol::copy_move::Arguments,
@@ -20,8 +20,7 @@ use crate::{
     core::{SelectedMailbox, Session, SessionData},
     spawn_op,
 };
-use common::{MailboxId, listener::SessionStream};
-use jmap::email::{copy::EmailCopy, set::TagManager};
+use common::{MailboxId, listener::SessionStream, storage::tag::TagManager};
 use jmap_proto::{
     error::set::SetErrorType,
     types::{
@@ -30,8 +29,9 @@ use jmap_proto::{
     },
 };
 use store::{
+    SerializeInfallible,
     roaring::RoaringBitmap,
-    write::{BatchBuilder, F_VALUE, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
+    write::{BatchBuilder, ValueClass, assert::HashedValue, log::ChangeLogBuilder},
 };
 
 use super::ImapContext;
@@ -229,14 +229,16 @@ impl<T: SessionStream> SessionData<T> {
                     .with_account_id(account_id)
                     .with_collection(Collection::Email)
                     .update_document(id);
-                mailboxes.update_batch(&mut batch, Property::MailboxIds);
+                mailboxes
+                    .update_batch(&mut batch, Property::MailboxIds)
+                    .imap_ctx(&arguments.tag, trc::location!())?;
                 if changelog.change_id == u64::MAX {
                     changelog.change_id = self
                         .server
                         .assign_change_id(account_id)
                         .imap_ctx(&arguments.tag, trc::location!())?;
                 }
-                batch.value(Property::Cid, changelog.change_id, F_VALUE);
+                batch.set(Property::Cid, changelog.change_id.serialize());
 
                 // Add bayes train task
                 if can_spam_train {

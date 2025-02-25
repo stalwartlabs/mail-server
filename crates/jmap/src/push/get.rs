@@ -9,6 +9,7 @@ use common::{
     auth::AccessToken,
     ipc::{StateEvent, UpdateSubscription},
 };
+use email::push::ArchivedPushSubscription;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -20,8 +21,10 @@ use jmap_proto::{
 };
 use store::{
     BitmapKey, ValueKey,
-    write::{ValueClass, now},
+    write::{ArchivedValue, ValueClass, now},
 };
+use trc::AddContext;
+use utils::map::bitmap::Bitmap;
 
 use super::{EncryptionKeys, PushSubscription};
 use std::future::Future;
@@ -81,8 +84,8 @@ impl PushSubscriptionFetch for Server {
                 response.not_found.push(id.into());
                 continue;
             }
-            let mut push = if let Some(push) = self
-                .get_property::<email::push::PushSubscription>(
+            let push_ = if let Some(push) = self
+                .get_property::<ArchivedValue<ArchivedPushSubscription>>(
                     account_id,
                     Collection::PushSubscription,
                     document_id,
@@ -95,6 +98,7 @@ impl PushSubscriptionFetch for Server {
                 response.not_found.push(id.into());
                 continue;
             };
+            let push = push_.unarchive().caused_by(trc::location!())?;
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {
                 match property {
@@ -109,12 +113,12 @@ impl PushSubscriptionFetch for Server {
                     Property::DeviceClientId => {
                         result.append(
                             Property::DeviceClientId,
-                            std::mem::take(&mut push.device_client_id),
+                            Value::from(&push.device_client_id),
                         );
                     }
                     Property::Types => {
                         let mut types = Vec::new();
-                        for typ in push.types.into_iter() {
+                        for typ in Bitmap::from(&push.types).into_iter() {
                             types.push(Value::Text(typ.to_string()));
                         }
                         result.append(Property::Types, Value::List(types));
@@ -123,7 +127,9 @@ impl PushSubscriptionFetch for Server {
                         if push.expires > 0 {
                             result.append(
                                 Property::Expires,
-                                Value::Date(UTCDate::from_timestamp(push.expires as i64)),
+                                Value::Date(
+                                    UTCDate::from_timestamp(u64::from(push.expires) as i64),
+                                ),
                             );
                         } else {
                             result.append(Property::Expires, Value::Null);
@@ -160,7 +166,7 @@ impl PushSubscriptionFetch for Server {
                 .core
                 .storage
                 .data
-                .get_value::<email::push::PushSubscription>(ValueKey {
+                .get_value::<ArchivedValue<ArchivedPushSubscription>>(ValueKey {
                     account_id,
                     collection: Collection::PushSubscription.into(),
                     document_id,
@@ -172,7 +178,9 @@ impl PushSubscriptionFetch for Server {
                         .into_err()
                         .caused_by(trc::location!())
                         .document_id(document_id)
-                })?;
+                })?
+                .deserialize()
+                .caused_by(trc::location!())?;
 
             if subscription.expires > current_time {
                 if subscription.verified {

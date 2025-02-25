@@ -4,28 +4,25 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::config::jmap::settings::SpecialUse;
-use jmap_proto::{
-    object::index::{IndexValue, IndexableObject},
-    types::property::Property,
+use common::{
+    config::jmap::settings::SpecialUse,
+    storage::index::{IndexValue, IndexableObject},
 };
+use jmap_proto::types::property::Property;
+use store::write::{MaybeDynamicId, TagValue};
 
-use super::Mailbox;
+use super::{Mailbox, UidMailbox};
 
 impl IndexableObject for Mailbox {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>> {
         [
             IndexValue::Text {
                 field: Property::Name.into(),
-                value: self.name.as_str(),
-                tokenize: true,
-                index: true,
+                value: self.name.to_lowercase().into(),
             },
             IndexValue::Text {
                 field: Property::Role.into(),
-                value: self.role.as_str().unwrap_or_default(),
-                tokenize: false,
-                index: true,
+                value: self.role.as_str().unwrap_or_default().into(),
             },
             IndexValue::Tag {
                 field: Property::Role.into(),
@@ -46,5 +43,17 @@ impl IndexableObject for Mailbox {
             IndexValue::Acl { value: &self.acls },
         ]
         .into_iter()
+    }
+}
+
+impl From<&UidMailbox> for TagValue<MaybeDynamicId> {
+    fn from(value: &UidMailbox) -> Self {
+        TagValue::Id(MaybeDynamicId::Static(value.mailbox_id))
+    }
+}
+
+impl From<UidMailbox> for TagValue<MaybeDynamicId> {
+    fn from(value: UidMailbox) -> Self {
+        TagValue::Id(MaybeDynamicId::Static(value.mailbox_id))
     }
 }

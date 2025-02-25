@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use futures::{pin_mut, TryStreamExt};
+use futures::{TryStreamExt, pin_mut};
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{key::DeserializeBigEndian, BitmapClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
+    BitmapKey, Deserialize, IterateParams, Key, U32_LEN, ValueKey,
+    write::{BitmapClass, ValueClass, key::DeserializeBigEndian},
 };
 
-use super::{into_error, PostgresStore};
+use super::{PostgresStore, into_error};
 
 impl PostgresStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>

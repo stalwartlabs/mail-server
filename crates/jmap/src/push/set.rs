@@ -6,7 +6,7 @@
 
 use base64::{Engine, engine::general_purpose};
 use common::{Server, auth::AccessToken};
-use email::push::{Keys, PushSubscription};
+use email::push::{ArchivedPushSubscription, Keys, PushSubscription};
 use jmap_proto::{
     error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -24,7 +24,7 @@ use std::future::Future;
 use store::{
     Serialize,
     rand::{Rng, rng},
-    write::{BatchBuilder, F_CLEAR, F_VALUE, now},
+    write::{ArchivedValue, BatchBuilder, now},
 };
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
@@ -106,7 +106,10 @@ impl PushSubscriptionSet for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::PushSubscription)
                 .create_document()
-                .set(Property::Value, push.serialize());
+                .set(
+                    Property::Value,
+                    push.serialize().caused_by(trc::location!())?,
+                );
             let document_id = self
                 .store()
                 .write_expect_id(batch)
@@ -133,7 +136,7 @@ impl PushSubscriptionSet for Server {
             // Obtain push subscription
             let document_id = id.document_id();
             let mut push = if let Some(push) = self
-                .get_property::<PushSubscription>(
+                .get_property::<ArchivedValue<ArchivedPushSubscription>>(
                     account_id,
                     Collection::PushSubscription,
                     document_id,
@@ -141,7 +144,7 @@ impl PushSubscriptionSet for Server {
                 )
                 .await?
             {
-                push
+                push.deserialize().caused_by(trc::location!())?
             } else {
                 response.not_updated.append(id, SetError::not_found());
                 continue 'update;
@@ -163,7 +166,10 @@ impl PushSubscriptionSet for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::PushSubscription)
                 .update_document(document_id)
-                .set(Property::Value, push.serialize());
+                .set(
+                    Property::Value,
+                    push.serialize().caused_by(trc::location!())?,
+                );
             self.store()
                 .write(batch)
                 .await
@@ -181,7 +187,7 @@ impl PushSubscriptionSet for Server {
                     .with_account_id(account_id)
                     .with_collection(Collection::PushSubscription)
                     .delete_document(document_id)
-                    .value(Property::Value, (), F_VALUE | F_CLEAR);
+                    .clear(Property::Value);
                 self.store()
                     .write(batch)
                     .await

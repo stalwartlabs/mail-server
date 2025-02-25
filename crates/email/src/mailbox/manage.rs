@@ -6,12 +6,15 @@
 
 use std::future::Future;
 
-use common::{Server, config::jmap::settings::SpecialUse};
-use jmap_proto::{
-    object::index::ObjectIndexBuilder,
-    types::{collection::Collection, keyword::Keyword, property::Property},
+use common::{Server, config::jmap::settings::SpecialUse, storage::index::ObjectIndexBuilder};
+use jmap_proto::types::{collection::Collection, keyword::Keyword, property::Property};
+use store::{
+    SerializeInfallible,
+    ahash::AHashSet,
+    query::Filter,
+    roaring::RoaringBitmap,
+    write::{ArchivedValue, BatchBuilder},
 };
-use store::{ahash::AHashSet, query::Filter, roaring::RoaringBitmap, write::BatchBuilder};
 use trc::AddContext;
 
 use crate::thread::cache::ThreadCache;
@@ -106,7 +109,8 @@ impl MailboxFnc for Server {
             }
             batch
                 .create_document_with_id(document_id)
-                .custom(ObjectIndexBuilder::new().with_changes(object));
+                .custom(ObjectIndexBuilder::new().with_changes(object))
+                .caused_by(trc::location!())?;
             mailbox_ids.insert(document_id);
         }
 
@@ -164,7 +168,8 @@ impl MailboxFnc for Server {
                     .custom(
                         ObjectIndexBuilder::new()
                             .with_changes(Mailbox::new(name).with_parent_id(next_parent_id)),
-                    );
+                    )
+                    .caused_by(trc::location!())?;
                 let document_id = self
                     .store()
                     .write_expect_id(batch)
@@ -179,7 +184,8 @@ impl MailboxFnc for Server {
             batch
                 .with_account_id(account_id)
                 .with_collection(Collection::Mailbox)
-                .custom(changes);
+                .custom(changes)
+                .caused_by(trc::location!())?;
             self.store()
                 .write(batch.build())
                 .await
@@ -275,7 +281,7 @@ impl MailboxFnc for Server {
             if pos == 0 && item.eq_ignore_ascii_case("inbox") {
                 has_inbox = true;
             } else {
-                filter.push(Filter::eq(Property::Name, *item));
+                filter.push(Filter::eq(Property::Name, item.serialize()));
             }
         }
         filter.push(Filter::End);
@@ -299,7 +305,7 @@ impl MailboxFnc for Server {
         let mut found_names = Vec::new();
         for document_id in document_ids {
             if let Some(obj) = self
-                .get_property::<Mailbox>(
+                .get_property::<ArchivedValue<ArchivedMailbox>>(
                     account_id,
                     Collection::Mailbox,
                     document_id,
@@ -307,7 +313,12 @@ impl MailboxFnc for Server {
                 )
                 .await?
             {
-                found_names.push((obj.name, obj.parent_id, document_id + 1));
+                let obj = obj.unarchive()?;
+                found_names.push((
+                    obj.name.to_string(),
+                    u32::from(obj.parent_id),
+                    document_id + 1,
+                ));
             } else {
                 return Ok(None);
             }
@@ -349,7 +360,7 @@ impl MailboxFnc for Server {
                 .filter(
                     account_id,
                     Collection::Mailbox,
-                    vec![Filter::eq(Property::Role, role.to_string())],
+                    vec![Filter::eq(Property::Role, role.serialize())],
                 )
                 .await
                 .caused_by(trc::location!())

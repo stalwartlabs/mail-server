@@ -5,16 +5,18 @@
  */
 
 use common::Server;
-use email::sieve::SieveScript;
+use email::sieve::ArchivedSieveScript;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
+        blob::{BlobId, BlobSection},
         collection::Collection,
         property::Property,
         value::{Object, Value},
     },
 };
-use store::BlobClass;
+use store::{BlobClass, write::ArchivedValue};
+use trc::AddContext;
 
 use crate::changes::state::StateManager;
 
@@ -70,8 +72,8 @@ impl SieveScriptGet for Server {
                 response.not_found.push(id.into());
                 continue;
             }
-            let mut sieve = if let Some(sieve) = self
-                .get_property::<SieveScript>(
+            let sieve_ = if let Some(sieve) = self
+                .get_property::<ArchivedValue<ArchivedSieveScript>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -84,6 +86,7 @@ impl SieveScriptGet for Server {
                 response.not_found.push(id.into());
                 continue;
             };
+            let sieve = sieve_.unarchive().caused_by(trc::location!())?;
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {
                 match property {
@@ -91,18 +94,26 @@ impl SieveScriptGet for Server {
                         result.append(Property::Id, Value::Id(id));
                     }
                     Property::Name => {
-                        result.append(Property::Name, Value::Text(std::mem::take(&mut sieve.name)));
+                        result.append(Property::Name, Value::from(&sieve.name));
                     }
                     Property::IsActive => {
                         result.append(Property::IsActive, Value::Bool(sieve.is_active));
                     }
                     Property::BlobId => {
-                        let mut blob_id = sieve.blob_id.clone();
-                        blob_id.class = BlobClass::Linked {
-                            account_id,
-                            collection: Collection::SieveScript.into(),
-                            document_id,
+                        let blob_id = BlobId {
+                            hash: (&sieve.blob_hash).into(),
+                            class: BlobClass::Linked {
+                                account_id,
+                                collection: Collection::SieveScript.into(),
+                                document_id,
+                            },
+                            section: BlobSection {
+                                size: u32::from(sieve.size) as usize,
+                                ..Default::default()
+                            }
+                            .into(),
                         };
+
                         result.append(Property::BlobId, Value::BlobId(blob_id));
                     }
                     property => {

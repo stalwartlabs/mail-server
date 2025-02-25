@@ -7,15 +7,15 @@
 use std::{borrow::Cow, future::Future};
 
 use common::{
-    ip_to_bytes, Server, KV_REPUTATION_ASN, KV_REPUTATION_DOMAIN, KV_REPUTATION_FROM,
-    KV_REPUTATION_IP,
+    KV_REPUTATION_ASN, KV_REPUTATION_DOMAIN, KV_REPUTATION_FROM, KV_REPUTATION_IP, Server,
+    ip_to_bytes,
 };
 use mail_auth::DmarcResult;
-use store::{dispatch::lookup::KeyValue, Deserialize, Serialize};
+use store::{Deserialize, Serialize, dispatch::lookup::KeyValue};
 
 use crate::{
-    modules::{key_get, key_set},
     SpamFilterContext,
+    modules::{key_get, key_set},
 };
 
 pub trait SpamFilterAnalyzeReputation: Sync + Send {
@@ -104,7 +104,8 @@ impl SpamFilterAnalyzeReputation for Server {
                                     count: 1,
                                     score: ctx.result.score,
                                 }
-                                .serialize(),
+                                .serialize()
+                                .unwrap(),
                             )
                             .expires(config.expiry),
                         )
@@ -131,7 +132,8 @@ impl SpamFilterAnalyzeReputation for Server {
                                 count: updated_count,
                                 score: updated_score,
                             }
-                            .serialize(),
+                            .serialize()
+                            .unwrap(),
                         )
                         .expires(config.expiry),
                     )
@@ -168,12 +170,12 @@ impl Type {
     }
 }
 
-impl Serialize for &Reputation {
-    fn serialize(self) -> Vec<u8> {
+impl Serialize for Reputation {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
         let mut buf = Vec::with_capacity(12);
         buf.extend_from_slice(&self.count.to_be_bytes());
         buf.extend_from_slice(&self.score.to_be_bytes());
-        buf
+        Ok(buf)
     }
 }
 

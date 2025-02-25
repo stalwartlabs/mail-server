@@ -6,13 +6,13 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use jmap_proto::{
     method::{
         get, query,
         set::{self},
     },
-    request::{method::MethodName, Call, Request, RequestMethod},
+    request::{Call, Request, RequestMethod, method::MethodName},
     response::{Response, ResponseMethod},
     types::collection::Collection,
 };
@@ -22,8 +22,8 @@ use crate::{
     blob::{copy::BlobCopy, get::BlobOperations, upload::BlobUpload},
     changes::{get::ChangesLookup, query::QueryChanges},
     email::{
-        copy::EmailCopy, get::EmailGet, import::EmailImport, parse::EmailParse, query::EmailQuery,
-        set::EmailSet, snippet::EmailSearchSnippet,
+        copy::JmapEmailCopy, get::EmailGet, import::EmailImport, parse::EmailParse,
+        query::EmailQuery, set::EmailSet, snippet::EmailSearchSnippet,
     },
     identity::{get::IdentityGet, set::IdentitySet},
     mailbox::{get::MailboxGet, query::MailboxQuery, set::MailboxSet},
@@ -138,10 +138,12 @@ impl RequestHandler for Server {
                     Err(error) => {
                         let method_error = error.clone();
 
-                        trc::error!(error
-                            .span_id(session.session_id)
-                            .ctx_unique(trc::Key::AccountId, access_token.primary_id())
-                            .caused_by(method_name));
+                        trc::error!(
+                            error
+                                .span_id(session.session_id)
+                                .ctx_unique(trc::Key::AccountId, access_token.primary_id())
+                                .caused_by(method_name)
+                        );
 
                         response.push_error(call.id, method_error);
                     }

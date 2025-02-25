@@ -11,7 +11,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
-use mail_auth::{Parameters, Txt, MX};
+use mail_auth::{MX, Parameters, Txt};
 use mail_send::smtp::tls::build_tls_connector;
 use nlp::bayes::{TokenHash, Weights};
 use parking_lot::RwLock;
@@ -22,12 +22,12 @@ use utils::{
 };
 
 use crate::{
-    auth::{roles::RolePermissions, AccessToken},
+    Account, AccountId, Caches, Data, Mailbox, MailboxId, MailboxState, NextMailboxState, Threads,
+    TlsConnectors,
+    auth::{AccessToken, roles::RolePermissions},
     config::smtp::resolver::{Policy, Tlsa},
     listener::blocked::BlockedIps,
     manager::webadmin::WebAdminManager,
-    Account, AccountId, Caches, Data, Mailbox, MailboxId, MailboxState, NextMailboxState, Threads,
-    TlsConnectors,
 };
 
 use super::server::tls::{build_self_signed_cert, parse_certificates};

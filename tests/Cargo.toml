@@ -5,8 +5,8 @@ edition = "2024"
 resolver = "2"
 
 [features]
-#default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
-default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis"]
+default = ["sqlite", "postgres", "mysql", "rocks", "elastic", "s3", "redis", "azure", "foundationdb"]
+#default = ["sqlite", "postgres", "mysql", "rocks", "s3", "redis"]
 #default = ["rocks", "redis", "s3"]
 sqlite = ["store/sqlite"]
 foundationdb = ["store/foundation", "common/foundation"]
@@ -29,7 +29,7 @@ imap_proto = { path = "../crates/imap-proto" }
 pop3 = { path = "../crates/pop3", features = ["test_mode"] }
 smtp = { path = "../crates/smtp", features = ["test_mode", "enterprise"] }
 common = { path = "../crates/common", features = ["test_mode", "enterprise"] }
-email = { path = "../crates/email", features = ["test_mode"] }
+email = { path = "../crates/email", features = ["test_mode", "enterprise"] }
 spam-filter = { path = "../crates/spam-filter", features = ["test_mode", "enterprise"] }
 trc = { path = "../crates/trc" }
 managesieve = { path = "../crates/managesieve", features = ["test_mode", "enterprise"] }

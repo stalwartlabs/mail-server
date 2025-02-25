@@ -6,7 +6,7 @@
 
 use common::Server;
 use directory::{QueryBy, backend::internal::PrincipalField};
-use email::identity::{EmailAddress, Identity};
+use email::identity::{ArchivedIdentity, EmailAddress, Identity};
 use jmap_proto::{
     error::set::SetError,
     method::set::{RequestArguments, SetRequest, SetResponse},
@@ -18,8 +18,8 @@ use jmap_proto::{
     },
 };
 use std::future::Future;
-use store::Serialize;
-use store::write::{BatchBuilder, F_CLEAR, F_VALUE, log::ChangeLogBuilder};
+use store::write::{BatchBuilder, log::ChangeLogBuilder};
+use store::{Serialize, write::ArchivedValue};
 use trc::AddContext;
 use utils::sanitize_email;
 
@@ -94,7 +94,10 @@ impl IdentitySet for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::Identity)
                 .create_document()
-                .set(Property::Value, identity.serialize());
+                .set(
+                    Property::Value,
+                    identity.serialize().caused_by(trc::location!())?,
+                );
             let document_id = self
                 .store()
                 .write_expect_id(batch)
@@ -116,7 +119,7 @@ impl IdentitySet for Server {
             // Obtain identity
             let document_id = id.document_id();
             let mut identity = if let Some(identity) = self
-                .get_property::<Identity>(
+                .get_property::<ArchivedValue<ArchivedIdentity>>(
                     account_id,
                     Collection::Identity,
                     document_id,
@@ -124,7 +127,7 @@ impl IdentitySet for Server {
                 )
                 .await?
             {
-                identity
+                identity.deserialize().caused_by(trc::location!())?
             } else {
                 response.not_updated.append(id, SetError::not_found());
                 continue 'update;
@@ -145,7 +148,10 @@ impl IdentitySet for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::Identity)
                 .update_document(document_id)
-                .set(Property::Value, identity.serialize());
+                .set(
+                    Property::Value,
+                    identity.serialize().caused_by(trc::location!())?,
+                );
             self.store()
                 .write(batch)
                 .await
@@ -164,7 +170,7 @@ impl IdentitySet for Server {
                     .with_account_id(account_id)
                     .with_collection(Collection::Identity)
                     .delete_document(document_id)
-                    .value(Property::Value, (), F_VALUE | F_CLEAR);
+                    .clear(Property::Value);
                 self.store()
                     .write(batch)
                     .await

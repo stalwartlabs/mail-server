@@ -456,7 +456,7 @@ impl ManageDirectory for Store {
             )
             .set(
                 ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Dynamic(0))),
-                (&principal).serialize(),
+                principal.serialize().caused_by(trc::location!())?,
             )
             .set(
                 ValueClass::Directory(DirectoryClass::NameToId(
@@ -815,8 +815,12 @@ impl ManageDirectory for Store {
         // Prepare changes
         let mut batch = BatchBuilder::new();
         let mut pinfo_name =
-            PrincipalInfo::new(principal_id, principal_type, principal.inner.tenant()).serialize();
-        let pinfo_email = PrincipalInfo::new(principal_id, principal_type, None).serialize();
+            PrincipalInfo::new(principal_id, principal_type, principal.inner.tenant())
+                .serialize()
+                .caused_by(trc::location!())?;
+        let pinfo_email = PrincipalInfo::new(principal_id, principal_type, None)
+            .serialize()
+            .caused_by(trc::location!())?;
         let update_principal = !changes.is_empty()
             && !changes.iter().all(|c| {
                 matches!(
@@ -981,7 +985,8 @@ impl ManageDirectory for Store {
                         principal.inner.set(PrincipalField::Tenant, tenant_info.id);
                         pinfo_name =
                             PrincipalInfo::new(principal_id, principal_type, tenant_info.id.into())
-                                .serialize();
+                                .serialize()
+                                .caused_by(trc::location!())?;
                     } else if let Some(tenant_id) = principal.inner.tenant() {
                         // Update quota
                         if let Some(used_quota) = used_quota {
@@ -992,8 +997,9 @@ impl ManageDirectory for Store {
                         changed_principals.add_change(principal_id, principal_type, change.field);
 
                         principal.inner.remove(PrincipalField::Tenant);
-                        pinfo_name =
-                            PrincipalInfo::new(principal_id, principal_type, None).serialize();
+                        pinfo_name = PrincipalInfo::new(principal_id, principal_type, None)
+                            .serialize()
+                            .caused_by(trc::location!())?;
                     } else {
                         continue;
                     }
@@ -1722,7 +1728,7 @@ impl ManageDirectory for Store {
                 ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
                     principal_id,
                 ))),
-                principal.inner.serialize(),
+                principal.inner.serialize().caused_by(trc::location!())?,
             );
         }
 
@@ -2147,7 +2153,7 @@ impl SerializeWithId for Principal {
     fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>> {
         let mut principal = self.clone();
         principal.id = ids.last_document_id().caused_by(trc::location!())?;
-        Ok(principal.serialize())
+        principal.serialize()
     }
 }
 
@@ -2383,8 +2389,9 @@ impl ChangedPrincipal {
 
 impl SerializeWithId for DynamicPrincipalInfo {
     fn serialize_with_id(&self, ids: &AssignedIds) -> trc::Result<Vec<u8>> {
-        ids.last_document_id()
-            .map(|principal_id| PrincipalInfo::new(principal_id, self.typ, self.tenant).serialize())
+        ids.last_document_id().and_then(|principal_id| {
+            PrincipalInfo::new(principal_id, self.typ, self.tenant).serialize()
+        })
     }
 }
 

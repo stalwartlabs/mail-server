@@ -7,11 +7,25 @@
 use std::ops::Deref;
 
 #[derive(
-    Debug, serde::Serialize, serde::Deserialize, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash,
+    Debug,
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Copy,
+    PartialOrd,
+    Ord,
+    PartialEq,
+    Eq,
+    Hash,
 )]
+#[rkyv(compare(PartialEq), derive(Debug))]
 pub struct Bitmap<T: BitmapItem> {
     pub bitmap: u64,
     #[serde(skip)]
+    #[rkyv(omit_bounds)]
     _state: std::marker::PhantomData<T>,
 }
 
@@ -36,6 +50,11 @@ impl<T: BitmapItem> Bitmap<T> {
     #[inline(always)]
     pub fn union(&mut self, items: &Bitmap<T>) {
         self.bitmap |= items.bitmap;
+    }
+
+    #[inline(always)]
+    pub fn union_raw(&mut self, items: impl Into<u64>) {
+        self.bitmap |= items.into();
     }
 
     #[inline(always)]
@@ -98,6 +117,24 @@ impl<T: BitmapItem> Bitmap<T> {
         self.bitmap = 0;
         Bitmap {
             bitmap,
+            _state: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: BitmapItem> From<ArchivedBitmap<T>> for Bitmap<T> {
+    fn from(value: ArchivedBitmap<T>) -> Self {
+        Self {
+            bitmap: value.bitmap.into(),
+            _state: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: BitmapItem> From<&ArchivedBitmap<T>> for Bitmap<T> {
+    fn from(value: &ArchivedBitmap<T>) -> Self {
+        Self {
+            bitmap: value.bitmap.into(),
             _state: std::marker::PhantomData,
         }
     }

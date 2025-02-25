@@ -4,50 +4,28 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{collections::HashSet, fmt::Debug};
+use jmap_proto::types::{property::Property, value::AclGrant};
+use std::{borrow::Cow, collections::HashSet, fmt::Debug};
 use store::{
-    Deserialize, Serialize,
+    Serialize, SerializeInfallible,
     write::{
-        BatchBuilder, BitmapClass, BitmapHash, DirectoryClass, IntoOperations, Operation,
-        TokenizeText, ValueClass, ValueOp, assert::HashedValue,
+        BatchBuilder, BitmapClass, DirectoryClass, IntoOperations, Operation, ValueOp,
+        assert::HashedValue,
     },
 };
 
-use crate::types::{property::Property, value::AclGrant};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexValue<'x> {
-    Text {
-        field: u8,
-        value: &'x str,
-        tokenize: bool,
-        index: bool,
-    },
-    U32 {
-        field: u8,
-        value: Option<u32>,
-    },
-    U64 {
-        field: u8,
-        value: Option<u64>,
-    },
-    U32List {
-        field: u8,
-        value: &'x [u32],
-    },
-    Tag {
-        field: u8,
-        is_set: bool,
-    },
-    Quota {
-        used: u32,
-    },
-    Acl {
-        value: &'x [AclGrant],
-    },
+    Text { field: u8, value: Cow<'x, str> },
+    U32 { field: u8, value: Option<u32> },
+    U64 { field: u8, value: Option<u64> },
+    U32List { field: u8, value: &'x [u32] },
+    Tag { field: u8, is_set: bool },
+    Quota { used: u32 },
+    Acl { value: &'x [AclGrant] },
 }
 
-pub trait IndexableObject: Debug + Serialize + Deserialize + Eq {
+pub trait IndexableObject: Debug + Eq + Serialize + Sync + Send {
     fn index_values(&self) -> impl Iterator<Item = IndexValue<'_>>;
 }
 
@@ -111,17 +89,17 @@ impl<T: IndexableObject> ObjectIndexBuilder<T> {
 }
 
 impl<T: IndexableObject> IntoOperations for ObjectIndexBuilder<T> {
-    fn build(self, batch: &mut BatchBuilder) {
+    fn build(self, batch: &mut BatchBuilder) -> trc::Result<()> {
         match (self.current, self.changes) {
             (None, Some(changes)) => {
                 // Insertion
                 build_batch(batch, &changes, self.tenant_id, true);
-                batch.set(Property::Value, changes.serialize());
+                batch.set(Property::Value, changes.serialize()?);
             }
             (Some(current), Some(changes)) => {
                 // Update
                 batch.assert_value(Property::Value, &current);
-                merge_batch(batch, current.inner, changes, self.tenant_id);
+                merge_batch(batch, current.inner, changes, self.tenant_id)?;
             }
             (Some(current), None) => {
                 // Deletion
@@ -131,6 +109,8 @@ impl<T: IndexableObject> IntoOperations for ObjectIndexBuilder<T> {
             }
             (None, None) => unreachable!(),
         }
+
+        Ok(())
     }
 }
 
@@ -142,31 +122,13 @@ fn build_batch<T: IndexableObject>(
 ) {
     for item in object.index_values() {
         match item {
-            IndexValue::Text {
-                field,
-                value,
-                tokenize,
-                index,
-            } => {
+            IndexValue::Text { field, value } => {
                 if !value.is_empty() {
-                    if index {
-                        batch.ops.push(Operation::Index {
-                            field,
-                            key: value.serialize(),
-                            set,
-                        });
-                    }
-                    if tokenize {
-                        for token in value.to_tokens() {
-                            batch.ops.push(Operation::Bitmap {
-                                class: BitmapClass::Text {
-                                    field,
-                                    token: BitmapHash::new(token),
-                                },
-                                set,
-                            });
-                        }
-                    }
+                    batch.ops.push(Operation::Index {
+                        field,
+                        key: value.as_ref().serialize(),
+                        set,
+                    });
                 }
             }
             IndexValue::U32 { field, value } => {
@@ -191,7 +153,7 @@ fn build_batch<T: IndexableObject>(
                 for item in value {
                     batch.ops.push(Operation::Index {
                         field,
-                        key: item.serialize(),
+                        key: (*item).serialize(),
                         set,
                     });
                 }
@@ -239,7 +201,7 @@ fn merge_batch<T: IndexableObject>(
     current: T,
     changes: T,
     tenant_id: Option<u32>,
-) {
+) -> trc::Result<()> {
     let mut has_changes = current != changes;
 
     for (current, change) in current.index_values().zip(changes.index_values()) {
@@ -253,59 +215,25 @@ fn merge_batch<T: IndexableObject>(
                 IndexValue::Text {
                     field,
                     value: old_value,
-                    tokenize,
-                    index,
                 },
                 IndexValue::Text {
                     value: new_value, ..
                 },
             ) => {
-                // Remove current text from index
-                let mut add_tokens = HashSet::new();
-                let mut remove_tokens = HashSet::new();
-
                 if !old_value.is_empty() {
-                    if index {
-                        batch.ops.push(Operation::Index {
-                            field,
-                            key: old_value.serialize(),
-                            set: false,
-                        });
-                    }
-                    if tokenize {
-                        old_value.tokenize_into(&mut remove_tokens);
-                    }
+                    batch.ops.push(Operation::Index {
+                        field,
+                        key: old_value.as_ref().serialize(),
+                        set: false,
+                    });
                 }
 
-                // Add new text to index
                 if !new_value.is_empty() {
-                    if index {
-                        batch.ops.push(Operation::Index {
-                            field,
-                            key: new_value.serialize(),
-                            set: true,
-                        });
-                    }
-                    if tokenize {
-                        for token in new_value.to_tokens() {
-                            if !remove_tokens.remove(&token) {
-                                add_tokens.insert(token);
-                            }
-                        }
-                    }
-                }
-
-                // Update tokens
-                for (token, set) in [(add_tokens, true), (remove_tokens, false)] {
-                    for token in token {
-                        batch.ops.push(Operation::Bitmap {
-                            class: BitmapClass::Text {
-                                field,
-                                token: BitmapHash::new(token),
-                            },
-                            set,
-                        });
-                    }
+                    batch.ops.push(Operation::Index {
+                        field,
+                        key: new_value.as_ref().serialize(),
+                        set: true,
+                    });
                 }
             }
             (
@@ -482,13 +410,9 @@ fn merge_batch<T: IndexableObject>(
     if has_changes {
         batch.ops.push(Operation::Value {
             class: Property::Value.into(),
-            op: ValueOp::Set(current.serialize().into()),
+            op: ValueOp::Set(current.serialize()?.into()),
         });
     }
-}
 
-impl<T> From<Property> for ValueClass<T> {
-    fn from(value: Property) -> Self {
-        ValueClass::Property(value.into())
-    }
+    Ok(())
 }

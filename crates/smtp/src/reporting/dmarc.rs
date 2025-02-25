@@ -8,21 +8,21 @@ use std::{collections::hash_map::Entry, future::Future};
 
 use ahash::AHashMap;
 use common::{
+    Server,
     config::smtp::report::AggregateFrequency,
     ipc::{DmarcEvent, ToHash},
     listener::SessionStream,
-    Server,
 };
 use mail_auth::{
+    ArcOutput, AuthenticatedMessage, AuthenticationResults, DkimOutput, DkimResult, DmarcOutput,
+    SpfResult,
     common::verify::VerifySignature,
     dmarc::{self, URI},
     report::{AuthFailureType, IdentityAlignment, PolicyPublished, Record, Report, SPFDomainScope},
-    ArcOutput, AuthenticatedMessage, AuthenticationResults, DkimOutput, DkimResult, DmarcOutput,
-    SpfResult,
 };
 use store::{
-    write::{now, BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass},
     Deserialize, IterateParams, Serialize, ValueKey,
+    write::{BatchBuilder, Bincode, QueueClass, ReportEvent, ValueClass, now},
 };
 use trc::{AddContext, OutgoingReportEvent};
 use utils::config::Rate;
@@ -551,7 +551,7 @@ impl DmarcReporting for Server {
                     Entry::Vacant(e) => {
                         if serialized_size
                             .as_deref_mut()
-                            .is_none_or( |serialized_size| {
+                            .is_none_or(|serialized_size| {
                                 serde::Serialize::serialize(e.key(), serialized_size).is_ok()
                             })
                         {
@@ -597,18 +597,20 @@ impl DmarcReporting for Server {
             )
             .await
         {
-            trc::error!(err
-                .caused_by(trc::location!())
-                .details("Failed to delete DMARC report"));
+            trc::error!(
+                err.caused_by(trc::location!())
+                    .details("Failed to delete DMARC report")
+            );
             return;
         }
 
         let mut batch = BatchBuilder::new();
         batch.clear(ValueClass::Queue(QueueClass::DmarcReportHeader(event)));
         if let Err(err) = self.core.storage.data.write(batch.build()).await {
-            trc::error!(err
-                .caused_by(trc::location!())
-                .details("Failed to delete DMARC report"));
+            trc::error!(
+                err.caused_by(trc::location!())
+                    .details("Failed to delete DMARC report")
+            );
         }
     }
 
@@ -648,7 +650,16 @@ impl DmarcReporting for Server {
             // Write report
             builder.set(
                 ValueClass::Queue(QueueClass::DmarcReportHeader(report_event.clone())),
-                Bincode::new(entry).serialize(),
+                match Bincode::new(entry).serialize() {
+                    Ok(data) => data,
+                    Err(err) => {
+                        trc::error!(
+                            err.caused_by(trc::location!())
+                                .details("Failed to serialize DMARC report")
+                        );
+                        return;
+                    }
+                },
             );
         }
 
@@ -656,13 +667,23 @@ impl DmarcReporting for Server {
         report_event.seq_id = self.inner.data.queue_id_gen.generate().unwrap_or_else(now);
         builder.set(
             ValueClass::Queue(QueueClass::DmarcReportEvent(report_event)),
-            Bincode::new(event.report_record).serialize(),
+            match Bincode::new(event.report_record).serialize() {
+                Ok(data) => data,
+                Err(err) => {
+                    trc::error!(
+                        err.caused_by(trc::location!())
+                            .details("Failed to serialize DMARC report")
+                    );
+                    return;
+                }
+            },
         );
 
         if let Err(err) = self.core.storage.data.write(builder.build()).await {
-            trc::error!(err
-                .caused_by(trc::location!())
-                .details("Failed to write DMARC report"));
+            trc::error!(
+                err.caused_by(trc::location!())
+                    .details("Failed to write DMARC report")
+            );
         }
     }
 }

@@ -25,7 +25,7 @@ use mail_builder::{
 };
 use serde_json::json;
 use store::{
-    Serialize,
+    SerializeInfallible,
     write::{BatchBuilder, BlobOp, now},
 };
 use trc::AddContext;

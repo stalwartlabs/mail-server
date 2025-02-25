@@ -15,17 +15,18 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
+    BitmapKey, Deserialize, IndexKey, IterateParams, LogKey, SUBSPACE_BITMAP_ID,
+    SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, SerializeInfallible, U32_LEN, U64_LEN, ValueKey,
     write::{
-        key::DeserializeBigEndian, AnyKey, BitmapClass, BitmapHash, BlobOp, DirectoryClass,
-        InMemoryClass, QueueClass, QueueEvent, TagValue, ValueClass,
+        AnyKey, BitmapClass, BitmapHash, BlobOp, DirectoryClass, InMemoryClass, QueueClass,
+        QueueEvent, TagValue, ValueClass, key::DeserializeBigEndian,
     },
-    BitmapKey, Deserialize, IndexKey, IterateParams, LogKey, Serialize, ValueKey,
-    SUBSPACE_BITMAP_ID, SUBSPACE_BITMAP_TAG, SUBSPACE_BITMAP_TEXT, U32_LEN, U64_LEN,
 };
 
 use utils::{
-    codec::leb128::{Leb128Reader, Leb128_},
-    failed, BlobHash, UnwrapFailure, BLOB_HASH_LEN,
+    BLOB_HASH_LEN, BlobHash, UnwrapFailure,
+    codec::leb128::{Leb128_, Leb128Reader},
+    failed,
 };
 
 use crate::Core;
@@ -465,8 +466,8 @@ impl Core {
                                 .failed("Failed to send key value");
                         } else {
                             eprintln!(
-                            "Warning: blob hash {hash:?} does not exist in blob store. Skipping."
-                        );
+                                "Warning: blob hash {hash:?} does not exist in blob store. Skipping."
+                            );
                         }
                     }
                 }

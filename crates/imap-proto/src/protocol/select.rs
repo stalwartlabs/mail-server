@@ -6,7 +6,7 @@
 
 use crate::{ResponseCode, StatusResponse};
 
-use super::{list::ListItem, ImapResponse, Sequence};
+use super::{ImapResponse, Sequence, list::ListItem};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arguments {
@@ -129,7 +129,7 @@ impl Exists {
 
 #[cfg(test)]
 mod tests {
-    use crate::protocol::{list::ListItem, ImapResponse};
+    use crate::protocol::{ImapResponse, list::ListItem};
 
     use super::HighestModSeq;
 

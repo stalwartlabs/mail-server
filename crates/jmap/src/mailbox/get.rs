@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{Server, auth::AccessToken};
-use email::mailbox::{Mailbox, manage::MailboxFnc};
+use common::{Server, auth::AccessToken, sharing::EffectiveAcl};
+use email::mailbox::{ArchivedMailbox, manage::MailboxFnc};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -15,11 +15,10 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
+use store::write::ArchivedValue;
+use trc::AddContext;
 
-use crate::{
-    auth::acl::{AclMethods, EffectiveAcl},
-    changes::state::StateManager,
-};
+use crate::changes::state::StateManager;
 
 use std::future::Future;
 
@@ -97,9 +96,9 @@ impl MailboxGet for Server {
                 continue;
             }
 
-            let mut values = if fetch_properties {
+            let archived_mailbox_ = if fetch_properties {
                 match self
-                    .get_property::<Mailbox>(
+                    .get_property::<ArchivedValue<ArchivedMailbox>>(
                         account_id,
                         Collection::Mailbox,
                         document_id,
@@ -117,34 +116,33 @@ impl MailboxGet for Server {
             } else {
                 None
             };
+            let archived_mailbox = if let Some(archived_mailbox) = &archived_mailbox_ {
+                archived_mailbox
+                    .unarchive()
+                    .caused_by(trc::location!())?
+                    .into()
+            } else {
+                None
+            };
 
             let mut mailbox = Object::with_capacity(properties.len());
 
             for property in &properties {
                 let value = match property {
                     Property::Id => Value::Id(id),
-                    Property::Name => {
-                        Value::Text(std::mem::take(&mut values.as_mut().unwrap().name))
-                    }
+                    Property::Name => Value::Text(archived_mailbox.unwrap().name.to_string()),
                     Property::Role => {
-                        if let Some(role) = values.as_ref().unwrap().role.as_str() {
+                        if let Some(role) = archived_mailbox.unwrap().role.as_str() {
                             Value::Text(role.to_string())
                         } else {
                             Value::Null
                         }
                     }
-                    Property::SortOrder => Value::UnsignedInt(
-                        values
-                            .as_ref()
-                            .unwrap()
-                            .sort_order
-                            .unwrap_or_default()
-                            .into(),
-                    ),
+                    Property::SortOrder => Value::from(&archived_mailbox.unwrap().sort_order),
                     Property::ParentId => {
-                        let parent_id = values.as_ref().unwrap().parent_id;
+                        let parent_id = archived_mailbox.as_ref().unwrap().parent_id;
                         if parent_id > 0 {
-                            Value::Id((parent_id - 1).into())
+                            Value::Id((u32::from(parent_id) - 1).into())
                         } else {
                             Value::Null
                         }
@@ -189,7 +187,7 @@ impl MailboxGet for Server {
                     ),
                     Property::MyRights => {
                         if access_token.is_shared(account_id) {
-                            let acl = values.as_ref().unwrap().acls.effective_acl(access_token);
+                            let acl = archived_mailbox.unwrap().acls.effective_acl(access_token);
                             Object::with_capacity(9)
                                 .with_property(Property::MayReadItems, acl.contains(Acl::ReadItems))
                                 .with_property(Property::MayAddItems, acl.contains(Acl::AddItems))
@@ -225,11 +223,11 @@ impl MailboxGet for Server {
                         }
                     }
                     Property::IsSubscribed => {
-                        if values
-                            .as_ref()
+                        if archived_mailbox
                             .unwrap()
                             .subscribers
-                            .contains(&access_token.primary_id())
+                            .iter()
+                            .any(|s| u32::from(s) == access_token.primary_id())
                         {
                             Value::Bool(true)
                         } else {
@@ -237,7 +235,7 @@ impl MailboxGet for Server {
                         }
                     }
                     Property::Acl => {
-                        self.acl_get(&values.as_ref().unwrap().acls, access_token, account_id)
+                        self.acl_get(&archived_mailbox.unwrap().acls, access_token, account_id)
                             .await
                     }
 

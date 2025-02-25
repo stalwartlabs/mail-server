@@ -4,12 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod serialize;
-
 use jmap_proto::types::type_state::DataType;
+use store::Serialize;
 use utils::map::bitmap::Bitmap;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Default, Debug, Clone, PartialEq, Eq,
+)]
 pub struct PushSubscription {
     pub url: String,
     pub device_client_id: String,
@@ -20,8 +21,16 @@ pub struct PushSubscription {
     pub keys: Option<Keys>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Keys {
     pub p256dh: Vec<u8>,
     pub auth: Vec<u8>,
+}
+
+impl Serialize for PushSubscription {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map(|r| r.into_vec())
+            .map_err(Into::into)
+    }
 }

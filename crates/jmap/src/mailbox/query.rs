@@ -5,19 +5,21 @@
  */
 
 use common::{Server, auth::AccessToken};
-use email::mailbox::{Mailbox, manage::MailboxFnc};
+use email::mailbox::{ArchivedMailbox, manage::MailboxFnc};
 use jmap_proto::{
     method::query::{Comparator, Filter, QueryRequest, QueryResponse, SortProperty},
     object::mailbox::QueryArguments,
     types::{acl::Acl, collection::Collection, property::Property},
 };
 use store::{
+    Serialize, SerializeInfallible,
     ahash::{AHashMap, AHashSet},
     query::{self, sort::Pagination},
     roaring::RoaringBitmap,
+    write::ArchivedValue,
 };
 
-use crate::{JmapMethods, UpdateResults, auth::acl::AclMethods};
+use crate::{JmapMethods, UpdateResults};
 use std::future::Future;
 
 pub trait MailboxQuery: Sync + Send {
@@ -44,7 +46,10 @@ impl MailboxQuery for Server {
             match cond {
                 Filter::ParentId(parent_id) => filters.push(query::Filter::eq(
                     Property::ParentId,
-                    parent_id.map(|id| id.document_id() + 1).unwrap_or(0),
+                    parent_id
+                        .map(|id| id.document_id() + 1)
+                        .unwrap_or(0)
+                        .serialize(),
                 )),
                 Filter::Name(name) => {
                     #[cfg(feature = "test_mode")]
@@ -54,11 +59,14 @@ impl MailboxQuery for Server {
                             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         }
                     }
-                    filters.push(query::Filter::has_text(Property::Name, &name));
+                    filters.push(query::Filter::contains(
+                        Property::Name,
+                        name.to_lowercase().into_bytes(),
+                    ));
                 }
                 Filter::Role(role) => {
                     if let Some(role) = role {
-                        filters.push(query::Filter::eq(Property::Role, role));
+                        filters.push(query::Filter::eq(Property::Role, role.into_bytes()));
                     } else {
                         filters.push(query::Filter::Not);
                         filters.push(query::Filter::is_in_bitmap(Property::Role, ()));
@@ -80,7 +88,7 @@ impl MailboxQuery for Server {
                     }
                     filters.push(query::Filter::eq(
                         Property::IsSubscribed,
-                        access_token.primary_id,
+                        access_token.primary_id.serialize(),
                     ));
                     if !is_subscribed {
                         filters.push(query::Filter::End);
@@ -117,7 +125,7 @@ impl MailboxQuery for Server {
                 || (response.total.is_some_and(|total| total > 0) && filter_as_tree))
         {
             for (document_id, value) in self
-                .get_properties::<Mailbox, _, _>(
+                .get_properties::<ArchivedValue<ArchivedMailbox>, _, _>(
                     account_id,
                     Collection::Mailbox,
                     &mailbox_ids,
@@ -125,8 +133,11 @@ impl MailboxQuery for Server {
                 )
                 .await?
             {
-                hierarchy.insert(document_id + 1, value.parent_id);
-                tree.entry(value.parent_id)
+                let todo = "use index";
+                let mailbox = value.unarchive()?;
+                let parent_id = u32::from(mailbox.parent_id);
+                hierarchy.insert(document_id + 1, parent_id);
+                tree.entry(parent_id)
                     .or_insert_with(AHashSet::default)
                     .insert(document_id + 1);
             }

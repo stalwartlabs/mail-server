@@ -14,15 +14,17 @@ pub mod query;
 pub mod write;
 
 pub use ahash;
-use ahash::AHashMap;
-use backend::{fs::FsStore, http::HttpStore, memory::StaticMemoryStore};
 pub use blake3;
 pub use parking_lot;
 pub use rand;
+pub use rkyv;
 pub use roaring;
+pub use xxhash_rust;
+
+use ahash::AHashMap;
+use backend::{fs::FsStore, http::HttpStore, memory::StaticMemoryStore};
 use utils::config::cron::SimpleCron;
 use write::{BitmapClass, ValueClass};
-pub use xxhash_rust;
 
 #[cfg(feature = "s3")]
 use backend::s3::S3Store;
@@ -53,10 +55,17 @@ use backend::azure::AzureStore;
 
 pub trait Deserialize: Sized + Sync + Send {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self>;
+    fn deserialize_owned(bytes: Vec<u8>) -> trc::Result<Self> {
+        Self::deserialize(&bytes)
+    }
 }
 
 pub trait Serialize {
-    fn serialize(self) -> Vec<u8>;
+    fn serialize(&self) -> trc::Result<Vec<u8>>;
+}
+
+pub trait SerializeInfallible {
+    fn serialize(&self) -> Vec<u8>;
 }
 
 // Key serialization flags

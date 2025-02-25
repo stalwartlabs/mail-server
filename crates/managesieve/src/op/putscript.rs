@@ -6,20 +6,16 @@
 
 use std::time::Instant;
 
-use common::listener::SessionStream;
+use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::sieve::SieveScript;
+use email::sieve::{ArchivedSieveScript, SieveScript};
 use imap_proto::receiver::Request;
-use jmap::JmapMethods;
-use jmap_proto::{
-    object::index::ObjectIndexBuilder,
-    types::{blob::BlobId, collection::Collection, property::Property},
-};
+use jmap_proto::types::{blob::BlobId, collection::Collection, property::Property};
 use sieve::compiler::ErrorType;
 use store::{
     BlobClass,
     query::Filter,
-    write::{BatchBuilder, BlobOp, DirectoryClass, assert::HashedValue, log::LogInsert},
+    write::{ArchivedValue, BatchBuilder, BlobOp, assert::HashedValue, log::LogInsert},
 };
 use trc::AddContext;
 
@@ -105,7 +101,7 @@ impl<T: SessionStream> Session<T> {
             // Obtain script values
             let script = self
                 .server
-                .get_property::<HashedValue<SieveScript>>(
+                .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -118,7 +114,9 @@ impl<T: SessionStream> Session<T> {
                         .into_err()
                         .details("Script not found")
                         .code(ResponseCode::NonExistent)
-                })?;
+                })?
+                .into_deserialized()
+                .caused_by(trc::location!())?;
 
             // Write script blob
             let blob_id = BlobId::new(
@@ -134,12 +132,12 @@ impl<T: SessionStream> Session<T> {
                 },
             )
             .with_section_size(script_size as usize);
-            let prev_blob_id_hash = script.inner.blob_id.hash.clone();
-            let blob_id_hash = blob_id.hash.clone();
+            let prev_blob_hash = script.inner.blob_hash.clone();
+            let blob_hash = blob_id.hash.clone();
 
             // Write record
             let mut obj = ObjectIndexBuilder::new()
-                .with_changes(script.inner.clone().with_blob_id(blob_id))
+                .with_changes(script.inner.clone().with_blob_hash(blob_hash.clone()))
                 .with_current(script);
 
             // Update tenant quota
@@ -156,10 +154,11 @@ impl<T: SessionStream> Session<T> {
                 .with_collection(Collection::SieveScript)
                 .update_document(document_id)
                 .clear(BlobOp::Link {
-                    hash: prev_blob_id_hash,
+                    hash: prev_blob_hash,
                 })
-                .set(BlobOp::Link { hash: blob_id_hash }, Vec::new())
-                .custom(obj);
+                .set(BlobOp::Link { hash: blob_hash }, Vec::new())
+                .custom(obj)
+                .caused_by(trc::location!())?;
 
             self.server
                 .store()
@@ -177,23 +176,18 @@ impl<T: SessionStream> Session<T> {
             );
         } else {
             // Write script blob
-            let blob_id = BlobId::new(
-                self.server
-                    .put_blob(account_id, &script_bytes, false)
-                    .await?
-                    .hash,
-                BlobClass::Linked {
-                    account_id,
-                    collection: Collection::SieveScript.into(),
-                    document_id: 0,
-                },
-            )
-            .with_section_size(script_size as usize);
-            let blob_id_hash = blob_id.hash.clone();
+            let blob_hash = self
+                .server
+                .put_blob(account_id, &script_bytes, false)
+                .await?
+                .hash;
 
             // Write record
-            let mut obj = ObjectIndexBuilder::new()
-                .with_changes(SieveScript::new(name.clone(), blob_id).with_is_active(false));
+            let mut obj = ObjectIndexBuilder::new().with_changes(
+                SieveScript::new(name.clone(), blob_hash.clone())
+                    .with_is_active(false)
+                    .with_size(script_size as u32),
+            );
 
             // Update tenant quota
             #[cfg(feature = "enterprise")]
@@ -209,9 +203,9 @@ impl<T: SessionStream> Session<T> {
                 .with_collection(Collection::SieveScript)
                 .create_document()
                 .log(LogInsert())
-                .add(DirectoryClass::UsedQuota(account_id), script_size)
-                .set(BlobOp::Link { hash: blob_id_hash }, Vec::new())
-                .custom(obj);
+                .set(BlobOp::Link { hash: blob_hash }, Vec::new())
+                .custom(obj)
+                .caused_by(trc::location!())?;
 
             let assigned_ids = self
                 .server
@@ -248,10 +242,11 @@ impl<T: SessionStream> Session<T> {
         } else {
             Ok(self
                 .server
+                .store()
                 .filter(
                     account_id,
                     Collection::SieveScript,
-                    vec![Filter::eq(Property::Name, name)],
+                    vec![Filter::eq(Property::Name, name.to_lowercase().into_bytes())],
                 )
                 .await
                 .caused_by(trc::location!())?

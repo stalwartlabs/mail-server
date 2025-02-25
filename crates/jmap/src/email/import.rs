@@ -25,8 +25,7 @@ use mail_parser::MessageParser;
 use utils::map::vec_map::VecMap;
 
 use crate::{
-    api::http::HttpSessionData, auth::acl::AclMethods, blob::download::BlobDownload,
-    changes::state::StateManager,
+    api::http::HttpSessionData, blob::download::BlobDownload, changes::state::StateManager,
 };
 
 use std::future::Future;

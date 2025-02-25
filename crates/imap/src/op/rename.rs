@@ -10,20 +10,16 @@ use crate::{
     core::{Session, SessionData},
     spawn_op,
 };
-use common::listener::SessionStream;
+use common::{listener::SessionStream, sharing::EffectiveAcl, storage::index::ObjectIndexBuilder};
 use directory::Permission;
+use email::mailbox::ArchivedMailbox;
 use imap_proto::{
     Command, ResponseCode, StatusResponse, protocol::rename::Arguments, receiver::Request,
 };
-use jmap::auth::acl::EffectiveAcl;
-use jmap_proto::{
-    object::index::ObjectIndexBuilder,
-    types::{
-        acl::Acl, collection::Collection, property::Property, state::StateChange,
-        type_state::DataType,
-    },
+use jmap_proto::types::{
+    acl::Acl, collection::Collection, property::Property, state::StateChange, type_state::DataType,
 };
-use store::write::{BatchBuilder, assert::HashedValue};
+use store::write::{ArchivedValue, BatchBuilder, assert::HashedValue};
 use trc::AddContext;
 
 use super::ImapContext;
@@ -93,7 +89,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox = self
             .server
-            .get_property::<HashedValue<email::mailbox::Mailbox>>(
+            .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
                 params.account_id,
                 Collection::Mailbox,
                 mailbox_id,
@@ -108,7 +104,9 @@ impl<T: SessionStream> SessionData<T> {
                     .caused_by(trc::location!())
                     .code(ResponseCode::NonExistent)
                     .id(arguments.tag.clone())
-            })?;
+            })?
+            .into_deserialized()
+            .imap_ctx(&arguments.tag, trc::location!())?;
 
         // Validate ACL
         let access_token = self
@@ -148,7 +146,8 @@ impl<T: SessionStream> SessionData<T> {
                 .create_document()
                 .custom(ObjectIndexBuilder::new().with_changes(
                     email::mailbox::Mailbox::new(path_item).with_parent_id(parent_id),
-                ));
+                ))
+                .imap_ctx(&arguments.tag, trc::location!())?;
 
             let mailbox_id = self
                 .server
@@ -175,11 +174,14 @@ impl<T: SessionStream> SessionData<T> {
                 ObjectIndexBuilder::new()
                     .with_current(mailbox)
                     .with_changes(new_mailbox),
-            );
+            )
+            .imap_ctx(&arguments.tag, trc::location!())?;
         changes.log_update(Collection::Mailbox, mailbox_id);
 
         let change_id = changes.change_id;
-        batch.custom(changes);
+        batch
+            .custom(changes)
+            .imap_ctx(&arguments.tag, trc::location!())?;
         self.server
             .store()
             .write(batch)

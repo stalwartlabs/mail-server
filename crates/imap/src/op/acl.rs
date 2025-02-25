@@ -6,11 +6,15 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{MailboxId, auth::AccessToken, listener::SessionStream};
+use common::{
+    MailboxId, auth::AccessToken, listener::SessionStream, sharing::EffectiveAcl,
+    storage::index::ObjectIndexBuilder,
+};
 use directory::{
     Permission, QueryBy, Type,
     backend::internal::{PrincipalField, manage::ChangedPrincipals},
 };
+use email::mailbox::ArchivedMailbox;
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
     protocol::acl::{
@@ -19,15 +23,11 @@ use imap_proto::{
     receiver::Request,
 };
 
-use jmap::auth::acl::EffectiveAcl;
-use jmap_proto::{
-    object::index::ObjectIndexBuilder,
-    types::{
-        acl::Acl, collection::Collection, property::Property, state::StateChange,
-        type_state::DataType, value::AclGrant,
-    },
+use jmap_proto::types::{
+    acl::Acl, collection::Collection, property::Property, state::StateChange, type_state::DataType,
+    value::AclGrant,
 };
-use store::write::{BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
+use store::write::{ArchivedValue, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
 use trc::AddContext;
 use utils::map::bitmap::Bitmap;
 
@@ -48,26 +48,29 @@ impl<T: SessionStream> Session<T> {
         let data = self.state.session_data();
 
         spawn_op!(data, {
-            let (mailbox_id, mailbox, _) = data
+            let (mailbox_id, mailbox_, _) = data
                 .get_acl_mailbox(&arguments, true)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
             let mut permissions = Vec::new();
+            let mailbox = mailbox_
+                .to_unarchived()
+                .imap_ctx(&arguments.tag, trc::location!())?;
 
-            for item in mailbox.inner.acls {
+            for item in mailbox.inner.acls.iter() {
                 if let Some(account_name) = data
                     .server
                     .core
                     .storage
                     .directory
-                    .query(QueryBy::Id(item.account_id), false)
+                    .query(QueryBy::Id(item.account_id.into()), false)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
                     .and_then(|mut p| p.take_str(PrincipalField::Name))
                 {
                     let mut rights = Vec::new();
 
-                    for acl in item.grants {
+                    for acl in Bitmap::from(&item.grants) {
                         match acl {
                             Acl::Read => {
                                 rights.push(Rights::Lookup);
@@ -101,7 +104,7 @@ impl<T: SessionStream> Session<T> {
                             Acl::Submit => {
                                 rights.push(Rights::Post);
                             }
-                            Acl::None => (),
+                            _ => (),
                         }
                     }
 
@@ -144,12 +147,15 @@ impl<T: SessionStream> Session<T> {
         let is_rev2 = self.version.is_rev2();
 
         spawn_op!(data, {
-            let (mailbox, values, access_token) = data
+            let (mailbox_id, mailbox_, access_token) = data
                 .get_acl_mailbox(&arguments, false)
                 .await
                 .imap_ctx(&arguments.tag, trc::location!())?;
-            let rights = if access_token.is_shared(mailbox.account_id) {
-                let acl = values.inner.acls.effective_acl(&access_token);
+            let mailbox = mailbox_
+                .to_unarchived()
+                .imap_ctx(&arguments.tag, trc::location!())?;
+            let rights = if access_token.is_shared(mailbox_id.account_id) {
+                let acl = mailbox.inner.acls.effective_acl(&access_token);
                 let mut rights = Vec::with_capacity(5);
                 if acl.contains(Acl::ReadItems) {
                     rights.push(Rights::Read);
@@ -195,8 +201,8 @@ impl<T: SessionStream> Session<T> {
                 Imap(trc::ImapEvent::MyRights),
                 SpanId = data.session_id,
                 MailboxName = arguments.mailbox_name.clone(),
-                AccountId = mailbox.account_id,
-                MailboxId = mailbox.mailbox_id,
+                AccountId = mailbox_id.account_id,
+                MailboxId = mailbox_id.mailbox_id,
                 Details = rights
                     .iter()
                     .map(|r| trc::Value::String(r.to_string()))
@@ -233,6 +239,9 @@ impl<T: SessionStream> Session<T> {
             let (mailbox_id, current_mailbox, _) = data
                 .get_acl_mailbox(&arguments, false)
                 .await
+                .imap_ctx(&arguments.tag, trc::location!())?;
+            let current_mailbox = current_mailbox
+                .into_deserialized()
                 .imap_ctx(&arguments.tag, trc::location!())?;
 
             // Obtain principal id
@@ -322,7 +331,8 @@ impl<T: SessionStream> Session<T> {
                     ObjectIndexBuilder::new()
                         .with_changes(mailbox)
                         .with_current(current_mailbox),
-                );
+                )
+                .imap_ctx(&arguments.tag, trc::location!())?;
             if !batch.is_empty() {
                 data.server
                     .store()
@@ -428,13 +438,13 @@ impl<T: SessionStream> SessionData<T> {
         validate: bool,
     ) -> trc::Result<(
         MailboxId,
-        HashedValue<email::mailbox::Mailbox>,
+        HashedValue<ArchivedValue<ArchivedMailbox>>,
         Arc<AccessToken>,
     )> {
         if let Some(mailbox) = self.get_mailbox_by_name(&arguments.mailbox_name) {
             if let Some(values) = self
                 .server
-                .get_property::<HashedValue<email::mailbox::Mailbox>>(
+                .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
                     mailbox.account_id,
                     Collection::Mailbox,
                     mailbox.mailbox_id,
@@ -448,6 +458,8 @@ impl<T: SessionStream> SessionData<T> {
                     || access_token.is_member(mailbox.account_id)
                     || values
                         .inner
+                        .unarchive()
+                        .caused_by(trc::location!())?
                         .acls
                         .effective_acl(&access_token)
                         .contains(Acl::Administer)

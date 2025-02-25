@@ -9,7 +9,6 @@ use std::time::Instant;
 use common::listener::SessionStream;
 use directory::Permission;
 use email::message::metadata::MessageMetadata;
-use jmap::blob::download::BlobDownload;
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::write::Bincode;
 use trc::AddContext;
@@ -39,7 +38,8 @@ impl<T: SessionStream> Session<T> {
             {
                 if let Some(bytes) = self
                     .server
-                    .get_blob(&metadata.inner.blob_hash, 0..usize::MAX)
+                    .blob_store()
+                    .get_blob(metadata.inner.blob_hash.as_slice(), 0..usize::MAX)
                     .await
                     .caused_by(trc::location!())?
                 {

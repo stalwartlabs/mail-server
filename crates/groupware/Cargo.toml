@@ -1,0 +1,20 @@
+[package]
+name = "groupware"
+version = "0.11.5"
+edition = "2024"
+resolver = "2"
+
+[dependencies]
+utils = { path = "../utils" }
+common = { path =  "../common" }
+jmap_proto = { path =  "../jmap-proto" }
+directory = { path =  "../directory" }
+calcard = { path =  "/Users/me/code/calcard" }
+hashify = "0.2"
+
+[features]
+test_mode = []
+enterprise = []
+
+[dev-dependencies]
+tokio = { version = "1.23", features = ["full"] }

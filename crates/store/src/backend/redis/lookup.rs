@@ -8,7 +8,7 @@ use redis::AsyncCommands;
 
 use crate::Deserialize;
 
-use super::{into_error, RedisPool, RedisStore};
+use super::{RedisPool, RedisStore, into_error};
 
 impl RedisStore {
     pub async fn key_set(&self, key: &[u8], value: &[u8], expires: Option<u64>) -> trc::Result<()> {
@@ -136,7 +136,7 @@ impl RedisStore {
             .await
             .map_err(into_error)?
         {
-            T::deserialize(&value).map(Some)
+            T::deserialize_owned(value).map(Some)
         } else {
             Ok(None)
         }

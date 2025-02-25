@@ -8,8 +8,9 @@ use std::time::Instant;
 
 use common::listener::SessionStream;
 use directory::Permission;
-use email::sieve::SieveScript;
+use email::sieve::ArchivedSieveScript;
 use jmap_proto::types::{collection::Collection, property::Property};
+use store::write::ArchivedValue;
 use trc::AddContext;
 
 use crate::core::{Session, StatusResponse};
@@ -36,9 +37,9 @@ impl<T: SessionStream> Session<T> {
         let count = document_ids.len();
 
         for document_id in document_ids {
-            if let Some(script) = self
+            if let Some(script_) = self
                 .server
-                .get_property::<SieveScript>(
+                .get_property::<ArchivedValue<ArchivedSieveScript>>(
                     account_id,
                     Collection::SieveScript,
                     document_id,
@@ -47,6 +48,7 @@ impl<T: SessionStream> Session<T> {
                 .await
                 .caused_by(trc::location!())?
             {
+                let script = script_.unarchive().caused_by(trc::location!())?;
                 response.push(b'\"');
                 for ch in script.name.as_bytes() {
                     if [b'\\', b'\"'].contains(ch) {

@@ -11,20 +11,19 @@ use crate::{
     op::ImapContext,
     spawn_op,
 };
-use common::{Account, Mailbox, config::jmap::settings::SpecialUse, listener::SessionStream};
+use common::{
+    Account, Mailbox, config::jmap::settings::SpecialUse, listener::SessionStream,
+    storage::index::ObjectIndexBuilder,
+};
 use directory::Permission;
 use imap_proto::{
     Command, ResponseCode, StatusResponse,
     protocol::{create::Arguments, list::Attribute},
     receiver::Request,
 };
-use jmap::JmapMethods;
-use jmap_proto::{
-    object::index::ObjectIndexBuilder,
-    types::{
-        acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
-        type_state::DataType,
-    },
+use jmap_proto::types::{
+    acl::Acl, collection::Collection, id::Id, property::Property, state::StateChange,
+    type_state::DataType,
 };
 use store::{query::Filter, write::BatchBuilder};
 use trc::AddContext;
@@ -94,7 +93,8 @@ impl<T: SessionStream> SessionData<T> {
                 .with_account_id(params.account_id)
                 .with_collection(Collection::Mailbox)
                 .create_document()
-                .custom(ObjectIndexBuilder::new().with_changes(mailbox));
+                .custom(ObjectIndexBuilder::new().with_changes(mailbox))
+                .imap_ctx(&arguments.tag, trc::location!())?;
             let mailbox_id = self
                 .server
                 .store()
@@ -112,7 +112,8 @@ impl<T: SessionStream> SessionData<T> {
         batch
             .with_account_id(params.account_id)
             .with_collection(Collection::Mailbox)
-            .custom(changes);
+            .custom(changes)
+            .imap_ctx(&arguments.tag, trc::location!())?;
         self.server
             .store()
             .write(batch)
@@ -389,10 +390,11 @@ impl<T: SessionStream> SessionData<T> {
                 let role_name = attr_to_role(mailbox_role).as_str().unwrap_or_default();
                 if !self
                     .server
+                    .store()
                     .filter(
                         account_id,
                         Collection::Mailbox,
-                        vec![Filter::eq(Property::Role, role_name)],
+                        vec![Filter::eq(Property::Role, role_name.as_bytes().to_vec())],
                     )
                     .await
                     .caused_by(trc::location!())?

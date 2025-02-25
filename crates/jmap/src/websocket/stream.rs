@@ -6,7 +6,7 @@
 
 use std::{sync::Arc, time::Instant};
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use futures_util::{SinkExt, StreamExt};
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
@@ -22,12 +22,9 @@ use trc::JmapEvent;
 use tungstenite::Message;
 use utils::map::bitmap::Bitmap;
 
-use crate::{
-    api::{
-        http::{HttpSessionData, ToRequestError},
-        request::RequestHandler,
-    },
-    services::state::StateManager,
+use crate::api::{
+    http::{HttpSessionData, ToRequestError},
+    request::RequestHandler,
 };
 use std::future::Future;
 
@@ -69,9 +66,10 @@ impl WebSocketHandler for Server {
         {
             Ok(change_rx) => change_rx,
             Err(err) => {
-                trc::error!(err
-                    .details("Failed to subscribe to state manager")
-                    .span_id(session.session_id));
+                trc::error!(
+                    err.details("Failed to subscribe to state manager")
+                        .span_id(session.session_id)
+                );
 
                 let _ = stream
                     .send(Message::Text(

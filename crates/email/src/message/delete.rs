@@ -16,8 +16,8 @@ use store::{
     ahash::AHashMap,
     roaring::RoaringBitmap,
     write::{
-        BatchBuilder, Bincode, BitmapClass, F_BITMAP, F_CLEAR, F_VALUE, MaybeDynamicId, TagValue,
-        ValueClass, log::ChangeLogBuilder,
+        BatchBuilder, Bincode, BitmapClass, MaybeDynamicId, TagValue, ValueClass,
+        log::ChangeLogBuilder,
     },
 };
 use trc::{AddContext, StoreEvent};
@@ -155,11 +155,9 @@ impl EmailDeletion for Server {
                     changes.log_child_update(Collection::Mailbox, mailbox_id.mailbox_id);
                 }
 
-                batch.value(
-                    Property::MailboxIds,
-                    delete_properties.mailboxes,
-                    F_VALUE | F_BITMAP | F_CLEAR,
-                );
+                batch
+                    .untag_many(Property::MailboxIds, delete_properties.mailboxes.iter())
+                    .clear(Property::MailboxIds);
             } else {
                 trc::event!(
                     Store(StoreEvent::NotFound),
@@ -170,7 +168,9 @@ impl EmailDeletion for Server {
                 );
             }
             if let Some(thread_id) = delete_properties.thread_id {
-                batch.value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP | F_CLEAR);
+                batch
+                    .untag(Property::ThreadId, thread_id)
+                    .clear(Property::ThreadId);
 
                 // Log message deletion
                 changes.log_delete(Collection::Email, Id::from_parts(thread_id, document_id));
@@ -191,7 +191,6 @@ impl EmailDeletion for Server {
             batch.tag(
                 Property::MailboxIds,
                 TagValue::Id(MaybeDynamicId::Static(TOMBSTONE_ID)),
-                0,
             );
             document_ids.remove(document_id);
 
@@ -432,10 +431,9 @@ impl EmailDeletion for Server {
                 .with_collection(Collection::Email)
                 .delete_document(document_id)
                 .clear(Property::Cid)
-                .tag(
+                .untag(
                     Property::MailboxIds,
                     TagValue::Id(MaybeDynamicId::Static(TOMBSTONE_ID)),
-                    F_CLEAR,
                 );
 
             // Remove keywords
@@ -451,7 +449,9 @@ impl EmailDeletion for Server {
                 })
                 .await?
             {
-                batch.value(Property::Keywords, keywords, F_VALUE | F_BITMAP | F_CLEAR);
+                batch
+                    .untag_many(Property::Keywords, keywords.into_iter())
+                    .clear(Property::Keywords);
             } else {
                 trc::event!(
                     Purge(trc::PurgeEvent::Error),
@@ -491,7 +491,9 @@ impl EmailDeletion for Server {
                 // SPDX-SnippetEnd
 
                 // Delete message
-                EmailIndexBuilder::clear(metadata.inner).build(&mut batch, account_id, tenant_id);
+                EmailIndexBuilder::clear(metadata.inner)
+                    .build(&mut batch, account_id, tenant_id)
+                    .caused_by(trc::location!())?;
 
                 // Commit batch
                 self.core.storage.data.write(batch.build()).await?;

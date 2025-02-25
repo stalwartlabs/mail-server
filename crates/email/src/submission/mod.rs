@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
+use store::Serialize;
 use utils::map::vec_map::VecMap;
 
 pub mod index;
-pub mod serialize;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct EmailSubmission {
     pub email_id: u32,
     pub thread_id: u32,
@@ -21,26 +23,34 @@ pub struct EmailSubmission {
     pub delivery_status: VecMap<String, DeliveryStatus>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct Envelope {
     pub mail_from: Address,
     pub rcpt_to: Vec<Address>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct Address {
     pub email: String,
     pub parameters: Option<VecMap<String, Option<String>>>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct DeliveryStatus {
     pub smtp_reply: String,
     pub delivered: Delivered,
     pub displayed: bool,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub enum Delivered {
     Queued,
     Yes,
@@ -49,7 +59,9 @@ pub enum Delivered {
     Unknown,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub enum UndoStatus {
     #[default]
     Pending,
@@ -84,6 +96,39 @@ impl UndoStatus {
     }
 }
 
+impl ArchivedUndoStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ArchivedUndoStatus::Pending => "pending",
+            ArchivedUndoStatus::Final => "final",
+            ArchivedUndoStatus::Canceled => "canceled",
+        }
+    }
+
+    pub fn as_index(&self) -> &'static str {
+        match self {
+            ArchivedUndoStatus::Pending => "p",
+            ArchivedUndoStatus::Final => "f",
+            ArchivedUndoStatus::Canceled => "c",
+        }
+    }
+}
+
+impl From<&ArchivedDeliveryStatus> for DeliveryStatus {
+    fn from(value: &ArchivedDeliveryStatus) -> Self {
+        DeliveryStatus {
+            smtp_reply: value.smtp_reply.to_string(),
+            delivered: match value.delivered {
+                ArchivedDelivered::Queued => Delivered::Queued,
+                ArchivedDelivered::Yes => Delivered::Yes,
+                ArchivedDelivered::No => Delivered::No,
+                ArchivedDelivered::Unknown => Delivered::Unknown,
+            },
+            displayed: value.displayed,
+        }
+    }
+}
+
 impl Delivered {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -92,5 +137,24 @@ impl Delivered {
             Delivered::No => "no",
             Delivered::Unknown => "unknown",
         }
+    }
+}
+
+impl ArchivedDelivered {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ArchivedDelivered::Queued => "queued",
+            ArchivedDelivered::Yes => "yes",
+            ArchivedDelivered::No => "no",
+            ArchivedDelivered::Unknown => "unknown",
+        }
+    }
+}
+
+impl Serialize for EmailSubmission {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map(|r| r.into_vec())
+            .map_err(Into::into)
     }
 }

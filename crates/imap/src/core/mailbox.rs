@@ -7,19 +7,19 @@ use ahash::AHashMap;
 use common::{
     AccountId, Mailbox,
     auth::AccessToken,
-    config::jmap::settings::SpecialUse,
+    config::jmap::settings::{ArchivedSpecialUse, SpecialUse},
     listener::{SessionStream, limiter::InFlight},
+    sharing::EffectiveAcl,
 };
 use directory::{QueryBy, backend::internal::PrincipalField};
-use email::mailbox::{INBOX_ID, manage::MailboxFnc};
+use email::mailbox::{ArchivedMailbox, INBOX_ID, manage::MailboxFnc};
 use imap_proto::protocol::list::Attribute;
-use jmap::{
-    auth::acl::{AclMethods, EffectiveAcl},
-    changes::get::ChangesLookup,
-};
 use jmap_proto::types::{acl::Acl, collection::Collection, id::Id, property::Property};
 use parking_lot::Mutex;
-use store::query::log::{Change, Query};
+use store::{
+    query::log::{Change, Query},
+    write::ArchivedValue,
+};
 use trc::AddContext;
 
 use super::{Account, MailboxId, MailboxSync, Session, SessionData};
@@ -143,11 +143,19 @@ impl<T: SessionStream> SessionData<T> {
         };
 
         // Fetch mailboxes
+        struct MailboxData {
+            mailbox_id: u32,
+            parent_id: u32,
+            role: SpecialUse,
+            name: String,
+            is_subscribed: bool,
+        }
+
         let mut mailboxes = Vec::with_capacity(10);
         let mut special_uses = AHashMap::new();
-        for (mailbox_id, mailbox) in self
+        for (mailbox_id, mailbox_) in self
             .server
-            .get_properties::<email::mailbox::Mailbox, _, _>(
+            .get_properties::<ArchivedValue<ArchivedMailbox>, _, _>(
                 account_id,
                 Collection::Mailbox,
                 &mailbox_ids,
@@ -156,13 +164,24 @@ impl<T: SessionStream> SessionData<T> {
             .await
             .caused_by(trc::location!())?
         {
+            let mailbox = mailbox_.unarchive().caused_by(trc::location!())?;
             // Map special uses
-            if mailbox.role != SpecialUse::None {
-                special_uses.insert(mailbox.role, mailbox_id);
+            let role = SpecialUse::from(&mailbox.role);
+            if !matches!(mailbox.role, ArchivedSpecialUse::None) {
+                special_uses.insert(role, mailbox_id);
             }
 
             // Add mailbox id
-            mailboxes.push((mailbox_id, mailbox.parent_id, mailbox));
+            mailboxes.push(MailboxData {
+                mailbox_id,
+                parent_id: u32::from(mailbox.parent_id),
+                role,
+                name: mailbox.name.to_string(),
+                is_subscribed: mailbox
+                    .subscribers
+                    .iter()
+                    .any(|s| u32::from(s) == access_token.primary_id()),
+            });
         }
 
         // Build tree
@@ -197,27 +216,27 @@ impl<T: SessionStream> SessionData<T> {
                 .map(|k| k.len() + std::mem::size_of::<u32>())
                 .sum::<usize>()
             + (account.mailbox_state.len()
-                * (std::mem::size_of::<Mailbox>() + std::mem::size_of::<u32>())))
-            as u64;
+                * (std::mem::size_of::<ArchivedValue<ArchivedMailbox>>()
+                    + std::mem::size_of::<u32>()))) as u64;
 
         loop {
-            while let Some((mailbox_id, mailbox_parent_id, mailbox)) = iter.next() {
-                if *mailbox_parent_id == parent_id {
+            while let Some(mailbox) = iter.next() {
+                if mailbox.parent_id == parent_id {
                     let mut mailbox_path = path.clone();
-                    if *mailbox_id != INBOX_ID || account.prefix.is_some() {
+                    if mailbox.mailbox_id != INBOX_ID || account.prefix.is_some() {
                         mailbox_path.push(mailbox.name.clone());
                     } else {
                         mailbox_path.push("INBOX".to_string());
                     }
                     let has_children = mailboxes
                         .iter()
-                        .any(|(_, child_parent_id, _)| *child_parent_id == *mailbox_id + 1);
+                        .any(|child| child.parent_id == mailbox.mailbox_id + 1);
 
                     account.mailbox_state.insert(
-                        *mailbox_id,
+                        mailbox.mailbox_id,
                         Mailbox {
                             has_children,
-                            is_subscribed: mailbox.is_subscribed(access_token.primary_id()),
+                            is_subscribed: mailbox.is_subscribed,
                             special_use: match mailbox.role {
                                 SpecialUse::Trash => Some(Attribute::Trash),
                                 SpecialUse::Junk => Some(Attribute::Junk),
@@ -233,7 +252,7 @@ impl<T: SessionStream> SessionData<T> {
                                     account_id,
                                     Collection::Email,
                                     Property::MailboxIds,
-                                    *mailbox_id,
+                                    mailbox.mailbox_id,
                                 )
                                 .await
                                 .caused_by(trc::location!())?
@@ -242,7 +261,7 @@ impl<T: SessionStream> SessionData<T> {
                                 .into(),
                             total_unseen: self
                                 .server
-                                .mailbox_unread_tags(account_id, *mailbox_id, &message_ids)
+                                .mailbox_unread_tags(account_id, mailbox.mailbox_id, &message_ids)
                                 .await
                                 .caused_by(trc::location!())?
                                 .map(|v| v.len())
@@ -253,7 +272,8 @@ impl<T: SessionStream> SessionData<T> {
                     );
 
                     let mut mailbox_name = mailbox_path.join("/");
-                    if mailbox_name.eq_ignore_ascii_case("inbox") && *mailbox_id != INBOX_ID {
+                    if mailbox_name.eq_ignore_ascii_case("inbox") && mailbox.mailbox_id != INBOX_ID
+                    {
                         // If there is another mailbox called Inbox, rename it to avoid conflicts
                         mailbox_name = format!("{mailbox_name} 2");
                     }
@@ -270,7 +290,7 @@ impl<T: SessionStream> SessionData<T> {
                         })
                         .and_then(|f| special_uses.get(&f.special_use))
                         .copied()
-                        .unwrap_or(*mailbox_id);
+                        .unwrap_or(mailbox.mailbox_id);
 
                     account
                         .mailbox_names
@@ -278,7 +298,7 @@ impl<T: SessionStream> SessionData<T> {
 
                     if has_children && iter_stack.len() < 100 {
                         iter_stack.push((iter, parent_id, path));
-                        parent_id = *mailbox_id + 1;
+                        parent_id = mailbox.mailbox_id + 1;
                         path = mailbox_path;
                         iter = mailboxes.iter();
                     }
@@ -398,7 +418,8 @@ impl<T: SessionStream> SessionData<T> {
         for (account_id, last_state) in account_states {
             let changelog = self
                 .server
-                .changes_(
+                .store()
+                .changes(
                     account_id,
                     Collection::Mailbox,
                     last_state.map(Query::Since).unwrap_or(Query::All),
@@ -600,14 +621,26 @@ impl<T: SessionStream> SessionData<T> {
         Ok(access_token.is_member(account_id)
             || self
                 .server
-                .get_property::<email::mailbox::Mailbox>(
+                .get_property::<ArchivedValue<ArchivedMailbox>>(
                     account_id,
                     Collection::Mailbox,
                     document_id,
                     Property::Value,
                 )
-                .await?
-                .map(|mailbox| mailbox.acls.effective_acl(&access_token).contains(item))
+                .await
+                .and_then(|mailbox| {
+                    if let Some(mailbox) = mailbox {
+                        Ok(Some(
+                            mailbox
+                                .unarchive()?
+                                .acls
+                                .effective_acl(&access_token)
+                                .contains(item),
+                        ))
+                    } else {
+                        Ok(None)
+                    }
+                })?
                 .ok_or_else(|| {
                     trc::ImapEvent::Error
                         .caused_by(trc::location!())

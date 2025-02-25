@@ -10,7 +10,7 @@ use ahash::AHashSet;
 use bitpacking::{BitPacker, BitPacker1x, BitPacker4x, BitPacker8x};
 use utils::codec::leb128::Leb128Reader;
 
-use crate::{write::key::KeySerializer, Serialize};
+use crate::{SerializeInfallible, write::key::KeySerializer};
 
 #[derive(Default)]
 pub(super) struct Postings {
@@ -159,13 +159,13 @@ impl Iterator for PostingsIterator<'_> {
     }
 }
 
-impl Serialize for Postings {
-    fn serialize(self) -> Vec<u8> {
+impl SerializeInfallible for Postings {
+    fn serialize(&self) -> Vec<u8> {
         // Serialize fields
         let mut serializer =
             KeySerializer::new((self.fields.len() + 1) + (self.postings.len() * 2));
-        for field in self.fields {
-            serializer = serializer.write(field);
+        for field in &self.fields {
+            serializer = serializer.write(*field);
         }
         serializer = serializer.write(u8::MAX);
 

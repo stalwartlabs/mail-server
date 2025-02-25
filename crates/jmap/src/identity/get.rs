@@ -6,7 +6,7 @@
 
 use common::Server;
 use directory::{QueryBy, backend::internal::PrincipalField};
-use email::identity::{EmailAddress, Identity};
+use email::identity::{ArchivedEmailAddress, ArchivedIdentity, Identity};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -15,7 +15,12 @@ use jmap_proto::{
         value::{Object, Value},
     },
 };
-use store::{Serialize, roaring::RoaringBitmap, write::BatchBuilder};
+use store::{
+    Serialize,
+    rkyv::{option::ArchivedOption, vec::ArchivedVec},
+    roaring::RoaringBitmap,
+    write::{ArchivedValue, BatchBuilder},
+};
 use trc::AddContext;
 use utils::sanitize_email;
 
@@ -79,8 +84,8 @@ impl IdentityGet for Server {
                 response.not_found.push(id.into());
                 continue;
             }
-            let mut identity = if let Some(identity) = self
-                .get_property::<Identity>(
+            let _identity = if let Some(identity) = self
+                .get_property::<ArchivedValue<ArchivedIdentity>>(
                     account_id,
                     Collection::Identity,
                     document_id,
@@ -93,6 +98,7 @@ impl IdentityGet for Server {
                 response.not_found.push(id.into());
                 continue;
             };
+            let identity = _identity.unarchive().caused_by(trc::location!())?;
             let mut result = Object::with_capacity(properties.len());
             for property in &properties {
                 match property {
@@ -103,28 +109,22 @@ impl IdentityGet for Server {
                         result.append(Property::MayDelete, Value::Bool(true));
                     }
                     Property::Name => {
-                        result.append(Property::Name, std::mem::take(&mut identity.name));
+                        result.append(Property::Name, identity.name.to_string());
                     }
                     Property::Email => {
-                        result.append(Property::Email, std::mem::take(&mut identity.email));
+                        result.append(Property::Email, identity.email.to_string());
                     }
                     Property::TextSignature => {
-                        result.append(
-                            Property::TextSignature,
-                            std::mem::take(&mut identity.text_signature),
-                        );
+                        result.append(Property::TextSignature, identity.text_signature.to_string());
                     }
                     Property::HtmlSignature => {
-                        result.append(
-                            Property::HtmlSignature,
-                            std::mem::take(&mut identity.html_signature),
-                        );
+                        result.append(Property::HtmlSignature, identity.html_signature.to_string());
                     }
                     Property::Bcc => {
-                        result.append(Property::Bcc, email_to_value(identity.bcc.take()));
+                        result.append(Property::Bcc, email_to_value(&identity.bcc));
                     }
                     Property::ReplyTo => {
-                        result.append(Property::ReplyTo, email_to_value(identity.reply_to.take()));
+                        result.append(Property::ReplyTo, email_to_value(&identity.reply_to));
                     }
                     property => {
                         result.append(property.clone(), Value::Null);
@@ -192,7 +192,8 @@ impl IdentityGet for Server {
                     email,
                     ..Default::default()
                 }
-                .serialize(),
+                .serialize()
+                .caused_by(trc::location!())?,
             );
             identity_ids.insert(document_id);
         }
@@ -207,16 +208,16 @@ impl IdentityGet for Server {
     }
 }
 
-fn email_to_value(email: Option<Vec<EmailAddress>>) -> Value {
-    if let Some(email) = email {
+fn email_to_value(email: &ArchivedOption<ArchivedVec<ArchivedEmailAddress>>) -> Value {
+    if let ArchivedOption::Some(email) = email {
         Value::List(
             email
-                .into_iter()
+                .iter()
                 .map(|email| {
                     Value::Object(
                         Object::with_capacity(2)
-                            .with_property(Property::Name, email.name)
-                            .with_property(Property::Email, email.email),
+                            .with_property(Property::Name, &email.name)
+                            .with_property(Property::Email, &email.email),
                     )
                 })
                 .collect(),

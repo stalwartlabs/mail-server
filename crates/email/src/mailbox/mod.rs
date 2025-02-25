@@ -7,6 +7,7 @@
 use common::config::jmap::settings::SpecialUse;
 use jmap_proto::types::value::AclGrant;
 
+pub mod destroy;
 pub mod index;
 pub mod manage;
 pub mod serialize;
@@ -19,7 +20,7 @@ pub const SENT_ID: u32 = 4;
 pub const ARCHIVE_ID: u32 = 5;
 pub const TOMBSTONE_ID: u32 = u32::MAX - 1;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct Mailbox {
     pub name: String,
     pub role: SpecialUse,
@@ -90,6 +91,12 @@ impl Mailbox {
 
     pub fn is_subscribed(&self, subscriber: u32) -> bool {
         self.subscribers.contains(&subscriber)
+    }
+}
+
+impl ArchivedMailbox {
+    pub fn is_subscribed(&self, subscriber: u32) -> bool {
+        self.subscribers.iter().any(|x| u32::from(x) == subscriber)
     }
 }
 

@@ -32,18 +32,18 @@ use spam_filter::{
     SpamFilterInput, analysis::init::SpamFilterInit, modules::bayes::BayesClassifier,
 };
 use std::future::Future;
-use store::rand::Rng;
 use store::{
-    BitmapKey, BlobClass, Serialize,
+    BitmapKey, BlobClass,
     ahash::AHashSet,
     query::Filter,
     write::{
-        AssignedIds, BatchBuilder, BitmapClass, F_BITMAP, F_CLEAR, F_VALUE, MaybeDynamicId,
-        MaybeDynamicValue, SerializeWithId, TagValue, TaskQueueClass, ValueClass,
+        AssignedIds, BatchBuilder, BitmapClass, MaybeDynamicId, MaybeDynamicValue, SerializeWithId,
+        TagValue, TaskQueueClass, ValueClass,
         log::{ChangeLogBuilder, Changes, LogInsert},
         now,
     },
 };
+use store::{SerializeInfallible, rand::Rng};
 use trc::{AddContext, MessageIngestEvent};
 use utils::map::vec_map::VecMap;
 
@@ -291,7 +291,7 @@ impl EmailIngest for Server {
                         account_id,
                         Collection::Email,
                         vec![
-                            Filter::eq(Property::MessageId, &message_id),
+                            Filter::eq(Property::MessageId, message_id.as_str().serialize()),
                             Filter::is_in_bitmap(
                                 Property::MailboxIds,
                                 params.mailbox_ids.first().copied().unwrap_or(INBOX_ID),
@@ -497,9 +497,10 @@ impl EmailIngest for Server {
                 mailbox_ids,
                 params.received_at.unwrap_or_else(now),
             )
-            .value(Property::Cid, change_id, F_VALUE)
+            .caused_by(trc::location!())?
+            .set(Property::Cid, change_id.serialize())
             .set(Property::ThreadId, maybe_thread_id)
-            .tag(Property::ThreadId, TagValue::Id(maybe_thread_id), 0)
+            .tag(Property::ThreadId, TagValue::Id(maybe_thread_id))
             .set(
                 ValueClass::TaskQueue(TaskQueueClass::IndexEmail {
                     seq: self.generate_snowflake_id().caused_by(trc::location!())?,
@@ -584,21 +585,20 @@ impl EmailIngest for Server {
         references: &[&str],
     ) -> trc::Result<Option<u32>> {
         let mut try_count = 0;
+        let thread_name = if !thread_name.is_empty() {
+            thread_name
+        } else {
+            "!"
+        }
+        .serialize();
 
         loop {
             // Find messages with matching references
             let mut filters = Vec::with_capacity(references.len() + 3);
-            filters.push(Filter::eq(
-                Property::Subject,
-                if !thread_name.is_empty() {
-                    thread_name
-                } else {
-                    "!"
-                },
-            ));
+            filters.push(Filter::eq(Property::Subject, thread_name.clone()));
             filters.push(Filter::Or);
             for reference in references {
-                filters.push(Filter::eq(Property::References, *reference));
+                filters.push(Filter::eq(Property::References, reference.serialize()));
             }
             filters.push(Filter::End);
             let results = self
@@ -690,8 +690,9 @@ impl EmailIngest for Server {
                         batch
                             .update_document(document_id)
                             .assert_value(Property::ThreadId, old_thread_id)
-                            .value(Property::ThreadId, old_thread_id, F_BITMAP | F_CLEAR)
-                            .value(Property::ThreadId, thread_id, F_VALUE | F_BITMAP);
+                            .untag(Property::ThreadId, old_thread_id)
+                            .tag(Property::ThreadId, thread_id)
+                            .set(Property::ThreadId, thread_id.serialize());
                         changes.log_move(
                             Collection::Email,
                             Id::from_parts(old_thread_id, document_id),
@@ -700,7 +701,7 @@ impl EmailIngest for Server {
                     }
                 }
             }
-            batch.custom(changes);
+            batch.custom(changes).caused_by(trc::location!())?;
 
             match self.core.storage.data.write(batch.build()).await {
                 Ok(_) => return Ok(Some(thread_id)),
