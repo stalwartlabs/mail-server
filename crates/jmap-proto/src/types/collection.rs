@@ -11,7 +11,7 @@ use std::{
 
 use utils::map::bitmap::BitmapItem;
 
-use super::type_state::DataType;
+use super::{property::Property, type_state::DataType};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 #[repr(u8)]
@@ -24,7 +24,35 @@ pub enum Collection {
     SieveScript = 5,
     PushSubscription = 6,
     Principal = 7,
-    None = 8,
+    Calendar = 8,
+    CalendarEvent = 9,
+    CalendarEventNotification = 10,
+    AddressBook = 11,
+    ContactCard = 12,
+    FileNode = 13,
+    None = 14,
+}
+
+impl Collection {
+    pub fn child_collection(&self) -> Option<Collection> {
+        match self {
+            Collection::Mailbox => Some(Collection::Email),
+            Collection::Calendar => Some(Collection::CalendarEvent),
+            Collection::AddressBook => Some(Collection::ContactCard),
+            Collection::FileNode => Some(Collection::FileNode),
+            _ => None,
+        }
+    }
+
+    pub fn parent_property(&self) -> Option<Property> {
+        match self {
+            Collection::Email => Some(Property::MailboxIds),
+            Collection::CalendarEvent => Some(Property::ParentId),
+            Collection::ContactCard => Some(Property::ParentId),
+            Collection::FileNode => Some(Property::ParentId),
+            _ => None,
+        }
+    }
 }
 
 impl From<u8> for Collection {
@@ -38,6 +66,12 @@ impl From<u8> for Collection {
             5 => Collection::SieveScript,
             6 => Collection::PushSubscription,
             7 => Collection::Principal,
+            8 => Collection::Calendar,
+            9 => Collection::CalendarEvent,
+            10 => Collection::CalendarEventNotification,
+            11 => Collection::AddressBook,
+            12 => Collection::ContactCard,
+            13 => Collection::FileNode,
             _ => Collection::None,
         }
     }
@@ -54,6 +88,12 @@ impl From<u64> for Collection {
             5 => Collection::SieveScript,
             6 => Collection::PushSubscription,
             7 => Collection::Principal,
+            8 => Collection::Calendar,
+            9 => Collection::CalendarEvent,
+            10 => Collection::CalendarEventNotification,
+            11 => Collection::AddressBook,
+            12 => Collection::ContactCard,
+            13 => Collection::FileNode,
             _ => Collection::None,
         }
     }
@@ -105,6 +145,12 @@ impl Collection {
             Collection::EmailSubmission => "emailSubmission",
             Collection::SieveScript => "sieveScript",
             Collection::Principal => "principal",
+            Collection::Calendar => "calendar",
+            Collection::CalendarEvent => "calendarEvent",
+            Collection::CalendarEventNotification => "calendarEventNotification",
+            Collection::AddressBook => "addressBook",
+            Collection::ContactCard => "contactCard",
+            Collection::FileNode => "fileNode",
             Collection::None => "",
         }
     }
@@ -114,17 +160,23 @@ impl FromStr for Collection {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "pushSubscription" => Ok(Collection::PushSubscription),
-            "email" => Ok(Collection::Email),
-            "mailbox" => Ok(Collection::Mailbox),
-            "thread" => Ok(Collection::Thread),
-            "identity" => Ok(Collection::Identity),
-            "emailSubmission" => Ok(Collection::EmailSubmission),
-            "sieveScript" => Ok(Collection::SieveScript),
-            "principal" => Ok(Collection::Principal),
-            _ => Err(()),
-        }
+        hashify::tiny_map!(s.as_bytes(),
+            "pushSubscription" => Collection::PushSubscription,
+            "email" => Collection::Email,
+            "mailbox" => Collection::Mailbox,
+            "thread" => Collection::Thread,
+            "identity" => Collection::Identity,
+            "emailSubmission" => Collection::EmailSubmission,
+            "sieveScript" => Collection::SieveScript,
+            "principal" => Collection::Principal,
+            "calendar" => Collection::Calendar,
+            "calendarEvent" => Collection::CalendarEvent,
+            "calendarEventNotification" => Collection::CalendarEventNotification,
+            "addressBook" => Collection::AddressBook,
+            "contactCard" => Collection::ContactCard,
+            "fileNode" => Collection::FileNode,
+        )
+        .ok_or(())
     }
 }
 

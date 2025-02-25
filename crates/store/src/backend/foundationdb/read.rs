@@ -5,23 +5,23 @@
  */
 
 use foundationdb::{
+    KeySelector, RangeOption, Transaction,
     future::FdbSlice,
     options::{self, StreamingMode},
-    KeySelector, RangeOption, Transaction,
 };
 use futures::TryStreamExt;
 use roaring::RoaringBitmap;
 
 use crate::{
+    BitmapKey, Deserialize, IterateParams, Key, U32_LEN, ValueKey, WITH_SUBSPACE,
     backend::deserialize_i64_le,
     write::{
-        key::{DeserializeBigEndian, KeySerializer},
         BitmapClass, ValueClass,
+        key::{DeserializeBigEndian, KeySerializer},
     },
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN, WITH_SUBSPACE,
 };
 
-use super::{into_error, FdbStore, ReadVersion, TimedTransaction, MAX_VALUE_SIZE};
+use super::{FdbStore, MAX_VALUE_SIZE, ReadVersion, TimedTransaction, into_error};
 
 #[allow(dead_code)]
 pub(crate) enum ChunkedValue {
@@ -40,7 +40,7 @@ impl FdbStore {
 
         match read_chunked_value(&key, &trx, true).await? {
             ChunkedValue::Single(bytes) => U::deserialize(&bytes).map(Some),
-            ChunkedValue::Chunked { bytes, .. } => U::deserialize(&bytes).map(Some),
+            ChunkedValue::Chunked { bytes, .. } => U::deserialize_owned(bytes).map(Some),
             ChunkedValue::None => Ok(None),
         }
     }

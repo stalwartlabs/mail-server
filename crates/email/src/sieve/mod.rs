@@ -4,16 +4,19 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
-use jmap_proto::types::blob::BlobId;
 use sieve::Sieve;
-use store::{ahash::AHashSet, blake3};
+use store::{ahash::RandomState, blake3};
+use utils::BlobHash;
 
+pub mod activate;
+pub mod delete;
 pub mod index;
 pub mod ingest;
 pub mod serialize;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveScript {
     pub document_id: u32,
     pub script_name: String,
@@ -21,27 +24,34 @@ pub struct ActiveScript {
     pub seen_ids: SeenIds,
 }
 
-#[derive(Debug, Clone)]
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone)]
 pub struct SeenIdHash {
     hash: [u8; 32],
     expiry: u64,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Default, Debug, Clone, PartialEq, Eq,
+)]
 pub struct SeenIds {
-    pub ids: AHashSet<SeenIdHash>,
+    pub ids: HashSet<SeenIdHash, RandomState>,
     pub has_changes: bool,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct SieveScript {
     pub name: String,
     pub is_active: bool,
-    pub blob_id: BlobId,
+    pub blob_hash: BlobHash,
+    pub size: u32,
     pub vacation_response: Option<VacationResponse>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct VacationResponse {
     pub from_date: Option<u64>,
     pub to_date: Option<u64>,
@@ -51,12 +61,13 @@ pub struct VacationResponse {
 }
 
 impl SieveScript {
-    pub fn new(name: impl Into<String>, blob_id: BlobId) -> Self {
+    pub fn new(name: impl Into<String>, blob_hash: BlobHash) -> Self {
         SieveScript {
             name: name.into(),
             is_active: false,
-            blob_id,
+            blob_hash,
             vacation_response: None,
+            size: 0,
         }
     }
 
@@ -65,13 +76,18 @@ impl SieveScript {
         self
     }
 
-    pub fn with_blob_id(mut self, blob_id: BlobId) -> Self {
-        self.blob_id = blob_id;
+    pub fn with_blob_hash(mut self, blob_hash: BlobHash) -> Self {
+        self.blob_hash = blob_hash;
         self
     }
 
     pub fn with_is_active(mut self, is_active: bool) -> Self {
         self.is_active = is_active;
+        self
+    }
+
+    pub fn with_size(mut self, size: u32) -> Self {
+        self.size = size;
         self
     }
 
@@ -116,3 +132,17 @@ impl PartialEq for SeenIdHash {
 }
 
 impl Eq for SeenIdHash {}
+
+impl std::hash::Hash for ArchivedSeenIdHash {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
+
+impl PartialEq for ArchivedSeenIdHash {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
+}
+
+impl Eq for ArchivedSeenIdHash {}

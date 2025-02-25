@@ -12,8 +12,8 @@ use roaring::RoaringBitmap;
 use trc::AddContext;
 
 use crate::{
-    backend::MAX_TOKEN_LENGTH, write::key::DeserializeBigEndian, BitmapKey, IndexKey,
-    IndexKeyPrefix, IterateParams, Key, Store, U32_LEN,
+    BitmapKey, IndexKey, IndexKeyPrefix, IterateParams, Key, Store, U32_LEN,
+    backend::MAX_TOKEN_LENGTH, write::key::DeserializeBigEndian,
 };
 
 use super::{Filter, Operator, ResultSet};
@@ -177,6 +177,7 @@ impl Store {
         match_value: &[u8],
         op: Operator,
     ) -> trc::Result<Option<RoaringBitmap>> {
+        let mut finder = None;
         let (begin, end) = match op {
             Operator::LowerThan => (
                 IndexKey {
@@ -258,6 +259,26 @@ impl Store {
                     key: match_value,
                 },
             ),
+            Operator::Contains => {
+                finder = memchr::memmem::Finder::new(match_value).into();
+
+                (
+                    IndexKey {
+                        account_id,
+                        collection,
+                        document_id: 0,
+                        field,
+                        key: &[][..],
+                    },
+                    IndexKey {
+                        account_id,
+                        collection,
+                        document_id: u32::MAX,
+                        field: field + 1,
+                        key: &[u8::MAX, u8::MAX, u8::MAX, u8::MAX][..],
+                    },
+                )
+            }
         };
 
         let mut bm = RoaringBitmap::new();
@@ -286,6 +307,7 @@ impl Store {
                     Operator::GreaterThan => value > match_value,
                     Operator::GreaterEqualThan => value >= match_value,
                     Operator::Equal => value == match_value,
+                    Operator::Contains => finder.as_ref().unwrap().find(value).is_some(),
                 };
 
                 if matches {

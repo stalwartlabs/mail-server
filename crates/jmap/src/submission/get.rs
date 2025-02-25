@@ -5,7 +5,10 @@
  */
 
 use common::Server;
-use email::submission::{Address, Delivered, EmailSubmission, Envelope, UndoStatus};
+use email::submission::{
+    ArchivedAddress, ArchivedEmailSubmission, ArchivedEnvelope, Delivered, DeliveryStatus,
+    UndoStatus,
+};
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     types::{
@@ -18,6 +21,9 @@ use jmap_proto::{
 };
 use smtp::queue::{self, spool::SmtpSpool};
 use std::future::Future;
+use store::{rkyv::option::ArchivedOption, write::ArchivedValue};
+use trc::AddContext;
+use utils::map::vec_map::VecMap;
 
 use crate::changes::state::StateManager;
 
@@ -77,8 +83,8 @@ impl EmailSubmissionGet for Server {
                 response.not_found.push(id.into());
                 continue;
             }
-            let mut submission = if let Some(submission) = self
-                .get_property::<EmailSubmission>(
+            let submission_ = if let Some(submission) = self
+                .get_property::<ArchivedValue<ArchivedEmailSubmission>>(
                     account_id,
                     Collection::EmailSubmission,
                     document_id,
@@ -91,33 +97,40 @@ impl EmailSubmissionGet for Server {
                 response.not_found.push(id.into());
                 continue;
             };
+            let submission = submission_.unarchive().caused_by(trc::location!())?;
 
             // Obtain queueId
-            if let Some(queue_id) = submission.queue_id {
+            let mut delivery_status = submission
+                .delivery_status
+                .iter()
+                .map(|(k, v)| (k.to_string(), DeliveryStatus::from(v)))
+                .collect::<VecMap<_, _>>();
+            let mut is_pending = false;
+            if let Some(queue_id) = submission.queue_id.as_ref().map(u64::from) {
                 if let Some(mut queued_message) = self.read_message(queue_id).await {
                     for rcpt in std::mem::take(&mut queued_message.recipients) {
-                        let rcpt_status = submission
-                            .delivery_status
-                            .get_mut_or_insert(rcpt.address_lcase);
-                        rcpt_status.delivered = match &rcpt.status {
-                            queue::Status::Scheduled | queue::Status::TemporaryFailure(_) => {
-                                Delivered::Queued
-                            }
-                            queue::Status::Completed(_) => Delivered::Yes,
-                            queue::Status::PermanentFailure(_) => Delivered::No,
-                        };
-                        rcpt_status.smtp_reply = match &rcpt.status {
-                            queue::Status::Completed(reply) => {
-                                reply.response.to_string().replace('\n', " ")
-                            }
-                            queue::Status::TemporaryFailure(reply)
-                            | queue::Status::PermanentFailure(reply) => {
-                                reply.response.to_string().replace('\n', " ")
-                            }
-                            queue::Status::Scheduled => "250 2.1.5 Queued".to_string(),
+                        *delivery_status.get_mut_or_insert(rcpt.address_lcase) = DeliveryStatus {
+                            smtp_reply: match &rcpt.status {
+                                queue::Status::Completed(reply) => {
+                                    reply.response.to_string().replace('\n', " ")
+                                }
+                                queue::Status::TemporaryFailure(reply)
+                                | queue::Status::PermanentFailure(reply) => {
+                                    reply.response.to_string().replace('\n', " ")
+                                }
+                                queue::Status::Scheduled => "250 2.1.5 Queued".to_string(),
+                            },
+                            delivered: match &rcpt.status {
+                                queue::Status::Scheduled | queue::Status::TemporaryFailure(_) => {
+                                    Delivered::Queued
+                                }
+                                queue::Status::Completed(_) => Delivered::Yes,
+                                queue::Status::PermanentFailure(_) => Delivered::No,
+                            },
+                            displayed: false,
                         };
                     }
-                    submission.undo_status = UndoStatus::Pending;
+                    is_pending = true;
                 }
             }
 
@@ -126,11 +139,9 @@ impl EmailSubmissionGet for Server {
                 let value = match property {
                     Property::Id => Value::Id(id),
                     Property::DeliveryStatus => {
-                        let mut status = Object::with_capacity(submission.delivery_status.len());
+                        let mut status = Object::with_capacity(delivery_status.len());
 
-                        for (rcpt, delivery_status) in
-                            std::mem::take(&mut submission.delivery_status)
-                        {
+                        for (rcpt, delivery_status) in std::mem::take(&mut delivery_status) {
                             status.set(
                                 Property::_T(rcpt),
                                 Object::with_capacity(3)
@@ -145,17 +156,25 @@ impl EmailSubmissionGet for Server {
 
                         Value::Object(status)
                     }
-                    Property::UndoStatus => {
-                        Value::Text(submission.undo_status.as_str().to_string())
-                    }
-                    Property::EmailId => {
-                        Value::Id(Id::from_parts(submission.thread_id, submission.email_id))
-                    }
-                    Property::IdentityId => Value::Id(Id::from(submission.identity_id)),
-                    Property::ThreadId => Value::Id(Id::from(submission.thread_id)),
-                    Property::Envelope => build_envelope(std::mem::take(&mut submission.envelope)),
+                    Property::UndoStatus => Value::Text(
+                        {
+                            if is_pending {
+                                UndoStatus::Pending.as_str()
+                            } else {
+                                submission.undo_status.as_str()
+                            }
+                        }
+                        .to_string(),
+                    ),
+                    Property::EmailId => Value::Id(Id::from_parts(
+                        u32::from(submission.thread_id),
+                        u32::from(submission.email_id),
+                    )),
+                    Property::IdentityId => Value::Id(Id::from(u32::from(submission.identity_id))),
+                    Property::ThreadId => Value::Id(Id::from(u32::from(submission.thread_id))),
+                    Property::Envelope => build_envelope(&submission.envelope),
                     Property::SendAt => {
-                        Value::Date(UTCDate::from_timestamp(submission.send_at as i64))
+                        Value::Date(UTCDate::from_timestamp(u64::from(submission.send_at) as i64))
                     }
                     Property::MdnBlobIds | Property::DsnBlobIds => Value::List(vec![]),
                     _ => Value::Null,
@@ -170,26 +189,26 @@ impl EmailSubmissionGet for Server {
     }
 }
 
-fn build_envelope(envelope: Envelope) -> Value {
+fn build_envelope(envelope: &ArchivedEnvelope) -> Value {
     Object::with_capacity(2)
-        .with_property(Property::MailFrom, build_address(envelope.mail_from))
+        .with_property(Property::MailFrom, build_address(&envelope.mail_from))
         .with_property(
             Property::RcptTo,
-            Value::List(envelope.rcpt_to.into_iter().map(build_address).collect()),
+            Value::List(envelope.rcpt_to.iter().map(build_address).collect()),
         )
         .into()
 }
 
-fn build_address(envelope: Address) -> Value {
+fn build_address(envelope: &ArchivedAddress) -> Value {
     Object::with_capacity(2)
-        .with_property(Property::Email, Value::Text(envelope.email))
+        .with_property(Property::Email, Value::Text(envelope.email.to_string()))
         .with_property(
             Property::Parameters,
-            if let Some(params) = envelope.parameters {
+            if let ArchivedOption::Some(params) = &envelope.parameters {
                 Value::Object(Object(
                     params
-                        .into_iter()
-                        .map(|(k, v)| (Property::_T(k), v.into()))
+                        .iter()
+                        .map(|(k, v)| (Property::_T(k.to_string()), v.into()))
                         .collect(),
                 ))
             } else {

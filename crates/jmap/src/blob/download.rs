@@ -6,34 +6,18 @@
 
 use std::ops::Range;
 
-use common::{auth::AccessToken, Server};
-use jmap_proto::types::{
-    acl::Acl,
-    blob::{BlobId, BlobSection},
-    collection::Collection,
-};
-use mail_parser::{
-    decoders::{base64::base64_decode, quoted_printable::quoted_printable_decode},
-    Encoding,
-};
+use common::{Server, auth::AccessToken};
+use jmap_proto::types::{acl::Acl, blob::BlobId, collection::Collection};
 use std::future::Future;
 use store::BlobClass;
 use trc::AddContext;
 use utils::BlobHash;
-
-use crate::auth::acl::AclMethods;
 
 pub trait BlobDownload: Sync + Send {
     fn blob_download(
         &self,
         blob_id: &BlobId,
         access_token: &AccessToken,
-    ) -> impl Future<Output = trc::Result<Option<Vec<u8>>>> + Send;
-
-    fn get_blob_section(
-        &self,
-        hash: &BlobHash,
-        section: &BlobSection,
     ) -> impl Future<Output = trc::Result<Option<Vec<u8>>>> + Send;
 
     fn get_blob(
@@ -76,7 +60,12 @@ impl BlobDownload for Server {
                 } => {
                     if Collection::from(*collection) == Collection::Email {
                         match self
-                            .shared_messages(access_token, *account_id, Acl::ReadItems)
+                            .shared_document_children(
+                                access_token,
+                                *account_id,
+                                Collection::Mailbox,
+                                Acl::ReadItems,
+                            )
                             .await
                         {
                             Ok(shared_messages) if shared_messages.contains(*document_id) => (),
@@ -111,24 +100,6 @@ impl BlobDownload for Server {
         }
     }
 
-    async fn get_blob_section(
-        &self,
-        hash: &BlobHash,
-        section: &BlobSection,
-    ) -> trc::Result<Option<Vec<u8>>> {
-        Ok(self
-            .get_blob(
-                hash,
-                (section.offset_start)..(section.offset_start.saturating_add(section.size)),
-            )
-            .await?
-            .and_then(|bytes| match Encoding::from(section.encoding) {
-                Encoding::None => Some(bytes),
-                Encoding::Base64 => base64_decode(&bytes),
-                Encoding::QuotedPrintable => quoted_printable_decode(&bytes),
-            }))
-    }
-
     #[inline(always)]
     async fn get_blob(&self, hash: &BlobHash, range: Range<usize>) -> trc::Result<Option<Vec<u8>>> {
         self.core
@@ -160,7 +131,12 @@ impl BlobDownload for Server {
                     if Collection::from(*collection) == Collection::Email {
                         access_token.is_member(*account_id)
                             || self
-                                .shared_messages(access_token, *account_id, Acl::ReadItems)
+                                .shared_document_children(
+                                    access_token,
+                                    *account_id,
+                                    Collection::Mailbox,
+                                    Acl::ReadItems,
+                                )
                                 .await?
                                 .contains(*document_id)
                     } else {

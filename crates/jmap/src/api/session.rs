@@ -6,16 +6,14 @@
 
 use std::sync::Arc;
 
-use common::{auth::AccessToken, Server};
-use directory::{backend::internal::PrincipalField, QueryBy};
+use common::{Server, auth::AccessToken};
+use directory::{QueryBy, backend::internal::PrincipalField};
 use jmap_proto::{
     request::capability::{Capability, Session},
     types::{acl::Acl, collection::Collection, id::Id},
 };
 use std::future::Future;
 use trc::AddContext;
-
-use crate::auth::acl::AclMethods;
 
 pub trait SessionHandler: Sync + Send {
     fn handle_session_resource(

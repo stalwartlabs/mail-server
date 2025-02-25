@@ -22,6 +22,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::future::Future;
 use store::{Serialize, dispatch::lookup::KeyValue, write::Bincode};
+use trc::AddContext;
 
 use crate::{
     api::{
@@ -113,7 +114,8 @@ impl OAuthApiHandler for Server {
                     nonce,
                     params: redirect_uri.unwrap_or_default(),
                 })
-                .serialize();
+                .serialize()
+                .caused_by(trc::location!())?;
 
                 // Insert client code
                 self.core
@@ -174,7 +176,7 @@ impl OAuthApiHandler for Server {
                                 KeyValue::with_prefix(
                                     KV_OAUTH,
                                     device_code.as_bytes(),
-                                    auth_code.serialize(),
+                                    auth_code.serialize().caused_by(trc::location!())?,
                                 )
                                 .expires(self.core.oauth.oauth_expiry_auth_code),
                             )
@@ -237,7 +239,8 @@ impl OAuthApiHandler for Server {
             nonce,
             params: device_code.clone(),
         })
-        .serialize();
+        .serialize()
+        .caused_by(trc::location!())?;
 
         // Insert device code
         self.core

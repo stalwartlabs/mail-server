@@ -9,22 +9,22 @@ use std::{
     hash::{BuildHasher, Hasher},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{
-        atomic::{AtomicBool, AtomicU8},
         Arc,
+        atomic::{AtomicBool, AtomicU8},
     },
 };
 
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
-use auth::{oauth::config::OAuthConfig, roles::RolePermissions, AccessToken};
+use auth::{AccessToken, oauth::config::OAuthConfig, roles::RolePermissions};
 use config::{
     imap::ImapConfig,
     jmap::settings::JmapConfig,
     network::Network,
     scripts::Scripting,
     smtp::{
-        resolver::{Policy, Tlsa},
         SmtpConfig,
+        resolver::{Policy, Tlsa},
     },
     spamfilter::{IpResolver, SpamFilterConfig},
     storage::Storage,
@@ -35,12 +35,12 @@ use imap_proto::protocol::list::Attribute;
 use ipc::{HousekeeperEvent, QueueEvent, ReportingEvent, StateEvent};
 use listener::{asn::AsnGeoLookupData, blocked::Security, tls::AcmeProviders};
 
-use mail_auth::{Txt, MX};
+use mail_auth::{MX, Txt};
 use manager::webadmin::{Resource, WebAdminManager};
 use nlp::bayes::{TokenHash, Weights};
 use parking_lot::{Mutex, RwLock};
 use rustls::sign::CertifiedKey;
-use tokio::sync::{mpsc, Notify, Semaphore};
+use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio_rustls::TlsConnector;
 use utils::{
     cache::{Cache, CacheItemWeight, CacheWithTtl},
@@ -59,6 +59,8 @@ pub mod ipc;
 pub mod listener;
 pub mod manager;
 pub mod scripts;
+pub mod sharing;
+pub mod storage;
 pub mod telemetry;
 
 pub use psl;

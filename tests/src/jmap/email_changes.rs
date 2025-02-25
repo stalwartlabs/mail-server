@@ -5,12 +5,12 @@
  */
 
 use jmap_proto::{
-    parser::{json::Parser, JsonObjectParser},
+    parser::{JsonObjectParser, json::Parser},
     types::{collection::Collection, id::Id, state::State},
 };
 use store::{
     ahash::AHashSet,
-    write::{log::ChangeLogBuilder, BatchBuilder},
+    write::{BatchBuilder, log::ChangeLogBuilder},
 };
 
 use crate::jmap::assert_is_empty;
@@ -160,6 +160,7 @@ pub async fn test(params: &mut JMAPTest) {
                     .with_account_id(1)
                     .with_collection(Collection::Email)
                     .custom(changelog)
+                    .unwrap()
                     .build_batch(),
             )
             .await

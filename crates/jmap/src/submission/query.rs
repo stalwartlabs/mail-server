@@ -13,7 +13,10 @@ use jmap_proto::{
     types::{collection::Collection, property::Property},
 };
 use std::future::Future;
-use store::query::{self};
+use store::{
+    SerializeInfallible,
+    query::{self},
+};
 
 use crate::JmapMethods;
 
@@ -37,21 +40,27 @@ impl EmailSubmissionQuery for Server {
                 Filter::IdentityIds(ids) => {
                     filters.push(query::Filter::Or);
                     for id in ids {
-                        filters.push(query::Filter::eq(Property::IdentityId, id.document_id()));
+                        filters.push(query::Filter::eq(
+                            Property::IdentityId,
+                            id.document_id().serialize(),
+                        ));
                     }
                     filters.push(query::Filter::End);
                 }
                 Filter::EmailIds(ids) => {
                     filters.push(query::Filter::Or);
                     for id in ids {
-                        filters.push(query::Filter::eq(Property::EmailId, id.id()));
+                        filters.push(query::Filter::eq(Property::EmailId, id.id().serialize()));
                     }
                     filters.push(query::Filter::End);
                 }
                 Filter::ThreadIds(ids) => {
                     filters.push(query::Filter::Or);
                     for id in ids {
-                        filters.push(query::Filter::eq(Property::ThreadId, id.document_id()));
+                        filters.push(query::Filter::eq(
+                            Property::ThreadId,
+                            id.document_id().serialize(),
+                        ));
                     }
                     filters.push(query::Filter::End);
                 }
@@ -59,15 +68,16 @@ impl EmailSubmissionQuery for Server {
                     Property::UndoStatus,
                     UndoStatus::parse(&undo_status)
                         .unwrap_or(UndoStatus::Pending)
-                        .as_index(),
+                        .as_index()
+                        .serialize(),
                 )),
                 Filter::Before(before) => filters.push(query::Filter::lt(
                     Property::SendAt,
-                    before.timestamp() as u64,
+                    (before.timestamp() as u64).serialize(),
                 )),
                 Filter::After(after) => filters.push(query::Filter::gt(
                     Property::SendAt,
-                    after.timestamp() as u64,
+                    (after.timestamp() as u64).serialize(),
                 )),
                 Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                     filters.push(cond.into());

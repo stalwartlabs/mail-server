@@ -5,15 +5,15 @@
  */
 
 use futures::TryStreamExt;
-use mysql_async::{prelude::Queryable, Row};
+use mysql_async::{Row, prelude::Queryable};
 use roaring::RoaringBitmap;
 
 use crate::{
-    write::{key::DeserializeBigEndian, BitmapClass, ValueClass},
-    BitmapKey, Deserialize, IterateParams, Key, ValueKey, U32_LEN,
+    BitmapKey, Deserialize, IterateParams, Key, U32_LEN, ValueKey,
+    write::{BitmapClass, ValueClass, key::DeserializeBigEndian},
 };
 
-use super::{into_error, MysqlStore};
+use super::{MysqlStore, into_error};
 
 impl MysqlStore {
     pub(crate) async fn get_value<U>(&self, key: impl Key) -> trc::Result<Option<U>>
@@ -34,7 +34,7 @@ impl MysqlStore {
             .map_err(into_error)
             .and_then(|r| {
                 if let Some(r) = r {
-                    Ok(Some(U::deserialize(&r)?))
+                    Ok(Some(U::deserialize_owned(r)?))
                 } else {
                     Ok(None)
                 }
@@ -90,8 +90,8 @@ impl MysqlStore {
                 }
                 (true, false) => {
                     format!(
-                    "SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC LIMIT 1"
-                )
+                        "SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k DESC LIMIT 1"
+                    )
                 }
                 (false, true) => {
                     format!("SELECT {keys} FROM {table} WHERE k >= ? AND k <= ? ORDER BY k ASC")

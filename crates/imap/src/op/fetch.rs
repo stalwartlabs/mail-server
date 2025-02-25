@@ -27,15 +27,15 @@ use imap_proto::{
     },
     receiver::Request,
 };
-use jmap::{blob::download::BlobDownload, changes::get::ChangesLookup};
 use jmap_proto::types::{
     acl::Acl, collection::Collection, id::Id, keyword::Keyword, property::Property,
     state::StateChange, type_state::DataType,
 };
 use mail_parser::{Address, GetHeader, HeaderName, Message, PartType};
 use store::{
+    Serialize, SerializeInfallible,
     query::log::{Change, Query},
-    write::{BatchBuilder, Bincode, F_BITMAP, F_VALUE, assert::HashedValue},
+    write::{BatchBuilder, Bincode, assert::HashedValue},
 };
 use trc::AddContext;
 
@@ -148,7 +148,8 @@ impl<T: SessionStream> SessionData<T> {
             // Obtain changes since the modseq.
             let changelog = self
                 .server
-                .changes_(
+                .store()
+                .changes(
                     account_id,
                     Collection::Email,
                     Query::from_modseq(changed_since),
@@ -337,7 +338,8 @@ impl<T: SessionStream> SessionData<T> {
                 // Retrieve raw message if needed
                 match self
                     .server
-                    .get_blob(&email.blob_hash, 0..usize::MAX)
+                    .blob_store()
+                    .get_blob(email.blob_hash.as_slice(), 0..usize::MAX)
                     .await
                     .imap_ctx(&arguments.tag, trc::location!())?
                 {
@@ -555,9 +557,12 @@ impl<T: SessionStream> SessionData<T> {
                     .with_collection(Collection::Email)
                     .update_document(id.document_id())
                     .assert_value(Property::Keywords, &keywords)
-                    .value(Property::Keywords, keywords.inner, F_VALUE)
-                    .value(Property::Keywords, Keyword::Seen, F_BITMAP)
-                    .value(Property::Cid, changelog.change_id, F_VALUE);
+                    .set(
+                        Property::Keywords,
+                        keywords.inner.serialize().caused_by(trc::location!())?,
+                    )
+                    .tag(Property::Keywords, Keyword::Seen)
+                    .set(Property::Cid, changelog.change_id.serialize());
                 match self
                     .server
                     .store()

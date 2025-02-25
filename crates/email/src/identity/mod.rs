@@ -4,9 +4,11 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-pub mod serialize;
+use store::Serialize;
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Default, Clone, PartialEq, Eq,
+)]
 pub struct Identity {
     pub name: String,
     pub email: String,
@@ -16,8 +18,16 @@ pub struct Identity {
     pub html_signature: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct EmailAddress {
     pub name: Option<String>,
     pub email: String,
+}
+
+impl Serialize for Identity {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        rkyv::to_bytes::<rkyv::rancor::Error>(self)
+            .map(|r| r.into_vec())
+            .map_err(Into::into)
+    }
 }

@@ -14,14 +14,14 @@ use ahash::AHashMap;
 use common::Server;
 use mail_auth::{
     flate2::read::GzDecoder,
-    report::{tlsrpt::TlsReport, ActionDisposition, DmarcResult, Feedback, Report},
+    report::{ActionDisposition, DmarcResult, Feedback, Report, tlsrpt::TlsReport},
     zip,
 };
 use mail_parser::{Message, MimeHeaders, PartType};
 
 use store::{
-    write::{now, BatchBuilder, Bincode, ReportClass, ValueClass},
     Serialize,
+    write::{BatchBuilder, Bincode, ReportClass, ValueClass, now},
 };
 use trc::IncomingReportEvent;
 
@@ -287,7 +287,8 @@ impl AnalyzeReport for Server {
                                     subject,
                                     report,
                                 })
-                                .serialize(),
+                                .serialize()
+                                .unwrap_or_default(),
                             );
                         }
                         Format::Tls(report) => {
@@ -299,7 +300,8 @@ impl AnalyzeReport for Server {
                                     subject,
                                     report,
                                 })
-                                .serialize(),
+                                .serialize()
+                                .unwrap_or_default(),
                             );
                         }
                         Format::Arf(report) => {
@@ -311,16 +313,18 @@ impl AnalyzeReport for Server {
                                     subject,
                                     report,
                                 })
-                                .serialize(),
+                                .serialize()
+                                .unwrap_or_default(),
                             );
                         }
                     }
                     let batch = batch.build();
                     if let Err(err) = core.core.storage.data.write(batch).await {
-                        trc::error!(err
-                            .span_id(session_id)
-                            .caused_by(trc::location!())
-                            .details("Failed to write report"));
+                        trc::error!(
+                            err.span_id(session_id)
+                                .caused_by(trc::location!())
+                                .details("Failed to write report")
+                        );
                     }
                 }
                 return;

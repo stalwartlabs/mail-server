@@ -5,6 +5,7 @@
  */
 
 pub mod bayes;
+pub mod copy;
 pub mod crypto;
 pub mod delete;
 pub mod delivery;

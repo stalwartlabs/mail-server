@@ -8,10 +8,8 @@ use std::collections::HashSet;
 
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
-    write::{
-        BatchBuilder, BitmapClass, DirectoryClass, MaybeDynamicId, TagValue, ValueClass, F_CLEAR,
-    },
     BitmapKey, Store, ValueKey,
+    write::{BatchBuilder, BitmapClass, DirectoryClass, MaybeDynamicId, TagValue, ValueClass},
 };
 
 // FDB max value
@@ -107,11 +105,7 @@ pub async fn test(db: Store) {
         .create_document()
         .with_collection(Collection::Email)
         .create_document()
-        .tag(
-            Property::ThreadId,
-            TagValue::Id(MaybeDynamicId::Dynamic(0)),
-            0,
-        )
+        .tag(Property::ThreadId, TagValue::Id(MaybeDynamicId::Dynamic(0)))
         .set(Property::ThreadId, MaybeDynamicId::Dynamic(0));
 
     let assigned_ids = db.write(builder.build_batch()).await.unwrap();
@@ -180,10 +174,9 @@ pub async fn test(db: Store) {
         .delete_document(thread_id)
         .with_collection(Collection::Email)
         .delete_document(email_id)
-        .tag(
+        .untag(
             Property::ThreadId,
             TagValue::Id(MaybeDynamicId::Static(thread_id)),
-            F_CLEAR,
         )
         .clear(Property::ThreadId);
     db.write(builder.build_batch()).await.unwrap();

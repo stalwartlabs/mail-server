@@ -21,17 +21,17 @@ use jmap_proto::types::{collection::Collection, id::Id, keyword::Keyword, proper
 use mail_parser::MessageParser;
 use sieve::{Envelope, Event, Input, Mailbox, Recipient, Sieve};
 use store::{
-    Deserialize, Serialize,
+    Deserialize, Serialize, SerializeInfallible,
     ahash::AHashSet,
     query::Filter,
-    write::{BatchBuilder, Bincode, BlobOp, F_VALUE, assert::HashedValue, now},
+    write::{ArchivedValue, BatchBuilder, Bincode, BlobOp, assert::HashedValue, now},
 };
 use trc::{AddContext, SieveEvent};
 use utils::config::utils::ParseValue;
 
 use std::future::Future;
 
-use super::{ActiveScript, SeenIdHash, SeenIds, SieveScript};
+use super::{ActiveScript, ArchivedSieveScript, SeenIdHash, SeenIds};
 
 struct SieveMessage<'x> {
     pub raw_message: Cow<'x, [u8]>,
@@ -67,7 +67,7 @@ pub trait SieveScriptIngest: Sync + Send {
         &self,
         account_id: u32,
         document_id: u32,
-    ) -> impl Future<Output = trc::Result<(Sieve, SieveScript)>> + Send;
+    ) -> impl Future<Output = trc::Result<(Sieve, String)>> + Send;
 }
 
 impl SieveScriptIngest for Server {
@@ -529,10 +529,11 @@ impl SieveScriptIngest for Server {
                 .with_account_id(account_id)
                 .with_collection(Collection::SieveScript)
                 .update_document(active_script.document_id)
-                .value(
+                .set(
                     Property::EmailIds,
-                    Bincode::new(active_script.seen_ids),
-                    F_VALUE,
+                    Bincode::new(active_script.seen_ids)
+                        .serialize()
+                        .caused_by(trc::location!())?,
                 );
             if let Err(err) = self.store().write(batch).await.caused_by(trc::location!()) {
                 trc::error!(err.details("Failed to save Sieve seen ids changes."));
@@ -561,19 +562,18 @@ impl SieveScriptIngest for Server {
             .filter(
                 account_id,
                 Collection::SieveScript,
-                vec![Filter::eq(Property::IsActive, 1u32)],
+                vec![Filter::eq(Property::IsActive, 1u32.serialize())],
             )
             .await
             .caused_by(trc::location!())?
             .results
             .min()
         {
-            let (script, script_object) =
-                self.sieve_script_compile(account_id, document_id).await?;
+            let (script, script_name) = self.sieve_script_compile(account_id, document_id).await?;
             Ok(Some(ActiveScript {
                 document_id,
                 script: Arc::new(script),
-                script_name: script_object.name,
+                script_name,
                 seen_ids: self
                     .get_property::<Bincode<SeenIds>>(
                         account_id,
@@ -601,7 +601,7 @@ impl SieveScriptIngest for Server {
             .filter(
                 account_id,
                 Collection::SieveScript,
-                vec![Filter::eq(Property::Name, name)],
+                vec![Filter::eq(Property::Name, name.serialize())],
             )
             .await
             .caused_by(trc::location!())?
@@ -621,10 +621,10 @@ impl SieveScriptIngest for Server {
         &self,
         account_id: u32,
         document_id: u32,
-    ) -> trc::Result<(Sieve, SieveScript)> {
+    ) -> trc::Result<(Sieve, String)> {
         // Obtain script object
         let script_object = self
-            .get_property::<HashedValue<SieveScript>>(
+            .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -639,24 +639,18 @@ impl SieveScriptIngest for Server {
             })?;
 
         // Obtain the sieve script length
-        let blob_id = &script_object.inner.blob_id;
-        let script_offset = blob_id
-            .section
-            .as_ref()
-            .ok_or_else(|| {
-                trc::StoreEvent::NotFound
-                    .into_err()
-                    .caused_by(trc::location!())
-                    .document_id(document_id)
-            })?
-            .size;
+        let unarchived_script = script_object
+            .inner
+            .unarchive()
+            .caused_by(trc::location!())?;
+        let script_offset = u32::from(unarchived_script.size) as usize;
 
         // Obtain the sieve script blob
         let script_bytes = self
             .core
             .storage
             .blob
-            .get_blob(blob_id.hash.as_ref(), 0..usize::MAX)
+            .get_blob(unarchived_script.blob_hash.0.as_ref(), 0..usize::MAX)
             .await
             .caused_by(trc::location!())?
             .ok_or_else(|| {
@@ -671,7 +665,7 @@ impl SieveScriptIngest for Server {
             .get(script_offset..)
             .and_then(|bytes| Bincode::<Sieve>::deserialize(bytes).ok())
         {
-            Ok((sieve.inner, script_object.inner))
+            Ok((sieve.inner, unarchived_script.name.to_string()))
         } else {
             // Deserialization failed, probably because the script compiler version changed
             match self.core.sieve.untrusted_compiler.compile(
@@ -685,20 +679,21 @@ impl SieveScriptIngest for Server {
                 Ok(sieve) => {
                     // Store updated compiled sieve script
                     let sieve = Bincode::new(sieve);
-                    let compiled_bytes = (&sieve).serialize();
+                    let compiled_bytes = sieve.serialize().caused_by(trc::location!())?;
                     let mut updated_sieve_bytes =
                         Vec::with_capacity(script_offset + compiled_bytes.len());
                     updated_sieve_bytes.extend_from_slice(&script_bytes[0..script_offset]);
                     updated_sieve_bytes.extend_from_slice(&compiled_bytes);
 
                     // Store updated blob
-                    let mut new_blob_id = blob_id.clone();
-                    new_blob_id.hash = self
+                    let new_blob_hash = self
                         .put_blob(account_id, &updated_sieve_bytes, false)
                         .await?
                         .hash;
-                    let mut new_script_object = script_object.inner.clone();
-                    new_script_object.blob_id = new_blob_id.clone();
+                    let mut new_script_object =
+                        rkyv::deserialize(unarchived_script).caused_by(trc::location!())?;
+                    let blob_hash =
+                        std::mem::replace(&mut new_script_object.blob_hash, new_blob_hash.clone());
 
                     // Update script object
                     let mut batch = BatchBuilder::new();
@@ -707,13 +702,14 @@ impl SieveScriptIngest for Server {
                         .with_collection(Collection::SieveScript)
                         .update_document(document_id)
                         .assert_value(Property::Value, &script_object)
-                        .set(Property::Value, (&new_script_object).serialize())
-                        .clear(BlobOp::Link {
-                            hash: blob_id.hash.clone(),
-                        })
+                        .set(
+                            Property::Value,
+                            new_script_object.serialize().caused_by(trc::location!())?,
+                        )
+                        .clear(BlobOp::Link { hash: blob_hash })
                         .set(
                             BlobOp::Link {
-                                hash: new_blob_id.hash,
+                                hash: new_blob_hash,
                             },
                             Vec::new(),
                         );
@@ -722,7 +718,7 @@ impl SieveScriptIngest for Server {
                         .await
                         .caused_by(trc::location!())?;
 
-                    Ok((sieve.inner, new_script_object))
+                    Ok((sieve.inner, new_script_object.name))
                 }
                 Err(error) => Err(trc::StoreEvent::UnexpectedError
                     .caused_by(trc::location!())
@@ -732,20 +728,3 @@ impl SieveScriptIngest for Server {
         }
     }
 }
-
-/*
-#[inline(always)]
-pub fn is_valid_role(role: &str) -> bool {
-    [
-        "inbox",
-        "trash",
-        "spam",
-        "junk",
-        "drafts",
-        "archive",
-        "sent",
-        "important",
-    ]
-    .contains(&role)
-}
-*/

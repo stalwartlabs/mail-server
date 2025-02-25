@@ -26,10 +26,7 @@ use rasn_cms::{
 };
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey, pkcs1::DecodeRsaPublicKey};
 use sequoia_openpgp as openpgp;
-use store::{
-    Deserialize, Serialize,
-    write::{Bincode, ToBitmaps},
-};
+use store::{Deserialize, Serialize, write::Bincode};
 
 const P: openpgp::policy::StandardPolicy<'static> = openpgp::policy::StandardPolicy::new();
 
@@ -615,13 +612,17 @@ fn try_parse_pem(
     Ok(method.map(|method| (method, certs)))
 }
 
-impl Serialize for &EncryptionParams {
-    fn serialize(self) -> Vec<u8> {
+impl Serialize for EncryptionParams {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
         let len = bincode::serialized_size(&self).unwrap_or_default();
         let mut buf = Vec::with_capacity(len as usize + 1);
         buf.push(1);
-        let _ = bincode::serialize_into(&mut buf, &self);
-        buf
+        bincode::serialize_into(&mut buf, &self).map_err(|err| {
+            trc::EventType::Store(trc::StoreEvent::DeserializeError)
+                .reason(err)
+                .caused_by(trc::location!())
+        })?;
+        Ok(buf)
     }
 }
 
@@ -642,12 +643,6 @@ impl Deserialize for EncryptionParams {
                 .caused_by(trc::location!())
                 .ctx(trc::Key::Value, version as u64)),
         }
-    }
-}
-
-impl ToBitmaps for &EncryptionParams {
-    fn to_bitmaps(&self, _: &mut Vec<store::write::Operation>, _: u8, _: bool) {
-        unreachable!()
     }
 }
 

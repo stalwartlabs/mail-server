@@ -12,7 +12,10 @@ use jmap_proto::{
     types::{collection::Collection, property::Property},
 };
 use std::future::Future;
-use store::query::{self};
+use store::{
+    SerializeInfallible,
+    query::{self},
+};
 
 use crate::JmapMethods;
 
@@ -33,17 +36,21 @@ impl SieveScriptQuery for Server {
 
         for cond in std::mem::take(&mut request.filter) {
             match cond {
-                Filter::Name(name) => filters.push(query::Filter::has_text(Property::Name, &name)),
-                Filter::IsActive(is_active) => {
-                    filters.push(query::Filter::eq(Property::IsActive, is_active as u32))
-                }
+                Filter::Name(name) => filters.push(query::Filter::contains(
+                    Property::Name,
+                    name.to_lowercase().into_bytes(),
+                )),
+                Filter::IsActive(is_active) => filters.push(query::Filter::eq(
+                    Property::IsActive,
+                    (is_active as u32).serialize(),
+                )),
                 Filter::And | Filter::Or | Filter::Not | Filter::Close => {
                     filters.push(cond.into());
                 }
                 other => {
                     return Err(trc::JmapEvent::UnsupportedFilter
                         .into_err()
-                        .details(other.to_string()))
+                        .details(other.to_string()));
                 }
             }
         }
@@ -72,7 +79,7 @@ impl SieveScriptQuery for Server {
                     other => {
                         return Err(trc::JmapEvent::UnsupportedSort
                             .into_err()
-                            .details(other.to_string()))
+                            .details(other.to_string()));
                     }
                 });
             }

@@ -10,14 +10,14 @@ use crate::{
     core::{Session, SessionData},
     spawn_op,
 };
-use common::listener::SessionStream;
+use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
+use email::mailbox::ArchivedMailbox;
 use imap_proto::{Command, ResponseCode, StatusResponse, receiver::Request};
-use jmap_proto::{
-    object::index::ObjectIndexBuilder,
-    types::{collection::Collection, property::Property, state::StateChange, type_state::DataType},
+use jmap_proto::types::{
+    collection::Collection, property::Property, state::StateChange, type_state::DataType,
 };
-use store::write::{BatchBuilder, assert::HashedValue};
+use store::write::{ArchivedValue, BatchBuilder, assert::HashedValue};
 
 use super::ImapContext;
 
@@ -97,7 +97,7 @@ impl<T: SessionStream> SessionData<T> {
         // Obtain mailbox
         let mailbox = self
             .server
-            .get_property::<HashedValue<email::mailbox::Mailbox>>(
+            .get_property::<HashedValue<ArchivedValue<ArchivedMailbox>>>(
                 account_id,
                 Collection::Mailbox,
                 mailbox_id,
@@ -112,9 +112,10 @@ impl<T: SessionStream> SessionData<T> {
                     .code(ResponseCode::NonExistent)
                     .id(tag.clone())
                     .caused_by(trc::location!())
-            })?;
+            })?
+            .into_deserialized()
+            .imap_ctx(&tag, trc::location!())?;
 
-        // Subscribe/unsubscribe to mailbox
         if (subscribe && !mailbox.inner.is_subscribed(self.account_id))
             || (!subscribe && mailbox.inner.is_subscribed(self.account_id))
         {
@@ -138,11 +139,12 @@ impl<T: SessionStream> SessionData<T> {
                     ObjectIndexBuilder::new()
                         .with_current(mailbox)
                         .with_changes(new_mailbox),
-                );
+                )
+                .imap_ctx(&tag, trc::location!())?;
             changes.log_update(Collection::Mailbox, mailbox_id);
 
             let change_id = changes.change_id;
-            batch.custom(changes);
+            batch.custom(changes).imap_ctx(&tag, trc::location!())?;
             self.server
                 .store()
                 .write(batch)

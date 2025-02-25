@@ -84,7 +84,9 @@ pub struct DefaultFolder {
     pub create: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Clone, Copy, PartialEq, Eq, Hash, Debug,
+)]
 pub enum SpecialUse {
     Inbox,
     Trash,
@@ -400,6 +402,38 @@ impl SpecialUse {
             SpecialUse::Shared => Some("shared"),
             SpecialUse::Important => Some("important"),
             SpecialUse::None => None,
+        }
+    }
+}
+
+impl ArchivedSpecialUse {
+    pub fn as_str(&self) -> Option<&'static str> {
+        match self {
+            ArchivedSpecialUse::Inbox => Some("inbox"),
+            ArchivedSpecialUse::Trash => Some("trash"),
+            ArchivedSpecialUse::Junk => Some("junk"),
+            ArchivedSpecialUse::Drafts => Some("drafts"),
+            ArchivedSpecialUse::Archive => Some("archive"),
+            ArchivedSpecialUse::Sent => Some("sent"),
+            ArchivedSpecialUse::Shared => Some("shared"),
+            ArchivedSpecialUse::Important => Some("important"),
+            ArchivedSpecialUse::None => None,
+        }
+    }
+}
+
+impl From<&ArchivedSpecialUse> for SpecialUse {
+    fn from(value: &ArchivedSpecialUse) -> Self {
+        match value {
+            ArchivedSpecialUse::Inbox => SpecialUse::Inbox,
+            ArchivedSpecialUse::Trash => SpecialUse::Trash,
+            ArchivedSpecialUse::Junk => SpecialUse::Junk,
+            ArchivedSpecialUse::Drafts => SpecialUse::Drafts,
+            ArchivedSpecialUse::Archive => SpecialUse::Archive,
+            ArchivedSpecialUse::Sent => SpecialUse::Sent,
+            ArchivedSpecialUse::Shared => SpecialUse::Shared,
+            ArchivedSpecialUse::Important => SpecialUse::Important,
+            ArchivedSpecialUse::None => SpecialUse::None,
         }
     }
 }

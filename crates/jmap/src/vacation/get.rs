@@ -5,7 +5,7 @@
  */
 
 use common::Server;
-use email::sieve::SieveScript;
+use email::sieve::ArchivedSieveScript;
 use jmap_proto::{
     method::get::{GetRequest, GetResponse, RequestArguments},
     request::reference::MaybeReference,
@@ -19,7 +19,8 @@ use jmap_proto::{
     },
 };
 use std::future::Future;
-use store::query::Filter;
+use store::{query::Filter, write::ArchivedValue};
+use trc::AddContext;
 
 use crate::{JmapMethods, changes::state::StateManager};
 
@@ -79,8 +80,8 @@ impl VacationResponseGet for Server {
         };
         if do_get {
             if let Some(document_id) = self.get_vacation_sieve_script_id(account_id).await? {
-                if let Some(mut obj) = self
-                    .get_property::<SieveScript>(
+                if let Some(sieve_) = self
+                    .get_property::<ArchivedValue<ArchivedSieveScript>>(
                         account_id,
                         Collection::SieveScript,
                         document_id,
@@ -88,6 +89,8 @@ impl VacationResponseGet for Server {
                     )
                     .await?
                 {
+                    let sieve = sieve_.unarchive().caused_by(trc::location!())?;
+                    let vacation = sieve.vacation_response.as_ref();
                     let mut result = Object::with_capacity(properties.len());
                     for property in &properties {
                         match property {
@@ -95,46 +98,48 @@ impl VacationResponseGet for Server {
                                 result.append(Property::Id, Value::Id(Id::singleton()));
                             }
                             Property::IsEnabled => {
-                                result.append(Property::IsEnabled, obj.is_active);
+                                result.append(Property::IsEnabled, sieve.is_active);
                             }
                             Property::FromDate => {
                                 result.append(
                                     Property::FromDate,
-                                    obj.vacation_response.as_mut().and_then(|r| {
-                                        r.from_date.take().map(UTCDate::from).map(Value::Date)
+                                    vacation.and_then(|r| {
+                                        r.from_date
+                                            .as_ref()
+                                            .map(u64::from)
+                                            .map(UTCDate::from)
+                                            .map(Value::Date)
                                     }),
                                 );
                             }
                             Property::ToDate => {
                                 result.append(
                                     Property::ToDate,
-                                    obj.vacation_response.as_mut().and_then(|r| {
-                                        r.to_date.take().map(UTCDate::from).map(Value::Date)
+                                    vacation.and_then(|r| {
+                                        r.to_date
+                                            .as_ref()
+                                            .map(u64::from)
+                                            .map(UTCDate::from)
+                                            .map(Value::Date)
                                     }),
                                 );
                             }
                             Property::Subject => {
                                 result.append(
                                     Property::Subject,
-                                    obj.vacation_response
-                                        .as_mut()
-                                        .and_then(|r| r.subject.take().map(Value::from)),
+                                    vacation.and_then(|r| r.subject.as_ref().map(Value::from)),
                                 );
                             }
                             Property::TextBody => {
                                 result.append(
                                     Property::TextBody,
-                                    obj.vacation_response
-                                        .as_mut()
-                                        .and_then(|r| r.text_body.take().map(Value::from)),
+                                    vacation.and_then(|r| r.text_body.as_ref().map(Value::from)),
                                 );
                             }
                             Property::HtmlBody => {
                                 result.append(
                                     Property::HtmlBody,
-                                    obj.vacation_response
-                                        .as_mut()
-                                        .and_then(|r| r.html_body.take().map(Value::from)),
+                                    vacation.and_then(|r| r.html_body.as_ref().map(Value::from)),
                                 );
                             }
                             property => {
@@ -158,7 +163,7 @@ impl VacationResponseGet for Server {
         self.filter(
             account_id,
             Collection::SieveScript,
-            vec![Filter::eq(Property::Name, "vacation")],
+            vec![Filter::eq(Property::Name, "vacation".as_bytes().to_vec())],
         )
         .await
         .map(|r| r.results.min())

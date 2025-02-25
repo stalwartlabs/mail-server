@@ -9,18 +9,19 @@ use std::borrow::Cow;
 use trc::AddContext;
 use utils::config::Rate;
 
-use crate::{
-    backend::http::lookup::HttpStoreGet,
-    write::{assert::AssertValue, InMemoryClass, MaybeDynamicId},
-    Serialize,
-};
 #[allow(unused_imports)]
 use crate::{
+    Deserialize, InMemoryStore, IterateParams, QueryResult, Store, U64_LEN, Value, ValueKey,
     write::{
+        BatchBuilder, Operation, ValueClass, ValueOp,
         key::{DeserializeBigEndian, KeySerializer},
-        now, BatchBuilder, Operation, ValueClass, ValueOp,
+        now,
     },
-    Deserialize, InMemoryStore, IterateParams, QueryResult, Store, Value, ValueKey, U64_LEN,
+};
+use crate::{
+    SerializeInfallible,
+    backend::http::lookup::HttpStoreGet,
+    write::{InMemoryClass, MaybeDynamicId, assert::AssertValue},
 };
 
 pub struct KeyValue<T> {

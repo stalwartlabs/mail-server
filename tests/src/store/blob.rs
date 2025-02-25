@@ -6,12 +6,12 @@
 
 use ahash::AHashMap;
 use store::{
-    write::{blob::BlobQuota, now, BatchBuilder, BlobOp},
-    BlobClass, BlobStore, Serialize, Stores,
+    BlobClass, BlobStore, SerializeInfallible, Stores,
+    write::{BatchBuilder, BlobOp, blob::BlobQuota, now},
 };
-use utils::{config::Config, BlobHash};
+use utils::{BlobHash, config::Config};
 
-use crate::store::{TempDir, CONFIG};
+use crate::store::{CONFIG, TempDir};
 
 #[tokio::test]
 pub async fn blob_tests() {
@@ -74,35 +74,41 @@ pub async fn blob_tests() {
 
         // Blob hash should now exist
         assert!(store.blob_exists(&hash).await.unwrap());
-        assert!(blob_store
-            .get_blob(hash.as_ref(), 0..usize::MAX)
-            .await
-            .unwrap()
-            .is_some());
+        assert!(
+            blob_store
+                .get_blob(hash.as_ref(), 0..usize::MAX)
+                .await
+                .unwrap()
+                .is_some()
+        );
 
         // AccountId 0 should be able to read blob
-        assert!(store
-            .blob_has_access(
-                &hash,
-                BlobClass::Reserved {
-                    account_id: 0,
-                    expires: until
-                }
-            )
-            .await
-            .unwrap());
+        assert!(
+            store
+                .blob_has_access(
+                    &hash,
+                    BlobClass::Reserved {
+                        account_id: 0,
+                        expires: until
+                    }
+                )
+                .await
+                .unwrap()
+        );
 
         // AccountId 1 should not be able to read blob
-        assert!(!store
-            .blob_has_access(
-                &hash,
-                BlobClass::Reserved {
-                    account_id: 1,
-                    expires: until
-                }
-            )
-            .await
-            .unwrap());
+        assert!(
+            !store
+                .blob_has_access(
+                    &hash,
+                    BlobClass::Reserved {
+                        account_id: 1,
+                        expires: until
+                    }
+                )
+                .await
+                .unwrap()
+        );
 
         // Blob already expired, quota should be 0
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -118,23 +124,27 @@ pub async fn blob_tests() {
         assert!(!store.blob_exists(&hash).await.unwrap());
 
         // AccountId 0 should not be able to read blob
-        assert!(!store
-            .blob_has_access(
-                &hash,
-                BlobClass::Reserved {
-                    account_id: 0,
-                    expires: until
-                }
-            )
-            .await
-            .unwrap());
+        assert!(
+            !store
+                .blob_has_access(
+                    &hash,
+                    BlobClass::Reserved {
+                        account_id: 0,
+                        expires: until
+                    }
+                )
+                .await
+                .unwrap()
+        );
 
         // Blob should no longer be in store
-        assert!(blob_store
-            .get_blob(hash.as_ref(), 0..usize::MAX)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            blob_store
+                .get_blob(hash.as_ref(), 0..usize::MAX)
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         // Upload one linked blob to accountId 1, two linked blobs to accountId 0, and three unlinked (reserved) blobs to accountId 2
         let expiry_times = AHashMap::from_iter([
@@ -260,17 +270,19 @@ pub async fn blob_tests() {
         }
 
         // AccountId 0 should not have access to accountId 1's blobs
-        assert!(!store
-            .blob_has_access(
-                BlobHash::from(b"123".as_slice()),
-                BlobClass::Linked {
-                    account_id: 0,
-                    collection: 0,
-                    document_id: 0,
-                }
-            )
-            .await
-            .unwrap());
+        assert!(
+            !store
+                .blob_has_access(
+                    BlobHash::from(b"123".as_slice()),
+                    BlobClass::Linked {
+                        account_id: 0,
+                        collection: 0,
+                        document_id: 0,
+                    }
+                )
+                .await
+                .unwrap()
+        );
 
         // Unlink blob
         store
@@ -432,11 +444,13 @@ async fn test_store(store: BlobStore) {
         std::str::from_utf8(&DATA[11..57]).unwrap()
     );
     assert!(store.delete_blob(hash.as_slice()).await.unwrap());
-    assert!(store
-        .get_blob(hash.as_slice(), 0..usize::MAX)
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        store
+            .get_blob(hash.as_slice(), 0..usize::MAX)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     // Test large blob
     let mut data = Vec::with_capacity(50 * 1024 * 1024);
@@ -471,9 +485,11 @@ async fn test_store(store: BlobStore) {
         std::str::from_utf8(&data[3000111..4000999]).unwrap()
     );
     assert!(store.delete_blob(hash.as_slice()).await.unwrap());
-    assert!(store
-        .get_blob(hash.as_slice(), 0..usize::MAX)
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        store
+            .get_blob(hash.as_slice(), 0..usize::MAX)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }

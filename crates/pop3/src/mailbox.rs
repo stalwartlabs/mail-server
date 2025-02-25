@@ -7,10 +7,12 @@
 use std::collections::BTreeMap;
 
 use common::listener::SessionStream;
-use email::mailbox::{INBOX_ID, UidMailbox, manage::MailboxFnc};
+use email::mailbox::{ArchivedMailbox, INBOX_ID, UidMailbox, manage::MailboxFnc};
 use jmap_proto::types::{collection::Collection, property::Property};
 use store::{
-    IndexKey, IterateParams, Serialize, U32_LEN, ahash::AHashMap, write::key::DeserializeBigEndian,
+    IndexKey, IterateParams, SerializeInfallible, U32_LEN,
+    ahash::AHashMap,
+    write::{ArchivedValue, key::DeserializeBigEndian},
 };
 use trc::AddContext;
 
@@ -59,24 +61,27 @@ impl<T: SessionStream> Session<T> {
             .mailbox_get_or_create(account_id)
             .await
             .caused_by(trc::location!())?;
-        let uid_validity = self
-            .server
-            .get_property::<email::mailbox::Mailbox>(
-                account_id,
-                Collection::Mailbox,
-                INBOX_ID,
-                &Property::Value,
-            )
-            .await
-            .caused_by(trc::location!())?
-            .ok_or_else(|| {
-                trc::StoreEvent::UnexpectedError
-                    .caused_by(trc::location!())
-                    .details("Failed to obtain UID validity")
-                    .account_id(account_id)
-                    .document_id(INBOX_ID)
-            })?
-            .uid_validity;
+        let uid_validity = u32::from(
+            self.server
+                .get_property::<ArchivedValue<ArchivedMailbox>>(
+                    account_id,
+                    Collection::Mailbox,
+                    INBOX_ID,
+                    &Property::Value,
+                )
+                .await
+                .caused_by(trc::location!())?
+                .ok_or_else(|| {
+                    trc::StoreEvent::UnexpectedError
+                        .caused_by(trc::location!())
+                        .details("Failed to obtain UID validity")
+                        .account_id(account_id)
+                        .document_id(INBOX_ID)
+                })?
+                .unarchive()
+                .caused_by(trc::location!())?
+                .uid_validity,
+        );
 
         // Obtain message sizes
         self.server

@@ -14,17 +14,17 @@ use std::{
 use jmap_proto::types::keyword::Keyword;
 use nlp::language::Language;
 use store::{
+    FtsStore, SerializeInfallible,
     ahash::AHashMap,
-    fts::{index::FtsDocument, Field, FtsFilter},
+    fts::{Field, FtsFilter, index::FtsDocument},
     query::sort::Pagination,
     write::ValueClass,
-    FtsStore,
 };
 
 use store::{
-    query::{Comparator, Filter},
-    write::{BatchBuilder, F_BITMAP, F_INDEX, F_VALUE},
     Store, ValueKey,
+    query::{Comparator, Filter},
+    write::BatchBuilder,
 };
 
 use crate::store::deflate_test_resource;
@@ -145,10 +145,9 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
                         match FIELDS_OPTIONS[pos] {
                             FieldType::Text => {
                                 if !field.is_empty() {
-                                    builder.value(
-                                        field_id,
-                                        field.to_lowercase(),
-                                        F_VALUE | F_BITMAP,
+                                    builder.tag(field_id, field.to_lowercase()).set(
+                                        ValueClass::Property(field_id),
+                                        field.to_lowercase().into_bytes(),
                                     );
                                 }
                             }
@@ -160,24 +159,25 @@ pub async fn test(db: Store, fts_store: FtsStore, do_insert: bool) {
                                         Language::English,
                                     );
                                     if field_id == 7 {
-                                        builder.value(field_id, field.to_lowercase(), F_INDEX);
+                                        builder.index(field_id, field.to_lowercase());
                                     }
                                 }
                             }
                             FieldType::Integer => {
-                                builder.value(
-                                    field_id,
-                                    field.parse::<u32>().unwrap_or(0),
-                                    F_VALUE | F_INDEX,
-                                );
+                                let field = field.parse::<u32>().unwrap_or(0);
+                                builder
+                                    .index(field_id, field.serialize())
+                                    .set(ValueClass::Property(field_id), field.serialize());
                             }
                             FieldType::Keyword => {
                                 if !field.is_empty() {
-                                    builder.value(
-                                        field_id,
-                                        Keyword::Other(field.to_lowercase()),
-                                        F_VALUE | F_INDEX | F_BITMAP,
-                                    );
+                                    builder
+                                        .set(
+                                            ValueClass::Property(field_id),
+                                            field.to_lowercase().into_bytes(),
+                                        )
+                                        .tag(field_id, Keyword::Other(field.to_lowercase()))
+                                        .index(field_id, field.to_lowercase());
                                 }
                             }
                         }
@@ -270,7 +270,7 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
                     .await
                     .unwrap(),
                 ),
-                Filter::eq(fields_u8["year"], 1979u32),
+                Filter::eq(fields_u8["year"], 1979u32.serialize()),
             ],
             vec!["p11293"],
         ),
@@ -288,9 +288,9 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
                     .await
                     .unwrap(),
                 ),
-                Filter::gt(fields_u8["year"], 2000u32),
-                Filter::lt(fields_u8["width"], 180u32),
-                Filter::gt(fields_u8["width"], 0u32),
+                Filter::gt(fields_u8["year"], 2000u32.serialize()),
+                Filter::lt(fields_u8["width"], 180u32.serialize()),
+                Filter::gt(fields_u8["width"], 0u32.serialize()),
             ],
             vec!["p79426", "p79427", "p79428", "p79429", "p79430"],
         ),
@@ -332,8 +332,8 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
                     Keyword::Other("artist".to_string()),
                 ),
                 Filter::Or,
-                Filter::eq(fields_u8["year"], 1969u32),
-                Filter::eq(fields_u8["year"], 1971u32),
+                Filter::eq(fields_u8["year"], 1969u32.serialize()),
+                Filter::eq(fields_u8["year"], 1971u32.serialize()),
                 Filter::End,
             ],
             vec!["p01764", "t05843"],
@@ -356,12 +356,12 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
                 ),
                 Filter::Or,
                 Filter::And,
-                Filter::ge(fields_u8["year"], 1900u32),
-                Filter::lt(fields_u8["year"], 1910u32),
+                Filter::ge(fields_u8["year"], 1900u32.serialize()),
+                Filter::lt(fields_u8["year"], 1910u32.serialize()),
                 Filter::End,
                 Filter::And,
-                Filter::ge(fields_u8["year"], 2000u32),
-                Filter::lt(fields_u8["year"], 2010u32),
+                Filter::ge(fields_u8["year"], 2000u32.serialize()),
+                Filter::lt(fields_u8["year"], 2010u32.serialize()),
                 Filter::End,
                 Filter::End,
             ],
@@ -391,14 +391,14 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
                 Filter::End,
                 Filter::Not,
                 Filter::Or,
-                Filter::gt(fields_u8["year"], 1980u32),
+                Filter::gt(fields_u8["year"], 1980u32.serialize()),
                 Filter::And,
-                Filter::gt(fields_u8["width"], 500u32),
-                Filter::gt(fields_u8["height"], 500u32),
+                Filter::gt(fields_u8["width"], 500u32.serialize()),
+                Filter::gt(fields_u8["height"], 500u32.serialize()),
                 Filter::End,
                 Filter::End,
                 Filter::End,
-                Filter::eq(fields_u8["acquisitionYear"], 2008u32),
+                Filter::eq(fields_u8["acquisitionYear"], 2008u32.serialize()),
                 Filter::End,
             ],
             vec!["ar00039", "t12600"],
@@ -425,8 +425,8 @@ pub async fn test_filter(db: Store, fts: FtsStore) {
                     .await
                     .unwrap(),
                 ),
-                Filter::gt(fields_u8["year"], 1900u32),
-                Filter::gt(fields_u8["acquisitionYear"], 2000u32),
+                Filter::gt(fields_u8["year"], 1900u32.serialize()),
+                Filter::gt(fields_u8["acquisitionYear"], 2000u32.serialize()),
             ],
             vec![
                 "p80042", "p80043", "p80044", "p80045", "p80203", "t11937", "t12172",
@@ -473,9 +473,9 @@ pub async fn test_sort(db: Store) {
     let tests = [
         (
             vec![
-                Filter::gt(fields["year"], 0u32),
-                Filter::gt(fields["acquisitionYear"], 0u32),
-                Filter::gt(fields["width"], 0u32),
+                Filter::gt(fields["year"], 0u32.serialize()),
+                Filter::gt(fields["acquisitionYear"], 0u32.serialize()),
+                Filter::gt(fields["width"], 0u32.serialize()),
             ],
             vec![
                 Comparator::descending(fields["year"]),
@@ -495,8 +495,8 @@ pub async fn test_sort(db: Store) {
         ),
         (
             vec![
-                Filter::gt(fields["width"], 0u32),
-                Filter::gt(fields["height"], 0u32),
+                Filter::gt(fields["width"], 0u32.serialize()),
+                Filter::gt(fields["height"], 0u32.serialize()),
             ],
             vec![
                 Comparator::descending(fields["width"]),

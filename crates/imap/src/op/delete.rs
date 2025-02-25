@@ -12,10 +12,10 @@ use crate::{
 };
 use common::listener::SessionStream;
 use directory::Permission;
+use email::mailbox::destroy::MailboxDestroy;
 use imap_proto::{
-    protocol::delete::Arguments, receiver::Request, Command, ResponseCode, StatusResponse,
+    Command, ResponseCode, StatusResponse, protocol::delete::Arguments, receiver::Request,
 };
-use jmap::mailbox::set::MailboxSet;
 use jmap_proto::types::{state::StateChange, type_state::DataType};
 use store::write::log::ChangeLogBuilder;
 

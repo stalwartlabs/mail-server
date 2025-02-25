@@ -10,7 +10,7 @@ use serde::Serialize;
 use store::write::{DeserializeFrom, SerializeInto};
 use utils::map::bitmap::BitmapItem;
 
-use crate::parser::{json::Parser, JsonObjectParser};
+use crate::parser::{JsonObjectParser, json::Parser};
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone, Copy, Serialize)]
 #[repr(u8)]
@@ -41,7 +41,19 @@ pub enum DataType {
     Quota = 11,
     #[serde(rename = "SieveScript")]
     SieveScript = 12,
-    None = 13,
+    #[serde(rename = "Calendar")]
+    Calendar = 13,
+    #[serde(rename = "CalendarEvent")]
+    CalendarEvent = 14,
+    #[serde(rename = "CalendarEventNotification")]
+    CalendarEventNotification = 15,
+    #[serde(rename = "AddressBook")]
+    AddressBook = 16,
+    #[serde(rename = "ContactCard")]
+    ContactCard = 17,
+    #[serde(rename = "FileNode")]
+    FileNode = 18,
+    None = 19,
 }
 
 impl BitmapItem for DataType {
@@ -70,6 +82,12 @@ impl From<u64> for DataType {
             10 => DataType::Mdn,
             11 => DataType::Quota,
             12 => DataType::SieveScript,
+            13 => DataType::Calendar,
+            14 => DataType::CalendarEvent,
+            15 => DataType::CalendarEventNotification,
+            16 => DataType::AddressBook,
+            17 => DataType::ContactCard,
+            18 => DataType::FileNode,
             _ => {
                 debug_assert!(false, "Invalid type_state value: {}", value);
                 DataType::None
@@ -171,6 +189,12 @@ impl DataType {
             DataType::Mdn => "MDN",
             DataType::Quota => "Quota",
             DataType::SieveScript => "SieveScript",
+            DataType::Calendar => "Calendar",
+            DataType::CalendarEvent => "CalendarEvent",
+            DataType::CalendarEventNotification => "CalendarEventNotification",
+            DataType::AddressBook => "AddressBook",
+            DataType::ContactCard => "ContactCard",
+            DataType::FileNode => "FileNode",
             DataType::None => "",
         }
     }

@@ -5,8 +5,8 @@
  */
 
 use common::{
-    listener::{SessionResult, SessionStream},
     KV_RATE_LIMIT_IMAP,
+    listener::{SessionResult, SessionStream},
 };
 use imap_proto::receiver::{self, Request};
 use jmap_proto::types::{collection::Collection, property::Property};
@@ -70,9 +70,10 @@ impl<T: SessionStream> Session<T> {
                             }
                             Ok(false) => {}
                             Err(err) => {
-                                trc::error!(err
-                                    .span_id(self.session_id)
-                                    .details("Failed to check for fail2ban"));
+                                trc::error!(
+                                    err.span_id(self.session_id)
+                                        .details("Failed to check for fail2ban")
+                                );
                             }
                         }
                     }
@@ -278,7 +279,7 @@ impl<T: AsyncWrite + AsyncRead> Session<T> {
             .filter(
                 account_id,
                 Collection::SieveScript,
-                vec![Filter::eq(Property::Name, name)],
+                vec![Filter::eq(Property::Name, name.as_bytes().to_vec())],
             )
             .await
             .caused_by(trc::location!())

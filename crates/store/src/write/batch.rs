@@ -5,9 +5,8 @@
  */
 
 use super::{
-    assert::ToAssertValue, Batch, BatchBuilder, BitmapClass, HasFlag, IntoOperations,
-    MaybeDynamicId, MaybeDynamicValue, Operation, Serialize, TagValue, ToBitmaps, ValueClass,
-    ValueOp, F_BITMAP, F_CLEAR, F_INDEX, F_VALUE,
+    Batch, BatchBuilder, BitmapClass, IntoOperations, MaybeDynamicId, MaybeDynamicValue, Operation,
+    TagValue, ValueClass, ValueOp, assert::ToAssertValue,
 };
 
 impl BatchBuilder {
@@ -86,40 +85,65 @@ impl BatchBuilder {
         self
     }
 
-    pub fn value(
+    pub fn set_and_index(&mut self, field: impl Into<u8>, value: impl Into<Vec<u8>>) -> &mut Self {
+        let field = field.into();
+        let value = value.into();
+
+        self.ops.push(Operation::Index {
+            field,
+            key: value.clone(),
+            set: true,
+        });
+        self.ops.push(Operation::Value {
+            class: ValueClass::Property(field),
+            op: ValueOp::Set(value.into()),
+        });
+
+        self
+    }
+
+    pub fn unset_and_unindex(
         &mut self,
         field: impl Into<u8>,
-        value: impl Serialize + ToBitmaps,
-        options: u32,
+        value: impl Into<Vec<u8>>,
     ) -> &mut Self {
         let field = field.into();
-        let is_set = !options.has_flag(F_CLEAR);
+        let value = value.into();
 
-        if options.has_flag(F_BITMAP) {
-            value.to_bitmaps(&mut self.ops, field, is_set);
-        }
+        self.ops.push(Operation::Index {
+            field,
+            key: value,
+            set: false,
+        });
+        self.ops.push(Operation::Value {
+            class: ValueClass::Property(field),
+            op: ValueOp::Clear,
+        });
 
-        let value = value.serialize();
+        self
+    }
 
-        if options.has_flag(F_INDEX) {
-            self.ops.push(Operation::Index {
-                field,
-                key: value.clone(),
-                set: is_set,
-            });
-        }
+    pub fn index(&mut self, field: impl Into<u8>, value: impl Into<Vec<u8>>) -> &mut Self {
+        let field = field.into();
+        let value = value.into();
 
-        if options.has_flag(F_VALUE) {
-            self.ops.push(Operation::Value {
-                class: ValueClass::Property(field),
-                op: if is_set {
-                    ValueOp::Set(value.into())
-                } else {
-                    ValueOp::Clear
-                },
-            });
-        }
+        self.ops.push(Operation::Index {
+            field,
+            key: value.clone(),
+            set: true,
+        });
+        self
+    }
 
+    pub fn unindex(&mut self, field: impl Into<u8>, value: impl Into<Vec<u8>>) -> &mut Self {
+        let field = field.into();
+        let value = value.into();
+
+        self.ops.push(Operation::Index {
+            field,
+            key: value.clone(),
+            set: false,
+        });
         self
     }
 
@@ -127,15 +151,53 @@ impl BatchBuilder {
         &mut self,
         field: impl Into<u8>,
         value: impl Into<TagValue<MaybeDynamicId>>,
-        options: u32,
     ) -> &mut Self {
         self.ops.push(Operation::Bitmap {
             class: BitmapClass::Tag {
                 field: field.into(),
                 value: value.into(),
             },
-            set: !options.has_flag(F_CLEAR),
+            set: true,
         });
+        self
+    }
+
+    pub fn untag(
+        &mut self,
+        field: impl Into<u8>,
+        value: impl Into<TagValue<MaybeDynamicId>>,
+    ) -> &mut Self {
+        self.ops.push(Operation::Bitmap {
+            class: BitmapClass::Tag {
+                field: field.into(),
+                value: value.into(),
+            },
+            set: false,
+        });
+        self
+    }
+
+    pub fn tag_many<T, V>(&mut self, field: impl Into<u8>, values: T) -> &mut Self
+    where
+        T: Iterator<Item = V>,
+        V: Into<TagValue<MaybeDynamicId>>,
+    {
+        let field = field.into();
+        for value in values {
+            self.tag(field, value);
+        }
+        self
+    }
+
+    pub fn untag_many<T, V>(&mut self, field: impl Into<u8>, values: T) -> &mut Self
+    where
+        T: Iterator<Item = V>,
+        V: Into<TagValue<MaybeDynamicId>>,
+    {
+        let field = field.into();
+        for value in values {
+            self.untag(field, value);
+        }
         self
     }
 
@@ -184,9 +246,9 @@ impl BatchBuilder {
         self
     }
 
-    pub fn custom(&mut self, value: impl IntoOperations) -> &mut Self {
-        value.build(self);
-        self
+    pub fn custom(&mut self, value: impl IntoOperations) -> trc::Result<&mut Self> {
+        value.build(self)?;
+        Ok(self)
     }
 
     pub fn build(self) -> Batch {

@@ -28,8 +28,20 @@ pub use erased_serde;
 
 pub const BLOB_HASH_LEN: usize = 32;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct BlobHash([u8; BLOB_HASH_LEN]);
+#[derive(
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub struct BlobHash(pub [u8; BLOB_HASH_LEN]);
 
 impl BlobHash {
     pub fn new_max() -> Self {
@@ -56,6 +68,12 @@ impl BlobHash {
 impl From<&[u8]> for BlobHash {
     fn from(value: &[u8]) -> Self {
         BlobHash(blake3::hash(value).into())
+    }
+}
+
+impl From<&ArchivedBlobHash> for BlobHash {
+    fn from(value: &ArchivedBlobHash) -> Self {
+        value.0.as_slice().into()
     }
 }
 

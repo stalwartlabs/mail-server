@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use common::{auth::AccessToken, Server};
+use common::{Server, auth::AccessToken};
 use jmap_proto::{
     method::changes::{ChangesRequest, ChangesResponse, RequestArguments},
     types::{collection::Collection, property::Property, state::State},
 };
 use std::future::Future;
-use store::query::log::{Change, Changes, Query};
-use trc::AddContext;
+use store::query::log::{Change, Query};
 
 pub trait ChangesLookup: Sync + Send {
     fn changes(
@@ -19,13 +18,6 @@ pub trait ChangesLookup: Sync + Send {
         request: ChangesRequest,
         access_token: &AccessToken,
     ) -> impl Future<Output = trc::Result<ChangesResponse>> + Send;
-
-    fn changes_(
-        &self,
-        account_id: u32,
-        collection: Collection,
-        query: Query,
-    ) -> impl Future<Output = trc::Result<Changes>> + Send;
 }
 
 impl ChangesLookup for Server {
@@ -88,7 +80,10 @@ impl ChangesLookup for Server {
 
         let (items_sent, mut changelog) = match &request.since_state {
             State::Initial => {
-                let changelog = self.changes_(account_id, collection, Query::All).await?;
+                let changelog = self
+                    .store()
+                    .changes(account_id, collection, Query::All)
+                    .await?;
                 if changelog.changes.is_empty() && changelog.from_change_id == 0 {
                     return Ok(response);
                 }
@@ -97,12 +92,14 @@ impl ChangesLookup for Server {
             }
             State::Exact(change_id) => (
                 0,
-                self.changes_(account_id, collection, Query::Since(*change_id))
+                self.store()
+                    .changes(account_id, collection, Query::Since(*change_id))
                     .await?,
             ),
             State::Intermediate(intermediate_state) => {
                 let mut changelog = self
-                    .changes_(
+                    .store()
+                    .changes(
                         account_id,
                         collection,
                         Query::RangeInclusive(intermediate_state.from_id, intermediate_state.to_id),
@@ -111,12 +108,13 @@ impl ChangesLookup for Server {
                 if intermediate_state.items_sent >= changelog.changes.len() {
                     (
                         0,
-                        self.changes_(
-                            account_id,
-                            collection,
-                            Query::Since(intermediate_state.to_id),
-                        )
-                        .await?,
+                        self.store()
+                            .changes(
+                                account_id,
+                                collection,
+                                Query::Since(intermediate_state.to_id),
+                            )
+                            .await?,
                     )
                 } else {
                     changelog.changes.drain(
@@ -172,19 +170,5 @@ impl ChangesLookup for Server {
         }
 
         Ok(response)
-    }
-
-    async fn changes_(
-        &self,
-        account_id: u32,
-        collection: Collection,
-        query: Query,
-    ) -> trc::Result<Changes> {
-        self.core
-            .storage
-            .data
-            .changes(account_id, collection, query)
-            .await
-            .caused_by(trc::location!())
     }
 }

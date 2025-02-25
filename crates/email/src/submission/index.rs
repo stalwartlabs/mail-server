@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
- use jmap_proto::{
-    object::index::{IndexValue, IndexableObject},
-    types::property::Property,
-};
+use common::storage::index::{IndexValue, IndexableObject};
+use jmap_proto::types::property::Property;
 
 use super::EmailSubmission;
 
@@ -16,9 +14,7 @@ impl IndexableObject for EmailSubmission {
         [
             IndexValue::Text {
                 field: Property::UndoStatus.into(),
-                value: self.undo_status.as_index(),
-                tokenize: false,
-                index: true,
+                value: self.undo_status.as_index().into(),
             },
             IndexValue::U32 {
                 field: Property::EmailId.into(),

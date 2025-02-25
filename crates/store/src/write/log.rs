@@ -7,7 +7,7 @@
 use ahash::AHashSet;
 use utils::{codec::leb128::Leb128Vec, map::vec_map::VecMap};
 
-use crate::Serialize;
+use crate::SerializeInfallible;
 
 use super::{IntoOperations, MaybeDynamicValue, Operation, SerializeWithId};
 
@@ -126,7 +126,7 @@ impl ChangeLogBuilder {
 }
 
 impl IntoOperations for ChangeLogBuilder {
-    fn build(self, batch: &mut super::BatchBuilder) {
+    fn build(self, batch: &mut super::BatchBuilder) -> trc::Result<()> {
         batch.with_change_id(self.change_id);
         for (collection, changes) in self.changes {
             batch.ops.push(Operation::Collection { collection });
@@ -134,6 +134,7 @@ impl IntoOperations for ChangeLogBuilder {
                 set: changes.serialize().into(),
             });
         }
+        Ok(())
     }
 }
 
@@ -183,8 +184,8 @@ impl Changes {
     }
 }
 
-impl Serialize for &Changes {
-    fn serialize(self) -> Vec<u8> {
+impl SerializeInfallible for Changes {
+    fn serialize(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(
             1 + (self.inserts.len()
                 + self.updates.len()

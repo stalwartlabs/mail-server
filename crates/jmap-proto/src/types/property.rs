@@ -8,7 +8,7 @@ use std::fmt::{Display, Formatter};
 
 use mail_parser::HeaderName;
 use serde::Serialize;
-use store::write::{DeserializeFrom, SerializeInto};
+use store::write::{DeserializeFrom, SerializeInto, ValueClass};
 
 use crate::parser::{JsonObjectParser, json::Parser};
 
@@ -1457,5 +1457,11 @@ impl Serialize for Property {
 impl AsRef<Property> for Property {
     fn as_ref(&self) -> &Property {
         self
+    }
+}
+
+impl<T> From<Property> for ValueClass<T> {
+    fn from(value: Property) -> Self {
+        ValueClass::Property(value.into())
     }
 }

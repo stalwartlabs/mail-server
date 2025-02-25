@@ -10,9 +10,9 @@ use std::{
 };
 
 use common::{
+    Inner, Server,
     core::BuildServer,
     ipc::{PushSubscription, StateEvent, UpdateSubscription},
-    Inner, Server, IPC_CHANNEL_BUFFER,
 };
 use jmap_proto::types::{id::Id, state::StateChange, type_state::DataType};
 use std::future::Future;
@@ -85,9 +85,10 @@ pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<Stat
                     let acl = match inner.build_server().get_access_token(account_id).await {
                         Ok(result) => result,
                         Err(err) => {
-                            trc::error!(err
-                                .account_id(account_id)
-                                .details("Failed to obtain access token."));
+                            trc::error!(
+                                err.account_id(account_id)
+                                    .details("Failed to obtain access token.")
+                            );
 
                             continue;
                         }
@@ -366,49 +367,18 @@ pub fn spawn_state_manager(inner: Arc<Inner>, mut change_rx: mpsc::Receiver<Stat
 }
 
 pub trait StateManager: Sync + Send {
-    fn subscribe_state_manager(
-        &self,
-        account_id: u32,
-        types: Bitmap<DataType>,
-    ) -> impl Future<Output = trc::Result<mpsc::Receiver<StateChange>>> + Send;
-
     fn update_push_subscriptions(&self, account_id: u32) -> impl Future<Output = bool> + Send;
 }
 
 impl StateManager for Server {
-    async fn subscribe_state_manager(
-        &self,
-        account_id: u32,
-        types: Bitmap<DataType>,
-    ) -> trc::Result<mpsc::Receiver<StateChange>> {
-        let (change_tx, change_rx) = mpsc::channel::<StateChange>(IPC_CHANNEL_BUFFER);
-        let state_tx = self.inner.ipc.state_tx.clone();
-
-        for event in [
-            StateEvent::UpdateSharedAccounts { account_id },
-            StateEvent::Subscribe {
-                account_id,
-                types,
-                tx: change_tx,
-            },
-        ] {
-            state_tx.send(event).await.map_err(|err| {
-                trc::EventType::Server(trc::ServerEvent::ThreadError)
-                    .reason(err)
-                    .caused_by(trc::location!())
-            })?;
-        }
-
-        Ok(change_rx)
-    }
-
     async fn update_push_subscriptions(&self, account_id: u32) -> bool {
         let push_subs = match self.fetch_push_subscriptions(account_id).await {
             Ok(push_subs) => push_subs,
             Err(err) => {
-                trc::error!(err
-                    .account_id(account_id)
-                    .details("Failed to fetch push subscriptions"));
+                trc::error!(
+                    err.account_id(account_id)
+                        .details("Failed to fetch push subscriptions")
+                );
                 return false;
             }
         };

@@ -32,13 +32,7 @@ pub struct PrincipalInfo {
 }
 
 impl Serialize for Principal {
-    fn serialize(self) -> Vec<u8> {
-        (&self).serialize()
-    }
-}
-
-impl Serialize for &Principal {
-    fn serialize(self) -> Vec<u8> {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
         let mut serializer = KeySerializer::new(
             U32_LEN
                 + 2
@@ -84,7 +78,7 @@ impl Serialize for &Principal {
             }
         }
 
-        serializer.finalize()
+        Ok(serializer.finalize())
     }
 }
 
@@ -122,8 +116,8 @@ impl PrincipalInfo {
 }
 
 impl Serialize for PrincipalInfo {
-    fn serialize(self) -> Vec<u8> {
-        if let Some(tenant) = self.tenant {
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        Ok(if let Some(tenant) = self.tenant {
             KeySerializer::new((U32_LEN * 2) + 1)
                 .write_leb128(self.id)
                 .write(self.typ as u8)
@@ -134,7 +128,7 @@ impl Serialize for PrincipalInfo {
                 .write_leb128(self.id)
                 .write(self.typ as u8)
                 .finalize()
-        }
+        })
     }
 }
 
@@ -314,7 +308,7 @@ impl MigrateDirectory for Store {
                     ValueClass::Directory(DirectoryClass::Principal(MaybeDynamicId::Static(
                         account_id,
                     ))),
-                    (&principal).serialize(),
+                    principal.serialize().caused_by(trc::location!())?,
                 );
 
             if principal.typ() == Type::Individual {
@@ -359,7 +353,8 @@ impl MigrateDirectory for Store {
                     Principal::new(0, Type::Domain)
                         .with_field(PrincipalField::Name, domain.to_string())
                         .with_field(PrincipalField::Description, domain.to_string())
-                        .serialize(),
+                        .serialize()
+                        .caused_by(trc::location!())?,
                 )
                 .set(
                     ValueClass::Directory(DirectoryClass::NameToId(domain.as_bytes().to_vec())),

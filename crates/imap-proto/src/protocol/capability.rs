@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use super::{authenticate::Mechanism, ImapResponse};
+use super::{ImapResponse, authenticate::Mechanism};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Response {
@@ -201,8 +201,8 @@ impl ImapResponse for Response {
 #[cfg(test)]
 mod tests {
     use crate::protocol::{
-        capability::{Capability, Response},
         ImapResponse,
+        capability::{Capability, Response},
     };
 
     #[test]

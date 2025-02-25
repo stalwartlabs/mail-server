@@ -6,7 +6,6 @@ resolver = "2"
 
 [dependencies]
 imap_proto = { path = "../imap-proto" }
-jmap = { path = "../jmap" }
 jmap_proto = { path = "../jmap-proto" }
 directory = { path = "../directory" }
 trc = { path = "../trc" }

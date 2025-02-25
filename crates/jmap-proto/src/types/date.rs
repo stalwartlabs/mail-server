@@ -6,7 +6,7 @@
 
 use std::fmt::Display;
 
-use store::Serialize;
+use store::SerializeInfallible;
 
 use crate::parser::{JsonObjectParser, json::Parser};
 
@@ -220,8 +220,8 @@ impl serde::Serialize for UTCDate {
     }
 }
 
-impl Serialize for UTCDate {
-    fn serialize(self) -> Vec<u8> {
+impl SerializeInfallible for UTCDate {
+    fn serialize(&self) -> Vec<u8> {
         (self.timestamp() as u64).serialize()
     }
 }

@@ -13,7 +13,7 @@ use jmap_proto::types::{
 use sieve::Sieve;
 use store::{
     BitmapKey, BlobClass, BlobStore, Deserialize, FtsStore, InMemoryStore, IndexKey, IterateParams,
-    LogKey, Serialize, Store, U32_LEN, ValueKey,
+    LogKey, SerializeInfallible, Store, U32_LEN, ValueKey,
     dispatch::DocumentSet,
     roaring::RoaringBitmap,
     write::{
@@ -534,7 +534,10 @@ impl Server {
         let state = changes.change_id;
 
         let mut builder = BatchBuilder::new();
-        builder.with_account_id(account_id).custom(changes);
+        builder
+            .with_account_id(account_id)
+            .custom(changes)
+            .caused_by(trc::location!())?;
         self.core
             .storage
             .data

@@ -13,6 +13,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use assert::HashedValue;
 use nlp::tokenizers::word::WordTokenizer;
 use rand::Rng;
 use roaring::RoaringBitmap;
@@ -21,7 +22,9 @@ use utils::{
     codec::leb128::{Leb128Iterator, Leb128Vec},
 };
 
-use crate::{BlobClass, Deserialize, Serialize, Value, backend::MAX_TOKEN_LENGTH};
+use crate::{
+    BlobClass, Deserialize, Serialize, SerializeInfallible, Value, backend::MAX_TOKEN_LENGTH,
+};
 
 use self::assert::AssertValue;
 
@@ -69,11 +72,6 @@ pub(crate) const MAX_COMMIT_TIME: Duration = Duration::from_secs(10);
 pub(crate) const MAX_COMMIT_ATTEMPTS: u32 = 1000;
 #[cfg(feature = "test_mode")]
 pub(crate) const MAX_COMMIT_TIME: Duration = Duration::from_secs(3600);
-
-pub const F_VALUE: u32 = 1 << 0;
-pub const F_INDEX: u32 = 1 << 1;
-pub const F_BITMAP: u32 = 1 << 2;
-pub const F_CLEAR: u32 = 1 << 3;
 
 #[derive(Debug)]
 pub struct Batch {
@@ -305,63 +303,50 @@ impl<T> From<()> for TagValue<T> {
     }
 }
 
-impl Serialize for u32 {
-    fn serialize(self) -> Vec<u8> {
+impl SerializeInfallible for u32 {
+    fn serialize(&self) -> Vec<u8> {
         self.to_be_bytes().to_vec()
     }
 }
 
-impl Serialize for u64 {
-    fn serialize(self) -> Vec<u8> {
+impl SerializeInfallible for u64 {
+    fn serialize(&self) -> Vec<u8> {
         self.to_be_bytes().to_vec()
     }
 }
 
-impl Serialize for i64 {
-    fn serialize(self) -> Vec<u8> {
+impl SerializeInfallible for i64 {
+    fn serialize(&self) -> Vec<u8> {
         self.to_be_bytes().to_vec()
     }
 }
 
-impl Serialize for u16 {
-    fn serialize(self) -> Vec<u8> {
+impl SerializeInfallible for u16 {
+    fn serialize(&self) -> Vec<u8> {
         self.to_be_bytes().to_vec()
     }
 }
 
-impl Serialize for f64 {
-    fn serialize(self) -> Vec<u8> {
+impl SerializeInfallible for f64 {
+    fn serialize(&self) -> Vec<u8> {
         self.to_be_bytes().to_vec()
     }
 }
 
-impl Serialize for &str {
-    fn serialize(self) -> Vec<u8> {
+impl SerializeInfallible for &str {
+    fn serialize(&self) -> Vec<u8> {
         self.as_bytes().to_vec()
-    }
-}
-
-impl Serialize for &String {
-    fn serialize(self) -> Vec<u8> {
-        self.as_bytes().to_vec()
-    }
-}
-
-impl Serialize for String {
-    fn serialize(self) -> Vec<u8> {
-        self.into_bytes()
-    }
-}
-
-impl Serialize for Vec<u8> {
-    fn serialize(self) -> Vec<u8> {
-        self
     }
 }
 
 impl Deserialize for String {
     fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
         Ok(String::from_utf8_lossy(bytes).into_owned())
+    }
+
+    fn deserialize_owned(bytes: Vec<u8>) -> trc::Result<Self> {
+        Ok(String::from_utf8(bytes)
+            .unwrap_or_else(|err| String::from_utf8_lossy(err.as_bytes()).into_owned()))
     }
 }
 
@@ -397,20 +382,19 @@ pub trait DeserializeFrom: Sized {
     fn deserialize_from(bytes: &mut Iter<'_, u8>) -> Option<Self>;
 }
 
-impl<T: SerializeInto> Serialize for &Vec<T> {
-    fn serialize(self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(self.len() * 4);
-        bytes.push_leb128(self.len());
-        for item in self {
-            item.serialize_into(&mut bytes);
-        }
-        bytes
-    }
+pub struct ArchivedValue<T> {
+    inner: Vec<u8>,
+    _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: SerializeInto> Serialize for Vec<T> {
-    fn serialize(self) -> Vec<u8> {
-        (&self).serialize()
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        let mut bytes = Vec::with_capacity(self.len() * 4);
+        bytes.push_leb128(self.len());
+        for item in self.iter() {
+            item.serialize_into(&mut bytes);
+        }
+        Ok(bytes)
     }
 }
 
@@ -490,42 +474,9 @@ impl<T: DeserializeFrom + Sync + Send> Deserialize for Vec<T> {
     }
 }
 
-trait HasFlag {
-    fn has_flag(&self, flag: u32) -> bool;
-}
-
-impl HasFlag for u32 {
-    #[inline(always)]
-    fn has_flag(&self, flag: u32) -> bool {
-        self & flag == flag
-    }
-}
-
-pub trait ToBitmaps {
-    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool);
-}
-
 pub trait TokenizeText {
     fn tokenize_into(&self, tokens: &mut HashSet<String>);
     fn to_tokens(&self) -> HashSet<String>;
-}
-
-impl ToBitmaps for &str {
-    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
-        let mut tokens = HashSet::new();
-
-        self.tokenize_into(&mut tokens);
-
-        for token in tokens {
-            ops.push(Operation::Bitmap {
-                class: BitmapClass::Text {
-                    field,
-                    token: BitmapHash::new(token),
-                },
-                set,
-            });
-        }
-    }
 }
 
 impl TokenizeText for &str {
@@ -542,59 +493,9 @@ impl TokenizeText for &str {
     }
 }
 
-impl ToBitmaps for String {
-    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
-        self.as_str().to_bitmaps(ops, field, set)
-    }
-}
-
-impl ToBitmaps for u32 {
-    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
-        ops.push(Operation::Bitmap {
-            class: BitmapClass::Tag {
-                field,
-                value: TagValue::Id(MaybeDynamicId::Static(*self)),
-            },
-            set,
-        });
-    }
-}
-
-impl ToBitmaps for u64 {
-    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
-        ops.push(Operation::Bitmap {
-            class: BitmapClass::Tag {
-                field,
-                value: TagValue::Id(MaybeDynamicId::Static(*self as u32)),
-            },
-            set,
-        });
-    }
-}
-
-impl ToBitmaps for f64 {
-    fn to_bitmaps(&self, _ops: &mut Vec<Operation>, _field: u8, _set: bool) {
-        unreachable!()
-    }
-}
-
-impl<T: ToBitmaps> ToBitmaps for Vec<T> {
-    fn to_bitmaps(&self, ops: &mut Vec<Operation>, field: u8, set: bool) {
-        for item in self {
-            item.to_bitmaps(ops, field, set);
-        }
-    }
-}
-
 impl Serialize for () {
-    fn serialize(self) -> Vec<u8> {
-        Vec::with_capacity(0)
-    }
-}
-
-impl ToBitmaps for () {
-    fn to_bitmaps(&self, _ops: &mut Vec<Operation>, _field: u8, _set: bool) {
-        unreachable!()
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        Ok(Vec::with_capacity(0))
     }
 }
 
@@ -605,7 +506,7 @@ impl Deserialize for () {
 }
 
 pub trait IntoOperations {
-    fn build(self, batch: &mut BatchBuilder);
+    fn build(self, batch: &mut BatchBuilder) -> trc::Result<()>;
 }
 
 impl Operation {
@@ -690,15 +591,15 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> From<Value<'static>> for
     }
 }
 
-impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for &Bincode<T> {
-    fn serialize(self) -> Vec<u8> {
-        lz4_flex::compress_prepend_size(&bincode::serialize(&self.inner).unwrap_or_default())
-    }
-}
-
 impl<T: serde::Serialize + serde::de::DeserializeOwned> Serialize for Bincode<T> {
-    fn serialize(self) -> Vec<u8> {
-        lz4_flex::compress_prepend_size(&bincode::serialize(&self.inner).unwrap_or_default())
+    fn serialize(&self) -> trc::Result<Vec<u8>> {
+        bincode::serialize(&self.inner)
+            .map(|bytes| lz4_flex::compress_prepend_size(&bytes))
+            .map_err(|err| {
+                trc::StoreEvent::DeserializeError
+                    .caused_by(trc::location!())
+                    .reason(err)
+            })
     }
 }
 
@@ -725,15 +626,69 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned + Sized + Sync + Send> De
     }
 }
 
-impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for Bincode<T> {
-    fn to_bitmaps(&self, _ops: &mut Vec<crate::write::Operation>, _field: u8, _set: bool) {
-        unreachable!()
+impl<T: Sync + Send> Deserialize for ArchivedValue<T> {
+    fn deserialize(bytes: &[u8]) -> trc::Result<Self> {
+        Ok(ArchivedValue {
+            inner: bytes.to_vec(),
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    fn deserialize_owned(bytes: Vec<u8>) -> trc::Result<Self> {
+        Ok(ArchivedValue {
+            inner: bytes,
+            _phantom: std::marker::PhantomData,
+        })
     }
 }
 
-impl<T: serde::Serialize + serde::de::DeserializeOwned> ToBitmaps for &Bincode<T> {
-    fn to_bitmaps(&self, _ops: &mut Vec<crate::write::Operation>, _field: u8, _set: bool) {
-        unreachable!()
+impl<T> ArchivedValue<T>
+where
+    T: rkyv::Portable
+        + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
+        + Sync
+        + Send,
+{
+    pub fn unarchive(&self) -> trc::Result<&T> {
+        rkyv::access::<T, rkyv::rancor::Error>(&self.inner).map_err(Into::into)
+    }
+
+    pub fn unarchive_unsafe(&self) -> &T {
+        unsafe { rkyv::access_unchecked::<T>(&self.inner) }
+    }
+
+    pub fn deserialize<V>(&self) -> trc::Result<V>
+    where
+        T: rkyv::Deserialize<V, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
+    {
+        rkyv::access::<T, rkyv::rancor::Error>(&self.inner)
+            .and_then(|value| rkyv::deserialize::<V, rkyv::rancor::Error>(value))
+            .map_err(Into::into)
+    }
+}
+
+impl<T> HashedValue<ArchivedValue<T>>
+where
+    T: rkyv::Portable
+        + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
+        + Sync
+        + Send,
+{
+    pub fn to_unarchived(&self) -> trc::Result<HashedValue<&T>> {
+        self.inner.unarchive().map(|inner| HashedValue {
+            hash: self.hash,
+            inner,
+        })
+    }
+
+    pub fn into_deserialized<V>(self) -> trc::Result<HashedValue<V>>
+    where
+        T: rkyv::Deserialize<V, rkyv::api::high::HighDeserializer<rkyv::rancor::Error>>,
+    {
+        self.inner.deserialize().map(|inner| HashedValue {
+            hash: self.hash,
+            inner,
+        })
     }
 }
 

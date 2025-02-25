@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-SEL
  */
 
-use std::{borrow::Cow, collections::HashMap, slice::IterMut};
+use std::{borrow::Cow, collections::HashMap};
 
-use common::{Server, auth::AccessToken};
+use common::{Server, auth::AccessToken, storage::tag::TagManager};
 use email::{
     mailbox::{UidMailbox, manage::MailboxFnc},
     message::{
@@ -38,18 +38,15 @@ use mail_builder::{
 };
 use mail_parser::MessageParser;
 use store::{
-    Serialize,
+    SerializeInfallible,
     ahash::AHashSet,
     roaring::RoaringBitmap,
-    write::{
-        BatchBuilder, DeserializeFrom, F_BITMAP, F_CLEAR, F_VALUE, SerializeInto, ToBitmaps,
-        ValueClass, assert::HashedValue, log::ChangeLogBuilder,
-    },
+    write::{BatchBuilder, assert::HashedValue, log::ChangeLogBuilder},
 };
 use trc::AddContext;
 
 use crate::{
-    JmapMethods, api::http::HttpSessionData, auth::acl::AclMethods, blob::download::BlobDownload,
+    JmapMethods, api::http::HttpSessionData, blob::download::BlobDownload,
     changes::state::StateManager,
 };
 use std::future::Future;
@@ -96,9 +93,14 @@ impl EmailSet for Server {
                 )
                 .await?
                 .into(),
-                self.shared_messages(access_token, account_id, Acl::ModifyItems)
-                    .await?
-                    .into(),
+                self.shared_document_children(
+                    access_token,
+                    account_id,
+                    Collection::Mailbox,
+                    Acl::ModifyItems,
+                )
+                .await?
+                .into(),
             )
         } else {
             (None, None, None)
@@ -878,13 +880,15 @@ impl EmailSet for Server {
                 }
 
                 // Update keywords property
-                keywords.update_batch(&mut batch, Property::Keywords);
+                keywords
+                    .update_batch(&mut batch, Property::Keywords)
+                    .caused_by(trc::location!())?;
 
                 // Update last change id
                 if changes.change_id == u64::MAX {
                     changes.change_id = self.assign_change_id(account_id)?;
                 }
-                batch.value(Property::Cid, changes.change_id, F_VALUE);
+                batch.set(Property::Cid, changes.change_id.serialize());
             }
 
             // Process mailboxes
@@ -960,7 +964,9 @@ impl EmailSet for Server {
                 }
 
                 // Update mailboxIds property
-                mailboxes.update_batch(&mut batch, Property::MailboxIds);
+                mailboxes
+                    .update_batch(&mut batch, Property::MailboxIds)
+                    .caused_by(trc::location!())?;
             }
 
             // Log mailbox changes
@@ -997,9 +1003,14 @@ impl EmailSet for Server {
                 .await?
                 .unwrap_or_default();
             let can_destroy_message_ids = if access_token.is_shared(account_id) {
-                self.shared_messages(access_token, account_id, Acl::RemoveItems)
-                    .await?
-                    .into()
+                self.shared_document_children(
+                    access_token,
+                    account_id,
+                    Collection::Mailbox,
+                    Acl::RemoveItems,
+                )
+                .await?
+                .into()
             } else {
                 None
             };
@@ -1072,111 +1083,5 @@ impl EmailSet for Server {
         }
 
         Ok(response)
-    }
-}
-pub struct TagManager<
-    T: PartialEq + Clone + ToBitmaps + SerializeInto + Serialize + DeserializeFrom + Sync + Send,
-> {
-    current: HashedValue<Vec<T>>,
-    added: Vec<T>,
-    removed: Vec<T>,
-    last: LastTag,
-}
-
-enum LastTag {
-    Set,
-    Update,
-    None,
-}
-
-impl<T: PartialEq + Clone + ToBitmaps + SerializeInto + Serialize + DeserializeFrom + Sync + Send>
-    TagManager<T>
-{
-    pub fn new(current: HashedValue<Vec<T>>) -> Self {
-        Self {
-            current,
-            added: Vec::new(),
-            removed: Vec::new(),
-            last: LastTag::None,
-        }
-    }
-
-    pub fn set(&mut self, tags: Vec<T>) {
-        if matches!(self.last, LastTag::None) {
-            self.added.clear();
-            self.removed.clear();
-
-            for tag in &tags {
-                if !self.current.inner.contains(tag) {
-                    self.added.push(tag.clone());
-                }
-            }
-
-            for tag in &self.current.inner {
-                if !tags.contains(tag) {
-                    self.removed.push(tag.clone());
-                }
-            }
-
-            self.current.inner = tags;
-            self.last = LastTag::Set;
-        }
-    }
-
-    pub fn update(&mut self, tag: T, add: bool) {
-        if matches!(self.last, LastTag::None | LastTag::Update) {
-            if add {
-                if !self.current.inner.contains(&tag) {
-                    self.added.push(tag.clone());
-                    self.current.inner.push(tag);
-                }
-            } else if let Some(index) = self.current.inner.iter().position(|t| t == &tag) {
-                self.current.inner.swap_remove(index);
-                self.removed.push(tag);
-            }
-            self.last = LastTag::Update;
-        }
-    }
-
-    pub fn added(&self) -> &[T] {
-        &self.added
-    }
-
-    pub fn removed(&self) -> &[T] {
-        &self.removed
-    }
-
-    pub fn current(&self) -> &[T] {
-        &self.current.inner
-    }
-
-    pub fn changed_tags(&self) -> impl Iterator<Item = &T> {
-        self.added.iter().chain(self.removed.iter())
-    }
-
-    pub fn inner_tags_mut(&mut self) -> IterMut<'_, T> {
-        self.current.inner.iter_mut()
-    }
-
-    pub fn has_tags(&self) -> bool {
-        !self.current.inner.is_empty()
-    }
-
-    pub fn has_changes(&self) -> bool {
-        !self.added.is_empty() || !self.removed.is_empty()
-    }
-
-    pub fn update_batch(self, batch: &mut BatchBuilder, property: Property) {
-        let property = u8::from(property);
-
-        batch
-            .assert_value(ValueClass::Property(property), &self.current)
-            .value(property, self.current.inner, F_VALUE);
-        for added in self.added {
-            batch.value(property, added, F_BITMAP);
-        }
-        for removed in self.removed {
-            batch.value(property, removed, F_BITMAP | F_CLEAR);
-        }
     }
 }

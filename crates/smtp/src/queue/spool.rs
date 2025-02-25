@@ -6,13 +6,13 @@
 
 use crate::queue::DomainPart;
 use common::ipc::QueueEvent;
-use common::{Server, KV_LOCK_QUEUE_MESSAGE};
+use common::{KV_LOCK_QUEUE_MESSAGE, Server};
 use std::borrow::Cow;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
 use store::write::key::DeserializeBigEndian;
-use store::write::{now, BatchBuilder, Bincode, BlobOp, QueueClass, ValueClass};
-use store::{IterateParams, Serialize, ValueKey, U64_LEN};
+use store::write::{BatchBuilder, Bincode, BlobOp, QueueClass, ValueClass, now};
+use store::{IterateParams, Serialize, SerializeInfallible, U64_LEN, ValueKey};
 use trc::ServerEvent;
 use utils::BlobHash;
 
@@ -104,9 +104,10 @@ impl SmtpSpool for Server {
             .await;
 
         if let Err(err) = result {
-            trc::error!(err
-                .details("Failed to read queue.")
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.details("Failed to read queue.")
+                    .caused_by(trc::location!())
+            );
         }
 
         events
@@ -125,9 +126,10 @@ impl SmtpSpool for Server {
                 result
             }
             Err(err) => {
-                trc::error!(err
-                    .details("Failed to lock event.")
-                    .caused_by(trc::location!()));
+                trc::error!(
+                    err.details("Failed to lock event.")
+                        .caused_by(trc::location!())
+                );
                 false
             }
         }
@@ -139,9 +141,10 @@ impl SmtpSpool for Server {
             .remove_lock(KV_LOCK_QUEUE_MESSAGE, &queue_id.to_be_bytes())
             .await
         {
-            trc::error!(err
-                .details("Failed to unlock event.")
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.details("Failed to unlock event.")
+                    .caused_by(trc::location!())
+            );
         }
     }
 
@@ -156,9 +159,10 @@ impl SmtpSpool for Server {
             Ok(Some(message)) => Some(message.inner),
             Ok(None) => None,
             Err(err) => {
-                trc::error!(err
-                    .details("Failed to read message.")
-                    .caused_by(trc::location!()));
+                trc::error!(
+                    err.details("Failed to read message.")
+                        .caused_by(trc::location!())
+                );
 
                 None
             }
@@ -202,10 +206,11 @@ impl Message {
             0u32.serialize(),
         );
         if let Err(err) = server.store().write(batch.build()).await {
-            trc::error!(err
-                .details("Failed to write to store.")
-                .span_id(session_id)
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.details("Failed to write to store.")
+                    .span_id(session_id)
+                    .caused_by(trc::location!())
+            );
 
             return false;
         }
@@ -214,10 +219,11 @@ impl Message {
             .put_blob(self.blob_hash.as_slice(), message.as_ref())
             .await
         {
-            trc::error!(err
-                .details("Failed to write blob.")
-                .span_id(session_id)
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.details("Failed to write blob.")
+                    .span_id(session_id)
+                    .caused_by(trc::location!())
+            );
 
             return false;
         }
@@ -292,14 +298,25 @@ impl Message {
             )
             .set(
                 ValueClass::Queue(QueueClass::Message(self.queue_id)),
-                Bincode::new(self).serialize(),
+                match Bincode::new(self).serialize() {
+                    Ok(data) => data,
+                    Err(err) => {
+                        trc::error!(
+                            err.details("Failed to serialize message.")
+                                .span_id(session_id)
+                                .caused_by(trc::location!())
+                        );
+                        return false;
+                    }
+                },
             );
 
         if let Err(err) = server.store().write(batch.build()).await {
-            trc::error!(err
-                .details("Failed to write to store.")
-                .span_id(session_id)
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.details("Failed to write to store.")
+                    .span_id(session_id)
+                    .caused_by(trc::location!())
+            );
 
             return false;
         }
@@ -413,14 +430,25 @@ impl Message {
         let span_id = self.span_id;
         batch.set(
             ValueClass::Queue(QueueClass::Message(self.queue_id)),
-            Bincode::new(self).serialize(),
+            match Bincode::new(self).serialize() {
+                Ok(data) => data,
+                Err(err) => {
+                    trc::error!(
+                        err.details("Failed to serialize message.")
+                            .span_id(span_id)
+                            .caused_by(trc::location!())
+                    );
+                    return false;
+                }
+            },
         );
 
         if let Err(err) = server.store().write(batch.build()).await {
-            trc::error!(err
-                .details("Failed to save changes.")
-                .span_id(span_id)
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.details("Failed to save changes.")
+                    .span_id(span_id)
+                    .caused_by(trc::location!())
+            );
             false
         } else {
             true
@@ -459,10 +487,11 @@ impl Message {
             .clear(ValueClass::Queue(QueueClass::Message(self.queue_id)));
 
         if let Err(err) = server.store().write(batch.build()).await {
-            trc::error!(err
-                .details("Failed to write to update queue.")
-                .span_id(self.span_id)
-                .caused_by(trc::location!()));
+            trc::error!(
+                err.details("Failed to write to update queue.")
+                    .span_id(self.span_id)
+                    .caused_by(trc::location!())
+            );
             false
         } else {
             true

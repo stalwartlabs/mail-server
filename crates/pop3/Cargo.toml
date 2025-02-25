@@ -8,7 +8,6 @@ resolver = "2"
 store = { path = "../store" }
 common = { path = "../common" }
 directory = { path = "../directory" }
-jmap = { path = "../jmap" }
 imap = { path = "../imap" }
 utils = { path = "../utils" }
 trc = { path = "../trc" }

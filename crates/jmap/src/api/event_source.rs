@@ -9,16 +9,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::{auth::AccessToken, Server};
-use http_body_util::{combinators::BoxBody, StreamBody};
+use common::{Server, auth::AccessToken};
+use http_body_util::{StreamBody, combinators::BoxBody};
 use hyper::{
-    body::{Bytes, Frame},
     StatusCode,
+    body::{Bytes, Frame},
 };
 use jmap_proto::types::type_state::DataType;
 use utils::map::bitmap::Bitmap;
 
-use crate::{services::state::StateManager, LONG_SLUMBER};
+use crate::LONG_SLUMBER;
 
 use super::{HttpRequest, HttpResponse, HttpResponseBody, StateChangeResponse};
 use std::future::Future;

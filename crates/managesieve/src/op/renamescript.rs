@@ -6,15 +6,12 @@
 
 use std::time::Instant;
 
-use common::listener::SessionStream;
+use common::{listener::SessionStream, storage::index::ObjectIndexBuilder};
 use directory::Permission;
-use email::sieve::SieveScript;
+use email::sieve::ArchivedSieveScript;
 use imap_proto::receiver::Request;
-use jmap_proto::{
-    object::index::ObjectIndexBuilder,
-    types::{collection::Collection, property::Property},
-};
-use store::write::{BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
+use jmap_proto::types::{collection::Collection, property::Property};
+use store::write::{ArchivedValue, BatchBuilder, assert::HashedValue, log::ChangeLogBuilder};
 use trc::AddContext;
 
 use crate::core::{Command, ResponseCode, Session, StatusResponse};
@@ -63,7 +60,7 @@ impl<T: SessionStream> Session<T> {
         // Obtain script values
         let script = self
             .server
-            .get_property::<HashedValue<SieveScript>>(
+            .get_property::<HashedValue<ArchivedValue<ArchivedSieveScript>>>(
                 account_id,
                 Collection::SieveScript,
                 document_id,
@@ -76,7 +73,9 @@ impl<T: SessionStream> Session<T> {
                     .into_err()
                     .details("Script not found")
                     .code(ResponseCode::NonExistent)
-            })?;
+            })?
+            .into_deserialized()
+            .caused_by(trc::location!())?;
 
         // Write record
         let mut batch = BatchBuilder::new();
@@ -88,7 +87,8 @@ impl<T: SessionStream> Session<T> {
                 ObjectIndexBuilder::new()
                     .with_changes(script.inner.clone().with_name(new_name.clone()))
                     .with_current(script),
-            );
+            )
+            .caused_by(trc::location!())?;
         if !batch.is_empty() {
             self.server
                 .store()

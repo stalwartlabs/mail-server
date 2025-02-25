@@ -37,6 +37,7 @@ quick_cache = "0.6.9"
 downcast-rs = "2.0.1"
 fast-float = "0.2.0"
 erased-serde = "0.4.5"
+rkyv = { version = "0.8.10", features = ["little_endian"] }
 
 [target.'cfg(unix)'.dependencies]
 privdrop = "0.5.3"

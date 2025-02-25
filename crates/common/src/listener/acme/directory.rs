@@ -190,7 +190,7 @@ impl Account {
                 .reason(err)
         })?;
 
-        Ok(Bincode::new(SerializedCert {
+        Bincode::new(SerializedCert {
             certificate: cert.serialize_der().map_err(|err| {
                 trc::EventType::Acme(trc::AcmeEvent::Error)
                     .caused_by(trc::location!())
@@ -198,7 +198,7 @@ impl Account {
             })?,
             private_key: cert.serialize_private_key_der(),
         })
-        .serialize())
+        .serialize()
     }
 }
 
