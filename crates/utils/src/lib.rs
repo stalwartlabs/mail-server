@@ -179,7 +179,7 @@ impl TryFrom<&str> for Semver {
         let mut parts = value.splitn(3, '.');
         let major = parts.next().ok_or(())?.parse().map_err(|_| ())?;
         let minor = parts.next().ok_or(())?.parse().map_err(|_| ())?;
-        let patch = parts.next().ok_or(())?.parse().map_err(|_| ())?;
+        let patch = parts.next().ok_or(())?.split('-').next().unwrap().parse().map_err(|_| ())?;
         Ok(Semver::new(major, minor, patch))
     }
 }
