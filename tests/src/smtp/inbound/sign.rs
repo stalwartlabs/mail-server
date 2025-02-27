@@ -16,9 +16,9 @@ use store::Stores;
 use utils::config::Config;
 
 use crate::smtp::{
+    DnsCache, TempDir, TestSMTP,
     inbound::TestMessage,
     session::{TestSession, VerifyResponse},
-    DnsCache, TempDir, TestSMTP,
 };
 use smtp::core::Session;
 

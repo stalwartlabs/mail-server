@@ -6,32 +6,32 @@
 
 use std::{sync::Arc, time::Duration};
 
-use directory::{backend::internal::manage::ManageDirectory, Directory, QueryBy, Type};
+use directory::{Directory, QueryBy, Type, backend::internal::manage::ManageDirectory};
 use jmap_proto::types::{
     blob::BlobId, collection::Collection, property::Property, state::StateChange,
 };
 use sieve::Sieve;
 use store::{
+    BitmapKey, BlobClass, BlobStore, Deserialize, FtsStore, InMemoryStore, IndexKey, IterateParams,
+    LogKey, Serialize, Store, U32_LEN, ValueKey,
     dispatch::DocumentSet,
     roaring::RoaringBitmap,
     write::{
-        key::DeserializeBigEndian, log::ChangeLogBuilder, now, BatchBuilder, BitmapClass, BlobOp,
-        DirectoryClass, QueueClass, TagValue, ValueClass,
+        BatchBuilder, BitmapClass, BlobOp, DirectoryClass, QueueClass, TagValue, ValueClass,
+        key::DeserializeBigEndian, log::ChangeLogBuilder, now,
     },
-    BitmapKey, BlobClass, BlobStore, Deserialize, FtsStore, InMemoryStore, IndexKey, IterateParams,
-    LogKey, Serialize, Store, ValueKey, U32_LEN,
 };
 use trc::AddContext;
 use utils::BlobHash;
 
 use crate::{
+    ImapId, Inner, MailboxState, Server,
     auth::{AccessToken, ResourceToken, TenantInfo},
     config::smtp::{
-        auth::{ArcSealer, DkimSigner},
+        auth::{ArcSealer, DkimSigner, LazySignature, ResolvedSignature, build_signature},
         queue::RelayHost,
     },
     ipc::StateEvent,
-    ImapId, Inner, MailboxState, Server,
 };
 
 impl Server {
@@ -110,40 +110,51 @@ impl Server {
         })
     }
 
-    pub fn get_arc_sealer(&self, name: &str, session_id: u64) -> Option<&ArcSealer> {
-        self.core
-            .smtp
-            .mail_auth
-            .sealers
-            .get(name)
-            .map(|s| s.as_ref())
-            .or_else(|| {
-                trc::event!(
-                    Arc(trc::ArcEvent::SealerNotFound),
-                    Id = name.to_string(),
-                    SpanId = session_id,
-                );
+    pub fn get_arc_sealer(&self, name: &str, session_id: u64) -> Option<Arc<ArcSealer>> {
+        self.resolve_signature(name).map(|s| s.sealer).or_else(|| {
+            trc::event!(
+                Arc(trc::ArcEvent::SealerNotFound),
+                Id = name.to_string(),
+                SpanId = session_id,
+            );
 
-                None
-            })
+            None
+        })
     }
 
-    pub fn get_dkim_signer(&self, name: &str, session_id: u64) -> Option<&DkimSigner> {
-        self.core
-            .smtp
-            .mail_auth
-            .signers
-            .get(name)
-            .map(|s| s.as_ref())
-            .or_else(|| {
-                trc::event!(
-                    Dkim(trc::DkimEvent::SignerNotFound),
-                    Id = name.to_string(),
-                    SpanId = session_id,
-                );
+    pub fn get_dkim_signer(&self, name: &str, session_id: u64) -> Option<Arc<DkimSigner>> {
+        self.resolve_signature(name).map(|s| s.signer).or_else(|| {
+            trc::event!(
+                Dkim(trc::DkimEvent::SignerNotFound),
+                Id = name.to_string(),
+                SpanId = session_id,
+            );
 
-                None
-            })
+            None
+        })
+    }
+
+    fn resolve_signature(&self, name: &str) -> Option<ResolvedSignature> {
+        let lazy_resolver_ = self.core.smtp.mail_auth.signatures.get(name)?;
+        match lazy_resolver_.load().as_ref() {
+            LazySignature::Resolved(resolved_signature) => Some(resolved_signature.clone()),
+            LazySignature::Pending(config) => {
+                let mut config = config.clone();
+                if let Some((signer, sealer)) = build_signature(&mut config, name) {
+                    let resolved = ResolvedSignature {
+                        signer: Arc::new(signer),
+                        sealer: Arc::new(sealer),
+                    };
+                    lazy_resolver_.store(Arc::new(LazySignature::Resolved(resolved.clone())));
+                    Some(resolved)
+                } else {
+                    config.log_errors();
+                    lazy_resolver_.store(Arc::new(LazySignature::Failed));
+                    None
+                }
+            }
+            LazySignature::Failed => None,
+        }
     }
 
     pub fn get_trusted_sieve_script(&self, name: &str, session_id: u64) -> Option<&Arc<Sieve>> {
